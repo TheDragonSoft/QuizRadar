@@ -6,24 +6,35 @@ pub struct Course {
     pub id: String,
     pub name: String,
     pub color: String,
+    #[serde(default)]
     pub bg: String,
+    #[serde(default)]
     pub border: String,
+}
+
+fn default_slot_type() -> String {
+    "Lecture".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScheduleSlot {
+    #[serde(default)]
     pub id: String,
     pub day: String,
+    #[serde(default)]
     pub day_index: u8,
     pub course_id: String,
+    #[serde(default)]
     pub course_name: String,
+    #[serde(default)]
     pub room: String,
-    #[serde(rename = "type")]
+    #[serde(rename = "type", default = "default_slot_type")]
     pub slot_type: String,
     #[serde(default)]
     pub group: String,
     pub start_time: String,
     pub end_time: String,
+    #[serde(default)]
     pub display_time: String,
     #[serde(default)]
     pub has_quiz: bool,

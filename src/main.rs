@@ -14,7 +14,7 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
-use models::{AppConfig, Assessment, CustomCalendarEvent, ScheduleData};
+use models::{AppConfig, Assessment, Course, CustomCalendarEvent, ScheduleData, ScheduleSlot};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{
@@ -53,6 +53,11 @@ fn save_app_config(cfg: &AppConfig) {
 }
 
 fn main() {
+    std::panic::set_hook(Box::new(|info| {
+        let msg = format!("PANIC: {}\n", info);
+        let _ = std::fs::write("panic.log", msg);
+    }));
+
     if !std::path::Path::new("Cargo.toml").exists() {
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
@@ -128,7 +133,7 @@ fn run_native_desktop_window(port: u16) {
 
     let app_url = format!("http://127.0.0.1:{}", port);
 
-    let _webview = WebViewBuilder::new()
+    let webview = WebViewBuilder::new()
         .with_url(&app_url)
         .with_user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         .with_new_window_req_handler(|url| {
@@ -142,6 +147,7 @@ fn run_native_desktop_window(port: u16) {
     window.set_focus();
 
     event_loop.run(move |event, _, control_flow| {
+        let _ = (&window, &webview);
         *control_flow = ControlFlow::Wait;
         if let Event::WindowEvent {
             event: WindowEvent::CloseRequested,
@@ -155,8 +161,8 @@ fn run_native_desktop_window(port: u16) {
 }
 
 async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
-    let ports = [5000, 5050, 3000, 8080, 5150, 5250, 0];
-    let mut selected_port = 5000;
+    let ports = [5050, 5000, 3000, 8080, 5150, 5250, 0];
+    let mut selected_port = 5050;
     let mut listener = None;
 
     for port in ports {
@@ -218,6 +224,10 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
         .route("/api/study/toggle", post(toggle_study_topic))
         .route("/api/events/custom", post(add_custom_event))
         .route("/api/events/custom/:id", delete(delete_custom_event))
+        .route("/api/schedule/extract", post(extract_schedule_handler))
+        .route("/api/schedule/save", post(save_schedule_handler))
+        .route("/api/schedule/courses", post(add_course_handler))
+        .route("/api/schedule/courses/:id", delete(delete_course_handler))
         .route("/api/calendar/ics/:id", get(download_ics))
         .route("/api/calendar/ics_all", get(download_all_ics))
         .route("/static/app.js", get(serve_app_js))
@@ -443,6 +453,141 @@ async fn trigger_gcal_sync(State(state): State<SharedAppState>) -> Json<Value> {
         "report": report,
         "assessments": *assessments,
         "dashboard": dashboard
+    }))
+}
+
+#[derive(Deserialize)]
+pub struct ExtractSchedulePayload {
+    pub file_base64: String,
+    pub mime_type: Option<String>,
+}
+
+async fn extract_schedule_handler(
+    State(state): State<SharedAppState>,
+    Json(payload): Json<ExtractSchedulePayload>,
+) -> Json<Value> {
+    let cfg = state.config.read().await.clone();
+    let mime = payload.mime_type.as_deref().unwrap_or("image/png");
+    match gemini::extract_schedule_with_gemini(&payload.file_base64, mime, cfg.gemini_api_key.as_deref()).await {
+        Ok(sched) => Json(json!({
+            "success": true,
+            "schedule": sched
+        })),
+        Err(err) => Json(json!({
+            "success": false,
+            "error": err
+        })),
+    }
+}
+
+async fn save_schedule_handler(
+    State(state): State<SharedAppState>,
+    Json(new_schedule): Json<ScheduleData>,
+) -> Json<Value> {
+    parser::save_schedule(&new_schedule);
+    *state.schedule.write().await = new_schedule.clone();
+
+    let cfg = state.config.read().await.clone();
+    let cached_emails = gmail::load_cached_emails();
+    let new_assessments = parser::process_all_emails(&cached_emails, &new_schedule, &cfg, false).await;
+    *state.assessments.write().await = new_assessments.clone();
+
+    Json(json!({
+        "success": true,
+        "schedule": new_schedule,
+        "assessments": new_assessments
+    }))
+}
+
+#[derive(Deserialize)]
+pub struct AddCoursePayload {
+    pub course: Course,
+    #[serde(default)]
+    pub slots: Vec<ScheduleSlot>,
+}
+
+async fn add_course_handler(
+    State(state): State<SharedAppState>,
+    Json(payload): Json<AddCoursePayload>,
+) -> Json<Value> {
+    let mut sched = state.schedule.read().await.clone();
+    let course_id = payload.course.id.trim().to_string();
+    if course_id.is_empty() {
+        return Json(json!({ "success": false, "error": "Course ID cannot be empty" }));
+    }
+
+    let mut course = payload.course;
+    if course.color.is_empty() {
+        course.color = "#1a73e8".to_string();
+    }
+    let (bg, border) = gemini::generate_course_palette(&course.color);
+    if course.bg.is_empty() {
+        course.bg = bg;
+    }
+    if course.border.is_empty() {
+        course.border = border;
+    }
+
+    if let Some(pos) = sched.courses.iter().position(|c| c.id.eq_ignore_ascii_case(&course_id)) {
+        sched.courses[pos] = course.clone();
+    } else {
+        sched.courses.push(course.clone());
+    }
+
+    let mut next_slot_num = sched.slots.len() + 1;
+    for mut slot in payload.slots {
+        if slot.id.is_empty() {
+            slot.id = format!("slot-{}", next_slot_num);
+            next_slot_num += 1;
+        }
+        slot.course_id = course_id.clone();
+        if slot.course_name.is_empty() {
+            slot.course_name = course.name.clone();
+        }
+        slot.day_index = gemini::normalize_day_index(&slot.day);
+        if slot.display_time.is_empty() && !slot.start_time.is_empty() && !slot.end_time.is_empty() {
+            slot.display_time = format!("{} – {}", slot.start_time, slot.end_time);
+        }
+        sched.slots.push(slot);
+    }
+
+    parser::save_schedule(&sched);
+    *state.schedule.write().await = sched.clone();
+
+    let cfg = state.config.read().await.clone();
+    let cached_emails = gmail::load_cached_emails();
+    let new_assessments = parser::process_all_emails(&cached_emails, &sched, &cfg, false).await;
+    *state.assessments.write().await = new_assessments.clone();
+
+    Json(json!({
+        "success": true,
+        "schedule": sched,
+        "assessments": new_assessments
+    }))
+}
+
+async fn delete_course_handler(
+    State(state): State<SharedAppState>,
+    Path(course_id): Path<String>,
+) -> Json<Value> {
+    let mut sched = state.schedule.read().await.clone();
+    let target = course_id.trim();
+
+    sched.courses.retain(|c| !c.id.eq_ignore_ascii_case(target));
+    sched.slots.retain(|s| !s.course_id.eq_ignore_ascii_case(target));
+
+    parser::save_schedule(&sched);
+    *state.schedule.write().await = sched.clone();
+
+    let cfg = state.config.read().await.clone();
+    let cached_emails = gmail::load_cached_emails();
+    let new_assessments = parser::process_all_emails(&cached_emails, &sched, &cfg, false).await;
+    *state.assessments.write().await = new_assessments.clone();
+
+    Json(json!({
+        "success": true,
+        "schedule": sched,
+        "assessments": new_assessments
     }))
 }
 

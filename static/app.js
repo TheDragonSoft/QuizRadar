@@ -47,6 +47,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   initDarkMode();
   initSidebarResponsive();
   initKeyboardShortcuts();
+  initSearchBar();
 
   if (window.lucide) {
     lucide.createIcons();
@@ -139,6 +140,24 @@ function toggleSidebar(forceCollapse) {
 function initKeyboardShortcuts() {
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
+      const palette = document.getElementById("search-dropdown-palette");
+      if (palette?.classList.contains("is-open")) {
+        closeSearchPalette();
+        document.getElementById("global-search-input")?.blur();
+        return;
+      }
+
+      const schedModal = document.getElementById("schedule-preview-modal");
+      const addCourseModal = document.getElementById("add-course-modal");
+      if (schedModal?.classList.contains("is-open")) {
+        closeSchedulePreviewModal();
+        return;
+      }
+      if (addCourseModal?.classList.contains("is-open")) {
+        closeAddCourseModal();
+        return;
+      }
+
       const detailModal = document.getElementById("event-detail-modal");
       const createModal = document.getElementById("create-event-modal");
       const settingsModal = document.getElementById("settings-modal");
@@ -1724,24 +1743,52 @@ function renderOnboardingPreview() {
     .join("");
 }
 
+function renderAllViews() {
+  updateTopBarAndUser();
+  renderSidebar();
+  renderDashboard();
+  renderWeekCalendar();
+  renderSettingsCourses();
+  renderOnboardingCourses();
+  renderPaletteCourseChips();
+  if (window.lucide) lucide.createIcons();
+}
+
 function renderOnboardingCourses() {
   const grid = document.getElementById("onboard-courses-grid");
+  const headerLabel = document.getElementById("onboard-courses-header-label");
   if (!grid) return;
   const courses = appState.schedule?.courses || [];
+  if (headerLabel) headerLabel.textContent = `Enrolled Courses (${courses.length})`;
+
+  if (courses.length === 0) {
+    grid.innerHTML = `<div class="col-span-1 sm:col-span-2 text-xs text-slate-400 p-3 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 text-center">No courses enrolled yet. Upload a timetable above or click "+ Add Course".</div>`;
+    return;
+  }
+
   grid.innerHTML = courses
     .map((c) => {
       const checked = activeCourseFilters.has(c.id);
+      const slotCount = (appState.schedule?.slots || []).filter((s) => s.course_id === c.id).length;
       return `
-        <label class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/70 hover:border-[#1a73e8] dark:hover:border-blue-500 cursor-pointer transition text-xs">
-          <div class="flex items-center gap-2.5 min-w-0">
+        <div class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/70 hover:border-[#1a73e8] dark:hover:border-blue-500 transition text-xs">
+          <label class="flex items-center gap-2.5 min-w-0 cursor-pointer flex-1">
             <input type="checkbox" ${checked ? "checked" : ""} onchange="toggleCourseFilter('${c.id}', this.checked)" class="w-4 h-4 rounded shrink-0 cursor-pointer" style="accent-color: ${c.color}" />
             <span class="px-2 py-0.5 rounded-md text-[10px] font-bold text-white shrink-0" style="background-color: ${c.color}">${escapeHtml(c.id)}</span>
             <span class="font-medium text-slate-800 dark:text-slate-200 truncate">${escapeHtml(c.name)}</span>
+          </label>
+          <div class="flex items-center gap-2 shrink-0 pl-1.5">
+            <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 tabular-nums">${slotCount} slots</span>
+            <button type="button" onclick="confirmDeleteCourse('${c.id}', '${escapeHtml(c.name)}', event)" class="p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer" title="Remove course">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
           </div>
-        </label>
+        </div>
       `;
     })
     .join("");
+
+  if (window.lucide) lucide.createIcons();
 }
 
 function setThemeFromOnboarding(isDark) {
@@ -1779,22 +1826,390 @@ function updateOnboardingThemeButtons() {
 
 function renderSettingsCourses() {
   const grid = document.getElementById("settings-courses-grid");
+  const headerLabel = document.getElementById("settings-courses-header-label");
   if (!grid) return;
   const courses = appState.schedule?.courses || [];
+  if (headerLabel) headerLabel.textContent = `Enrolled Courses & Timetable (${courses.length})`;
+
+  if (courses.length === 0) {
+    grid.innerHTML = `<div class="col-span-1 sm:col-span-2 text-xs text-slate-400 p-3 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 text-center">No courses enrolled. Upload a timetable above or click "+ Add Course".</div>`;
+    return;
+  }
+
   grid.innerHTML = courses
     .map((c) => {
       const checked = activeCourseFilters.has(c.id);
+      const slotCount = (appState.schedule?.slots || []).filter((s) => s.course_id === c.id).length;
       return `
-        <label class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/70 hover:border-[#1a73e8] dark:hover:border-blue-500 cursor-pointer transition text-xs">
-          <div class="flex items-center gap-2.5 min-w-0">
+        <div class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/70 hover:border-[#1a73e8] dark:hover:border-blue-500 transition text-xs">
+          <label class="flex items-center gap-2.5 min-w-0 cursor-pointer flex-1">
             <input type="checkbox" ${checked ? "checked" : ""} onchange="toggleCourseFilter('${c.id}', this.checked)" class="w-4 h-4 rounded shrink-0 cursor-pointer" style="accent-color: ${c.color}" />
             <span class="px-2 py-0.5 rounded-md text-[10px] font-bold text-white shrink-0" style="background-color: ${c.color}">${escapeHtml(c.id)}</span>
             <span class="font-medium text-slate-800 dark:text-slate-200 truncate">${escapeHtml(c.name)}</span>
+          </label>
+          <div class="flex items-center gap-2 shrink-0 pl-1.5">
+            <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 tabular-nums">${slotCount} slots</span>
+            <button type="button" onclick="confirmDeleteCourse('${c.id}', '${escapeHtml(c.name)}', event)" class="p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer" title="Remove course">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
           </div>
-        </label>
+        </div>
       `;
     })
     .join("");
+
+  if (window.lucide) lucide.createIcons();
+}
+
+// ============================================================================
+// GEMINI SCHEDULE EXTRACTION & COURSE MANAGEMENT
+// ============================================================================
+
+let pendingExtractedSchedule = null;
+
+async function handleScheduleFileUpload(inputEl) {
+  const file = inputEl?.files?.[0];
+  if (!file) return;
+
+  const onboardLoader = document.getElementById("onboard-schedule-loader");
+  const settingsLoader = document.getElementById("settings-schedule-loader");
+  if (onboardLoader) onboardLoader.classList.remove("hidden");
+  if (settingsLoader) settingsLoader.classList.remove("hidden");
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const base64 = e.target.result;
+    try {
+      const res = await fetch("/api/schedule/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          file_base64: base64,
+          mime_type: file.type || "image/png",
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.schedule) {
+        pendingExtractedSchedule = data.schedule;
+        openSchedulePreviewModal(data.schedule);
+      } else {
+        showToast(data.error || "Gemini could not extract schedule. Check your Gemini API key in Settings.");
+      }
+    } catch (err) {
+      console.error(err);
+      showToast("Error connecting to Gemini schedule extractor.");
+    } finally {
+      if (onboardLoader) onboardLoader.classList.add("hidden");
+      if (settingsLoader) settingsLoader.classList.add("hidden");
+      inputEl.value = "";
+    }
+  };
+  reader.onerror = () => {
+    showToast("Failed to read the selected file.");
+    if (onboardLoader) onboardLoader.classList.add("hidden");
+    if (settingsLoader) settingsLoader.classList.add("hidden");
+    inputEl.value = "";
+  };
+  reader.readAsDataURL(file);
+}
+
+function openSchedulePreviewModal(sched) {
+  const modal = document.getElementById("schedule-preview-modal");
+  if (!modal || !sched) return;
+
+  const semEl = document.getElementById("schedule-preview-semester");
+  const cCountEl = document.getElementById("schedule-preview-courses-count");
+  const sCountEl = document.getElementById("schedule-preview-slots-count");
+  const coursesListEl = document.getElementById("schedule-preview-courses-list");
+  const slotsListEl = document.getElementById("schedule-preview-slots-list");
+
+  if (semEl) semEl.textContent = sched.semester || "Semester Timetable";
+  if (cCountEl) cCountEl.textContent = `${(sched.courses || []).length} Courses`;
+  if (sCountEl) sCountEl.textContent = `${(sched.slots || []).length} Weekly Slots`;
+
+  if (coursesListEl) {
+    coursesListEl.innerHTML = (sched.courses || [])
+      .map(
+        (c) => `
+      <div class="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 flex items-center gap-2.5 text-xs">
+        <span class="px-2 py-0.5 rounded-md text-[10px] font-bold text-white shrink-0" style="background-color: ${c.color}">${escapeHtml(c.id)}</span>
+        <span class="font-medium text-slate-800 dark:text-slate-200 truncate">${escapeHtml(c.name)}</span>
+      </div>
+    `
+      )
+      .join("");
+  }
+
+  if (slotsListEl) {
+    slotsListEl.innerHTML = (sched.slots || [])
+      .map(
+        (s) => `
+      <div class="flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-xs">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="font-bold text-slate-700 dark:text-slate-200 shrink-0">${escapeHtml(s.day)}</span>
+          <span class="text-slate-400 text-[11px]">•</span>
+          <span class="font-semibold text-slate-900 dark:text-white truncate">${escapeHtml(s.course_id)}</span>
+          <span class="text-slate-400 text-[10px] truncate">(${escapeHtml(s.slot_type || "Lecture")})</span>
+        </div>
+        <div class="text-[11px] tabular-nums font-medium text-slate-600 dark:text-slate-300 shrink-0">
+          ${escapeHtml(s.display_time || `${s.start_time} - ${s.end_time}`)} ${s.room ? `• Room ${escapeHtml(s.room)}` : ""}
+        </div>
+      </div>
+    `
+      )
+      .join("");
+  }
+
+  modal.classList.add("is-open");
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeSchedulePreviewModal() {
+  document.getElementById("schedule-preview-modal")?.classList.remove("is-open");
+}
+
+async function applyExtractedSchedule() {
+  if (!pendingExtractedSchedule) return;
+
+  try {
+    const res = await fetch("/api/schedule/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(pendingExtractedSchedule),
+    });
+    const data = await res.json();
+    if (data.success) {
+      appState.schedule = data.schedule;
+      if (data.assessments) appState.assessments = data.assessments;
+
+      activeCourseFilters.clear();
+      (appState.schedule.courses || []).forEach((c) => activeCourseFilters.add(c.id));
+      activeCourseFilters.add("GENERAL");
+
+      saveStateCache();
+      renderAllViews();
+      closeSchedulePreviewModal();
+      showToast("Timetable schedule extracted with Gemini AI and applied!");
+    } else {
+      showToast(data.error || "Failed to apply schedule.");
+    }
+  } catch (err) {
+    console.error(err);
+    showToast("Error saving extracted schedule.");
+  }
+}
+
+const COURSE_PRESET_COLORS = [
+  "#1a73e8", // Blue
+  "#0f9d58", // Emerald
+  "#ea8600", // Amber
+  "#d93025", // Red
+  "#8e24aa", // Purple
+  "#00acc1", // Cyan
+  "#e67c73", // Coral
+  "#3949ab", // Indigo
+];
+let selectedAddCourseColor = "#1a73e8";
+
+function openAddCourseModal() {
+  const modal = document.getElementById("add-course-modal");
+  if (!modal) return;
+
+  const idInput = document.getElementById("add-course-id");
+  const nameInput = document.getElementById("add-course-name");
+  if (idInput) idInput.value = "";
+  if (nameInput) nameInput.value = "";
+
+  selectedAddCourseColor = "#1a73e8";
+  renderCourseColorPicker();
+
+  const slotsContainer = document.getElementById("add-course-slots-container");
+  if (slotsContainer) {
+    slotsContainer.innerHTML = "";
+    addCourseSlotRow();
+  }
+
+  modal.classList.add("is-open");
+  if (idInput) idInput.focus();
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeAddCourseModal() {
+  document.getElementById("add-course-modal")?.classList.remove("is-open");
+}
+
+function renderCourseColorPicker() {
+  const container = document.getElementById("add-course-color-picker");
+  if (!container) return;
+  container.innerHTML = COURSE_PRESET_COLORS.map(
+    (hex) => `
+    <button type="button" onclick="selectCourseModalColor('${hex}')" class="w-6 h-6 rounded-full transition transform hover:scale-110 active:scale-95 cursor-pointer shadow-xs ${
+      selectedAddCourseColor === hex ? "ring-2 ring-offset-2 ring-[#1a73e8] dark:ring-offset-slate-900 scale-110" : ""
+    }" style="background-color: ${hex}"></button>
+  `
+  ).join("");
+}
+
+function selectCourseModalColor(hex) {
+  selectedAddCourseColor = hex;
+  renderCourseColorPicker();
+}
+
+function addCourseSlotRow() {
+  const container = document.getElementById("add-course-slots-container");
+  if (!container) return;
+
+  const row = document.createElement("div");
+  row.className =
+    "course-slot-row flex items-center gap-2 p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/40 text-xs flex-wrap sm:flex-nowrap";
+  row.innerHTML = `
+    <select class="slot-day px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none">
+      <option value="Sunday">Sunday</option>
+      <option value="Monday" selected>Monday</option>
+      <option value="Tuesday">Tuesday</option>
+      <option value="Wednesday">Wednesday</option>
+      <option value="Thursday">Thursday</option>
+      <option value="Friday">Friday</option>
+      <option value="Saturday">Saturday</option>
+    </select>
+    <div class="flex items-center gap-1">
+      <input type="time" class="slot-start px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none" value="09:00" />
+      <span class="text-slate-400 text-[10px]">to</span>
+      <input type="time" class="slot-end px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none" value="10:30" />
+    </div>
+    <input type="text" class="slot-room px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none w-20" placeholder="Room" value="C203" />
+    <select class="slot-type px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none">
+      <option value="Lecture" selected>Lecture</option>
+      <option value="Lab">Lab</option>
+      <option value="Tutorial">Tutorial</option>
+    </select>
+    <button type="button" onclick="this.closest('.course-slot-row').remove()" class="p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer" title="Remove slot">
+      <i data-lucide="x" class="w-3.5 h-3.5"></i>
+    </button>
+  `;
+  container.appendChild(row);
+  if (window.lucide) lucide.createIcons();
+}
+
+function getDayIndex(day) {
+  const map = {
+    sunday: 0,
+    monday: 1,
+    tuesday: 2,
+    wednesday: 3,
+    thursday: 4,
+    friday: 5,
+    saturday: 6,
+  };
+  return map[(day || "").toLowerCase()] ?? 0;
+}
+
+async function submitAddCourse() {
+  const idInput = document.getElementById("add-course-id");
+  const nameInput = document.getElementById("add-course-name");
+  const courseId = (idInput?.value || "").trim().toUpperCase();
+  const courseName = (nameInput?.value || "").trim();
+
+  if (!courseId) {
+    showToast("Please enter a Course Code (e.g. CS 301).");
+    if (idInput) idInput.focus();
+    return;
+  }
+  if (!courseName) {
+    showToast("Please enter the Full Course Name.");
+    if (nameInput) nameInput.focus();
+    return;
+  }
+
+  const slotRows = document.querySelectorAll("#add-course-slots-container .course-slot-row");
+  const slots = [];
+  slotRows.forEach((row, idx) => {
+    const day = row.querySelector(".slot-day")?.value || "Monday";
+    const start = row.querySelector(".slot-start")?.value || "09:00";
+    const end = row.querySelector(".slot-end")?.value || "10:30";
+    const room = row.querySelector(".slot-room")?.value || "TBA";
+    const type = row.querySelector(".slot-type")?.value || "Lecture";
+
+    slots.push({
+      id: `slot-${courseId.toLowerCase()}-${idx + 1}`,
+      day: day,
+      day_index: getDayIndex(day),
+      course_id: courseId,
+      course_name: courseName,
+      room: room,
+      type: type,
+      group: "",
+      start_time: start,
+      end_time: end,
+      display_time: `${start} – ${end}`,
+      has_quiz: false,
+      quiz_title: null,
+    });
+  });
+
+  const payload = {
+    course: {
+      id: courseId,
+      name: courseName,
+      color: selectedAddCourseColor,
+      bg: hexToRgba(selectedAddCourseColor, 0.12),
+      border: selectedAddCourseColor,
+    },
+    slots: slots,
+  };
+
+  try {
+    const res = await fetch("/api/schedule/courses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (data.success) {
+      appState.schedule = data.schedule;
+      if (data.assessments) appState.assessments = data.assessments;
+      activeCourseFilters.add(courseId);
+      saveStateCache();
+      renderAllViews();
+      closeAddCourseModal();
+      showToast(`Course ${courseId} added successfully!`);
+    } else {
+      showToast(data.error || "Failed to add course.");
+    }
+  } catch (err) {
+    console.error(err);
+    showToast("Network error while adding course.");
+  }
+}
+
+async function confirmDeleteCourse(courseId, courseName, event) {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+  if (!confirm(`Are you sure you want to remove ${courseId} (${courseName}) and all its weekly classes?`)) {
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/schedule/courses/${encodeURIComponent(courseId)}`, {
+      method: "DELETE",
+    });
+    const data = await res.json();
+    if (data.success) {
+      appState.schedule = data.schedule;
+      if (data.assessments) appState.assessments = data.assessments;
+      activeCourseFilters.delete(courseId);
+      saveStateCache();
+      renderAllViews();
+      showToast(`Course ${courseId} removed.`);
+    } else {
+      showToast(data.error || "Failed to remove course.");
+    }
+  } catch (err) {
+    console.error(err);
+    showToast("Network error while removing course.");
+  }
 }
 
 function openSettingsModal() {
@@ -2033,6 +2448,202 @@ async function deleteCustomEvent(id) {
   }
 }
 
+// ============================================================================
+// SEARCH BAR & COMMAND PALETTE
+// ============================================================================
+
+const RECENT_SEARCHES_KEY = "quizradar_recent_searches_v1";
+const DEFAULT_SUGGESTED_SEARCHES = ["Midterm", "Regression", "Lab Exam", "Machine Learning"];
+
+function initSearchBar() {
+  const isMac =
+    navigator.platform.toUpperCase().indexOf("MAC") >= 0 ||
+    navigator.userAgent.toUpperCase().indexOf("MAC") >= 0;
+  const cmdSpan = document.getElementById("search-kbd-cmd");
+  if (cmdSpan) {
+    cmdSpan.textContent = isMac ? "⌘" : "Ctrl";
+  }
+
+  // Click outside to close palette
+  document.addEventListener("click", (e) => {
+    const container = document.getElementById("search-bar-container");
+    const palette = document.getElementById("search-dropdown-palette");
+    if (!container || !palette) return;
+    if (!container.contains(e.target)) {
+      closeSearchPalette();
+    }
+  });
+}
+
+function getRecentSearches() {
+  try {
+    const raw = localStorage.getItem(RECENT_SEARCHES_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {}
+  return [];
+}
+
+function saveRecentSearch(query) {
+  const clean = (query || "").trim();
+  if (!clean) return;
+  try {
+    let recents = getRecentSearches();
+    recents = [clean, ...recents.filter((x) => x.toLowerCase() !== clean.toLowerCase())].slice(0, 6);
+    localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(recents));
+  } catch (e) {}
+}
+
+function clearRecentSearches(event) {
+  if (event) event.stopPropagation();
+  try {
+    localStorage.removeItem(RECENT_SEARCHES_KEY);
+  } catch (e) {}
+  renderRecentSearchesList();
+}
+
+function removeRecentSearch(query, event) {
+  if (event) event.stopPropagation();
+  try {
+    let recents = getRecentSearches();
+    recents = recents.filter((x) => x.toLowerCase() !== (query || "").toLowerCase());
+    localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(recents));
+  } catch (e) {}
+  renderRecentSearchesList();
+}
+
+function renderRecentSearchesList() {
+  const listEl = document.getElementById("palette-recent-list");
+  if (!listEl) return;
+  const recents = getRecentSearches();
+  const items = recents.length > 0 ? recents : DEFAULT_SUGGESTED_SEARCHES;
+  const isDefault = recents.length === 0;
+
+  listEl.innerHTML = items
+    .map(
+      (term) => `
+      <div onclick="applySearchSuggestion('${escapeHtml(term)}')" class="group flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-100/80 dark:hover:bg-slate-800/80 cursor-pointer text-xs font-medium text-slate-700 dark:text-slate-200 transition">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <i data-lucide="${isDefault ? "sparkles" : "clock"}" class="w-3.5 h-3.5 text-slate-400 group-hover:text-[#1a73e8] dark:group-hover:text-blue-400 shrink-0 transition"></i>
+          <span class="truncate">${escapeHtml(term)}</span>
+        </div>
+        ${
+          !isDefault
+            ? `
+          <button type="button" onclick="removeRecentSearch('${escapeHtml(term)}', event)" class="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer" title="Remove">
+            <i data-lucide="x" class="w-3 h-3"></i>
+          </button>
+        `
+            : `
+          <span class="text-[10px] text-slate-400 font-normal">Suggested</span>
+        `
+        }
+      </div>
+    `
+    )
+    .join("");
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function renderPaletteCourseChips() {
+  const chipsEl = document.getElementById("palette-course-chips");
+  if (!chipsEl) return;
+  const courses = appState.schedule?.courses || [];
+  if (courses.length === 0) {
+    chipsEl.innerHTML = `<span class="text-[10px] text-slate-400">All courses active</span>`;
+    return;
+  }
+  chipsEl.innerHTML = courses
+    .map(
+      (c) => `
+    <button type="button" onclick="applySearchSuggestion('${escapeHtml(c.id)}')" class="px-2 py-0.5 rounded-lg text-[10px] font-bold transition hover:scale-105 active:scale-95 text-white shadow-2xs cursor-pointer" style="background-color: ${c.color}">
+      ${escapeHtml(c.id)}
+    </button>
+  `
+    )
+    .join("");
+}
+
+function updatePaletteMatches() {
+  const secEl = document.getElementById("palette-matches-section");
+  const listEl = document.getElementById("palette-matches-list");
+  if (!secEl || !listEl) return;
+
+  if (!globalSearchQuery) {
+    secEl.classList.add("hidden");
+    listEl.innerHTML = "";
+    return;
+  }
+
+  const q = globalSearchQuery.toLowerCase();
+  const allAssessments = appState.assessments || [];
+  const matches = allAssessments
+    .filter(
+      (a) =>
+        (a.title || "").toLowerCase().includes(q) ||
+        (a.course_id || "").toLowerCase().includes(q) ||
+        (a.course_name || "").toLowerCase().includes(q) ||
+        (a.assessment_type || "").toLowerCase().includes(q) ||
+        (a.instructor || "").toLowerCase().includes(q) ||
+        (a.topics || []).some((t) => (t || "").toLowerCase().includes(q))
+    )
+    .slice(0, 4);
+
+  if (matches.length === 0) {
+    secEl.classList.add("hidden");
+    listEl.innerHTML = "";
+    return;
+  }
+
+  secEl.classList.remove("hidden");
+  listEl.innerHTML = matches
+    .map((a) => {
+      return `
+      <div onclick="selectPaletteAssessment('${a.id}')" class="flex items-center justify-between p-2 rounded-xl hover:bg-slate-100/80 dark:hover:bg-slate-800/80 cursor-pointer transition text-xs">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <span class="px-2 py-0.5 rounded-md text-[10px] font-bold text-white shrink-0" style="background-color: ${a.color}">${escapeHtml(a.course_id)}</span>
+          <div class="min-w-0">
+            <div class="font-medium text-slate-800 dark:text-slate-100 truncate">${escapeHtml(a.title)}</div>
+            <div class="text-[10px] text-slate-400 dark:text-slate-500 truncate">${escapeHtml(a.display_date || a.date_iso)} • ${escapeHtml(a.display_time)}</div>
+          </div>
+        </div>
+        <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">${escapeHtml(a.assessment_type)}</span>
+      </div>
+    `;
+    })
+    .join("");
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function selectPaletteAssessment(assessmentId) {
+  if (globalSearchQuery) {
+    saveRecentSearch(globalSearchQuery);
+  }
+  closeSearchPalette();
+  openAssessmentModalById(assessmentId);
+}
+
+function openSearchPalette() {
+  const palette = document.getElementById("search-dropdown-palette");
+  if (!palette) return;
+  renderRecentSearchesList();
+  renderPaletteCourseChips();
+  updatePaletteMatches();
+  palette.classList.add("is-open");
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeSearchPalette() {
+  const palette = document.getElementById("search-dropdown-palette");
+  if (palette) {
+    palette.classList.remove("is-open");
+  }
+}
+
 function handleGlobalSearch(val) {
   globalSearchQuery = (val || "").trim();
   const desktopInput = document.getElementById("global-search-input");
@@ -2040,6 +2651,31 @@ function handleGlobalSearch(val) {
   if (desktopInput && desktopInput.value !== val) desktopInput.value = val;
   if (mobileInput && mobileInput.value !== val) mobileInput.value = val;
 
+  const clearBtn = document.getElementById("search-clear-btn");
+  const kbdBadge = document.getElementById("search-kbd-badge");
+  if (clearBtn) {
+    if (val) {
+      clearBtn.classList.remove("hidden");
+      clearBtn.classList.add("flex");
+    } else {
+      clearBtn.classList.add("hidden");
+      clearBtn.classList.remove("flex");
+    }
+  }
+  if (kbdBadge) {
+    kbdBadge.classList.toggle("hidden", !!val);
+  }
+
+  const queryText = document.getElementById("palette-query-text");
+  if (queryText) {
+    if (globalSearchQuery) {
+      queryText.innerHTML = `Search for <strong class="text-slate-900 dark:text-white font-semibold">"${escapeHtml(globalSearchQuery)}"</strong>`;
+    } else {
+      queryText.innerHTML = `<span class="text-slate-400 dark:text-slate-500">Type to search courses, topics & exams...</span>`;
+    }
+  }
+
+  updatePaletteMatches();
   renderDashboard();
   renderWeekCalendar();
 }
@@ -2048,10 +2684,42 @@ function clearGlobalSearch() {
   globalSearchQuery = "";
   const desktopInput = document.getElementById("global-search-input");
   const mobileInput = document.getElementById("mobile-search-input");
-  if (desktopInput) desktopInput.value = "";
+  if (desktopInput) {
+    desktopInput.value = "";
+    desktopInput.focus();
+  }
   if (mobileInput) mobileInput.value = "";
-  renderDashboard();
-  renderWeekCalendar();
+  handleGlobalSearch("");
+  openSearchPalette();
+}
+
+function handleSearchKeyDown(event) {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    commitSearchAndClose();
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    closeSearchPalette();
+    const desktopInput = document.getElementById("global-search-input");
+    if (desktopInput) desktopInput.blur();
+  }
+}
+
+function commitSearchAndClose() {
+  if (globalSearchQuery) {
+    saveRecentSearch(globalSearchQuery);
+  }
+  closeSearchPalette();
+  const desktopInput = document.getElementById("global-search-input");
+  if (desktopInput) desktopInput.blur();
+}
+
+function applySearchSuggestion(term) {
+  const desktopInput = document.getElementById("global-search-input");
+  if (desktopInput) desktopInput.value = term;
+  handleGlobalSearch(term);
+  saveRecentSearch(term);
+  closeSearchPalette();
 }
 
 function matchesGlobalSearch(...fields) {

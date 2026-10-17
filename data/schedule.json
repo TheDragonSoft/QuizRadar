@@ -72,7 +72,8 @@
       "start_time": "11:00",
       "end_time": "12:30",
       "display_time": "11:00 AM – 12:30 PM",
-      "has_quiz": false
+      "has_quiz": false,
+      "quiz_title": null
     },
     {
       "id": "slot-3",
@@ -86,7 +87,8 @@
       "start_time": "14:00",
       "end_time": "15:30",
       "display_time": "2:00 PM – 3:30 PM",
-      "has_quiz": false
+      "has_quiz": false,
+      "quiz_title": null
     },
     {
       "id": "slot-4",
@@ -100,7 +102,8 @@
       "start_time": "08:00",
       "end_time": "10:30",
       "display_time": "8:00 AM – 10:30 AM",
-      "has_quiz": false
+      "has_quiz": false,
+      "quiz_title": null
     },
     {
       "id": "slot-5",
@@ -114,7 +117,8 @@
       "start_time": "11:30",
       "end_time": "13:00",
       "display_time": "11:30 AM – 1:00 PM",
-      "has_quiz": false
+      "has_quiz": false,
+      "quiz_title": null
     },
     {
       "id": "slot-6",
@@ -143,7 +147,8 @@
       "start_time": "16:00",
       "end_time": "17:00",
       "display_time": "4:00 PM – 5:00 PM",
-      "has_quiz": false
+      "has_quiz": false,
+      "quiz_title": null
     },
     {
       "id": "slot-8",
@@ -157,7 +162,8 @@
       "start_time": "13:00",
       "end_time": "15:00",
       "display_time": "1:00 PM – 3:00 PM",
-      "has_quiz": false
+      "has_quiz": false,
+      "quiz_title": null
     },
     {
       "id": "slot-9",
@@ -171,7 +177,8 @@
       "start_time": "08:00",
       "end_time": "09:30",
       "display_time": "8:00 AM – 9:30 AM",
-      "has_quiz": false
+      "has_quiz": false,
+      "quiz_title": null
     },
     {
       "id": "slot-10",
@@ -185,7 +192,8 @@
       "start_time": "09:30",
       "end_time": "12:30",
       "display_time": "9:30 AM – 12:30 PM",
-      "has_quiz": false
+      "has_quiz": false,
+      "quiz_title": null
     },
     {
       "id": "slot-11",
@@ -214,7 +222,8 @@
       "start_time": "16:00",
       "end_time": "17:00",
       "display_time": "4:00 PM – 5:00 PM",
-      "has_quiz": false
+      "has_quiz": false,
+      "quiz_title": null
     },
     {
       "id": "slot-13",
@@ -243,7 +252,8 @@
       "start_time": "14:00",
       "end_time": "15:00",
       "display_time": "2:00 PM – 3:00 PM",
-      "has_quiz": false
+      "has_quiz": false,
+      "quiz_title": null
     }
   ]
 }

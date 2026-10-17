@@ -1,24 +1,95 @@
-// QuizRadar — Google Calendar Frontend Logic
+// Google Calendar Exact UI Replication Logic
 
+let currentWeekIndex = 0; // 0 = Fall 2026 active week (Oct 18-24), 1 = June 2026 reference week
 let scheduleData = null;
 let quizzesData = [];
 let enabledCourses = new Set();
-let currentView = 'week';
+
+// Week definitions
+const WEEKS = [
+  {
+    monthLabel: 'October 2026',
+    activeDayIndex: 0, // Sunday 18 is active day
+    days: [
+      { name: 'SUN', num: 18, active: true },
+      { name: 'MON', num: 19, active: false },
+      { name: 'TUE', num: 20, active: false },
+      { name: 'WED', num: 21, active: false },
+      { name: 'THU', num: 22, active: false },
+      { name: 'FRI', num: 23, active: false },
+      { name: 'SAT', num: 24, active: false }
+    ],
+    mode: 'university' // uses user's university schedule & quizzes
+  },
+  {
+    monthLabel: 'June 2026',
+    activeDayIndex: 2, // Tuesday 30 is active day (from image!)
+    days: [
+      { name: 'SUN', num: 28, active: false },
+      { name: 'MON', num: 29, active: false },
+      { name: 'TUE', num: 30, active: true },
+      { name: 'WED', num: 1, active: false },
+      { name: 'THU', num: 2, active: false },
+      { name: 'FRI', num: 3, active: false },
+      { name: 'SAT', num: 4, active: false }
+    ],
+    mode: 'reference' // reference classes shown in screenshot
+  }
+];
+
+// Reference classes from screenshot image
+const REFERENCE_CLASSES = [
+  // Monday
+  { day: 1, title: 'Calculus II', subtitle: 'Room 214 · Dr. Reyes', time: '9am – 10:15am', start: '09:00', end: '10:15', colorKey: 'blue' },
+  { day: 1, title: 'Organic Chemistry', subtitle: 'Science Hall 110', time: '10:30am – 11:45am', start: '10:30', end: '11:45', colorKey: 'green' },
+  { day: 1, title: 'Lunch', subtitle: '', time: '12pm – 1pm', start: '12:00', end: '13:00', colorKey: 'orange' },
+  { day: 1, title: 'World History', subtitle: 'Humanities 305', time: '1:30pm – 2:45pm', start: '13:30', end: '14:45', colorKey: 'purple' },
+  { day: 1, title: 'Chem Lab', subtitle: 'Lab Wing B', time: '3pm – 5pm', start: '15:00', end: '17:00', colorKey: 'green' },
+
+  // Tuesday
+  { day: 2, title: 'English Lit', subtitle: 'Room 118 · Ms. Okafor', time: '9:30am – 10:45am', start: '09:30', end: '10:45', colorKey: 'red' },
+  { day: 2, title: 'Spanish III', subtitle: 'Lang Center 4', time: '11am – 12:15pm', start: '11:00', end: '12:15', colorKey: 'cyan' },
+  { day: 2, title: 'Study Hall', subtitle: 'Library', time: '1pm – 2:30pm', start: '13:00', end: '14:30', colorKey: 'pink' },
+  { day: 2, title: 'Calculus II', subtitle: 'Room 214 · Dr. Reyes', time: '3pm – 4:15pm', start: '15:00', end: '16:15', colorKey: 'blue' },
+
+  // Wednesday
+  { day: 3, title: 'Calculus II', subtitle: 'Room 214 · Dr. Reyes', time: '9am – 10:15am', start: '09:00', end: '10:15', colorKey: 'blue' },
+  { day: 3, title: 'Organic Chemistry', subtitle: 'Science Hall 110', time: '10:30am – 11:45am', start: '10:30', end: '11:45', colorKey: 'green' },
+  { day: 3, title: 'Lunch', subtitle: '', time: '12pm – 1pm', start: '12:00', end: '13:00', colorKey: 'orange' },
+  { day: 3, title: 'World History', subtitle: 'Humanities 305', time: '1:30pm – 2:45pm', start: '13:30', end: '14:45', colorKey: 'purple' },
+  { day: 3, title: 'Physics', subtitle: 'Science Hall 220', time: '3pm – 4:15pm', start: '15:00', end: '16:15', colorKey: 'cyan' },
+
+  // Thursday
+  { day: 4, title: 'English Lit', subtitle: 'Room 118 · Ms. Okafor', time: '9:30am – 10:45am', start: '09:30', end: '10:45', colorKey: 'red' },
+  { day: 4, title: 'Spanish III', subtitle: 'Lang Center 4', time: '11am – 12:15pm', start: '11:00', end: '12:15', colorKey: 'cyan' },
+  { day: 4, title: 'Lunch', subtitle: '', time: '12:30pm – 1:30pm', start: '12:30', end: '13:30', colorKey: 'orange' },
+  { day: 4, title: 'World History', subtitle: 'Humanities 305', time: '1:30pm – 2:45pm', start: '13:30', end: '14:45', colorKey: 'purple' },
+  { day: 4, title: 'Chem Lab', subtitle: 'Lab Wing B', time: '3pm – 5pm', start: '15:00', end: '17:00', colorKey: 'green' },
+
+  // Friday
+  { day: 5, title: 'Calculus II', subtitle: 'Quiz · Room 214', time: '9am – 10:15am', start: '09:00', end: '10:15', colorKey: 'blue', isQuiz: true },
+  { day: 5, title: 'Physics', subtitle: 'Science Hall 220', time: '10:30am – 11:45am', start: '10:30', end: '11:45', colorKey: 'cyan' },
+  { day: 5, title: 'Lunch', subtitle: '', time: '12pm – 1pm', start: '12:00', end: '13:00', colorKey: 'orange' },
+  { day: 5, title: 'Art Studio', subtitle: 'Fine Arts 12', time: '1:30pm – 3pm', start: '13:30', end: '15:00', colorKey: 'pink' }
+];
+
+// Exact Google Calendar color palette
+const GCAL_COLORS = {
+  blue: { bg: '#d2e3fc', border: '#1a73e8', text: '#174ea6' },
+  green: { bg: '#ceead6', border: '#1e8e3e', text: '#137333' },
+  purple: { bg: '#f3e8fd', border: '#a142f4', text: '#7627bb' },
+  red: { bg: '#fce8e6', border: '#d93025', text: '#c5221f' },
+  cyan: { bg: '#cbf0f8', border: '#12b5cb', text: '#007b83' },
+  orange: { bg: '#feefe3', border: '#e37400', text: '#b06000' },
+  pink: { bg: '#fce4ec', border: '#e91e63', text: '#c2185b' }
+};
 
 document.addEventListener('DOMContentLoaded', async () => {
-  await loadData();
-  renderSidebar();
-  renderCalendar();
-  lucide.createIcons();
-
-  // Scroll to 8 AM / active morning slot
-  const scrollArea = document.getElementById('calendar-scroll-area');
-  if (scrollArea) {
-    scrollArea.scrollTop = 0;
-  }
+  await fetchBackendData();
+  renderApp();
 });
 
-async function loadData() {
+async function fetchBackendData() {
   try {
     const [schedRes, quizRes] = await Promise.all([
       fetch('/api/schedule'),
@@ -27,208 +98,318 @@ async function loadData() {
     scheduleData = await schedRes.json();
     quizzesData = await quizRes.json();
 
-    // Default all courses enabled
     if (scheduleData && scheduleData.courses) {
       scheduleData.courses.forEach(c => enabledCourses.add(c.id));
     }
-  } catch (err) {
-    console.error('Failed to load schedule or quizzes:', err);
-    showToast('Failed to load schedule data', true);
+  } catch (e) {
+    console.error('Error fetching data:', e);
   }
 }
 
-// Render "My Calendars" Course List in Left Sidebar
-function renderSidebar() {
-  const container = document.getElementById('course-checkboxes');
-  if (!container || !scheduleData) return;
-  container.innerHTML = '';
-
-  scheduleData.courses.forEach(c => {
-    const item = document.createElement('label');
-    item.className = 'flex items-center space-x-3 cursor-pointer py-1 select-none hover:bg-slate-50 px-2 rounded-lg transition';
-    item.innerHTML = `
-      <input type="checkbox" checked onchange="toggleCourse('${c.id}')" class="w-4 h-4 rounded text-blue-600 focus:ring-0 cursor-pointer" style="accent-color: ${c.color};">
-      <span class="w-3 h-3 rounded-full shrink-0" style="background-color: ${c.color};"></span>
-      <span class="text-xs font-medium text-slate-700 truncate" title="${c.name}">${c.name}</span>
-    `;
-    container.appendChild(item);
-  });
-
-  // Add Special Quiz Radar filter
-  const quizFilter = document.createElement('label');
-  quizFilter.className = 'flex items-center space-x-3 cursor-pointer py-1.5 select-none hover:bg-purple-50 px-2 rounded-lg transition border-t border-slate-100 mt-2';
-  quizFilter.innerHTML = `
-    <span class="w-3.5 h-3.5 flex items-center justify-center text-xs">⚡</span>
-    <span class="text-xs font-bold text-purple-700 truncate">Highlighted Quizzes</span>
-  `;
-  container.appendChild(quizFilter);
-}
-
-function toggleCourse(courseId) {
-  if (enabledCourses.has(courseId)) {
-    enabledCourses.delete(courseId);
-  } else {
-    enabledCourses.add(courseId);
-  }
-  renderCalendar();
-}
-
-// Convert "HH:MM" (e.g. "08:00") to minutes from 08:00 AM
-function timeToMinutesFrom8AM(timeStr) {
-  const [h, m] = timeStr.split(':').map(Number);
-  return (h - 8) * 60 + m;
-}
-
-// Render Calendar Grid Events
-function renderCalendar() {
-  if (!scheduleData || !scheduleData.slots) return;
-
-  // Clear day columns (0 to 6)
-  for (let d = 0; d < 7; d++) {
-    const col = document.getElementById(`day-col-${d}`);
-    if (col) col.innerHTML = '';
-  }
-
-  scheduleData.slots.forEach(slot => {
-    // Check if course is enabled
-    if (!enabledCourses.has(slot.course_id)) return;
-
-    const col = document.getElementById(`day-col-${slot.day_index}`);
-    if (!col) return;
-
-    const course = scheduleData.courses.find(c => c.id === slot.course_id) || {
-      color: '#4285F4',
-      bg: '#E8F0FE',
-      border: '#1A73E8'
-    };
-
-    // Find if there is an active quiz in this slot
-    const matchingQuiz = quizzesData.find(q => 
-      q.course_id === slot.course_id && 
-      (q.day_name === slot.day || q.room === slot.room)
-    );
-
-    const startMinutes = timeToMinutesFrom8AM(slot.start_time);
-    const endMinutes = timeToMinutesFrom8AM(slot.end_time);
-    const duration = endMinutes - startMinutes;
-
-    // 1 minute = 1 pixel (time-slot is 60px per hour)
-    const topPx = startMinutes;
-    const heightPx = Math.max(duration - 2, 28);
-
-    const eventEl = document.createElement('div');
-    eventEl.className = `cal-event absolute left-1 right-1 rounded-md p-2 overflow-hidden flex flex-col justify-between text-left select-none ${matchingQuiz ? 'ring-2 ring-purple-600 shadow-md z-10' : ''}`;
-    eventEl.style.top = `${topPx}px`;
-    eventEl.style.height = `${heightPx}px`;
-    eventEl.style.backgroundColor = course.bg;
-    eventEl.style.borderLeft = `4px solid ${course.border}`;
-    eventEl.style.color = '#202124';
-
-    let quizBadge = '';
-    if (matchingQuiz) {
-      quizBadge = `
-        <div class="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded text-[10px] font-bold text-white bg-purple-700 quiz-glow mb-1 self-start shadow-xs">
-          <span>⚡</span>
-          <span>${matchingQuiz.title}</span>
-        </div>
-      `;
-    }
-
-    eventEl.innerHTML = `
-      <div>
-        ${quizBadge}
-        <div class="font-google font-bold text-xs leading-tight truncate" title="${slot.course_name}">
-          ${slot.course_name}
-        </div>
-        <div class="text-[11px] font-medium text-slate-600 truncate mt-0.5">
-          ${slot.type} · Room ${slot.room} ${slot.group ? `(Group ${slot.group})` : ''}
-        </div>
-      </div>
-      <div class="text-[10px] text-slate-500 font-normal">
-        ${slot.display_time}
-      </div>
-    `;
-
-    eventEl.onclick = () => openModal(slot, course, matchingQuiz);
-    col.appendChild(eventEl);
-  });
-
+function renderApp() {
+  renderHeader();
+  renderMiniCalendar();
+  renderSidebarCalendars();
+  renderDaysHeader();
+  renderEventGrid();
   lucide.createIcons();
 }
 
-// Open Google Calendar Event Detail Modal
-function openModal(slot, course, quiz) {
-  const modal = document.getElementById('event-modal');
-  document.getElementById('modal-stripe').style.backgroundColor = course.color;
-  document.getElementById('modal-type-badge').innerText = slot.type;
-  document.getElementById('modal-type-badge').style.backgroundColor = course.bg;
-  document.getElementById('modal-type-badge').style.color = course.border;
-  document.getElementById('modal-group-badge').innerText = slot.group ? `Group ${slot.group}` : 'All Groups';
+function renderHeader() {
+  const week = WEEKS[currentWeekIndex];
+  document.getElementById('calendar-title').innerText = week.monthLabel;
+  document.getElementById('mini-month-label').innerText = week.monthLabel;
+}
 
-  document.getElementById('modal-course-name').innerText = slot.course_name;
-  document.getElementById('modal-time-slot').innerHTML = `
-    <i data-lucide="clock" class="w-4 h-4 text-slate-400 inline"></i>
-    <span>${slot.day}, ${slot.display_time}</span>
-  `;
-  document.getElementById('modal-room').innerHTML = `
-    <i data-lucide="map-pin" class="w-4 h-4 text-slate-400 inline"></i>
-    <span>Room ${slot.room} · MSA University Campus</span>
-  `;
+// Render Mini Calendar with Google's week highlight pill
+function renderMiniCalendar() {
+  const container = document.getElementById('mini-calendar-days');
+  container.innerHTML = '';
+  const week = WEEKS[currentWeekIndex];
 
-  // Quiz Callout
-  const quizCallout = document.getElementById('modal-quiz-callout');
-  const quizWarnings = document.getElementById('modal-quiz-warnings');
-  const topicsBox = document.getElementById('modal-topics-box');
-  const topicsList = document.getElementById('modal-topics-list');
-  quizWarnings.innerHTML = '';
-  topicsList.innerHTML = '';
+  if (week.mode === 'reference') {
+    // June 2026
+    const days = [
+      { d: 25, cur: false }, { d: 26, cur: false }, { d: 27, cur: false }, { d: 28, cur: false }, { d: 29, cur: false }, { d: 30, cur: false }, { d: 31, cur: false },
+      { d: 1, cur: true }, { d: 2, cur: true }, { d: 3, cur: true }, { d: 4, cur: true }, { d: 5, cur: true }, { d: 6, cur: true }, { d: 7, cur: true },
+      { d: 8, cur: true }, { d: 9, cur: true }, { d: 10, cur: true }, { d: 11, cur: true }, { d: 12, cur: true }, { d: 13, cur: true }, { d: 14, cur: true },
+      { d: 15, cur: true }, { d: 16, cur: true }, { d: 17, cur: true }, { d: 18, cur: true }, { d: 19, cur: true }, { d: 20, cur: true }, { d: 21, cur: true },
+      { d: 22, cur: true }, { d: 23, cur: true }, { d: 24, cur: true }, { d: 25, cur: true }, { d: 26, cur: true }, { d: 27, cur: true }, { d: 28, cur: true },
+      { d: 29, cur: true, inWeek: true }, { d: 30, cur: true, inWeek: true, active: true }, { d: 1, cur: false, inWeek: true }, { d: 2, cur: false, inWeek: true }, { d: 3, cur: false, inWeek: true }, { d: 4, cur: false, inWeek: true }, { d: 5, cur: false, inWeek: true }
+    ];
 
-  if (quiz) {
-    quizCallout.classList.remove('hidden');
-    document.getElementById('modal-quiz-title').innerText = `${quiz.title} (${quiz.display_time})`;
+    days.forEach(item => {
+      const span = document.createElement('span');
+      let baseClass = 'py-1 text-center font-normal ';
+      if (!item.cur) baseClass += 'text-slate-300 ';
+      else baseClass += 'text-[#3c4043] cursor-pointer hover:bg-slate-100 rounded-full ';
 
-    if (quiz.warnings && quiz.warnings.length > 0) {
-      quiz.warnings.forEach(w => {
-        const li = document.createElement('li');
-        li.innerText = w;
-        quizWarnings.appendChild(li);
+      if (item.active) {
+        span.className = 'py-1 rounded-full bg-[#1a73e8] text-white font-bold text-center';
+        span.innerText = item.d;
+      } else if (item.inWeek) {
+        span.className = baseClass + 'bg-[#e8f0fe]';
+        span.innerText = item.d;
+      } else {
+        span.className = baseClass;
+        span.innerText = item.d;
+      }
+      container.appendChild(span);
+    });
+  } else {
+    // October 2026 (Fall 2026)
+    const days = [
+      { d: 27, cur: false }, { d: 28, cur: false }, { d: 29, cur: false }, { d: 30, cur: false }, { d: 1, cur: true }, { d: 2, cur: true }, { d: 3, cur: true },
+      { d: 4, cur: true }, { d: 5, cur: true }, { d: 6, cur: true }, { d: 7, cur: true }, { d: 8, cur: true }, { d: 9, cur: true }, { d: 10, cur: true },
+      { d: 11, cur: true }, { d: 12, cur: true }, { d: 13, cur: true }, { d: 14, cur: true }, { d: 15, cur: true }, { d: 16, cur: true }, { d: 17, cur: true },
+      { d: 18, cur: true, inWeek: true, active: true }, { d: 19, cur: true, inWeek: true }, { d: 20, cur: true, inWeek: true }, { d: 21, cur: true, inWeek: true }, { d: 22, cur: true, inWeek: true }, { d: 23, cur: true, inWeek: true }, { d: 24, cur: true, inWeek: true },
+      { d: 25, cur: true }, { d: 26, cur: true }, { d: 27, cur: true }, { d: 28, cur: true }, { d: 29, cur: true }, { d: 30, cur: true }, { d: 31, cur: true }
+    ];
+
+    days.forEach(item => {
+      const span = document.createElement('span');
+      let baseClass = 'py-1 text-center font-normal ';
+      if (!item.cur) baseClass += 'text-slate-300 ';
+      else baseClass += 'text-[#3c4043] cursor-pointer hover:bg-slate-100 rounded-full ';
+
+      if (item.active) {
+        span.className = 'py-1 rounded-full bg-[#1a73e8] text-white font-bold text-center';
+        span.innerText = item.d;
+      } else if (item.inWeek) {
+        span.className = baseClass + 'bg-[#e8f0fe]';
+        span.innerText = item.d;
+      } else {
+        span.className = baseClass;
+        span.innerText = item.d;
+      }
+      container.appendChild(span);
+    });
+  }
+}
+
+// Render "My calendars" Course List
+function renderSidebarCalendars() {
+  const container = document.getElementById('course-list-sidebar');
+  container.innerHTML = '';
+  const week = WEEKS[currentWeekIndex];
+
+  if (week.mode === 'reference') {
+    const list = [
+      { name: 'Calculus II', color: '#1a73e8' },
+      { name: 'Chemistry', color: '#1e8e3e' },
+      { name: 'History', color: '#a142f4' },
+      { name: 'English Lit', color: '#d93025' },
+      { name: 'Languages', color: '#12b5cb' }
+    ];
+    list.forEach(item => {
+      const label = document.createElement('label');
+      label.className = 'flex items-center space-x-3 py-1 cursor-pointer select-none';
+      label.innerHTML = `
+        <span class="w-4 h-4 rounded-sm flex items-center justify-center text-white text-[10px]" style="background-color: ${item.color};">✓</span>
+        <span class="text-xs text-[#3c4043] font-normal">${item.name}</span>
+      `;
+      container.appendChild(label);
+    });
+  } else {
+    // User's exact Fall 2026 Courses from Image 3
+    if (scheduleData && scheduleData.courses) {
+      scheduleData.courses.forEach(c => {
+        const isChecked = enabledCourses.has(c.id);
+        const label = document.createElement('label');
+        label.className = 'flex items-center space-x-3 py-1 cursor-pointer select-none hover:bg-slate-50 px-1 rounded transition';
+        label.innerHTML = `
+          <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleCourseFilter('${c.id}')" class="w-4 h-4 rounded-sm cursor-pointer" style="accent-color: ${c.color};">
+          <span class="text-xs text-[#3c4043] font-normal truncate" title="${c.name}">${c.name}</span>
+        `;
+        container.appendChild(label);
+      });
+    }
+  }
+}
+
+function toggleCourseFilter(courseId) {
+  if (enabledCourses.has(courseId)) enabledCourses.delete(courseId);
+  else enabledCourses.add(courseId);
+  renderEventGrid();
+}
+
+// Render 7 Day Headers with blue active day circle
+function renderDaysHeader() {
+  const row = document.getElementById('day-headers-row');
+  row.innerHTML = '';
+  const week = WEEKS[currentWeekIndex];
+
+  week.days.forEach(day => {
+    const col = document.createElement('div');
+    col.className = 'flex flex-col items-center justify-center';
+
+    if (day.active) {
+      col.innerHTML = `
+        <span class="text-[11px] font-medium text-[#1a73e8] tracking-wider uppercase">${day.name}</span>
+        <div class="w-11 h-11 rounded-full bg-[#1a73e8] text-white font-google font-normal text-[26px] flex items-center justify-center -mt-0.5 shadow-xs">
+          ${day.num}
+        </div>
+      `;
+    } else {
+      col.innerHTML = `
+        <span class="text-[11px] font-medium text-[#70757a] tracking-wider uppercase">${day.name}</span>
+        <span class="text-[26px] font-google text-[#3c4043] font-normal -mt-0.5">
+          ${day.num}
+        </span>
+      `;
+    }
+    row.appendChild(col);
+  });
+}
+
+// Convert "HH:MM" (e.g. "09:30") to pixels from 8:00 AM (1 hr = 52px, 1 min = 52/60 = 0.8666px)
+function timeToPixels(timeStr) {
+  const [h, m] = timeStr.split(':').map(Number);
+  const totalMinutes = (h - 8) * 60 + m;
+  return totalMinutes * (52 / 60);
+}
+
+// Render Event Cards
+function renderEventGrid() {
+  for (let d = 0; d < 7; d++) {
+    const col = document.getElementById(`col-day-${d}`);
+    if (col) col.innerHTML = '';
+  }
+
+  const week = WEEKS[currentWeekIndex];
+
+  if (week.mode === 'reference') {
+    // Render exact cards from Image 1
+    REFERENCE_CLASSES.forEach(item => {
+      const col = document.getElementById(`col-day-${item.day}`);
+      if (!col) return;
+
+      const topPx = timeToPixels(item.start);
+      const endPx = timeToPixels(item.end);
+      const heightPx = Math.max(endPx - topPx - 2, 26);
+      const color = GCAL_COLORS[item.colorKey] || GCAL_COLORS.blue;
+
+      const card = document.createElement('div');
+      card.className = 'gcal-event';
+      card.style.top = `${topPx}px`;
+      card.style.height = `${heightPx}px`;
+      card.style.backgroundColor = color.bg;
+      card.style.borderLeft = `4px solid ${color.border}`;
+      card.style.color = color.text;
+
+      card.innerHTML = `
+        <div style="font-weight: 700; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+          ${item.title}
+        </div>
+        ${item.subtitle ? `<div style="font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.9;">${item.subtitle}</div>` : ''}
+        <div style="font-size: 11px; opacity: 0.85;">${item.time}</div>
+      `;
+
+      card.onclick = () => openModal(item.title, item.subtitle, item.time, color.border, item.isQuiz);
+      col.appendChild(card);
+    });
+  } else {
+    // Render User's Real University Schedule & Quizzes from Image 2 & 3
+    if (!scheduleData || !scheduleData.slots) return;
+
+    // Course ID to color mapping
+    const courseColorMap = {
+      'GSE211': 'blue',    // Calculus / Math
+      'CSE263': 'purple',  // Machine Learning
+      'CSE261': 'green',   // Algorithms
+      'CSE241': 'red',     // Electronic Design
+      'CSE252': 'orange',  // Embedded Systems
+      'CSE262': 'cyan'     // Software Engineering
+    };
+
+    scheduleData.slots.forEach(slot => {
+      if (!enabledCourses.has(slot.course_id)) return;
+
+      const col = document.getElementById(`col-day-${slot.day_index}`);
+      if (!col) return;
+
+      const topPx = timeToPixels(slot.start_time);
+      const endPx = timeToPixels(slot.end_time);
+      const heightPx = Math.max(endPx - topPx - 2, 28);
+
+      const colorKey = courseColorMap[slot.course_id] || 'blue';
+      const color = GCAL_COLORS[colorKey] || GCAL_COLORS.blue;
+
+      // Find if this class has a quiz
+      const quiz = quizzesData.find(q => q.course_id === slot.course_id && (q.day_name === slot.day || q.room === slot.room));
+
+      const card = document.createElement('div');
+      card.className = 'gcal-event';
+      card.style.top = `${topPx}px`;
+      card.style.height = `${heightPx}px`;
+      card.style.backgroundColor = color.bg;
+      card.style.borderLeft = `4px solid ${color.border}`;
+      card.style.color = color.text;
+
+      // Format line 2 as "Quiz · Room" if quiz, otherwise "Room · Type"
+      let line2 = `Room ${slot.room} · ${slot.type}`;
+      if (quiz) {
+        line2 = `${quiz.title} · Room ${slot.room}`;
+      }
+
+      card.innerHTML = `
+        <div style="font-weight: 700; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${slot.course_name}">
+          ${slot.course_name}
+        </div>
+        <div style="font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: ${quiz ? '700' : '400'};">
+          ${line2}
+        </div>
+        <div style="font-size: 11px; opacity: 0.85;">${slot.display_time}</div>
+      `;
+
+      card.onclick = () => openModal(slot.course_name, line2, slot.display_time, color.border, quiz);
+      col.appendChild(card);
+    });
+  }
+}
+
+// Modal handler
+function openModal(title, subtitle, time, colorBorder, quizObj) {
+  const modal = document.getElementById('gcal-modal');
+  document.getElementById('modal-color-bar').style.backgroundColor = colorBorder;
+  document.getElementById('modal-title').innerText = title;
+  document.getElementById('modal-room').innerText = subtitle || 'University Classroom';
+  document.getElementById('modal-time').innerText = time;
+
+  const quizBanner = document.getElementById('modal-quiz-banner');
+  const quizDesc = document.getElementById('modal-quiz-desc');
+  const quizTopics = document.getElementById('modal-quiz-topics');
+  quizTopics.innerHTML = '';
+
+  if (quizObj && typeof quizObj === 'object') {
+    quizBanner.classList.remove('hidden');
+    quizDesc.innerText = quizObj.warnings ? quizObj.warnings.join(' ') : 'Quiz scheduled during this slot.';
+
+    if (quizObj.topics && quizObj.topics.length > 0) {
+      quizObj.topics.forEach(t => {
+        const chip = document.createElement('span');
+        chip.className = 'px-2 py-0.5 rounded text-[11px] bg-purple-100 text-purple-900 font-semibold';
+        chip.innerText = t;
+        quizTopics.appendChild(chip);
       });
     }
 
-    if (quiz.topics && quiz.topics.length > 0) {
-      topicsBox.classList.remove('hidden');
-      quiz.topics.forEach(t => {
-        const span = document.createElement('span');
-        span.className = 'px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-800 border border-slate-200';
-        span.innerText = t;
-        topicsList.appendChild(span);
-      });
+    document.getElementById('modal-gcal-btn').href = quizObj.google_cal_url || '#';
+    document.getElementById('modal-ics-btn').href = `/api/calendar/ics/${quizObj.id}`;
+    const moodleBtn = document.getElementById('modal-moodle-btn');
+    if (quizObj.elearning_url) {
+      moodleBtn.href = quizObj.elearning_url;
+      moodleBtn.classList.remove('hidden');
     } else {
-      topicsBox.classList.add('hidden');
-    }
-
-    // Google Calendar 1-click link
-    document.getElementById('modal-google-cal-btn').href = quiz.google_cal_url || '#';
-    document.getElementById('modal-ics-link').href = `/api/calendar/ics/${quiz.id}`;
-
-    const moodleLink = document.getElementById('modal-moodle-link');
-    if (quiz.elearning_url) {
-      moodleLink.href = quiz.elearning_url;
-      moodleLink.classList.remove('hidden');
-    } else {
-      moodleLink.classList.add('hidden');
+      moodleBtn.classList.add('hidden');
     }
   } else {
-    quizCallout.classList.add('hidden');
-    topicsBox.classList.add('hidden');
-
-    // Create a regular class calendar URL
-    const calTitle = encodeURIComponent(`[${slot.course_id}] ${slot.course_name} (${slot.type})`);
-    const calDetails = encodeURIComponent(`Course: ${slot.course_name}\nRoom: ${slot.room}\nType: ${slot.type}\nGroup: ${slot.group}`);
-    const calLoc = encodeURIComponent(`Room ${slot.room}, MSA University`);
-    document.getElementById('modal-google-cal-btn').href = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${calTitle}&details=${calDetails}&location=${calLoc}`;
-    document.getElementById('modal-ics-link').href = '#';
-    document.getElementById('modal-moodle-link').classList.add('hidden');
+    quizBanner.classList.add('hidden');
+    const calTitle = encodeURIComponent(title);
+    const calDetails = encodeURIComponent(`${title}\n${subtitle}\n${time}`);
+    document.getElementById('modal-gcal-btn').href = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${calTitle}&details=${calDetails}`;
+    document.getElementById('modal-ics-btn').href = '#';
+    document.getElementById('modal-moodle-btn').classList.add('hidden');
   }
 
   modal.classList.remove('hidden');
@@ -236,81 +417,28 @@ function openModal(slot, course, quiz) {
 }
 
 function closeModal() {
-  document.getElementById('event-modal').classList.add('hidden');
+  document.getElementById('gcal-modal').classList.add('hidden');
+}
+
+function changeWeek(delta) {
+  currentWeekIndex = (currentWeekIndex + delta + WEEKS.length) % WEEKS.length;
+  renderApp();
+}
+
+function goToCurrentWeek() {
+  currentWeekIndex = 0; // Fall 2026 active week
+  renderApp();
+}
+
+function toggleDropdown() {
+  document.getElementById('view-menu').classList.toggle('hidden');
+}
+
+function setView(viewName) {
+  document.getElementById('active-view-label').innerText = viewName;
+  document.getElementById('view-menu').classList.add('hidden');
 }
 
 function toggleSidebar() {
-  const sb = document.getElementById('sidebar');
-  sb.classList.toggle('hidden');
-}
-
-function goToToday() {
-  document.getElementById('calendar-month-title').innerText = 'October 2026';
-  showToast('Centered on October 18, 2026');
-}
-
-function prevWeek() {
-  document.getElementById('calendar-month-title').innerText = 'October 2026 (Week 3)';
-  showToast('Viewing Previous Week');
-}
-
-function nextWeek() {
-  document.getElementById('calendar-month-title').innerText = 'October 2026 (Week 5)';
-  showToast('Viewing Next Week');
-}
-
-function toggleViewDropdown() {
-  document.getElementById('view-dropdown').classList.toggle('hidden');
-}
-
-function setView(view) {
-  currentView = view;
-  document.getElementById('current-view-name').innerText = view.charAt(0).toUpperCase() + view.slice(1);
-  document.getElementById('view-dropdown').classList.add('hidden');
-  showToast(`Switched to ${view} view`);
-}
-
-async function triggerSync() {
-  const btn = document.getElementById('sync-btn');
-  const icon = document.getElementById('sync-icon');
-  const text = document.getElementById('sync-text');
-
-  icon.classList.add('animate-spin');
-  text.innerText = 'Syncing...';
-  showToast('Checking Gmail for quiz announcements...');
-
-  try {
-    const res = await fetch('/api/sync', { method: 'POST' });
-    const data = await res.json();
-    showToast(data.message || 'Synced successfully!');
-    await loadData();
-    renderCalendar();
-  } catch (err) {
-    showToast('Sync failed', true);
-  } finally {
-    icon.classList.remove('animate-spin');
-    text.innerText = 'Sync Gmail';
-    lucide.createIcons();
-  }
-}
-
-function showToast(msg, isError = false) {
-  const toast = document.getElementById('toast');
-  const toastText = document.getElementById('toast-text');
-  const toastIcon = document.getElementById('toast-icon');
-
-  toastText.innerText = msg;
-  if (isError) {
-    toastIcon.setAttribute('data-lucide', 'alert-circle');
-    toastIcon.className = 'w-4 h-4 text-red-400';
-  } else {
-    toastIcon.setAttribute('data-lucide', 'check-circle');
-    toastIcon.className = 'w-4 h-4 text-emerald-400';
-  }
-  lucide.createIcons();
-
-  toast.className = 'fixed bottom-6 right-6 z-50 flex items-center space-x-3 px-5 py-3 rounded-xl bg-slate-900 text-white shadow-2xl transition transform translate-y-0 opacity-100';
-  setTimeout(() => {
-    toast.className = 'fixed bottom-6 right-6 z-50 flex items-center space-x-3 px-5 py-3 rounded-xl bg-slate-900 text-white shadow-2xl transition transform translate-y-20 opacity-0 pointer-events-none';
-  }, 3500);
+  document.getElementById('sidebar').classList.toggle('hidden');
 }

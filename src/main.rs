@@ -112,6 +112,7 @@ fn run_native_desktop_window(port: u16) {
         .with_inner_size(LogicalSize::new(1420.0, 880.0))
         .with_min_inner_size(LogicalSize::new(960.0, 620.0))
         .with_window_icon(window_icon)
+        .with_visible(false)
         .build(&event_loop)
         .expect("Failed to create native QuizRadar window");
 
@@ -126,6 +127,9 @@ fn run_native_desktop_window(port: u16) {
         })
         .build(&window)
         .expect("Failed to initialize native WebView");
+
+    window.set_visible(true);
+    window.set_focus();
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;

@@ -1433,12 +1433,12 @@ function openAssessmentModalById(id) {
   document.getElementById("modal-gcal-link").href = a.google_cal_url;
   document.getElementById("modal-ics-link").href = `/api/calendar/ics/${a.id}`;
 
-  const moodleLink = document.getElementById("modal-moodle-link");
+  const courseLink = document.getElementById("modal-course-link");
   if (a.elearning_url) {
-    moodleLink.href = a.elearning_url;
-    moodleLink.classList.remove("hidden");
+    courseLink.href = a.elearning_url;
+    courseLink.classList.remove("hidden");
   } else {
-    moodleLink.classList.add("hidden");
+    courseLink.classList.add("hidden");
   }
 
   document.getElementById("event-detail-modal").classList.add("is-open");
@@ -1531,7 +1531,7 @@ function openSlotPopover(slotId, dateIso) {
   }
 
   document.getElementById("modal-warnings-section").classList.add("hidden");
-  document.getElementById("modal-moodle-link").classList.add("hidden");
+  document.getElementById("modal-course-link").classList.add("hidden");
   document.getElementById("event-detail-modal").classList.add("is-open");
   if (window.lucide) lucide.createIcons();
 }

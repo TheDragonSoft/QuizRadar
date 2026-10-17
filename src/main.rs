@@ -20,11 +20,32 @@ struct ScheduleData {
 
 #[tokio::main]
 async fn main() {
+    let ports = [5000, 5050, 3000, 8080];
+    let mut selected_port = 5000;
+    let mut listener = None;
+
+    for port in ports {
+        let addr = SocketAddr::from(([127, 0, 0, 1], port));
+        if let Ok(l) = tokio::net::TcpListener::bind(addr).await {
+            selected_port = port;
+            listener = Some(l);
+            break;
+        }
+    }
+
+    let listener = listener.expect("Could not bind to any available port (5000, 5050, 3000, 8080)");
+
     println!("==============================================================");
     println!("🚀 QuizRadar Native Rust Academic Calendar & Quiz Assistant");
-    println!("📍 Running on: http://127.0.0.1:5000");
+    println!("📍 Running on: http://127.0.0.1:{}", selected_port);
     println!("📅 Semester: Fall 2026 - MSA University Engineering");
     println!("==============================================================");
+
+    // Automatically open browser on startup
+    tokio::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        let _ = open::that(format!("http://127.0.0.1:{}", selected_port));
+    });
 
     // Build the Axum router
     let app = Router::new()
@@ -35,15 +56,6 @@ async fn main() {
         .route("/api/calendar/ics_all", get(download_all_ics))
         .route("/api/sync", post(trigger_sync))
         .nest_service("/static", ServeDir::new("static"));
-
-    let addr = SocketAddr::from(([127, 0, 0, 1], 5000));
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-
-    // Automatically open browser on startup
-    tokio::spawn(async move {
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        let _ = open::that("http://127.0.0.1:5000");
-    });
 
     axum::serve(listener, app).await.unwrap();
 }

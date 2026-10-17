@@ -24,6 +24,7 @@
 
   <style>
     :root {
+      color-scheme: light;
       --accent: #1a73e8;
       --accent-hover: #1557b0;
       --surface-bg: #f8fafc;
@@ -37,6 +38,7 @@
     }
 
     html.dark {
+      color-scheme: dark;
       --accent: #3b82f6;
       --accent-hover: #60a5fa;
       --surface-bg: #0b0f19;
@@ -61,7 +63,72 @@
       overflow: hidden;
       -webkit-font-smoothing: antialiased;
       text-rendering: optimizeLegibility;
-      transition: background-color 180ms var(--ease-out-quart), color 180ms var(--ease-out-quart);
+      transition: background-color 220ms var(--ease-out-quart), color 220ms var(--ease-out-quart);
+    }
+
+    /* Synchronized Theme Switch Interpolation (Impeccable Animate — Operate Mode) */
+    html.theme-transitioning,
+    html.theme-transitioning body,
+    html.theme-transitioning header,
+    html.theme-transitioning aside,
+    html.theme-transitioning main,
+    html.theme-transitioning section,
+    html.theme-transitioning div,
+    html.theme-transitioning button,
+    html.theme-transitioning a,
+    html.theme-transitioning input,
+    html.theme-transitioning select,
+    html.theme-transitioning label,
+    html.theme-transitioning span,
+    html.theme-transitioning p,
+    html.theme-transitioning h1,
+    html.theme-transitioning h2,
+    html.theme-transitioning h3,
+    html.theme-transitioning h4,
+    html.theme-transitioning kbd {
+      transition-property: background-color, border-color, color, fill, stroke, box-shadow !important;
+      transition-duration: 220ms !important;
+      transition-timing-function: var(--ease-out-quart) !important;
+    }
+
+    /* Sun <-> Moon Focal Toggle Choreography */
+    .theme-toggle-stage {
+      position: relative;
+      width: 16px;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .theme-icon-moon,
+    .theme-icon-sun {
+      position: absolute;
+      inset: 0;
+      width: 16px;
+      height: 16px;
+      transition: transform 260ms var(--ease-out-expo), opacity 200ms var(--ease-out-quart);
+      will-change: transform, opacity;
+    }
+
+    .theme-icon-moon {
+      opacity: 1;
+      transform: rotate(0deg) scale(1);
+    }
+
+    .theme-icon-sun {
+      opacity: 0;
+      transform: rotate(-75deg) scale(0.55);
+    }
+
+    html.dark .theme-icon-moon {
+      opacity: 0;
+      transform: rotate(75deg) scale(0.55);
+    }
+
+    html.dark .theme-icon-sun {
+      opacity: 1;
+      transform: rotate(0deg) scale(1);
     }
 
     /* Browser surfaces themed from palette (Impeccable Craft Floor) */
@@ -132,9 +199,8 @@
 
     /* Smooth Collapsible Sidebar */
     #left-sidebar {
-      transition: width 240ms var(--ease-out-expo), transform 240ms var(--ease-out-expo), opacity 180ms var(--ease-out-quart), padding 240ms var(--ease-out-expo);
+      transition: width 240ms var(--ease-out-expo), transform 240ms var(--ease-out-expo), opacity 180ms var(--ease-out-quart), padding 240ms var(--ease-out-expo), background-color 220ms var(--ease-out-quart), border-color 220ms var(--ease-out-quart);
     }
-
     #left-sidebar.sidebar-collapsed {
       width: 0 !important;
       padding-left: 0 !important;
@@ -147,7 +213,7 @@
 
     /* Interactive Card Micro-feedback */
     .interactive-card {
-      transition: border-color 160ms var(--ease-out-quart), transform 180ms var(--ease-out-expo), background-color 160ms var(--ease-out-quart);
+      transition: border-color 180ms var(--ease-out-quart), transform 180ms var(--ease-out-expo), background-color 180ms var(--ease-out-quart);
     }
     @media (hover: hover) {
       .interactive-card:hover {
@@ -162,14 +228,16 @@
     .hour-row {
       height: 56px;
       border-bottom: 1px solid var(--border-subtle);
+      transition: border-color 220ms var(--ease-out-quart);
     }
 
     .day-col {
       border-right: 1px solid var(--border-subtle);
       position: relative;
+      transition: border-color 220ms var(--ease-out-quart);
     }
 
-    /* Calendar Event Cards: 1px full border (Craft Floor) */
+    /* Calendar Event Cards: 1px full border + CSS-driven Light/Dark surface variables */
     .gcal-card {
       position: absolute;
       border-radius: 8px;
@@ -178,8 +246,15 @@
       cursor: pointer;
       line-height: 1.25;
       border: 1px solid transparent;
-      transition: transform 160ms var(--ease-out-expo), box-shadow 160ms var(--ease-out-quart), filter 160ms ease;
+      background-color: var(--card-bg-light, #e8f0fe);
+      color: #111827;
+      transition: transform 160ms var(--ease-out-expo), box-shadow 160ms var(--ease-out-quart), background-color 220ms var(--ease-out-quart), color 220ms var(--ease-out-quart), border-color 220ms var(--ease-out-quart);
       z-index: 10;
+    }
+
+    html.dark .gcal-card {
+      background-color: var(--card-bg-dark, rgba(59, 130, 246, 0.22));
+      color: #f8fafc;
     }
 
     @media (hover: hover) {
@@ -210,16 +285,27 @@
       pointer-events: auto;
     }
 
-    /* Respect Reduced Motion (Impeccable Animate) */
+    /* Respect Reduced Motion (Impeccable Animate: remove spatial movement while preserving state/opacity feedback) */
     @media (prefers-reduced-motion: reduce) {
-      *, ::before, ::after {
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.01ms !important;
-        scroll-behavior: auto !important;
+      .view-transition {
+        animation: none !important;
       }
-      .interactive-card:hover, .gcal-card:hover {
+      .interactive-card:hover,
+      .gcal-card:hover {
         transform: none !important;
+      }
+      .modal-panel {
+        transform: none !important;
+        transition: opacity 150ms ease !important;
+      }
+      .theme-icon-moon,
+      .theme-icon-sun {
+        transform: none !important;
+        transition: opacity 140ms ease !important;
+      }
+      #toast-notification {
+        transform: none !important;
+        transition: opacity 150ms ease !important;
       }
     }
 
@@ -303,9 +389,24 @@
         <span id="top-sync-text" class="hidden sm:inline">Sync Gmail & Calendar</span>
       </button>
 
-      <!-- Dark Mode Toggle Button -->
-      <button onclick="toggleDarkMode()" id="dark-mode-btn" class="w-9 h-9 rounded-lg flex items-center justify-center border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-slate-600 dark:text-amber-300 transition cursor-pointer" title="Toggle Dark / Light Mode">
-        <i id="dark-mode-icon" data-lucide="moon" class="w-4 h-4"></i>
+      <!-- Dark Mode Toggle Button (Choreographed Dual Moon / Sun Stage) -->
+      <button onclick="toggleDarkMode()" id="dark-mode-btn" aria-label="Toggle theme" class="w-9 h-9 rounded-lg flex items-center justify-center border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-slate-600 dark:text-amber-300 transition cursor-pointer" title="Switch to Dark Mode">
+        <span class="theme-toggle-stage" aria-hidden="true">
+          <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
+          </svg>
+          <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v2"></path>
+            <path d="M12 20v2"></path>
+            <path d="m4.93 4.93 1.41 1.41"></path>
+            <path d="m17.66 17.66 1.41 1.41"></path>
+            <path d="M2 12h2"></path>
+            <path d="M20 12h2"></path>
+            <path d="m6.34 17.66-1.41 1.41"></path>
+            <path d="m19.07 4.93-1.41 1.41"></path>
+          </svg>
+        </span>
       </button>
 
       <!-- Settings & Preferences Modal Trigger -->

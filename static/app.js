@@ -64,6 +64,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 // DARK MODE & RESPONSIVE SIDEBAR MANAGEMENT
 // ============================================================================
 
+let themeTransitionTimeout = null;
+
 function initDarkMode() {
   const saved = localStorage.getItem("quizradar_theme");
   const isDark = saved === "dark";
@@ -71,20 +73,33 @@ function initDarkMode() {
   updateDarkModeIcon(isDark);
 }
 
-function toggleDarkMode() {
-  const isDark = document.documentElement.classList.toggle("dark");
+function applySmoothThemeSwitch(isDark) {
+  const root = document.documentElement;
+  root.classList.add("theme-transitioning");
+  if (themeTransitionTimeout) {
+    clearTimeout(themeTransitionTimeout);
+  }
+  root.classList.toggle("dark", isDark);
   localStorage.setItem("quizradar_theme", isDark ? "dark" : "light");
   updateDarkModeIcon(isDark);
-  renderSidebar();
-  renderDashboard();
-  renderWeekCalendar();
+  updateOnboardingThemeButtons();
+
+  themeTransitionTimeout = setTimeout(() => {
+    root.classList.remove("theme-transitioning");
+    themeTransitionTimeout = null;
+  }, 240);
+}
+
+function toggleDarkMode() {
+  const nextDark = !document.documentElement.classList.contains("dark");
+  applySmoothThemeSwitch(nextDark);
 }
 
 function updateDarkModeIcon(isDark) {
   const btn = document.getElementById("dark-mode-btn");
   if (!btn) return;
-  btn.innerHTML = `<i data-lucide="${isDark ? "sun" : "moon"}" class="w-4 h-4"></i>`;
-  if (window.lucide) lucide.createIcons();
+  btn.title = isDark ? "Switch to Light Mode" : "Switch to Dark Mode";
+  btn.setAttribute("aria-pressed", String(isDark));
 }
 
 function initSidebarResponsive() {
@@ -1194,31 +1209,29 @@ function renderWeekCalendar() {
           : `left: calc(${leftPct}% + 2px); width: calc(${widthPct}% - 4px);`;
 
       const borderHex = item.palette.border || item.palette.color || "#1a73e8";
-      const bgStyle = isDark ? hexToRgba(borderHex, 0.22) : item.palette.bg;
-      const titleColor = isDark ? "#f8fafc" : "#111827";
-      const subTextColor = isDark ? "#cbd5e1" : "#374151";
-      const timeTextColor = isDark ? "#94a3b8" : "#4b5563";
+      const bgLight = item.palette.bg || "#e8f0fe";
+      const bgDark = hexToRgba(borderHex, 0.22);
 
       if (item.kind === "merged_exam") {
         const { slot, exam } = item;
         blocksHtml += `
           <div onclick="openAssessmentModalById('${exam.id}')"
                class="gcal-card has-exam-glow"
-               style="top: ${topPx}px; height: ${heightPx}px; ${horizStyle} background-color: ${bgStyle}; border-color: ${borderHex}; color: ${titleColor};">
+               style="top: ${topPx}px; height: ${heightPx}px; ${horizStyle} --card-bg-light: ${bgLight}; --card-bg-dark: ${bgDark}; border-color: ${borderHex};">
             <div class="flex items-center justify-between gap-1">
-              <span class="text-[11px] font-bold truncate flex items-center gap-1" style="color: ${titleColor}">
+              <span class="text-[11px] font-bold truncate flex items-center gap-1 text-slate-900 dark:text-slate-50">
                 <span class="w-2 h-2 rounded-full shrink-0" style="background-color: ${borderHex}"></span>
                 <span>${escapeHtml(slot.course_id)} · ${escapeHtml(slot.course_name)}</span>
               </span>
               <span class="px-1.5 py-0.2 rounded bg-red-600 text-white text-[9px] font-bold shrink-0">${escapeHtml(exam.assessment_type)}</span>
             </div>
-            <div class="text-[11px] font-bold ${isDark ? "text-red-300" : "text-red-700"} truncate mt-0.5">
+            <div class="text-[11px] font-bold text-red-700 dark:text-red-300 truncate mt-0.5">
               ${escapeHtml(exam.title)}
             </div>
-            <div class="text-[10px] truncate" style="color: ${subTextColor}">
+            <div class="text-[10px] truncate text-slate-700 dark:text-slate-300">
               Room ${escapeHtml(slot.room)} · Group ${escapeHtml(slot.group)}
             </div>
-            <div class="text-[10px] tabular-nums" style="color: ${timeTextColor}">
+            <div class="text-[10px] tabular-nums text-slate-600 dark:text-slate-400">
               ${formatCompactTime(slot.start_time)} – ${formatCompactTime(slot.end_time)}
             </div>
           </div>
@@ -1228,15 +1241,15 @@ function renderWeekCalendar() {
         blocksHtml += `
           <div onclick="openSlotPopover('${slot.id}', '${colIso}')"
                class="gcal-card"
-               style="top: ${topPx}px; height: ${heightPx}px; ${horizStyle} background-color: ${bgStyle}; border-color: ${borderHex}; color: ${titleColor};">
-            <div class="text-[11px] font-bold truncate flex items-center gap-1.5" style="color: ${titleColor}">
+               style="top: ${topPx}px; height: ${heightPx}px; ${horizStyle} --card-bg-light: ${bgLight}; --card-bg-dark: ${bgDark}; border-color: ${borderHex};">
+            <div class="text-[11px] font-bold truncate flex items-center gap-1.5 text-slate-900 dark:text-slate-50">
               <span class="w-2 h-2 rounded-full shrink-0" style="background-color: ${borderHex}"></span>
               <span class="truncate">${escapeHtml(slot.course_id)} · ${escapeHtml(slot.course_name)}</span>
             </div>
-            <div class="text-[10px] truncate" style="color: ${subTextColor}">
+            <div class="text-[10px] truncate text-slate-700 dark:text-slate-300">
               ${escapeHtml(slot.slot_type)} (Grp ${escapeHtml(slot.group)}) · Room ${escapeHtml(slot.room)}
             </div>
-            <div class="text-[10px] tabular-nums" style="color: ${timeTextColor}">
+            <div class="text-[10px] tabular-nums text-slate-600 dark:text-slate-400">
               ${formatCompactTime(slot.start_time)} – ${formatCompactTime(slot.end_time)}
             </div>
           </div>
@@ -1246,18 +1259,18 @@ function renderWeekCalendar() {
         blocksHtml += `
           <div onclick="openAssessmentModalById('${exam.id}')"
                class="gcal-card has-exam-glow"
-               style="top: ${topPx}px; height: ${heightPx}px; ${horizStyle} background-color: ${bgStyle}; border-color: ${borderHex}; color: ${titleColor};">
+               style="top: ${topPx}px; height: ${heightPx}px; ${horizStyle} --card-bg-light: ${bgLight}; --card-bg-dark: ${bgDark}; border-color: ${borderHex};">
             <div class="flex items-center justify-between gap-1">
-              <span class="text-[11px] font-bold truncate flex items-center gap-1" style="color: ${titleColor}">
+              <span class="text-[11px] font-bold truncate flex items-center gap-1 text-slate-900 dark:text-slate-50">
                 <span class="w-2 h-2 rounded-full shrink-0" style="background-color: ${borderHex}"></span>
                 <span class="truncate">${escapeHtml(exam.course_id)} · ${escapeHtml(exam.title)}</span>
               </span>
               <span class="px-1.5 py-0.2 rounded bg-red-600 text-white text-[9px] font-bold shrink-0">${escapeHtml(exam.assessment_type)}</span>
             </div>
-            <div class="text-[10px] truncate" style="color: ${subTextColor}">
+            <div class="text-[10px] truncate text-slate-700 dark:text-slate-300">
               Room ${escapeHtml(exam.room)} · ${escapeHtml(exam.instructor)}
             </div>
-            <div class="text-[10px] tabular-nums" style="color: ${timeTextColor}">
+            <div class="text-[10px] tabular-nums text-slate-600 dark:text-slate-400">
               ${formatCompactTime(exam.start_time)} – ${formatCompactTime(exam.end_time)}
             </div>
           </div>
@@ -1266,13 +1279,13 @@ function renderWeekCalendar() {
         const { ev } = item;
         blocksHtml += `
           <div class="gcal-card"
-               style="top: ${topPx}px; height: ${heightPx}px; ${horizStyle} background-color: ${bgStyle}; border-color: ${borderHex}; color: ${titleColor};">
+               style="top: ${topPx}px; height: ${heightPx}px; ${horizStyle} --card-bg-light: ${bgLight}; --card-bg-dark: ${bgDark}; border-color: ${borderHex};">
             <div class="flex items-center justify-between">
-              <span class="text-[11px] font-bold truncate" style="color: ${titleColor}">${escapeHtml(ev.title)}</span>
+              <span class="text-[11px] font-bold truncate text-slate-900 dark:text-slate-50">${escapeHtml(ev.title)}</span>
               <button onclick="deleteCustomEvent('${ev.id}')" class="text-[10px] hover:underline cursor-pointer">✕</button>
             </div>
-            <div class="text-[10px] truncate" style="color: ${subTextColor}">${escapeHtml(ev.event_type)} · ${escapeHtml(ev.room)}</div>
-            <div class="text-[10px] tabular-nums" style="color: ${timeTextColor}">${formatCompactTime(ev.start_time)} – ${formatCompactTime(ev.end_time)}</div>
+            <div class="text-[10px] truncate text-slate-700 dark:text-slate-300">${escapeHtml(ev.event_type)} · ${escapeHtml(ev.room)}</div>
+            <div class="text-[10px] tabular-nums text-slate-600 dark:text-slate-400">${formatCompactTime(ev.start_time)} – ${formatCompactTime(ev.end_time)}</div>
           </div>
         `;
       }
@@ -1736,13 +1749,7 @@ function renderOnboardingCourses() {
 }
 
 function setThemeFromOnboarding(isDark) {
-  document.documentElement.classList.toggle("dark", isDark);
-  localStorage.setItem("quizradar_theme", isDark ? "dark" : "light");
-  updateDarkModeIcon(isDark);
-  updateOnboardingThemeButtons();
-  renderSidebar();
-  renderDashboard();
-  renderWeekCalendar();
+  applySmoothThemeSwitch(isDark);
 }
 
 function updateOnboardingThemeButtons() {

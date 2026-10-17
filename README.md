@@ -4,19 +4,18 @@
 
 # QuizRadar
 
-**Standalone Rust Academic Dashboard, Gemini Schedule-Aware Email Scanner & Google Calendar Week View**
+**Never miss a quiz, lab assessment, or midterm buried in your university inbox.**
 
 [![Latest Release](https://img.shields.io/github/v/release/TheDragonSoft/QuizRadar?style=for-the-badge&logo=github&label=Release&color=1a73e8)](https://github.com/TheDragonSoft/QuizRadar/releases/latest)
-[![Rust](https://img.shields.io/badge/Rust-2021_Edition-000000?style=for-the-badge&logo=rust&logoColor=white)](Cargo.toml)
-[![Axum](https://img.shields.io/badge/Axum-0.7_Async_Server-1d4ed8?style=for-the-badge)](src/main.rs)
-[![Gemini AI](https://img.shields.io/badge/Gemini_2.5_Flash-Schedule_Reasoning-8e24aa?style=for-the-badge&logo=googlegemini&logoColor=white)](src/gemini.rs)
+[![Rust](https://img.shields.io/badge/Rust-Standalone_App-000000?style=for-the-badge&logo=rust&logoColor=white)](Cargo.toml)
+[![Gemini AI](https://img.shields.io/badge/Gemini_AI-Smart_Study_Planner-8e24aa?style=for-the-badge&logo=googlegemini&logoColor=white)](src/gemini.rs)
 [![Google Calendar](https://img.shields.io/badge/Google_Calendar-Auto_Sync-0f9d58?style=for-the-badge&logo=googlecalendar&logoColor=white)](src/gcal.rs)
 
 <p align="center">
   <a href="https://github.com/TheDragonSoft/QuizRadar/releases/latest"><strong>⬇ Download Standalone Release (v2.0.0)</strong></a> ·
   <a href="#-visual-tour--screenshots"><strong>📸 Screenshots</strong></a> ·
   <a href="#-key-features"><strong>✨ Features</strong></a> ·
-  <a href="#-system-architecture"><strong>🏗 Architecture</strong></a> ·
+  <a href="#-quick-start"><strong>🚀 Quick Start</strong></a> ·
   <a href="docs/ARCHITECTURE.md"><strong>📖 Technical Docs</strong></a>
 </p>
 
@@ -26,50 +25,53 @@
 
 ## 🎯 Overview
 
-University course announcements and LMS emails rarely state the exact calendar timestamp of an upcoming quiz or exam—instead, they use relative phrases like:
+Professors and course portals rarely give you an exact calendar date when announcing a quiz or assignment. Instead, you get emails like:
 
 > *"Dear Students, you will have Class Quiz 1 during your scheduled lecture next week (not this week). Bring a scientific calculator."*
 
-**QuizRadar** solves this in a single standalone Rust executable (`quizradar.exe`). Sign in once with your Google account during the guided 3-step onboarding flow, and QuizRadar automatically:
-1. **Scans your Gmail inbox** (`gmail.readonly`) for university and LMS announcements (course portals, department notices, and course codes).
-2. **Cross-references email timestamps with your weekly class timetable** using **Gemini 2.5 Flash** (`src/gemini.rs`) + deterministic schedule resolution (`src/parser.rs`) to pinpoint the exact calendar date, lecture/lab start & end time, room number, and student group.
-3. **Prioritizes what you should study** with interactive topic checklists, per-exam rules & calculator/notes reminders, and live readiness progress bars.
-4. **Synchronizes directly to your Google Calendar** (`calendar.events`) and renders an interactive **7-Day Google Calendar Week View** inside the app.
+Figuring out when that quiz actually happens means checking when the email was sent, looking up your weekly lecture slot, finding the right room number, and adding it to your calendar by hand—for every single course.
+
+**QuizRadar** does all of that for you automatically. It is a personal academic companion that connects your university inbox, your weekly class schedule, and your calendar into one clean workspace:
+
+- **Finds Every Announced Exam Automatically**: Scans your Gmail for course announcements, quizzes, lab tests, assignments, and midterms so nothing slips through the cracks.
+- **Turns Vague Emails into Exact Dates & Rooms**: Understands phrases like *"next week's lecture"* or *"during your assigned lab"* by matching each email against your actual weekly class timetable—giving you the exact date, time, and room number.
+- **Tells You What to Study Right Now**: Breaks every upcoming exam into an interactive topic checklist, highlights important exam rules (like bringing a calculator or printed template), and tracks your overall study readiness.
+- **Keeps Your Calendar in Sync**: Pushes your upcoming quizzes and study checklists straight to Google Calendar and gives you a built-in **7-Day Week Calendar** showing your classes and exams side by side.
 
 ---
 
 ## 📸 Visual Tour & Screenshots
 
-### 1. Smart Academic Dashboard & AI Study Priority Planner (Light Mode)
-Spotlights your immediate next exam, 4 live KPI cards (**Coming up this week**, **Types of exams**, **Study readiness**, and **Gemini & Calendar sync**), interactive **What Should I Study?** priority cards with per-exam rules, and a filterable timeline of all 50 scanned assessments.
+### 1. Smart Academic Dashboard & Study Priority Planner (Light Mode)
+See what is coming up next at a glance, filter assessments by type, track your study readiness, and work through prioritized **What Should I Study?** cards alongside a scrollable feed of all scanned course assessments.
 
 ![Smart Academic Dashboard — Light Mode](docs/screenshots/dashboard-light.png)
 
 ---
 
 ### 2. Smart Academic Dashboard (Dark Mode)
-Full class-based Dark Mode (`localStorage` persisted) with tailored contrast across cards, badges, checklists, and calendar blocks.
+Switch effortlessly between a crisp daylight workspace and a low-glare Dark Mode built for late-night study sessions.
 
 ![Smart Academic Dashboard — Dark Mode](docs/screenshots/dashboard-dark.png)
 
 ---
 
-### 3. Google Calendar 7-Day Week View
-Displays your weekly class schedule alongside color-coded quiz, assignment, and midterm overlays (`8:00 AM – 8:00 PM` time grid), side-by-side overlap layout, mini-month date navigator, and per-course layer filters.
+### 3. 7-Day Week Calendar View
+View your entire week of lectures, tutorials, and labs alongside color-coded quiz and assignment overlays, complete with a mini-month navigator and course filters.
 
 ![Google Calendar 7-Day Week View](docs/screenshots/week-calendar.png)
 
 ---
 
-### 4. Standalone 3-Step First-Time Onboarding Wizard
-Guides you through connecting your Google account (`OAuth2`), scanning your Gmail inbox with Gemini Schedule AI, selecting active courses, and choosing your workspace theme.
+### 4. Guided First-Time Setup Wizard
+A one-time, 3-step welcome flow that connects your Google account, scans your inbox, and lets you pick your enrolled courses and preferred theme. Everything can be adjusted anytime from **Settings**.
 
 ![Standalone 3-Step Onboarding Wizard](docs/screenshots/onboarding-wizard.png)
 
 ---
 
-### 5. Rectangular 2-Column Assessment & Study Window
-Click any assessment card or calendar event to open its full 2-column study window featuring schedule & venue details, Gemini's schedule-inference explanation, specific exam rules, and an optimistic zero-latency study topic checklist.
+### 5. Full Assessment & Study Window
+Click any assessment card or calendar block to open a focused study view with the exact time and room, how the date was matched to your schedule, exam rules, and an interactive topic checklist.
 
 ![Assessment Detail & Study Checklist Modal](docs/screenshots/assessment-modal.png)
 
@@ -77,14 +79,14 @@ Click any assessment card or calendar event to open its full 2-column study wind
 
 ## ✨ Key Features
 
-| Feature | Description |
+| Feature | What It Does For You |
 | :--- | :--- |
-| **🪄 3-Step Standalone Onboarding** | Launch `quizradar.exe` after installing, sign in with Google, scan your Gmail inbox with live progress feedback, customize your courses & theme, and jump straight into your Dashboard. |
-| **🧠 Gemini Schedule-Aware Time Inference** | Combines email `Sent` timestamps + your enrolled course timetable (`schedule.json`) to resolve vague expressions (*"next week's lecture"*, *"Thursday lab"*) into exact dates, hours, rooms, and groups. |
-| **📊 Smart Academic Dashboard** | Features the **What's Coming Next** hero spotlight, **Types of exams** interactive filter pills, live **Study readiness** meter, and **What Should I Study?** priority cards. |
-| **🗓 Google Calendar 7-Day Week View** | Interactive `8 AM – 8 PM` weekly timetable grid showing both recurring lectures/labs and highlighted exam overlays, plus a `+ Create Event` modal for custom study sessions. |
-| **🔄 Direct Google Calendar API Sync** | Automatically pushes and updates detected quizzes and midterms (complete with room numbers, study checklists, and popup reminders) directly to your primary Google Calendar (`src/gcal.rs`), alongside `.ics` export. |
-| **⚡ 100% Native Rust Single Binary** | Built on `axum`, `tokio`, and `reqwest` with compile-time embedded static fallbacks (`include_str!`) so `quizradar.exe` runs anywhere with zero Python or Node.js runtime dependencies. |
+| **🪄 One-Time Guided Setup & Settings** | Get started in under a minute with a 3-step first-time setup wizard, and update your account, courses, theme, or sync preferences anytime in **Settings**. |
+| **🧠 Schedule-Aware Date Matching** | Reads announcements in context with your weekly timetable so *"next week's lecture"* automatically becomes the exact day, time, and room for your section. |
+| **📊 What Should I Study? Planner** | Ranks your upcoming exams by urgency, extracts the exact topics and lecture slides you need to review, and updates your readiness bar as you check topics off. |
+| **⚠️ Per-Exam Rules & Reminders** | Surfaces critical instructions right on each quiz card—such as *"Bring a scientific calculator"*, *"Print the quiz template"*, or *"15-minute time limit"*. |
+| **🗓 Interactive Week Calendar** | Displays your recurring weekly classes and upcoming exams on a unified `8 AM – 8 PM` calendar grid, with a **Create Study Event** button to block out study time. |
+| **🔄 Automatic Google Calendar Sync** | Sends your quizzes, room numbers, and study checklists directly to Google Calendar (or exports them as a `.ics` calendar file) so your phone and laptop stay updated. |
 
 ---
 

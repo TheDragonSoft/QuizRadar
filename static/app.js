@@ -64,8 +64,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 // DARK MODE & RESPONSIVE SIDEBAR MANAGEMENT
 // ============================================================================
 
-let themeTransitionTimeout = null;
-
 function initDarkMode() {
   const saved = localStorage.getItem("quizradar_theme");
   const isDark = saved === "dark";
@@ -74,20 +72,18 @@ function initDarkMode() {
 }
 
 function applySmoothThemeSwitch(isDark) {
-  const root = document.documentElement;
-  root.classList.add("theme-transitioning");
-  if (themeTransitionTimeout) {
-    clearTimeout(themeTransitionTimeout);
-  }
-  root.classList.toggle("dark", isDark);
-  localStorage.setItem("quizradar_theme", isDark ? "dark" : "light");
-  updateDarkModeIcon(isDark);
-  updateOnboardingThemeButtons();
+  const updateDom = () => {
+    document.documentElement.classList.toggle("dark", isDark);
+    localStorage.setItem("quizradar_theme", isDark ? "dark" : "light");
+    updateDarkModeIcon(isDark);
+    updateOnboardingThemeButtons();
+  };
 
-  themeTransitionTimeout = setTimeout(() => {
-    root.classList.remove("theme-transitioning");
-    themeTransitionTimeout = null;
-  }, 240);
+  if (document.startViewTransition && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    document.startViewTransition(updateDom);
+  } else {
+    updateDom();
+  }
 }
 
 function toggleDarkMode() {

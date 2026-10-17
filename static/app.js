@@ -51,6 +51,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   initSidebarResponsive();
   initKeyboardShortcuts();
   initSearchBar();
+  initAppUpdater();
 
   if (window.lucide) {
     lucide.createIcons();
@@ -3275,4 +3276,278 @@ function escapeHtml(str) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+// ============================================================================
+// AUTO-UPDATER SYSTEM (Borrowed from Axial with QuizRadar Colors)
+// ============================================================================
+
+let appUpdateState = null;
+let isUpdatePopoverOpen = false;
+let updatePhase = "idle"; // "idle" | "downloading" | "done"
+let updateCountdown = 3;
+
+function initAppUpdater() {
+  // Gated startup check (2.5s delay like Axial) so it doesn't compete with initial state load
+  setTimeout(() => {
+    checkForAppUpdates(false);
+  }, 2500);
+
+  // Close popover when clicking outside or pressing Escape
+  document.addEventListener("click", (e) => {
+    const popover = document.getElementById("update-popover");
+    const container = document.getElementById("update-pill-container");
+    if (!popover || popover.classList.contains("hidden")) return;
+    if (container && !container.contains(e.target)) {
+      closeUpdatePopover();
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closeUpdatePopover();
+    }
+  });
+}
+
+async function checkForAppUpdates(force = false) {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const isPreview = params.has("__updatePreview");
+    const url = isPreview ? "/api/updater/check?preview=true" : "/api/updater/check";
+
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (data.success && data.update_available) {
+      const dismissed = localStorage.getItem("quizradar_dismissed_update");
+      if (!force && dismissed === data.latest_version && !isPreview) {
+        return;
+      }
+
+      appUpdateState = data;
+      renderUpdatePill(data);
+    }
+  } catch (err) {
+    console.warn("Update check failed:", err);
+  }
+}
+
+function renderUpdatePill(data) {
+  const container = document.getElementById("update-pill-container");
+  if (!container) return;
+
+  container.classList.remove("hidden");
+  const label = document.getElementById("update-pill-label");
+  if (label) {
+    label.textContent = "Update";
+  }
+
+  // Pre-populate popover
+  const title = document.getElementById("update-popover-title");
+  const dateEl = document.getElementById("update-popover-date");
+  const body = document.getElementById("update-popover-body");
+
+  if (title) title.textContent = `${data.latest_version} Release Notes`;
+  if (dateEl && data.release_date) {
+    try {
+      const d = new Date(data.release_date);
+      dateEl.textContent = `Released ${d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}`;
+    } catch {
+      dateEl.textContent = `Released ${data.release_date}`;
+    }
+  }
+
+  if (body) {
+    body.innerHTML = formatMarkdownNotes(data.release_notes || "No release notes were published for this version.");
+  }
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function toggleUpdatePopover() {
+  const popover = document.getElementById("update-popover");
+  if (!popover) return;
+  if (popover.classList.contains("hidden")) {
+    openUpdatePopover();
+  } else {
+    closeUpdatePopover();
+  }
+}
+
+function openUpdatePopover() {
+  const popover = document.getElementById("update-popover");
+  if (!popover) return;
+  popover.classList.remove("hidden");
+  isUpdatePopoverOpen = true;
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeUpdatePopover() {
+  const popover = document.getElementById("update-popover");
+  if (!popover) return;
+  popover.classList.add("hidden");
+  isUpdatePopoverOpen = false;
+}
+
+function skipThisUpdate() {
+  if (appUpdateState?.latest_version) {
+    localStorage.setItem("quizradar_dismissed_update", appUpdateState.latest_version);
+  }
+  const container = document.getElementById("update-pill-container");
+  if (container) container.classList.add("hidden");
+  closeUpdatePopover();
+  showToast(`Skipped ${appUpdateState?.latest_version || "this version"}. You can check again in Settings.`);
+}
+
+async function startUpdateDownload() {
+  if (updatePhase !== "idle") return;
+  if (!appUpdateState?.download_url) {
+    showToast("No download package found for this release.", true);
+    return;
+  }
+
+  updatePhase = "downloading";
+  const actions = document.getElementById("update-popover-actions");
+  const progressContainer = document.getElementById("update-progress-container");
+  const progressBar = document.getElementById("update-progress-bar");
+  const progressStatus = document.getElementById("update-progress-status");
+  const errorEl = document.getElementById("update-popover-error");
+
+  if (errorEl) errorEl.classList.add("hidden");
+  if (actions) actions.classList.add("hidden");
+  if (progressContainer) progressContainer.classList.remove("hidden");
+
+  // Animate progress smoothly
+  let pct = 10;
+  if (progressBar) progressBar.style.width = "10%";
+  if (progressStatus) progressStatus.textContent = "Connecting to GitHub release server…";
+
+  const progressInterval = setInterval(() => {
+    if (pct < 85) {
+      pct += Math.floor(Math.random() * 8) + 4;
+      if (progressBar) progressBar.style.width = `${pct}%`;
+      if (progressStatus) progressStatus.textContent = `Downloading installer package… ${pct}%`;
+    }
+  }, 180);
+
+  try {
+    const res = await fetch("/api/updater/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ download_url: appUpdateState.download_url }),
+    });
+    clearInterval(progressInterval);
+
+    const data = await res.json();
+    if (data.success) {
+      if (progressBar) progressBar.style.width = "100%";
+      updatePhase = "done";
+      updateCountdown = 3;
+
+      const countdownInterval = setInterval(() => {
+        updateCountdown -= 1;
+        if (progressStatus) {
+          progressStatus.innerHTML = `<span class="text-emerald-600 dark:text-emerald-400 font-bold">Download complete!</span> Launching installer and restarting in ${updateCountdown}…`;
+        }
+        if (updateCountdown <= 0) {
+          clearInterval(countdownInterval);
+        }
+      }, 1000);
+    } else {
+      throw new Error(data.error || "Update installation failed");
+    }
+  } catch (err) {
+    clearInterval(progressInterval);
+    updatePhase = "idle";
+    if (actions) actions.classList.remove("hidden");
+    if (progressContainer) progressContainer.classList.add("hidden");
+    if (errorEl) {
+      errorEl.textContent = err.message || "Failed to download update";
+      errorEl.classList.remove("hidden");
+    }
+    showToast(err.message || "Failed to download update", true);
+  }
+}
+
+async function checkUpdatesFromSettings() {
+  const btn = document.getElementById("settings-check-update-btn");
+  const spinner = document.getElementById("settings-update-spinner");
+  const statusEl = document.getElementById("settings-update-status");
+
+  if (btn) btn.disabled = true;
+  if (spinner) spinner.classList.add("animate-spin");
+  if (statusEl) {
+    statusEl.classList.remove("hidden");
+    statusEl.className = "text-xs p-2.5 rounded-xl border border-blue-200 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-950/30 text-[#1a73e8] dark:text-blue-400";
+    statusEl.textContent = "Checking GitHub releases for latest version...";
+  }
+
+  try {
+    const res = await fetch("/api/updater/check");
+    const data = await res.json();
+
+    if (data.success) {
+      if (data.update_available) {
+        appUpdateState = data;
+        renderUpdatePill(data);
+        if (statusEl) {
+          statusEl.className = "text-xs p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 flex items-center justify-between";
+          statusEl.innerHTML = `
+            <span><strong>${data.latest_version}</strong> is available! (Current: ${data.current_version})</span>
+            <button onclick="closeSettingsModal(); openUpdatePopover();" class="px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-bold text-[11px] cursor-pointer hover:bg-emerald-700 transition">View Update</button>
+          `;
+        }
+      } else {
+        if (statusEl) {
+          statusEl.className = "text-xs p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300";
+          statusEl.textContent = `QuizRadar is up to date (${data.current_version}).`;
+        }
+      }
+    } else {
+      if (statusEl) {
+        statusEl.className = "text-xs p-2.5 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50/50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300";
+        statusEl.textContent = `Update check failed: ${data.error || "Unknown error"}`;
+      }
+    }
+  } catch (err) {
+    if (statusEl) {
+      statusEl.className = "text-xs p-2.5 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50/50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300";
+      statusEl.textContent = "Could not connect to GitHub releases.";
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+    if (spinner) spinner.classList.remove("animate-spin");
+  }
+}
+
+function formatMarkdownNotes(raw) {
+  if (!raw) return "<p>No release notes provided.</p>";
+  return raw
+    .split("\n\n")
+    .map((block) => {
+      const trimmed = block.trim();
+      if (trimmed.startsWith("## ")) {
+        return `<h4 class="font-bold text-slate-900 dark:text-white text-xs mt-2 mb-1">${escapeHtml(trimmed.slice(3))}</h4>`;
+      }
+      if (trimmed.startsWith("# ")) {
+        return `<h3 class="font-bold text-slate-900 dark:text-white text-sm mt-2 mb-1">${escapeHtml(trimmed.slice(2))}</h3>`;
+      }
+      if (trimmed.includes("\n- ") || trimmed.startsWith("- ")) {
+        const items = trimmed
+          .split("\n")
+          .filter((line) => line.trim().startsWith("- "))
+          .map((line) => {
+            let content = escapeHtml(line.trim().slice(2));
+            content = content.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+            return `<li class="flex items-start gap-1.5"><span class="text-blue-500">•</span><span>${content}</span></li>`;
+          })
+          .join("");
+        return `<ul class="space-y-1 my-1 pl-1">${items}</ul>`;
+      }
+      let paragraph = escapeHtml(trimmed);
+      paragraph = paragraph.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+      return `<p class="my-1">${paragraph}</p>`;
+    })
+    .join("");
 }

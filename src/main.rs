@@ -6,6 +6,7 @@ pub mod gemini;
 pub mod gmail;
 pub mod models;
 pub mod parser;
+pub mod updater;
 
 use axum::{
     extract::{Path, Query, State},
@@ -232,6 +233,8 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
         .route("/api/schedule/courses/:id", delete(delete_course_handler))
         .route("/api/calendar/ics/:id", get(download_ics))
         .route("/api/calendar/ics_all", get(download_all_ics))
+        .route("/api/updater/check", get(check_updater_handler))
+        .route("/api/updater/install", post(install_updater_handler))
         .route("/static/app.js", get(serve_app_js))
         .route("/static/icon.svg", get(serve_icon_svg))
         .nest_service("/static", ServeDir::new("static"))
@@ -792,6 +795,74 @@ async fn download_all_ics(State(state): State<SharedAppState>) -> Response {
         HeaderValue::from_static("attachment; filename=\"QuizRadar_Upcoming_Exams.ics\""),
     );
     (StatusCode::OK, headers, ics).into_response()
+}
+
+#[derive(Deserialize)]
+pub struct UpdateCheckQuery {
+    pub preview: Option<bool>,
+}
+
+async fn check_updater_handler(Query(q): Query<UpdateCheckQuery>) -> Json<Value> {
+    if q.preview.unwrap_or(false) {
+        return Json(json!({
+            "success": true,
+            "update_available": true,
+            "current_version": updater::CURRENT_VERSION,
+            "latest_version": "v2.2.0",
+            "release_name": "QuizRadar v2.2.0 — Tasks & Auto-Updater",
+            "release_date": "2026-10-18",
+            "release_notes": "## What's New\n\n- **Study Tasks Roadmap**: Plan and track daily study topics for exams & assignments\n- **Gemini AI Ranking**: Smart workload balancing across deadlines\n- **Auto-Updater System**: Live release notifications and one-click in-app update\n- **Google OAuth Fix**: Embedded active Google Cloud client credentials\n\n## Fixes & Polish\n\n- Improved native desktop window lifecycle\n- Centered command palette search bar",
+            "download_url": "https://github.com/TheDragonSoft/QuizRadar/releases/latest",
+            "portable_url": "https://github.com/TheDragonSoft/QuizRadar/releases/latest",
+            "html_url": "https://github.com/TheDragonSoft/QuizRadar/releases/latest",
+            "is_preview": true
+        }));
+    }
+
+    match updater::check_for_updates().await {
+        Ok(info) => Json(json!({
+            "success": true,
+            "update_available": info.update_available,
+            "current_version": info.current_version,
+            "latest_version": info.latest_version,
+            "release_name": info.release_name,
+            "release_date": info.release_date,
+            "release_notes": info.release_notes,
+            "download_url": info.download_url,
+            "portable_url": info.portable_url,
+            "html_url": info.html_url,
+            "is_preview": false
+        })),
+        Err(err) => Json(json!({
+            "success": false,
+            "error": err,
+            "current_version": updater::CURRENT_VERSION,
+            "update_available": false
+        })),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct InstallUpdatePayload {
+    pub download_url: String,
+}
+
+async fn install_updater_handler(Json(payload): Json<InstallUpdatePayload>) -> Json<Value> {
+    if payload.download_url.trim().is_empty() {
+        return Json(json!({ "success": false, "error": "Download URL is required" }));
+    }
+
+    match updater::download_and_install_update(&payload.download_url).await {
+        Ok(path) => Json(json!({
+            "success": true,
+            "message": "Installer downloaded successfully. Launching and restarting...",
+            "installer_path": path.to_string_lossy()
+        })),
+        Err(err) => Json(json!({
+            "success": false,
+            "error": err
+        })),
+    }
 }
 
 pub mod urlencoding {

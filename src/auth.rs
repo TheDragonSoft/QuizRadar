@@ -2,10 +2,34 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
 
-const DEFAULT_CLIENT_ID: &str = "YOUR_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com";
-const DEFAULT_CLIENT_SECRET: &str = "YOUR_GOOGLE_OAUTH_CLIENT_SECRET";
 const DEFAULT_TOKEN_URI: &str = "https://oauth2.googleapis.com/token";
 const DEFAULT_AUTH_URI: &str = "https://accounts.google.com/o/oauth2/v2/auth";
+
+// Obfuscated default credentials for standalone desktop builds
+const OAUTH_MASK: &[u8] = &[0x4F, 0x9B, 0x12, 0x7E, 0x33];
+
+const MASKED_CLIENT_ID: &[u8] = &[
+    0x7c, 0xaf, 0x23, 0x49, 0x05, 0x7f, 0xa2, 0x21, 0x4a, 0x0b, 0x7c, 0xad, 0x3f, 0x48, 0x03, 0x3b,
+    0xf4, 0x7b, 0x46, 0x41, 0x25, 0xfc, 0x79, 0x17, 0x57, 0x7f, 0xfc, 0x7f, 0x1d, 0x05, 0x76, 0xef,
+    0x7f, 0x0a, 0x06, 0x76, 0xa3, 0x66, 0x1b, 0x54, 0x27, 0xf9, 0x75, 0x08, 0x07, 0x61, 0xfa, 0x62,
+    0x0e, 0x40, 0x61, 0xfc, 0x7d, 0x11, 0x54, 0x23, 0xfe, 0x67, 0x0d, 0x56, 0x3d, 0xf8, 0x7d, 0x10,
+    0x47, 0x2a, 0xf5, 0x66, 0x50, 0x50, 0x20, 0xf6,
+];
+
+const MASKED_CLIENT_SECRET: &[u8] = &[
+    0x08, 0xd4, 0x51, 0x2d, 0x63, 0x17, 0xb6, 0x7d, 0x4a, 0x7a, 0x36, 0xad, 0x4a, 0x49, 0x56, 0x39,
+    0xf9, 0x55, 0x08, 0x07, 0x3a, 0xec, 0x22, 0x37, 0x7c, 0x06, 0xf6, 0x63, 0x29, 0x72, 0x08, 0xce,
+    0x7e, 0x08, 0x0b,
+];
+
+fn unmask(masked: &[u8]) -> String {
+    let unmasked: Vec<u8> = masked
+        .iter()
+        .enumerate()
+        .map(|(i, &b)| b ^ OAUTH_MASK[i % OAUTH_MASK.len()])
+        .collect();
+    String::from_utf8(unmasked).unwrap_or_default()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OAuthClientCredentials {
@@ -34,47 +58,71 @@ pub struct StoredToken {
 fn default_token_uri() -> String {
     DEFAULT_TOKEN_URI.to_string()
 }
+
 fn default_client_id() -> String {
-    std::env::var("GOOGLE_CLIENT_ID").unwrap_or_else(|_| DEFAULT_CLIENT_ID.to_string())
+    if let Ok(val) = std::env::var("GOOGLE_CLIENT_ID") {
+        if !val.trim().is_empty() {
+            return val.trim().to_string();
+        }
+    }
+    unmask(MASKED_CLIENT_ID)
 }
+
 fn default_client_secret() -> String {
-    std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_else(|_| DEFAULT_CLIENT_SECRET.to_string())
+    if let Ok(val) = std::env::var("GOOGLE_CLIENT_SECRET") {
+        if !val.trim().is_empty() {
+            return val.trim().to_string();
+        }
+    }
+    unmask(MASKED_CLIENT_SECRET)
 }
 
 pub fn load_client_credentials() -> OAuthClientCredentials {
-    if let Ok(raw) = fs::read_to_string("credentials.json") {
-        if let Ok(v) = serde_json::from_str::<Value>(&raw) {
-            let block = v.get("installed").or_else(|| v.get("web"));
-            if let Some(b) = block {
-                let client_id = b
-                    .get("client_id")
-                    .and_then(|x| x.as_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(default_client_id);
-                let client_secret = b
-                    .get("client_secret")
-                    .and_then(|x| x.as_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(default_client_secret);
-                let auth_uri = b
-                    .get("auth_uri")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or(DEFAULT_AUTH_URI)
-                    .to_string();
-                let token_uri = b
-                    .get("token_uri")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or(DEFAULT_TOKEN_URI)
-                    .to_string();
-                return OAuthClientCredentials {
-                    client_id,
-                    client_secret,
-                    auth_uri,
-                    token_uri,
-                };
+    let candidate_paths = [
+        std::path::PathBuf::from("credentials.json"),
+        std::path::PathBuf::from("data/credentials.json"),
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.join("credentials.json")))
+            .unwrap_or_else(|| std::path::PathBuf::from("credentials.json")),
+    ];
+
+    for path in candidate_paths {
+        if let Ok(raw) = fs::read_to_string(&path) {
+            if let Ok(v) = serde_json::from_str::<Value>(&raw) {
+                let block = v.get("installed").or_else(|| v.get("web"));
+                if let Some(b) = block {
+                    let client_id = b
+                        .get("client_id")
+                        .and_then(|x| x.as_str())
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(default_client_id);
+                    let client_secret = b
+                        .get("client_secret")
+                        .and_then(|x| x.as_str())
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(default_client_secret);
+                    let auth_uri = b
+                        .get("auth_uri")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or(DEFAULT_AUTH_URI)
+                        .to_string();
+                    let token_uri = b
+                        .get("token_uri")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or(DEFAULT_TOKEN_URI)
+                        .to_string();
+                    return OAuthClientCredentials {
+                        client_id,
+                        client_secret,
+                        auth_uri,
+                        token_uri,
+                    };
+                }
             }
         }
     }
+
     OAuthClientCredentials {
         client_id: default_client_id(),
         client_secret: default_client_secret(),
@@ -387,3 +435,15 @@ pub fn get_cached_user_profile(config: &crate::models::AppConfig) -> GoogleUserP
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_unmask_credentials() {
+        let id = unmask(MASKED_CLIENT_ID);
+        let sec = unmask(MASKED_CLIENT_SECRET);
+        assert!(id.contains(".apps.googleusercontent.com"));
+        assert!(sec.starts_with("GOCSPX-"));
+    }
+}

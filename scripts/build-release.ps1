@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "2.1.0"
+    [string]$Version = "2.2.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,6 +28,9 @@ try {
     Copy-Item "assets\icon.ico" -Destination (Join-Path $StageDir "assets")
     Copy-Item "assets\icon.png" -Destination (Join-Path $StageDir "assets")
     Copy-Item "data\schedule.json" -Destination (Join-Path $StageDir "data")
+    if (Test-Path "credentials.json") {
+        Copy-Item "credentials.json" -Destination $StageDir
+    }
     Copy-Item "README.md" -Destination $StageDir
 
     $ZipPath = Join-Path $DistDir "QuizRadar-Portable-v$Version-win-x64.zip"

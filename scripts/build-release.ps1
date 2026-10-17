@@ -19,13 +19,15 @@ try {
     New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
     New-Item -ItemType Directory -Force -Path (Join-Path $StageDir "static") | Out-Null
     New-Item -ItemType Directory -Force -Path (Join-Path $StageDir "data") | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $StageDir "assets") | Out-Null
 
     Copy-Item "target\release\quizradar.exe" -Destination $StageDir
     Copy-Item "static\index.html" -Destination (Join-Path $StageDir "static")
     Copy-Item "static\app.js" -Destination (Join-Path $StageDir "static")
     Copy-Item "static\icon.svg" -Destination (Join-Path $StageDir "static")
+    Copy-Item "assets\icon.ico" -Destination (Join-Path $StageDir "assets")
+    Copy-Item "assets\icon.png" -Destination (Join-Path $StageDir "assets")
     Copy-Item "data\schedule.json" -Destination (Join-Path $StageDir "data")
-    Copy-Item "start.bat" -Destination $StageDir
     Copy-Item "README.md" -Destination $StageDir
 
     $ZipPath = Join-Path $DistDir "QuizRadar-Portable-v$Version-win-x64.zip"

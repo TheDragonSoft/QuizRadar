@@ -1,5 +1,5 @@
 ; QuizRadar — Inno Setup Installer Script
-; Builds QuizRadar-Setup-v2.0.0-x64.exe
+; Builds QuizRadar-Setup-v2.0.0-x64.exe with custom QuizRadar icon & wizard branding
 
 #ifndef MyAppVersion
   #define MyAppVersion "2.0.0"
@@ -26,6 +26,9 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=..\dist
 OutputBaseFilename=QuizRadar-Setup-v{#MyAppVersion}-x64
+SetupIconFile=..\assets\icon.ico
+WizardImageFile=..\assets\wizard-SideImage.bmp
+WizardSmallImageFile=..\assets\wizard-SmallImage.bmp
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -38,22 +41,24 @@ UninstallDisplayName={#MyAppName}
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Dirs]
 Name: "{app}\data"
 Name: "{app}\static"
+Name: "{app}\assets"
 
 [Files]
 Source: "..\target\release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\static\*"; DestDir: "{app}\static"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\assets\icon.ico"; DestDir: "{app}\assets"; Flags: ignoreversion
+Source: "..\assets\icon.png"; DestDir: "{app}\assets"; Flags: ignoreversion
 Source: "..\data\schedule.json"; DestDir: "{app}\data"; Flags: onlyifdoesntexist
-Source: "..\start.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Comment: "QuizRadar — Smart Academic Dashboard & Exam Calendar"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Comment: "QuizRadar — Smart Academic Dashboard & Exam Calendar"; Tasks: desktopicon
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\assets\icon.ico"; Comment: "QuizRadar — Smart Academic Dashboard & Exam Calendar"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\assets\icon.ico"; Comment: "QuizRadar — Smart Academic Dashboard & Exam Calendar"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent

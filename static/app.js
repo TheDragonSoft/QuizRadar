@@ -1798,7 +1798,7 @@ function openSettingsModal() {
   const modal = document.getElementById("settings-modal");
   if (!modal) return;
   modal.classList.remove("hidden");
-  modal.classList.add("flex");
+  modal.classList.add("flex", "is-open");
 
   const autoSyncEl = document.getElementById("settings-auto-gcal");
   const geminiToggleEl = document.getElementById("settings-gemini-toggle");
@@ -1818,8 +1818,7 @@ function openSettingsModal() {
 function closeSettingsModal() {
   const modal = document.getElementById("settings-modal");
   if (!modal) return;
-  modal.classList.add("hidden");
-  modal.classList.remove("flex");
+  modal.classList.remove("is-open");
 }
 
 function reopenFirstTimeWizardFromSettings() {

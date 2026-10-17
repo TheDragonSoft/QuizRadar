@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 pub mod auth;
 pub mod gcal;
 pub mod gemini;
@@ -19,7 +21,7 @@ use std::{
     collections::HashMap,
     fs,
     net::SocketAddr,
-    sync::Arc,
+    sync::{mpsc, Arc},
 };
 use tokio::sync::RwLock;
 use tower_http::services::ServeDir;
@@ -50,8 +52,7 @@ fn save_app_config(cfg: &AppConfig) {
     }
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     if !std::path::Path::new("Cargo.toml").exists() {
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
@@ -61,21 +62,100 @@ async fn main() {
     }
     let _ = fs::create_dir_all("data");
 
-    let ports = [5000, 5050, 3000, 8080];
+    let headless = std::env::args().any(|a| a == "--headless" || a == "--server");
+    let (port_tx, port_rx) = mpsc::channel::<u16>();
+
+    let server_handle = std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to create Tokio runtime");
+        rt.block_on(run_backend_server(port_tx));
+    });
+
+    let selected_port = port_rx.recv().unwrap_or(5000);
+
+    if headless {
+        let _ = server_handle.join();
+        return;
+    }
+
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        run_native_desktop_window(selected_port);
+    }
+
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        let _ = open::that(format!("http://127.0.0.1:{}", selected_port));
+        let _ = server_handle.join();
+    }
+}
+
+#[cfg(any(windows, target_os = "macos"))]
+fn run_native_desktop_window(port: u16) {
+    use tao::{
+        dpi::LogicalSize,
+        event::{Event, WindowEvent},
+        event_loop::{ControlFlow, EventLoop},
+        window::{Icon, WindowBuilder},
+    };
+    use wry::WebViewBuilder;
+
+    let event_loop = EventLoop::new();
+
+    let icon_rgba = include_bytes!("../assets/icon_64x64.rgba");
+    let window_icon = Icon::from_rgba(icon_rgba.to_vec(), 64, 64).ok();
+
+    let window = WindowBuilder::new()
+        .with_title("QuizRadar — Academic Dashboard & Smart Exam Calendar")
+        .with_inner_size(LogicalSize::new(1420.0, 880.0))
+        .with_min_inner_size(LogicalSize::new(960.0, 620.0))
+        .with_window_icon(window_icon)
+        .build(&event_loop)
+        .expect("Failed to create native QuizRadar window");
+
+    let app_url = format!("http://127.0.0.1:{}", port);
+
+    let _webview = WebViewBuilder::new()
+        .with_url(&app_url)
+        .with_user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+        .with_new_window_req_handler(|url| {
+            let _ = open::that(&url);
+            false
+        })
+        .build(&window)
+        .expect("Failed to initialize native WebView");
+
+    event_loop.run(move |event, _, control_flow| {
+        *control_flow = ControlFlow::Wait;
+        if let Event::WindowEvent {
+            event: WindowEvent::CloseRequested,
+            ..
+        } = event
+        {
+            *control_flow = ControlFlow::Exit;
+            std::process::exit(0);
+        }
+    });
+}
+
+async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
+    let ports = [5000, 5050, 3000, 8080, 5150, 5250, 0];
     let mut selected_port = 5000;
     let mut listener = None;
 
     for port in ports {
         let addr = SocketAddr::from(([127, 0, 0, 1], port));
         if let Ok(l) = tokio::net::TcpListener::bind(addr).await {
-            selected_port = port;
+            selected_port = l.local_addr().map(|a| a.port()).unwrap_or(port);
             listener = Some(l);
             break;
         }
     }
 
-    let listener =
-        listener.expect("Could not bind to any available port (5000, 5050, 3000, 8080)");
+    let listener = listener.expect("Could not bind local server socket");
+    let _ = port_tx.send(selected_port);
 
     let config = load_app_config();
     let schedule = parser::load_schedule();
@@ -105,19 +185,6 @@ async fn main() {
             }
             save_app_config(&cfg);
         }
-    });
-
-    println!("====================================================================");
-    println!("🚀 QuizRadar v2.0 — Standalone Rust Academic Dashboard & Calendar");
-    println!("📍 Local App URL: http://127.0.0.1:{}", selected_port);
-    println!("🤖 AI Engine: Gemini Schedule-Aware Email & Timetable Analyzer");
-    println!("📅 Semester: Fall 2026 (Academic Schedule)");
-    println!("====================================================================");
-
-    let open_port = selected_port;
-    tokio::spawn(async move {
-        tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
-        let _ = open::that(format!("http://127.0.0.1:{}", open_port));
     });
 
     let app = Router::new()

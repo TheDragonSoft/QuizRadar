@@ -15,3 +15,11 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 chrono = { version = "0.4", features = ["serde"] }
 regex = "1.10"
 base64 = "0.22"
+
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+tao = "0.30"
+wry = "0.47"
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+

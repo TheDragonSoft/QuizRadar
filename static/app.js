@@ -188,13 +188,17 @@ async function loadFullState() {
       activeCourseFilters.add("GENERAL");
     }
 
+    const params = new URLSearchParams(window.location.search);
+    const demo = params.get("demo");
+    if (demo) {
+      applyDemoDummyData();
+    }
+
     updateTopBarAndUser();
     renderSidebar();
     renderDashboard();
     renderWeekCalendar();
 
-    const params = new URLSearchParams(window.location.search);
-    const demo = params.get("demo");
     if (demo) {
       closeOnboardingModal();
       if (demo === "onboarding") {
@@ -226,6 +230,92 @@ async function loadFullState() {
   } catch (err) {
     console.error("Failed to load state:", err);
   }
+}
+
+function applyDemoDummyData() {
+  if (!appState.auth) appState.auth = {};
+  if (!appState.config) appState.config = {};
+
+  appState.auth.name = "Alex Mercer";
+  appState.auth.email = "alex.mercer@university.edu";
+  appState.auth.authenticated = true;
+  appState.auth.has_calendar_scope = true;
+  appState.config.user_name = "Alex Mercer";
+  appState.config.user_email = "alex.mercer@university.edu";
+  appState.config.last_gmail_sync = "2026-10-17 09:30";
+
+  const dummyByCourse = {
+    GSE211: { instructor: "Prof. Elena Rostova", room: "Hall B-204", group: "Sec 1" },
+    CSE263: { instructor: "Dr. Marcus Vance", room: "Lab C-301", group: "Sec 2" },
+    CSE261: { instructor: "Prof. Claire Sterling", room: "Hall A-110", group: "Sec 1" },
+    CSE252: { instructor: "Dr. David Chen", room: "Embedded Lab 102", group: "Sec 2" },
+    CSE241: { instructor: "Prof. Arthur Pendelton", room: "Room D-205", group: "Sec 1" },
+    CSE262: { instructor: "Dr. Sarah Jenkins", room: "Hall C-115", group: "Sec 1" },
+  };
+
+  const scrubText = (txt) => {
+    if (!txt) return txt;
+    return txt
+      .replace(/C212 O/g, "Hall B-204")
+      .replace(/C203 O/g, "Lab C-301")
+      .replace(/D202 O/g, "Hall A-110")
+      .replace(/D114 O/g, "Hall A-110")
+      .replace(/L102 O/g, "Embedded Lab 102")
+      .replace(/Group [A-Z]/g, "Sec 1");
+  };
+
+  const scrubAssessment = (a) => {
+    if (!a) return;
+    const d = dummyByCourse[a.course_id] || {
+      instructor: "Prof. Elena Rostova",
+      room: "Hall B-204",
+      group: "Sec 1",
+    };
+    a.instructor = d.instructor;
+    a.room = d.room;
+    a.group = d.group;
+    a.ai_inference_note = scrubText(a.ai_inference_note);
+    a.ai_study_plan = scrubText(a.ai_study_plan);
+  };
+
+  (appState.assessments || []).forEach(scrubAssessment);
+  if (appState.dashboard) {
+    scrubAssessment(appState.dashboard.next_up);
+    (appState.dashboard.upcoming_this_week || []).forEach(scrubAssessment);
+    (appState.dashboard.all_upcoming || []).forEach(scrubAssessment);
+    (appState.dashboard.study_recommendations || []).forEach((rec) => {
+      const d = dummyByCourse[rec.course_id] || { room: "Hall B-204" };
+      rec.room = d.room;
+      rec.why_study_now = scrubText(rec.why_study_now);
+      rec.ai_study_plan = scrubText(rec.ai_study_plan);
+    });
+
+    // Mark a couple of sample topics completed in demo mode so readiness progress bar looks realistic
+    const recs = appState.dashboard.study_recommendations || [];
+    if (recs[0]?.topics?.[0]) {
+      recs[0].topics[0].completed = true;
+      if (!appState.config.completed_topics) appState.config.completed_topics = {};
+      appState.config.completed_topics[recs[0].topics[0].key] = true;
+      recs[0].progress_percent = Math.round((1 / recs[0].topics.length) * 100);
+    }
+    if (recs[1]?.topics?.[0]) {
+      recs[1].topics[0].completed = true;
+      appState.config.completed_topics[recs[1].topics[0].key] = true;
+      recs[1].progress_percent = Math.round((1 / recs[1].topics.length) * 100);
+    }
+    appState.dashboard.completed_topics_count = 6;
+    appState.dashboard.total_topics_count = 23;
+    appState.dashboard.readiness_percent = 26;
+  }
+
+  (appState.schedule?.slots || []).forEach((s) => {
+    const d = dummyByCourse[s.course_id];
+    if (d) {
+      s.instructor = d.instructor;
+      s.room = d.room;
+      s.group = d.group;
+    }
+  });
 }
 
 function updateTopBarAndUser() {

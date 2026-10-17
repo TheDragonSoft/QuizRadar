@@ -1,0 +1,13 @@
+# Rust target directory
+/target/
+**/*.rs.bk
+
+# Sensitive Google OAuth credentials (DO NOT COMMIT)
+token.json
+credentials.json
+client_secret*.json
+
+# Python cache & logs
+__pycache__/
+*.py[cod]
+*.log

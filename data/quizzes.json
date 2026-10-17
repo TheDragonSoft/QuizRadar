@@ -1,0 +1,123 @@
+[
+  {
+    "id": "1a13437e51244663",
+    "course_id": "CSE263",
+    "course_name": "Machine Learning and Pattern Recognition",
+    "title": "Quiz 1: Machine Learning",
+    "date_iso": "2026-10-19",
+    "day_name": "Monday",
+    "start_time": "13:00",
+    "end_time": "15:30",
+    "display_time": "Monday, 19 October 2026 (1:00 PM – 3:30 PM)",
+    "room": "C203 O",
+    "instructor": "Dr. Mohamed Hussien Rehan / Eng. Abdelrahman Hesham",
+    "is_upcoming": true,
+    "topics": [
+      "Lecture 1: Introduction",
+      "Lecture 2: Regression",
+      "Lecture 3: k-Nearest Neighbors (k-NN) Classifier",
+      "Lecture 4: Naïve Bayes Classifier"
+    ],
+    "warnings": [
+      "⚠️ Bring your printed Quiz Template to the lecture!",
+      "📍 Attendance: Must attend with your registered Group B."
+    ],
+    "elearning_url": "https://e-learning.msa.edu.eg/mod/forum/discuss.php?d=171212#p189780",
+    "color": "#8e24aa"
+  },
+  {
+    "id": "1a125bc4af1ed819",
+    "course_id": "GSE211",
+    "course_name": "Mathematical Analysis and Numerical Methods",
+    "title": "Class Quiz 1: Numerical Methods",
+    "date_iso": "2026-10-18",
+    "day_name": "Sunday",
+    "start_time": "08:00",
+    "end_time": "10:00",
+    "display_time": "Sunday, 18 October 2026 (8:00 AM – 10:00 AM)",
+    "room": "C212 O",
+    "instructor": "Assoc. Prof. Dr. Mohamed Khalil",
+    "is_upcoming": true,
+    "topics": [
+      "Numerical Integration Methods",
+      "Trapezoidal Rule",
+      "Simpson’s 1/3 Rule"
+    ],
+    "warnings": [
+      "📝 Fully prepared with calculator and required formula sheets.",
+      "📍 Held during your scheduled lecture time slot in Room C212 O."
+    ],
+    "elearning_url": "https://e-learning.msa.edu.eg/mod/forum/discuss.php?d=170969#p189536",
+    "color": "#4285f4"
+  },
+  {
+    "id": "1a1456c790245d83",
+    "course_id": "CSE261",
+    "course_name": "Algorithms and Data Structures",
+    "title": "Quiz 1: Algorithms",
+    "date_iso": "2026-10-21",
+    "day_name": "Wednesday",
+    "start_time": "14:00",
+    "end_time": "15:30",
+    "display_time": "Wednesday, 21 October 2026 (2:00 PM – 3:30 PM)",
+    "room": "D114 O",
+    "instructor": "Eng. Mona Farouk Ahmed Kamal Eldeen",
+    "is_upcoming": true,
+    "topics": [
+      "Lecture 1: Algorithm Efficiency",
+      "Lecture 2: Recursion"
+    ],
+    "warnings": [
+      "⚠️ STRICT NAVIGATION: Once you move to the next question, you CANNOT go back to previous ones!",
+      "📍 Attendance: You must attend AT YOUR ASSIGNED TIME SLOT (Group B: 2:00 PM) otherwise you cannot take the quiz."
+    ],
+    "elearning_url": "https://e-learning.msa.edu.eg/mod/forum/discuss.php?d=171611#p190182",
+    "color": "#0f9d58"
+  },
+  {
+    "id": "1a08707180c75395",
+    "course_id": "CSE252",
+    "course_name": "Embedded Systems Design",
+    "title": "Quiz 1: Embedded Systems",
+    "date_iso": "2026-10-22",
+    "day_name": "Thursday",
+    "start_time": "11:00",
+    "end_time": "13:00",
+    "display_time": "Thursday, 22 October 2026 (11:00 AM – 1:00 PM)",
+    "room": "L102 O",
+    "instructor": "Dr. Hossam Mohamed Ali Khalil",
+    "is_upcoming": true,
+    "topics": [
+      "Lectures 1, 2, and 3",
+      "Tutorial Sheets 1, 2 & 3"
+    ],
+    "warnings": [
+      "⏱️ Duration: 15 minutes.",
+      "📝 Format: Multiple Choice Questions (MCQ) & Explain/Discuss."
+    ],
+    "elearning_url": "https://e-learning.msa.edu.eg/mod/forum/discuss.php?d=170818#p189382",
+    "color": "#f4b400"
+  },
+  {
+    "id": "1a1341512161cf0c",
+    "course_id": "GENERAL",
+    "course_name": "University Examinations",
+    "title": "Fall 2026 Midterm Examinations",
+    "date_iso": "2026-11-07",
+    "day_name": "Saturday",
+    "start_time": "09:00",
+    "end_time": "12:00",
+    "display_time": "Saturday, 7 November 2026 (All Day)",
+    "room": "Assigned Examination Halls",
+    "instructor": "Faculty Examination Committee",
+    "is_upcoming": true,
+    "topics": [
+      "All lecture & tutorial content up to Week 7 across registered courses."
+    ],
+    "warnings": [
+      "📅 Rescheduled Date: Changed to Saturday, 7 November 2026 (previously 31 Oct)."
+    ],
+    "elearning_url": "",
+    "color": "#e67c73"
+  }
+]

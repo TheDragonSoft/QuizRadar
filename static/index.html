@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google Calendar — Fall 2026 Academic Schedule & Quizzes</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            google: {
+              blue: '#1a73e8',
+              blueHover: '#1765cc',
+              red: '#d93025',
+              green: '#1e8e3e',
+              yellow: '#f9ab00',
+              gray: '#5f6368',
+              lightGray: '#f1f3f4',
+              border: '#dadce0',
+              text: '#3c4043'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts & Lucide Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Google+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    body {
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #3c4043;
+      background-color: #ffffff;
+      overflow-x: hidden;
+    }
+    .font-google {
+      font-family: 'Google Sans', 'Roboto', sans-serif;
+    }
+    /* Google Calendar Time Grid */
+    .time-slot {
+      height: 60px;
+    }
+    .grid-line {
+      border-bottom: 1px solid #dadce0;
+    }
+    .grid-col {
+      border-right: 1px solid #dadce0;
+    }
+    /* Event Card Hover */
+    .cal-event {
+      transition: box-shadow 0.15s ease, transform 0.15s ease;
+      cursor: pointer;
+    }
+    .cal-event:hover {
+      box-shadow: 0 4px 8px rgba(60,64,67, 0.25);
+      z-index: 20;
+    }
+    /* Pulse badge */
+    @keyframes pulse-glow {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.85; transform: scale(1.03); }
+    }
+    .quiz-glow {
+      animation: pulse-glow 2s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="h-screen flex flex-col selection:bg-blue-100 selection:text-blue-800">
+
+  <!-- ================= TOP HEADER (Google Calendar Bar) ================= -->
+  <header class="h-16 border-b border-google-border px-4 flex items-center justify-between shrink-0 bg-white z-30">
+    
+    <!-- Left: Hamburger, Calendar Logo, Title, Today, Nav, Month -->
+    <div class="flex items-center space-x-3 sm:space-x-4">
+      <button onclick="toggleSidebar()" class="p-2.5 rounded-full hover:bg-google-lightGray text-google-gray transition" title="Main menu">
+        <i data-lucide="menu" class="w-5 h-5"></i>
+      </button>
+
+      <!-- Calendar Logo & Title -->
+      <div class="flex items-center space-x-2.5 cursor-pointer" onclick="location.reload()">
+        <div class="w-10 h-10 rounded-xl bg-blue-600 flex flex-col items-center justify-center text-white shadow-sm font-google font-bold leading-none">
+          <span class="text-[9px] uppercase tracking-wider font-semibold opacity-90 -mt-0.5">OCT</span>
+          <span class="text-base font-bold">18</span>
+        </div>
+        <span class="text-xl font-google font-medium text-slate-700 tracking-tight hidden sm:inline">Calendar</span>
+      </div>
+
+      <!-- Today Button -->
+      <button onclick="goToToday()" class="px-4 py-2 border border-google-border rounded-lg text-sm font-medium text-google-text hover:bg-google-lightGray transition ml-2">
+        Today
+      </button>
+
+      <!-- Prev / Next Arrows -->
+      <div class="flex items-center space-x-0.5">
+        <button onclick="prevWeek()" class="p-2 rounded-full hover:bg-google-lightGray text-google-gray transition" title="Previous week">
+          <i data-lucide="chevron-left" class="w-5 h-5"></i>
+        </button>
+        <button onclick="nextWeek()" class="p-2 rounded-full hover:bg-google-lightGray text-google-gray transition" title="Next week">
+          <i data-lucide="chevron-right" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Month Year Display -->
+      <h2 id="calendar-month-title" class="text-xl font-google font-normal text-google-text pl-1">
+        October 2026
+      </h2>
+    </div>
+
+    <!-- Right: Search, Settings, View Dropdown, Sync, Avatar -->
+    <div class="flex items-center space-x-2 sm:space-x-3">
+      <!-- Sync with Gmail -->
+      <button id="sync-btn" onclick="triggerSync()" class="hidden md:flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-google-blue hover:bg-blue-50 border border-blue-200 transition">
+        <i id="sync-icon" data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+        <span id="sync-text">Sync Gmail</span>
+      </button>
+
+      <!-- Search icon -->
+      <button onclick="toggleSearch()" class="p-2.5 rounded-full hover:bg-google-lightGray text-google-gray transition" title="Search">
+        <i data-lucide="search" class="w-5 h-5"></i>
+      </button>
+
+      <!-- Settings icon -->
+      <button class="p-2.5 rounded-full hover:bg-google-lightGray text-google-gray transition" title="Settings menu">
+        <i data-lucide="settings" class="w-5 h-5"></i>
+      </button>
+
+      <!-- View Selector (Week, Day, Month) -->
+      <div class="relative">
+        <button id="view-dropdown-btn" onclick="toggleViewDropdown()" class="flex items-center space-x-1.5 px-3.5 py-2 border border-google-border rounded-lg text-sm font-medium text-google-text hover:bg-google-lightGray transition">
+          <span id="current-view-name">Week</span>
+          <i data-lucide="chevron-down" class="w-4 h-4 text-google-gray"></i>
+        </button>
+        <div id="view-dropdown" class="absolute right-0 mt-1.5 w-36 bg-white border border-google-border rounded-xl shadow-xl py-1.5 hidden z-50">
+          <button onclick="setView('week')" class="w-full text-left px-4 py-2 text-sm font-medium hover:bg-google-lightGray flex items-center justify-between">
+            <span>Week</span>
+            <i data-lucide="check" class="w-4 h-4 text-blue-600"></i>
+          </button>
+          <button onclick="setView('day')" class="w-full text-left px-4 py-2 text-sm font-medium hover:bg-google-lightGray">
+            <span>Day</span>
+          </button>
+          <button onclick="setView('month')" class="w-full text-left px-4 py-2 text-sm font-medium hover:bg-google-lightGray">
+            <span>Month</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Avatar -->
+      <div class="w-9 h-9 rounded-full bg-purple-700 text-white font-google font-bold flex items-center justify-center text-sm shadow-sm cursor-pointer ml-1" title="omar.ahmed126@msa.edu.eg">
+        O
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= BODY: SIDEBAR + CALENDAR GRID ================= -->
+  <div class="flex-1 flex overflow-hidden">
+    
+    <!-- LEFT SIDEBAR -->
+    <aside id="sidebar" class="w-64 border-r border-google-border p-4 flex flex-col space-y-6 shrink-0 overflow-y-auto bg-white transition-all duration-200">
+      
+      <!-- + Create Button -->
+      <div class="relative">
+        <button onclick="openCreateModal()" class="flex items-center space-x-3 px-6 py-3.5 rounded-full shadow-md hover:shadow-lg border border-google-border hover:bg-slate-50 transition bg-white text-google-text font-google font-medium text-sm">
+          <svg class="w-7 h-7" viewBox="0 0 36 36">
+            <path fill="#4285F4" d="M16 16v14h4V20z"/>
+            <path fill="#34A853" d="M30 16H20l-4 4h14z"/>
+            <path fill="#FBBC05" d="M6 16h10l4-4H6z"/>
+            <path fill="#EA4335" d="M20 16V6h-4v10z"/>
+            <path fill="none" d="M0 0h36v36H0z"/>
+          </svg>
+          <span class="text-sm font-medium">Create</span>
+          <i data-lucide="chevron-down" class="w-4 h-4 text-google-gray ml-1"></i>
+        </button>
+      </div>
+
+      <!-- Mini Calendar Month Picker -->
+      <div class="space-y-2 select-none">
+        <div class="flex items-center justify-between px-1">
+          <span class="text-sm font-google font-medium text-google-text">October 2026</span>
+          <div class="flex items-center space-x-1">
+            <button class="p-1 rounded-full hover:bg-google-lightGray text-google-gray"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
+            <button class="p-1 rounded-full hover:bg-google-lightGray text-google-gray"><i data-lucide="chevron-right" class="w-3.5 h-3.5"></i></button>
+          </div>
+        </div>
+
+        <!-- Mini Calendar Days Grid -->
+        <div class="grid grid-cols-7 text-center text-[11px] font-medium text-google-gray">
+          <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+        </div>
+        <div class="grid grid-cols-7 text-center text-xs font-normal text-google-text gap-y-1">
+          <!-- Week 1 -->
+          <span class="text-slate-300 py-1">27</span><span class="text-slate-300 py-1">28</span><span class="text-slate-300 py-1">29</span><span class="text-slate-300 py-1">30</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">1</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">2</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">3</span>
+          <!-- Week 2 -->
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">4</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">5</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">6</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">7</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">8</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">9</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">10</span>
+          <!-- Week 3 -->
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">11</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">12</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">13</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">14</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">15</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">16</span>
+          <span class="py-1 rounded-full font-bold bg-blue-100 text-blue-700">17</span>
+          <!-- Active Exam Week (18 - 24) -->
+          <span class="py-1 font-bold rounded-full bg-blue-600 text-white cursor-pointer shadow-sm">18</span>
+          <span class="py-1 font-semibold rounded-full bg-purple-100 text-purple-700 cursor-pointer">19</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">20</span>
+          <span class="py-1 font-semibold rounded-full bg-green-100 text-green-700 cursor-pointer">21</span>
+          <span class="py-1 font-semibold rounded-full bg-amber-100 text-amber-700 cursor-pointer">22</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">23</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">24</span>
+          <!-- Week 5 -->
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">25</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">26</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">27</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">28</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">29</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">30</span>
+          <span class="py-1 cursor-pointer hover:bg-google-lightGray rounded-full">31</span>
+        </div>
+      </div>
+
+      <!-- "My Calendars" Course List -->
+      <div class="space-y-3 pt-2">
+        <div class="flex items-center justify-between text-xs font-google font-semibold text-google-gray uppercase tracking-wider">
+          <span>My Courses & Schedule</span>
+          <i data-lucide="chevron-up" class="w-4 h-4"></i>
+        </div>
+
+        <div id="course-checkboxes" class="space-y-2 text-sm text-google-text">
+          <!-- Populated dynamically with course colors from Image 3 -->
+        </div>
+      </div>
+
+      <!-- Quick Export & Links -->
+      <div class="pt-4 border-t border-google-border space-y-2">
+        <a href="/api/calendar/ics_all" class="flex items-center space-x-2 text-xs font-medium text-google-blue hover:underline">
+          <i data-lucide="download" class="w-3.5 h-3.5"></i>
+          <span>Subscribe to Calendar (.ics)</span>
+        </a>
+        <a href="https://e-learning.msa.edu.eg" target="_blank" class="flex items-center space-x-2 text-xs font-medium text-google-gray hover:text-google-text">
+          <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+          <span>MSA E-Learning Portal</span>
+        </a>
+      </div>
+
+    </aside>
+
+    <!-- MAIN CALENDAR VIEW -->
+    <main class="flex-1 flex flex-col overflow-hidden bg-white">
+      
+      <!-- Week Days Header (SUN 18, MON 19, TUE 20, ...) -->
+      <div class="flex border-b border-google-border shrink-0 bg-white shadow-sm z-10">
+        <!-- Time gutter header spacer -->
+        <div class="w-16 sm:w-20 shrink-0 border-r border-google-border flex items-end justify-center pb-2 text-[11px] text-google-gray">
+          GMT+3
+        </div>
+
+        <!-- 7 Days Columns Headers -->
+        <div class="flex-1 grid grid-cols-7 text-center py-2.5">
+          <!-- Sun 18 (Quiz Day) -->
+          <div class="flex flex-col items-center">
+            <span class="text-[11px] font-medium text-google-gray uppercase">SUN</span>
+            <div class="w-10 h-10 rounded-full bg-blue-600 text-white font-google font-bold flex items-center justify-center text-lg mt-0.5 shadow-sm">
+              18
+            </div>
+            <span class="text-[10px] font-bold text-blue-600 uppercase mt-0.5 tracking-tight">Quiz Today</span>
+          </div>
+
+          <!-- Mon 19 (Quiz Day) -->
+          <div class="flex flex-col items-center">
+            <span class="text-[11px] font-medium text-google-gray uppercase">MON</span>
+            <div class="w-10 h-10 rounded-full bg-purple-600 text-white font-google font-bold flex items-center justify-center text-lg mt-0.5 shadow-sm">
+              19
+            </div>
+            <span class="text-[10px] font-bold text-purple-600 uppercase mt-0.5 tracking-tight">Quiz Today</span>
+          </div>
+
+          <!-- Tue 20 -->
+          <div class="flex flex-col items-center">
+            <span class="text-[11px] font-medium text-google-gray uppercase">TUE</span>
+            <div class="w-10 h-10 rounded-full hover:bg-google-lightGray text-google-text font-google font-medium flex items-center justify-center text-lg mt-0.5">
+              20
+            </div>
+          </div>
+
+          <!-- Wed 21 (Quiz Day) -->
+          <div class="flex flex-col items-center">
+            <span class="text-[11px] font-medium text-google-gray uppercase">WED</span>
+            <div class="w-10 h-10 rounded-full bg-emerald-600 text-white font-google font-bold flex items-center justify-center text-lg mt-0.5 shadow-sm">
+              21
+            </div>
+            <span class="text-[10px] font-bold text-emerald-600 uppercase mt-0.5 tracking-tight">Quiz Today</span>
+          </div>
+
+          <!-- Thu 22 (Quiz Day) -->
+          <div class="flex flex-col items-center">
+            <span class="text-[11px] font-medium text-google-gray uppercase">THU</span>
+            <div class="w-10 h-10 rounded-full bg-amber-500 text-white font-google font-bold flex items-center justify-center text-lg mt-0.5 shadow-sm">
+              22
+            </div>
+            <span class="text-[10px] font-bold text-amber-600 uppercase mt-0.5 tracking-tight">Quiz 1</span>
+          </div>
+
+          <!-- Fri 23 -->
+          <div class="flex flex-col items-center opacity-60">
+            <span class="text-[11px] font-medium text-google-gray uppercase">FRI</span>
+            <div class="w-10 h-10 rounded-full text-google-gray font-google font-medium flex items-center justify-center text-lg mt-0.5">
+              23
+            </div>
+          </div>
+
+          <!-- Sat 24 -->
+          <div class="flex flex-col items-center opacity-60">
+            <span class="text-[11px] font-medium text-google-gray uppercase">SAT</span>
+            <div class="w-10 h-10 rounded-full text-google-gray font-google font-medium flex items-center justify-center text-lg mt-0.5">
+              24
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Time Grid Scrollable Body -->
+      <div id="calendar-scroll-area" class="flex-1 overflow-y-auto flex relative">
+        
+        <!-- Left Time Column (8 AM to 8 PM) -->
+        <div class="w-16 sm:w-20 shrink-0 border-r border-google-border select-none bg-white z-10">
+          <div class="time-slot text-right pr-2 text-xs font-normal text-google-gray -mt-2">8 AM</div>
+          <div class="time-slot text-right pr-2 text-xs font-normal text-google-gray -mt-2">9 AM</div>
+          <div class="time-slot text-right pr-2 text-xs font-normal text-google-gray -mt-2">10 AM</div>
+          <div class="time-slot text-right pr-2 text-xs font-normal text-google-gray -mt-2">11 AM</div>
+          <div class="time-slot text-right pr-2 text-xs font-normal text-google-gray -mt-2">12 PM</div>
+          <div class="time-slot text-right pr-2 text-xs font-normal text-google-gray -mt-2">1 PM</div>
+          <div class="time-slot text-right pr-2 text-xs font-normal text-google-gray -mt-2">2 PM</div>
+          <div class="time-slot text-right pr-2 text-xs font-normal text-google-gray -mt-2">3 PM</div>
+          <div class="time-slot text-right pr-2 text-xs font-normal text-google-gray -mt-2">4 PM</div>
+          <div class="time-slot text-right pr-2 text-xs font-normal text-google-gray -mt-2">5 PM</div>
+          <div class="time-slot text-right pr-2 text-xs font-normal text-google-gray -mt-2">6 PM</div>
+          <div class="time-slot text-right pr-2 text-xs font-normal text-google-gray -mt-2">7 PM</div>
+          <div class="time-slot text-right pr-2 text-xs font-normal text-google-gray -mt-2">8 PM</div>
+        </div>
+
+        <!-- 7 Days Grid Matrix -->
+        <div class="flex-1 grid grid-cols-7 relative" style="height: 780px;">
+          
+          <!-- Background Grid Lines (13 hour rows) -->
+          <div class="absolute inset-0 pointer-events-none">
+            <div class="time-slot grid-line"></div>
+            <div class="time-slot grid-line"></div>
+            <div class="time-slot grid-line"></div>
+            <div class="time-slot grid-line"></div>
+            <div class="time-slot grid-line"></div>
+            <div class="time-slot grid-line"></div>
+            <div class="time-slot grid-line"></div>
+            <div class="time-slot grid-line"></div>
+            <div class="time-slot grid-line"></div>
+            <div class="time-slot grid-line"></div>
+            <div class="time-slot grid-line"></div>
+            <div class="time-slot grid-line"></div>
+            <div class="time-slot grid-line"></div>
+          </div>
+
+          <!-- Column Dividers -->
+          <div class="grid-col h-full relative" id="day-col-0"></div> <!-- SUN -->
+          <div class="grid-col h-full relative" id="day-col-1"></div> <!-- MON -->
+          <div class="grid-col h-full relative" id="day-col-2"></div> <!-- TUE -->
+          <div class="grid-col h-full relative" id="day-col-3"></div> <!-- WED -->
+          <div class="grid-col h-full relative" id="day-col-4"></div> <!-- THU -->
+          <div class="grid-col h-full relative bg-slate-50/40" id="day-col-5"></div> <!-- FRI -->
+          <div class="grid-col h-full relative bg-slate-50/40" id="day-col-6"></div> <!-- SAT -->
+
+        </div>
+
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- ================= GOOGLE CALENDAR EVENT DETAIL MODAL ================= -->
+  <div id="event-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs hidden">
+    <div class="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden border border-google-border">
+      
+      <!-- Top Colored Stripe -->
+      <div id="modal-stripe" class="h-3 w-full bg-blue-600"></div>
+
+      <div class="p-6 space-y-5">
+        <!-- Close & Actions Bar -->
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <span id="modal-type-badge" class="px-2.5 py-0.5 rounded text-xs font-semibold uppercase tracking-wide bg-blue-100 text-blue-800">
+              Lecture
+            </span>
+            <span id="modal-group-badge" class="px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600">
+              Group B
+            </span>
+          </div>
+
+          <button onclick="closeModal()" class="p-1.5 rounded-full hover:bg-google-lightGray text-google-gray transition">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <!-- Title & Time -->
+        <div>
+          <h3 id="modal-course-name" class="text-xl font-google font-bold text-google-text leading-snug">
+            Machine Learning and Pattern Recognition
+          </h3>
+          <p id="modal-time-slot" class="text-sm text-google-gray mt-1 flex items-center space-x-1.5 font-medium">
+            <i data-lucide="clock" class="w-4 h-4 text-google-gray"></i>
+            <span>Monday, 19 October · 1:00 PM – 3:30 PM</span>
+          </p>
+          <p id="modal-room" class="text-sm text-google-gray mt-0.5 flex items-center space-x-1.5 font-medium">
+            <i data-lucide="map-pin" class="w-4 h-4 text-google-gray"></i>
+            <span>Room C203 O (MSA University)</span>
+          </p>
+        </div>
+
+        <!-- Quiz Alert Callout if quiz exists -->
+        <div id="modal-quiz-callout" class="p-4 rounded-xl bg-purple-50 border border-purple-200 text-purple-900 space-y-2 hidden">
+          <div class="flex items-center space-x-2 font-google font-bold text-sm text-purple-900">
+            <i data-lucide="alert-circle" class="w-4 h-4 text-purple-700"></i>
+            <span id="modal-quiz-title">Quiz 1 Scheduled During This Slot</span>
+          </div>
+          <ul id="modal-quiz-warnings" class="list-disc list-inside text-xs text-purple-800 space-y-1 pl-1">
+          </ul>
+        </div>
+
+        <!-- Topics Covered -->
+        <div id="modal-topics-box" class="space-y-2 hidden">
+          <h4 class="text-xs font-google font-semibold text-google-gray uppercase tracking-wider flex items-center space-x-1.5">
+            <i data-lucide="book-open" class="w-3.5 h-3.5 text-blue-600"></i>
+            <span>Exam Topics Covered</span>
+          </h4>
+          <div id="modal-topics-list" class="flex flex-wrap gap-1.5">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- Footer Buttons: Google Calendar 1-Click Reminder & .ics -->
+        <div class="pt-4 border-t border-google-border flex items-center justify-between gap-3">
+          <a id="modal-moodle-link" href="#" target="_blank" class="text-xs font-medium text-google-blue hover:underline flex items-center space-x-1">
+            <span>Moodle Post</span>
+            <i data-lucide="external-link" class="w-3 h-3"></i>
+          </a>
+
+          <div class="flex items-center space-x-2">
+            <a id="modal-ics-link" href="#" class="px-3.5 py-2 rounded-lg border border-google-border hover:bg-google-lightGray text-google-text font-medium text-xs transition">
+              Download .ics
+            </a>
+            <a id="modal-google-cal-btn" href="#" target="_blank" class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs shadow-sm transition flex items-center space-x-1.5">
+              <i data-lucide="bell" class="w-3.5 h-3.5"></i>
+              <span>Add to Google Calendar</span>
+            </a>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Toast Message -->
+  <div id="toast" class="fixed bottom-6 right-6 z-50 flex items-center space-x-3 px-5 py-3 rounded-xl bg-slate-900 text-white shadow-2xl transition transform translate-y-20 opacity-0 pointer-events-none">
+    <i id="toast-icon" data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>
+    <span id="toast-text" class="text-xs font-medium">Notification</span>
+  </div>
+
+  <!-- Load Frontend Logic -->
+  <script src="/static/app.js"></script>
+  <script>
+    lucide.createIcons();
+  </script>
+</body>
+</html>

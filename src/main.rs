@@ -112,9 +112,11 @@ fn run_native_desktop_window(port: u16) {
         .with_inner_size(LogicalSize::new(1420.0, 880.0))
         .with_min_inner_size(LogicalSize::new(960.0, 620.0))
         .with_window_icon(window_icon)
-        .with_visible(false)
         .build(&event_loop)
         .expect("Failed to create native QuizRadar window");
+
+    window.set_visible(true);
+    window.set_focus();
 
     let app_url = format!("http://127.0.0.1:{}", port);
 

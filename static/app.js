@@ -204,6 +204,9 @@ async function loadFullState() {
       if (demo === "onboarding") {
         setThemeFromOnboarding(false);
         openOnboardingModal(1);
+      } else if (demo === "onboarding-dark") {
+        setThemeFromOnboarding(true);
+        openOnboardingModal(1);
       } else if (demo === "dashboard-light") {
         setThemeFromOnboarding(false);
         switchMainView("dashboard");
@@ -213,8 +216,16 @@ async function loadFullState() {
       } else if (demo === "calendar") {
         setThemeFromOnboarding(false);
         switchMainView("calendar");
+      } else if (demo === "calendar-dark") {
+        setThemeFromOnboarding(true);
+        switchMainView("calendar");
       } else if (demo === "modal") {
         setThemeFromOnboarding(false);
+        switchMainView("dashboard");
+        const nextId = appState.dashboard?.next_up?.id || appState.assessments?.[0]?.id;
+        if (nextId) openAssessmentModalById(nextId);
+      } else if (demo === "modal-dark") {
+        setThemeFromOnboarding(true);
         switchMainView("dashboard");
         const nextId = appState.dashboard?.next_up?.id || appState.assessments?.[0]?.id;
         if (nextId) openAssessmentModalById(nextId);

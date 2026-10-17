@@ -42,38 +42,69 @@ Figuring out when that quiz actually happens means checking when the email was s
 
 ## 📸 Visual Tour & Screenshots
 
-### 1. Smart Academic Dashboard & Study Priority Planner (Light Mode)
-See what is coming up next at a glance, filter assessments by type, track your study readiness, and work through prioritized **What Should I Study?** cards alongside a scrollable feed of all scanned course assessments.
+### Workspace Views — Dashboard & 7-Day Week Calendar
+<table>
+  <thead>
+    <tr>
+      <th align="center">📊 Smart Academic Dashboard</th>
+      <th align="center">🗓 7-Day Week Calendar</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center">
+        <strong>☀️ Light Mode</strong><br />
+        <img src="docs/screenshots/dashboard-light.png" width="420" alt="Smart Academic Dashboard — Light Mode" />
+      </td>
+      <td align="center">
+        <strong>☀️ Light Mode</strong><br />
+        <img src="docs/screenshots/week-calendar.png" width="420" alt="7-Day Week Calendar — Light Mode" />
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <strong>🌙 Dark Mode</strong><br />
+        <img src="docs/screenshots/dashboard-dark.png" width="420" alt="Smart Academic Dashboard — Dark Mode" />
+      </td>
+      <td align="center">
+        <strong>🌙 Dark Mode</strong><br />
+        <img src="docs/screenshots/week-calendar-dark.png" width="420" alt="7-Day Week Calendar — Dark Mode" />
+      </td>
+    </tr>
+  </tbody>
+</table>
 
-![Smart Academic Dashboard — Light Mode](docs/screenshots/dashboard-light.png)
-
----
-
-### 2. Smart Academic Dashboard (Dark Mode)
-Switch effortlessly between a crisp daylight workspace and a low-glare Dark Mode built for late-night study sessions.
-
-![Smart Academic Dashboard — Dark Mode](docs/screenshots/dashboard-dark.png)
-
----
-
-### 3. 7-Day Week Calendar View
-View your entire week of lectures, tutorials, and labs alongside color-coded quiz and assignment overlays, complete with a mini-month navigator and course filters.
-
-![Google Calendar 7-Day Week View](docs/screenshots/week-calendar.png)
-
----
-
-### 4. Guided First-Time Setup Wizard
-A one-time, 3-step welcome flow that connects your Google account, scans your inbox, and lets you pick your enrolled courses and preferred theme. Everything can be adjusted anytime from **Settings**.
-
-![Standalone 3-Step Onboarding Wizard](docs/screenshots/onboarding-wizard.png)
-
----
-
-### 5. Full Assessment & Study Window
-Click any assessment card or calendar block to open a focused study view with the exact time and room, how the date was matched to your schedule, exam rules, and an interactive topic checklist.
-
-![Assessment Detail & Study Checklist Modal](docs/screenshots/assessment-modal.png)
+### Guided First-Time Setup & Full Study Window
+<table>
+  <thead>
+    <tr>
+      <th align="center">🪄 First-Time Setup Wizard</th>
+      <th align="center">📝 Assessment & Study Checklist Window</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center">
+        <strong>☀️ Light Mode</strong><br />
+        <img src="docs/screenshots/onboarding-wizard.png" width="420" alt="First-Time Setup Wizard — Light Mode" />
+      </td>
+      <td align="center">
+        <strong>☀️ Light Mode</strong><br />
+        <img src="docs/screenshots/assessment-modal.png" width="420" alt="Assessment & Study Window — Light Mode" />
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <strong>🌙 Dark Mode</strong><br />
+        <img src="docs/screenshots/onboarding-wizard-dark.png" width="420" alt="First-Time Setup Wizard — Dark Mode" />
+      </td>
+      <td align="center">
+        <strong>🌙 Dark Mode</strong><br />
+        <img src="docs/screenshots/assessment-modal-dark.png" width="420" alt="Assessment & Study Window — Dark Mode" />
+      </td>
+    </tr>
+  </tbody>
+</table>
 
 ---
 

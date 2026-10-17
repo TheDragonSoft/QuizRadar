@@ -130,6 +130,7 @@ function initKeyboardShortcuts() {
     if (e.key === "Escape") {
       const detailModal = document.getElementById("event-detail-modal");
       const createModal = document.getElementById("create-event-modal");
+      const settingsModal = document.getElementById("settings-modal");
       const onboardModal = document.getElementById("onboarding-modal");
 
       if (detailModal?.classList.contains("is-open")) {
@@ -138,6 +139,10 @@ function initKeyboardShortcuts() {
       }
       if (createModal?.classList.contains("is-open")) {
         closeCreateEventModal();
+        return;
+      }
+      if (settingsModal?.classList.contains("is-open")) {
+        closeSettingsModal();
         return;
       }
       if (onboardModal?.classList.contains("is-open")) {
@@ -213,10 +218,10 @@ async function loadFullState() {
       return;
     }
 
-    if (params.get("setup") === "1" || !appState.config.onboarding_completed) {
-      localStorage.removeItem("quizradar_onboarding_done");
-      const initialStep = params.get("auth") === "success" ? 2 : 1;
-      openOnboardingModal(initialStep);
+    // One-time First-Run Onboarding Wizard: only opens the very first time the app is used
+    const localOnboardDone = localStorage.getItem("quizradar_onboarding_done") === "true";
+    if (!appState.config.onboarding_completed && !localOnboardDone) {
+      openOnboardingModal(1);
     }
   } catch (err) {
     console.error("Failed to load state:", err);
@@ -242,6 +247,12 @@ function updateTopBarAndUser() {
   const syncTsEl = document.getElementById("last-sync-timestamp");
   if (syncTsEl) syncTsEl.textContent = `Last scanned: ${lastSync}`;
 
+  const badgeText = appState.auth?.authenticated ? "Connected" : "Sign-In Recommended";
+  const badgeClass = appState.auth?.authenticated
+    ? "text-xs font-semibold px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300"
+    : "text-xs font-semibold px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300";
+
+  // Populate First-Time Onboarding Wizard
   const obName = document.getElementById("onboard-user-name");
   const obEmail = document.getElementById("onboard-user-email");
   const obAvatar = document.getElementById("onboard-user-avatar");
@@ -252,13 +263,8 @@ function updateTopBarAndUser() {
   if (obEmail) obEmail.textContent = email;
   if (obAvatar) obAvatar.textContent = initial;
   if (obBadge) {
-    if (appState.auth?.authenticated) {
-      obBadge.textContent = "Connected";
-      obBadge.className = "text-xs font-semibold px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300";
-    } else {
-      obBadge.textContent = "Sign-In Recommended";
-      obBadge.className = "text-xs font-semibold px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300";
-    }
+    obBadge.textContent = badgeText;
+    obBadge.className = badgeClass;
   }
   if (obScope) {
     obScope.textContent = appState.auth?.has_calendar_scope
@@ -266,8 +272,23 @@ function updateTopBarAndUser() {
       : "Gmail Connected · Sign in to grant direct Google Calendar write scope";
   }
 
+  // Populate Settings Modal
+  const stName = document.getElementById("settings-user-name");
+  const stEmail = document.getElementById("settings-user-email");
+  const stAvatar = document.getElementById("settings-user-avatar");
+  const stBadge = document.getElementById("settings-auth-badge");
+
+  if (stName) stName.textContent = name;
+  if (stEmail) stEmail.textContent = email;
+  if (stAvatar) stAvatar.textContent = initial;
+  if (stBadge) {
+    stBadge.textContent = badgeText;
+    stBadge.className = badgeClass;
+  }
+
   renderOnboardingPreview();
   renderOnboardingCourses();
+  renderSettingsCourses();
   updateOnboardingThemeButtons();
 }
 
@@ -1591,6 +1612,107 @@ function updateOnboardingThemeButtons() {
     darkBtn.className = isDark
       ? "p-3 rounded-xl border-2 border-[#1a73e8] dark:border-blue-400 bg-blue-950/30 flex items-center gap-3 text-left transition cursor-pointer"
       : "p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 flex items-center gap-3 text-left transition cursor-pointer";
+  }
+
+  const sLightBtn = document.getElementById("settings-theme-light-btn");
+  const sDarkBtn = document.getElementById("settings-theme-dark-btn");
+  if (sLightBtn) {
+    sLightBtn.className = !isDark
+      ? "p-2.5 rounded-xl border-2 border-[#1a73e8] bg-blue-50/50 dark:bg-slate-800 flex items-center gap-2.5 text-left transition cursor-pointer"
+      : "p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 flex items-center gap-2.5 text-left transition cursor-pointer";
+  }
+  if (sDarkBtn) {
+    sDarkBtn.className = isDark
+      ? "p-2.5 rounded-xl border-2 border-[#1a73e8] dark:border-blue-400 bg-blue-950/30 flex items-center gap-2.5 text-left transition cursor-pointer"
+      : "p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 flex items-center gap-2.5 text-left transition cursor-pointer";
+  }
+}
+
+function renderSettingsCourses() {
+  const grid = document.getElementById("settings-courses-grid");
+  if (!grid) return;
+  const courses = appState.schedule?.courses || [];
+  grid.innerHTML = courses
+    .map((c) => {
+      const checked = activeCourseFilters.has(c.id);
+      return `
+        <label class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/70 hover:border-[#1a73e8] dark:hover:border-blue-500 cursor-pointer transition text-xs">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <input type="checkbox" ${checked ? "checked" : ""} onchange="toggleCourseFilter('${c.id}', this.checked)" class="w-4 h-4 rounded shrink-0 cursor-pointer" style="accent-color: ${c.color}" />
+            <span class="px-2 py-0.5 rounded-md text-[10px] font-bold text-white shrink-0" style="background-color: ${c.color}">${escapeHtml(c.id)}</span>
+            <span class="font-medium text-slate-800 dark:text-slate-200 truncate">${escapeHtml(c.name)}</span>
+          </div>
+        </label>
+      `;
+    })
+    .join("");
+}
+
+function openSettingsModal() {
+  const modal = document.getElementById("settings-modal");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  modal.classList.add("flex");
+
+  const autoSyncEl = document.getElementById("settings-auto-gcal");
+  const geminiToggleEl = document.getElementById("settings-gemini-toggle");
+  const geminiKeyEl = document.getElementById("settings-gemini-key");
+
+  if (autoSyncEl) autoSyncEl.checked = appState.config?.auto_sync_gcal ?? true;
+  if (geminiToggleEl) geminiToggleEl.checked = appState.config?.gemini_enabled ?? true;
+  if (geminiKeyEl && appState.config?.gemini_api_key) {
+    geminiKeyEl.value = appState.config.gemini_api_key;
+  }
+
+  updateOnboardingThemeButtons();
+  renderSettingsCourses();
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeSettingsModal() {
+  const modal = document.getElementById("settings-modal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  modal.classList.remove("flex");
+}
+
+function reopenFirstTimeWizardFromSettings() {
+  closeSettingsModal();
+  openOnboardingModal(1);
+}
+
+async function saveSettingsModal() {
+  const autoSync = document.getElementById("settings-auto-gcal")?.checked ?? true;
+  const geminiEnabled = document.getElementById("settings-gemini-toggle")?.checked ?? true;
+  const geminiKey = document.getElementById("settings-gemini-key")?.value || "";
+
+  if (appState.config) {
+    appState.config.auto_sync_gcal = autoSync;
+    appState.config.gemini_enabled = geminiEnabled;
+    if (geminiKey.trim()) appState.config.gemini_api_key = geminiKey.trim();
+  }
+
+  closeSettingsModal();
+  showToast("Settings saved!");
+
+  try {
+    const res = await fetch("/api/onboarding/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        auto_sync_gcal: autoSync,
+        gemini_enabled: geminiEnabled,
+        gemini_api_key: geminiKey,
+      }),
+    });
+    const data = await res.json();
+    if (data.assessments) appState.assessments = data.assessments;
+    if (data.dashboard) appState.dashboard = data.dashboard;
+    if (data.config) appState.config = data.config;
+    renderDashboard();
+    renderWeekCalendar();
+  } catch (err) {
+    console.error("Background settings save error:", err);
   }
 }
 

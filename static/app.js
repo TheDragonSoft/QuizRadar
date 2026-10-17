@@ -189,6 +189,30 @@ async function loadFullState() {
     renderWeekCalendar();
 
     const params = new URLSearchParams(window.location.search);
+    const demo = params.get("demo");
+    if (demo) {
+      closeOnboardingModal();
+      if (demo === "onboarding") {
+        setThemeFromOnboarding(false);
+        openOnboardingModal(1);
+      } else if (demo === "dashboard-light") {
+        setThemeFromOnboarding(false);
+        switchMainView("dashboard");
+      } else if (demo === "dashboard-dark") {
+        setThemeFromOnboarding(true);
+        switchMainView("dashboard");
+      } else if (demo === "calendar") {
+        setThemeFromOnboarding(false);
+        switchMainView("calendar");
+      } else if (demo === "modal") {
+        setThemeFromOnboarding(false);
+        switchMainView("dashboard");
+        const nextId = appState.dashboard?.next_up?.id || appState.assessments?.[0]?.id;
+        if (nextId) openAssessmentModalById(nextId);
+      }
+      return;
+    }
+
     if (params.get("setup") === "1" || !appState.config.onboarding_completed) {
       localStorage.removeItem("quizradar_onboarding_done");
       const initialStep = params.get("auth") === "success" ? 2 : 1;
@@ -476,6 +500,9 @@ function renderDashboard() {
           )
           .join("");
 
+        const matchingAssessment = (appState.assessments || []).find((a) => a.id === rec.assessment_id);
+        const roomLabel = rec.room || matchingAssessment?.room || "";
+
         return `
           <div onclick="openAssessmentModalById('${rec.assessment_id}')" class="interactive-card bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-[#1a73e8] dark:hover:border-blue-500 cursor-pointer overflow-hidden group">
             <div class="h-1.5" style="background-color: ${rec.color}"></div>
@@ -489,7 +516,7 @@ function renderDashboard() {
                     <span class="text-[11px] font-bold tabular-nums px-2 py-0.5 rounded-md border ${badgeColor}">${escapeHtml(rec.urgency_badge)}</span>
                   </div>
                   <h4 class="text-base font-bold text-slate-900 dark:text-white group-hover:text-[#1a73e8] dark:group-hover:text-blue-400 transition">${escapeHtml(rec.title)} — <span class="font-normal text-slate-500 dark:text-slate-400 text-sm">${escapeHtml(rec.course_name)}</span></h4>
-                  <div class="text-xs tabular-nums text-slate-500 dark:text-slate-400 mt-0.5">${escapeHtml(rec.display_time)} · Room ${escapeHtml(rec.room)}</div>
+                  <div class="text-xs tabular-nums text-slate-500 dark:text-slate-400 mt-0.5">${escapeHtml(rec.display_time)}${roomLabel ? ` · Room ${escapeHtml(roomLabel)}` : ""}</div>
                 </div>
 
                 <div class="text-right tabular-nums shrink-0">

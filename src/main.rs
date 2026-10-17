@@ -129,6 +129,7 @@ async fn main() {
         .route("/api/calendar/ics/:id", get(download_ics))
         .route("/api/calendar/ics_all", get(download_all_ics))
         .route("/static/app.js", get(serve_app_js))
+        .route("/static/icon.svg", get(serve_icon_svg))
         .nest_service("/static", ServeDir::new("static"))
         .with_state(state);
 
@@ -148,6 +149,17 @@ async fn serve_app_js() -> Response {
     headers.insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/javascript; charset=utf-8"),
+    );
+    (StatusCode::OK, headers, content).into_response()
+}
+
+async fn serve_icon_svg() -> Response {
+    let content = fs::read_to_string("static/icon.svg")
+        .unwrap_or_else(|_| include_str!("../static/icon.svg").to_string());
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("image/svg+xml; charset=utf-8"),
     );
     (StatusCode::OK, headers, content).into_response()
 }

@@ -352,3 +352,38 @@ pub async fn fetch_user_profile() -> GoogleUserProfile {
         has_calendar_scope,
     }
 }
+
+/// Instant 0ms local profile lookup using stored token scopes + cached AppConfig user metadata.
+/// Avoids blocking `/api/state` or server startup on external Google HTTP calls.
+pub fn get_cached_user_profile(config: &crate::models::AppConfig) -> GoogleUserProfile {
+    if let Some(token) = load_stored_token() {
+        let has_gmail_scope = token
+            .scopes
+            .iter()
+            .any(|s| s.contains("gmail"))
+            || config.user_email.is_some();
+        let has_calendar_scope = token
+            .scopes
+            .iter()
+            .any(|s| s.contains("calendar"));
+
+        GoogleUserProfile {
+            authenticated: true,
+            email: config.user_email.clone(),
+            name: config.user_name.clone(),
+            picture: config.user_picture.clone(),
+            has_gmail_scope,
+            has_calendar_scope,
+        }
+    } else {
+        GoogleUserProfile {
+            authenticated: config.user_email.is_some(),
+            email: config.user_email.clone(),
+            name: config.user_name.clone(),
+            picture: config.user_picture.clone(),
+            has_gmail_scope: config.user_email.is_some(),
+            has_calendar_scope: false,
+        }
+    }
+}
+

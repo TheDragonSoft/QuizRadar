@@ -177,7 +177,50 @@ function initKeyboardShortcuts() {
 // STATE LOADING & TOP BAR
 // ============================================================================
 
+const STATE_CACHE_KEY = "quizradar_state_cache_v2";
+
+function saveStateCache() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("demo")) return;
+  try {
+    localStorage.setItem(STATE_CACHE_KEY, JSON.stringify(appState));
+  } catch (e) {
+    // Ignore storage quota errors
+  }
+}
+
+function hydrateAndRenderState(stateData) {
+  appState = stateData;
+  if (activeCourseFilters.size === 0 && appState.schedule?.courses) {
+    appState.schedule.courses.forEach((c) => activeCourseFilters.add(c.id));
+    activeCourseFilters.add("GENERAL");
+  }
+  updateTopBarAndUser();
+  renderSidebar();
+  renderDashboard();
+  renderWeekCalendar();
+}
+
 async function loadFullState() {
+  const params = new URLSearchParams(window.location.search);
+  const demo = params.get("demo");
+
+  // 1. Instant 0ms render from localStorage cache (Stale-While-Revalidate)
+  if (!demo) {
+    try {
+      const cachedRaw = localStorage.getItem(STATE_CACHE_KEY);
+      if (cachedRaw) {
+        const cachedData = JSON.parse(cachedRaw);
+        if (cachedData && cachedData.assessments && cachedData.dashboard) {
+          hydrateAndRenderState(cachedData);
+        }
+      }
+    } catch (e) {
+      // Ignore corrupt cache
+    }
+  }
+
+  // 2. Fetch fresh state from fast in-memory backend (<1ms)
   try {
     const res = await fetch("/api/state");
     const data = await res.json();
@@ -188,10 +231,10 @@ async function loadFullState() {
       activeCourseFilters.add("GENERAL");
     }
 
-    const params = new URLSearchParams(window.location.search);
-    const demo = params.get("demo");
     if (demo) {
       applyDemoDummyData();
+    } else {
+      saveStateCache();
     }
 
     updateTopBarAndUser();
@@ -844,6 +887,7 @@ async function toggleTopicCheckbox(key, completed) {
   if (activeModalAssessmentId) {
     updateModalTopicProgress(activeModalAssessmentId);
   }
+  saveStateCache();
 
   // 4. Persist to backend in background
   try {
@@ -856,6 +900,7 @@ async function toggleTopicCheckbox(key, completed) {
     if (data.success) {
       appState.dashboard = data.dashboard;
       appState.config.completed_topics = data.completed_topics;
+      saveStateCache();
       updateReadinessKpiDom();
     }
   } catch (err) {
@@ -1792,6 +1837,7 @@ async function saveSettingsModal() {
     appState.config.gemini_enabled = geminiEnabled;
     if (geminiKey.trim()) appState.config.gemini_api_key = geminiKey.trim();
   }
+  saveStateCache();
 
   closeSettingsModal();
   showToast("Settings saved!");
@@ -1810,6 +1856,7 @@ async function saveSettingsModal() {
     if (data.assessments) appState.assessments = data.assessments;
     if (data.dashboard) appState.dashboard = data.dashboard;
     if (data.config) appState.config = data.config;
+    saveStateCache();
     renderDashboard();
     renderWeekCalendar();
   } catch (err) {
@@ -1861,6 +1908,7 @@ async function finishOnboarding() {
 
   localStorage.setItem("quizradar_onboarding_done", "true");
   appState.config.onboarding_completed = true;
+  saveStateCache();
   closeOnboardingModal();
   switchMainView("dashboard");
   showToast("Setup saved! Your Dashboard & Calendar are ready.");
@@ -1879,6 +1927,7 @@ async function finishOnboarding() {
     if (data.assessments) appState.assessments = data.assessments;
     if (data.dashboard) appState.dashboard = data.dashboard;
     if (data.config) appState.config = data.config;
+    saveStateCache();
     renderDashboard();
     renderWeekCalendar();
   } catch (err) {
@@ -1898,6 +1947,7 @@ async function triggerFullSync() {
     if (data.assessments) appState.assessments = data.assessments;
     if (data.dashboard) appState.dashboard = data.dashboard;
     if (data.config) appState.config = data.config;
+    saveStateCache();
 
     updateTopBarAndUser();
     renderDashboard();
@@ -1917,6 +1967,7 @@ async function syncGoogleCalendarOnly() {
     const data = await res.json();
     if (data.assessments) appState.assessments = data.assessments;
     if (data.dashboard) appState.dashboard = data.dashboard;
+    saveStateCache();
     renderDashboard();
     renderWeekCalendar();
     showToast(data.report?.message || "Synced upcoming exams to Google Calendar!");
@@ -1954,6 +2005,7 @@ async function submitCreateCustomEvent() {
     const data = await res.json();
     if (data.success) {
       appState.config.custom_events = data.custom_events;
+      saveStateCache();
       closeCreateEventModal();
       const [y, m, d] = date_iso.split("-").map(Number);
       selectDateInMiniCal(y, m - 1, d);
@@ -1970,6 +2022,7 @@ async function deleteCustomEvent(id) {
     const data = await res.json();
     if (data.success) {
       appState.config.custom_events = data.custom_events;
+      saveStateCache();
       renderWeekCalendar();
       showToast("Removed custom event.");
     }

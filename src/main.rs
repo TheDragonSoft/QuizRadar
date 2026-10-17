@@ -70,21 +70,9 @@ async fn main() {
     let listener =
         listener.expect("Could not bind to any available port (5000, 5050, 3000, 8080)");
 
-    let mut config = load_app_config();
+    let config = load_app_config();
     let schedule = parser::load_schedule();
     let cached_emails = gmail::load_cached_emails();
-
-    // Check existing Google authentication profile on startup
-    let profile = auth::fetch_user_profile().await;
-    if profile.authenticated {
-        config.user_email = profile.email.clone();
-        config.user_name = profile.name.clone();
-        config.user_picture = profile.picture.clone();
-        if config.last_gmail_sync.is_none() {
-            config.last_gmail_sync = Some("2026-10-17 19:35".to_string());
-        }
-        save_app_config(&config);
-    }
 
     let initial_assessments =
         parser::process_all_emails(&cached_emails, &schedule, &config, false).await;
@@ -96,6 +84,22 @@ async fn main() {
         assessments: Arc::new(RwLock::new(initial_assessments)),
     };
 
+    // Refresh Google authentication profile in the background so startup is 0ms
+    let bg_state = state.clone();
+    tokio::spawn(async move {
+        let profile = auth::fetch_user_profile().await;
+        if profile.authenticated {
+            let mut cfg = bg_state.config.write().await;
+            cfg.user_email = profile.email.clone();
+            cfg.user_name = profile.name.clone();
+            cfg.user_picture = profile.picture.clone();
+            if cfg.last_gmail_sync.is_none() {
+                cfg.last_gmail_sync = Some("2026-10-17 19:35".to_string());
+            }
+            save_app_config(&cfg);
+        }
+    });
+
     println!("====================================================================");
     println!("🚀 QuizRadar v2.0 — Standalone Rust Academic Dashboard & Calendar");
     println!("📍 Local App URL: http://127.0.0.1:{}", selected_port);
@@ -105,7 +109,7 @@ async fn main() {
 
     let open_port = selected_port;
     tokio::spawn(async move {
-        tokio::time::sleep(tokio::time::Duration::from_millis(450)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
         let _ = open::that(format!("http://127.0.0.1:{}", open_port));
     });
 
@@ -161,23 +165,37 @@ async fn serve_icon_svg() -> Response {
         header::CONTENT_TYPE,
         HeaderValue::from_static("image/svg+xml; charset=utf-8"),
     );
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=86400"),
+    );
     (StatusCode::OK, headers, content).into_response()
 }
 
 async fn get_full_state(State(state): State<SharedAppState>) -> Json<Value> {
-    let profile = auth::fetch_user_profile().await;
-    let mut cfg = state.config.write().await;
-    if profile.authenticated {
-        cfg.user_email = profile.email.clone();
-        cfg.user_name = profile.name.clone();
-        cfg.user_picture = profile.picture.clone();
-    }
+    let cfg = state.config.read().await.clone();
+    let profile = auth::get_cached_user_profile(&cfg);
     let schedule = state.schedule.read().await.clone();
     let assessments = state.assessments.read().await.clone();
     let dashboard = parser::build_dashboard_summary(&assessments, &cfg);
 
+    // If token exists on disk but user_email wasn't cached yet, refresh profile in background
+    if profile.authenticated && profile.email.is_none() {
+        let bg_state = state.clone();
+        tokio::spawn(async move {
+            let live = auth::fetch_user_profile().await;
+            if live.authenticated {
+                let mut wcfg = bg_state.config.write().await;
+                wcfg.user_email = live.email;
+                wcfg.user_name = live.name;
+                wcfg.user_picture = live.picture;
+                save_app_config(&wcfg);
+            }
+        });
+    }
+
     Json(json!({
-        "config": *cfg,
+        "config": cfg,
         "auth": profile,
         "schedule": schedule,
         "assessments": assessments,
@@ -186,8 +204,8 @@ async fn get_full_state(State(state): State<SharedAppState>) -> Json<Value> {
 }
 
 async fn get_legacy_status(State(state): State<SharedAppState>) -> Json<Value> {
-    let profile = auth::fetch_user_profile().await;
     let cfg = state.config.read().await;
+    let profile = auth::get_cached_user_profile(&cfg);
     let assessments = state.assessments.read().await;
     let upcoming_count = assessments.iter().filter(|a| a.is_upcoming).count();
 

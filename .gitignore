@@ -2,10 +2,16 @@
 /target/
 **/*.rs.bk
 
-# Sensitive Google OAuth credentials (DO NOT COMMIT)
+# Sensitive Google OAuth credentials & local user config (DO NOT COMMIT)
 token.json
 credentials.json
 client_secret*.json
+.env
+data/app_config.json
+
+# Agent skill caches
+.agents/
+skills-lock.json
 
 # Python cache & logs
 __pycache__/

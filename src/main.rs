@@ -1,25 +1,59 @@
+pub mod auth;
+pub mod gcal;
+pub mod gemini;
+pub mod gmail;
+pub mod models;
+pub mod parser;
+
 use axum::{
-    extract::Path,
+    extract::{Path, Query, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
-    response::{Html, IntoResponse, Response},
-    routing::{get, post},
+    response::{Html, IntoResponse, Redirect, Response},
+    routing::{delete, get, post},
     Json, Router,
 };
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::{fs, net::SocketAddr};
+use models::{AppConfig, Assessment, CustomCalendarEvent, ScheduleData};
+use serde::Deserialize;
+use serde_json::{json, Value};
+use std::{
+    collections::HashMap,
+    fs,
+    net::SocketAddr,
+    sync::Arc,
+};
+use tokio::sync::RwLock;
 use tower_http::services::ServeDir;
 
-#[allow(dead_code)]
-#[derive(Debug, Serialize, Deserialize)]
-struct ScheduleData {
-    semester: String,
-    courses: Vec<Value>,
-    slots: Vec<Value>,
+const CONFIG_FILE: &str = "data/app_config.json";
+
+#[derive(Clone)]
+pub struct SharedAppState {
+    pub port: u16,
+    pub config: Arc<RwLock<AppConfig>>,
+    pub schedule: Arc<RwLock<ScheduleData>>,
+    pub assessments: Arc<RwLock<Vec<Assessment>>>,
+}
+
+fn load_app_config() -> AppConfig {
+    if let Ok(raw) = fs::read_to_string(CONFIG_FILE) {
+        if let Ok(cfg) = serde_json::from_str::<AppConfig>(&raw) {
+            return cfg;
+        }
+    }
+    AppConfig::default()
+}
+
+fn save_app_config(cfg: &AppConfig) {
+    let _ = fs::create_dir_all("data");
+    if let Ok(json) = serde_json::to_string_pretty(cfg) {
+        let _ = fs::write(CONFIG_FILE, json);
+    }
 }
 
 #[tokio::main]
 async fn main() {
+    let _ = fs::create_dir_all("data");
+
     let ports = [5000, 5050, 3000, 8080];
     let mut selected_port = 5000;
     let mut listener = None;
@@ -33,156 +67,431 @@ async fn main() {
         }
     }
 
-    let listener = listener.expect("Could not bind to any available port (5000, 5050, 3000, 8080)");
+    let listener =
+        listener.expect("Could not bind to any available port (5000, 5050, 3000, 8080)");
 
-    println!("==============================================================");
-    println!("🚀 QuizRadar Native Rust Academic Calendar & Quiz Assistant");
-    println!("📍 Running on: http://127.0.0.1:{}", selected_port);
-    println!("📅 Semester: Fall 2026 - MSA University Engineering");
-    println!("==============================================================");
+    let mut config = load_app_config();
+    let schedule = parser::load_schedule();
+    let cached_emails = gmail::load_cached_emails();
 
-    // Automatically open browser on startup
+    // Check existing Google authentication profile on startup
+    let profile = auth::fetch_user_profile().await;
+    if profile.authenticated {
+        config.user_email = profile.email.clone();
+        config.user_name = profile.name.clone();
+        config.user_picture = profile.picture.clone();
+        if config.last_gmail_sync.is_none() {
+            config.last_gmail_sync = Some("2026-10-17 19:35".to_string());
+        }
+        save_app_config(&config);
+    }
+
+    let initial_assessments =
+        parser::process_all_emails(&cached_emails, &schedule, &config, false).await;
+
+    let state = SharedAppState {
+        port: selected_port,
+        config: Arc::new(RwLock::new(config)),
+        schedule: Arc::new(RwLock::new(schedule)),
+        assessments: Arc::new(RwLock::new(initial_assessments)),
+    };
+
+    println!("====================================================================");
+    println!("🚀 QuizRadar v2.0 — Standalone Rust Academic Dashboard & Calendar");
+    println!("📍 Local App URL: http://127.0.0.1:{}", selected_port);
+    println!("🤖 AI Engine: Gemini Schedule-Aware Email & Timetable Analyzer");
+    println!("📅 Semester: Fall 2026 (MSA University Engineering)");
+    println!("====================================================================");
+
+    let open_port = selected_port;
     tokio::spawn(async move {
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        let _ = open::that(format!("http://127.0.0.1:{}", selected_port));
+        tokio::time::sleep(tokio::time::Duration::from_millis(450)).await;
+        let _ = open::that(format!("http://127.0.0.1:{}", open_port));
     });
 
-    // Build the Axum router
     let app = Router::new()
         .route("/", get(serve_index))
+        .route("/api/state", get(get_full_state))
+        .route("/api/status", get(get_legacy_status))
         .route("/api/schedule", get(get_schedule))
         .route("/api/quizzes", get(get_quizzes))
+        .route("/api/auth/google/login", get(google_login_redirect))
+        .route("/api/auth/google/url", get(google_login_url))
+        .route("/api/auth/callback", get(google_oauth_callback))
+        .route("/api/auth/logout", post(google_logout))
+        .route("/api/onboarding/complete", post(complete_onboarding))
+        .route("/api/onboarding/reset", post(reset_onboarding))
+        .route("/api/sync", post(trigger_full_sync))
+        .route("/api/gcal/sync", post(trigger_gcal_sync))
+        .route("/api/study/toggle", post(toggle_study_topic))
+        .route("/api/events/custom", post(add_custom_event))
+        .route("/api/events/custom/:id", delete(delete_custom_event))
         .route("/api/calendar/ics/:id", get(download_ics))
         .route("/api/calendar/ics_all", get(download_all_ics))
-        .route("/api/sync", post(trigger_sync))
-        .nest_service("/static", ServeDir::new("static"));
+        .route("/static/app.js", get(serve_app_js))
+        .nest_service("/static", ServeDir::new("static"))
+        .with_state(state);
 
     axum::serve(listener, app).await.unwrap();
 }
 
 async fn serve_index() -> Html<String> {
     let content = fs::read_to_string("static/index.html")
-        .unwrap_or_else(|_| "<h1>QuizRadar UI Not Found</h1>".to_string());
+        .unwrap_or_else(|_| include_str!("../static/index.html").to_string());
     Html(content)
 }
 
-async fn get_schedule() -> Json<Value> {
-    let content = fs::read_to_string("data/schedule.json")
-        .unwrap_or_else(|_| r#"{"courses":[], "slots":[]}"#.to_string());
-    let data: Value = serde_json::from_str(&content).unwrap_or(Value::Null);
-    Json(data)
+async fn serve_app_js() -> Response {
+    let content = fs::read_to_string("static/app.js")
+        .unwrap_or_else(|_| include_str!("../static/app.js").to_string());
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/javascript; charset=utf-8"),
+    );
+    (StatusCode::OK, headers, content).into_response()
 }
 
-async fn get_quizzes() -> Json<Value> {
-    let content = fs::read_to_string("data/quizzes.json")
-        .unwrap_or_else(|_| "[]".to_string());
-    let mut quizzes: Vec<Value> = serde_json::from_str(&content).unwrap_or_default();
+async fn get_full_state(State(state): State<SharedAppState>) -> Json<Value> {
+    let profile = auth::fetch_user_profile().await;
+    let mut cfg = state.config.write().await;
+    if profile.authenticated {
+        cfg.user_email = profile.email.clone();
+        cfg.user_name = profile.name.clone();
+        cfg.user_picture = profile.picture.clone();
+    }
+    let schedule = state.schedule.read().await.clone();
+    let assessments = state.assessments.read().await.clone();
+    let dashboard = parser::build_dashboard_summary(&assessments, &cfg);
 
-    for q in &mut quizzes {
-        if let Some(obj) = q.as_object_mut() {
-            let course = obj.get("course_id").and_then(|v| v.as_str()).unwrap_or("CSE");
-            let title = obj.get("title").and_then(|v| v.as_str()).unwrap_or("Quiz");
-            let date = obj.get("date_iso").and_then(|v| v.as_str()).unwrap_or("2026-10-19").replace("-", "");
-            let room = obj.get("room").and_then(|v| v.as_str()).unwrap_or("");
-            let instructor = obj.get("instructor").and_then(|v| v.as_str()).unwrap_or("");
+    Json(json!({
+        "config": *cfg,
+        "auth": profile,
+        "schedule": schedule,
+        "assessments": assessments,
+        "dashboard": dashboard,
+    }))
+}
 
-            let cal_title = urlencoding::encode(&format!("[{}] {}", course, title));
-            let dates = format!("{}T090000/{}T103000", date, date);
-            let details = urlencoding::encode(&format!(
-                "Course: {}\nRoom: {}\nInstructor: {}\n\nSynced with QuizRadar & University Moodle",
-                course, room, instructor
-            ));
-            let location = urlencoding::encode(&format!("MSA University - Room {}", room));
+async fn get_legacy_status(State(state): State<SharedAppState>) -> Json<Value> {
+    let profile = auth::fetch_user_profile().await;
+    let cfg = state.config.read().await;
+    let assessments = state.assessments.read().await;
+    let upcoming_count = assessments.iter().filter(|a| a.is_upcoming).count();
 
-            let google_url = format!(
-                "https://calendar.google.com/calendar/render?action=TEMPLATE&text={}&dates={}&details={}&location={}&sf=true&output=xml",
-                cal_title, dates, details, location
-            );
-            obj.insert("google_cal_url".to_string(), Value::String(google_url));
+    Json(json!({
+        "authenticated": profile.authenticated,
+        "email": profile.email.or_else(|| cfg.user_email.clone()).unwrap_or_else(|| "Not signed in".to_string()),
+        "total_quizzes": assessments.len(),
+        "upcoming_count": upcoming_count,
+        "last_sync": cfg.last_gmail_sync.clone().unwrap_or_else(|| "Never".to_string())
+    }))
+}
+
+async fn get_schedule(State(state): State<SharedAppState>) -> Json<ScheduleData> {
+    let schedule = state.schedule.read().await.clone();
+    Json(schedule)
+}
+
+async fn get_quizzes(State(state): State<SharedAppState>) -> Json<Vec<Assessment>> {
+    let assessments = state.assessments.read().await.clone();
+    Json(assessments)
+}
+
+async fn google_login_redirect(State(state): State<SharedAppState>) -> Redirect {
+    let url = auth::build_google_oauth_url(state.port, true);
+    Redirect::temporary(&url)
+}
+
+async fn google_login_url(State(state): State<SharedAppState>) -> Json<Value> {
+    let url = auth::build_google_oauth_url(state.port, true);
+    Json(json!({ "url": url }))
+}
+
+async fn google_oauth_callback(
+    State(state): State<SharedAppState>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    if let Some(code) = params.get("code") {
+        match auth::exchange_code_for_token(code, state.port).await {
+            Ok(_) => {
+                let profile = auth::fetch_user_profile().await;
+                let mut cfg = state.config.write().await;
+                cfg.user_email = profile.email.clone();
+                cfg.user_name = profile.name.clone();
+                cfg.user_picture = profile.picture.clone();
+                save_app_config(&cfg);
+                drop(cfg);
+
+                // Automatically scan Gmail and sync on sign-in
+                let _ = run_sync_pipeline(&state, true).await;
+
+                return Redirect::temporary("/?auth=success").into_response();
+            }
+            Err(err) => {
+                let html = format!(
+                    "<h2>Google Sign-In Error</h2><p>{}</p><p><a href=\"/\">Return to QuizRadar</a></p>",
+                    err
+                );
+                return Html(html).into_response();
+            }
         }
     }
-
-    Json(Value::Array(quizzes))
+    Redirect::temporary("/?auth=cancelled").into_response()
 }
 
-async fn download_ics(Path(id): Path<String>) -> Response {
-    let content = fs::read_to_string("data/quizzes.json").unwrap_or_else(|_| "[]".to_string());
-    let quizzes: Vec<Value> = serde_json::from_str(&content).unwrap_or_default();
-    let quiz = quizzes.into_iter().find(|q| q.get("id").and_then(|v| v.as_str()) == Some(&id));
-
-    if let Some(q) = quiz {
-        let course = q.get("course_id").and_then(|v| v.as_str()).unwrap_or("CSE");
-        let title = q.get("title").and_then(|v| v.as_str()).unwrap_or("Quiz");
-        let date_clean = q.get("date_iso").and_then(|v| v.as_str()).unwrap_or("20261019").replace("-", "");
-        let room = q.get("room").and_then(|v| v.as_str()).unwrap_or("Lecture Hall");
-        let instructor = q.get("instructor").and_then(|v| v.as_str()).unwrap_or("");
-
-        let ics = format!(
-            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//QuizRadar//Rust//EN\r\nBEGIN:VEVENT\r\nUID:quiz-{}@quizradar.local\r\nDTSTART;VALUE=DATE:{}\r\nDTEND;VALUE=DATE:{}\r\nSUMMARY:[{}] {}\r\nDESCRIPTION:Instructor: {}\\nLocation: Room {}\r\nLOCATION:MSA University - Room {}\r\nBEGIN:VALARM\r\nTRIGGER:-P1D\r\nACTION:DISPLAY\r\nDESCRIPTION:Upcoming {} Quiz Tomorrow!\r\nEND:VALARM\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
-            id, date_clean, date_clean, course, title, instructor, room, room, course
-        );
-
-        let filename = format!("{}_{}.ics", course, title.replace(' ', "_"));
-        let mut headers = HeaderMap::new();
-        headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/calendar"));
-        headers.insert(
-            header::CONTENT_DISPOSITION,
-            HeaderValue::from_str(&format!("attachment; filename=\"{}\"", filename)).unwrap(),
-        );
-
-        (StatusCode::OK, headers, ics).into_response()
-    } else {
-        (StatusCode::NOT_FOUND, "Quiz not found").into_response()
-    }
+async fn google_logout(State(state): State<SharedAppState>) -> Json<Value> {
+    let _ = fs::remove_file("token.json");
+    let mut cfg = state.config.write().await;
+    cfg.user_email = None;
+    cfg.user_name = None;
+    cfg.user_picture = None;
+    cfg.onboarding_completed = false;
+    save_app_config(&cfg);
+    Json(json!({ "success": true }))
 }
 
-async fn download_all_ics() -> Response {
-    let content = fs::read_to_string("data/quizzes.json").unwrap_or_else(|_| "[]".to_string());
-    let quizzes: Vec<Value> = serde_json::from_str(&content).unwrap_or_default();
+#[derive(Debug, Deserialize)]
+pub struct OnboardingPayload {
+    pub auto_sync_gcal: Option<bool>,
+    pub sync_weekly_classes_to_gcal: Option<bool>,
+    pub gemini_enabled: Option<bool>,
+    pub gemini_api_key: Option<String>,
+}
 
-    let mut ics = String::from(
-        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//QuizRadar//Rust All//EN\r\nX-WR-CALNAME:QuizRadar Fall 2026 Quizzes\r\n",
+async fn complete_onboarding(
+    State(state): State<SharedAppState>,
+    Json(payload): Json<OnboardingPayload>,
+) -> Json<Value> {
+    let cfg_snapshot = {
+        let mut cfg = state.config.write().await;
+        cfg.onboarding_completed = true;
+        if let Some(v) = payload.auto_sync_gcal {
+            cfg.auto_sync_gcal = v;
+        }
+        if let Some(v) = payload.sync_weekly_classes_to_gcal {
+            cfg.sync_weekly_classes_to_gcal = v;
+        }
+        if let Some(v) = payload.gemini_enabled {
+            cfg.gemini_enabled = v;
+        }
+        if let Some(k) = payload.gemini_api_key {
+            if !k.trim().is_empty() {
+                cfg.gemini_api_key = Some(k.trim().to_string());
+            }
+        }
+        save_app_config(&cfg);
+        cfg.clone()
+    };
+
+    let assessments = state.assessments.read().await.clone();
+    let dashboard = parser::build_dashboard_summary(&assessments, &cfg_snapshot);
+
+    // Run network sync in the background so the UI transitions to Dashboard instantaneously
+    let bg_state = state.clone();
+    tokio::spawn(async move {
+        let _ = run_sync_pipeline(&bg_state, false).await;
+    });
+
+    Json(json!({
+        "success": true,
+        "assessments": assessments,
+        "dashboard": dashboard,
+        "config": cfg_snapshot
+    }))
+}
+
+async fn reset_onboarding(State(state): State<SharedAppState>) -> Json<Value> {
+    let mut cfg = state.config.write().await;
+    cfg.onboarding_completed = false;
+    save_app_config(&cfg);
+    Json(json!({ "success": true }))
+}
+
+async fn trigger_full_sync(State(state): State<SharedAppState>) -> Json<Value> {
+    let res = run_sync_pipeline(&state, true).await;
+    Json(res)
+}
+
+async fn trigger_gcal_sync(State(state): State<SharedAppState>) -> Json<Value> {
+    let mut cfg = state.config.write().await;
+    let mut assessments = state.assessments.write().await;
+    let report = gcal::sync_assessments_to_google_calendar(&mut assessments, &mut cfg).await;
+    save_app_config(&cfg);
+    let dashboard = parser::build_dashboard_summary(&assessments, &cfg);
+
+    Json(json!({
+        "success": report.success,
+        "report": report,
+        "assessments": *assessments,
+        "dashboard": dashboard
+    }))
+}
+
+async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Value {
+    let emails = match gmail::sync_gmail_messages().await {
+        Ok(list) => list,
+        Err(_) => gmail::load_cached_emails(),
+    };
+
+    let schedule = state.schedule.read().await.clone();
+    let mut cfg = state.config.write().await;
+    cfg.last_gmail_sync = Some(
+        chrono::Local::now()
+            .format("%Y-%m-%d %H:%M")
+            .to_string(),
     );
 
-    for q in quizzes {
-        let id = q.get("id").and_then(|v| v.as_str()).unwrap_or("1");
-        let course = q.get("course_id").and_then(|v| v.as_str()).unwrap_or("CSE");
-        let title = q.get("title").and_then(|v| v.as_str()).unwrap_or("Quiz");
-        let date_clean = q.get("date_iso").and_then(|v| v.as_str()).unwrap_or("20261019").replace("-", "");
-        let room = q.get("room").and_then(|v| v.as_str()).unwrap_or("Lecture Hall");
-        let instructor = q.get("instructor").and_then(|v| v.as_str()).unwrap_or("");
+    let mut parsed =
+        parser::process_all_emails(&emails, &schedule, &cfg, use_live_gemini).await;
 
-        ics.push_str(&format!(
-            "BEGIN:VEVENT\r\nUID:quiz-{}@quizradar.local\r\nDTSTART;VALUE=DATE:{}\r\nDTEND;VALUE=DATE:{}\r\nSUMMARY:[{}] {}\r\nDESCRIPTION:Instructor: {}\\nLocation: Room {}\r\nLOCATION:MSA University - Room {}\r\nBEGIN:VALARM\r\nTRIGGER:-P1D\r\nACTION:DISPLAY\r\nDESCRIPTION:Upcoming {} Quiz Tomorrow!\r\nEND:VALARM\r\nEND:VEVENT\r\n",
-            id, date_clean, date_clean, course, title, instructor, room, room, course
-        ));
+    let gcal_report = if cfg.auto_sync_gcal {
+        Some(gcal::sync_assessments_to_google_calendar(&mut parsed, &mut cfg).await)
+    } else {
+        None
+    };
+
+    save_app_config(&cfg);
+    let dashboard = parser::build_dashboard_summary(&parsed, &cfg);
+    let upcoming_count = parsed.iter().filter(|a| a.is_upcoming).count();
+
+    let mut assessments_lock = state.assessments.write().await;
+    *assessments_lock = parsed.clone();
+
+    json!({
+        "success": true,
+        "message": format!(
+            "Scanned {} university emails with Gemini Schedule Reasoning! Found {} upcoming exams & quizzes.",
+            emails.len(),
+            upcoming_count
+        ),
+        "gcal_report": gcal_report,
+        "assessments": parsed,
+        "dashboard": dashboard,
+        "config": *cfg
+    })
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ToggleTopicPayload {
+    pub key: String,
+    pub completed: bool,
+}
+
+async fn toggle_study_topic(
+    State(state): State<SharedAppState>,
+    Json(payload): Json<ToggleTopicPayload>,
+) -> Json<Value> {
+    let mut cfg = state.config.write().await;
+    cfg.completed_topics.insert(payload.key, payload.completed);
+    save_app_config(&cfg);
+
+    let assessments = state.assessments.read().await;
+    let dashboard = parser::build_dashboard_summary(&assessments, &cfg);
+
+    Json(json!({
+        "success": true,
+        "dashboard": dashboard,
+        "completed_topics": cfg.completed_topics
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateCustomEventPayload {
+    pub title: String,
+    pub course_id: String,
+    pub event_type: String,
+    pub date_iso: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub room: Option<String>,
+    pub notes: Option<String>,
+}
+
+async fn add_custom_event(
+    State(state): State<SharedAppState>,
+    Json(payload): Json<CreateCustomEventPayload>,
+) -> Json<Value> {
+    let mut cfg = state.config.write().await;
+    let id = format!("custom-{}", chrono::Utc::now().timestamp_millis());
+    let color = match payload.course_id.as_str() {
+        "GSE211" => "#4285f4",
+        "CSE263" => "#8e24aa",
+        "CSE261" => "#0f9d58",
+        "CSE252" => "#f4b400",
+        "CSE241" => "#e67c73",
+        "CSE262" => "#00acc1",
+        _ => "#ec4899",
+    };
+
+    let ev = CustomCalendarEvent {
+        id,
+        title: payload.title,
+        course_id: payload.course_id,
+        event_type: payload.event_type,
+        date_iso: payload.date_iso,
+        start_time: payload.start_time,
+        end_time: payload.end_time,
+        room: payload.room.unwrap_or_else(|| "Study Room / Library".to_string()),
+        notes: payload.notes.unwrap_or_default(),
+        color: color.to_string(),
+    };
+
+    cfg.custom_events.push(ev);
+    save_app_config(&cfg);
+
+    Json(json!({
+        "success": true,
+        "custom_events": cfg.custom_events
+    }))
+}
+
+async fn delete_custom_event(
+    State(state): State<SharedAppState>,
+    Path(id): Path<String>,
+) -> Json<Value> {
+    let mut cfg = state.config.write().await;
+    cfg.custom_events.retain(|e| e.id != id);
+    save_app_config(&cfg);
+
+    Json(json!({
+        "success": true,
+        "custom_events": cfg.custom_events
+    }))
+}
+
+async fn download_ics(
+    State(state): State<SharedAppState>,
+    Path(id): Path<String>,
+) -> Response {
+    let assessments = state.assessments.read().await;
+    if let Some(a) = assessments.iter().find(|x| x.id == id) {
+        let ics = gcal::generate_single_ics(a);
+        let filename = format!("{}_{}.ics", a.course_id, a.title.replace(' ', "_"));
+        let mut headers = HeaderMap::new();
+        headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/calendar"));
+        if let Ok(disp) = HeaderValue::from_str(&format!("attachment; filename=\"{}\"", filename)) {
+            headers.insert(header::CONTENT_DISPOSITION, disp);
+        }
+        (StatusCode::OK, headers, ics).into_response()
+    } else {
+        (StatusCode::NOT_FOUND, "Assessment not found").into_response()
     }
-    ics.push_str("END:VCALENDAR\r\n");
+}
 
+async fn download_all_ics(State(state): State<SharedAppState>) -> Response {
+    let assessments = state.assessments.read().await;
+    let ics = gcal::generate_all_ics(&assessments);
     let mut headers = HeaderMap::new();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/calendar"));
     headers.insert(
         header::CONTENT_DISPOSITION,
-        HeaderValue::from_static("attachment; filename=\"QuizRadar_Fall2026_All.ics\""),
+        HeaderValue::from_static("attachment; filename=\"QuizRadar_Upcoming_Exams.ics\""),
     );
-
     (StatusCode::OK, headers, ics).into_response()
 }
 
-async fn trigger_sync() -> Json<Value> {
-    // Sync with Gmail via python sync script if needed or refresh
-    let _ = tokio::process::Command::new("python")
-        .arg("fetch_quizzes.py")
-        .output()
-        .await;
-
-    Json(serde_json::json!({
-        "success": true,
-        "message": "Gmail sync refreshed successfully! Schedule & upcoming quizzes up to date."
-    }))
-}
-
-mod urlencoding {
+pub mod urlencoding {
     pub fn encode(s: &str) -> String {
         let mut result = String::with_capacity(s.len() * 3);
         for b in s.bytes() {
@@ -190,7 +499,7 @@ mod urlencoding {
                 b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
                     result.push(b as char);
                 }
-                b' ' => result.push('+'),
+                b' ' => result.push_str("%20"),
                 _ => {
                     result.push_str(&format!("%{:02X}", b));
                 }

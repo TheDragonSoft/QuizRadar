@@ -3,359 +3,995 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Google Calendar</title>
-  
-  <!-- Tailwind CSS -->
+  <title>QuizRadar — Academic Dashboard & Calendar</title>
+
+  <!-- Tailwind CSS with class-based Dark Mode -->
   <script src="https://cdn.tailwindcss.com"></script>
-  
-  <!-- Google Fonts: Roboto & Google Sans -->
+  <script>
+    tailwind.config = {
+      darkMode: 'class'
+    };
+  </script>
+
+  <!-- Google Fonts: Inter (Single Unified Product UI Family per Impeccable Operate Mode) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Google+Sans:wght@400;500;700&display=swap" rel="stylesheet">
-  
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
 
   <style>
+    :root {
+      --accent: #1a73e8;
+      --accent-hover: #1557b0;
+      --surface-bg: #f8fafc;
+      --panel-bg: #ffffff;
+      --border-subtle: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+      --ease-out-quart: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    html.dark {
+      --accent: #3b82f6;
+      --accent-hover: #60a5fa;
+      --surface-bg: #0b0f19;
+      --panel-bg: #111827;
+      --border-subtle: #1e293b;
+      --border-strong: #334155;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+    }
+
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
     }
+
     body {
-      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      color: #3c4043;
-      background-color: #ffffff;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text-primary);
+      background-color: var(--surface-bg);
+      caret-color: var(--accent);
       overflow: hidden;
-      user-select: none;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      transition: background-color 180ms var(--ease-out-quart), color 180ms var(--ease-out-quart);
     }
-    .font-google {
-      font-family: 'Google Sans', 'Roboto', sans-serif;
+
+    /* Browser surfaces themed from palette (Impeccable Craft Floor) */
+    ::selection {
+      background-color: rgba(26, 115, 232, 0.16);
+      color: #1557b0;
     }
-    /* Grid dimensions: 1 hour = 52px */
-    .time-slot-height {
-      height: 52px;
+    html.dark ::selection {
+      background-color: rgba(59, 130, 246, 0.28);
+      color: #dbeafe;
     }
-    .grid-border-bottom {
-      border-bottom: 1px solid #dadce0;
+
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
     }
-    .grid-border-right {
-      border-right: 1px solid #dadce0;
+
+    a, button {
+      text-underline-offset: 3px;
     }
-    /* Event card styling exactly like Google Calendar */
-    .gcal-event {
+
+    h1, h2, h3, h4 {
+      text-wrap: balance;
+      letter-spacing: -0.02em;
+    }
+
+    .tabular-nums {
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Smooth View & Modal Transitions (Impeccable Animate) */
+    .view-transition {
+      animation: viewEnter 220ms var(--ease-out-expo) both;
+    }
+
+    @keyframes viewEnter {
+      from {
+        opacity: 0;
+        transform: translateY(4px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .modal-backdrop {
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 200ms var(--ease-out-quart);
+    }
+
+    .modal-backdrop.is-open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-panel {
+      transform: scale(0.97) translateY(6px);
+      opacity: 0;
+      transition: transform 240ms var(--ease-out-expo), opacity 200ms var(--ease-out-quart);
+    }
+
+    .modal-backdrop.is-open .modal-panel {
+      transform: scale(1) translateY(0);
+      opacity: 1;
+    }
+
+    /* Smooth Collapsible Sidebar */
+    #left-sidebar {
+      transition: width 240ms var(--ease-out-expo), transform 240ms var(--ease-out-expo), opacity 180ms var(--ease-out-quart), padding 240ms var(--ease-out-expo);
+    }
+
+    #left-sidebar.sidebar-collapsed {
+      width: 0 !important;
+      padding-left: 0 !important;
+      padding-right: 0 !important;
+      border-right-width: 0 !important;
+      opacity: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    /* Interactive Card Micro-feedback */
+    .interactive-card {
+      transition: border-color 160ms var(--ease-out-quart), transform 180ms var(--ease-out-expo), background-color 160ms var(--ease-out-quart);
+    }
+    @media (hover: hover) {
+      .interactive-card:hover {
+        transform: translateY(-1px);
+      }
+    }
+    .interactive-card:active {
+      transform: translateY(0) scale(0.996);
+    }
+
+    /* Google Calendar Week Grid dimensions: 1 hour = 56px */
+    .hour-row {
+      height: 56px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .day-col {
+      border-right: 1px solid var(--border-subtle);
+      position: relative;
+    }
+
+    /* Calendar Event Cards: 1px full border (Craft Floor) */
+    .gcal-card {
       position: absolute;
-      left: 2px;
-      right: 3px;
-      border-radius: 4px;
-      padding: 4px 6px;
+      border-radius: 8px;
+      padding: 5px 8px;
       overflow: hidden;
       cursor: pointer;
       line-height: 1.25;
-      transition: filter 0.1s ease, box-shadow 0.1s ease;
-      z-index: 5;
+      border: 1px solid transparent;
+      transition: transform 160ms var(--ease-out-expo), box-shadow 160ms var(--ease-out-quart), filter 160ms ease;
+      z-index: 10;
     }
-    .gcal-event:hover {
-      filter: brightness(0.96);
-      box-shadow: 0 1px 3px 0 rgba(60,64,67,0.3), 0 4px 8px 3px rgba(60,64,67,0.15);
-      z-index: 20;
+
+    @media (hover: hover) {
+      .gcal-card:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px -4px rgba(15, 23, 42, 0.16);
+        z-index: 30;
+      }
+      html.dark .gcal-card:hover {
+        box-shadow: 0 6px 16px -4px rgba(0, 0, 0, 0.5);
+      }
     }
-    .create-btn-shadow {
-      box-shadow: 0 1px 2px 0 rgba(60,64,67,0.30), 0 1px 3px 1px rgba(60,64,67,0.15);
+
+    .gcal-card.has-exam-glow {
+      box-shadow: 0 3px 10px rgba(220, 38, 38, 0.14);
     }
-    .create-btn-shadow:hover {
-      box-shadow: 0 1px 3px 0 rgba(60,64,67,0.30), 0 4px 8px 3px rgba(60,64,67,0.15);
+
+    /* Toast Transition */
+    #toast-notification {
+      transform: translateY(12px);
+      opacity: 0;
+      pointer-events: none;
+      transition: transform 240ms var(--ease-out-expo), opacity 180ms var(--ease-out-quart);
     }
-    /* Week selection pill in mini calendar */
-    .mini-week-row {
-      border-radius: 14px;
-      background-color: #e8f0fe;
+    #toast-notification.toast-visible {
+      transform: translateY(0);
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* Respect Reduced Motion (Impeccable Animate) */
+    @media (prefers-reduced-motion: reduce) {
+      *, ::before, ::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+      .interactive-card:hover, .gcal-card:hover {
+        transform: none !important;
+      }
+    }
+
+    /* Custom themed scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+    html.dark ::-webkit-scrollbar-thumb {
+      background: #334155;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
     }
   </style>
 </head>
-<body class="h-screen w-screen flex flex-col">
+<body class="h-screen w-screen flex flex-col bg-[#f8fafc] dark:bg-[#0b0f19] select-none">
 
-  <!-- ================= TOP GOOGLE BAR ================= -->
-  <header class="h-16 border-b border-[#dadce0] px-4 flex items-center justify-between shrink-0 bg-white z-30">
-    
-    <!-- Left: Hamburger, Calendar Logo, Title, Today, Nav, Month/Year -->
-    <div class="flex items-center space-x-3 sm:space-x-4">
-      <button onclick="toggleSidebar()" class="p-2 rounded-full hover:bg-[#f1f3f4] text-[#5f6368] transition" title="Main menu">
-        <svg class="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
-        </svg>
+  <!-- ================= TOP NAVIGATION BAR ================= -->
+  <header class="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-4 flex items-center justify-between gap-2 shrink-0 z-30">
+    <!-- Left: Sidebar Toggle, Brand Logo, View Switcher, Date Controls -->
+    <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+      <button onclick="toggleSidebar()" class="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-slate-600 dark:text-slate-300 transition cursor-pointer shrink-0" title="Toggle sidebar">
+        <i data-lucide="panel-left" class="w-4 h-4"></i>
       </button>
 
-      <!-- Calendar Logo & Title -->
-      <div class="flex items-center space-x-2.5 cursor-pointer select-none" onclick="location.reload()">
-        <!-- White calendar square with blue/red header & date 30 -->
-        <div class="w-10 h-10 rounded-lg border border-[#dadce0] bg-white flex flex-col items-center justify-between shadow-xs overflow-hidden">
-          <div class="w-full bg-[#1a73e8] text-white text-[9px] font-bold text-center tracking-tight py-0.5 uppercase">
-            OCT
-          </div>
-          <div class="text-base font-google font-bold text-[#3c4043] -mt-1 pb-0.5">
-            18
-          </div>
+      <!-- Dynamic Calendar Icon + Brand -->
+      <div class="flex items-center gap-2.5 pr-1 cursor-pointer shrink-0" onclick="switchMainView('dashboard')">
+        <div class="w-9 h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex flex-col items-center justify-between overflow-hidden">
+          <div id="brand-month-bar" class="w-full bg-[#1a73e8] text-white text-[9px] font-bold text-center py-0.5">Oct</div>
+          <div id="brand-day-num" class="text-sm font-bold tabular-nums text-slate-800 dark:text-slate-100 pb-0.5">17</div>
         </div>
-        <span class="text-[22px] font-google text-[#3c4043] tracking-normal font-normal">Calendar</span>
+        <span class="hidden sm:inline-block text-lg font-bold text-slate-900 dark:text-white tracking-tight">QuizRadar</span>
       </div>
 
-      <!-- "Today" Button -->
-      <button onclick="goToCurrentWeek()" class="ml-3 px-4 py-2 border border-[#dadce0] rounded-md text-sm font-google font-medium text-[#3c4043] hover:bg-[#f8f9fa] transition">
-        Today
-      </button>
-
-      <!-- Prev / Next Chevrons -->
-      <div class="flex items-center space-x-0.5">
-        <button onclick="changeWeek(-1)" class="p-2 rounded-full hover:bg-[#f1f3f4] text-[#5f6368] transition" title="Previous week">
-          <i data-lucide="chevron-left" class="w-5 h-5"></i>
+      <!-- Primary View Switcher: Dashboard vs Week Calendar -->
+      <div class="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700 shrink-0">
+        <button id="tab-btn-dashboard" onclick="switchMainView('dashboard')" class="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-semibold transition bg-white dark:bg-slate-900 text-[#1a73e8] dark:text-blue-400 shadow-2xs cursor-pointer">
+          <i data-lucide="layout-dashboard" class="w-3.5 h-3.5"></i>
+          <span class="hidden md:inline">Dashboard & Study Guide</span>
+          <span class="md:hidden">Dashboard</span>
         </button>
-        <button onclick="changeWeek(1)" class="p-2 rounded-full hover:bg-[#f1f3f4] text-[#5f6368] transition" title="Next week">
-          <i data-lucide="chevron-right" class="w-5 h-5"></i>
+        <button id="tab-btn-calendar" onclick="switchMainView('calendar')" class="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-semibold transition text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer">
+          <i data-lucide="calendar-days" class="w-3.5 h-3.5"></i>
+          <span class="hidden md:inline">Week Calendar</span>
+          <span class="md:hidden">Calendar</span>
         </button>
       </div>
 
-      <!-- Month Year Display -->
-      <h2 id="calendar-title" class="text-[22px] font-google text-[#3c4043] font-normal pl-2">
-        October 2026
-      </h2>
+      <!-- Calendar Navigation Controls -->
+      <div id="calendar-top-controls" class="hidden items-center gap-1.5 sm:gap-2 pl-1 sm:pl-2 border-l border-slate-200 dark:border-slate-800">
+        <button onclick="goToTodayWeek()" class="h-8 px-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-xs font-medium text-slate-700 dark:text-slate-200 transition cursor-pointer">
+          Today
+        </button>
+        <div class="flex items-center">
+          <button onclick="shiftWeek(-1)" class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition cursor-pointer" title="Previous week">
+            <i data-lucide="chevron-left" class="w-4 h-4"></i>
+          </button>
+          <button onclick="shiftWeek(1)" class="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition cursor-pointer" title="Next week">
+            <i data-lucide="chevron-right" class="w-4 h-4"></i>
+          </button>
+        </div>
+        <h2 id="top-month-year-label" class="hidden lg:block text-sm font-semibold text-slate-800 dark:text-slate-100 min-w-[120px]">October 2026</h2>
+      </div>
     </div>
 
-    <!-- Right: Search, Settings, View Dropdown (Week), Avatar -->
-    <div class="flex items-center space-x-2 sm:space-x-3">
-      <!-- Search -->
-      <button class="p-2.5 rounded-full hover:bg-[#f1f3f4] text-[#5f6368] transition" title="Search">
-        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
-        </svg>
-      </button>
-
-      <!-- Settings -->
-      <button class="p-2.5 rounded-full hover:bg-[#f1f3f4] text-[#5f6368] transition" title="Settings menu">
-        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
-        </svg>
-      </button>
-
-      <!-- View Selector Dropdown: "Week" -->
-      <div class="relative">
-        <button id="view-dropdown-btn" onclick="toggleDropdown()" class="flex items-center space-x-2 px-3.5 py-2 border border-[#dadce0] rounded-md text-sm font-google font-medium text-[#3c4043] hover:bg-[#f8f9fa] transition">
-          <span id="active-view-label">Week</span>
-          <i data-lucide="chevron-down" class="w-4 h-4 text-[#5f6368]"></i>
-        </button>
-        <div id="view-menu" class="absolute right-0 mt-1 w-36 bg-white border border-[#dadce0] rounded-lg shadow-lg py-1.5 hidden z-50">
-          <button onclick="setView('Day')" class="w-full text-left px-4 py-2 text-sm text-[#3c4043] hover:bg-[#f1f3f4]">Day</button>
-          <button onclick="setView('Week')" class="w-full text-left px-4 py-2 text-sm text-[#3c4043] hover:bg-[#f1f3f4] font-semibold flex items-center justify-between">
-            <span>Week</span>
-            <i data-lucide="check" class="w-4 h-4 text-[#1a73e8]"></i>
-          </button>
-          <button onclick="setView('Month')" class="w-full text-left px-4 py-2 text-sm text-[#3c4043] hover:bg-[#f1f3f4]">Month</button>
-        </div>
+    <!-- Right: Search, Sync, .ics, Dark Mode Toggle, Onboarding, Account (Unified h-9 control rhythm) -->
+    <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+      <!-- Search input with "/" keyboard shortcut hint -->
+      <div class="relative hidden lg:block">
+        <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+        <input id="global-search-input" type="text" oninput="handleGlobalSearch(this.value)" placeholder="Search courses, topics..." class="h-9 pl-8 pr-12 text-xs bg-slate-100 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 border border-slate-200/70 dark:border-slate-700 focus:border-[#1a73e8] rounded-lg w-52 xl:w-60 outline-none transition text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400" />
+        <kbd id="search-kbd-hint" class="absolute right-2.5 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] font-medium text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded pointer-events-none">/</kbd>
       </div>
 
-      <!-- Avatar Circle (with Letter "A" like screenshot) -->
-      <div class="w-8 h-8 rounded-full bg-[#673ab7] text-white font-google font-medium flex items-center justify-center text-sm shadow-xs cursor-pointer ml-1 select-none" title="omar.ahmed126@msa.edu.eg">
-        A
+      <!-- Sync with Gmail + Gemini + Google Calendar Button -->
+      <button id="top-sync-btn" onclick="triggerFullSync()" class="h-9 flex items-center gap-1.5 px-3 sm:px-3.5 rounded-lg bg-[#e8f0fe] dark:bg-blue-950/70 hover:bg-[#d2e3fc] dark:hover:bg-blue-900/70 active:scale-[0.98] text-[#1a73e8] dark:text-blue-400 text-xs font-semibold transition border border-blue-200/60 dark:border-blue-800/60 cursor-pointer" title="Scan Gmail with Gemini AI & Auto-Sync Google Calendar">
+        <i id="top-sync-icon" data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+        <span id="top-sync-text" class="hidden sm:inline">Sync Gmail & Calendar</span>
+      </button>
+
+      <!-- Export / Subscribe .ics -->
+      <a href="/api/calendar/ics_all" class="hidden md:flex h-9 items-center gap-1.5 px-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-medium transition" title="Download all upcoming exams (.ics)">
+        <i data-lucide="calendar-check-2" class="w-3.5 h-3.5 text-[#1a73e8] dark:text-blue-400"></i>
+        <span>.ics</span>
+      </a>
+
+      <!-- Dark Mode Toggle Button -->
+      <button onclick="toggleDarkMode()" id="dark-mode-btn" class="w-9 h-9 rounded-lg flex items-center justify-center border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-slate-600 dark:text-amber-300 transition cursor-pointer" title="Toggle Dark / Light Mode">
+        <i id="dark-mode-icon" data-lucide="moon" class="w-4 h-4"></i>
+      </button>
+
+      <!-- Setup / Onboarding Wizard Trigger -->
+      <button onclick="openOnboardingModal(1)" class="h-9 px-2.5 sm:px-3 rounded-lg flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-slate-700 dark:text-slate-200 text-xs font-semibold transition cursor-pointer" title="Open First-Time Setup & Onboarding Wizard">
+        <i data-lucide="wand-sparkles" class="w-3.5 h-3.5 text-[#1a73e8] dark:text-blue-400"></i>
+        <span class="hidden md:inline">Setup Wizard</span>
+      </button>
+
+      <!-- Signed-in Google User Pill -->
+      <div onclick="openOnboardingModal(1)" class="h-9 flex items-center gap-2 pl-1.5 pr-2.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition" title="Manage Google Account & Sync Settings">
+        <div id="user-avatar-badge" class="w-6 h-6 rounded-md bg-[#1a73e8] text-white flex items-center justify-center text-xs font-semibold">
+          O
+        </div>
+        <div class="hidden xl:block text-left leading-tight">
+          <div id="user-name-label" class="text-[11px] font-semibold text-slate-900 dark:text-slate-100 truncate max-w-[115px]">Omar Ahmed</div>
+          <div id="user-email-label" class="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[125px]">omar.ahmed126@msa.edu.eg</div>
+        </div>
       </div>
     </div>
   </header>
 
-  <!-- ================= MAIN BODY CONTAINER ================= -->
-  <div class="flex-1 flex overflow-hidden">
-    
-    <!-- LEFT SIDEBAR -->
-    <aside id="sidebar" class="w-64 shrink-0 border-r border-[#dadce0] p-3 flex flex-col space-y-6 overflow-y-auto bg-white">
-      
-      <!-- "+ Create" Button -->
-      <div class="pt-1">
-        <button class="flex items-center space-x-3 pl-3 pr-6 py-2.5 rounded-full create-btn-shadow bg-white text-[#3c4043] font-google font-medium text-sm transition">
-          <svg class="w-8 h-8" viewBox="0 0 36 36">
-            <path fill="#4285F4" d="M16 16v14h4V20z"/>
-            <path fill="#34A853" d="M30 16H20l-4 4h14z"/>
-            <path fill="#FBBC05" d="M6 16h10l4-4H6z"/>
-            <path fill="#EA4335" d="M20 16V6h-4v10z"/>
-            <path fill="none" d="M0 0h36v36H0z"/>
-          </svg>
-          <span class="text-sm font-medium">Create</span>
-        </button>
-      </div>
+  <!-- ================= MAIN WORKSPACE AREA ================= -->
+  <div class="flex-1 flex overflow-hidden relative">
 
-      <!-- Mini Calendar Month Picker -->
-      <div class="space-y-1.5 px-1 select-none">
-        <div class="flex items-center justify-between">
-          <span class="text-sm font-google font-medium text-[#3c4043]" id="mini-month-label">October 2026</span>
-          <div class="flex items-center space-x-0.5">
-            <button onclick="changeWeek(-1)" class="p-1 rounded-full hover:bg-[#f1f3f4] text-[#5f6368]"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
-            <button onclick="changeWeek(1)" class="p-1 rounded-full hover:bg-[#f1f3f4] text-[#5f6368]"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+    <!-- Mobile/Tablet Sidebar Backdrop -->
+    <div id="sidebar-backdrop" onclick="toggleSidebar(false)" class="hidden fixed inset-0 top-16 bg-slate-950/40 z-30 lg:hidden backdrop-blur-2xs"></div>
+
+    <!-- ================= LEFT SIDEBAR ================= -->
+    <aside id="left-sidebar" class="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between shrink-0 overflow-y-auto p-4 fixed lg:static inset-y-16 left-0 z-40">
+      <div class="space-y-5">
+        <!-- + Create Button -->
+        <div>
+          <button onclick="openCreateEventModal()" class="w-full flex items-center justify-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-[#1a73e8] dark:hover:border-blue-500 hover:bg-blue-50/40 dark:hover:bg-slate-700/80 active:scale-[0.99] rounded-xl px-4 py-2.5 text-xs font-semibold text-slate-800 dark:text-slate-100 transition cursor-pointer">
+            <i data-lucide="plus" class="w-4 h-4 text-[#1a73e8] dark:text-blue-400"></i>
+            <span>Create Study Event</span>
+          </button>
+        </div>
+
+        <!-- Mobile Search Input (Visible < lg) -->
+        <div class="lg:hidden relative">
+          <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+          <input id="mobile-search-input" type="text" oninput="handleGlobalSearch(this.value)" placeholder="Search courses, topics..." class="w-full h-9 pl-8 pr-3 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-slate-100" />
+        </div>
+
+        <!-- Interactive Mini Month Calendar -->
+        <div class="px-0.5">
+          <div class="flex items-center justify-between mb-2">
+            <span id="mini-cal-month-label" class="text-xs font-semibold text-slate-800 dark:text-slate-200">October 2026</span>
+            <div class="flex items-center gap-0.5">
+              <button onclick="shiftWeek(-1)" class="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-pointer" title="Previous week">
+                <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
+              </button>
+              <button onclick="shiftWeek(1)" class="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-pointer" title="Next week">
+                <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+          </div>
+          <div class="grid grid-cols-7 text-center text-[10px] font-medium text-slate-400 dark:text-slate-500 mb-1">
+            <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+          </div>
+          <div id="mini-cal-days-grid" class="space-y-0.5 text-center text-[11px] tabular-nums">
+            <!-- Populated by JS -->
           </div>
         </div>
 
-        <!-- Mini Day Headers: S M T W T F S -->
-        <div class="grid grid-cols-7 text-center text-[10px] font-medium text-[#70757a] py-1">
-          <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+        <!-- This Week's Exams Summary -->
+        <div class="bg-slate-50 dark:bg-slate-800/60 border border-slate-200/90 dark:border-slate-700/80 rounded-xl p-3">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+              <i data-lucide="zap" class="w-3.5 h-3.5 text-[#1a73e8] dark:text-blue-400"></i>
+              <span>Exams in Selected Week</span>
+            </span>
+            <span id="sidebar-week-exam-count" class="text-[11px] font-bold tabular-nums px-1.5 py-0.5 rounded-md bg-blue-100 dark:bg-blue-950 text-[#1a73e8] dark:text-blue-300">0</span>
+          </div>
+          <div id="sidebar-week-exams-list" class="space-y-1.5">
+            <!-- Populated by JS -->
+          </div>
         </div>
 
-        <!-- Mini Dates Grid -->
-        <div id="mini-calendar-days" class="grid grid-cols-7 text-center text-xs gap-y-1">
-          <!-- Dynamically populated to render exact highlight row -->
+        <!-- My Calendars (Courses & Layers Filter) -->
+        <div class="px-0.5">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-semibold text-slate-800 dark:text-slate-200">My calendars</span>
+            <button onclick="resetCourseFilters()" class="text-[11px] font-medium text-[#1a73e8] dark:text-blue-400 hover:underline cursor-pointer">Show all</button>
+          </div>
+          <div id="sidebar-calendars-list" class="space-y-1 text-xs">
+            <!-- Populated by JS -->
+          </div>
         </div>
       </div>
 
-      <!-- "My calendars" section with Colored Checkboxes -->
-      <div class="space-y-2.5 pt-2">
-        <div class="flex items-center justify-between text-sm font-google font-medium text-[#3c4043]">
-          <span>My calendars</span>
-          <i data-lucide="chevron-up" class="w-4 h-4 text-[#5f6368]"></i>
+      <!-- Bottom Google Sync Status Footer -->
+      <div class="pt-3 mt-4 border-t border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 space-y-1.5">
+        <div class="flex items-center justify-between">
+          <span class="flex items-center gap-1.5">
+            <span id="sync-dot" class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <span id="sync-status-label" class="font-medium text-slate-700 dark:text-slate-200">Google Sync Active</span>
+          </span>
+          <button onclick="syncGoogleCalendarOnly()" class="text-[#1a73e8] dark:text-blue-400 hover:underline font-medium cursor-pointer">Push GCal</button>
         </div>
-
-        <div id="course-list-sidebar" class="space-y-1.5 text-xs text-[#3c4043]">
-          <!-- Populated with courses & colors from image -->
-        </div>
+        <div id="last-sync-timestamp" class="text-[10px] tabular-nums text-slate-400 dark:text-slate-500">Last scanned: Oct 17, 2026</div>
       </div>
-
     </aside>
 
-    <!-- RIGHT: MAIN CALENDAR WEEK GRID -->
-    <main class="flex-1 flex flex-col overflow-hidden bg-white">
-      
-      <!-- Top Days Header: SUN 28, MON 29, TUE 30 (circled), WED 1, THU 2, FRI 3, SAT 4 -->
-      <div class="flex border-b border-[#dadce0] shrink-0 bg-white z-10">
-        <!-- Time gutter top-left empty cell -->
-        <div class="w-14 shrink-0 grid-border-right flex items-end justify-center pb-1 text-[10px] text-[#70757a]">
-          GMT+3
-        </div>
+    <!-- ================= VIEW 1: SMART ACADEMIC DASHBOARD ================= -->
+    <main id="view-dashboard" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 view-transition">
+      <div class="max-w-[1440px] mx-auto space-y-6">
+        <!-- Top Hero Banner: What's Coming Next (Warning pill removed per user feedback) -->
+        <section id="dashboard-next-up-hero" class="rounded-2xl bg-gradient-to-r from-[#1e3a8a] via-[#1d4ed8] to-[#2563eb] dark:from-slate-900 dark:via-blue-950 dark:to-indigo-950 border border-blue-700/30 dark:border-blue-800/50 text-white p-5 sm:p-6">
+          <!-- Populated by JS -->
+        </section>
 
-        <!-- 7 Column Headers -->
-        <div class="flex-1 grid grid-cols-7 text-center py-2" id="day-headers-row">
-          <!-- Populated dynamically with active day circle -->
-        </div>
-      </div>
-
-      <!-- Scrollable Time Slots & Event Area -->
-      <div id="calendar-scroll-body" class="flex-1 overflow-y-auto flex relative">
-        
-        <!-- Time Gutter (8 AM to 8 PM) -->
-        <div class="w-14 shrink-0 grid-border-right select-none bg-white">
-          <div class="time-slot-height text-right pr-2 text-[10px] text-[#70757a] -mt-2">8 AM</div>
-          <div class="time-slot-height text-right pr-2 text-[10px] text-[#70757a] -mt-2">9 AM</div>
-          <div class="time-slot-height text-right pr-2 text-[10px] text-[#70757a] -mt-2">10 AM</div>
-          <div class="time-slot-height text-right pr-2 text-[10px] text-[#70757a] -mt-2">11 AM</div>
-          <div class="time-slot-height text-right pr-2 text-[10px] text-[#70757a] -mt-2">12 PM</div>
-          <div class="time-slot-height text-right pr-2 text-[10px] text-[#70757a] -mt-2">1 PM</div>
-          <div class="time-slot-height text-right pr-2 text-[10px] text-[#70757a] -mt-2">2 PM</div>
-          <div class="time-slot-height text-right pr-2 text-[10px] text-[#70757a] -mt-2">3 PM</div>
-          <div class="time-slot-height text-right pr-2 text-[10px] text-[#70757a] -mt-2">4 PM</div>
-          <div class="time-slot-height text-right pr-2 text-[10px] text-[#70757a] -mt-2">5 PM</div>
-          <div class="time-slot-height text-right pr-2 text-[10px] text-[#70757a] -mt-2">6 PM</div>
-          <div class="time-slot-height text-right pr-2 text-[10px] text-[#70757a] -mt-2">7 PM</div>
-          <div class="time-slot-height text-right pr-2 text-[10px] text-[#70757a] -mt-2">8 PM</div>
-        </div>
-
-        <!-- 7 Days Grid Area (Height: 13 hours * 52px = 676px) -->
-        <div class="flex-1 grid grid-cols-7 relative" style="height: 676px;">
-          
-          <!-- Horizontal Grid Lines -->
-          <div class="absolute inset-0 pointer-events-none">
-            <div class="time-slot-height grid-border-bottom"></div>
-            <div class="time-slot-height grid-border-bottom"></div>
-            <div class="time-slot-height grid-border-bottom"></div>
-            <div class="time-slot-height grid-border-bottom"></div>
-            <div class="time-slot-height grid-border-bottom"></div>
-            <div class="time-slot-height grid-border-bottom"></div>
-            <div class="time-slot-height grid-border-bottom"></div>
-            <div class="time-slot-height grid-border-bottom"></div>
-            <div class="time-slot-height grid-border-bottom"></div>
-            <div class="time-slot-height grid-border-bottom"></div>
-            <div class="time-slot-height grid-border-bottom"></div>
-            <div class="time-slot-height grid-border-bottom"></div>
-            <div class="time-slot-height grid-border-bottom"></div>
+        <!-- 4 KPI Overview Cards -->
+        <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <!-- Card 1: Upcoming This Week -->
+          <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 flex flex-col justify-between">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">Coming up this week</span>
+              <div class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/80 text-[#1a73e8] dark:text-blue-400 flex items-center justify-center">
+                <i data-lucide="calendar-clock" class="w-4 h-4"></i>
+              </div>
+            </div>
+            <div class="mt-3">
+              <div class="flex items-baseline gap-2">
+                <span id="kpi-week-count" class="text-3xl font-bold tabular-nums text-slate-900 dark:text-white">4</span>
+                <span class="text-xs font-medium text-emerald-600 dark:text-emerald-400">Assessments</span>
+              </div>
+              <p id="kpi-week-subtext" class="text-xs tabular-nums text-slate-500 dark:text-slate-400 mt-1">Sun 18 Oct – Thu 22 Oct 2026</p>
+            </div>
           </div>
 
-          <!-- Vertical Columns for each Day (0 to 6) -->
-          <div class="grid-border-right h-full relative" id="col-day-0"></div> <!-- SUN -->
-          <div class="grid-border-right h-full relative" id="col-day-1"></div> <!-- MON -->
-          <div class="grid-border-right h-full relative" id="col-day-2"></div> <!-- TUE -->
-          <div class="grid-border-right h-full relative" id="col-day-3"></div> <!-- WED -->
-          <div class="grid-border-right h-full relative" id="col-day-4"></div> <!-- THU -->
-          <div class="grid-border-right h-full relative" id="col-day-5"></div> <!-- FRI -->
-          <div class="h-full relative" id="col-day-6"></div> <!-- SAT -->
+          <!-- Card 2: Types of Exams Breakdown -->
+          <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 flex flex-col justify-between">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">Types of exams</span>
+              <div class="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950/80 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+                <i data-lucide="layers" class="w-4 h-4"></i>
+              </div>
+            </div>
+            <div id="kpi-exam-types-pills" class="mt-3 flex flex-wrap gap-1.5">
+              <!-- Populated by JS -->
+            </div>
+          </div>
 
+          <!-- Card 3: Study Readiness Progress -->
+          <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 flex flex-col justify-between">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">Study readiness</span>
+              <div class="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+              </div>
+            </div>
+            <div class="mt-3">
+              <div class="flex items-baseline justify-between">
+                <span id="kpi-readiness-pct" class="text-3xl font-bold tabular-nums text-slate-900 dark:text-white">0%</span>
+                <span id="kpi-readiness-counts" class="text-xs tabular-nums text-slate-500 dark:text-slate-400">0 / 19 topics studied</span>
+              </div>
+              <div class="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mt-2">
+                <div id="kpi-readiness-bar" class="h-full bg-emerald-500 transition-all duration-300" style="width: 0%"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 4: Gemini AI & Google Calendar Sync -->
+          <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 flex flex-col justify-between">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">Gemini & Calendar sync</span>
+              <div class="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                <i data-lucide="sparkles" class="w-4 h-4"></i>
+              </div>
+            </div>
+            <div class="mt-3">
+              <div class="flex items-center gap-1.5">
+                <span class="inline-block w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                <span id="kpi-sync-account" class="text-sm font-bold text-slate-900 dark:text-white truncate">omar.ahmed126@msa.edu.eg</span>
+              </div>
+              <div class="flex items-center justify-between mt-2">
+                <span class="text-[11px] text-slate-500 dark:text-slate-400">Schedule-aware AI active</span>
+                <button onclick="syncGoogleCalendarOnly()" class="text-xs font-semibold text-[#1a73e8] dark:text-blue-400 hover:underline cursor-pointer">Sync Calendar</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Main Dashboard Grid: Left = "What Should I Study?" AI Study Planner | Right = All Scanned Assessments Radar -->
+        <section class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <!-- Left 7 Cols: What Should I Study? (Entire card clickable + per-quiz exam rules inside each card) -->
+          <div class="lg:col-span-7 space-y-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <i data-lucide="brain-circuit" class="w-5 h-5 text-[#1a73e8] dark:text-blue-400"></i>
+                  <span>What Should I Study? — AI Priority Study Planner</span>
+                </h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Click any assessment card to open its full study & schedule window, or check off topics directly.</p>
+              </div>
+            </div>
+
+            <div id="study-recommendations-list" class="space-y-4">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+
+          <!-- Right 5 Cols: All Scanned Assessments Radar -->
+          <div id="all-assessments-panel" class="lg:col-span-5 space-y-4">
+            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 space-y-3">
+              <div class="flex items-center justify-between gap-2">
+                <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <i data-lucide="radar" class="w-4 h-4 text-[#1a73e8] dark:text-blue-400"></i>
+                  <span>All Scanned Assessments</span>
+                </h3>
+                <select id="dashboard-type-filter" onchange="renderDashboard()" class="text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 outline-none cursor-pointer">
+                  <option value="UPCOMING">Upcoming Only</option>
+                  <option value="ALL">All Semesters (Upcoming + Past)</option>
+                  <option value="Class Quiz">Class Quizzes</option>
+                  <option value="Online Quiz">Online Quizzes</option>
+                  <option value="Midterm Exam">Midterm Exams</option>
+                  <option value="Assignment">Assignments</option>
+                </select>
+              </div>
+
+              <div id="dashboard-timeline-list" class="space-y-2.5 max-h-[760px] overflow-y-auto pr-1">
+                <!-- Populated by JS -->
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- ================= VIEW 2: GOOGLE CALENDAR WEEK VIEW ================= -->
+    <main id="view-calendar" class="hidden flex-1 flex flex-col bg-white dark:bg-slate-950 overflow-x-auto overflow-y-hidden view-transition">
+      <div class="min-w-[760px] flex-1 flex flex-col overflow-hidden">
+        <!-- Week Header Row (Sun .. Sat with Dates) -->
+        <div class="border-b border-slate-200 dark:border-slate-800 flex shrink-0 bg-white dark:bg-slate-900">
+          <!-- Left Time Gutter Header -->
+          <div class="w-16 shrink-0 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-end items-center pb-2 text-[10px] tabular-nums text-slate-400">
+            <span>GMT+03</span>
+          </div>
+          <!-- 7 Day Columns Header -->
+          <div id="week-header-days" class="flex-1 grid grid-cols-7">
+            <!-- Populated by JS -->
+          </div>
         </div>
 
-      </div>
+        <!-- Scrollable 8 AM – 8 PM Week Grid -->
+        <div id="week-grid-scroll" class="flex-1 overflow-y-auto flex relative bg-white dark:bg-slate-950">
+          <!-- Time Labels Column (8 AM to 8 PM) -->
+          <div id="week-time-gutter" class="w-16 shrink-0 border-r border-slate-200 dark:border-slate-800 select-none bg-white dark:bg-slate-900">
+            <!-- Populated by JS -->
+          </div>
 
+          <!-- 7 Day Columns Grid -->
+          <div id="week-columns-container" class="flex-1 grid grid-cols-7 relative">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+      </div>
     </main>
 
   </div>
 
-  <!-- ================= POPUP MODAL ================= -->
-  <div id="gcal-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 hidden" onclick="if(event.target === this) closeModal()">
-    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden border border-[#dadce0] animate-in fade-in zoom-in-95 duration-100">
-      
-      <!-- Modal Top Color Bar -->
-      <div id="modal-color-bar" class="h-2 w-full bg-[#1a73e8]"></div>
+  <!-- ================= MODAL 1: WIDER, RECTANGULAR 2-COLUMN ASSESSMENT POPUP ================= -->
+  <div id="event-detail-modal" onclick="if(event.target === this) closeEventDetailModal()" class="modal-backdrop fixed inset-0 bg-slate-950/50 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
+    <div class="modal-panel bg-white dark:bg-slate-900 rounded-2xl max-w-4xl w-full shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+      <!-- Top Color Accent Bar -->
+      <div id="modal-header-bar" class="h-2 bg-[#1a73e8]"></div>
 
-      <div class="p-6 space-y-4">
-        <!-- Close button & Course Type -->
-        <div class="flex items-center justify-between">
-          <span id="modal-type-tag" class="px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700">
-            Lecture
-          </span>
-          <button onclick="closeModal()" class="p-1 rounded-full hover:bg-[#f1f3f4] text-[#5f6368]">
+      <div class="p-5 sm:p-6 space-y-5 max-h-[85vh] overflow-y-auto">
+        <!-- Top Header Row: Clean Single-Line Badges + Title + Close Button -->
+        <div class="flex items-start justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
+          <div class="space-y-1.5 min-w-0">
+            <div class="flex flex-wrap items-center gap-2">
+              <span id="modal-course-badge" class="text-xs font-bold px-2.5 py-0.5 rounded-md text-white shrink-0 whitespace-nowrap">GSE211</span>
+              <span id="modal-type-badge" class="text-xs font-semibold px-2.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 shrink-0 whitespace-nowrap">Class Quiz</span>
+              <span id="modal-urgency-badge" class="text-xs font-semibold tabular-nums px-2.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 shrink-0 whitespace-nowrap">In 3 days</span>
+              <span id="modal-course-fullname" class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">Mathematical Analysis and Numerical Methods</span>
+            </div>
+            <h3 id="modal-title" class="text-xl font-bold text-slate-900 dark:text-white leading-snug">Class Quiz 1: Numerical Methods</h3>
+          </div>
+          <button onclick="closeEventDetailModal()" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 shrink-0 transition cursor-pointer" title="Close (Esc)">
             <i data-lucide="x" class="w-5 h-5"></i>
           </button>
         </div>
 
-        <!-- Course Title -->
-        <div>
-          <h3 id="modal-title" class="text-xl font-google font-bold text-[#3c4043] leading-snug">
-            Calculus II
-          </h3>
-          <div class="flex items-center space-x-2 text-xs text-[#5f6368] mt-1">
-            <i data-lucide="clock" class="w-3.5 h-3.5 text-[#5f6368]"></i>
-            <span id="modal-time">9:00am – 10:15am</span>
+        <!-- Rectangular 2-Column Body Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-5 items-stretch">
+          <!-- Left Column (6 cols): Schedule Info, Gemini AI Time Inference & Exam Rules -->
+          <div class="md:col-span-6 flex flex-col gap-4">
+            <!-- Schedule & Venue Card -->
+            <div class="space-y-2.5 text-xs text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-800/70 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80">
+              <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Schedule & location</div>
+              <div class="flex items-center gap-2.5">
+                <i data-lucide="clock" class="w-4 h-4 text-[#1a73e8] dark:text-blue-400 shrink-0"></i>
+                <span id="modal-time" class="font-semibold tabular-nums">Sunday, 18 October 2026 (8:00 AM – 10:00 AM)</span>
+              </div>
+              <div class="flex items-center gap-2.5">
+                <i data-lucide="map-pin" class="w-4 h-4 text-[#1a73e8] dark:text-blue-400 shrink-0"></i>
+                <span id="modal-room" class="font-medium">Room C212 O (Group C)</span>
+              </div>
+              <div class="flex items-center gap-2.5">
+                <i data-lucide="user" class="w-4 h-4 text-[#1a73e8] dark:text-blue-400 shrink-0"></i>
+                <span id="modal-instructor">Assoc. Prof. Dr. Mohamed Khalil</span>
+              </div>
+            </div>
+
+            <!-- Gemini Schedule Reasoning Callout -->
+            <div id="modal-ai-box" class="bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/70 rounded-xl p-4 text-xs text-blue-950 dark:text-blue-100 space-y-2 flex-1">
+              <div class="font-bold flex items-center gap-1.5 text-[#1a73e8] dark:text-blue-400">
+                <i data-lucide="sparkles" class="w-4 h-4"></i>
+                <span>Gemini Schedule-Aware Time Inference</span>
+              </div>
+              <p id="modal-ai-inference" class="text-xs leading-relaxed text-slate-700 dark:text-slate-300"></p>
+              <div id="modal-ai-study-plan" class="pt-2 border-t border-blue-200/70 dark:border-blue-800/60 text-xs font-medium text-slate-800 dark:text-slate-200"></div>
+            </div>
+
+            <!-- Exam Rules & Instructions inside Modal -->
+            <div id="modal-warnings-section" class="space-y-1.5">
+              <h4 class="text-xs font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                <i data-lucide="alert-circle" class="w-3.5 h-3.5"></i>
+                <span>Exam rules & instructions</span>
+              </h4>
+              <div id="modal-warnings-list" class="space-y-1.5 text-xs bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/70 rounded-xl p-3.5 text-amber-950 dark:text-amber-200"></div>
+            </div>
           </div>
-          <div class="flex items-center space-x-2 text-xs text-[#5f6368] mt-1">
-            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-[#5f6368]"></i>
-            <span id="modal-room">Room 214 · Dr. Reyes</span>
+
+          <!-- Right Column (6 cols): Interactive Topics Checklist with Live Readiness Meter -->
+          <div id="modal-topics-section" class="md:col-span-6 flex flex-col justify-between bg-slate-50/60 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+            <div class="space-y-3">
+              <div class="flex items-center justify-between gap-2">
+                <h4 class="text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                  <i data-lucide="check-square" class="w-4 h-4 text-[#1a73e8] dark:text-blue-400"></i>
+                  <span>Topics to study</span>
+                </h4>
+                <span id="modal-topics-progress-label" class="text-[11px] font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">0 / 4 studied (0%)</span>
+              </div>
+              <div class="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                <div id="modal-topics-progress-bar" class="h-full bg-emerald-500 transition-all duration-300" style="width: 0%"></div>
+              </div>
+              <div id="modal-topics-list" class="space-y-2 pt-1"></div>
+            </div>
           </div>
         </div>
 
-        <!-- Quiz Alert Callout if a quiz is scheduled -->
-        <div id="modal-quiz-banner" class="p-3.5 rounded-lg bg-[#f3e8fd] border border-[#d1c4e9] text-[#4a148c] space-y-2 hidden">
-          <div class="flex items-center space-x-2 font-google font-bold text-xs uppercase tracking-wider">
-            <span>⚡ Upcoming Quiz Details</span>
+        <!-- Action Footer -->
+        <div class="pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex flex-wrap items-center gap-2.5">
+            <a id="modal-gcal-link" href="#" target="_blank" class="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1a73e8] hover:bg-[#1557b0] active:scale-[0.99] text-white text-xs font-semibold transition">
+              <i data-lucide="calendar-plus" class="w-4 h-4"></i>
+              <span>Open in Google Calendar</span>
+            </a>
+            <button id="modal-jump-cal-btn" onclick="jumpFromModalToCalendar()" class="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 transition cursor-pointer">
+              <i data-lucide="calendar-days" class="w-3.5 h-3.5 text-[#1a73e8] dark:text-blue-400"></i>
+              <span>Show on Week Calendar</span>
+            </button>
+            <a id="modal-ics-link" href="#" class="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200 transition">
+              <i data-lucide="download" class="w-3.5 h-3.5"></i>
+              <span>Download .ics</span>
+            </a>
           </div>
-          <p id="modal-quiz-desc" class="text-xs text-[#4a148c] font-medium leading-relaxed"></p>
-          <div id="modal-quiz-topics" class="flex flex-wrap gap-1 pt-1"></div>
-        </div>
-
-        <!-- Action Buttons -->
-        <div class="pt-3 border-t border-[#dadce0] flex items-center justify-between">
-          <a id="modal-moodle-btn" href="#" target="_blank" class="text-xs text-[#1a73e8] hover:underline flex items-center space-x-1 font-medium">
-            <span>Moodle Link</span>
-            <i data-lucide="external-link" class="w-3 h-3"></i>
+          <a id="modal-moodle-link" href="#" target="_blank" class="text-xs font-semibold text-[#1a73e8] dark:text-blue-400 hover:underline flex items-center gap-1.5">
+            <span>View Original Moodle Announcement</span>
+            <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
           </a>
+        </div>
+      </div>
+    </div>
+  </div>
 
-          <div class="flex items-center space-x-2">
-            <a id="modal-ics-btn" href="#" class="px-3 py-1.5 rounded-md border border-[#dadce0] text-xs font-medium text-[#3c4043] hover:bg-[#f1f3f4] transition">
-              Download .ics
-            </a>
-            <a id="modal-gcal-btn" href="#" target="_blank" class="px-3.5 py-1.5 rounded-md bg-[#1a73e8] hover:bg-[#1765cc] text-white text-xs font-medium shadow-xs transition flex items-center space-x-1">
-              <i data-lucide="bell" class="w-3.5 h-3.5"></i>
-              <span>Add Reminder</span>
-            </a>
+  <!-- ================= MODAL 2: INTERACTIVE 3-STEP STANDALONE ONBOARDING WIZARD ================= -->
+  <div id="onboarding-modal" onclick="if(event.target === this) closeOnboardingModal()" class="modal-backdrop fixed inset-0 bg-slate-950/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
+    <div class="modal-panel bg-white dark:bg-slate-900 rounded-2xl max-w-3xl w-full shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+      <!-- Top Gradient Header + Interactive 3-Step Stepper -->
+      <div class="bg-gradient-to-r from-[#1e3a8a] via-[#1d4ed8] to-[#2563eb] p-5 sm:p-6 text-white space-y-4">
+        <div class="flex items-start justify-between gap-4">
+          <div class="flex items-center gap-3.5">
+            <div class="w-11 h-11 rounded-xl bg-white/15 border border-white/20 backdrop-blur-xs flex items-center justify-center shrink-0">
+              <i data-lucide="radar" class="w-6 h-6 text-white"></i>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-bold uppercase tracking-wider">First-Time Setup</span>
+                <span class="text-xs text-blue-100 font-medium">Standalone Academic Radar</span>
+              </div>
+              <h2 class="text-xl font-bold mt-0.5">Welcome to QuizRadar</h2>
+              <p class="text-xs text-blue-100">Connect your Gmail, scan course announcements with Gemini AI, and sync your Google Calendar.</p>
+            </div>
+          </div>
+          <button onclick="closeOnboardingModal()" class="p-1.5 rounded-lg hover:bg-white/15 text-white/90 transition cursor-pointer shrink-0" title="Close (Esc)">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <!-- Interactive 3-Step Navigation Pills -->
+        <div class="grid grid-cols-3 gap-2 pt-1">
+          <button onclick="setOnboardingStep(1)" id="onboard-tab-1" class="flex items-center gap-2.5 p-2.5 rounded-xl bg-white text-[#1a73e8] font-bold text-xs transition text-left cursor-pointer shadow-xs">
+            <span id="onboard-tab-num-1" class="w-6 h-6 rounded-full bg-[#1a73e8] text-white text-xs font-bold tabular-nums flex items-center justify-center shrink-0">1</span>
+            <div class="truncate">
+              <div class="text-[10px] opacity-75 font-semibold">Step 1</div>
+              <div class="truncate">Google Account</div>
+            </div>
+          </button>
+          <button onclick="setOnboardingStep(2)" id="onboard-tab-2" class="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs transition text-left cursor-pointer">
+            <span id="onboard-tab-num-2" class="w-6 h-6 rounded-full bg-white/20 text-white text-xs font-bold tabular-nums flex items-center justify-center shrink-0">2</span>
+            <div class="truncate">
+              <div class="text-[10px] opacity-75 font-semibold">Step 2</div>
+              <div class="truncate">Gemini Inbox Scan</div>
+            </div>
+          </button>
+          <button onclick="setOnboardingStep(3)" id="onboard-tab-3" class="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs transition text-left cursor-pointer">
+            <span id="onboard-tab-num-3" class="w-6 h-6 rounded-full bg-white/20 text-white text-xs font-bold tabular-nums flex items-center justify-center shrink-0">3</span>
+            <div class="truncate">
+              <div class="text-[10px] opacity-75 font-semibold">Step 3</div>
+              <div class="truncate">Courses & Sync</div>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Wizard Step Panels -->
+      <div class="p-5 sm:p-6 max-h-[68vh] overflow-y-auto">
+
+        <!-- ================= STEP 1: GOOGLE ACCOUNT & OAUTH2 ================= -->
+        <div id="onboard-step-1" class="space-y-4 view-transition">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 class="text-base font-bold text-slate-900 dark:text-white">Step 1: Connect Your Google Account</h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">One sign-in unlocks Gmail announcement reading, Gemini AI schedule matching, and Google Calendar sync.</p>
+            </div>
+            <span id="onboard-auth-badge" class="text-xs font-semibold px-3 py-1 rounded-full bg-emerald-100 text-emerald-800">Connected</span>
+          </div>
+
+          <!-- Account Profile Card -->
+          <div class="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/60 flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-3.5">
+              <div id="onboard-user-avatar" class="w-12 h-12 rounded-xl bg-[#1a73e8] text-white flex items-center justify-center text-base font-bold shadow-xs">O</div>
+              <div>
+                <div id="onboard-user-name" class="text-sm font-bold text-slate-900 dark:text-white">Omar Ahmed Mohamed Refaat Mostafa</div>
+                <div id="onboard-user-email" class="text-xs font-medium text-[#1a73e8] dark:text-blue-400">omar.ahmed126@msa.edu.eg</div>
+                <div id="onboard-scope-note" class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Gmail Read & Google Calendar Direct Sync Ready</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <a href="/api/auth/google/login" class="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1a73e8] hover:bg-[#1557b0] active:scale-[0.98] text-white text-xs font-bold transition shadow-xs">
+                <i data-lucide="log-in" class="w-4 h-4"></i>
+                <span>Sign In / Authorize with Google</span>
+              </a>
+            </div>
+          </div>
+
+          <!-- 3 Feature Pillars Grid -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-1.5">
+              <div class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950 text-[#1a73e8] dark:text-blue-400 flex items-center justify-center">
+                <i data-lucide="mail-search" class="w-4 h-4"></i>
+              </div>
+              <div class="text-xs font-bold text-slate-900 dark:text-white">1. Automatic Gmail Scan</div>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">Detects university & Moodle emails for quizzes, midterms, lab exams, and deadlines.</p>
+            </div>
+            <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-1.5">
+              <div class="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+                <i data-lucide="sparkles" class="w-4 h-4"></i>
+              </div>
+              <div class="text-xs font-bold text-slate-900 dark:text-white">2. Gemini Time Inference</div>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">Cross-references vague phrases like <i>"next lecture"</i> with your exact weekly class slots.</p>
+            </div>
+            <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-1.5">
+              <div class="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                <i data-lucide="calendar-check" class="w-4 h-4"></i>
+              </div>
+              <div class="text-xs font-bold text-slate-900 dark:text-white">3. Google Calendar Sync</div>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">Pushes every exam, room number, and study topic checklist directly to your calendar.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ================= STEP 2: GEMINI AI INBOX & TIMETABLE SCANNER ================= -->
+        <div id="onboard-step-2" class="hidden space-y-4 view-transition">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 class="text-base font-bold text-slate-900 dark:text-white">Step 2: Scan Your Inbox with Gemini Schedule AI</h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">QuizRadar matches your Gmail announcements against your Fall 2026 weekly timetable (6 courses, 14 slots).</p>
+            </div>
+            <button onclick="runOnboardingScan()" id="onboard-scan-btn" class="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white text-xs font-bold transition cursor-pointer shadow-xs">
+              <i data-lucide="sparkles" class="w-4 h-4"></i>
+              <span>Scan Inbox Now</span>
+            </button>
+          </div>
+
+          <!-- Live Animated Scan Progress Bar -->
+          <div id="onboard-scan-progress-wrap" class="p-3.5 rounded-xl bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200/70 dark:border-blue-800/60 space-y-2">
+            <div class="flex items-center justify-between text-xs">
+              <span id="onboard-scan-status-text" class="font-semibold text-[#1a73e8] dark:text-blue-300 flex items-center gap-1.5">
+                <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-emerald-500"></i>
+                <span>Ready — 4 upcoming Fall 2026 assessments & 50 total records resolved</span>
+              </span>
+              <span id="onboard-scan-pct" class="font-bold tabular-nums text-[#1a73e8] dark:text-blue-400">100%</span>
+            </div>
+            <div class="w-full h-1.5 bg-blue-200/60 dark:bg-slate-800 rounded-full overflow-hidden">
+              <div id="onboard-scan-progress-bar" class="h-full bg-[#1a73e8] transition-all duration-300" style="width: 100%"></div>
+            </div>
+          </div>
+
+          <!-- Discovered Upcoming Assessments Preview List -->
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-semibold text-slate-700 dark:text-slate-200">Detected Upcoming Assessments (Matched with Class Schedule)</span>
+              <span id="onboard-detected-count-badge" class="text-[11px] font-bold tabular-nums px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300">4 Upcoming</span>
+            </div>
+            <div id="onboard-scan-results" class="bg-slate-50/70 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2 max-h-52 overflow-y-auto">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+
+          <!-- Optional Gemini API Key Override -->
+          <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-1.5">
+            <label class="block text-xs font-semibold text-slate-700 dark:text-slate-200">Optional: Custom Gemini API Key</label>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400">Leave blank to use your signed-in Google account and QuizRadar's built-in schedule inference engine automatically.</p>
+            <input id="onboard-gemini-key" type="password" placeholder="AIzaSy... (Optional — automatic schedule-aware AI is already active)" class="w-full mt-1 px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 outline-none focus:border-[#1a73e8]" />
+          </div>
+        </div>
+
+        <!-- ================= STEP 3: COURSES, APPEARANCE & GOOGLE CALENDAR SYNC ================= -->
+        <div id="onboard-step-3" class="hidden space-y-4 view-transition">
+          <div>
+            <h3 class="text-base font-bold text-slate-900 dark:text-white">Step 3: Customize Courses, Theme & Auto-Sync</h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Choose your active Fall 2026 courses, preferred color theme, and automatic Google Calendar sync behavior.</p>
+          </div>
+
+          <!-- Enrolled Fall 2026 Courses Checklist Grid -->
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-slate-700 dark:text-slate-200">Active Fall 2026 Courses (6 Enrolled)</span>
+              <span class="text-[11px] text-slate-500 dark:text-slate-400">Synced with Weekly Schedule</span>
+            </div>
+            <div id="onboard-courses-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+
+          <!-- Appearance Theme Selector (Light vs Dark) -->
+          <div class="space-y-2">
+            <span class="block text-xs font-semibold text-slate-700 dark:text-slate-200">Workspace Appearance</span>
+            <div class="grid grid-cols-2 gap-3">
+              <button type="button" onclick="setThemeFromOnboarding(false)" id="onboard-theme-light-btn" class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 flex items-center gap-3 text-left transition cursor-pointer">
+                <div class="w-8 h-8 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                  <i data-lucide="sun" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <div class="text-xs font-bold text-slate-900 dark:text-white">Light Mode</div>
+                  <div class="text-[11px] text-slate-500 dark:text-slate-400">Clean daylight calendar</div>
+                </div>
+              </button>
+              <button type="button" onclick="setThemeFromOnboarding(true)" id="onboard-theme-dark-btn" class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 flex items-center gap-3 text-left transition cursor-pointer">
+                <div class="w-8 h-8 rounded-lg bg-indigo-950 text-amber-300 flex items-center justify-center shrink-0">
+                  <i data-lucide="moon" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <div class="text-xs font-bold text-slate-900 dark:text-white">Dark Mode</div>
+                  <div class="text-[11px] text-slate-500 dark:text-slate-400">Low-glare night study</div>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <!-- Synchronization Toggles -->
+          <div class="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 space-y-2.5">
+            <div class="text-xs font-semibold text-slate-800 dark:text-slate-100">Automation Preferences</div>
+            <label class="flex items-center gap-2.5 text-xs text-slate-700 dark:text-slate-200 cursor-pointer">
+              <input id="onboard-auto-gcal" type="checkbox" checked class="w-4 h-4 accent-[#1a73e8] rounded cursor-pointer" />
+              <span>Automatically sync detected quizzes, midterms, and study checklists to my Google Calendar</span>
+            </label>
+            <label class="flex items-center gap-2.5 text-xs text-slate-700 dark:text-slate-200 cursor-pointer">
+              <input id="onboard-gemini-toggle" type="checkbox" checked class="w-4 h-4 accent-[#1a73e8] rounded cursor-pointer" />
+              <span>Enable Gemini AI study priority planner and relative-date timetable inference</span>
+            </label>
           </div>
         </div>
 
       </div>
 
+      <!-- Persistent Wizard Footer -->
+      <div class="px-5 sm:px-6 py-4 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2">
+          <button type="button" id="onboard-prev-btn" onclick="prevOnboardingStep()" class="hidden px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 transition cursor-pointer flex items-center gap-1.5">
+            <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i>
+            <span>Back</span>
+          </button>
+          <span id="onboard-step-counter" class="text-xs font-medium tabular-nums text-slate-500 dark:text-slate-400">Step 1 of 3</span>
+        </div>
+
+        <div class="flex items-center gap-2.5">
+          <button type="button" onclick="finishOnboarding()" class="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 transition cursor-pointer">
+            Save & Open My Dashboard
+          </button>
+          <button type="button" id="onboard-next-btn" onclick="nextOnboardingStep()" class="px-5 py-2.5 rounded-xl bg-[#1a73e8] hover:bg-[#1557b0] active:scale-[0.98] text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs">
+            <span id="onboard-next-btn-label">Continue to Inbox Scan</span>
+            <i data-lucide="arrow-right" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 
+  <!-- ================= MODAL 3: + CREATE CUSTOM EVENT / STUDY SESSION ================= -->
+  <div id="create-event-modal" onclick="if(event.target === this) closeCreateEventModal()" class="modal-backdrop fixed inset-0 bg-slate-950/50 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
+    <div class="modal-panel bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+      <div class="p-5 space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+          <h3 class="text-base font-bold text-slate-900 dark:text-white">Create Study Session or Custom Assessment</h3>
+          <button onclick="closeCreateEventModal()" class="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-pointer" title="Close (Esc)">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <div class="space-y-3 text-xs">
+          <div>
+            <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Title</label>
+            <input id="create-ev-title" type="text" placeholder="e.g. Study Hall: CSE263 Regression & k-NN" class="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg outline-none focus:border-[#1a73e8]" />
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Course</label>
+              <select id="create-ev-course" class="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                <option value="GSE211">GSE211 (Math Analysis)</option>
+                <option value="CSE263">CSE263 (Machine Learning)</option>
+                <option value="CSE261">CSE261 (Algorithms)</option>
+                <option value="CSE252">CSE252 (Embedded Systems)</option>
+                <option value="CSE241">CSE241 (EDA)</option>
+                <option value="CSE262">CSE262 (Software Eng)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Type</label>
+              <select id="create-ev-type" class="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                <option value="Study Session">Study Session</option>
+                <option value="Custom Quiz">Custom Quiz</option>
+                <option value="Midterm Prep">Midterm Prep</option>
+                <option value="Assignment">Assignment</option>
+              </select>
+            </div>
+          </div>
+          <div class="grid grid-cols-3 gap-2">
+            <div>
+              <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Date</label>
+              <input id="create-ev-date" type="date" value="2026-10-18" class="w-full px-2.5 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg outline-none tabular-nums" />
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Start</label>
+              <input id="create-ev-start" type="time" value="16:00" class="w-full px-2.5 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg outline-none tabular-nums" />
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">End</label>
+              <input id="create-ev-end" type="time" value="17:30" class="w-full px-2.5 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg outline-none tabular-nums" />
+            </div>
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Room / Location</label>
+            <input id="create-ev-room" type="text" placeholder="Library / Study Hall" value="Library Study Room" class="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg outline-none" />
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+          <button onclick="closeCreateEventModal()" class="px-4 py-2 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer">Cancel</button>
+          <button onclick="submitCreateCustomEvent()" class="px-4 py-2 rounded-lg bg-[#1a73e8] hover:bg-[#1557b0] active:scale-[0.98] text-white text-xs font-semibold cursor-pointer">Save to Calendar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Banner -->
+  <div id="toast-notification" class="fixed bottom-5 right-5 z-50 bg-slate-900 dark:bg-slate-800 text-white px-4 py-3 rounded-xl shadow-lg text-xs font-medium flex items-center gap-2.5 max-w-md border border-slate-800 dark:border-slate-700">
+    <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400 shrink-0"></i>
+    <span id="toast-message">Synced successfully!</span>
+  </div>
+
   <script src="/static/app.js"></script>
-  <script>
-    lucide.createIcons();
-  </script>
 </body>
 </html>

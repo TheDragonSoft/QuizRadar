@@ -1,10 +1,14 @@
 @echo off
-title QuizRadar - Native Rust Academic Calendar & Quiz Assistant
-echo ============================================================
-echo   Starting QuizRadar Native Rust Application...
-echo   Connected to: omar.ahmed126@msa.edu.eg
-echo   Schedule: Fall 2026 (MSA University Engineering)
-echo ============================================================
+title QuizRadar v2.0 - Standalone Rust Academic Dashboard & Calendar
+echo ====================================================================
+echo   Starting QuizRadar v2.0 (Pure Standalone Rust Application)
+echo   AI Engine: Gemini Schedule-Aware Email & Timetable Analyzer
+echo   Features : Onboarding Wizard + Study Dashboard + Week Calendar
+echo ====================================================================
 echo.
-target\release\quizradar.exe
+if exist target\release\quizradar.exe (
+    target\release\quizradar.exe
+) else (
+    cargo run --release
+)
 pause

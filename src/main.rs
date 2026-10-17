@@ -52,6 +52,13 @@ fn save_app_config(cfg: &AppConfig) {
 
 #[tokio::main]
 async fn main() {
+    if !std::path::Path::new("Cargo.toml").exists() {
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                let _ = std::env::set_current_dir(exe_dir);
+            }
+        }
+    }
     let _ = fs::create_dir_all("data");
 
     let ports = [5000, 5050, 3000, 8080];

@@ -129,12 +129,16 @@ Figuring out when that quiz actually happens means checking when the email was s
 
 ## 🚀 Quick Start
 
-### Option 1: Download the Standalone App (Recommended)
-1. Download **`QuizRadar-v2.0.0-windows-x64.zip`** (or `quizradar.exe`) from the **[Latest GitHub Release](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
-2. Extract the folder and double-click **`quizradar.exe`** (or `start.bat`).
-3. QuizRadar will automatically open in your default browser and launch the **First-Time Setup Wizard**.
+### Option 1: Windows Installer (Recommended)
+1. Download **`QuizRadar-Setup-v2.0.0-x64.exe`** from the **[Latest GitHub Release](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
+2. Run the installer — it installs cleanly in your user folder (no administrator privileges required) and creates Start Menu / Desktop shortcuts.
+3. Launch **QuizRadar** to automatically open your academic dashboard and complete the **First-Time Setup Wizard**.
 
-### Option 2: Build from Source
+### Option 2: Portable ZIP / Linux / macOS
+1. Download **`QuizRadar-Portable-v2.0.0-win-x64.zip`** (or the Linux/macOS `.tar.gz` archive) from **[GitHub Releases](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
+2. Extract the archive anywhere and run **`quizradar.exe`** (or `./quizradar` on Linux/macOS).
+
+### Option 3: Build from Source
 ```powershell
 git clone https://github.com/TheDragonSoft/QuizRadar.git
 cd QuizRadar
@@ -143,4 +147,5 @@ cargo build --release
 ```
 
 > For technical documentation and architecture details, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
 

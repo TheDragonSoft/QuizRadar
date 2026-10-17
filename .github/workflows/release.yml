@@ -1,0 +1,172 @@
+name: Build & Publish Release Installer
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build & publish (e.g. v2.0.0)"
+        required: false
+        default: "v2.0.0"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows-installer:
+    name: Windows Setup Installer & Portable ZIP (x64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust build cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Determine release version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.event.inputs.tag }}" -ne "") {
+            $tag = "${{ github.event.inputs.tag }}"
+          } elseif ("${{ github.ref_name }}" -like "v*") {
+            $tag = "${{ github.ref_name }}"
+          } else {
+            $tag = "v2.0.0"
+          }
+          $ver = $tag.TrimStart('v')
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Building version $ver ($tag)"
+
+      - name: Build Windows Release Binary & Installer
+        shell: pwsh
+        run: |
+          .\scripts\build-release.ps1 -Version "${{ steps.version.outputs.version }}"
+
+      - name: Upload Windows Release Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: |
+            dist/*.exe
+            dist/*.zip
+
+  build-unix-archives:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_label: linux-x64
+          - os: macos-latest
+            artifact_label: macos-arm64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust build cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Determine release version
+        id: version
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          elif [[ "${{ github.ref_name }}" == v* ]]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG="v2.0.0"
+          fi
+          VER="${TAG#v}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Release Binary
+        run: cargo build --release
+
+      - name: Package Tarball
+        shell: bash
+        run: |
+          VER="${{ steps.version.outputs.version }}"
+          STAGE="dist/QuizRadar-v${VER}-${{ matrix.artifact_label }}"
+          mkdir -p "${STAGE}/static" "${STAGE}/data"
+          cp target/release/quizradar "${STAGE}/"
+          cp static/index.html static/app.js static/icon.svg "${STAGE}/static/"
+          cp data/schedule.json "${STAGE}/data/"
+          cp README.md "${STAGE}/"
+          tar -czf "dist/QuizRadar-v${VER}-${{ matrix.artifact_label }}.tar.gz" -C dist "QuizRadar-v${VER}-${{ matrix.artifact_label }}"
+
+      - name: Upload Unix Archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: unix-${{ matrix.artifact_label }}
+          path: dist/*.tar.gz
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-windows-installer, build-unix-archives]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine release tag
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          elif [[ "${{ github.ref_name }}" == v* ]]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG="v2.0.0"
+          fi
+          VER="${TAG#v}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+
+      - name: Download all built release assets
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS.txt
+        run: |
+          cd release-assets
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "QuizRadar ${{ steps.version.outputs.tag }} — Academic Dashboard & Smart Exam Calendar"
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## 🚀 QuizRadar ${{ steps.version.outputs.tag }}
+
+            **QuizRadar** is a privacy-first, local-first academic dashboard and weekly calendar that automatically detects quizzes, midterms, lab exams, and deadlines from your university emails and cross-references them against your weekly class schedule.
+
+            ### 📦 Downloads
+            - 🪟 **Windows Installer (Recommended)**: `QuizRadar-Setup-v${{ steps.version.outputs.version }}-x64.exe` — Standard Windows setup wizard with Start Menu & Desktop shortcuts (no administrator privileges required).
+            - 📁 **Windows Portable ZIP**: `QuizRadar-Portable-v${{ steps.version.outputs.version }}-win-x64.zip` — Extract anywhere and run `quizradar.exe` or `start.bat`.
+            - 🐧 **Linux (x64)**: `QuizRadar-v${{ steps.version.outputs.version }}-linux-x64.tar.gz`
+            - 🍎 **macOS (Apple Silicon)**: `QuizRadar-v${{ steps.version.outputs.version }}-macos-arm64.tar.gz`
+
+            ### 🔒 100% Local Privacy
+            All OAuth tokens, cached emails, and study progress stay strictly on your own computer.
+          files: |
+            release-assets/*

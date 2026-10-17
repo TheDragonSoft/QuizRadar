@@ -16,8 +16,14 @@ pub fn load_schedule() -> ScheduleData {
             return s;
         }
     }
+    let embedded = include_str!("../data/schedule.json");
+    if let Ok(s) = serde_json::from_str::<ScheduleData>(embedded) {
+        let _ = fs::create_dir_all("data");
+        let _ = fs::write("data/schedule.json", embedded);
+        return s;
+    }
     ScheduleData {
-        semester: "Fall 2026 (Semester 91)".to_string(),
+        semester: "Fall 2026 (Academic Schedule)".to_string(),
         courses: Vec::new(),
         slots: Vec::new(),
     }

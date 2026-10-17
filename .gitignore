@@ -1,5 +1,6 @@
-# Rust target directory
+# Rust target & release packaging directories
 /target/
+/dist/
 **/*.rs.bk
 
 # Sensitive Google OAuth credentials & local user data/caches (DO NOT COMMIT)

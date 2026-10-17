@@ -1,7 +1,7 @@
 use crate::gemini::{analyze_email_with_gemini, load_gemini_cache, save_gemini_cache};
 use crate::models::{
-    AppConfig, Assessment, CachedEmail, DashboardSummary, ScheduleData, StudyRecommendation,
-    TopicCheckItem,
+    AppConfig, Assessment, CachedEmail, DailyStudyDayGroup, DailyStudyTask, DashboardSummary,
+    ExamReadinessCard, ScheduleData, StudyRecommendation, StudyTasksPayload, TopicCheckItem,
 };
 use chrono::{Datelike, Duration, NaiveDate, Weekday};
 use regex::Regex;
@@ -1161,3 +1161,259 @@ fn default_course_palette(course_id: &str) -> (String, String, String) {
         ),
     }
 }
+
+pub fn build_study_tasks(assessments: &[Assessment], config: &AppConfig) -> StudyTasksPayload {
+    let ref_date = current_reference_date();
+    let mut upcoming: Vec<Assessment> = assessments
+        .iter()
+        .filter(|a| a.is_upcoming || a.days_until >= 0)
+        .cloned()
+        .collect();
+
+    // Sort upcoming by days_until ascending, then priority_score descending
+    upcoming.sort_by(|a, b| {
+        a.days_until
+            .cmp(&b.days_until)
+            .then_with(|| b.priority_score.cmp(&a.priority_score))
+    });
+
+    let mut readiness_cards = Vec::new();
+    let mut all_tasks = Vec::new();
+
+    for a in &upcoming {
+        let topics_list: Vec<String> = if a.topics.is_empty() {
+            vec![
+                "Core Lecture Concepts & Slides Review".to_string(),
+                "Practice Problem Sets & Exercises".to_string(),
+                "Mock Revision & Key Formula Summary".to_string(),
+            ]
+        } else {
+            a.topics.clone()
+        };
+
+        let mut completed_count = 0usize;
+        let mut first_uncompleted: Option<String> = None;
+
+        for (idx, topic) in topics_list.iter().enumerate() {
+            let key = format!("{}::{}", a.id, idx);
+            let is_completed = *config.completed_topics.get(&key).unwrap_or(&false);
+            if is_completed {
+                completed_count += 1;
+            } else if first_uncompleted.is_none() {
+                first_uncompleted = Some(topic.clone());
+            }
+
+            // Distribute across days based on days_until and topic index
+            let max_prep_days = (a.days_until.max(1) - 1).min(5) as i32;
+            let day_offset = if a.days_until <= 0 {
+                0
+            } else if max_prep_days <= 0 {
+                0
+            } else {
+                (idx as i32) % (max_prep_days + 1)
+            };
+
+            let task_date = ref_date + Duration::days(day_offset as i64);
+            let display_day = match day_offset {
+                0 => "Today".to_string(),
+                1 => "Tomorrow".to_string(),
+                _ => task_date.format("%A, %b %-d").to_string(),
+            };
+
+            let hours_per_topic = (a.estimated_study_hours / (topics_list.len() as f32).max(1.0))
+                .max(0.5)
+                .min(2.5);
+            let hours_rounded = (hours_per_topic * 10.0).round() / 10.0;
+
+            let urgency = if a.days_until <= 1 {
+                "critical".to_string()
+            } else if a.days_until <= 3 {
+                "high".to_string()
+            } else if a.days_until <= 7 {
+                "medium".to_string()
+            } else {
+                "normal".to_string()
+            };
+
+            let ai_reasoning = if a.days_until <= 1 {
+                format!("Immediate exam deadline in {} — high grade impact.", if a.days_until == 0 { "a few hours" } else { "24 hours" })
+            } else if a.days_until <= 3 {
+                format!("High-priority preparation. Master foundational problem sets before final review.")
+            } else {
+                format!("Structured early revision to build retention and confidence.")
+            };
+
+            let rank_score = a.priority_score.saturating_sub((day_offset as u32) * 5);
+
+            all_tasks.push(DailyStudyTask {
+                id: format!("task-{}-{}-{}", a.id, idx, day_offset),
+                key,
+                assessment_id: a.id.clone(),
+                course_id: a.course_id.clone(),
+                course_name: a.course_name.clone(),
+                assessment_title: a.title.clone(),
+                assessment_type: a.assessment_type.clone(),
+                topic: topic.clone(),
+                day_offset,
+                target_date_iso: task_date.format("%Y-%m-%d").to_string(),
+                display_day,
+                priority_rank: rank_score,
+                urgency,
+                estimated_hours: hours_rounded,
+                ai_reasoning,
+                completed: is_completed,
+                color: a.color.clone(),
+                days_until_assessment: a.days_until,
+                assessment_date: a.date_iso.clone(),
+            });
+        }
+
+        let readiness_percent = if topics_list.is_empty() {
+            100
+        } else {
+            ((completed_count as f32 / topics_list.len() as f32) * 100.0).round() as u32
+        };
+
+        readiness_cards.push(ExamReadinessCard {
+            assessment_id: a.id.clone(),
+            course_id: a.course_id.clone(),
+            course_name: a.course_name.clone(),
+            title: a.title.clone(),
+            assessment_type: a.assessment_type.clone(),
+            date_iso: a.date_iso.clone(),
+            display_date: a.display_time.clone(),
+            days_until: a.days_until,
+            readiness_percent,
+            completed_count,
+            total_count: topics_list.len(),
+            priority_score: a.priority_score,
+            color: a.color.clone(),
+            recommended_focus: first_uncompleted.unwrap_or_else(|| "All topics mastered! Complete mock revision.".to_string()),
+        });
+    }
+
+    // Group tasks by day_offset
+    let mut day_map: HashMap<i32, Vec<DailyStudyTask>> = HashMap::new();
+    for task in all_tasks.iter() {
+        day_map.entry(task.day_offset).or_default().push(task.clone());
+    }
+
+    // Collect sorted day offsets (from 0 up to 6)
+    let mut day_offsets: Vec<i32> = day_map.keys().cloned().collect();
+    if !day_offsets.contains(&0) {
+        day_offsets.push(0);
+    }
+    if !day_offsets.contains(&1) {
+        day_offsets.push(1);
+    }
+    day_offsets.sort();
+
+    let mut days = Vec::new();
+    for offset in day_offsets {
+        let date = ref_date + Duration::days(offset as i64);
+        let date_iso = date.format("%Y-%m-%d").to_string();
+        let display_day = match offset {
+            0 => format!("Today • {}", date.format("%A, %b %-d")),
+            1 => format!("Tomorrow • {}", date.format("%A, %b %-d")),
+            _ => date.format("%A • %b %-d").to_string(),
+        };
+
+        let mut day_tasks = day_map.remove(&offset).unwrap_or_default();
+        // Sort within day: uncompleted first, then by priority_rank descending
+        day_tasks.sort_by(|a, b| {
+            a.completed
+                .cmp(&b.completed)
+                .then_with(|| b.priority_rank.cmp(&a.priority_rank))
+        });
+
+        let total_estimated_hours = day_tasks
+            .iter()
+            .map(|t| t.estimated_hours)
+            .sum::<f32>();
+
+        days.push(DailyStudyDayGroup {
+            day_offset: offset,
+            date_iso,
+            display_day,
+            is_today: offset == 0,
+            total_estimated_hours: (total_estimated_hours * 10.0).round() / 10.0,
+            tasks: day_tasks,
+        });
+    }
+
+    let total_tasks = all_tasks.len();
+    let completed_tasks = all_tasks.iter().filter(|t| t.completed).count();
+    let pending_tasks = total_tasks.saturating_sub(completed_tasks);
+    let total_hours = all_tasks.iter().map(|t| t.estimated_hours).sum::<f32>();
+
+    StudyTasksPayload {
+        days,
+        readiness_cards,
+        total_tasks,
+        pending_tasks,
+        completed_tasks,
+        total_hours: (total_hours * 10.0).round() / 10.0,
+        ai_generated: false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_study_tasks() {
+        let mut config = AppConfig::default();
+        let assessment = Assessment {
+            id: "assess-test-1".to_string(),
+            course_id: "CSE420".to_string(),
+            course_name: "Computer Architecture".to_string(),
+            title: "Midterm Exam".to_string(),
+            assessment_type: "Midterm Exam".to_string(),
+            date_iso: "2026-10-21".to_string(),
+            day_name: "Wednesday".to_string(),
+            start_time: "10:00".to_string(),
+            end_time: "11:30".to_string(),
+            display_time: "10:00 AM – 11:30 AM".to_string(),
+            room: "Hall B".to_string(),
+            group: "Sec 1".to_string(),
+            instructor: "Dr. Smith".to_string(),
+            is_upcoming: true,
+            days_until: 3,
+            urgency_level: "high".to_string(),
+            priority_score: 90,
+            topics: vec![
+                "Instruction Pipelining & Hazards".to_string(),
+                "Branch Prediction & Speculative Execution".to_string(),
+                "Cache Memory & Coherence".to_string(),
+            ],
+            warnings: vec![],
+            ai_inference_note: "Syllabus chapter 4-6".to_string(),
+            ai_study_plan: "Review slides".to_string(),
+            estimated_study_hours: 4.5,
+            elearning_url: "".to_string(),
+            google_cal_url: "".to_string(),
+            gcal_synced: false,
+            gcal_event_id: None,
+            color: "#1a73e8".to_string(),
+            bg: "#e8f0fe".to_string(),
+            border: "#1a73e8".to_string(),
+            semester: "Fall 2026".to_string(),
+            email_subject: "Midterm".to_string(),
+            email_sent_date: "2026-10-15".to_string(),
+        };
+
+        // Mark topic 0 as completed in config
+        config.completed_topics.insert("assess-test-1::0".to_string(), true);
+
+        let payload = build_study_tasks(&[assessment], &config);
+        assert_eq!(payload.total_tasks, 3);
+        assert_eq!(payload.completed_tasks, 1);
+        assert_eq!(payload.pending_tasks, 2);
+        assert_eq!(payload.readiness_cards.len(), 1);
+        assert_eq!(payload.readiness_cards[0].readiness_percent, 33);
+        assert!(payload.days.len() >= 2);
+    }
+}
+
+

@@ -196,3 +196,66 @@ pub struct TopicCheckItem {
     pub topic: String,
     pub completed: bool,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailyStudyTask {
+    pub id: String,
+    pub key: String,
+    pub assessment_id: String,
+    pub course_id: String,
+    pub course_name: String,
+    pub assessment_title: String,
+    pub assessment_type: String,
+    pub topic: String,
+    pub day_offset: i32,
+    pub target_date_iso: String,
+    pub display_day: String,
+    pub priority_rank: u32,
+    pub urgency: String,
+    pub estimated_hours: f32,
+    pub ai_reasoning: String,
+    pub completed: bool,
+    pub color: String,
+    pub days_until_assessment: i64,
+    pub assessment_date: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailyStudyDayGroup {
+    pub day_offset: i32,
+    pub date_iso: String,
+    pub display_day: String,
+    pub is_today: bool,
+    pub total_estimated_hours: f32,
+    pub tasks: Vec<DailyStudyTask>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExamReadinessCard {
+    pub assessment_id: String,
+    pub course_id: String,
+    pub course_name: String,
+    pub title: String,
+    pub assessment_type: String,
+    pub date_iso: String,
+    pub display_date: String,
+    pub days_until: i64,
+    pub readiness_percent: u32,
+    pub completed_count: usize,
+    pub total_count: usize,
+    pub priority_score: u32,
+    pub color: String,
+    pub recommended_focus: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StudyTasksPayload {
+    pub days: Vec<DailyStudyDayGroup>,
+    pub readiness_cards: Vec<ExamReadinessCard>,
+    pub total_tasks: usize,
+    pub pending_tasks: usize,
+    pub completed_tasks: usize,
+    pub total_hours: f32,
+    pub ai_generated: bool,
+}
+

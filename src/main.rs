@@ -222,6 +222,8 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
         .route("/api/sync", post(trigger_full_sync))
         .route("/api/gcal/sync", post(trigger_gcal_sync))
         .route("/api/study/toggle", post(toggle_study_topic))
+        .route("/api/study/tasks", get(get_study_tasks_handler))
+        .route("/api/study/tasks/optimize", post(optimize_study_tasks_handler))
         .route("/api/events/custom", post(add_custom_event))
         .route("/api/events/custom/:id", delete(delete_custom_event))
         .route("/api/schedule/extract", post(extract_schedule_handler))
@@ -651,12 +653,50 @@ async fn toggle_study_topic(
 
     let assessments = state.assessments.read().await;
     let dashboard = parser::build_dashboard_summary(&assessments, &cfg);
+    let tasks_payload = parser::build_study_tasks(&assessments, &cfg);
 
     Json(json!({
         "success": true,
         "dashboard": dashboard,
+        "tasks_payload": tasks_payload,
         "completed_topics": cfg.completed_topics
     }))
+}
+
+async fn get_study_tasks_handler(State(state): State<SharedAppState>) -> Json<Value> {
+    let assessments = state.assessments.read().await;
+    let cfg = state.config.read().await;
+    let tasks_payload = parser::build_study_tasks(&assessments, &cfg);
+    Json(json!({
+        "success": true,
+        "tasks_payload": tasks_payload
+    }))
+}
+
+async fn optimize_study_tasks_handler(State(state): State<SharedAppState>) -> Json<Value> {
+    let assessments = state.assessments.read().await;
+    let schedule = state.schedule.read().await;
+    let cfg = state.config.read().await;
+
+    let api_key = cfg.gemini_api_key.as_deref();
+    let res = gemini::rank_and_plan_with_gemini(&assessments, &schedule, &cfg, api_key).await;
+
+    match res {
+        Ok(payload) => Json(json!({
+            "success": true,
+            "tasks_payload": payload,
+            "ai_optimized": true
+        })),
+        Err(err) => {
+            let fallback_payload = parser::build_study_tasks(&assessments, &cfg);
+            Json(json!({
+                "success": true,
+                "tasks_payload": fallback_payload,
+                "ai_optimized": false,
+                "fallback_note": format!("AI plan unavailable: {}. Loaded smart deterministic ranking.", err)
+            }))
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

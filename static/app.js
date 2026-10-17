@@ -21,7 +21,10 @@ let appState = {
   },
 };
 
-let currentMainView = "dashboard"; // "dashboard" | "calendar"
+let currentMainView = "dashboard"; // "dashboard" | "tasks" | "calendar"
+let studyTasksState = null;
+let currentTasksCourseFilter = "all";
+let currentTasksStatusFilter = "pending";
 let currentWeekStart = new Date(2026, 9, 18); // Sunday, Oct 18, 2026
 let selectedCalendarDate = new Date(2026, 9, 18);
 let activeCourseFilters = new Set();
@@ -271,6 +274,7 @@ async function loadFullState() {
     renderSidebar();
     renderDashboard();
     renderWeekCalendar();
+    loadStudyTasks();
 
     if (demo) {
       closeOnboardingModal();
@@ -469,41 +473,513 @@ function updateTopBarAndUser() {
 function switchMainView(view) {
   currentMainView = view;
   const dashEl = document.getElementById("view-dashboard");
+  const tasksEl = document.getElementById("view-tasks");
   const calEl = document.getElementById("view-calendar");
   const btnDash = document.getElementById("tab-btn-dashboard");
+  const btnTasks = document.getElementById("tab-btn-tasks");
   const btnCal = document.getElementById("tab-btn-calendar");
   const topControls = document.getElementById("calendar-top-controls");
 
+  const activeClass =
+    "flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition bg-white dark:bg-slate-900 text-[#1a73e8] dark:text-blue-400 shadow-2xs cursor-pointer";
+  const inactiveClass =
+    "flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer";
+
   if (view === "dashboard") {
-    dashEl.classList.remove("hidden");
-    dashEl.classList.remove("view-transition");
-    void dashEl.offsetWidth;
-    dashEl.classList.add("view-transition");
+    if (dashEl) {
+      dashEl.classList.remove("hidden");
+      dashEl.classList.remove("view-transition");
+      void dashEl.offsetWidth;
+      dashEl.classList.add("view-transition");
+    }
+    if (tasksEl) tasksEl.classList.add("hidden");
+    if (calEl) calEl.classList.add("hidden");
 
-    calEl.classList.add("hidden");
-    btnDash.className =
-      "flex items-center space-x-1.5 px-3 py-1 rounded-md text-xs font-semibold transition bg-white dark:bg-slate-900 text-[#1a73e8] dark:text-blue-400 shadow-2xs cursor-pointer";
-    btnCal.className =
-      "flex items-center space-x-1.5 px-3 py-1 rounded-md text-xs font-semibold transition text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer";
-    topControls.classList.add("hidden");
-    topControls.classList.remove("flex");
+    if (btnDash) btnDash.className = activeClass;
+    if (btnTasks) btnTasks.className = inactiveClass;
+    if (btnCal) btnCal.className = inactiveClass;
+
+    if (topControls) {
+      topControls.classList.add("hidden");
+      topControls.classList.remove("flex");
+    }
     renderDashboard();
-  } else {
-    dashEl.classList.add("hidden");
-    calEl.classList.remove("hidden");
-    calEl.classList.remove("view-transition");
-    void calEl.offsetWidth;
-    calEl.classList.add("view-transition");
+  } else if (view === "tasks") {
+    if (dashEl) dashEl.classList.add("hidden");
+    if (tasksEl) {
+      tasksEl.classList.remove("hidden");
+      tasksEl.classList.remove("view-transition");
+      void tasksEl.offsetWidth;
+      tasksEl.classList.add("view-transition");
+    }
+    if (calEl) calEl.classList.add("hidden");
 
-    btnCal.className =
-      "flex items-center space-x-1.5 px-3 py-1 rounded-md text-xs font-semibold transition bg-white dark:bg-slate-900 text-[#1a73e8] dark:text-blue-400 shadow-2xs cursor-pointer";
-    btnDash.className =
-      "flex items-center space-x-1.5 px-3 py-1 rounded-md text-xs font-semibold transition text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer";
-    topControls.classList.remove("hidden");
-    topControls.classList.add("flex");
+    if (btnDash) btnDash.className = inactiveClass;
+    if (btnTasks) btnTasks.className = activeClass;
+    if (btnCal) btnCal.className = inactiveClass;
+
+    if (topControls) {
+      topControls.classList.add("hidden");
+      topControls.classList.remove("flex");
+    }
+    renderTasksView();
+  } else {
+    if (dashEl) dashEl.classList.add("hidden");
+    if (tasksEl) tasksEl.classList.add("hidden");
+    if (calEl) {
+      calEl.classList.remove("hidden");
+      calEl.classList.remove("view-transition");
+      void calEl.offsetWidth;
+      calEl.classList.add("view-transition");
+    }
+
+    if (btnDash) btnDash.className = inactiveClass;
+    if (btnTasks) btnTasks.className = inactiveClass;
+    if (btnCal) btnCal.className = activeClass;
+
+    if (topControls) {
+      topControls.classList.remove("hidden");
+      topControls.classList.add("flex");
+    }
     renderWeekCalendar();
   }
   if (window.lucide) lucide.createIcons();
+}
+
+// ============================================================================
+// STUDY TASKS & REVISION ROADMAP MANAGEMENT
+// ============================================================================
+
+async function loadStudyTasks(forceRefresh = false) {
+  try {
+    const res = await fetch("/api/study/tasks");
+    const data = await res.json();
+    if (data.success && data.tasks_payload) {
+      studyTasksState = data.tasks_payload;
+      updateTasksBadgeCount();
+      if (currentMainView === "tasks") {
+        renderTasksView();
+      }
+    }
+  } catch (err) {
+    console.error("Failed to load study tasks:", err);
+  }
+}
+
+function updateTasksBadgeCount() {
+  const badge = document.getElementById("tasks-badge-count");
+  if (!badge) return;
+  const pending = studyTasksState?.pending_tasks || 0;
+  if (pending > 0) {
+    badge.textContent = pending;
+    badge.classList.remove("hidden");
+  } else {
+    badge.classList.add("hidden");
+  }
+}
+
+async function optimizeStudyTasks() {
+  const btn = document.getElementById("btn-tasks-ai-rerank");
+  const icon = document.getElementById("ai-rerank-icon");
+  if (btn) btn.disabled = true;
+  if (icon) icon.classList.add("animate-spin");
+
+  try {
+    const res = await fetch("/api/study/tasks/optimize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    const data = await res.json();
+    if (data.success && data.tasks_payload) {
+      studyTasksState = data.tasks_payload;
+      updateTasksBadgeCount();
+      renderTasksView();
+
+      const statusBadge = document.getElementById("tasks-header-status-badge");
+      if (statusBadge) {
+        statusBadge.textContent = data.ai_optimized ? "Gemini AI Optimized" : "Smart Ranked";
+        statusBadge.className = data.ai_optimized
+          ? "px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/50"
+          : "px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 dark:bg-blue-950/60 text-[#1a73e8] dark:text-blue-400 border border-blue-200 dark:border-blue-900/50";
+      }
+
+      showToast(
+        data.ai_optimized
+          ? "Daily study roadmap optimized with Gemini AI!"
+          : "Daily study roadmap updated with smart academic ranking."
+      );
+    } else {
+      showToast(data.error || "Failed to optimize study tasks", true);
+    }
+  } catch (err) {
+    console.error("Error optimizing study tasks:", err);
+    showToast("Error optimizing study tasks", true);
+  } finally {
+    if (btn) btn.disabled = false;
+    if (icon) icon.classList.remove("animate-spin");
+  }
+}
+
+async function toggleDailyTask(key, ev) {
+  if (ev) ev.stopPropagation();
+  if (!studyTasksState) return;
+
+  // Find task in local state and toggle optimistically
+  let targetTask = null;
+  for (const day of studyTasksState.days || []) {
+    for (const t of day.tasks || []) {
+      if (t.key === key) {
+        targetTask = t;
+        break;
+      }
+    }
+    if (targetTask) break;
+  }
+
+  if (!targetTask) return;
+  const newCompleted = !targetTask.completed;
+  targetTask.completed = newCompleted;
+
+  // Recalculate pending/completed counts
+  let completedCount = 0;
+  let totalCount = 0;
+  for (const day of studyTasksState.days || []) {
+    for (const t of day.tasks || []) {
+      totalCount++;
+      if (t.completed) completedCount++;
+    }
+  }
+  studyTasksState.completed_tasks = completedCount;
+  studyTasksState.pending_tasks = totalCount - completedCount;
+
+  // Update corresponding readiness card
+  if (studyTasksState.readiness_cards) {
+    const card = studyTasksState.readiness_cards.find((c) => c.assessment_id === targetTask.assessment_id);
+    if (card) {
+      if (newCompleted) {
+        card.completed_count = Math.min(card.total_count, card.completed_count + 1);
+      } else {
+        card.completed_count = Math.max(0, card.completed_count - 1);
+      }
+      card.readiness_percent = card.total_count > 0 ? Math.round((card.completed_count / card.total_count) * 100) : 0;
+    }
+  }
+
+  updateTasksBadgeCount();
+  renderTasksView();
+
+  try {
+    const res = await fetch("/api/study/toggle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, completed: newCompleted }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      if (data.dashboard) appState.dashboard = data.dashboard;
+      if (data.completed_topics && appState.config) {
+        appState.config.completed_topics = data.completed_topics;
+      }
+      if (data.tasks_payload) {
+        studyTasksState = data.tasks_payload;
+        updateTasksBadgeCount();
+        renderTasksView();
+      }
+      renderDashboard();
+    }
+  } catch (err) {
+    console.error("Failed to sync study topic toggle:", err);
+  }
+}
+
+function handleTasksFilterChange() {
+  const select = document.getElementById("tasks-course-filter");
+  if (select) {
+    currentTasksCourseFilter = select.value;
+  }
+  renderTasksView();
+}
+
+function setTasksStatusFilter(status) {
+  currentTasksStatusFilter = status;
+
+  const btnPending = document.getElementById("task-filter-pending");
+  const btnAll = document.getElementById("task-filter-all");
+  const btnCompleted = document.getElementById("task-filter-completed");
+
+  const active =
+    "px-2.5 py-1 rounded-lg font-semibold bg-white dark:bg-slate-900 text-[#1a73e8] dark:text-blue-400 shadow-2xs transition cursor-pointer";
+  const inactive =
+    "px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition cursor-pointer";
+
+  if (btnPending) btnPending.className = status === "pending" ? active : inactive;
+  if (btnAll) btnAll.className = status === "all" ? active : inactive;
+  if (btnCompleted) btnCompleted.className = status === "completed" ? active : inactive;
+
+  renderTasksView();
+}
+
+function renderTasksView() {
+  if (!studyTasksState) {
+    loadStudyTasks();
+    return;
+  }
+
+  // 1. Subtitle & Top Header Summary
+  const subEl = document.getElementById("tasks-summary-subtitle");
+  if (subEl) {
+    const pending = studyTasksState.pending_tasks || 0;
+    const examsCount = studyTasksState.readiness_cards?.length || 0;
+    const hours = studyTasksState.total_hours || 0;
+    subEl.textContent = `${pending} pending topics across ${examsCount} upcoming exams • Est. ${hours} hrs total`;
+  }
+
+  // 2. Populate Course Filter Dropdown if not already populated
+  const courseFilter = document.getElementById("tasks-course-filter");
+  if (courseFilter && courseFilter.options.length <= 1) {
+    const courses = appState.schedule?.courses || [];
+    const seen = new Set();
+    courses.forEach((c) => {
+      if (!seen.has(c.id)) {
+        seen.add(c.id);
+        const opt = document.createElement("option");
+        opt.value = c.id;
+        opt.textContent = `${c.id} — ${c.name}`;
+        courseFilter.appendChild(opt);
+      }
+    });
+  }
+
+  // 3. Render Exam Readiness Cards
+  renderReadinessCards();
+
+  // 4. Render Daily Study Roadmap
+  renderDailyRoadmap();
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function renderReadinessCards() {
+  const container = document.getElementById("readiness-cards-container");
+  const avgBadge = document.getElementById("readiness-avg-badge");
+  if (!container) return;
+
+  let cards = studyTasksState?.readiness_cards || [];
+  if (currentTasksCourseFilter !== "all") {
+    cards = cards.filter((c) => c.course_id.toLowerCase() === currentTasksCourseFilter.toLowerCase());
+  }
+
+  if (cards.length === 0) {
+    container.innerHTML = `
+      <div class="col-span-full p-6 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 text-slate-500 text-xs">
+        No upcoming assessments found for the selected filter.
+      </div>
+    `;
+    if (avgBadge) avgBadge.textContent = "";
+    return;
+  }
+
+  const avg = Math.round(cards.reduce((acc, c) => acc + (c.readiness_percent || 0), 0) / cards.length);
+  if (avgBadge) {
+    avgBadge.textContent = `Average Readiness: ${avg}%`;
+  }
+
+  container.innerHTML = cards
+    .map((c) => {
+      const percent = c.readiness_percent || 0;
+      const daysText = c.days_until === 0 ? "Today" : c.days_until === 1 ? "Tomorrow" : `In ${c.days_until} days`;
+      const isUrgent = c.days_until <= 2;
+      const isComplete = percent >= 100;
+      const barColor = isComplete ? "bg-emerald-500" : percent >= 60 ? "bg-blue-600 dark:bg-blue-500" : "bg-amber-500";
+
+      return `
+        <div class="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/90 dark:border-slate-800 shadow-2xs transition-all hover:border-slate-300 dark:hover:border-slate-700 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between gap-2 mb-2">
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-bold" style="background-color: ${c.color}15; color: ${c.color}; border: 1px solid ${c.color}35">
+                <span class="w-1.5 h-1.5 rounded-full" style="background-color: ${c.color}"></span>
+                ${escapeHtml(c.course_id)}
+              </span>
+              <span class="text-[11px] font-semibold px-2 py-0.5 rounded-md ${
+                isUrgent
+                  ? "bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/40"
+                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+              }">
+                ${daysText}
+              </span>
+            </div>
+
+            <h3 class="text-sm font-bold text-slate-900 dark:text-white line-clamp-1 mb-0.5" title="${escapeHtml(c.title)}">
+              ${escapeHtml(c.title)}
+            </h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mb-3">
+              ${escapeHtml(c.assessment_type)} • ${escapeHtml(c.course_name)}
+            </p>
+          </div>
+
+          <div>
+            <div class="flex items-center justify-between text-xs font-semibold mb-1.5">
+              <span class="text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                ${isComplete ? '<i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-emerald-500"></i> Exam Ready' : "Readiness"}
+              </span>
+              <span class="${isComplete ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-slate-900 dark:text-white"}">
+                ${percent}% <span class="text-[11px] font-normal text-slate-400">(${c.completed_count}/${c.total_count})</span>
+              </span>
+            </div>
+
+            <div class="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden mb-2.5">
+              <div class="h-full rounded-full ${barColor} transition-all duration-500" style="width: ${percent}%"></div>
+            </div>
+
+            <div class="text-[11px] bg-slate-50 dark:bg-slate-800/60 p-2 rounded-xl border border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400 line-clamp-1">
+              <span class="font-semibold text-slate-800 dark:text-slate-200">Focus:</span> ${escapeHtml(c.recommended_focus || "Review core concepts")}
+            </div>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function renderDailyRoadmap() {
+  const container = document.getElementById("daily-roadmap-container");
+  const countBadge = document.getElementById("tasks-overall-count");
+  if (!container) return;
+
+  const rawDays = studyTasksState?.days || [];
+  let matchingTaskCount = 0;
+
+  const filteredDays = rawDays
+    .map((d) => {
+      let tasks = d.tasks || [];
+      if (currentTasksCourseFilter !== "all") {
+        tasks = tasks.filter((t) => t.course_id.toLowerCase() === currentTasksCourseFilter.toLowerCase());
+      }
+      if (currentTasksStatusFilter === "pending") {
+        tasks = tasks.filter((t) => !t.completed);
+      } else if (currentTasksStatusFilter === "completed") {
+        tasks = tasks.filter((t) => t.completed);
+      }
+      matchingTaskCount += tasks.length;
+      return { ...d, tasks };
+    })
+    .filter((d) => d.tasks.length > 0);
+
+  if (countBadge) {
+    countBadge.textContent = `${matchingTaskCount} matching tasks`;
+  }
+
+  if (filteredDays.length === 0) {
+    container.innerHTML = `
+      <div class="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-2xs">
+        <div class="w-12 h-12 mx-auto mb-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-900/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+          <i data-lucide="check-check" class="w-6 h-6"></i>
+        </div>
+        <h3 class="text-base font-bold text-slate-900 dark:text-white">All Caught Up!</h3>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
+          ${
+            currentTasksStatusFilter === "pending"
+              ? "No pending study tasks remaining for this view. Excellent progress!"
+              : "No tasks found matching the selected filter."
+          }
+        </p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = filteredDays
+    .map((d) => {
+      const isToday = d.is_today;
+      const totalHours = Math.round(d.tasks.reduce((acc, t) => acc + (t.estimated_hours || 0), 0) * 10) / 10;
+
+      const tasksHtml = d.tasks
+        .map((t) => {
+          const isCompleted = t.completed;
+          const urgencyBadge =
+            t.urgency === "critical"
+              ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300">Critical</span>'
+              : t.urgency === "high"
+              ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300">High</span>'
+              : '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300">Normal</span>';
+
+          return `
+            <div class="group flex items-start gap-3.5 py-3.5 first:pt-1 last:pb-1 transition-colors ${
+              isCompleted ? "opacity-55" : ""
+            }">
+              <!-- Accessible Checkbox Button -->
+              <button onclick="toggleDailyTask('${escapeHtml(t.key)}', event)" class="mt-0.5 w-5 h-5 rounded-md flex items-center justify-center shrink-0 border transition-all cursor-pointer ${
+                isCompleted
+                  ? "bg-emerald-600 border-emerald-600 text-white"
+                  : "border-slate-300 dark:border-slate-600 hover:border-[#1a73e8] dark:hover:border-blue-400 bg-white dark:bg-slate-800"
+              }" title="${isCompleted ? "Mark incomplete" : "Mark completed"}">
+                ${isCompleted ? '<i data-lucide="check" class="w-3.5 h-3.5 stroke-[2.5]"></i>' : ""}
+              </button>
+
+              <!-- Main Content -->
+              <div class="flex-1 min-w-0">
+                <div class="flex flex-wrap items-center gap-2 mb-1">
+                  <span class="inline-flex items-center gap-1 px-2 py-0.2 rounded-md text-[11px] font-bold" style="background-color: ${t.color}15; color: ${t.color}; border: 1px solid ${t.color}35">
+                    ${escapeHtml(t.course_id)}
+                  </span>
+                  <span class="text-xs font-semibold text-slate-500 dark:text-slate-400 truncate max-w-[200px]" title="${escapeHtml(t.assessment_title)}">
+                    ${escapeHtml(t.assessment_title)}
+                  </span>
+                  ${urgencyBadge}
+                  <span class="text-[11px] text-slate-400 ml-auto flex items-center gap-1">
+                    <i data-lucide="clock" class="w-3 h-3"></i>
+                    ${t.estimated_hours}h
+                  </span>
+                </div>
+
+                <h4 class="text-sm font-semibold text-slate-900 dark:text-white ${isCompleted ? "line-through text-slate-400 dark:text-slate-500" : ""}">
+                  ${escapeHtml(t.topic)}
+                </h4>
+
+                ${
+                  t.ai_reasoning
+                    ? `
+                  <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 italic flex items-center gap-1.5">
+                    <i data-lucide="sparkle" class="w-3 h-3 text-blue-500 shrink-0"></i>
+                    <span>${escapeHtml(t.ai_reasoning)}</span>
+                  </p>
+                `
+                    : ""
+                }
+              </div>
+            </div>
+          `;
+        })
+        .join("");
+
+      return `
+        <div class="rounded-2xl p-5 border transition-all ${
+          isToday
+            ? "bg-white dark:bg-slate-900 border-blue-300 dark:border-blue-900/60 shadow-xs ring-1 ring-blue-500/10"
+            : "bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 shadow-2xs"
+        }">
+          <div class="flex items-center justify-between pb-3.5 mb-2 border-b border-slate-100 dark:border-slate-800">
+            <div class="flex items-center gap-2.5">
+              <span class="w-2.5 h-2.5 rounded-full ${isToday ? "bg-blue-600 animate-pulse" : "bg-slate-400 dark:bg-slate-600"}"></span>
+              <h3 class="text-base font-bold text-slate-900 dark:text-white">
+                ${escapeHtml(d.display_day)}
+              </h3>
+              ${isToday ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">Today</span>' : ""}
+            </div>
+            <div class="flex items-center gap-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
+              <span>${d.tasks.length} ${d.tasks.length === 1 ? "task" : "tasks"}</span>
+              <span>•</span>
+              <span>${totalHours} hrs total</span>
+            </div>
+          </div>
+
+          <div class="divide-y divide-slate-100 dark:divide-slate-800/80">
+            ${tasksHtml}
+          </div>
+        </div>
+      `;
+    })
+    .join("");
 }
 
 // ============================================================================

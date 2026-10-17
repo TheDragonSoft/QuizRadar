@@ -56,7 +56,15 @@ fn main() {
     if !std::path::Path::new("Cargo.toml").exists() {
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
-                let _ = std::env::set_current_dir(exe_dir);
+                if let Some(workspace_root) = exe_dir.parent().and_then(|p| p.parent()) {
+                    if workspace_root.join("Cargo.toml").exists() {
+                        let _ = std::env::set_current_dir(workspace_root);
+                    } else {
+                        let _ = std::env::set_current_dir(exe_dir);
+                    }
+                } else {
+                    let _ = std::env::set_current_dir(exe_dir);
+                }
             }
         }
     }

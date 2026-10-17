@@ -122,7 +122,6 @@ fn is_candidate_assessment_email(email: &CachedEmail) -> bool {
         || subj.contains("she impacts")
         || subj.contains("tot program")
         || subj.starts_with("re:")
-        || from.contains("omar.ahmed126@msa.edu.eg")
     {
         return false;
     }
@@ -171,7 +170,7 @@ fn parse_single_email(
     let ref_date = current_reference_date();
     let sent_date = parse_email_sent_date(&email.date).unwrap_or(ref_date);
 
-    // Extract announcement body between Moodle dashes if present
+    // Extract announcement body between LMS separator dashes if present
     let announcement_body = if email.body.contains("---------------------------------------------------------------------") {
         let parts: Vec<&str> = email
             .body
@@ -189,7 +188,7 @@ fn parse_single_email(
     let subj_and_body = format!("{} {}", email.subject, announcement_body);
     let lower = subj_and_body.to_lowercase();
 
-    // 1. Course ID & Course Name resolution (with Moodle cross-listing intelligence)
+    // 1. Course ID & Course Name resolution (with LMS cross-listing intelligence)
     let re_course = Regex::new(r"(?i)\b([A-Z]{2,4}\s*\d{3}[a-zA-Z]?)\b").unwrap();
     let mut raw_course = re_course
         .captures(&subj_and_body)
@@ -204,7 +203,7 @@ fn parse_single_email(
     } else if raw_course == "CSE354"
         || (lower.contains("algorithm efficiency") && lower.contains("recursion"))
     {
-        // CSE354 on Moodle is cross-listed as CSE261 (Algorithms and Data Structures) in the student's Fall 2026 schedule
+        // CSE354 is cross-listed as CSE261 (Algorithms and Data Structures) in the student's Fall 2026 schedule
         raw_course = "CSE261".to_string();
     }
 
@@ -345,7 +344,7 @@ fn parse_single_email(
         format_12h(&end_time)
     );
 
-    let re_url = Regex::new(r"(https://e-learning\.msa\.edu\.eg/[^\s\]]+)").unwrap();
+    let re_url = Regex::new(r"(https://e-learning\.[a-zA-Z0-9.-]+/[^\s\]]+)").unwrap();
     let elearning_url = re_url
         .captures(&email.body)
         .and_then(|c| c.get(1))
@@ -767,11 +766,11 @@ fn generate_ai_study_plan(
             3.5,
         ),
         "CSE252" => (
-            "Print the new Embedded Systems Quiz Template from Moodle! Since the quiz is only 15 minutes and combines MCQs with 'Explain & Discuss', prepare concise 2-3 bullet comparisons of microcontroller architectures and I/O interrupt handling from Tutorial Sheets 1–3.".to_string(),
+            "Print the new Embedded Systems Quiz Template from the course portal! Since the quiz is only 15 minutes and combines MCQs with 'Explain & Discuss', prepare concise 2-3 bullet comparisons of microcontroller architectures and I/O interrupt handling from Tutorial Sheets 1–3.".to_string(),
             3.5,
         ),
         "GENERAL" if assessment_type == "Midterm Exam" => (
-            "Space out your midterm revision across the next 3 weeks: dedicate 2 days per course starting with high-problem-solving courses (GSE211, CSE261, CSE263) and solve past MSA midterm papers.".to_string(),
+            "Space out your midterm revision across the next 3 weeks: dedicate 2 days per course starting with high-problem-solving courses (GSE211, CSE261, CSE263) and solve past midterm practice papers.".to_string(),
             18.0,
         ),
         _ => {
@@ -969,10 +968,10 @@ pub fn build_google_calendar_template_url(a: &Assessment) -> String {
     }
     details.push_str(&format!("AI Study Plan: {}\n", a.ai_study_plan));
     if !a.elearning_url.is_empty() {
-        details.push_str(&format!("\nMoodle Link: {}", a.elearning_url));
+        details.push_str(&format!("\nCourse Link: {}", a.elearning_url));
     }
 
-    let location = format!("MSA University - Room {}", a.room);
+    let location = format!("University Campus - Room {}", a.room);
     format!(
         "https://calendar.google.com/calendar/render?action=TEMPLATE&text={}&dates={}&details={}&location={}&sf=true&output=xml",
         crate::urlencoding::encode(&title),

@@ -100,7 +100,7 @@ async fn main() {
     println!("🚀 QuizRadar v2.0 — Standalone Rust Academic Dashboard & Calendar");
     println!("📍 Local App URL: http://127.0.0.1:{}", selected_port);
     println!("🤖 AI Engine: Gemini Schedule-Aware Email & Timetable Analyzer");
-    println!("📅 Semester: Fall 2026 (MSA University Engineering)");
+    println!("📅 Semester: Fall 2026 (Academic Schedule)");
     println!("====================================================================");
 
     let open_port = selected_port;

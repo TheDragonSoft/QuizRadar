@@ -58,7 +58,7 @@ STUDENT'S WEEKLY CLASS SCHEDULE (Fall 2026):
 {schedule_json}
 
 Note on Cross-Listed Courses:
-- Moodle forum "CSE354" taught by Mona Farouk Ahmed Kamal Eldeen corresponds to course_id "CSE261" (Algorithms and Data Structures) on the student's schedule.
+- Course forum "CSE354" (Algorithm Efficiency & Recursion) corresponds to course_id "CSE261" (Algorithms and Data Structures) on the student's schedule.
 - Always match "during the lecture", "in tutorial", or "in lab" to the student's actual scheduled slot for that course to determine the exact date_iso (YYYY-MM-DD), start_time (HH:MM), end_time (HH:MM), room, and group.
 - Anchor relative phrases like "this week", "next week (not this week)", or "next Wednesday" to the email's Sent Date!
 

@@ -117,8 +117,8 @@ pub async fn sync_gmail_messages() -> Result<Vec<CachedEmail>, String> {
     let queries = [
         "quiz",
         "exam OR midterm OR final",
-        "from:e-learning.msa.edu.eg OR from:msa.edu.eg",
-        "from:canvas OR from:blackboard OR from:moodle OR from:gradescope OR from:classroom.google.com",
+        "from:e-learning OR from:edu",
+        "from:canvas OR from:blackboard OR from:gradescope OR from:classroom.google.com",
     ];
 
     let mut message_ids = Vec::new();

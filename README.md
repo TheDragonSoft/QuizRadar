@@ -26,12 +26,12 @@
 
 ## 🎯 Overview
 
-University course announcements and Moodle emails rarely state the exact calendar timestamp of an upcoming quiz or exam—instead, they use relative phrases like:
+University course announcements and LMS emails rarely state the exact calendar timestamp of an upcoming quiz or exam—instead, they use relative phrases like:
 
 > *"Dear Students, you will have Class Quiz 1 during your scheduled lecture next week (not this week). Bring a scientific calculator."*
 
 **QuizRadar** solves this in a single standalone Rust executable (`quizradar.exe`). Sign in once with your Google account during the guided 3-step onboarding flow, and QuizRadar automatically:
-1. **Scans your Gmail inbox** (`gmail.readonly`) for university announcements (`[Moodle]`, `[MSA]`, course codes).
+1. **Scans your Gmail inbox** (`gmail.readonly`) for university and LMS announcements (course portals, department notices, and course codes).
 2. **Cross-references email timestamps with your weekly class timetable** using **Gemini 2.5 Flash** (`src/gemini.rs`) + deterministic schedule resolution (`src/parser.rs`) to pinpoint the exact calendar date, lecture/lab start & end time, room number, and student group.
 3. **Prioritizes what you should study** with interactive topic checklists, per-exam rules & calculator/notes reminders, and live readiness progress bars.
 4. **Synchronizes directly to your Google Calendar** (`calendar.events`) and renders an interactive **7-Day Google Calendar Week View** inside the app.

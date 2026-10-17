@@ -1500,7 +1500,7 @@ function openSlotPopover(slotId, dateIso) {
   document.getElementById("modal-time").textContent = `${slot.day} (${dateIso}) · ${slot.display_time}`;
   document.getElementById("modal-room").textContent = `Room ${slot.room} (Group ${slot.group})`;
   document.getElementById("modal-instructor").textContent =
-    courseQuiz?.instructor || "MSA Faculty of Engineering";
+    courseQuiz?.instructor || "University Faculty";
   document.getElementById("modal-ai-inference").textContent = courseQuiz
     ? `Upcoming Assessment for ${slot.course_id}: ${courseQuiz.title} on ${courseQuiz.display_time}.`
     : `Regular weekly ${slot.slot_type} session for ${slot.course_id} — no quiz announced for this specific session.`;

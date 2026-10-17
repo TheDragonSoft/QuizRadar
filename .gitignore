@@ -2,12 +2,16 @@
 /target/
 **/*.rs.bk
 
-# Sensitive Google OAuth credentials & local user config (DO NOT COMMIT)
+# Sensitive Google OAuth credentials & local user data/caches (DO NOT COMMIT)
 token.json
 credentials.json
 client_secret*.json
 .env
 data/app_config.json
+data/quizzes.json
+data/gemini_parsed_cache.json
+quiz_emails_cache.json
+processed_quizzes.json
 
 # Agent skill caches
 .agents/

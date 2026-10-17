@@ -61,12 +61,12 @@ pub async fn sync_assessments_to_google_calendar(
         desc.push_str(&format!("💡 AI Study Strategy:\n{}\n\n", a.ai_study_plan));
         desc.push_str(&format!("🤖 {}\n", a.ai_inference_note));
         if !a.elearning_url.is_empty() {
-            desc.push_str(&format!("\n🔗 Moodle Announcement: {}", a.elearning_url));
+            desc.push_str(&format!("\n🔗 Course Announcement: {}", a.elearning_url));
         }
 
         let event_body = json!({
             "summary": format!("⚡ [{}] {}", a.course_id, a.title),
-            "location": format!("MSA University - Room {} ({})", a.room, a.group),
+            "location": format!("University Campus - Room {} ({})", a.room, a.group),
             "description": desc,
             "start": {
                 "dateTime": start_dt,
@@ -216,7 +216,7 @@ fn format_vevent(a: &Assessment) -> String {
     desc.push_str(&format!("\\n\\nStudy Plan: {}", a.ai_study_plan));
 
     format!(
-        "BEGIN:VEVENT\r\nUID:quizradar-{}@msa.edu.eg\r\nDTSTART:{}T{}\r\nDTEND:{}T{}\r\nSUMMARY:[{}] {} ({})\r\nDESCRIPTION:{}\r\nLOCATION:MSA University - Room {} ({})\r\nBEGIN:VALARM\r\nTRIGGER:-P1D\r\nACTION:DISPLAY\r\nDESCRIPTION:Upcoming {} tomorrow at {}!\r\nEND:VALARM\r\nBEGIN:VALARM\r\nTRIGGER:-PT2H\r\nACTION:DISPLAY\r\nDESCRIPTION:{} starts in 2 hours in Room {}!\r\nEND:VALARM\r\nEND:VEVENT\r\n",
+        "BEGIN:VEVENT\r\nUID:quizradar-{}@quizradar.local\r\nDTSTART:{}T{}\r\nDTEND:{}T{}\r\nSUMMARY:[{}] {} ({})\r\nDESCRIPTION:{}\r\nLOCATION:University Campus - Room {} ({})\r\nBEGIN:VALARM\r\nTRIGGER:-P1D\r\nACTION:DISPLAY\r\nDESCRIPTION:Upcoming {} tomorrow at {}!\r\nEND:VALARM\r\nBEGIN:VALARM\r\nTRIGGER:-PT2H\r\nACTION:DISPLAY\r\nDESCRIPTION:{} starts in 2 hours in Room {}!\r\nEND:VALARM\r\nEND:VEVENT\r\n",
         a.id,
         date_clean,
         start_clean,

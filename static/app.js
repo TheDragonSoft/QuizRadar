@@ -117,6 +117,8 @@ function initAndroidNativeBridge() {
     App.addListener("backButton", () => {
       // 1. Close topmost open modal/bottom sheet
       const modals = [
+        { id: "account-profile-modal", close: closeAccountModal },
+        { id: "mobile-search-modal", close: closeMobileSearchModal },
         { id: "event-detail-modal", close: closeEventDetailModal },
         { id: "create-event-modal", close: closeCreateEventModal },
         { id: "cloud-sync-modal", close: closeCloudSyncModal },
@@ -175,36 +177,208 @@ function openMobileSyncTab() {
   openCloudSyncModal();
 }
 
+// ============================================================================
+// ACCOUNT & PROFILE MODAL CONTROLLERS
+// ============================================================================
+
+function openAccountModal() {
+  triggerHaptic("selection");
+  const modal = document.getElementById("account-profile-modal");
+  if (!modal) return;
+
+  const email = appState.auth?.email || appState.config?.user_email || "Offline Student Profile";
+  const name = appState.auth?.name || appState.config?.user_name || "Student";
+  const initial = (name && name[0] ? name[0] : "S").toUpperCase();
+  const isAuth = !!appState.auth?.authenticated;
+
+  const avatarEl = document.getElementById("account-modal-avatar");
+  const nameEl = document.getElementById("account-modal-name");
+  const emailEl = document.getElementById("account-modal-email");
+  const badgeEl = document.getElementById("account-modal-badge");
+  const statusEl = document.getElementById("account-google-status");
+  const actionLabel = document.getElementById("account-auth-action-label");
+  const coursesCountEl = document.getElementById("account-courses-count");
+  const examsCountEl = document.getElementById("account-exams-count");
+
+  if (avatarEl) avatarEl.textContent = initial;
+  if (nameEl) nameEl.textContent = name;
+  if (emailEl) emailEl.textContent = email;
+  if (coursesCountEl) coursesCountEl.textContent = `${(appState.schedule?.courses || []).length} Courses`;
+  if (examsCountEl) examsCountEl.textContent = `${(appState.assessments || []).length} Scheduled`;
+
+  if (badgeEl) {
+    badgeEl.className = isAuth
+      ? "mt-1.5 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-400/25 text-emerald-100 border border-emerald-300/30"
+      : "mt-1.5 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white";
+    badgeEl.innerHTML = `<i data-lucide="${isAuth ? "shield-check" : "user"}" class="w-3 h-3"></i><span>${isAuth ? "Google Cloud Synced" : "Local Student Profile"}</span>`;
+  }
+
+  if (statusEl) {
+    statusEl.className = isAuth
+      ? "text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300"
+      : "text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300";
+    statusEl.textContent = isAuth ? "Connected" : "Offline / Unlinked";
+  }
+
+  if (actionLabel) {
+    actionLabel.textContent = isAuth ? "Switch Account" : "Connect Google";
+  }
+
+  modal.classList.add("is-open");
+  if (window.lucide) lucide.createIcons({ root: modal });
+}
+
+function closeAccountModal() {
+  triggerHaptic("light");
+  document.getElementById("account-profile-modal")?.classList.remove("is-open");
+}
+
+// ============================================================================
+// DEDICATED MOBILE SEARCH CONTROLLERS
+// ============================================================================
+
+let currentMobileSearchFilter = "ALL";
+
 function openMobileSearchPalette() {
   triggerHaptic("selection");
-  const desktopSearch = document.getElementById("global-search-input");
-  const mobileSearch = document.getElementById("mobile-search-input");
-  if (desktopSearch) {
-    openSearchPalette();
-    desktopSearch.focus();
-  } else if (mobileSearch) {
-    mobileSearch.focus();
+  const modal = document.getElementById("mobile-search-modal");
+  if (!modal) return;
+  modal.classList.add("is-open");
+  const input = document.getElementById("mobile-modal-search-input");
+  if (input) {
+    input.value = "";
+    setTimeout(() => input.focus(), 80);
   }
+  handleMobileModalSearch("");
+  if (window.lucide) lucide.createIcons({ root: modal });
+}
+
+function closeMobileSearchModal() {
+  triggerHaptic("light");
+  const modal = document.getElementById("mobile-search-modal");
+  if (modal) modal.classList.remove("is-open");
+  document.getElementById("mobile-modal-search-input")?.blur();
+}
+
+function setMobileSearchFilter(filterType) {
+  triggerHaptic("selection");
+  currentMobileSearchFilter = filterType;
+  ["msf-all", "msf-quiz", "msf-assign", "msf-exam"].forEach((id) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    const isTarget =
+      (id === "msf-all" && filterType === "ALL") ||
+      (id === "msf-quiz" && filterType === "Class Quiz") ||
+      (id === "msf-assign" && filterType === "Assignment") ||
+      (id === "msf-exam" && filterType === "Exam");
+    if (isTarget) {
+      btn.className = "px-2.5 py-1 rounded-lg text-[11px] font-bold bg-[#1a73e8] text-white shadow-2xs shrink-0 cursor-pointer";
+    } else {
+      btn.className = "px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shrink-0 cursor-pointer";
+    }
+  });
+  const input = document.getElementById("mobile-modal-search-input");
+  handleMobileModalSearch(input ? input.value : "");
+}
+
+function clearMobileModalSearch() {
+  const input = document.getElementById("mobile-modal-search-input");
+  if (input) {
+    input.value = "";
+    input.focus();
+  }
+  document.getElementById("mobile-modal-search-clear")?.classList.add("hidden");
+  handleMobileModalSearch("");
+}
+
+function handleMobileModalSearch(rawQuery) {
+  const query = (rawQuery || "").trim().toLowerCase();
+  const clearBtn = document.getElementById("mobile-modal-search-clear");
+  if (clearBtn) clearBtn.classList.toggle("hidden", query.length === 0);
+
+  const container = document.getElementById("mobile-search-results-list");
+  if (!container) return;
+
+  let items = appState.assessments || [];
+  if (currentMobileSearchFilter !== "ALL") {
+    items = items.filter((a) => {
+      const type = (a.assessment_type || "").toLowerCase();
+      if (currentMobileSearchFilter === "Class Quiz") return type.includes("quiz");
+      if (currentMobileSearchFilter === "Assignment") return type.includes("assign");
+      if (currentMobileSearchFilter === "Exam") return type.includes("exam") || type.includes("midterm") || type.includes("final");
+      return true;
+    });
+  }
+
+  if (query) {
+    items = items.filter((a) => {
+      const titleMatch = (a.title || "").toLowerCase().includes(query);
+      const courseMatch = (a.course_id || "").toLowerCase().includes(query) || (a.course_name || "").toLowerCase().includes(query);
+      const roomMatch = (a.room || "").toLowerCase().includes(query);
+      const topicMatch = (a.topics || []).some((t) => {
+        const text = typeof t === "string" ? t : t?.topic || "";
+        return text.toLowerCase().includes(query);
+      });
+      return titleMatch || courseMatch || roomMatch || topicMatch;
+    });
+  }
+
+  if (items.length === 0) {
+    container.innerHTML = `
+      <div class="py-8 text-center space-y-2">
+        <div class="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 mx-auto flex items-center justify-center">
+          <i data-lucide="search-x" class="w-5 h-5"></i>
+        </div>
+        <p class="text-xs font-semibold text-slate-700 dark:text-slate-300">No matching assessments found</p>
+        <p class="text-[11px] text-slate-400 dark:text-slate-500">Try searching by course code (e.g. BASC 110, CSE 263) or topic name.</p>
+      </div>
+    `;
+    if (window.lucide) lucide.createIcons({ root: container });
+    return;
+  }
+
+  container.innerHTML = items
+    .map((item) => {
+      const badgeStyle = `background-color: ${item.color || "#1a73e8"};`;
+      return `
+        <div onclick="closeMobileSearchModal(); openAssessmentModalById('${item.id}')"
+             class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/80 hover:border-[#1a73e8] active:scale-[0.98] transition cursor-pointer flex items-center justify-between gap-3 shadow-2xs">
+          <div class="min-w-0 space-y-1">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="px-2 py-0.5 rounded-md text-[10px] font-bold text-white shrink-0" style="${badgeStyle}">${escapeHtml(item.course_id)}</span>
+              <span class="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0">${escapeHtml(item.assessment_type || "Assessment")}</span>
+              <span class="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">${escapeHtml(item.display_time || item.date_iso)}</span>
+            </div>
+            <div class="text-xs font-bold text-slate-900 dark:text-white truncate">${escapeHtml(item.title)}</div>
+            <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate">Room: ${escapeHtml(item.room || "TBA")} · ${escapeHtml(item.course_name || "")}</div>
+          </div>
+          <i data-lucide="chevron-right" class="w-4 h-4 text-slate-400 shrink-0"></i>
+        </div>
+      `;
+    })
+    .join("");
+
+  if (window.lucide) lucide.createIcons({ root: container });
 }
 
 const SEED_INITIAL_STATE = {
   config: {
-    user_name: "Alex Mercer",
-    user_email: "alex.mercer@university.edu",
-    last_gmail_sync: "2026-10-18 09:30",
+    user_name: "Student",
+    user_email: "student@university.edu",
+    last_gmail_sync: "Never",
     auto_sync_gcal: true,
     gemini_enabled: true,
     teams_enabled: true,
     moodle_enabled: false,
     classroom_enabled: false,
     completed_topics: { "basc110-a1::0": false, "gse211-q1::0": true },
-    onboarding_completed: true,
+    onboarding_completed: false,
   },
   auth: {
-    name: "Alex Mercer",
-    email: "alex.mercer@university.edu",
-    authenticated: true,
-    has_calendar_scope: true,
+    name: "Student",
+    email: "student@university.edu",
+    authenticated: false,
+    has_calendar_scope: false,
   },
   schedule: {
     semester: "Fall 2026",
@@ -886,10 +1060,10 @@ async function loadFullState() {
       return;
     }
 
-    // One-time First-Run Onboarding Wizard: only opens the very first time the app is used
-    const localOnboardDone = localStorage.getItem("quizradar_onboarding_done") === "true";
-    if (!appState.config.onboarding_completed && !localOnboardDone) {
-      openOnboardingModal(1);
+    // One-time First-Run Onboarding Wizard: triggers whenever this specific device hasn't completed onboarding yet
+    const deviceOnboardDone = localStorage.getItem("quizradar_device_onboarded_v2") === "true";
+    if (!deviceOnboardDone) {
+      setTimeout(() => openOnboardingModal(1), 150);
     }
   } catch (err) {
     console.warn("Failed to load live state from backend, falling back to cache or demo data:", err);
@@ -2982,8 +3156,11 @@ function openOnboardingModal(initialStep = 1) {
   selectOnboardingRhythm(savedRhythm);
 
   setOnboardingStep(initialStep);
-  document.getElementById("onboarding-modal")?.classList.add("is-open");
-  if (window.lucide) lucide.createIcons();
+  const modal = document.getElementById("onboarding-modal");
+  if (modal) {
+    modal.classList.add("is-open");
+    if (window.lucide) lucide.createIcons({ root: modal });
+  }
 }
 
 function closeOnboardingModal() {
@@ -3751,6 +3928,7 @@ async function finishOnboarding() {
   const geminiEnabled = document.getElementById("onboard-gemini-toggle")?.checked ?? true;
   const geminiKey = document.getElementById("onboard-gemini-key")?.value || "";
 
+  localStorage.setItem("quizradar_device_onboarded_v2", "true");
   localStorage.setItem("quizradar_onboarding_done", "true");
   if (!appState.config) appState.config = {};
   appState.config.onboarding_completed = true;

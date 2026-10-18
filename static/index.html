@@ -1606,9 +1606,23 @@
                 <button type="button" onclick="testMicrosoftFromSettings()" class="px-2.5 py-1 rounded-lg border border-indigo-300 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 text-indigo-800 dark:text-indigo-200 text-[11px] font-semibold transition cursor-pointer">Test Graph</button>
               </div>
             </div>
-            <div>
-              <label class="block text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-0.5">Optional: Microsoft Graph User Access Token</label>
-              <input id="settings-teams-token" type="password" placeholder="EwB... (Paste custom token or sign in above)" class="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none" />
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+              <div>
+                <label class="block text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-0.5">Optional: Custom Azure App Client ID</label>
+                <input id="settings-teams-client-id" type="text" placeholder="Default: Microsoft Graph CLI" class="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none" />
+              </div>
+              <div>
+                <label class="block text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-0.5">Microsoft Graph User Access Token</label>
+                <input id="settings-teams-token" type="password" placeholder="EwB... (Paste custom token or sign in above)" class="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none" />
+              </div>
+            </div>
+            <!-- Helpful Tip for College / University Accounts -->
+            <div class="p-2.5 rounded-lg bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 text-[11px] text-blue-900 dark:text-blue-200 leading-relaxed space-y-1">
+              <div class="font-bold flex items-center gap-1.5 text-blue-700 dark:text-blue-300">
+                <i data-lucide="info" class="w-3.5 h-3.5 shrink-0"></i>
+                <span>College / University Tenants (CIC, MSA, etc.)</span>
+              </div>
+              <p>If your college blocks third-party app consent, you can get an instant token from <a href="https://developer.microsoft.com/en-us/graph/graph-explorer" target="_blank" class="underline font-bold text-blue-600 dark:text-blue-400 hover:text-blue-800">Microsoft Graph Explorer</a>: sign in with your student account, copy the <em>Access token</em>, and paste it here.</p>
             </div>
             <div id="settings-teams-status" class="hidden text-[11px] p-2 rounded-lg bg-white dark:bg-slate-900 border font-medium"></div>
           </div>

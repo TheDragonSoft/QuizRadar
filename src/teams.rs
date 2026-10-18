@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
 
-const DEFAULT_MS_CLIENT_ID: &str = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"; // Standard Microsoft Office public client
+const DEFAULT_MS_CLIENT_ID: &str = "14d82eec-204b-4c2f-b7e8-296a70dab67e"; // Official Microsoft Graph Command Line Tools
 const MS_TOKEN_FILE: &str = "microsoft_token.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

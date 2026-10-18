@@ -2802,6 +2802,7 @@ function openSettingsModal() {
   const moodleUrl = document.getElementById("settings-moodle-url");
   const moodleIcal = document.getElementById("settings-moodle-ical");
   const teamsToggle = document.getElementById("settings-teams-toggle");
+  const teamsClientId = document.getElementById("settings-teams-client-id");
   const teamsToken = document.getElementById("settings-teams-token");
   const classroomToggle = document.getElementById("settings-classroom-toggle");
 
@@ -2809,6 +2810,7 @@ function openSettingsModal() {
   if (moodleUrl) moodleUrl.value = appState.config?.moodle_url || "";
   if (moodleIcal) moodleIcal.value = appState.config?.moodle_ical_url || "";
   if (teamsToggle) teamsToggle.checked = appState.config?.teams_enabled ?? false;
+  if (teamsClientId) teamsClientId.value = appState.config?.teams_client_id || "";
   if (teamsToken) teamsToken.value = appState.config?.teams_token || "";
   if (classroomToggle) classroomToggle.checked = appState.config?.classroom_enabled ?? false;
 
@@ -2837,6 +2839,7 @@ async function saveSettingsModal() {
   const moodleUrl = document.getElementById("settings-moodle-url")?.value || "";
   const moodleIcal = document.getElementById("settings-moodle-ical")?.value || "";
   const teamsEnabled = document.getElementById("settings-teams-toggle")?.checked ?? false;
+  const teamsClientId = document.getElementById("settings-teams-client-id")?.value || "";
   const teamsToken = document.getElementById("settings-teams-token")?.value || "";
   const classroomEnabled = document.getElementById("settings-classroom-toggle")?.checked ?? false;
 
@@ -2848,6 +2851,7 @@ async function saveSettingsModal() {
     appState.config.moodle_url = moodleUrl;
     appState.config.moodle_ical_url = moodleIcal;
     appState.config.teams_enabled = teamsEnabled;
+    appState.config.teams_client_id = teamsClientId;
     appState.config.teams_token = teamsToken;
     appState.config.classroom_enabled = classroomEnabled;
   }
@@ -2869,6 +2873,7 @@ async function saveSettingsModal() {
         moodle_token: appState.config?.moodle_token || "",
         moodle_ical_url: moodleIcal,
         teams_enabled: teamsEnabled,
+        teams_client_id: teamsClientId,
         teams_token: teamsToken,
         classroom_enabled: classroomEnabled,
       }),

@@ -1757,6 +1757,20 @@
               <span class="font-bold text-indigo-600 dark:text-indigo-400" id="pairing-lan-url">Loading...</span>
             </div>
           </div>
+
+          <!-- Mobile App Server Address Config -->
+          <div class="pt-2 border-t border-slate-200/60 dark:border-slate-800/60 space-y-2">
+            <label class="block text-[11px] font-semibold text-slate-700 dark:text-slate-300">Active Mobile Connection URL:</label>
+            <div class="flex gap-2">
+              <input type="text" id="mobile-server-url-input" placeholder="http://192.168.2.115:5050" class="flex-1 px-3 py-1.5 text-xs font-mono rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-500">
+              <button onclick="saveMobileServerUrl()" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-xs font-semibold shadow-xs transition cursor-pointer">Connect</button>
+            </div>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span class="text-[10px] text-slate-400">Presets:</span>
+              <button onclick="setMobileServerPreset('http://192.168.2.115:5050')" class="text-[10px] px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 hover:bg-indigo-100 transition cursor-pointer">Wi-Fi LAN (192.168.2.115)</button>
+              <button onclick="setMobileServerPreset('http://10.0.2.2:5050')" class="text-[10px] px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/80 hover:bg-slate-200 transition cursor-pointer">Emulator (10.0.2.2)</button>
+            </div>
+          </div>
         </div>
 
         <div id="cloud-sync-message" class="hidden text-xs p-3 rounded-lg"></div>

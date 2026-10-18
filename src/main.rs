@@ -174,7 +174,7 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
     let mut listener = None;
 
     for port in ports {
-        let addr = SocketAddr::from(([127, 0, 0, 1], port));
+        let addr = SocketAddr::from(([0, 0, 0, 0], port));
         if let Ok(l) = tokio::net::TcpListener::bind(addr).await {
             selected_port = l.local_addr().map(|a| a.port()).unwrap_or(port);
             listener = Some(l);

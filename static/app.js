@@ -6,10 +6,36 @@
 // Native Capacitor / Android Environment Setup
 const IS_NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 
+let _detectedApiBase = null;
+
 function getApiBase() {
   if (!IS_NATIVE) return "";
-  return localStorage.getItem("quizradar_api_base") || "http://10.0.2.2:5050";
+  const stored = localStorage.getItem("quizradar_api_base");
+  if (stored) return stored;
+  if (_detectedApiBase) return _detectedApiBase;
+  return "http://192.168.2.115:5050";
 }
+
+// Proactive detection for Android emulator vs physical phone on local Wi-Fi
+async function detectOptimalApiBase() {
+  if (!IS_NATIVE) return;
+  const stored = localStorage.getItem("quizradar_api_base");
+  if (stored) return;
+
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 600);
+    const res = await _originalFetch("http://10.0.2.2:5050/api/sync/pair/info", { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (res.ok) {
+      _detectedApiBase = "http://10.0.2.2:5050";
+      return;
+    }
+  } catch (e) {}
+
+  _detectedApiBase = "http://192.168.2.115:5050";
+}
+detectOptimalApiBase();
 
 // Transparently route /api requests to backend host when running in native mobile WebView
 const _originalFetch = window.fetch.bind(window);
@@ -4693,12 +4719,37 @@ async function openCloudSyncModal() {
     }
   }
 
+  const serverInput = document.getElementById("mobile-server-url-input");
+  if (serverInput) {
+    serverInput.value = getApiBase();
+  }
+
   if (window.lucide) lucide.createIcons();
 }
 
 function closeCloudSyncModal() {
   const modal = document.getElementById("cloud-sync-modal");
   if (modal) modal.classList.remove("is-open");
+}
+
+function saveMobileServerUrl() {
+  const input = document.getElementById("mobile-server-url-input");
+  if (!input) return;
+  let val = input.value.trim().replace(/\/+$/, "");
+  if (!val) val = "http://192.168.2.115:5050";
+  if (!/^https?:\/\//i.test(val)) val = "http://" + val;
+  input.value = val;
+  localStorage.setItem("quizradar_api_base", val);
+  _detectedApiBase = val;
+  triggerHaptic("selection");
+  showToast(`Connected to server: ${val}`, "success");
+  refreshState();
+}
+
+function setMobileServerPreset(url) {
+  const input = document.getElementById("mobile-server-url-input");
+  if (input) input.value = url;
+  saveMobileServerUrl();
 }
 
 async function pushStateToCloud() {

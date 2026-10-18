@@ -96,14 +96,16 @@ function triggerHaptic(type = "light") {
   }
 }
 
-async function updateNativeStatusBar(isDark) {
+function updateNativeStatusBar(isDark) {
   try {
     const StatusBar = window.Capacitor?.Plugins?.StatusBar;
     if (!StatusBar) return;
-    await StatusBar.setBackgroundColor({ color: isDark ? "#0b0f19" : "#ffffff" });
-    await StatusBar.setStyle({ style: isDark ? "DARK" : "LIGHT" });
+    Promise.all([
+      StatusBar.setBackgroundColor({ color: isDark ? "#0b0f19" : "#ffffff" }),
+      StatusBar.setStyle({ style: isDark ? "DARK" : "LIGHT" })
+    ]).catch((err) => console.debug("StatusBar update error:", err));
   } catch (err) {
-    console.debug("StatusBar update error:", err);
+    console.debug("StatusBar plugin error:", err);
   }
 }
 
@@ -185,26 +187,313 @@ function openMobileSearchPalette() {
   }
 }
 
-let appState = {
-  config: {},
-  auth: {},
-  schedule: { semester: "", courses: [], slots: [] },
-  assessments: [],
+const SEED_INITIAL_STATE = {
+  config: {
+    user_name: "Alex Mercer",
+    user_email: "alex.mercer@university.edu",
+    last_gmail_sync: "2026-10-18 09:30",
+    auto_sync_gcal: true,
+    gemini_enabled: true,
+    teams_enabled: true,
+    moodle_enabled: false,
+    classroom_enabled: false,
+    completed_topics: { "basc110-a1::0": false, "gse211-q1::0": true },
+    onboarding_completed: true,
+  },
+  auth: {
+    name: "Alex Mercer",
+    email: "alex.mercer@university.edu",
+    authenticated: true,
+    has_calendar_scope: true,
+  },
+  schedule: {
+    semester: "Fall 2026",
+    courses: [
+      { id: "BASC 110", name: "Business Mathematics", color: "#1a73e8", icon: "calculator" },
+      { id: "GSE 211", name: "Mathematical Analysis & Numerical Methods", color: "#00897b", icon: "sigma" },
+      { id: "CSE 263", name: "Machine Learning & Pattern Recognition", color: "#8e24aa", icon: "brain" },
+      { id: "MGMT 101", name: "Principles of Management", color: "#f59e0b", icon: "briefcase" },
+      { id: "CSE 241", name: "Digital Logic Design", color: "#e53935", icon: "cpu" },
+    ],
+    slots: [
+      { id: "s1", course_id: "GSE 211", course_name: "Mathematical Analysis & Numerical Methods", day_name: "Sunday", day_index: 0, start_time: "08:00", end_time: "10:00", room: "Hall B-204", group: "Sec 1", instructor: "Assoc. Prof. Dr. Mohamed Khalil", color: "#00897b" },
+      { id: "s2", course_id: "GSE 211", course_name: "Mathematical Analysis & Numerical Methods", day_name: "Sunday", day_index: 0, start_time: "10:15", end_time: "12:00", room: "Lab C-212", group: "Sec 1", instructor: "Eng. Omar Tarek", color: "#00897b" },
+      { id: "s3", course_id: "CSE 263", course_name: "Machine Learning & Pattern Recognition", day_name: "Monday", day_index: 1, start_time: "13:00", end_time: "15:30", room: "Lab C-301", group: "Sec 2", instructor: "Dr. Mohamed Hussien Rehan", color: "#8e24aa" },
+      { id: "s4", course_id: "MGMT 101", course_name: "Principles of Management", day_name: "Tuesday", day_index: 2, start_time: "09:00", end_time: "11:30", room: "Hall A-110", group: "Sec 1", instructor: "Dr. Tarek Adel", color: "#f59e0b" },
+      { id: "s5", course_id: "CSE 241", course_name: "Digital Logic Design", day_name: "Wednesday", day_index: 3, start_time: "10:00", end_time: "12:30", room: "Hall A-110", group: "Sec 1", instructor: "Prof. Arthur Pendelton", color: "#e53935" },
+      { id: "s6", course_id: "BASC 110", course_name: "Business Mathematics", day_name: "Thursday", day_index: 4, start_time: "11:00", end_time: "13:30", room: "Hall B-204", group: "Sec 1", instructor: "Dr. Shehab & Dr. Waheed", color: "#1a73e8" },
+    ],
+  },
+  assessments: [
+    {
+      id: "basc110-a1",
+      course_id: "BASC 110",
+      course_name: "Business Mathematics",
+      title: "Assignment 1: Matrix Inversion & Linear Systems",
+      assessment_type: "Assignment",
+      date_iso: "2026-10-22",
+      day_name: "Thursday",
+      start_time: "23:59",
+      end_time: "23:59",
+      display_time: "Thursday, Oct 22 (23:59 - 23:59)",
+      room: "Microsoft Teams Submission",
+      group: "Section 1",
+      instructor: "Dr. Shehab & Dr. Waheed",
+      is_upcoming: true,
+      days_until: 4,
+      priority_score: 95,
+      color: "#1a73e8",
+      source: "Microsoft Teams",
+      source_icon: "users",
+      ai_inference_note: "Parsed from Microsoft Teams Assignment portal. Due Thursday at 11:59 PM.",
+      ai_study_plan: "Complete problems 1 through 8 on Sheet 2 and verify inverse matrix checks using determinant formula.",
+      topics: ["Systems of Linear Equations", "Matrix Inverses & Adjoint Method", "Cramer's Rule Problem Set"],
+      warnings: ["Solve all problems from Sheet 2_00.pdf", "Show all intermediate matrix steps and calculations"],
+    },
+    {
+      id: "gse211-q1",
+      course_id: "GSE 211",
+      course_name: "Mathematical Analysis & Numerical Methods",
+      title: "Class Quiz 1: Numerical Methods",
+      assessment_type: "Class Quiz",
+      date_iso: "2026-10-18",
+      day_name: "Sunday",
+      start_time: "08:00",
+      end_time: "10:00",
+      display_time: "Sunday, 18 October 2026 (8:00 AM – 10:00 AM)",
+      room: "Hall B-204",
+      group: "Sec 1",
+      instructor: "Assoc. Prof. Dr. Mohamed Khalil",
+      is_upcoming: true,
+      days_until: 0,
+      priority_score: 98,
+      color: "#00897b",
+      source: "Gmail Ingestion",
+      source_icon: "mail",
+      ai_inference_note: "Synchronized from official department exam bulletin sent via student email.",
+      ai_study_plan: "Review formula sheets for Trapezoidal and Simpson's 1/3 rules before the 8:00 AM lecture.",
+      topics: ["Numerical Integration Methods", "Trapezoidal Rule", "Simpson's 1/3 Rule"],
+      warnings: ["Fully prepared with calculator and required formula sheets.", "Held during your scheduled lecture time slot in Room Hall B-204."],
+    },
+    {
+      id: "cse263-q1",
+      course_id: "CSE 263",
+      course_name: "Machine Learning & Pattern Recognition",
+      title: "Quiz 1: Machine Learning",
+      assessment_type: "Class Quiz",
+      date_iso: "2026-10-19",
+      day_name: "Monday",
+      start_time: "13:00",
+      end_time: "15:30",
+      display_time: "Monday, 19 October 2026 (1:00 PM – 3:30 PM)",
+      room: "Lab C-301",
+      group: "Sec 2",
+      instructor: "Dr. Mohamed Hussien Rehan",
+      is_upcoming: true,
+      days_until: 1,
+      priority_score: 90,
+      color: "#8e24aa",
+      source: "Gmail Ingestion",
+      source_icon: "mail",
+      ai_inference_note: "Inferred from instructor announcement in student portal.",
+      ai_study_plan: "Focus on k-NN distance metrics and Naive Bayes conditional probability equations.",
+      topics: ["Lecture 1: Introduction", "Lecture 2: Regression", "Lecture 3: k-NN Classifier", "Lecture 4: Naïve Bayes Classifier"],
+      warnings: ["Bring your printed Quiz Template to the lecture!", "Attendance: Must attend with your registered Group B."],
+    },
+    {
+      id: "mgmt101-a1",
+      course_id: "MGMT 101",
+      course_name: "Principles of Management",
+      title: "Case Study 1: Strategic Planning & SWOT",
+      assessment_type: "Assignment",
+      date_iso: "2026-10-24",
+      day_name: "Saturday",
+      start_time: "23:59",
+      end_time: "23:59",
+      display_time: "Saturday, Oct 24 (23:59 - 23:59)",
+      room: "Microsoft Teams Submission",
+      group: "Sec 1",
+      instructor: "Dr. Tarek Adel",
+      is_upcoming: true,
+      days_until: 6,
+      priority_score: 82,
+      color: "#f59e0b",
+      source: "Microsoft Teams",
+      source_icon: "users",
+      ai_inference_note: "Course submission folder opened in Microsoft Teams General channel.",
+      ai_study_plan: "Read chapters 3 & 4 on environmental scanning and corporate SWOT positioning.",
+      topics: ["SWOT Analysis Framework", "Porter's Five Forces Model", "Case Study Problem Questions"],
+      warnings: ["Submit in PDF format via Microsoft Teams", "Maximum 4 pages excluding references"],
+    },
+  ],
   dashboard: {
-    reference_date: "2026-10-17",
+    reference_date: "2026-10-18",
     next_up: null,
     upcoming_this_week: [],
     all_upcoming: [],
-    exam_type_counts: {},
-    study_recommendations: [],
-    total_topics_count: 0,
-    completed_topics_count: 0,
-    readiness_percent: 0,
+    exam_type_counts: { "Class Quiz": 2, "Assignment": 2 },
+    study_recommendations: [
+      {
+        assessment_id: "basc110-a1",
+        course_id: "BASC 110",
+        course_name: "Business Mathematics",
+        title: "Assignment 1: Matrix Inversion & Linear Systems",
+        assessment_type: "Assignment",
+        date_iso: "2026-10-22",
+        display_time: "Thursday, Oct 22 (23:59 - 23:59)",
+        days_until: 4,
+        urgency_badge: "IN 4 DAYS",
+        color: "#1a73e8",
+        why_study_now: "Scheduled this week on Thursday (11:59 PM) in Room Microsoft Teams Submission. Est. 3.0 hrs needed across 3 topics.",
+        ai_study_plan: "Complete problems 1 through 8 on Sheet 2 and verify inverse matrix checks using determinant formula.",
+        progress_percent: 0,
+        topics: [
+          { key: "basc110-a1::0", topic: "Systems of Linear Equations", completed: false },
+          { key: "basc110-a1::1", topic: "Matrix Inverses & Adjoint Method", completed: false },
+          { key: "basc110-a1::2", topic: "Cramer's Rule Problem Set", completed: false },
+        ],
+        warnings: [
+          "Solve all problems from Sheet 2_00.pdf",
+          "Show all intermediate matrix steps and calculations",
+        ],
+      },
+      {
+        assessment_id: "gse211-q1",
+        course_id: "GSE 211",
+        course_name: "Mathematical Analysis & Numerical Methods",
+        title: "Class Quiz 1: Numerical Methods",
+        assessment_type: "Class Quiz",
+        date_iso: "2026-10-18",
+        display_time: "Sunday, 18 October 2026 (8:00 AM – 10:00 AM)",
+        days_until: 0,
+        urgency_badge: "TODAY",
+        color: "#00897b",
+        why_study_now: "High-priority exam occurring today in Hall B-204! Est. 2.0 hrs review needed.",
+        ai_study_plan: "Review formula sheets for Trapezoidal and Simpson's 1/3 rules before the 8:00 AM lecture.",
+        progress_percent: 33,
+        topics: [
+          { key: "gse211-q1::0", topic: "Numerical Integration Methods", completed: true },
+          { key: "gse211-q1::1", topic: "Trapezoidal Rule", completed: false },
+          { key: "gse211-q1::2", topic: "Simpson's 1/3 Rule", completed: false },
+        ],
+        warnings: [
+          "Fully prepared with calculator and required formula sheets.",
+          "Held during your scheduled lecture time slot in Room Hall B-204.",
+        ],
+      },
+      {
+        assessment_id: "cse263-q1",
+        course_id: "CSE 263",
+        course_name: "Machine Learning & Pattern Recognition",
+        title: "Quiz 1: Machine Learning",
+        assessment_type: "Class Quiz",
+        date_iso: "2026-10-19",
+        display_time: "Monday, 19 October 2026 (1:00 PM – 3:30 PM)",
+        days_until: 1,
+        urgency_badge: "TOMORROW",
+        color: "#8e24aa",
+        why_study_now: "Quiz tomorrow in Lab C-301. Est. 2.5 hrs needed across 4 topics.",
+        ai_study_plan: "Focus on k-NN distance metrics and Naive Bayes conditional probability equations.",
+        progress_percent: 25,
+        topics: [
+          { key: "cse263-q1::0", topic: "Lecture 1: Introduction", completed: true },
+          { key: "cse263-q1::1", topic: "Lecture 2: Regression", completed: false },
+          { key: "cse263-q1::2", topic: "Lecture 3: k-NN Classifier", completed: false },
+          { key: "cse263-q1::3", topic: "Lecture 4: Naïve Bayes Classifier", completed: false },
+        ],
+        warnings: [
+          "Bring your printed Quiz Template to the lecture!",
+          "Attendance: Must attend with your registered Group B.",
+        ],
+      },
+    ],
+    readiness_percent: 33,
+    total_topics_count: 10,
+    completed_topics_count: 2,
   },
 };
+SEED_INITIAL_STATE.dashboard.next_up = SEED_INITIAL_STATE.assessments[0];
+SEED_INITIAL_STATE.dashboard.upcoming_this_week = [SEED_INITIAL_STATE.assessments[1], SEED_INITIAL_STATE.assessments[2]];
+SEED_INITIAL_STATE.dashboard.all_upcoming = [...SEED_INITIAL_STATE.assessments];
+
+const SEED_INITIAL_TASKS = {
+  pending_tasks: 8,
+  completed_tasks: 2,
+  total_hours: 7.5,
+  readiness_cards: [
+    {
+      assessment_id: "basc110-a1",
+      course_id: "BASC 110",
+      course_name: "Business Mathematics",
+      title: "Assignment 1: Matrix Inversion & Linear Systems",
+      assessment_type: "Assignment",
+      date_iso: "2026-10-22",
+      display_date: "Thu, Oct 22",
+      days_until: 4,
+      color: "#1a73e8",
+      readiness_percent: 0,
+      completed_count: 0,
+      total_count: 3,
+      priority_score: 95,
+      tasks: [
+        { key: "basc110-a1::0", topic: "Systems of Linear Equations", est_minutes: 60, completed: false },
+        { key: "basc110-a1::1", topic: "Matrix Inverses & Adjoint Method", est_minutes: 60, completed: false },
+        { key: "basc110-a1::2", topic: "Cramer's Rule Problem Set", est_minutes: 60, completed: false },
+      ],
+    },
+    {
+      assessment_id: "gse211-q1",
+      course_id: "GSE 211",
+      course_name: "Mathematical Analysis & Numerical Methods",
+      title: "Class Quiz 1: Numerical Methods",
+      assessment_type: "Class Quiz",
+      date_iso: "2026-10-18",
+      display_date: "Today",
+      days_until: 0,
+      color: "#00897b",
+      readiness_percent: 33,
+      completed_count: 1,
+      total_count: 3,
+      priority_score: 98,
+      tasks: [
+        { key: "gse211-q1::0", topic: "Numerical Integration Methods", est_minutes: 45, completed: true },
+        { key: "gse211-q1::1", topic: "Trapezoidal Rule", est_minutes: 45, completed: false },
+        { key: "gse211-q1::2", topic: "Simpson's 1/3 Rule", est_minutes: 45, completed: false },
+      ],
+    },
+  ],
+};
+
+function getBootstrapState() {
+  try {
+    const cachedRaw = localStorage.getItem(STATE_CACHE_KEY);
+    if (cachedRaw) {
+      const cachedData = JSON.parse(cachedRaw);
+      if (cachedData && Array.isArray(cachedData.assessments) && cachedData.assessments.length > 0 && cachedData.dashboard) {
+        return cachedData;
+      }
+    }
+  } catch (e) {}
+  return JSON.parse(JSON.stringify(SEED_INITIAL_STATE));
+}
+
+function getBootstrapTasks() {
+  try {
+    const cachedTasks = localStorage.getItem("quizradar_tasks_cache_v1");
+    if (cachedTasks) {
+      const data = JSON.parse(cachedTasks);
+      if (data && Array.isArray(data.readiness_cards)) {
+        return data;
+      }
+    }
+  } catch (e) {}
+  return JSON.parse(JSON.stringify(SEED_INITIAL_TASKS));
+}
+
+let appState = JSON.parse(JSON.stringify(SEED_INITIAL_STATE));
 
 let currentMainView = "dashboard"; // "dashboard" | "tasks" | "calendar"
-let studyTasksState = null;
+let studyTasksState = JSON.parse(JSON.stringify(SEED_INITIAL_TASKS));
 let currentTasksCourseFilter = "all";
 let currentTasksStatusFilter = "pending";
 let currentWeekStart = new Date(2026, 9, 18); // Sunday, Oct 18, 2026
@@ -242,7 +531,7 @@ const MONTH_NAMES = [
 const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-document.addEventListener("DOMContentLoaded", async () => {
+document.addEventListener("DOMContentLoaded", () => {
   initDarkMode();
   initSidebarResponsive();
   initKeyboardShortcuts();
@@ -250,13 +539,24 @@ document.addEventListener("DOMContentLoaded", async () => {
   initAppUpdater();
   initAndroidNativeBridge();
 
+  // 1. INSTANT 0ms SYNCHRONOUS HYDRATION FROM CACHE OR SEED DUMMY DATA
+  const bootstrap = getBootstrapState();
+  studyTasksState = getBootstrapTasks();
+  hydrateAndRenderState(bootstrap);
+  updateTasksBadgeCount();
+
   if (window.lucide) {
     lucide.createIcons();
   }
+
+  // 2. NON-BLOCKING BACKGROUND SYNC (ZERO DELAY ON APP INTERACTIVITY)
   if (IS_NATIVE) {
-    await detectOptimalApiBase();
+    detectOptimalApiBase()
+      .then(() => loadFullState())
+      .catch(() => loadFullState());
+  } else {
+    loadFullState();
   }
-  await loadFullState();
 
   const params = new URLSearchParams(window.location.search);
   if (params.get("auth") === "success") {
@@ -278,18 +578,15 @@ function initDarkMode() {
 }
 
 function applySmoothThemeSwitch(isDark) {
-  const updateDom = () => {
-    document.documentElement.classList.toggle("dark", isDark);
+  // 1-frame instant CSS theme switch without heavy compositor raster snapshot
+  document.documentElement.classList.toggle("dark", isDark);
+  try {
     localStorage.setItem("quizradar_theme", isDark ? "dark" : "light");
-    updateDarkModeIcon(isDark);
-    updateOnboardingThemeButtons();
-    updateNativeStatusBar(isDark);
-  };
-
-  if (document.startViewTransition && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    document.startViewTransition(updateDom);
-  } else {
-    updateDom();
+  } catch (e) {}
+  updateDarkModeIcon(isDark);
+  updateOnboardingThemeButtons();
+  if (IS_NATIVE) {
+    requestAnimationFrame(() => updateNativeStatusBar(isDark));
   }
 }
 
@@ -2844,7 +3141,7 @@ function renderOnboardingCourses() {
     })
     .join("");
 
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) lucide.createIcons({ root: grid });
 }
 
 function setThemeFromOnboarding(isDark) {
@@ -3273,9 +3570,10 @@ function openSettingsModal() {
   const gearStage = document.querySelector("#settings-nav-btn .settings-btn-stage");
   if (gearStage) {
     gearStage.classList.remove("is-spinning");
-    void gearStage.offsetWidth;
-    gearStage.classList.add("is-spinning");
-    setTimeout(() => gearStage.classList.remove("is-spinning"), 650);
+    requestAnimationFrame(() => {
+      gearStage.classList.add("is-spinning");
+      setTimeout(() => gearStage.classList.remove("is-spinning"), 650);
+    });
   }
 
   const modal = document.getElementById("settings-modal");
@@ -3311,13 +3609,19 @@ function openSettingsModal() {
 
   updateOnboardingThemeButtons();
   renderSettingsCourses();
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) lucide.createIcons({ root: modal });
 }
 
 function closeSettingsModal() {
   const modal = document.getElementById("settings-modal");
   if (!modal) return;
   modal.classList.remove("is-open");
+  setTimeout(() => {
+    if (!modal.classList.contains("is-open")) {
+      modal.classList.remove("flex");
+      modal.classList.add("hidden");
+    }
+  }, 250);
 }
 
 function reopenFirstTimeWizardFromSettings() {

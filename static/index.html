@@ -76,30 +76,9 @@
       overscroll-behavior-y: contain;
     }
 
-    /* Native GPU View Transition (WebView2 / Chromium) — 120fps hardware cross-fade with 0 CPU overhead */
-    ::view-transition-old(root),
-    ::view-transition-new(root) {
-      animation-duration: 200ms;
-      animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
-    }
-    ::view-transition-old(root) {
-      animation-name: themeFadeOut;
-    }
-    ::view-transition-new(root) {
-      animation-name: themeFadeIn;
-    }
-    @keyframes themeFadeOut {
-      from { opacity: 1; }
-      to { opacity: 0; }
-    }
-    @keyframes themeFadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-
-    /* Keep toggle button crisp and morphing independently */
-    #dark-mode-btn {
-      view-transition-name: dark-mode-toggle;
+    /* Fast Hardware-Accelerated Theme Switch without full-page raster stalling */
+    html {
+      color-scheme: light dark;
     }
 
     /* Sun <-> Moon Focal Toggle Choreography */
@@ -292,9 +271,9 @@
         align-items: flex-end !important;
         justify-content: center !important;
         padding: 0 !important;
-        background-color: rgba(11, 15, 25, 0.65) !important;
-        backdrop-filter: blur(6px) !important;
-        -webkit-backdrop-filter: blur(6px) !important;
+        background-color: rgba(11, 15, 25, 0.72) !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
       }
 
       .modal-panel {
@@ -309,16 +288,17 @@
         border-bottom: none !important;
         border-left: none !important;
         border-right: none !important;
-        box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.35) !important;
-        transform: translateY(100%) !important;
+        box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.4) !important;
+        transform: translate3d(0, 100%, 0) !important;
+        will-change: transform;
         opacity: 1 !important;
-        transition: transform 280ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+        transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1) !important;
         padding-bottom: max(16px, env(safe-area-inset-bottom, 16px)) !important;
         overscroll-behavior: contain;
       }
 
       .modal-backdrop.is-open .modal-panel {
-        transform: translateY(0) !important;
+        transform: translate3d(0, 0, 0) !important;
         opacity: 1 !important;
       }
     }
@@ -1804,7 +1784,7 @@
   </div>
 
   <!-- ================= MODAL 4: SETTINGS & PREFERENCES ================= -->
-  <div id="settings-modal" onclick="if(event.target === this) closeSettingsModal()" class="modal-backdrop fixed inset-0 bg-slate-950/60 z-50 flex items-center justify-center p-0 md:p-4 backdrop-blur-xs">
+  <div id="settings-modal" onclick="if(event.target === this) closeSettingsModal()" class="modal-backdrop fixed inset-0 bg-slate-950/60 z-50 flex items-center justify-center p-0 md:p-4 md:backdrop-blur-xs">
     <div class="modal-panel bg-white dark:bg-slate-900 rounded-t-[28px] md:rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh] md:max-h-[85vh]">
       <!-- M3 Bottom Sheet Drag Handle (Mobile only) -->
       <div class="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto my-3 md:hidden shrink-0"></div>

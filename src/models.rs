@@ -135,6 +135,37 @@ fn default_source_icon() -> String {
     "mail".to_string()
 }
 
+impl Assessment {
+    pub fn is_teams(&self) -> bool {
+        self.id.starts_with("teams-")
+            || self.source.to_lowercase().contains("teams")
+            || self.source.to_lowercase().contains("microsoft")
+    }
+
+    pub fn is_moodle(&self) -> bool {
+        self.id.starts_with("moodle-")
+            || self.source.to_lowercase().contains("moodle")
+    }
+
+    pub fn is_classroom(&self) -> bool {
+        self.id.starts_with("classroom-")
+            || self.source.to_lowercase().contains("classroom")
+    }
+
+    pub fn is_source_enabled(&self, config: &AppConfig) -> bool {
+        if self.is_teams() && !config.teams_enabled {
+            return false;
+        }
+        if self.is_moodle() && !config.moodle_enabled {
+            return false;
+        }
+        if self.is_classroom() && !config.classroom_enabled {
+            return false;
+        }
+        true
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomCalendarEvent {
     pub id: String,

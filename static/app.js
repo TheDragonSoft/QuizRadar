@@ -255,9 +255,68 @@ function syncActiveCourseFilters() {
   }
 }
 
+function filterStateByEnabledSources() {
+  if (!appState || !appState.config) return;
+  const cfg = appState.config;
+  const isTeams = (a) => (a?.id && a.id.startsWith("teams-")) || (a?.source && (a.source.toLowerCase().includes("teams") || a.source.toLowerCase().includes("microsoft")));
+  const isMoodle = (a) => (a?.id && a.id.startsWith("moodle-")) || (a?.source && a.source.toLowerCase().includes("moodle"));
+  const isClassroom = (a) => (a?.id && a.id.startsWith("classroom-")) || (a?.source && a.source.toLowerCase().includes("classroom"));
+
+  const isEnabled = (a) => {
+    if (!a) return false;
+    if (isTeams(a) && !cfg.teams_enabled) return false;
+    if (isMoodle(a) && !cfg.moodle_enabled) return false;
+    if (isClassroom(a) && !cfg.classroom_enabled) return false;
+    return true;
+  };
+
+  if (Array.isArray(appState.assessments)) {
+    appState.assessments = appState.assessments.filter(isEnabled);
+  }
+
+  if (appState.dashboard) {
+    if (appState.dashboard.next_up && !isEnabled(appState.dashboard.next_up)) {
+      appState.dashboard.next_up = null;
+    }
+    if (Array.isArray(appState.dashboard.upcoming_this_week)) {
+      appState.dashboard.upcoming_this_week = appState.dashboard.upcoming_this_week.filter(isEnabled);
+    }
+    if (Array.isArray(appState.dashboard.all_upcoming)) {
+      appState.dashboard.all_upcoming = appState.dashboard.all_upcoming.filter(isEnabled);
+    }
+    if (Array.isArray(appState.dashboard.study_recommendations)) {
+      appState.dashboard.study_recommendations = appState.dashboard.study_recommendations.filter((rec) => {
+        return (appState.assessments || []).some((a) => a.id === rec.assessment_id);
+      });
+    }
+    if (!appState.dashboard.next_up && appState.dashboard.all_upcoming && appState.dashboard.all_upcoming.length > 0) {
+      appState.dashboard.next_up = appState.dashboard.all_upcoming[0];
+    }
+  }
+
+  // Update dashboard source filter pills visibility
+  const teamsPill = document.getElementById("source-filter-teams");
+  if (teamsPill) teamsPill.style.display = cfg.teams_enabled ? "flex" : "none";
+  const moodlePill = document.getElementById("source-filter-moodle");
+  if (moodlePill) moodlePill.style.display = cfg.moodle_enabled ? "flex" : "none";
+  const classroomPill = document.getElementById("source-filter-classroom");
+  if (classroomPill) classroomPill.style.display = cfg.classroom_enabled ? "flex" : "none";
+
+  if (
+    (currentDashboardSourceFilter === "Microsoft Teams" && !cfg.teams_enabled) ||
+    (currentDashboardSourceFilter === "Moodle" && !cfg.moodle_enabled) ||
+    (currentDashboardSourceFilter === "Google Classroom" && !cfg.classroom_enabled)
+  ) {
+    currentDashboardSourceFilter = "ALL";
+    const allPill = document.getElementById("source-filter-all");
+    if (allPill) allPill.className = "px-2.5 py-1 rounded-lg bg-[#1a73e8] text-white shadow-2xs transition cursor-pointer";
+  }
+}
+
 function hydrateAndRenderState(stateData) {
   appState = stateData;
   syncActiveCourseFilters();
+  filterStateByEnabledSources();
   updateTopBarAndUser();
   renderSidebar();
   renderDashboard();
@@ -2894,6 +2953,10 @@ async function saveSettingsModal() {
   const teamsToken = document.getElementById("settings-teams-token")?.value || "";
   const classroomEnabled = document.getElementById("settings-classroom-toggle")?.checked ?? false;
 
+  const prevTeams = appState.config?.teams_enabled ?? false;
+  const prevMoodle = appState.config?.moodle_enabled ?? false;
+  const prevClassroom = appState.config?.classroom_enabled ?? false;
+
   if (appState.config) {
     appState.config.auto_sync_gcal = autoSync;
     appState.config.gemini_enabled = geminiEnabled;
@@ -2906,7 +2969,11 @@ async function saveSettingsModal() {
     appState.config.teams_token = teamsToken;
     appState.config.classroom_enabled = classroomEnabled;
   }
+
+  // Immediately filter out disabled sources on the client so the UI reacts in 0ms
+  filterStateByEnabledSources();
   saveStateCache();
+  hydrateAndRenderState(appState);
 
   closeSettingsModal();
   showToast("Settings saved!");
@@ -2932,9 +2999,19 @@ async function saveSettingsModal() {
     const data = await res.json();
     if (data.config) {
       appState.config = data.config;
-      saveStateCache();
     }
-    if (teamsEnabled && teamsToken) {
+    if (data.assessments) {
+      appState.assessments = data.assessments;
+    }
+    if (data.dashboard) {
+      appState.dashboard = data.dashboard;
+    }
+    filterStateByEnabledSources();
+    saveStateCache();
+    hydrateAndRenderState(appState);
+
+    const newlyEnabled = (!prevTeams && teamsEnabled && teamsToken) || (!prevMoodle && moodleEnabled) || (!prevClassroom && classroomEnabled);
+    if (newlyEnabled) {
       triggerFullSync();
     }
   } catch (err) {

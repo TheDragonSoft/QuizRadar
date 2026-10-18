@@ -207,6 +207,9 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
         });
     }
 
+    // Filter out disabled sources on startup
+    initial_assessments.retain(|p| p.is_source_enabled(&config));
+
     let state = SharedAppState {
         port: selected_port,
         config: Arc::new(RwLock::new(config.clone())),
@@ -321,7 +324,14 @@ async fn get_full_state(State(state): State<SharedAppState>) -> Json<Value> {
     let cfg = state.config.read().await.clone();
     let profile = auth::get_cached_user_profile(&cfg);
     let schedule = state.schedule.read().await.clone();
-    let assessments = state.assessments.read().await.clone();
+    let assessments: Vec<Assessment> = state
+        .assessments
+        .read()
+        .await
+        .iter()
+        .filter(|a| a.is_source_enabled(&cfg))
+        .cloned()
+        .collect();
     let dashboard = parser::build_dashboard_summary(&assessments, &cfg);
 
     // If token exists on disk but user_email wasn't cached yet, refresh profile in background
@@ -352,12 +362,16 @@ async fn get_legacy_status(State(state): State<SharedAppState>) -> Json<Value> {
     let cfg = state.config.read().await;
     let profile = auth::get_cached_user_profile(&cfg);
     let assessments = state.assessments.read().await;
-    let upcoming_count = assessments.iter().filter(|a| a.is_upcoming).count();
+    let visible_assessments: Vec<&Assessment> = assessments
+        .iter()
+        .filter(|a| a.is_source_enabled(&cfg))
+        .collect();
+    let upcoming_count = visible_assessments.iter().filter(|a| a.is_upcoming).count();
 
     Json(json!({
         "authenticated": profile.authenticated,
         "email": profile.email.or_else(|| cfg.user_email.clone()).unwrap_or_else(|| "Not signed in".to_string()),
-        "total_quizzes": assessments.len(),
+        "total_quizzes": visible_assessments.len(),
         "upcoming_count": upcoming_count,
         "last_sync": cfg.last_gmail_sync.clone().unwrap_or_else(|| "Never".to_string())
     }))
@@ -369,8 +383,13 @@ async fn get_schedule(State(state): State<SharedAppState>) -> Json<ScheduleData>
 }
 
 async fn get_quizzes(State(state): State<SharedAppState>) -> Json<Vec<Assessment>> {
+    let cfg = state.config.read().await.clone();
     let assessments = state.assessments.read().await.clone();
-    Json(assessments)
+    let visible: Vec<Assessment> = assessments
+        .into_iter()
+        .filter(|a| a.is_source_enabled(&cfg))
+        .collect();
+    Json(visible)
 }
 
 async fn google_login_redirect(State(state): State<SharedAppState>) -> Redirect {
@@ -739,6 +758,9 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
         });
     }
 
+    // Ensure all retained assessments belong to currently enabled sources
+    parsed.retain(|p| p.is_source_enabled(&cfg));
+
     // 4. Attach persistent grades & weightages
     for a in &mut parsed {
         if let Some(g) = cfg.grades.get(&a.id) {
@@ -1032,6 +1054,10 @@ async fn update_config_handler(
     Json(payload): Json<UpdateConfigPayload>,
 ) -> Json<Value> {
     let mut cfg = state.config.write().await;
+    let prev_teams = cfg.teams_enabled;
+    let prev_moodle = cfg.moodle_enabled;
+    let prev_classroom = cfg.classroom_enabled;
+
     if let Some(v) = payload.auto_sync_gcal { cfg.auto_sync_gcal = v; }
     if let Some(v) = payload.sync_weekly_classes_to_gcal { cfg.sync_weekly_classes_to_gcal = v; }
     if let Some(v) = payload.gemini_enabled { cfg.gemini_enabled = v; }
@@ -1042,27 +1068,44 @@ async fn update_config_handler(
     if let Some(i) = payload.moodle_ical_url { cfg.moodle_ical_url = Some(i); }
     if let Some(v) = payload.teams_enabled { cfg.teams_enabled = v; }
     if let Some(cid) = payload.teams_client_id { cfg.teams_client_id = Some(cid); }
-    let teams_modified = payload.teams_token.is_some() || payload.teams_enabled == Some(true);
+    let has_new_teams_token = payload.teams_token.is_some();
     if let Some(t) = payload.teams_token { cfg.teams_token = Some(t); }
     if let Some(a) = payload.teams_account_name { cfg.teams_account_name = Some(a); }
     if let Some(v) = payload.classroom_enabled { cfg.classroom_enabled = v; }
 
+    let any_source_enabled = (!prev_teams && cfg.teams_enabled && cfg.teams_token.is_some())
+        || (!prev_moodle && cfg.moodle_enabled)
+        || (!prev_classroom && cfg.classroom_enabled)
+        || (has_new_teams_token && cfg.teams_enabled);
+
     save_app_config(&cfg);
+    let cfg_final = cfg.clone();
     drop(cfg);
 
-    if teams_modified {
+    // If any source was disabled, immediately remove its assessments from active memory
+    {
+        let mut assessments_lock = state.assessments.write().await;
+        assessments_lock.retain(|a| a.is_source_enabled(&cfg_final));
+    }
+
+    // If any source was newly enabled (or tokens updated), trigger a sync pipeline to fetch fresh assignments
+    if any_source_enabled {
         let _ = run_sync_pipeline(&state, false).await;
     }
 
-    let cfg_final = state.config.read().await.clone();
     let assessments = state.assessments.read().await;
-    let dashboard = parser::build_dashboard_summary(&assessments, &cfg_final);
+    let visible_assessments: Vec<Assessment> = assessments
+        .iter()
+        .filter(|a| a.is_source_enabled(&cfg_final))
+        .cloned()
+        .collect();
+    let dashboard = parser::build_dashboard_summary(&visible_assessments, &cfg_final);
 
     Json(json!({
         "success": true,
         "config": cfg_final,
         "dashboard": dashboard,
-        "assessments": *assessments
+        "assessments": visible_assessments
     }))
 }
 

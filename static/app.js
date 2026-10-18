@@ -1586,8 +1586,22 @@ function renderDashboard() {
   }
   switchDashboardTab(currentDashboardTab);
 
-  // 3. "What Should I Study?" Study Recommendations List
-  // Entire card is clickable (Picture 4 feedback), no "View Full Details..." text link, and each quiz's rules are shown directly on its card
+  function formatCompactCardSchedule(str, room) {
+    if (!str) return room ? `Room ${room}` : "Scheduled";
+    let cleaned = str.replace(/\((\d{1,2}:\d{2})\s*-\s*\1\)/, "Due $1");
+    cleaned = cleaned.replace(/(\d{4})-(\d{2})-(\d{2})/, (m, y, mo, d) => {
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const monthName = months[parseInt(mo, 10) - 1] || mo;
+      return `${monthName} ${parseInt(d, 10)}`;
+    });
+    if (room && !cleaned.toLowerCase().includes(room.toLowerCase())) {
+      const shortRoom = room.replace(/^(Room\s*|Microsoft\s*)/i, "");
+      cleaned += ` · ${shortRoom}`;
+    }
+    return cleaned;
+  }
+
+  // 3. "What Should I Study?" Study Recommendations List (Compact Mobile-First Cards with Tap-To-Detail)
   const recsEl = document.getElementById("study-recommendations-list");
   let recs = dash.study_recommendations || [];
   if (globalSearchQuery) {
@@ -1619,95 +1633,77 @@ function renderDashboard() {
             ? "bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800/60"
             : "bg-blue-100 dark:bg-blue-950/70 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-800/60";
 
-        const topicsChecklistHtml = (rec.topics || [])
-          .map(
-            (item) => `
-            <div class="flex items-center justify-between p-1.5 sm:p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/70 transition border border-transparent hover:border-slate-200 dark:hover:border-slate-700">
-              <label onclick="event.stopPropagation()" class="flex items-start gap-2 cursor-pointer flex-1 mr-2 min-w-0">
-                <input type="checkbox" data-topic-key="${escapeHtml(item.key)}" ${item.completed ? "checked" : ""} onchange="toggleTopicCheckbox('${escapeHtml(item.key)}', this.checked)" class="mt-0.5 w-3.5 h-3.5 accent-[#1a73e8] rounded cursor-pointer shrink-0" />
-                <span data-topic-label="${escapeHtml(item.key)}" class="text-[11px] sm:text-xs transition-colors ${item.completed ? "line-through text-slate-400 dark:text-slate-500" : "text-slate-800 dark:text-slate-100 font-medium"} truncate">${escapeHtml(item.topic)}</span>
-              </label>
-              <button type="button" title="Start Focus Pomodoro for this topic" onclick="event.stopPropagation(); openPomodoroForTask('${escapeHtml(rec.course_id)} • ${escapeHtml(rec.title)}', '${escapeHtml(item.topic)}', '${escapeHtml(item.key)}')" class="p-1 rounded-md hover:bg-rose-100 dark:hover:bg-rose-950/60 text-rose-500 transition cursor-pointer shrink-0">
-                <i data-lucide="timer" class="w-3 h-3"></i>
-              </button>
-            </div>
-          `
-          )
-          .join("");
-
-        const uniqueWarnings = [...new Set(rec.warnings || [])];
-        const warnChips = uniqueWarnings
-          .map(
-            (w) =>
-              `<div class="flex items-start gap-1.5 text-[10px] sm:text-[11px] font-medium text-amber-900 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 px-2.5 py-1 rounded-lg">
-                <i data-lucide="alert-circle" class="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5"></i>
-                <span>${escapeHtml(stripLeadingEmoji(w))}</span>
-              </div>`
-          )
-          .join("");
-
         const matchingAssessment = (appState.assessments || []).find((a) => a.id === rec.assessment_id);
         const roomLabel = rec.room || matchingAssessment?.room || "";
+        const topicsCount = (rec.topics || []).length;
+        const uniqueWarnings = [...new Set(rec.warnings || [])];
+        const displaySchedule = formatCompactCardSchedule(rec.display_time, roomLabel);
 
         return `
-          <div onclick="openAssessmentModalById('${rec.assessment_id}')" class="interactive-card bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-[#1a73e8] dark:hover:border-blue-500 cursor-pointer overflow-hidden group">
-            <div class="h-1.5" style="background-color: ${rec.color}"></div>
-            <div class="p-3 sm:p-4 space-y-2.5">
-              <div class="flex flex-wrap items-start justify-between gap-1.5">
-                <div class="min-w-0 flex-1">
-                  <div class="flex flex-wrap items-center gap-1.5 mb-1">
-                    <span class="text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded-md bg-slate-900 dark:bg-slate-800 text-white">#${idx + 1}</span>
-                    <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-md text-white" style="background-color: ${rec.color}">${escapeHtml(rec.course_id)}</span>
-                    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">${escapeHtml(rec.assessment_type)}</span>
-                    <span class="text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded-md border ${badgeColor}">${escapeHtml(rec.urgency_badge)}</span>
-                  </div>
-                  <h4 class="text-sm sm:text-base font-bold text-slate-900 dark:text-white group-hover:text-[#1a73e8] dark:group-hover:text-blue-400 transition leading-snug">${escapeHtml(rec.title)} — <span class="font-normal text-slate-500 dark:text-slate-400 text-xs sm:text-sm">${escapeHtml(rec.course_name)}</span></h4>
-                  <div class="text-[11px] tabular-nums text-slate-500 dark:text-slate-400 mt-0.5">${escapeHtml(rec.display_time)}${roomLabel ? ` · Room ${escapeHtml(roomLabel)}` : ""}</div>
+          <div onclick="triggerHaptic('light'); openAssessmentModalById('${rec.assessment_id}')"
+               class="interactive-card group relative bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 p-3.5 sm:p-4 hover:border-[#1a73e8]/70 dark:hover:border-blue-500/70 transition-all duration-200 cursor-pointer active:scale-[0.985] shadow-xs hover:shadow-md overflow-hidden">
+            
+            <!-- Left Course Color Accent Bar -->
+            <div class="absolute left-0 top-3 bottom-3 w-1.5 rounded-r-full" style="background-color: ${rec.color}"></div>
+
+            <div class="pl-2 space-y-2">
+              <!-- Top Row: Badges & Readiness Meter -->
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-1.5 flex-wrap min-w-0">
+                  <span class="text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded-md bg-slate-900 dark:bg-slate-800 text-white">#${idx + 1}</span>
+                  <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-md text-white shrink-0" style="background-color: ${rec.color}">${escapeHtml(rec.course_id)}</span>
+                  <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 shrink-0">${escapeHtml(rec.assessment_type)}</span>
+                  <span class="text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded-md border ${badgeColor} shrink-0">${escapeHtml(rec.urgency_badge)}</span>
                 </div>
 
-                <div class="text-right tabular-nums shrink-0">
-                  <div data-rec-pct-label="${rec.assessment_id}" class="text-[11px] font-bold text-slate-900 dark:text-white">${rec.progress_percent}% Ready</div>
-                  <div class="w-16 sm:w-24 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mt-1">
+                <!-- Progress Pill -->
+                <div class="text-right tabular-nums shrink-0 flex items-center gap-1.5">
+                  <div class="w-12 sm:w-16 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                     <div data-rec-pct-bar="${rec.assessment_id}" class="h-full bg-emerald-500 transition-all duration-300" style="width: ${rec.progress_percent}%"></div>
                   </div>
+                  <span data-rec-pct-label="${rec.assessment_id}" class="text-[11px] font-bold text-slate-800 dark:text-slate-200">${rec.progress_percent}%</span>
                 </div>
               </div>
 
-              <!-- AI Study Recommendation Box -->
-              <div class="bg-blue-50/70 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/60 rounded-xl p-2.5 sm:p-3 text-[11px] sm:text-xs space-y-1">
-                <div class="font-bold text-[#1a73e8] dark:text-blue-400 flex items-center gap-1">
-                  <i data-lucide="sparkles" class="w-3 h-3"></i>
-                  <span>${escapeHtml(rec.why_study_now)}</span>
-                </div>
-                <p class="text-slate-700 dark:text-slate-300 leading-relaxed">${escapeHtml(rec.ai_study_plan)}</p>
-              </div>
-
-              <!-- Interactive Topics Checklist -->
+              <!-- Main Title & Course Name -->
               <div>
-                <div class="text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">Topics to study:</div>
-                <div class="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl p-0.5 sm:p-1">
-                  ${topicsChecklistHtml}
+                <h4 class="text-xs sm:text-sm font-bold text-slate-900 dark:text-white group-hover:text-[#1a73e8] dark:group-hover:text-blue-400 transition leading-snug line-clamp-1">
+                  ${escapeHtml(rec.title)}
+                </h4>
+                <div class="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5">
+                  ${escapeHtml(rec.course_name)}
                 </div>
               </div>
 
-              <!-- Specific Exam Rules attached directly to this Quiz/Exam -->
-              ${
-                warnChips
-                  ? `<div class="space-y-1">
-                       <div class="text-[11px] font-semibold text-amber-700 dark:text-amber-400">Exam instructions:</div>
-                       ${warnChips}
-                     </div>`
-                  : ""
-              }
+              <!-- Bottom Row: Time / Location Pill & Topics Count & Chevron Details Affordance -->
+              <div class="flex items-center justify-between gap-2 pt-1 border-t border-slate-100 dark:border-slate-800/80 text-[11px] text-slate-500 dark:text-slate-400">
+                <div class="flex items-center gap-2 truncate min-w-0">
+                  <span class="flex items-center gap-1 truncate font-medium">
+                    <i data-lucide="calendar" class="w-3.5 h-3.5 text-[#1a73e8] dark:text-blue-400 shrink-0"></i>
+                    <span class="truncate">${escapeHtml(displaySchedule)}</span>
+                  </span>
+                  ${
+                    topicsCount > 0
+                      ? `<span class="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/60 text-[#1a73e8] dark:text-blue-300 text-[10px] font-semibold shrink-0">
+                           <i data-lucide="book-open" class="w-2.5 h-2.5"></i>
+                           <span>${topicsCount} topics</span>
+                         </span>`
+                      : ""
+                  }
+                  ${
+                    uniqueWarnings.length > 0
+                      ? `<span class="hidden md:inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 text-[10px] font-medium shrink-0">
+                           <i data-lucide="alert-circle" class="w-2.5 h-2.5 text-amber-500"></i>
+                           <span>${uniqueWarnings.length} rules</span>
+                         </span>`
+                      : ""
+                  }
+                </div>
 
-              <div class="flex items-center justify-between pt-1 text-xs">
-                <button onclick="event.stopPropagation(); jumpToAssessmentOnCalendar('${rec.assessment_id}')" class="text-[#1a73e8] dark:text-blue-400 hover:underline font-semibold flex items-center gap-1.5 cursor-pointer">
-                  <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
-                  <span>Week Calendar</span>
-                </button>
-                <span class="text-[11px] font-medium text-slate-400 dark:text-slate-500 group-hover:text-[#1a73e8] dark:group-hover:text-blue-400 transition flex items-center gap-1">
-                  <span>View Details →</span>
-                </span>
+                <div class="flex items-center gap-0.5 text-[#1a73e8] dark:text-blue-400 font-semibold text-xs shrink-0 group-hover:translate-x-0.5 transition-transform">
+                  <span>Details</span>
+                  <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+                </div>
               </div>
             </div>
           </div>
@@ -2467,19 +2463,47 @@ function openAssessmentModalById(id) {
   document.getElementById("modal-time").textContent = a.display_time;
   document.getElementById("modal-room").textContent = `Room ${a.room} (${a.group})`;
   document.getElementById("modal-instructor").textContent = a.instructor;
-  document.getElementById("modal-ai-inference").textContent = a.ai_inference_note;
-  document.getElementById("modal-ai-study-plan").textContent = `Study Strategy: ${a.ai_study_plan}`;
 
+  // Retrieve recommendation if available to show full AI reasoning & focus plan
+  const rec = (appState.dashboard?.study_recommendations || []).find((r) => r.assessment_id === a.id);
+  const inferenceEl = document.getElementById("modal-ai-inference");
+  const studyPlanEl = document.getElementById("modal-ai-study-plan");
+
+  if (rec && rec.why_study_now) {
+    inferenceEl.innerHTML = `
+      <div class="space-y-1.5">
+        <div class="font-bold text-[#1a73e8] dark:text-blue-400 flex items-center gap-1.5">
+          <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+          <span>${escapeHtml(rec.why_study_now)}</span>
+        </div>
+        ${rec.ai_study_plan ? `<p class="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">${escapeHtml(rec.ai_study_plan)}</p>` : ""}
+      </div>
+    `;
+    studyPlanEl.textContent = "";
+    studyPlanEl.classList.add("hidden");
+  } else {
+    inferenceEl.textContent = a.ai_inference_note || "Analyzed from course schedule and academic syllabus.";
+    studyPlanEl.textContent = `Study Strategy: ${a.ai_study_plan || "Review all lecture notes and practice problem sets."}`;
+    studyPlanEl.classList.remove("hidden");
+  }
+
+  const rawTopics = (a.topics && a.topics.length > 0) ? a.topics : (rec?.topics || []).map(t => typeof t === "string" ? t : t.topic);
   const topicsEl = document.getElementById("modal-topics-list");
-  topicsEl.innerHTML = (a.topics || [])
+  topicsEl.innerHTML = rawTopics
     .map((t, idx) => {
       const key = `${a.id}::${idx}`;
       const done = !!(appState.config?.completed_topics && appState.config.completed_topics[key]);
+      const topicName = typeof t === "string" ? t : t.topic || "";
       return `
-        <label class="flex items-start gap-2.5 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer text-xs transition">
-          <input type="checkbox" data-topic-key="${escapeHtml(key)}" ${done ? "checked" : ""} onchange="toggleTopicCheckbox('${escapeHtml(key)}', this.checked)" class="mt-0.5 w-4 h-4 accent-[#1a73e8] rounded shrink-0 cursor-pointer" />
-          <span data-topic-label="${escapeHtml(key)}" class="transition-colors ${done ? "line-through text-slate-400 dark:text-slate-500" : "text-slate-900 dark:text-slate-100 font-medium"}">${escapeHtml(t)}</span>
-        </label>
+        <div class="flex items-center justify-between p-2 sm:p-2.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition gap-2">
+          <label class="flex items-start gap-2.5 cursor-pointer flex-1 min-w-0 select-none">
+            <input type="checkbox" data-topic-key="${escapeHtml(key)}" ${done ? "checked" : ""} onchange="toggleTopicCheckbox('${escapeHtml(key)}', this.checked)" class="mt-0.5 w-4 h-4 accent-[#1a73e8] rounded shrink-0 cursor-pointer" />
+            <span data-topic-label="${escapeHtml(key)}" class="text-xs transition-colors ${done ? "line-through text-slate-400 dark:text-slate-500" : "text-slate-900 dark:text-slate-100 font-medium"}">${escapeHtml(topicName)}</span>
+          </label>
+          <button type="button" title="Start Focus Pomodoro for this topic" onclick="event.stopPropagation(); triggerHaptic('selection'); openPomodoroForTask('${escapeHtml(a.course_id)} • ${escapeHtml(a.title)}', '${escapeHtml(topicName)}', '${escapeHtml(key)}')" class="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950/60 text-rose-500 transition cursor-pointer shrink-0">
+            <i data-lucide="timer" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
       `;
     })
     .join("");

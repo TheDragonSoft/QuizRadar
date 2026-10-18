@@ -643,8 +643,41 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
 
     // 2. Ingest from Microsoft Teams / Outlook if enabled
     if cfg.teams_enabled {
-        if let Ok(teams_items) = teams::sync_teams_assessments(&cfg, &schedule).await {
-            for t in teams_items {
+        if let Ok(teams_res) = teams::sync_teams_assessments(&cfg, &schedule).await {
+            if !teams_res.discovered_courses.is_empty() {
+                let mut sched = state.schedule.write().await;
+                let is_default_msa = sched.courses.iter().any(|c| c.id == "CSE241") && !teams_res.discovered_courses.iter().any(|c| c.id == "CSE241");
+                if is_default_msa || sched.courses.is_empty() {
+                    sched.courses = teams_res.discovered_courses.clone();
+                    sched.slots = teams_res.discovered_slots.clone();
+                    if let Some(ref sem) = teams_res.semester {
+                        sched.semester = sem.clone();
+                    }
+                    // When switching to the student's real enrolled university (e.g. CIC Cairo), clear mock MSA emails
+                    parsed.clear();
+                } else {
+                    for dc in &teams_res.discovered_courses {
+                        if !sched.courses.iter().any(|c| c.id == dc.id) {
+                            sched.courses.push(dc.clone());
+                        }
+                    }
+                    for ds in &teams_res.discovered_slots {
+                        if !sched.slots.iter().any(|s| s.course_id == ds.course_id && s.day == ds.day && s.start_time == ds.start_time) {
+                            sched.slots.push(ds.clone());
+                        }
+                    }
+                }
+                parser::save_schedule(&sched);
+            }
+
+            if let Some(ref uname) = teams_res.user_display_name {
+                cfg.user_name = Some(uname.clone());
+            }
+            if let Some(ref uemail) = teams_res.user_email {
+                cfg.user_email = Some(uemail.clone());
+            }
+
+            for t in teams_res.assessments {
                 if !parsed.iter().any(|p| p.course_id == t.course_id && p.title == t.title && p.date_iso == t.date_iso) {
                     parsed.push(t);
                 }
@@ -703,6 +736,7 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
         "gcal_report": gcal_report,
         "assessments": parsed,
         "dashboard": dashboard,
+        "schedule": state.schedule.read().await.clone(),
         "config": *cfg
     })
 }
@@ -1095,19 +1129,53 @@ async fn test_microsoft_handler(
     State(state): State<SharedAppState>,
     Json(payload): Json<TestMicrosoftPayload>,
 ) -> Json<Value> {
-    let cfg = state.config.read().await;
-    let token = payload.token.filter(|t| !t.trim().is_empty()).or_else(|| cfg.teams_token.clone());
+    let token_opt = payload.token.filter(|t| !t.trim().is_empty());
+
+    if let Some(ref tok) = token_opt {
+        let mut cfg = state.config.write().await;
+        cfg.teams_token = Some(tok.clone());
+        cfg.teams_enabled = true;
+        save_app_config(&cfg);
+    }
+
+    let cfg = state.config.read().await.clone();
+    let token = token_opt.or_else(|| cfg.teams_token.clone());
+
     match teams::test_microsoft_connection(token.as_deref()).await {
-        Ok(res) => Json(json!({
-            "success": true,
-            "status": "ok",
-            "message": res.message,
-            "user": res.user_display_name.unwrap_or_else(|| "Microsoft Student Account".to_string()),
-            "email": res.user_principal_name.unwrap_or_default(),
-            "items_found": res.items_found,
-            "teams_count": 4,
-            "assignments_count": res.items_found
-        })),
+        Ok(res) => {
+            {
+                let mut wcfg = state.config.write().await;
+                wcfg.teams_enabled = true;
+                if let Some(ref name) = res.user_display_name {
+                    wcfg.user_name = Some(name.clone());
+                }
+                if let Some(ref email) = res.user_principal_name {
+                    wcfg.user_email = Some(email.clone());
+                }
+                save_app_config(&wcfg);
+            }
+
+            // Immediately run the sync pipeline so courses and assessments appear automatically!
+            let sync_res = run_sync_pipeline(&state, false).await;
+            let schedule = state.schedule.read().await.clone();
+            let cfg_final = state.config.read().await.clone();
+
+            Json(json!({
+                "success": true,
+                "status": "ok",
+                "message": res.message,
+                "user": res.user_display_name.unwrap_or_else(|| "Microsoft Student Account".to_string()),
+                "email": res.user_principal_name.unwrap_or_default(),
+                "teams_count": res.teams_count,
+                "courses_count": res.courses_found.len(),
+                "courses_found": res.courses_found,
+                "assignments_count": res.items_found,
+                "dashboard": sync_res["dashboard"].clone(),
+                "assessments": sync_res["assessments"].clone(),
+                "schedule": schedule,
+                "config": cfg_final
+            }))
+        },
         Err(err) => Json(json!({
             "success": false,
             "status": "error",

@@ -49,6 +49,24 @@ pub struct ScheduleData {
     pub slots: Vec<ScheduleSlot>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DiscoveredAcademicData {
+    #[serde(default)]
+    pub semester: Option<String>,
+    #[serde(default)]
+    pub university_or_institution: Option<String>,
+    #[serde(default)]
+    pub student_name: Option<String>,
+    #[serde(default)]
+    pub student_email: Option<String>,
+    #[serde(default)]
+    pub courses: Vec<Course>,
+    #[serde(default)]
+    pub assessments: Vec<Assessment>,
+    #[serde(default)]
+    pub slots: Vec<ScheduleSlot>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CachedEmail {
     pub id: String,

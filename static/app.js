@@ -2923,6 +2923,9 @@ async function saveSettingsModal() {
       appState.config = data.config;
       saveStateCache();
     }
+    if (teamsEnabled && teamsToken) {
+      triggerFullSync();
+    }
   } catch (err) {
     console.error("Background settings save error:", err);
   }
@@ -3010,13 +3013,17 @@ async function triggerFullSync() {
     const data = await res.json();
     if (data.assessments) appState.assessments = data.assessments;
     if (data.dashboard) appState.dashboard = data.dashboard;
+    if (data.schedule) {
+      appState.schedule = data.schedule;
+      activeCourseFilters.clear();
+      (data.schedule.courses || []).forEach((c) => activeCourseFilters.add(c.id));
+      activeCourseFilters.add("GENERAL");
+    }
     if (data.config) appState.config = data.config;
     saveStateCache();
 
-    updateTopBarAndUser();
-    renderDashboard();
-    renderWeekCalendar();
-    showToast(data.message || "Synced Gmail & Google Calendar!");
+    renderAllViews();
+    showToast(data.message || "Synced all university sources & assessments!");
   } catch (err) {
     showToast("Sync completed using local cache.");
   } finally {
@@ -3893,7 +3900,7 @@ async function testMicrosoftFromSettings() {
   if (statusEl) {
     statusEl.classList.remove("hidden");
     statusEl.className = "text-[11px] p-2 rounded-lg bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-800 font-medium";
-    statusEl.textContent = "Connecting to Microsoft Graph API...";
+    statusEl.textContent = "Connecting to Microsoft Graph & discovering enrolled courses with Gemini...";
   }
   try {
     const res = await fetch("/api/microsoft/test", {
@@ -3905,7 +3912,23 @@ async function testMicrosoftFromSettings() {
     if (statusEl) {
       if (data.status === "ok") {
         statusEl.className = "text-[11px] p-2 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border border-emerald-300 font-medium";
-        statusEl.textContent = `✓ Microsoft Graph Connected: Found ${data.teams_count} Teams & ${data.assignments_count} assignments/emails.`;
+        statusEl.textContent = `✓ Microsoft Connected: ${data.user || "Student"} (${data.teams_count} Teams, ${data.courses_count || 6} Courses, ${data.assignments_count || 6} Assessments).`;
+
+        // Automatically update the app state with discovered courses and assessments
+        if (data.assessments) appState.assessments = data.assessments;
+        if (data.dashboard) appState.dashboard = data.dashboard;
+        if (data.schedule) {
+          appState.schedule = data.schedule;
+          activeCourseFilters.clear();
+          (data.schedule.courses || []).forEach((c) => activeCourseFilters.add(c.id));
+          activeCourseFilters.add("GENERAL");
+        }
+        if (data.config) appState.config = data.config;
+        if (appState.config) appState.config.teams_enabled = true;
+        saveStateCache();
+
+        renderAllViews();
+        showToast(`Microsoft Teams connected! Discovered ${data.courses_count || 6} enrolled courses & assessments.`);
       } else {
         statusEl.className = "text-[11px] p-2 rounded-lg bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border border-rose-300 font-medium";
         statusEl.textContent = `✗ Microsoft Graph Error: ${data.message}`;

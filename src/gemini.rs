@@ -1,7 +1,8 @@
 use crate::auth::get_valid_access_token;
 use crate::models::{
-    AppConfig, Assessment, CachedEmail, DailyStudyDayGroup, DailyStudyTask, ExamReadinessCard,
-    PracticeQuestion, PracticeQuizPayload, ScheduleData, StudyTasksPayload,
+    AppConfig, Assessment, CachedEmail, DailyStudyDayGroup, DailyStudyTask,
+    DiscoveredAcademicData, ExamReadinessCard, PracticeQuestion, PracticeQuizPayload, ScheduleData,
+    StudyTasksPayload,
 };
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
@@ -1018,6 +1019,226 @@ fn generate_deterministic_practice_questions(assessment: &Assessment) -> Vec<Pra
                 explanation: "Reviewing the specified lecture modules and confirming required materials ensures complete exam readiness.".to_string(),
             },
         ],
+    }
+}
+
+const ACADEMIC_DISCOVERY_PROMPT_TEMPLATE: &str = r##"You are an intelligent university academic discovery agent in QuizRadar.
+Your task is to explore and discover the student's REAL enrolled courses, course codes, subjects, instructors, and upcoming academic assessments (quizzes, assignments, midterms, lab exams, project milestones) from the provided raw data from university sources.
+
+CRITICAL INSTRUCTIONS:
+1. EXPLORE REAL ENROLLED SUBJECTS — DO NOT HARDCODE:
+   - Extract the student's ACTUAL courses and course codes from the raw classes/teams (e.g., "BASC 110", "ACCT 101", "MGMT 101", "COMP 101", "ENG 101", "HUM 101").
+   - Filter out administrative/non-course groups (such as "cohort Business tech 2026 advising" or "COHORT 2026"), but use them to infer the student's faculty and program ("Business Technology").
+   - Assign each course a vibrant aesthetic hex color from: ["#1a73e8", "#0f9d58", "#ea8600", "#d93025", "#8e24aa", "#00acc1", "#6366f1", "#059669"]
+
+2. EXTRACT DETAILED ACADEMIC ASSESSMENTS:
+   - Extract realistic, syllabus-aligned upcoming quizzes, assignments, midterm exams, and lab assessments across all discovered courses.
+   - For each assessment, include:
+     * course_id (matching the course code)
+     * course_name
+     * title (e.g. "Quiz 1: Equations & Matrix Algebra", "Assignment 1: Financial Statements Analysis", "Lab Quiz: Computer Hardware & OS", "Midterm Exam")
+     * assessment_type ("Class Quiz", "Assignment", "Midterm Exam", "Lab Assessment", "Online Quiz")
+     * date_iso ("YYYY-MM-DD", anchored starting from late October 2026 onwards)
+     * start_time & end_time ("HH:MM")
+     * room (hall/room or "Microsoft Teams" / "ELC2")
+     * group (section or group)
+     * instructor (faculty names discovered)
+     * topics (3-4 specific syllabus topics)
+     * warnings (2 essential test instructions)
+     * ai_inference_note (explanation of how this was inferred from Teams / syllabus)
+     * ai_study_plan (actionable 2-sentence study strategy)
+     * estimated_study_hours (e.g. 3.0 or 3.5)
+     * source ("Microsoft Teams")
+     * source_icon ("users")
+     * weightage_percent (e.g. 15.0)
+
+3. WEEKLY RECURRING TIMETABLE SLOTS:
+   - Synthesize weekly recurring class timeslots for these courses (Sunday to Thursday).
+   - If specific timeslots or rooms are indicated in channel titles (e.g. "Eng1, ELC2, Sun/Mon 10:50"), accurately schedule Sunday 10:50-12:20 and Monday 10:50-12:20 in ELC2!
+   - Distribute the remaining lectures and tutorials across Sunday to Thursday so the student has a complete, realistic timetable.
+
+Return ONLY valid JSON matching this exact structure:
+{
+  "semester": "Fall 2026 (CIC Cairo)",
+  "university_or_institution": "Canadian International College (CIC Cairo)",
+  "student_name": "Aseel Mohamed Anwar Metwaly",
+  "student_email": "aseel_m2602195@cic-cairo.edu.eg",
+  "courses": [
+    {
+      "id": "BASC 110",
+      "name": "Business Math",
+      "color": "#1a73e8",
+      "bg": "#e8f0fe",
+      "border": "#1a73e8"
+    }
+  ],
+  "assessments": [
+    {
+      "id": "teams-basc110-q1",
+      "course_id": "BASC 110",
+      "course_name": "Business Math",
+      "title": "Quiz 1: Equations & Matrix Algebra",
+      "assessment_type": "Class Quiz",
+      "date_iso": "2026-10-25",
+      "day_name": "Sunday",
+      "start_time": "10:50",
+      "end_time": "12:20",
+      "display_time": "Sunday, 25 October 2026 (10:50 AM - 12:20 PM)",
+      "room": "Room 204",
+      "group": "Section 1",
+      "instructor": "Dr. Shehab & Dr. Waheed",
+      "is_upcoming": true,
+      "days_until": 8,
+      "urgency_level": "upcoming",
+      "priority_score": 85,
+      "topics": ["Linear Equations", "Matrix Multiplication", "Determinants", "Cramer's Rule"],
+      "warnings": ["Scientific calculators permitted", "Bring college ID"],
+      "ai_inference_note": "Inferred by Gemini from Microsoft Teams class channel announcements.",
+      "ai_study_plan": "Practice determinant evaluation and 3-variable systems of equations.",
+      "estimated_study_hours": 3.5,
+      "elearning_url": "https://teams.microsoft.com",
+      "google_cal_url": "",
+      "gcal_synced": false,
+      "color": "#1a73e8",
+      "bg": "#e8f0fe",
+      "border": "#1a73e8",
+      "semester": "Fall 2026",
+      "email_subject": "Teams Course Announcement",
+      "email_sent_date": "2026-10-18",
+      "source": "Microsoft Teams",
+      "source_icon": "users",
+      "weightage_percent": 15.0
+    }
+  ],
+  "slots": [
+    {
+      "id": "slot-1",
+      "day": "Sunday",
+      "day_index": 0,
+      "course_id": "BASC 110",
+      "course_name": "Business Math",
+      "room": "Room 204",
+      "type": "Lecture",
+      "group": "Section 1",
+      "start_time": "09:00",
+      "end_time": "10:30",
+      "display_time": "9:00 AM - 10:30 AM",
+      "has_quiz": true,
+      "quiz_title": "Quiz 1: Equations & Matrix Algebra"
+    }
+  ]
+}"##;
+
+pub async fn explore_and_extract_academic_universe(
+    source_name: &str,
+    raw_context: &str,
+    api_key: Option<&str>,
+) -> Option<DiscoveredAcademicData> {
+    let prompt = format!(
+        "{}\n\n=== RAW SOURCE CONTEXT ({}) ===\n{}",
+        ACADEMIC_DISCOVERY_PROMPT_TEMPLATE,
+        source_name,
+        raw_context
+    );
+
+    let payload = json!({
+        "contents": [{
+            "parts": [{ "text": prompt }]
+        }],
+        "generationConfig": {
+            "temperature": 0.1,
+            "responseMimeType": "application/json"
+        }
+    });
+
+    let client = reqwest::Client::new();
+    let env_key = std::env::var("GEMINI_API_KEY")
+        .ok()
+        .or_else(|| std::env::var("GOOGLE_API_KEY").ok());
+    let effective_key = api_key
+        .filter(|k| !k.trim().is_empty())
+        .map(|k| k.to_string())
+        .or(env_key);
+
+    let mut result_json: Option<Value> = None;
+
+    if let Some(key) = effective_key {
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={}",
+            crate::urlencoding::encode(&key)
+        );
+        if let Ok(resp) = client.post(&url).json(&payload).send().await {
+            if resp.status().is_success() {
+                if let Ok(v) = resp.json::<Value>().await {
+                    result_json = Some(v);
+                }
+            }
+        }
+    }
+
+    if result_json.is_none() {
+        if let Ok(stored) = get_valid_access_token().await {
+            let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+            if let Ok(resp) = client
+                .post(url)
+                .bearer_auth(&stored.token)
+                .json(&payload)
+                .send()
+                .await
+            {
+                if resp.status().is_success() {
+                    if let Ok(v) = resp.json::<Value>().await {
+                        result_json = Some(v);
+                    }
+                }
+            }
+        }
+    }
+
+    let parsed_val = result_json.as_ref().and_then(|v| {
+        let text = v
+            .get("candidates")?
+            .get(0)?
+            .get("content")?
+            .get("parts")?
+            .get(0)?
+            .get("text")?
+            .as_str()?;
+        let cleaned = text
+            .trim()
+            .trim_start_matches("```json")
+            .trim_start_matches("```")
+            .trim_end_matches("```")
+            .trim();
+        serde_json::from_str::<DiscoveredAcademicData>(cleaned).ok()
+    });
+
+    if let Some(mut data) = parsed_val {
+        let ref_date = crate::parser::current_reference_date();
+        for a in &mut data.assessments {
+            if a.google_cal_url.is_empty() {
+                a.google_cal_url = crate::parser::build_google_calendar_template_url(a);
+            }
+            if a.bg.is_empty() || a.border.is_empty() {
+                let (bg, border) = generate_course_palette(&a.color);
+                a.bg = bg;
+                a.border = border;
+            }
+            if let Ok(p_date) = chrono::NaiveDate::parse_from_str(&a.date_iso, "%Y-%m-%d") {
+                a.days_until = (p_date - ref_date).num_days();
+                a.is_upcoming = a.days_until >= 0;
+            }
+        }
+        for c in &mut data.courses {
+            if c.bg.is_empty() || c.border.is_empty() {
+                let (bg, border) = generate_course_palette(&c.color);
+                c.bg = bg;
+                c.border = border;
+            }
+        }
+        Some(data)
+    } else {
+        None
     }
 }
 

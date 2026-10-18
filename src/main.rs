@@ -277,6 +277,7 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
         .route("/api/microsoft/url", get(microsoft_login_url))
         .route("/api/auth/microsoft/callback", get(microsoft_oauth_callback))
         .route("/api/microsoft/test", post(test_microsoft_handler))
+        .route("/api/microsoft/logout", post(microsoft_logout))
         .route("/api/classroom/test", get(test_classroom_handler).post(test_classroom_handler))
         .route("/api/assessments/:id/practice", post(get_assessment_practice_handler))
         .route("/api/assessments/:id/grade", post(update_assessment_grade_handler))
@@ -750,10 +751,16 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
             }
 
             if let Some(ref uname) = teams_res.user_display_name {
-                cfg.user_name = Some(uname.clone());
+                cfg.teams_account_name = Some(uname.clone());
+                if cfg.user_name.is_none() {
+                    cfg.user_name = Some(uname.clone());
+                }
             }
             if let Some(ref uemail) = teams_res.user_email {
-                cfg.user_email = Some(uemail.clone());
+                cfg.teams_account_email = Some(uemail.clone());
+                if cfg.user_email.is_none() {
+                    cfg.user_email = Some(uemail.clone());
+                }
             }
 
             for t in teams_res.assessments {
@@ -1240,14 +1247,95 @@ async fn microsoft_oauth_callback(
                 save_app_config(&cfg);
                 drop(cfg);
                 let _ = run_sync_pipeline(&state, false).await;
-                return Redirect::temporary("/?teams=success").into_response();
+
+                let html = r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QuizRadar — Microsoft Teams Connected</title>
+  <style>
+    body { background: #0b0f19; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+    .card { background: #131927; border: 1px solid #1e293b; border-radius: 16px; padding: 28px; max-width: 440px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; }
+    .icon { width: 52px; height: 52px; border-radius: 14px; background: rgba(99,102,241,0.15); color: #818cf8; display: inline-flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 16px; }
+    h2 { font-size: 19px; margin: 0 0 8px 0; color: #ffffff; font-weight: 700; }
+    p { font-size: 13px; color: #94a3b8; line-height: 1.5; margin: 0 0 20px 0; word-break: break-word; }
+    .btn { display: inline-block; background: #4f46e5; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 600; padding: 11px 22px; border-radius: 10px; cursor: pointer; border: none; transition: background 0.2s; }
+    .btn:hover { background: #4338ca; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">🎓</div>
+    <h2>University Account Connected!</h2>
+    <p>Your university Microsoft 365 / Teams account has been linked. Academic courses, assignments, and announcements will sync automatically.</p>
+    <button class="btn" onclick="window.close();">Return to QuizRadar</button>
+  </div>
+  <script>
+    setTimeout(function() {
+      try { window.close(); } catch(e) {}
+    }, 1500);
+  </script>
+</body>
+</html>"#;
+                return Html(html).into_response();
             }
             Err(err) => {
-                return Html(format!("<h2>Microsoft Sign-In Error</h2><p>{}</p><a href=\"/\">Return to QuizRadar</a>", err)).into_response();
+                let html = format!(
+                    r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QuizRadar — Microsoft Sign-In</title>
+  <style>
+    body {{ background: #0b0f19; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }}
+    .card {{ background: #131927; border: 1px solid #1e293b; border-radius: 16px; padding: 28px; max-width: 440px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; }}
+    .icon {{ width: 48px; height: 48px; border-radius: 12px; background: rgba(239,68,68,0.15); color: #ef4444; display: inline-flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 16px; }}
+    h2 {{ font-size: 18px; margin: 0 0 8px 0; color: #ffffff; }}
+    p {{ font-size: 13px; color: #94a3b8; line-height: 1.5; margin: 0 0 20px 0; word-break: break-word; }}
+    .btn {{ display: inline-block; background: #1a73e8; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 600; padding: 10px 20px; border-radius: 10px; cursor: pointer; border: none; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">⚠️</div>
+    <h2>Microsoft Sign-In Error</h2>
+    <p>{}</p>
+    <button class="btn" onclick="window.close();">Return to QuizRadar</button>
+  </div>
+</body>
+</html>"#,
+                    err
+                );
+                return Html(html).into_response();
             }
         }
     }
-    Redirect::temporary("/?teams=cancelled").into_response()
+    let html = r#"<!DOCTYPE html>
+<html>
+<body style="background:#0b0f19;color:#fff;font-family:sans-serif;text-align:center;padding:50px;">
+  <h2>Sign-In Cancelled</h2>
+  <p style="color:#94a3b8">The Microsoft sign-in window was closed.</p>
+  <button style="background:#4f46e5;color:#fff;padding:10px 20px;border-radius:8px;border:none;cursor:pointer" onclick="window.close();">Close</button>
+  <script>setTimeout(function(){ try { window.close(); } catch(e) {} }, 1200);</script>
+</body>
+</html>"#;
+    Html(html).into_response()
+}
+
+async fn microsoft_logout(State(state): State<SharedAppState>) -> Json<Value> {
+    teams::clear_stored_microsoft_token();
+    {
+        let mut cfg = state.config.write().await;
+        cfg.teams_enabled = false;
+        cfg.teams_token = None;
+        cfg.teams_account_name = None;
+        cfg.teams_account_email = None;
+        save_app_config(&cfg);
+    }
+    let _ = run_sync_pipeline(&state, false).await;
+    Json(json!({ "success": true, "message": "University Microsoft Teams disconnected" }))
 }
 
 #[derive(Deserialize)]
@@ -1277,10 +1365,16 @@ async fn test_microsoft_handler(
                 let mut wcfg = state.config.write().await;
                 wcfg.teams_enabled = true;
                 if let Some(ref name) = res.user_display_name {
-                    wcfg.user_name = Some(name.clone());
+                    wcfg.teams_account_name = Some(name.clone());
+                    if wcfg.user_name.is_none() {
+                        wcfg.user_name = Some(name.clone());
+                    }
                 }
                 if let Some(ref email) = res.user_principal_name {
-                    wcfg.user_email = Some(email.clone());
+                    wcfg.teams_account_email = Some(email.clone());
+                    if wcfg.user_email.is_none() {
+                        wcfg.user_email = Some(email.clone());
+                    }
                 }
                 save_app_config(&wcfg);
             }

@@ -279,8 +279,11 @@ function startAuthPolling() {
           clearInterval(_authPollInterval);
           _authPollInterval = null;
           appState = state;
-          saveCache();
-          updateUserInterface();
+          saveStateCache();
+          renderAllViews();
+          if (document.getElementById("account-profile-modal")?.classList.contains("is-open")) {
+            openAccountModal();
+          }
           triggerHaptic("success");
           showToast(`Connected as ${email}!`, "success", 4000);
 
@@ -318,8 +321,11 @@ async function disconnectGoogleAccount() {
       appState.config.user_picture = null;
     }
 
-    saveCache();
-    updateUserInterface();
+    saveStateCache();
+    renderAllViews();
+    if (document.getElementById("account-profile-modal")?.classList.contains("is-open")) {
+      openAccountModal();
+    }
     triggerHaptic("success");
     showToast("Google account disconnected successfully", "success", 3000);
   } catch (err) {
@@ -327,6 +333,50 @@ async function disconnectGoogleAccount() {
     showToast("Failed to disconnect: " + err.message, "error");
     triggerHaptic("warning");
   }
+}
+
+let _teamsPollInterval = null;
+
+function startTeamsPolling() {
+  if (_teamsPollInterval) clearInterval(_teamsPollInterval);
+  let attempts = 0;
+  const maxAttempts = 45; // 90 seconds (every 2s)
+
+  _teamsPollInterval = setInterval(async () => {
+    attempts++;
+    if (attempts > maxAttempts) {
+      clearInterval(_teamsPollInterval);
+      _teamsPollInterval = null;
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/state");
+      if (res.ok) {
+        const state = await res.json();
+        const teamsEmail = state.config?.teams_account_email || (state.config?.teams_enabled && state.config?.teams_token ? state.config?.teams_account_name : null);
+        if (state.config?.teams_enabled && (teamsEmail || state.config?.teams_token)) {
+          clearInterval(_teamsPollInterval);
+          _teamsPollInterval = null;
+          appState = state;
+          saveStateCache();
+          renderAllViews();
+          if (document.getElementById("account-profile-modal")?.classList.contains("is-open")) {
+            openAccountModal();
+          }
+          triggerHaptic("success");
+          const displayName = state.config?.teams_account_name || teamsEmail || "University";
+          showToast(`Connected Microsoft Teams account: ${displayName}!`, "success", 4000);
+
+          if (IS_NATIVE && window.Capacitor?.Plugins?.Browser) {
+            try {
+              await window.Capacitor.Plugins.Browser.close();
+            } catch (e) {}
+          }
+        }
+      }
+    } catch (e) {}
+  }, 2000);
 }
 
 async function startMicrosoftAuth() {
@@ -340,14 +390,53 @@ async function startMicrosoftAuth() {
     if (!data.url) throw new Error("No authorization URL returned by server");
 
     if (IS_NATIVE && window.Capacitor?.Plugins?.Browser) {
-      await window.Capacitor.Plugins.Browser.open({ url: data.url });
-      showToast("Opened Microsoft Sign-In in browser", "info", 4000);
+      await window.Capacitor.Plugins.Browser.open({
+        url: data.url,
+        windowName: "_system"
+      });
+      showToast("Opened Microsoft Sign-In in browser. Complete login to link.", "info", 5000);
+      startTeamsPolling();
     } else {
       window.location.href = data.url;
     }
   } catch (err) {
     console.error("Microsoft auth failed:", err);
     showToast("Unable to reach server for Teams sign-in: " + err.message, "error");
+    triggerHaptic("warning");
+  }
+}
+
+async function disconnectMicrosoftAccount() {
+  triggerHaptic("medium");
+  const confirmed = confirm("Are you sure you want to disconnect your University Microsoft Teams account from QuizRadar?");
+  if (!confirmed) return;
+
+  try {
+    showToast("Disconnecting Microsoft Teams account...", "info", 2000);
+    const res = await fetch("/api/microsoft/logout", { method: "POST" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    if (appState.config) {
+      appState.config.teams_enabled = false;
+      appState.config.teams_token = null;
+      appState.config.teams_account_email = null;
+      appState.config.teams_account_name = null;
+    }
+    if (data.assessments) appState.assessments = data.assessments;
+    if (data.dashboard) appState.dashboard = data.dashboard;
+    if (data.schedule) appState.schedule = data.schedule;
+
+    saveStateCache();
+    renderAllViews();
+    if (document.getElementById("account-profile-modal")?.classList.contains("is-open")) {
+      openAccountModal();
+    }
+    triggerHaptic("success");
+    showToast("University Microsoft account disconnected successfully", "success", 3000);
+  } catch (err) {
+    console.error("Teams disconnect failed:", err);
+    showToast("Failed to disconnect Teams: " + err.message, "error");
     triggerHaptic("warning");
   }
 }
@@ -453,6 +542,10 @@ function openAccountModal() {
   const coursesCountEl = document.getElementById("account-courses-count");
   const examsCountEl = document.getElementById("account-exams-count");
 
+  const isGoogleAuth = !!appState.auth?.authenticated;
+  const isTeamsAuth = !!(appState.config?.teams_enabled && (appState.config?.teams_token || appState.config?.teams_account_email));
+  const teamsEmail = appState.config?.teams_account_email || appState.config?.teams_account_name;
+
   if (avatarEl) avatarEl.textContent = initial;
   if (nameEl) nameEl.textContent = name;
   if (emailEl) emailEl.textContent = email;
@@ -460,29 +553,72 @@ function openAccountModal() {
   if (examsCountEl) examsCountEl.textContent = `${(appState.assessments || []).length} Scheduled`;
 
   if (badgeEl) {
-    badgeEl.className = isAuth
-      ? "mt-1.5 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-400/25 text-emerald-100 border border-emerald-300/30"
-      : "mt-1.5 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white";
-    badgeEl.innerHTML = `<i data-lucide="${isAuth ? "shield-check" : "user"}" class="w-3 h-3"></i><span>${isAuth ? "Google Cloud Synced" : "Local Student Profile"}</span>`;
+    if (isGoogleAuth && isTeamsAuth) {
+      badgeEl.className = "mt-1.5 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-400/25 text-emerald-100 border border-emerald-300/30";
+      badgeEl.innerHTML = `<i data-lucide="shield-check" class="w-3 h-3"></i><span>Google & University Synced</span>`;
+    } else if (isGoogleAuth) {
+      badgeEl.className = "mt-1.5 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-400/25 text-emerald-100 border border-emerald-300/30";
+      badgeEl.innerHTML = `<i data-lucide="shield-check" class="w-3 h-3"></i><span>Google Cloud Synced</span>`;
+    } else if (isTeamsAuth) {
+      badgeEl.className = "mt-1.5 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-400/25 text-indigo-100 border border-indigo-300/30";
+      badgeEl.innerHTML = `<i data-lucide="building-2" class="w-3 h-3"></i><span>University Synced (Teams)</span>`;
+    } else {
+      badgeEl.className = "mt-1.5 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white";
+      badgeEl.innerHTML = `<i data-lucide="user" class="w-3 h-3"></i><span>Local Student Profile</span>`;
+    }
   }
 
+  // Google Account Status
   if (statusEl) {
-    statusEl.className = isAuth
+    statusEl.className = isGoogleAuth
       ? "text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300"
       : "text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300";
-    statusEl.textContent = isAuth ? "Connected" : "Offline / Unlinked";
+    statusEl.textContent = isGoogleAuth ? "Connected" : "Offline / Unlinked";
   }
 
   if (actionLabel) {
-    actionLabel.textContent = isAuth ? "Switch Account" : "Connect Google";
+    actionLabel.textContent = isGoogleAuth ? "Switch Account" : "Connect Google";
   }
 
   const disconnectBtn = document.getElementById("account-disconnect-btn");
   if (disconnectBtn) {
-    if (isAuth) {
+    if (isGoogleAuth) {
       disconnectBtn.classList.remove("hidden");
     } else {
       disconnectBtn.classList.add("hidden");
+    }
+  }
+
+  // University (Microsoft Teams) Account Status
+  const teamsStatusEl = document.getElementById("account-teams-status");
+  const teamsDetailsEl = document.getElementById("account-teams-details");
+  const teamsActionLabel = document.getElementById("account-teams-auth-action-label");
+  const teamsDisconnectBtn = document.getElementById("account-teams-disconnect-btn");
+
+  if (teamsStatusEl) {
+    teamsStatusEl.className = isTeamsAuth
+      ? "text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300"
+      : "text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300";
+    teamsStatusEl.textContent = isTeamsAuth ? "Connected" : "Not Connected";
+  }
+
+  if (teamsDetailsEl) {
+    if (isTeamsAuth) {
+      teamsDetailsEl.innerHTML = `Linked university profile: <strong class="font-bold text-indigo-600 dark:text-indigo-400">${teamsEmail || "University Account"}</strong>. Assignments & exams automatically synced.`;
+    } else {
+      teamsDetailsEl.textContent = "Connect your university student email (e.g. CIC, MSA, Cairo Univ) to synchronize course teams, assignments, and exam dates without overwriting your primary account.";
+    }
+  }
+
+  if (teamsActionLabel) {
+    teamsActionLabel.textContent = isTeamsAuth ? "Switch University" : "Connect University";
+  }
+
+  if (teamsDisconnectBtn) {
+    if (isTeamsAuth) {
+      teamsDisconnectBtn.classList.remove("hidden");
+    } else {
+      teamsDisconnectBtn.classList.add("hidden");
     }
   }
 
@@ -1497,6 +1633,33 @@ function updateTopBarAndUser() {
       stDisconnectBtn.classList.remove("hidden");
     } else {
       stDisconnectBtn.classList.add("hidden");
+    }
+  }
+
+  // Populate Microsoft Teams controls in Settings Modal
+  const isTeamsConnected = !!(appState.config?.teams_enabled && (appState.config?.teams_token || appState.config?.teams_account_email));
+  const teamsEmail = appState.config?.teams_account_email || appState.config?.teams_account_name;
+  const stTeamsBadge = document.getElementById("settings-teams-badge");
+  const stTeamsAuthLabel = document.getElementById("settings-teams-auth-label");
+  const stTeamsDisconnectBtn = document.getElementById("settings-teams-disconnect-btn");
+
+  if (stTeamsBadge) {
+    if (isTeamsConnected) {
+      stTeamsBadge.className = "text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300";
+      stTeamsBadge.textContent = teamsEmail ? `Connected: ${teamsEmail}` : "Connected";
+    } else {
+      stTeamsBadge.className = "text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300";
+      stTeamsBadge.textContent = "Not Connected";
+    }
+  }
+  if (stTeamsAuthLabel) {
+    stTeamsAuthLabel.textContent = isTeamsConnected ? "Switch / Re-Sign In" : "Sign in with Microsoft";
+  }
+  if (stTeamsDisconnectBtn) {
+    if (isTeamsConnected) {
+      stTeamsDisconnectBtn.classList.remove("hidden");
+    } else {
+      stTeamsDisconnectBtn.classList.add("hidden");
     }
   }
 

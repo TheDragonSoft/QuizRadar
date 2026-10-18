@@ -271,6 +271,8 @@ pub struct AppConfig {
     pub teams_token: Option<String>,
     #[serde(default)]
     pub teams_account_name: Option<String>,
+    #[serde(default)]
+    pub teams_account_email: Option<String>,
 
     #[serde(default)]
     pub classroom_enabled: bool,
@@ -306,6 +308,7 @@ impl Default for AppConfig {
             teams_client_id: None,
             teams_token: None,
             teams_account_name: None,
+            teams_account_email: None,
             classroom_enabled: false,
             grades: HashMap::new(),
             dismiss_conflict_banner: false,

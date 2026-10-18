@@ -52,8 +52,15 @@ pub fn save_stored_microsoft_token(token: &MicrosoftStoredToken) {
     }
 }
 
+pub fn clear_stored_microsoft_token() {
+    let _ = fs::remove_file(MS_TOKEN_FILE);
+}
+
 pub fn build_microsoft_oauth_url(port: u16, client_id: Option<&str>) -> String {
-    let cid = client_id.unwrap_or(DEFAULT_MS_CLIENT_ID);
+    let cid = client_id
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(DEFAULT_MS_CLIENT_ID);
     let redirect_uri = format!("http://localhost:{}/api/auth/microsoft/callback", port);
     let scopes = "offline_access User.Read Mail.Read Calendars.Read";
 
@@ -70,7 +77,10 @@ pub async fn exchange_microsoft_code_for_token(
     port: u16,
     client_id: Option<&str>,
 ) -> Result<MicrosoftStoredToken, String> {
-    let cid = client_id.unwrap_or(DEFAULT_MS_CLIENT_ID);
+    let cid = client_id
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(DEFAULT_MS_CLIENT_ID);
     let redirect_uri = format!("http://localhost:{}/api/auth/microsoft/callback", port);
     let client = reqwest::Client::new();
 

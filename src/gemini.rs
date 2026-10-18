@@ -1,7 +1,7 @@
 use crate::auth::get_valid_access_token;
 use crate::models::{
     AppConfig, Assessment, CachedEmail, DailyStudyDayGroup, DailyStudyTask, ExamReadinessCard,
-    ScheduleData, StudyTasksPayload,
+    PracticeQuestion, PracticeQuizPayload, ScheduleData, StudyTasksPayload,
 };
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
@@ -705,5 +705,319 @@ RULES:
         total_hours: (total_hours * 10.0).round() / 10.0,
         ai_generated: true,
     })
+}
+
+pub async fn generate_practice_quiz(
+    assessment: &Assessment,
+    api_key: Option<&str>,
+) -> Result<PracticeQuizPayload, String> {
+    let topics_str = if assessment.topics.is_empty() {
+        assessment.title.clone()
+    } else {
+        assessment.topics.join(", ")
+    };
+
+    let prompt = format!(
+        r#"You are an expert university professor for the course "{course_name}" ({course_id}).
+Create 5 rigorous, practical multiple-choice quiz questions based on the following topics:
+Topics: {topics}
+Assessment Title: {title}
+
+Return ONLY a JSON array of 5 objects matching this exact structure:
+[
+  {{
+    "id": "q1",
+    "question": "What is ...?",
+    "options": ["Option A", "Option B", "Option C", "Option D"],
+    "correct_index": 0,
+    "explanation": "Clear explanation of why Option A is correct and why other choices are invalid."
+  }}
+]"#,
+        course_name = assessment.course_name,
+        course_id = assessment.course_id,
+        topics = topics_str,
+        title = assessment.title
+    );
+
+    let payload = json!({
+        "contents": [{
+            "parts": [{ "text": prompt }]
+        }],
+        "generationConfig": {
+            "temperature": 0.2,
+            "responseMimeType": "application/json"
+        }
+    });
+
+    let client = reqwest::Client::new();
+    let env_key = std::env::var("GEMINI_API_KEY")
+        .ok()
+        .or_else(|| std::env::var("GOOGLE_API_KEY").ok());
+    let effective_key = api_key
+        .filter(|k| !k.trim().is_empty())
+        .map(|k| k.to_string())
+        .or(env_key);
+
+    if let Some(key) = effective_key {
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={}",
+            crate::urlencoding::encode(&key)
+        );
+        if let Ok(resp) = client.post(&url).json(&payload).send().await {
+            if resp.status().is_success() {
+                if let Ok(v) = resp.json::<Value>().await {
+                    if let Some(questions) = parse_practice_questions_json(&v) {
+                        return Ok(PracticeQuizPayload {
+                            assessment_id: assessment.id.clone(),
+                            course_id: assessment.course_id.clone(),
+                            assessment_title: assessment.title.clone(),
+                            questions,
+                            generated_by_ai: true,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    if let Ok(stored) = get_valid_access_token().await {
+        let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+        if let Ok(resp) = client.post(url).bearer_auth(&stored.token).json(&payload).send().await {
+            if resp.status().is_success() {
+                if let Ok(v) = resp.json::<Value>().await {
+                    if let Some(questions) = parse_practice_questions_json(&v) {
+                        return Ok(PracticeQuizPayload {
+                            assessment_id: assessment.id.clone(),
+                            course_id: assessment.course_id.clone(),
+                            assessment_title: assessment.title.clone(),
+                            questions,
+                            generated_by_ai: true,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // High quality deterministic fallback generator so offline / no-API key students get great practice
+    let questions = generate_deterministic_practice_questions(assessment);
+    Ok(PracticeQuizPayload {
+        assessment_id: assessment.id.clone(),
+        course_id: assessment.course_id.clone(),
+        assessment_title: assessment.title.clone(),
+        questions,
+        generated_by_ai: false,
+    })
+}
+
+fn parse_practice_questions_json(val: &Value) -> Option<Vec<PracticeQuestion>> {
+    let candidate_text = val
+        .get("candidates")
+        .and_then(|c| c.get(0))
+        .and_then(|cand| cand.get("content"))
+        .and_then(|cont| cont.get("parts"))
+        .and_then(|p| p.get(0))
+        .and_then(|part| part.get("text"))
+        .and_then(|t| t.as_str())?;
+
+    if let Ok(list) = serde_json::from_str::<Vec<PracticeQuestion>>(candidate_text) {
+        if !list.is_empty() {
+            return Some(list);
+        }
+    }
+
+    // Try finding JSON array substring
+    if let (Some(start), Some(end)) = (candidate_text.find('['), candidate_text.rfind(']')) {
+        if start < end {
+            if let Ok(list) = serde_json::from_str::<Vec<PracticeQuestion>>(&candidate_text[start..=end]) {
+                if !list.is_empty() {
+                    return Some(list);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn generate_deterministic_practice_questions(assessment: &Assessment) -> Vec<PracticeQuestion> {
+    let cid = assessment.course_id.as_str();
+    match cid {
+        "GSE211" => vec![
+            PracticeQuestion {
+                id: "q1".to_string(),
+                question: "Which of the following is true regarding Simpson's 1/3 Rule compared to the Trapezoidal Rule?".to_string(),
+                options: vec![
+                    "Simpson's 1/3 rule fits parabolic arcs across triplets of points and requires an even number of sub-intervals.".to_string(),
+                    "Simpson's 1/3 rule requires an odd number of sub-intervals.".to_string(),
+                    "Trapezoidal rule yields higher precision for quadratic polynomials.".to_string(),
+                    "Simpson's 1/3 rule assumes piecewise linear segments.".to_string(),
+                ],
+                correct_index: 0,
+                explanation: "Simpson's 1/3 rule approximates the integrand with a degree-2 parabola over adjacent pairs of panels, requiring an even number of sub-intervals (n % 2 == 0).".to_string(),
+            },
+            PracticeQuestion {
+                id: "q2".to_string(),
+                question: "What is the global truncation error order of the composite Trapezoidal Rule with step size h?".to_string(),
+                options: vec![
+                    "O(h)".to_string(),
+                    "O(h^2)".to_string(),
+                    "O(h^3)".to_string(),
+                    "O(h^4)".to_string(),
+                ],
+                correct_index: 1,
+                explanation: "The composite Trapezoidal Rule has a local truncation error of O(h^3) and a global truncation error of O(h^2).".to_string(),
+            },
+            PracticeQuestion {
+                id: "q3".to_string(),
+                question: "In numerical differentiation, which finite difference formula provides second-order O(h^2) accuracy for the first derivative?".to_string(),
+                options: vec![
+                    "Forward difference [f(x+h) - f(x)] / h".to_string(),
+                    "Backward difference [f(x) - f(x-h)] / h".to_string(),
+                    "Central difference [f(x+h) - f(x-h)] / (2h)".to_string(),
+                    "One-sided forward extrapolation".to_string(),
+                ],
+                correct_index: 2,
+                explanation: "By Taylor expansion, odd power error terms cancel out in the central difference scheme, leaving the leading error term as O(h^2).".to_string(),
+            },
+            PracticeQuestion {
+                id: "q4".to_string(),
+                question: "When applying Simpson's 3/8 rule, how many sub-intervals (n) are required?".to_string(),
+                options: vec![
+                    "Must be an even integer".to_string(),
+                    "Must be a multiple of 3".to_string(),
+                    "Any positive integer >= 1".to_string(),
+                    "Must be a power of 2".to_string(),
+                ],
+                correct_index: 1,
+                explanation: "Simpson's 3/8 rule fits a cubic polynomial across sets of 3 intervals; thus the total number of sub-intervals must be a multiple of 3.".to_string(),
+            },
+        ],
+        "CSE263" => vec![
+            PracticeQuestion {
+                id: "q1".to_string(),
+                question: "In the k-Nearest Neighbors (k-NN) classification algorithm, what typically happens when k is set very small (e.g., k = 1)?".to_string(),
+                options: vec![
+                    "The model underfits and creates very smooth decision boundaries.".to_string(),
+                    "The model is highly susceptible to noise and may overfit the training data.".to_string(),
+                    "The classification boundary becomes completely linear.".to_string(),
+                    "The training time becomes significantly slower than testing time.".to_string(),
+                ],
+                correct_index: 1,
+                explanation: "With k=1, every single training noise or outlier forms its own decision region, leading to high variance (overfitting).".to_string(),
+            },
+            PracticeQuestion {
+                id: "q2".to_string(),
+                question: "What fundamental assumption allows Naïve Bayes to compute the posterior class probability efficiently?".to_string(),
+                options: vec![
+                    "Features are conditionally independent given the target class label.".to_string(),
+                    "Features follow a strict Bernoulli distribution only.".to_string(),
+                    "All features must have zero correlation with the class label.".to_string(),
+                    "The loss function is strictly non-convex.".to_string(),
+                ],
+                correct_index: 0,
+                explanation: "Naïve Bayes assumes conditional feature independence: P(x1, x2, ... | C) = P(x1 | C) * P(x2 | C) * ..., greatly simplifying computation.".to_string(),
+            },
+            PracticeQuestion {
+                id: "q3".to_string(),
+                question: "In ordinary least-squares Linear Regression, what does the closed-form normal equation compute?".to_string(),
+                options: vec![
+                    "theta = (X^T * X)^(-1) * X^T * y".to_string(),
+                    "theta = X * y^T * (X * X^T)".to_string(),
+                    "theta = X^T * (X * y)^(-1)".to_string(),
+                    "theta = (X + y)^(-1) * X^T".to_string(),
+                ],
+                correct_index: 0,
+                explanation: "Setting the gradient of the sum of squared errors to zero yields the normal equation theta = (X^T * X)^(-1) * X^T * y.".to_string(),
+            },
+            PracticeQuestion {
+                id: "q4".to_string(),
+                question: "Why is feature scaling (e.g. Min-Max or Z-score normalization) critical before running k-NN?".to_string(),
+                options: vec![
+                    "Because distance metrics (such as Euclidean distance) are dominated by features with larger numerical scales.".to_string(),
+                    "Because k-NN requires all feature values to be strictly non-zero.".to_string(),
+                    "Because scaling reduces the dimensionality of the feature space.".to_string(),
+                    "Because unscaled data causes division by zero in majority voting.".to_string(),
+                ],
+                correct_index: 0,
+                explanation: "Since k-NN computes geometric distances (sqrt(sum (xi - yi)^2)), unscaled features with large ranges overshadow features with small ranges.".to_string(),
+            },
+        ],
+        "CSE261" => vec![
+            PracticeQuestion {
+                id: "q1".to_string(),
+                question: "What is the worst-case time complexity of standard QuickSort when the pivot is always chosen as the first or last element of an already sorted array?".to_string(),
+                options: vec![
+                    "O(N log N)".to_string(),
+                    "O(N^2)".to_string(),
+                    "O(N)".to_string(),
+                    "O(log N)".to_string(),
+                ],
+                correct_index: 1,
+                explanation: "When partitions are maximally unbalanced (size 0 and size N-1), the recurrence relation becomes T(N) = T(N-1) + O(N), which solves to O(N^2).".to_string(),
+            },
+            PracticeQuestion {
+                id: "q2".to_string(),
+                question: "What is the primary condition required to prevent infinite recursion and stack overflow in a recursive function?".to_string(),
+                options: vec![
+                    "A well-defined base case that does not make a recursive call.".to_string(),
+                    "A global counter variable incremented on every pass.".to_string(),
+                    "Allocating memory on the heap rather than the call stack.".to_string(),
+                    "Ensuring all parameters are passed by reference.".to_string(),
+                ],
+                correct_index: 0,
+                explanation: "Every valid recursive function must possess one or more reachable base cases that terminate execution without recursive dispatch.".to_string(),
+            },
+            PracticeQuestion {
+                id: "q3".to_string(),
+                question: "Which Master Theorem case applies to the recurrence T(N) = 2T(N/2) + O(N)?".to_string(),
+                options: vec![
+                    "Case 1: Leaves dominate, O(N^(log_b a))".to_string(),
+                    "Case 2: Balanced work at every level, O(N log N)".to_string(),
+                    "Case 3: Root dominates, O(N^2)".to_string(),
+                    "The Master Theorem cannot be applied to this recurrence.".to_string(),
+                ],
+                correct_index: 1,
+                explanation: "Here a = 2, b = 2, so log_b(a) = log_2(2) = 1. Since f(N) = Theta(N^1), Case 2 applies, yielding T(N) = Theta(N log N).".to_string(),
+            },
+        ],
+        _ => vec![
+            PracticeQuestion {
+                id: "q1".to_string(),
+                question: format!("Regarding {}, which principle is most critical for mastery?", assessment.title),
+                options: vec![
+                    "Understanding core theoretical definitions and working through assigned practice problem sets.".to_string(),
+                    "Memorizing final numerical answers without deriving formulas.".to_string(),
+                    "Ignoring instructor guidelines and lecture slides.".to_string(),
+                    "Relying solely on external intuition during the exam.".to_string(),
+                ],
+                correct_index: 0,
+                explanation: "Solid mastery requires combining conceptual understanding of the syllabus topics with verified tutorial problem sheets.".to_string(),
+            },
+            PracticeQuestion {
+                id: "q2".to_string(),
+                question: "When managing exam time under strict navigation constraints (no backtracking), what is the optimal strategy?".to_string(),
+                options: vec![
+                    "Pace evenly: answer questions methodically and confirm each answer before submitting.".to_string(),
+                    "Spend 80% of the allocated time on the first problem.".to_string(),
+                    "Guess randomly on all questions immediately.".to_string(),
+                    "Leave tricky questions blank hoping to return later.".to_string(),
+                ],
+                correct_index: 0,
+                explanation: "Under strict navigation rules, once you advance you cannot return; steady pacing with careful verification before advancing is optimal.".to_string(),
+            },
+            PracticeQuestion {
+                id: "q3".to_string(),
+                question: format!("What is the recommended focus for {} before exam day?", assessment.course_id),
+                options: vec![
+                    "Review all lecture slide modules, tutorial sheets, and instructor warnings.".to_string(),
+                    "Skip past exam solutions.".to_string(),
+                    "Study unrelated elective materials.".to_string(),
+                    "Arrive at the examination hall without required materials.".to_string(),
+                ],
+                correct_index: 0,
+                explanation: "Reviewing the specified lecture modules and confirming required materials ensures complete exam readiness.".to_string(),
+            },
+        ],
+    }
 }
 

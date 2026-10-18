@@ -35,6 +35,20 @@ let activeModalAssessmentId = null;
 let activeModalDateIso = null;
 let toastHideTimeout = null;
 
+let currentDashboardSourceFilter = "ALL";
+let activePracticeQuiz = null;
+let practiceQuizCurrentIndex = 0;
+let practiceQuizScore = 0;
+let activePracticeAssessmentId = null;
+let pomodoroTimerInterval = null;
+let pomodoroSecondsRemaining = 25 * 60;
+let pomodoroTotalSeconds = 25 * 60;
+let pomodoroIsRunning = false;
+let pomodoroCurrentMode = "work";
+let pomodoroCurrentTaskKey = null;
+let pomodoroCurrentCourse = "";
+let pomodoroCurrentTopic = "";
+
 const START_HOUR = 8; // 8 AM
 const END_HOUR = 20;  // 8 PM
 const HOUR_HEIGHT = 56; // 56px per hour
@@ -991,6 +1005,39 @@ function renderDashboard() {
   const dash = appState.dashboard || {};
   const nextUp = dash.next_up;
 
+  // 0. Exam Overload & Conflict Detection Banner
+  const conflictBanner = document.getElementById("conflict-alert-banner");
+  if (conflictBanner) {
+    const alerts = dash.conflict_alerts || [];
+    if (alerts.length > 0) {
+      conflictBanner.classList.remove("hidden");
+      conflictBanner.innerHTML = `
+        <div class="flex items-start gap-3 flex-1">
+          <div class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+            <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+          </div>
+          <div class="space-y-1">
+            <div class="text-xs font-bold text-amber-900 dark:text-amber-200">Exam Overload & Schedule Conflict Detected (${alerts.length} conflict${alerts.length > 1 ? "s" : ""})</div>
+            <div class="text-xs text-amber-800 dark:text-amber-300 space-y-1">
+              ${alerts.map(a => `<div>• <strong>${escapeHtml(a.course_a || a.course_1)}</strong> and <strong>${escapeHtml(a.course_b || a.course_2)}</strong>: ${escapeHtml(a.message)}</div>`).join("")}
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <button onclick="scheduleSmartStudyBlocks()" class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer">
+            <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+            <span>Auto-Schedule Study Blocks</span>
+          </button>
+          <button onclick="document.getElementById('conflict-alert-banner').classList.add('hidden')" class="p-1 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 cursor-pointer">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+      `;
+    } else {
+      conflictBanner.classList.add("hidden");
+    }
+  }
+
   // 1. Hero Spotlight: What's Coming Next (No bottom warning pill per Picture 3; clean layout)
   const heroEl = document.getElementById("dashboard-next-up-hero");
   if (nextUp) {
@@ -1153,10 +1200,15 @@ function renderDashboard() {
         const topicsChecklistHtml = (rec.topics || [])
           .map(
             (item) => `
-            <label onclick="event.stopPropagation()" class="flex items-start gap-2.5 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/70 cursor-pointer transition border border-transparent hover:border-slate-200 dark:hover:border-slate-700">
-              <input type="checkbox" data-topic-key="${escapeHtml(item.key)}" ${item.completed ? "checked" : ""} onchange="toggleTopicCheckbox('${escapeHtml(item.key)}', this.checked)" class="mt-0.5 w-4 h-4 accent-[#1a73e8] rounded cursor-pointer shrink-0" />
-              <span data-topic-label="${escapeHtml(item.key)}" class="text-xs transition-colors ${item.completed ? "line-through text-slate-400 dark:text-slate-500" : "text-slate-800 dark:text-slate-100 font-medium"}">${escapeHtml(item.topic)}</span>
-            </label>
+            <div class="flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/70 transition border border-transparent hover:border-slate-200 dark:hover:border-slate-700">
+              <label onclick="event.stopPropagation()" class="flex items-start gap-2.5 cursor-pointer flex-1 mr-2">
+                <input type="checkbox" data-topic-key="${escapeHtml(item.key)}" ${item.completed ? "checked" : ""} onchange="toggleTopicCheckbox('${escapeHtml(item.key)}', this.checked)" class="mt-0.5 w-4 h-4 accent-[#1a73e8] rounded cursor-pointer shrink-0" />
+                <span data-topic-label="${escapeHtml(item.key)}" class="text-xs transition-colors ${item.completed ? "line-through text-slate-400 dark:text-slate-500" : "text-slate-800 dark:text-slate-100 font-medium"}">${escapeHtml(item.topic)}</span>
+              </label>
+              <button type="button" title="Start Focus Pomodoro for this topic" onclick="event.stopPropagation(); openPomodoroForTask('${escapeHtml(rec.course_id)} • ${escapeHtml(rec.title)}', '${escapeHtml(item.topic)}', '${escapeHtml(item.key)}')" class="p-1 rounded-md hover:bg-rose-100 dark:hover:bg-rose-950/60 text-rose-500 transition cursor-pointer shrink-0">
+                <i data-lucide="timer" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
           `
           )
           .join("");
@@ -1250,13 +1302,19 @@ function renderDashboard() {
   } else if (currentFilterVal !== "ALL") {
     timelineItems = timelineItems.filter((a) => a.assessment_type === currentFilterVal);
   }
+  if (currentDashboardSourceFilter && currentDashboardSourceFilter !== "ALL") {
+    timelineItems = timelineItems.filter(
+      (a) => (a.source || "").toLowerCase().includes(currentDashboardSourceFilter.toLowerCase())
+    );
+  }
   if (globalSearchQuery) {
     const q = globalSearchQuery.toLowerCase();
     timelineItems = timelineItems.filter(
       (a) =>
         a.course_id.toLowerCase().includes(q) ||
         a.title.toLowerCase().includes(q) ||
-        a.assessment_type.toLowerCase().includes(q)
+        a.assessment_type.toLowerCase().includes(q) ||
+        (a.source || "").toLowerCase().includes(q)
     );
   }
 
@@ -1285,11 +1343,17 @@ function renderDashboard() {
         return `
           <div onclick="openAssessmentModalById('${a.id}')" class="interactive-card p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-[#1a73e8] dark:hover:border-blue-500 bg-slate-50/60 dark:bg-slate-800/40 hover:bg-white dark:hover:bg-slate-800 cursor-pointer transition space-y-2">
             <div class="flex items-center justify-between gap-2">
-              <div class="flex items-center gap-1.5">
+              <div class="flex items-center gap-1.5 flex-wrap">
                 <span class="px-2 py-0.5 rounded-md text-[10px] font-bold text-white" style="background-color: ${a.color}">${escapeHtml(a.course_id)}</span>
                 <span class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-200">${escapeHtml(a.assessment_type)}</span>
+                <span class="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-900 flex items-center gap-1">
+                  <i data-lucide="${a.source_icon || 'mail'}" class="w-2.5 h-2.5"></i>
+                  <span>${escapeHtml(a.source || 'Gmail')}</span>
+                </span>
+                ${a.conflict_warning ? `<span class="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-200 border border-amber-300 flex items-center gap-0.5" title="Overload conflict detected (<36h)"><i data-lucide="alert-triangle" class="w-2.5 h-2.5"></i><span>Conflict</span></span>` : ""}
+                ${a.achieved_score != null ? `<span class="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-200 border border-emerald-300 flex items-center gap-1"><i data-lucide="award" class="w-2.5 h-2.5"></i><span>${a.achieved_score}/${a.max_score} (${Math.round((a.achieved_score / a.max_score) * 100)}%)</span></span>` : ""}
               </div>
-              <span class="text-[10px] font-bold tabular-nums ${
+              <span class="text-[10px] font-bold tabular-nums shrink-0 ${
                 a.is_upcoming
                   ? "text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800"
                   : "text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800"
@@ -1939,6 +2003,32 @@ function openAssessmentModalById(id) {
 
   document.getElementById("modal-type-badge").textContent = a.assessment_type;
 
+  const srcBadge = document.getElementById("modal-source-badge");
+  if (srcBadge) {
+    srcBadge.innerHTML = `<i data-lucide="${a.source_icon || 'mail'}" class="w-3.5 h-3.5"></i><span>${escapeHtml(a.source || 'Gmail Ingestion')}</span>`;
+  }
+
+  // Grade & Course Weightage
+  const weightInput = document.getElementById("modal-grade-weight");
+  const scoreInput = document.getElementById("modal-grade-score");
+  const maxInput = document.getElementById("modal-grade-max");
+  const statusPill = document.getElementById("modal-grade-status-pill");
+
+  if (weightInput) weightInput.value = a.weightage_percent != null ? a.weightage_percent : "";
+  if (scoreInput) scoreInput.value = a.achieved_score != null ? a.achieved_score : "";
+  if (maxInput) maxInput.value = a.max_score != null ? a.max_score : "";
+
+  if (statusPill) {
+    if (a.achieved_score != null && a.max_score != null) {
+      const pct = Math.round((a.achieved_score / a.max_score) * 100);
+      statusPill.textContent = `Recorded: ${a.achieved_score} / ${a.max_score} (${pct}%)`;
+      statusPill.className = "text-[11px] font-bold text-emerald-600 dark:text-emerald-400";
+    } else {
+      statusPill.textContent = "Not Graded";
+      statusPill.className = "text-[11px] font-semibold text-slate-500 dark:text-slate-400";
+    }
+  }
+
   const urgencyBadge = document.getElementById("modal-urgency-badge");
   if (urgencyBadge) {
     if (a.is_upcoming) {
@@ -1976,7 +2066,10 @@ function openAssessmentModalById(id) {
 
   const warnSec = document.getElementById("modal-warnings-section");
   const warnList = document.getElementById("modal-warnings-list");
-  const uniqueWarnings = [...new Set(a.warnings || [])];
+  let uniqueWarnings = [...new Set(a.warnings || [])];
+  if (a.conflict_warning) {
+    uniqueWarnings = ["⚠️ EXAM OVERLOAD: Another assessment is scheduled within 36 hours of this exam!", ...uniqueWarnings];
+  }
   if (uniqueWarnings.length > 0) {
     warnSec.classList.remove("hidden");
     warnList.innerHTML = uniqueWarnings
@@ -2705,6 +2798,20 @@ function openSettingsModal() {
     geminiKeyEl.value = appState.config.gemini_api_key;
   }
 
+  const moodleToggle = document.getElementById("settings-moodle-toggle");
+  const moodleUrl = document.getElementById("settings-moodle-url");
+  const moodleIcal = document.getElementById("settings-moodle-ical");
+  const teamsToggle = document.getElementById("settings-teams-toggle");
+  const teamsToken = document.getElementById("settings-teams-token");
+  const classroomToggle = document.getElementById("settings-classroom-toggle");
+
+  if (moodleToggle) moodleToggle.checked = appState.config?.moodle_enabled ?? false;
+  if (moodleUrl) moodleUrl.value = appState.config?.moodle_url || "";
+  if (moodleIcal) moodleIcal.value = appState.config?.moodle_ical_url || "";
+  if (teamsToggle) teamsToggle.checked = appState.config?.teams_enabled ?? false;
+  if (teamsToken) teamsToken.value = appState.config?.teams_token || "";
+  if (classroomToggle) classroomToggle.checked = appState.config?.classroom_enabled ?? false;
+
   updateOnboardingThemeButtons();
   renderSettingsCourses();
   if (window.lucide) lucide.createIcons();
@@ -2726,10 +2833,23 @@ async function saveSettingsModal() {
   const geminiEnabled = document.getElementById("settings-gemini-toggle")?.checked ?? true;
   const geminiKey = document.getElementById("settings-gemini-key")?.value || "";
 
+  const moodleEnabled = document.getElementById("settings-moodle-toggle")?.checked ?? false;
+  const moodleUrl = document.getElementById("settings-moodle-url")?.value || "";
+  const moodleIcal = document.getElementById("settings-moodle-ical")?.value || "";
+  const teamsEnabled = document.getElementById("settings-teams-toggle")?.checked ?? false;
+  const teamsToken = document.getElementById("settings-teams-token")?.value || "";
+  const classroomEnabled = document.getElementById("settings-classroom-toggle")?.checked ?? false;
+
   if (appState.config) {
     appState.config.auto_sync_gcal = autoSync;
     appState.config.gemini_enabled = geminiEnabled;
     if (geminiKey.trim()) appState.config.gemini_api_key = geminiKey.trim();
+    appState.config.moodle_enabled = moodleEnabled;
+    appState.config.moodle_url = moodleUrl;
+    appState.config.moodle_ical_url = moodleIcal;
+    appState.config.teams_enabled = teamsEnabled;
+    appState.config.teams_token = teamsToken;
+    appState.config.classroom_enabled = classroomEnabled;
   }
   saveStateCache();
 
@@ -2737,22 +2857,27 @@ async function saveSettingsModal() {
   showToast("Settings saved!");
 
   try {
-    const res = await fetch("/api/onboarding/complete", {
+    const res = await fetch("/api/config/update", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         auto_sync_gcal: autoSync,
         gemini_enabled: geminiEnabled,
         gemini_api_key: geminiKey,
+        moodle_enabled: moodleEnabled,
+        moodle_url: moodleUrl,
+        moodle_token: appState.config?.moodle_token || "",
+        moodle_ical_url: moodleIcal,
+        teams_enabled: teamsEnabled,
+        teams_token: teamsToken,
+        classroom_enabled: classroomEnabled,
       }),
     });
     const data = await res.json();
-    if (data.assessments) appState.assessments = data.assessments;
-    if (data.dashboard) appState.dashboard = data.dashboard;
-    if (data.config) appState.config = data.config;
-    saveStateCache();
-    renderDashboard();
-    renderWeekCalendar();
+    if (data.config) {
+      appState.config = data.config;
+      saveStateCache();
+    }
   } catch (err) {
     console.error("Background settings save error:", err);
   }
@@ -3550,4 +3675,565 @@ function formatMarkdownNotes(raw) {
       return `<p class="my-1">${paragraph}</p>`;
     })
     .join("");
+}
+
+// ============================================================================
+// MULTI-SOURCE RADAR, PRACTICE GENERATOR, POMODORO & STUDY BLOCKS
+// ============================================================================
+
+function setDashboardSourceFilter(source) {
+  currentDashboardSourceFilter = source;
+  const pills = [
+    { id: "source-filter-all", key: "ALL" },
+    { id: "source-filter-gmail", key: "Gmail" },
+    { id: "source-filter-moodle", key: "Moodle" },
+    { id: "source-filter-teams", key: "Microsoft Teams" },
+    { id: "source-filter-classroom", key: "Google Classroom" },
+  ];
+
+  pills.forEach((p) => {
+    const el = document.getElementById(p.id);
+    if (!el) return;
+    if (p.key === source) {
+      el.className = "px-2.5 py-1 rounded-lg bg-[#1a73e8] text-white shadow-2xs transition cursor-pointer flex items-center gap-1";
+    } else {
+      el.className = "px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer flex items-center gap-1";
+    }
+  });
+
+  renderDashboard();
+}
+
+async function saveAssessmentGradeFromModal() {
+  if (!activeModalAssessmentId) return;
+  const weightVal = document.getElementById("modal-grade-weight")?.value;
+  const scoreVal = document.getElementById("modal-grade-score")?.value;
+  const maxVal = document.getElementById("modal-grade-max")?.value;
+
+  const weight = weightVal !== "" && !isNaN(parseFloat(weightVal)) ? parseFloat(weightVal) : null;
+  const score = scoreVal !== "" && !isNaN(parseFloat(scoreVal)) ? parseFloat(scoreVal) : null;
+  const max = maxVal !== "" && !isNaN(parseFloat(maxVal)) ? parseFloat(maxVal) : null;
+
+  try {
+    const res = await fetch(`/api/assessments/${encodeURIComponent(activeModalAssessmentId)}/grade`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        weightage_percent: weight,
+        achieved_score: score,
+        max_score: max,
+      }),
+    });
+    const data = await res.json();
+    if (data.status === "ok") {
+      showToast("Grade saved successfully!");
+      const a = (appState.assessments || []).find((x) => x.id === activeModalAssessmentId);
+      if (a) {
+        a.weightage_percent = weight;
+        a.achieved_score = score;
+        a.max_score = max;
+      }
+      if (data.summary && appState.dashboard) {
+        appState.dashboard.grade_summary = data.summary;
+      }
+      saveStateCache();
+      openAssessmentModalById(activeModalAssessmentId);
+      renderDashboard();
+    } else {
+      showToast(data.message || "Could not save grade.");
+    }
+  } catch (err) {
+    showToast("Network error saving grade.");
+  }
+}
+
+async function scheduleSmartStudyBlocks() {
+  try {
+    showToast("Generating AI study blocks into timetable gaps...");
+    const res = await fetch("/api/study/blocks/schedule", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    const data = await res.json();
+    if (data.status === "ok") {
+      showToast(data.message || "Smart study blocks scheduled!");
+      if (data.assessments) appState.assessments = data.assessments;
+      if (data.dashboard) appState.dashboard = data.dashboard;
+      saveStateCache();
+      renderDashboard();
+      renderWeekCalendar();
+    } else {
+      showToast(data.message || "Could not schedule study blocks.");
+    }
+  } catch (err) {
+    showToast("Error scheduling study blocks.");
+  }
+}
+
+async function testMoodleFromSettings() {
+  const statusEl = document.getElementById("settings-moodle-status");
+  const url = document.getElementById("settings-moodle-url")?.value || "";
+  const ical = document.getElementById("settings-moodle-ical")?.value || "";
+  if (statusEl) {
+    statusEl.classList.remove("hidden");
+    statusEl.className = "text-[11px] p-2 rounded-lg bg-orange-100 dark:bg-orange-950/60 text-orange-800 dark:text-orange-200 border border-orange-200 dark:border-orange-800 font-medium";
+    statusEl.textContent = "Connecting to Moodle LMS...";
+  }
+  try {
+    const res = await fetch("/api/moodle/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, ical_url: ical }),
+    });
+    const data = await res.json();
+    if (statusEl) {
+      if (data.status === "ok") {
+        statusEl.className = "text-[11px] p-2 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border border-emerald-300 font-medium";
+        statusEl.textContent = `✓ Moodle Connected: Found ${data.events_count} upcoming academic calendar events.`;
+      } else {
+        statusEl.className = "text-[11px] p-2 rounded-lg bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border border-rose-300 font-medium";
+        statusEl.textContent = `✗ Moodle Error: ${data.message}`;
+      }
+    }
+  } catch (e) {
+    if (statusEl) {
+      statusEl.className = "text-[11px] p-2 rounded-lg bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border border-rose-300 font-medium";
+      statusEl.textContent = "✗ Network error connecting to Moodle.";
+    }
+  }
+}
+
+async function syncMoodleNow() {
+  try {
+    showToast("Syncing Moodle calendar events...");
+    const url = document.getElementById("settings-moodle-url")?.value || "";
+    const ical = document.getElementById("settings-moodle-ical")?.value || "";
+    const res = await fetch("/api/moodle/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, ical_url: ical }),
+    });
+    const data = await res.json();
+    if (data.status === "ok") {
+      showToast(`Moodle Synced: Imported ${data.synced_count} assignments/quizzes!`);
+      if (data.assessments) appState.assessments = data.assessments;
+      if (data.dashboard) appState.dashboard = data.dashboard;
+      saveStateCache();
+      renderDashboard();
+      renderWeekCalendar();
+    } else {
+      showToast(data.message || "Moodle sync failed.");
+    }
+  } catch (err) {
+    showToast("Error triggering Moodle sync.");
+  }
+}
+
+async function testMicrosoftFromSettings() {
+  const statusEl = document.getElementById("settings-teams-status");
+  const token = document.getElementById("settings-teams-token")?.value || "";
+  if (statusEl) {
+    statusEl.classList.remove("hidden");
+    statusEl.className = "text-[11px] p-2 rounded-lg bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-800 font-medium";
+    statusEl.textContent = "Connecting to Microsoft Graph API...";
+  }
+  try {
+    const res = await fetch("/api/microsoft/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    const data = await res.json();
+    if (statusEl) {
+      if (data.status === "ok") {
+        statusEl.className = "text-[11px] p-2 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border border-emerald-300 font-medium";
+        statusEl.textContent = `✓ Microsoft Graph Connected: Found ${data.teams_count} Teams & ${data.assignments_count} assignments/emails.`;
+      } else {
+        statusEl.className = "text-[11px] p-2 rounded-lg bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border border-rose-300 font-medium";
+        statusEl.textContent = `✗ Microsoft Graph Error: ${data.message}`;
+      }
+    }
+  } catch (e) {
+    if (statusEl) {
+      statusEl.className = "text-[11px] p-2 rounded-lg bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border border-rose-300 font-medium";
+      statusEl.textContent = "✗ Network error connecting to Microsoft.";
+    }
+  }
+}
+
+async function testClassroomFromSettings() {
+  const statusEl = document.getElementById("settings-classroom-status");
+  if (statusEl) {
+    statusEl.classList.remove("hidden");
+    statusEl.className = "text-[11px] p-2 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800 font-medium";
+    statusEl.textContent = "Connecting to Google Classroom API...";
+  }
+  try {
+    const res = await fetch("/api/classroom/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    const data = await res.json();
+    if (statusEl) {
+      if (data.status === "ok") {
+        statusEl.className = "text-[11px] p-2 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border border-emerald-300 font-medium";
+        statusEl.textContent = `✓ Google Classroom Connected: ${data.courses_count} courses, ${data.coursework_count} coursework assignments.`;
+      } else {
+        statusEl.className = "text-[11px] p-2 rounded-lg bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border border-rose-300 font-medium";
+        statusEl.textContent = `✗ Google Classroom Error: ${data.message}`;
+      }
+    }
+  } catch (e) {
+    if (statusEl) {
+      statusEl.className = "text-[11px] p-2 rounded-lg bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border border-rose-300 font-medium";
+      statusEl.textContent = "✗ Network error connecting to Classroom.";
+    }
+  }
+}
+
+async function openPracticeModalForCurrentAssessment() {
+  const modal = document.getElementById("practice-quiz-modal");
+  if (!modal || !activeModalAssessmentId) return;
+
+  const a = (appState.assessments || []).find((x) => x.id === activeModalAssessmentId);
+  if (!a) return;
+
+  activePracticeAssessmentId = a.id;
+  const badgeEl = document.getElementById("practice-course-badge");
+  if (badgeEl) {
+    badgeEl.textContent = a.course_id;
+    badgeEl.style.backgroundColor = a.color || "#7c3aed";
+  }
+  const titleEl = document.getElementById("practice-quiz-title");
+  if (titleEl) {
+    titleEl.textContent = `Practice: ${a.title}`;
+  }
+
+  const loadingEl = document.getElementById("practice-loading");
+  const contentEl = document.getElementById("practice-content");
+  const completeEl = document.getElementById("practice-complete-view");
+  const nextBtn = document.getElementById("practice-next-btn");
+
+  if (loadingEl) {
+    loadingEl.classList.remove("hidden");
+    loadingEl.innerHTML = `
+      <div class="w-8 h-8 border-3 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+      <p class="text-xs font-semibold text-slate-600 dark:text-slate-300">Gemini AI is analyzing syllabus topics and formulating practice questions...</p>
+    `;
+  }
+  if (contentEl) contentEl.classList.add("hidden");
+  if (completeEl) completeEl.classList.add("hidden");
+  if (nextBtn) {
+    nextBtn.classList.remove("hidden");
+    nextBtn.disabled = true;
+  }
+
+  modal.classList.add("is-open");
+  if (window.lucide) lucide.createIcons();
+
+  try {
+    const res = await fetch(`/api/assessments/${encodeURIComponent(a.id)}/practice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    const data = await res.json();
+    if (data.questions && data.questions.length > 0) {
+      activePracticeQuiz = data.questions;
+      practiceQuizCurrentIndex = 0;
+      practiceQuizScore = 0;
+      if (loadingEl) loadingEl.classList.add("hidden");
+      if (contentEl) contentEl.classList.remove("hidden");
+      renderCurrentPracticeQuestion();
+    } else {
+      if (loadingEl) {
+        loadingEl.innerHTML = `<p class="text-xs text-rose-500 font-semibold">${escapeHtml(data.message || "Failed to load practice quiz.")}</p>`;
+      }
+    }
+  } catch (err) {
+    if (loadingEl) {
+      loadingEl.innerHTML = `<p class="text-xs text-rose-500 font-semibold">Network error generating practice quiz.</p>`;
+    }
+  }
+}
+
+function renderCurrentPracticeQuestion() {
+  if (!activePracticeQuiz || practiceQuizCurrentIndex >= activePracticeQuiz.length) return;
+  const q = activePracticeQuiz[practiceQuizCurrentIndex];
+  const total = activePracticeQuiz.length;
+
+  const progLabel = document.getElementById("practice-progress-label");
+  const scoreCounter = document.getElementById("practice-score-counter");
+  const qText = document.getElementById("practice-question-text");
+
+  if (progLabel) progLabel.textContent = `Question ${practiceQuizCurrentIndex + 1} of ${total}`;
+  if (scoreCounter) scoreCounter.textContent = `Score: ${practiceQuizScore} / ${practiceQuizCurrentIndex}`;
+  if (qText) qText.textContent = q.question;
+
+  const explBox = document.getElementById("practice-explanation-box");
+  if (explBox) explBox.classList.add("hidden");
+
+  const nextBtn = document.getElementById("practice-next-btn");
+  if (nextBtn) nextBtn.disabled = true;
+
+  const optContainer = document.getElementById("practice-options-container");
+  const letters = ["A", "B", "C", "D"];
+  if (optContainer) {
+    optContainer.innerHTML = (q.options || [])
+      .map(
+        (opt, idx) => `
+        <button type="button" onclick="selectPracticeOption(${idx})" id="practice-opt-${idx}" class="practice-opt-btn w-full text-left p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 hover:bg-white dark:hover:bg-slate-800 hover:border-purple-500 text-xs text-slate-800 dark:text-slate-100 font-medium transition flex items-start gap-3 cursor-pointer">
+          <span class="w-6 h-6 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold flex items-center justify-center shrink-0 text-xs">${letters[idx] || idx + 1}</span>
+          <span class="leading-relaxed mt-0.5">${escapeHtml(opt)}</span>
+        </button>
+      `
+      )
+      .join("");
+  }
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function selectPracticeOption(selectedIdx) {
+  if (!activePracticeQuiz) return;
+  const q = activePracticeQuiz[practiceQuizCurrentIndex];
+  const buttons = document.querySelectorAll(".practice-opt-btn");
+  buttons.forEach((b) => (b.disabled = true));
+
+  const correctIdx = q.correct_index != null ? q.correct_index : q.correct_option_index;
+  const isCorrect = selectedIdx === correctIdx;
+  if (isCorrect) practiceQuizScore += 1;
+
+  const scoreCounter = document.getElementById("practice-score-counter");
+  if (scoreCounter) scoreCounter.textContent = `Score: ${practiceQuizScore} / ${practiceQuizCurrentIndex + 1}`;
+
+  const selectedBtn = document.getElementById(`practice-opt-${selectedIdx}`);
+  const correctBtn = document.getElementById(`practice-opt-${correctIdx}`);
+
+  if (selectedBtn) {
+    if (isCorrect) {
+      selectedBtn.className = "practice-opt-btn w-full text-left p-3.5 rounded-xl border border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-100 text-xs font-semibold flex items-start gap-3";
+    } else {
+      selectedBtn.className = "practice-opt-btn w-full text-left p-3.5 rounded-xl border border-rose-500 bg-rose-50 dark:bg-rose-950/60 text-rose-900 dark:text-rose-100 text-xs font-semibold flex items-start gap-3";
+    }
+  }
+
+  if (!isCorrect && correctBtn) {
+    correctBtn.className = "practice-opt-btn w-full text-left p-3.5 rounded-xl border border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/50 text-emerald-900 dark:text-emerald-100 text-xs font-semibold flex items-start gap-3";
+  }
+
+  const explBox = document.getElementById("practice-explanation-box");
+  const explTitle = document.getElementById("practice-explanation-title");
+  const explText = document.getElementById("practice-explanation-text");
+
+  if (explBox && explTitle && explText) {
+    explBox.classList.remove("hidden");
+    if (isCorrect) {
+      explBox.className = "p-4 rounded-xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 text-xs space-y-1";
+      explTitle.innerHTML = `<i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-600"></i><span>Correct! Well done.</span>`;
+    } else {
+      explBox.className = "p-4 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 text-xs space-y-1";
+      explTitle.innerHTML = `<i data-lucide="info" class="w-4 h-4 text-amber-600"></i><span>Explanation & Key Concept:</span>`;
+    }
+    explText.textContent = q.explanation || "Review this topic in your notes.";
+  }
+
+  const nextBtn = document.getElementById("practice-next-btn");
+  if (nextBtn) nextBtn.disabled = false;
+  if (window.lucide) lucide.createIcons();
+}
+
+function nextPracticeQuestion() {
+  if (!activePracticeQuiz) return;
+  if (practiceQuizCurrentIndex + 1 < activePracticeQuiz.length) {
+    practiceQuizCurrentIndex += 1;
+    renderCurrentPracticeQuestion();
+  } else {
+    const contentEl = document.getElementById("practice-content");
+    const completeEl = document.getElementById("practice-complete-view");
+    const nextBtn = document.getElementById("practice-next-btn");
+
+    if (contentEl) contentEl.classList.add("hidden");
+    if (completeEl) completeEl.classList.remove("hidden");
+    if (nextBtn) nextBtn.classList.add("hidden");
+
+    const total = activePracticeQuiz.length;
+    const pct = Math.round((practiceQuizScore / total) * 100);
+    const scoreText = document.getElementById("practice-final-score-text");
+    if (scoreText) {
+      scoreText.textContent = `You scored ${practiceQuizScore} out of ${total} (${pct}%).`;
+    }
+    const scoreCounter = document.getElementById("practice-score-counter");
+    if (scoreCounter) scoreCounter.textContent = `Final: ${practiceQuizScore} / ${total}`;
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+function restartPracticeQuiz() {
+  if (!activePracticeQuiz) return;
+  practiceQuizCurrentIndex = 0;
+  practiceQuizScore = 0;
+  const contentEl = document.getElementById("practice-content");
+  const completeEl = document.getElementById("practice-complete-view");
+  const nextBtn = document.getElementById("practice-next-btn");
+
+  if (contentEl) contentEl.classList.remove("hidden");
+  if (completeEl) completeEl.classList.add("hidden");
+  if (nextBtn) nextBtn.classList.remove("hidden");
+
+  renderCurrentPracticeQuestion();
+}
+
+function closePracticeQuizModal() {
+  const modal = document.getElementById("practice-quiz-modal");
+  if (modal) modal.classList.remove("is-open");
+}
+
+function openPomodoroForTask(course, topic, taskKey) {
+  const modal = document.getElementById("pomodoro-modal");
+  if (!modal) return;
+
+  pomodoroCurrentCourse = course || "Study Focus";
+  pomodoroCurrentTopic = topic || "Active Session";
+  pomodoroCurrentTaskKey = taskKey || null;
+
+  const courseEl = document.getElementById("pomodoro-task-course");
+  const titleEl = document.getElementById("pomodoro-task-title");
+  if (courseEl) courseEl.textContent = pomodoroCurrentCourse;
+  if (titleEl) titleEl.textContent = pomodoroCurrentTopic;
+
+  modal.classList.add("is-open");
+  if (!pomodoroIsRunning) {
+    setPomodoroMode("work");
+  }
+  if (window.lucide) lucide.createIcons();
+}
+
+function closePomodoroModal() {
+  const modal = document.getElementById("pomodoro-modal");
+  if (modal) modal.classList.remove("is-open");
+}
+
+function setPomodoroMode(mode) {
+  pomodoroCurrentMode = mode;
+  if (pomodoroIsRunning) {
+    clearInterval(pomodoroTimerInterval);
+    pomodoroIsRunning = false;
+  }
+
+  const workBtn = document.getElementById("pomo-mode-work");
+  const shortBtn = document.getElementById("pomo-mode-short");
+  const longBtn = document.getElementById("pomo-mode-long");
+  const statusEl = document.getElementById("pomodoro-status-text");
+
+  [workBtn, shortBtn, longBtn].forEach((b) => {
+    if (b) {
+      b.className = "flex-1 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition cursor-pointer";
+    }
+  });
+
+  if (mode === "work") {
+    pomodoroTotalSeconds = 25 * 60;
+    if (workBtn) workBtn.className = "flex-1 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 font-bold shadow-2xs transition cursor-pointer";
+    if (statusEl) statusEl.textContent = "25-minute deep focus block. Eliminate distractions.";
+  } else if (mode === "short") {
+    pomodoroTotalSeconds = 5 * 60;
+    if (shortBtn) shortBtn.className = "flex-1 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 font-bold shadow-2xs transition cursor-pointer";
+    if (statusEl) statusEl.textContent = "5-minute quick recharge. Hydrate or stretch.";
+  } else if (mode === "long") {
+    pomodoroTotalSeconds = 15 * 60;
+    if (longBtn) longBtn.className = "flex-1 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 font-bold shadow-2xs transition cursor-pointer";
+    if (statusEl) statusEl.textContent = "15-minute restorative break. Step away from screen.";
+  }
+
+  pomodoroSecondsRemaining = pomodoroTotalSeconds;
+  updatePomodoroDisplay();
+  updatePomodoroControls();
+}
+
+function togglePomodoroTimer() {
+  if (pomodoroIsRunning) {
+    clearInterval(pomodoroTimerInterval);
+    pomodoroIsRunning = false;
+    updatePomodoroControls();
+  } else {
+    pomodoroIsRunning = true;
+    updatePomodoroControls();
+    pomodoroTimerInterval = setInterval(() => {
+      pomodoroSecondsRemaining -= 1;
+      updatePomodoroDisplay();
+      if (pomodoroSecondsRemaining <= 0) {
+        clearInterval(pomodoroTimerInterval);
+        pomodoroIsRunning = false;
+        playPomodoroChime();
+        showToast("Pomodoro session complete! Great work!");
+        updatePomodoroControls();
+      }
+    }, 1000);
+  }
+}
+
+function resetPomodoroTimer() {
+  if (pomodoroIsRunning) {
+    clearInterval(pomodoroTimerInterval);
+    pomodoroIsRunning = false;
+  }
+  pomodoroSecondsRemaining = pomodoroTotalSeconds;
+  updatePomodoroDisplay();
+  updatePomodoroControls();
+}
+
+function updatePomodoroDisplay() {
+  const m = Math.floor(pomodoroSecondsRemaining / 60);
+  const s = pomodoroSecondsRemaining % 60;
+  const digitsEl = document.getElementById("pomodoro-digits");
+  if (digitsEl) {
+    digitsEl.textContent = `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  }
+}
+
+function updatePomodoroControls() {
+  const toggleBtn = document.getElementById("pomodoro-toggle-btn");
+  const toggleLabel = document.getElementById("pomodoro-toggle-label");
+  const toggleIcon = document.getElementById("pomodoro-toggle-icon");
+  if (!toggleBtn) return;
+
+  if (pomodoroIsRunning) {
+    toggleBtn.className = "px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs transition cursor-pointer active:scale-95 flex items-center gap-2";
+    if (toggleLabel) toggleLabel.textContent = "Pause";
+    if (toggleIcon) toggleIcon.setAttribute("data-lucide", "pause");
+  } else {
+    toggleBtn.className = "px-6 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs transition cursor-pointer active:scale-95 flex items-center gap-2";
+    if (toggleLabel) toggleLabel.textContent = "Start Focus";
+    if (toggleIcon) toggleIcon.setAttribute("data-lucide", "play");
+  }
+  if (window.lucide) lucide.createIcons();
+}
+
+function playPomodoroChime() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.3); // A5
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.2);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 1.2);
+  } catch (e) {
+    // AudioContext fallback
+  }
+}
+
+function markCurrentPomodoroTaskDone() {
+  if (pomodoroCurrentTaskKey) {
+    toggleTopicCheckbox(pomodoroCurrentTaskKey, true);
+    showToast("Topic marked as studied!");
+    closePomodoroModal();
+  } else {
+    showToast("No active topic checklist linked.");
+  }
 }

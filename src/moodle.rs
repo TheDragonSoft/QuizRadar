@@ -1,0 +1,497 @@
+use crate::models::{AppConfig, Assessment, ScheduleData};
+use chrono::{Local, NaiveDate};
+use regex::Regex;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoodleTestResult {
+    pub success: bool,
+    pub message: String,
+    pub events_found: usize,
+    pub mode: String,
+}
+
+/// Parses iCal/ICS datetime strings such as "20261018T080000Z" or "20261018T080000" or "20261018"
+fn parse_ical_datetime(val: &str) -> Option<(String, String, String)> {
+    let cleaned = val.trim().trim_end_matches('Z');
+    if cleaned.len() >= 15 && cleaned.contains('T') {
+        let parts: Vec<&str> = cleaned.split('T').collect();
+        if parts[0].len() == 8 && parts[1].len() >= 4 {
+            let y = &parts[0][0..4];
+            let m = &parts[0][4..6];
+            let d = &parts[0][6..8];
+            let hh = &parts[1][0..2];
+            let mm = &parts[1][2..4];
+            let date_iso = format!("{}-{}-{}", y, m, d);
+            let time_str = format!("{}:{}", hh, mm);
+            return Some((date_iso, time_str, cleaned.to_string()));
+        }
+    } else if cleaned.len() == 8 {
+        let y = &cleaned[0..4];
+        let m = &cleaned[4..6];
+        let d = &cleaned[6..8];
+        return Some((format!("{}-{}-{}", y, m, d), "09:00".to_string(), cleaned.to_string()));
+    }
+    None
+}
+
+/// Parse raw VEVENT blocks from Moodle's personal calendar export feed (.ics)
+pub fn parse_moodle_ics_content(
+    ics_text: &str,
+    schedule: &ScheduleData,
+    portal_url: Option<&str>,
+) -> Vec<Assessment> {
+    let mut assessments = Vec::new();
+    let re_vevent = Regex::new(r"(?is)BEGIN:VEVENT(.*?)END:VEVENT").unwrap();
+
+    for cap in re_vevent.captures_iter(ics_text) {
+        let block = &cap[1];
+        let mut summary = String::new();
+        let mut description = String::new();
+        let mut dtstart_raw = String::new();
+        let mut dtend_raw = String::new();
+        let mut uid = String::new();
+        let mut url = String::new();
+
+        for line in block.lines() {
+            let line = line.trim();
+            if let Some(rest) = line.strip_prefix("SUMMARY:") {
+                summary = rest.replace("\\,", ",").replace("\\n", " ").trim().to_string();
+            } else if let Some(rest) = line.strip_prefix("DESCRIPTION:") {
+                description = rest.replace("\\,", ",").replace("\\n", "\n").trim().to_string();
+            } else if let Some(rest) = line.strip_prefix("DTSTART:") {
+                dtstart_raw = rest.to_string();
+            } else if let Some(rest) = line.strip_prefix("DTSTART;") {
+                if let Some(idx) = rest.find(':') {
+                    dtstart_raw = rest[idx + 1..].to_string();
+                }
+            } else if let Some(rest) = line.strip_prefix("DTEND:") {
+                dtend_raw = rest.to_string();
+            } else if let Some(rest) = line.strip_prefix("DTEND;") {
+                if let Some(idx) = rest.find(':') {
+                    dtend_raw = rest[idx + 1..].to_string();
+                }
+            } else if let Some(rest) = line.strip_prefix("UID:") {
+                uid = rest.to_string();
+            } else if let Some(rest) = line.strip_prefix("URL:") {
+                url = rest.to_string();
+            }
+        }
+
+        if summary.is_empty() {
+            continue;
+        }
+
+        let is_quiz_or_exam = summary.to_lowercase().contains("quiz")
+            || summary.to_lowercase().contains("exam")
+            || summary.to_lowercase().contains("midterm")
+            || summary.to_lowercase().contains("assessment")
+            || summary.to_lowercase().contains("assignment")
+            || description.to_lowercase().contains("quiz")
+            || description.to_lowercase().contains("exam");
+
+        if !is_quiz_or_exam {
+            continue;
+        }
+
+        let (date_iso, start_time, _) = parse_ical_datetime(&dtstart_raw).unwrap_or_else(|| {
+            ("2026-10-25".to_string(), "09:00".to_string(), String::new())
+        });
+
+        let end_time = parse_ical_datetime(&dtend_raw)
+            .map(|(_, t, _)| t)
+            .unwrap_or_else(|| {
+                // Default 1h30m after start
+                if let Ok(st) = chrono::NaiveTime::parse_from_str(&start_time, "%H:%M") {
+                    let et = st + chrono::Duration::minutes(90);
+                    et.format("%H:%M").to_string()
+                } else {
+                    "10:30".to_string()
+                }
+            });
+
+        // Determine course code by matching against schedule
+        let mut matched_course_id = "GEN100".to_string();
+        let mut matched_course_name = "General Academic Course".to_string();
+        let mut course_color = "#f97316".to_string(); // Moodle energetic orange
+        let mut course_room = "E-Learning Lab / Online".to_string();
+        let matched_instructor = "Course Faculty".to_string();
+
+        let combined_text = format!("{} {}", summary, description).to_uppercase();
+        for c in &schedule.courses {
+            if combined_text.contains(&c.id.to_uppercase())
+                || combined_text.contains(&c.name.to_uppercase())
+            {
+                matched_course_id = c.id.clone();
+                matched_course_name = c.name.clone();
+                course_color = c.color.clone();
+                break;
+            }
+        }
+
+        // Try matching a room from the student's slot for that course
+        if let Some(slot) = schedule.slots.iter().find(|s| s.course_id == matched_course_id) {
+            if !slot.room.is_empty() {
+                course_room = slot.room.clone();
+            }
+        }
+
+        let ref_date = crate::parser::current_reference_date();
+        let parsed_date = NaiveDate::parse_from_str(&date_iso, "%Y-%m-%d").unwrap_or(ref_date);
+        let days_until = (parsed_date - ref_date).num_days();
+        let is_upcoming = days_until >= 0;
+
+        let urgency_level = match days_until {
+            d if d < 0 => "past",
+            0..=1 => "critical",
+            2..=4 => "high",
+            5..=7 => "medium",
+            _ => "upcoming",
+        }
+        .to_string();
+
+        let day_name = parsed_date.format("%A").to_string();
+        let display_time = format!("{}, {} ({} – {})", day_name, date_iso, start_time, end_time);
+
+        let assessment_type = if summary.to_lowercase().contains("midterm") {
+            "Midterm Exam".to_string()
+        } else if summary.to_lowercase().contains("final") {
+            "Final Exam".to_string()
+        } else if summary.to_lowercase().contains("lab") {
+            "Lab Assessment".to_string()
+        } else if summary.to_lowercase().contains("assignment") {
+            "Assignment".to_string()
+        } else {
+            "Online Quiz".to_string()
+        };
+
+        // Extract topics or warnings from description
+        let mut warnings = vec![
+            "🎓 Synced directly from your official Moodle LMS calendar.".to_string(),
+        ];
+        if description.contains("time limit") || description.contains("minute") {
+            warnings.push("⏱️ Timed submission on Moodle portal.".to_string());
+        }
+        if description.contains("password") {
+            warnings.push("🔑 Requires quiz password provided in lecture.".to_string());
+        }
+
+        let mut topics = Vec::new();
+        if !description.is_empty() {
+            for line in description.lines() {
+                let l = line.trim();
+                if (l.starts_with("•") || l.starts_with("-") || l.starts_with("*") || l.to_lowercase().contains("lecture") || l.to_lowercase().contains("chapter")) && l.len() > 3 {
+                    topics.push(l.trim_start_matches(|c| c == '•' || c == '-' || c == '*' || c == ' ').to_string());
+                }
+            }
+        }
+        if topics.is_empty() {
+            topics.push(format!("Review all materials for {}", summary));
+            topics.push("Check Moodle course forums for recent lecture slides".to_string());
+        }
+
+        let elearning_url = if !url.is_empty() {
+            url
+        } else if let Some(base) = portal_url {
+            format!("{}/calendar/view.php?view=upcoming", base.trim_end_matches('/'))
+        } else {
+            "https://moodle.org".to_string()
+        };
+
+        let id = if !uid.is_empty() {
+            format!("moodle-{}", uid.replace('@', "_").replace('/', "_"))
+        } else {
+            format!("moodle-{}-{}", matched_course_id, date_iso.replace('-', ""))
+        };
+
+        let (bg, border) = crate::gemini::generate_course_palette(&course_color);
+
+        let mut assess = Assessment {
+            id,
+            course_id: matched_course_id,
+            course_name: matched_course_name,
+            title: summary,
+            assessment_type,
+            date_iso,
+            day_name,
+            start_time,
+            end_time,
+            display_time,
+            room: course_room,
+            group: "All Sections".to_string(),
+            instructor: matched_instructor,
+            is_upcoming,
+            days_until,
+            urgency_level,
+            priority_score: 85,
+            topics,
+            warnings,
+            ai_inference_note: "Synced via Moodle Calendar Feed with automatic Course & Slot matching.".to_string(),
+            ai_study_plan: "Complete assigned online quizzes and revise corresponding Moodle lecture slides.".to_string(),
+            estimated_study_hours: 3.0,
+            elearning_url,
+            google_cal_url: String::new(),
+            gcal_synced: false,
+            gcal_event_id: None,
+            color: course_color,
+            bg,
+            border,
+            semester: "Fall 2026".to_string(),
+            email_subject: "Moodle Calendar Event".to_string(),
+            email_sent_date: Local::now().format("%Y-%m-%d").to_string(),
+            source: "Moodle".to_string(),
+            source_icon: "graduation-cap".to_string(),
+            weightage_percent: None,
+            achieved_score: None,
+            max_score: None,
+            conflict_warning: None,
+        };
+        assess.google_cal_url = crate::parser::build_google_calendar_template_url(&assess);
+        assessments.push(assess);
+    }
+
+    assessments
+}
+
+/// Fetch Moodle Calendar events via the private iCal Export URL
+pub async fn fetch_moodle_ical_events(
+    ical_url: &str,
+    schedule: &ScheduleData,
+) -> Result<Vec<Assessment>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(12))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let resp = client.get(ical_url).send().await.map_err(|e| {
+        format!("Failed to connect to Moodle calendar feed: {}", e)
+    })?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Moodle responded with HTTP {}", resp.status()));
+    }
+
+    let text = resp.text().await.map_err(|e| e.to_string())?;
+    let assessments = parse_moodle_ics_content(&text, schedule, None);
+    Ok(assessments)
+}
+
+/// Fetch Moodle calendar events via Moodle Web Services REST API (`core_calendar_get_calendar_events`)
+pub async fn fetch_moodle_api_events(
+    base_url: &str,
+    wstoken: &str,
+    schedule: &ScheduleData,
+) -> Result<Vec<Assessment>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(12))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let clean_url = base_url.trim_end_matches('/');
+    let endpoint = format!(
+        "{}/webservice/rest/server.php?wstoken={}&wsfunction=core_calendar_get_calendar_events&moodlewsrestformat=json",
+        clean_url, wstoken
+    );
+
+    let resp = client.get(&endpoint).send().await.map_err(|e| {
+        format!("Failed to call Moodle REST API: {}", e)
+    })?;
+
+    let val: Value = resp.json().await.map_err(|e| {
+        format!("Failed to parse Moodle JSON response: {}", e)
+    })?;
+
+    if let Some(err) = val.get("message").and_then(|m| m.as_str()) {
+        return Err(format!("Moodle API error: {}", err));
+    }
+
+    let mut assessments = Vec::new();
+    if let Some(events) = val.get("events").and_then(|e| e.as_array()) {
+        for ev in events {
+            let name = ev.get("name").and_then(|n| n.as_str()).unwrap_or("Moodle Assessment");
+            let _desc = ev.get("description").and_then(|d| d.as_str()).unwrap_or("");
+            let timestart = ev.get("timestart").and_then(|t| t.as_i64()).unwrap_or(0);
+            let timeduration = ev.get("timeduration").and_then(|t| t.as_i64()).unwrap_or(3600);
+
+            if timestart == 0 {
+                continue;
+            }
+
+            let dt = chrono::DateTime::from_timestamp(timestart, 0)
+                .unwrap_or_else(|| chrono::Utc::now());
+            let date_iso = dt.format("%Y-%m-%d").to_string();
+            let start_time = dt.format("%H:%M").to_string();
+            let end_dt = dt + chrono::Duration::seconds(timeduration);
+            let end_time = end_dt.format("%H:%M").to_string();
+
+            let ref_date = crate::parser::current_reference_date();
+            let parsed_date = NaiveDate::parse_from_str(&date_iso, "%Y-%m-%d").unwrap_or(ref_date);
+            let days_until = (parsed_date - ref_date).num_days();
+
+            let course_name = ev.get("course").and_then(|c| c.get("fullname")).and_then(|n| n.as_str()).unwrap_or("Course");
+            let mut course_id = "MDL101".to_string();
+            let mut color = "#f97316".to_string();
+
+            for c in &schedule.courses {
+                if course_name.contains(&c.id) || name.contains(&c.id) {
+                    course_id = c.id.clone();
+                    color = c.color.clone();
+                    break;
+                }
+            }
+
+            let (bg, border) = crate::gemini::generate_course_palette(&color);
+
+            assessments.push(Assessment {
+                id: format!("moodle-api-{}", ev.get("id").and_then(|i| i.as_i64()).unwrap_or(timestart)),
+                course_id,
+                course_name: course_name.to_string(),
+                title: name.to_string(),
+                assessment_type: "Online Quiz".to_string(),
+                date_iso,
+                day_name: dt.format("%A").to_string(),
+                start_time: start_time.clone(),
+                end_time: end_time.clone(),
+                display_time: format!("{}, {} ({} – {})", dt.format("%A"), dt.format("%Y-%m-%d"), start_time, end_time),
+                room: "Moodle LMS Portal".to_string(),
+                group: "All Groups".to_string(),
+                instructor: "Faculty".to_string(),
+                is_upcoming: days_until >= 0,
+                days_until,
+                urgency_level: "upcoming".to_string(),
+                priority_score: 80,
+                topics: vec![format!("Moodle Module: {}", name)],
+                warnings: vec!["Synced live via Moodle Web Services API".to_string()],
+                ai_inference_note: "Synced via Moodle Web Services core_calendar_get_calendar_events".to_string(),
+                ai_study_plan: "Review assignment requirements on Moodle portal.".to_string(),
+                estimated_study_hours: 2.5,
+                elearning_url: format!("{}/calendar/view.php", clean_url),
+                google_cal_url: String::new(),
+                gcal_synced: false,
+                gcal_event_id: None,
+                color,
+                bg,
+                border,
+                semester: "Fall 2026".to_string(),
+                email_subject: "Moodle API Sync".to_string(),
+                email_sent_date: Local::now().format("%Y-%m-%d").to_string(),
+                source: "Moodle".to_string(),
+                source_icon: "graduation-cap".to_string(),
+                weightage_percent: None,
+                achieved_score: None,
+                max_score: None,
+                conflict_warning: None,
+            });
+        }
+    }
+
+    Ok(assessments)
+}
+
+/// Unified sync function for Moodle: tries iCal feed first, then REST API if configured
+pub async fn sync_moodle_assessments(
+    config: &AppConfig,
+    schedule: &ScheduleData,
+) -> Result<Vec<Assessment>, String> {
+    if !config.moodle_enabled {
+        return Ok(Vec::new());
+    }
+
+    let mut all = Vec::new();
+
+    // 1. Try iCal export URL if configured
+    if let Some(ref ical_url) = config.moodle_ical_url {
+        if !ical_url.trim().is_empty() {
+            if let Ok(events) = fetch_moodle_ical_events(ical_url.trim(), schedule).await {
+                all.extend(events);
+            }
+        }
+    }
+
+    // 2. Try REST API if token & url are provided
+    if let (Some(ref url), Some(ref token)) = (&config.moodle_url, &config.moodle_token) {
+        if !url.trim().is_empty() && !token.trim().is_empty() {
+            if let Ok(events) = fetch_moodle_api_events(url.trim(), token.trim(), schedule).await {
+                all.extend(events);
+            }
+        }
+    }
+
+    // 3. If enabled but no URLs configured yet, provide intelligent mock demo for testing
+    if all.is_empty() && config.moodle_ical_url.is_none() && config.moodle_token.is_none() {
+        all.extend(generate_moodle_sample_assessments(schedule));
+    }
+
+    Ok(all)
+}
+
+/// Generate demo Moodle assessments for student verification and offline exploration
+pub fn generate_moodle_sample_assessments(schedule: &ScheduleData) -> Vec<Assessment> {
+    let mut list = Vec::new();
+
+    let sample_items = [
+        ("CSE263", "Moodle Lab Quiz 2: Pattern Classification", "2026-10-26", "14:00", "15:00", "Lab Quiz", vec!["k-NN Decision Boundaries", "Bayes Decision Theory"]),
+        ("CSE261", "Moodle Online Assignment: Graph Traversal", "2026-10-28", "23:59", "23:59", "Assignment", vec!["Breadth-First Search (BFS)", "Depth-First Search (DFS) implementation"]),
+    ];
+
+    let ref_date = crate::parser::current_reference_date();
+
+    for (cid, title, date_str, st, et, atype, topics) in sample_items {
+        let (color, room) = schedule
+            .courses
+            .iter()
+            .find(|c| c.id == cid)
+            .map(|c| (c.color.clone(), "Computer Lab / Online".to_string()))
+            .unwrap_or_else(|| ("#f97316".to_string(), "Online Portal".to_string()));
+
+        let (bg, border) = crate::gemini::generate_course_palette(&color);
+        let parsed_date = NaiveDate::parse_from_str(date_str, "%Y-%m-%d").unwrap_or(ref_date);
+        let days_until = (parsed_date - ref_date).num_days();
+
+        let mut a = Assessment {
+            id: format!("moodle-sample-{}", cid),
+            course_id: cid.to_string(),
+            course_name: format!("{} Course", cid),
+            title: title.to_string(),
+            assessment_type: atype.to_string(),
+            date_iso: date_str.to_string(),
+            day_name: parsed_date.format("%A").to_string(),
+            start_time: st.to_string(),
+            end_time: et.to_string(),
+            display_time: format!("{}, {} ({} – {})", parsed_date.format("%A"), date_str, st, et),
+            room,
+            group: "Group B".to_string(),
+            instructor: "Course Instructor".to_string(),
+            is_upcoming: days_until >= 0,
+            days_until,
+            urgency_level: "upcoming".to_string(),
+            priority_score: 82,
+            topics: topics.into_iter().map(String::from).collect(),
+            warnings: vec!["🎓 Synced from university Moodle LMS portal.".to_string(), "⏱️ Automated grading upon submission.".to_string()],
+            ai_inference_note: "Synced via Moodle LMS calendar integration.".to_string(),
+            ai_study_plan: "Complete and submit on Moodle before the deadline cutoff.".to_string(),
+            estimated_study_hours: 2.5,
+            elearning_url: "https://e-learning.msa.edu.eg".to_string(),
+            google_cal_url: String::new(),
+            gcal_synced: false,
+            gcal_event_id: None,
+            color,
+            bg,
+            border,
+            semester: "Fall 2026".to_string(),
+            email_subject: "Moodle LMS Announcement".to_string(),
+            email_sent_date: Local::now().format("%Y-%m-%d").to_string(),
+            source: "Moodle".to_string(),
+            source_icon: "graduation-cap".to_string(),
+            weightage_percent: Some(10.0),
+            achieved_score: None,
+            max_score: Some(10.0),
+            conflict_warning: None,
+        };
+        a.google_cal_url = crate::parser::build_google_calendar_template_url(&a);
+        list.push(a);
+    }
+
+    list
+}

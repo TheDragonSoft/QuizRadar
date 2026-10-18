@@ -95,6 +95,26 @@ pub struct Assessment {
     pub semester: String,
     pub email_subject: String,
     pub email_sent_date: String,
+    #[serde(default = "default_source")]
+    pub source: String, // "Gmail", "Moodle", "Microsoft Teams", "Microsoft Outlook", "Google Classroom"
+    #[serde(default = "default_source_icon")]
+    pub source_icon: String, // "mail", "graduation-cap", "users", "book-open"
+    #[serde(default)]
+    pub weightage_percent: Option<f32>,
+    #[serde(default)]
+    pub achieved_score: Option<f32>,
+    #[serde(default)]
+    pub max_score: Option<f32>,
+    #[serde(default)]
+    pub conflict_warning: Option<String>,
+}
+
+fn default_source() -> String {
+    "Gmail".to_string()
+}
+
+fn default_source_icon() -> String {
+    "mail".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,6 +129,52 @@ pub struct CustomCalendarEvent {
     pub room: String,
     pub notes: String,
     pub color: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssessmentGrade {
+    pub achieved_score: f32,
+    pub max_score: f32,
+    pub weightage_percent: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct GradeOverallSummary {
+    pub completed_assessments_count: usize,
+    pub total_weight_percent: f32,
+    pub weighted_average_percent: f32,
+    pub letter_standing: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConflictAlert {
+    pub assessment_id_a: String,
+    pub assessment_id_b: String,
+    pub course_a: String,
+    pub course_b: String,
+    pub date_a: String,
+    pub date_b: String,
+    pub gap_hours: i64,
+    pub severity: String, // "critical" (< 24h) or "warning" (24..=36h)
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PracticeQuestion {
+    pub id: String,
+    pub question: String,
+    pub options: Vec<String>,
+    pub correct_index: usize,
+    pub explanation: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PracticeQuizPayload {
+    pub assessment_id: String,
+    pub course_id: String,
+    pub assessment_title: String,
+    pub questions: Vec<PracticeQuestion>,
+    pub generated_by_ai: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -135,6 +201,32 @@ pub struct AppConfig {
     pub synced_gcal_map: HashMap<String, String>, // quiz_id -> google_calendar_event_id
     #[serde(default)]
     pub custom_events: Vec<CustomCalendarEvent>,
+
+    // Academic Multi-Source Integrations
+    #[serde(default)]
+    pub moodle_enabled: bool,
+    #[serde(default)]
+    pub moodle_url: Option<String>,
+    #[serde(default)]
+    pub moodle_token: Option<String>,
+    #[serde(default)]
+    pub moodle_ical_url: Option<String>,
+
+    #[serde(default)]
+    pub teams_enabled: bool,
+    #[serde(default)]
+    pub teams_client_id: Option<String>,
+    #[serde(default)]
+    pub teams_token: Option<String>,
+    #[serde(default)]
+    pub teams_account_name: Option<String>,
+
+    #[serde(default)]
+    pub classroom_enabled: bool,
+
+    // Grade Tracking
+    #[serde(default)]
+    pub grades: HashMap<String, AssessmentGrade>,
 }
 
 impl Default for AppConfig {
@@ -153,6 +245,16 @@ impl Default for AppConfig {
             completed_topics: HashMap::new(),
             synced_gcal_map: HashMap::new(),
             custom_events: Vec::new(),
+            moodle_enabled: false,
+            moodle_url: None,
+            moodle_token: None,
+            moodle_ical_url: None,
+            teams_enabled: false,
+            teams_client_id: None,
+            teams_token: None,
+            teams_account_name: None,
+            classroom_enabled: false,
+            grades: HashMap::new(),
         }
     }
 }
@@ -168,6 +270,12 @@ pub struct DashboardSummary {
     pub total_topics_count: usize,
     pub completed_topics_count: usize,
     pub readiness_percent: u32,
+    #[serde(default)]
+    pub conflict_alerts: Vec<ConflictAlert>,
+    #[serde(default)]
+    pub sources_count: HashMap<String, usize>,
+    #[serde(default)]
+    pub grade_stats: Option<GradeOverallSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

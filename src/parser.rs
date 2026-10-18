@@ -1,7 +1,8 @@
 use crate::gemini::{analyze_email_with_gemini, load_gemini_cache, save_gemini_cache};
 use crate::models::{
-    AppConfig, Assessment, CachedEmail, DailyStudyDayGroup, DailyStudyTask, DashboardSummary,
-    ExamReadinessCard, ScheduleData, StudyRecommendation, StudyTasksPayload, TopicCheckItem,
+    AppConfig, Assessment, CachedEmail, ConflictAlert, DailyStudyDayGroup, DailyStudyTask,
+    DashboardSummary, ExamReadinessCard, GradeOverallSummary, ScheduleData, StudyRecommendation,
+    StudyTasksPayload, TopicCheckItem,
 };
 use chrono::{Datelike, Duration, NaiveDate, Weekday};
 use regex::Regex;
@@ -400,6 +401,12 @@ fn parse_single_email(
         semester,
         email_subject: email.subject.clone(),
         email_sent_date: sent_date.format("%Y-%m-%d").to_string(),
+        source: "Gmail".to_string(),
+        source_icon: "mail".to_string(),
+        weightage_percent: None,
+        achieved_score: None,
+        max_score: None,
+        conflict_warning: None,
     };
 
     assessment.google_cal_url = build_google_calendar_template_url(&assessment);
@@ -934,6 +941,91 @@ pub fn build_dashboard_summary(
         ((completed_topics_count as f32 / total_topics_count as f32) * 100.0).round() as u32
     };
 
+    // 1. Conflict and Overload Detection (Assessments within 36 hours of each other)
+    let mut conflict_alerts = Vec::new();
+    for i in 0..upcoming.len() {
+        for j in (i + 1)..upcoming.len() {
+            let a1 = &upcoming[i];
+            let a2 = &upcoming[j];
+            if let (Ok(d1), Ok(d2)) = (
+                NaiveDate::parse_from_str(&a1.date_iso, "%Y-%m-%d"),
+                NaiveDate::parse_from_str(&a2.date_iso, "%Y-%m-%d"),
+            ) {
+                let diff_days = (d2 - d1).num_days();
+                if diff_days >= 0 && diff_days <= 1 {
+                    let is_same_day = diff_days == 0;
+                    let gap_hours = if is_same_day { 4 } else { 26 };
+                    let severity = if is_same_day {
+                        "critical".to_string()
+                    } else {
+                        "warning".to_string()
+                    };
+                    let message = format!(
+                        "Exam schedule cluster: {} ({}) and {} ({}) occur within {} hours! Review early to balance your study load.",
+                        a1.course_id,
+                        a1.title,
+                        a2.course_id,
+                        a2.title,
+                        gap_hours
+                    );
+                    conflict_alerts.push(ConflictAlert {
+                        assessment_id_a: a1.id.clone(),
+                        assessment_id_b: a2.id.clone(),
+                        course_a: a1.course_id.clone(),
+                        course_b: a2.course_id.clone(),
+                        date_a: a1.date_iso.clone(),
+                        date_b: a2.date_iso.clone(),
+                        gap_hours,
+                        severity,
+                        message,
+                    });
+                }
+            }
+        }
+    }
+
+    // 2. Multi-Source Ingestion Counts
+    let mut sources_count = HashMap::new();
+    for a in assessments {
+        let src = if a.source.is_empty() { "Gmail" } else { &a.source };
+        *sources_count.entry(src.to_string()).or_insert(0) += 1;
+    }
+
+    // 3. Overall Grade & Academic Standing
+    let mut completed_grades_count = 0usize;
+    let mut total_weight = 0.0f32;
+    let mut weighted_points = 0.0f32;
+    for a in assessments {
+        if let Some(g) = config.grades.get(&a.id) {
+            if g.max_score > 0.0 && g.weightage_percent > 0.0 {
+                completed_grades_count += 1;
+                total_weight += g.weightage_percent;
+                let pct = (g.achieved_score / g.max_score) * 100.0;
+                weighted_points += pct * (g.weightage_percent / 100.0);
+            }
+        }
+    }
+    let grade_stats = if total_weight > 0.0 {
+        let weighted_avg = (weighted_points / total_weight) * 100.0;
+        let letter = match weighted_avg {
+            p if p >= 90.0 => "A",
+            p if p >= 85.0 => "A-",
+            p if p >= 80.0 => "B+",
+            p if p >= 75.0 => "B",
+            p if p >= 70.0 => "C+",
+            p if p >= 60.0 => "C",
+            _ => "D",
+        };
+        Some(GradeOverallSummary {
+            completed_assessments_count: completed_grades_count,
+            total_weight_percent: total_weight,
+            weighted_average_percent: (weighted_avg * 10.0).round() / 10.0,
+            letter_standing: letter.to_string(),
+        })
+    } else {
+        None
+    };
+
     DashboardSummary {
         reference_date: ref_date.format("%Y-%m-%d").to_string(),
         next_up,
@@ -944,6 +1036,9 @@ pub fn build_dashboard_summary(
         total_topics_count,
         completed_topics_count,
         readiness_percent,
+        conflict_alerts,
+        sources_count,
+        grade_stats,
     }
 }
 
@@ -1401,6 +1496,12 @@ mod tests {
             semester: "Fall 2026".to_string(),
             email_subject: "Midterm".to_string(),
             email_sent_date: "2026-10-15".to_string(),
+            source: "Gmail".to_string(),
+            source_icon: "mail".to_string(),
+            weightage_percent: None,
+            achieved_score: None,
+            max_score: None,
+            conflict_warning: None,
         };
 
         // Mark topic 0 as completed in config

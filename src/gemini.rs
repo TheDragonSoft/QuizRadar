@@ -1031,26 +1031,27 @@ CRITICAL INSTRUCTIONS:
    - Filter out administrative/non-course groups (such as "cohort Business tech 2026 advising" or "COHORT 2026"), but use them to infer the student's faculty and program ("Business Technology").
    - Assign each course a vibrant aesthetic hex color from: ["#1a73e8", "#0f9d58", "#ea8600", "#d93025", "#8e24aa", "#00acc1", "#6366f1", "#059669"]
 
-2. EXTRACT DETAILED ACADEMIC ASSESSMENTS:
-   - Extract realistic, syllabus-aligned upcoming quizzes, assignments, midterm exams, and lab assessments across all discovered courses.
+2. EXTRACT DETAILED ACADEMIC ASSESSMENTS FROM UPLOADED FILES & TABS:
+   - Carefully inspect all uploaded course files, assignment PDFs, and classwork tabs discovered in each team!
+   - When assignment PDFs are present (e.g., "Assignment I Accounting I.pdf", "Assignment Questions.pdf", "Project Outline.pdf", "Sheet 2_00.pdf", "Research Group Names & IDs.pdf", "Assignment Record.mp4", "Microsoft Forms"), extract them as distinct, high-priority Assignments / Project Milestones with realistic submission deadlines in late October or early November 2026.
    - For each assessment, include:
      * course_id (matching the course code)
      * course_name
-     * title (e.g. "Quiz 1: Equations & Matrix Algebra", "Assignment 1: Financial Statements Analysis", "Lab Quiz: Computer Hardware & OS", "Midterm Exam")
-     * assessment_type ("Class Quiz", "Assignment", "Midterm Exam", "Lab Assessment", "Online Quiz")
+     * title (e.g. "Assignment 1: Financial Statements & Journal Entries", "Class Quiz 1: Equations & Matrix Algebra", "Lab Quiz: Computer Hardware & OS", "Term Project Outline & Proposal")
+     * assessment_type ("Class Quiz", "Assignment", "Midterm Exam", "Lab Assessment", "Online Quiz", "Project Milestone")
      * date_iso ("YYYY-MM-DD", anchored starting from late October 2026 onwards)
      * start_time & end_time ("HH:MM")
-     * room (hall/room or "Microsoft Teams" / "ELC2")
+     * room (hall/room or "Microsoft Teams Submission" / "ELC2")
      * group (section or group)
      * instructor (faculty names discovered)
      * topics (3-4 specific syllabus topics)
      * warnings (2 essential test instructions)
-     * ai_inference_note (explanation of how this was inferred from Teams / syllabus)
+     * ai_inference_note (explanation of how this was inferred from Teams Drive files or class syllabus)
      * ai_study_plan (actionable 2-sentence study strategy)
      * estimated_study_hours (e.g. 3.0 or 3.5)
      * source ("Microsoft Teams")
      * source_icon ("users")
-     * weightage_percent (e.g. 15.0)
+     * weightage_percent (e.g. 10.0 or 15.0)
 
 3. WEEKLY RECURRING TIMETABLE SLOTS:
    - Synthesize weekly recurring class timeslots for these courses (Sunday to Thursday).

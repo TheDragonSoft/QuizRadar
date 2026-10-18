@@ -237,12 +237,27 @@ function saveStateCache() {
   }
 }
 
+function syncActiveCourseFilters() {
+  const currentCourses = appState.schedule?.courses || [];
+  if (currentCourses.length === 0) return;
+  const currentIds = new Set(currentCourses.map((c) => c.id));
+  const hasOverlap = [...activeCourseFilters].some((id) => currentIds.has(id));
+  if (!hasOverlap || activeCourseFilters.size === 0) {
+    activeCourseFilters.clear();
+    currentCourses.forEach((c) => activeCourseFilters.add(c.id));
+    activeCourseFilters.add("GENERAL");
+  } else {
+    currentCourses.forEach((c) => {
+      if (!activeCourseFilters.has(c.id)) {
+        activeCourseFilters.add(c.id);
+      }
+    });
+  }
+}
+
 function hydrateAndRenderState(stateData) {
   appState = stateData;
-  if (activeCourseFilters.size === 0 && appState.schedule?.courses) {
-    appState.schedule.courses.forEach((c) => activeCourseFilters.add(c.id));
-    activeCourseFilters.add("GENERAL");
-  }
+  syncActiveCourseFilters();
   updateTopBarAndUser();
   renderSidebar();
   renderDashboard();
@@ -273,11 +288,7 @@ async function loadFullState() {
     const res = await fetch("/api/state");
     const data = await res.json();
     appState = data;
-
-    if (activeCourseFilters.size === 0 && appState.schedule?.courses) {
-      appState.schedule.courses.forEach((c) => activeCourseFilters.add(c.id));
-      activeCourseFilters.add("GENERAL");
-    }
+    syncActiveCourseFilters();
 
     if (demo) {
       applyDemoDummyData();
@@ -3015,9 +3026,7 @@ async function triggerFullSync() {
     if (data.dashboard) appState.dashboard = data.dashboard;
     if (data.schedule) {
       appState.schedule = data.schedule;
-      activeCourseFilters.clear();
-      (data.schedule.courses || []).forEach((c) => activeCourseFilters.add(c.id));
-      activeCourseFilters.add("GENERAL");
+      syncActiveCourseFilters();
     }
     if (data.config) appState.config = data.config;
     saveStateCache();
@@ -3919,9 +3928,7 @@ async function testMicrosoftFromSettings() {
         if (data.dashboard) appState.dashboard = data.dashboard;
         if (data.schedule) {
           appState.schedule = data.schedule;
-          activeCourseFilters.clear();
-          (data.schedule.courses || []).forEach((c) => activeCourseFilters.add(c.id));
-          activeCourseFilters.add("GENERAL");
+          syncActiveCourseFilters();
         }
         if (data.config) appState.config = data.config;
         if (appState.config) appState.config.teams_enabled = true;

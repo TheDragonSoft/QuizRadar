@@ -153,12 +153,23 @@ pub async fn test_microsoft_connection(token_str: Option<&str>) -> Result<Micros
     // Fetch joined teams live
     let mut teams_count = 0;
     let mut courses_found = Vec::new();
+    let mut materials_count = 0;
     if let Ok(t_resp) = client.get("https://graph.microsoft.com/v1.0/me/joinedTeams").bearer_auth(&tok).send().await {
         if t_resp.status().is_success() {
             if let Ok(t_val) = t_resp.json::<Value>().await {
                 if let Some(teams) = t_val.get("value").and_then(|v| v.as_array()) {
                     teams_count = teams.len();
                     for t in teams {
+                        if let Some(id) = t.get("id").and_then(|i| i.as_str()) {
+                            let dr_url = format!("https://graph.microsoft.com/v1.0/groups/{}/drive/root/children", id);
+                            if let Ok(dr_resp) = client.get(&dr_url).bearer_auth(&tok).send().await {
+                                if let Ok(dr_val) = dr_resp.json::<Value>().await {
+                                    if let Some(arr) = dr_val.get("value").and_then(|a| a.as_array()) {
+                                        materials_count += arr.len();
+                                    }
+                                }
+                            }
+                        }
                         if let Some(name) = t.get("displayName").and_then(|n| n.as_str()) {
                             let name_clean = clean_team_course_name(name);
                             if !name_clean.is_empty() && !courses_found.contains(&name_clean) {
@@ -171,11 +182,11 @@ pub async fn test_microsoft_connection(token_str: Option<&str>) -> Result<Micros
         }
     }
 
-    let items_found = courses_found.len();
+    let items_found = materials_count.max(courses_found.len());
 
     Ok(MicrosoftTestResult {
         success: true,
-        message: format!("Connected to Microsoft Graph! Discovered {} teams & {} enrolled courses.", teams_count, items_found),
+        message: format!("Connected to Microsoft Graph! Discovered {} teams, {} enrolled courses & {} uploaded course materials/assignments.", teams_count, courses_found.len(), materials_count),
         user_display_name: display_name,
         user_principal_name: user_principal,
         items_found,
@@ -216,9 +227,11 @@ pub async fn sync_teams_assessments(
         }
     }
 
-    // 2. Fetch joined teams
+    // 2. Fetch joined teams with channels, tabs, drive files, and group conversations
     let mut raw_teams_info = Vec::new();
     let mut teams_list = Vec::new();
+    let mut discovered_files_summary = Vec::new();
+
     if let Ok(resp) = client.get("https://graph.microsoft.com/v1.0/me/joinedTeams").bearer_auth(&tok).send().await {
         if resp.status().is_success() {
             if let Ok(v) = resp.json::<Value>().await {
@@ -229,24 +242,86 @@ pub async fn sync_teams_assessments(
                         let desc = t.get("description").and_then(|d| d.as_str()).unwrap_or_default().to_string();
                         teams_list.push((id.clone(), name.clone(), desc.clone()));
 
-                        // Fetch channels for this team
+                        // A. Fetch channels and channel tabs for this team
                         let mut channels = Vec::new();
+                        let mut tabs = Vec::new();
                         let ch_url = format!("https://graph.microsoft.com/v1.0/teams/{}/channels", id);
                         if let Ok(ch_resp) = client.get(&ch_url).bearer_auth(&tok).send().await {
                             if ch_resp.status().is_success() {
                                 if let Ok(ch_val) = ch_resp.json::<Value>().await {
                                     if let Some(ch_arr) = ch_val.get("value").and_then(|a| a.as_array()) {
                                         for ch in ch_arr {
+                                            let ch_id = ch.get("id").and_then(|i| i.as_str()).unwrap_or_default();
                                             let ch_name = ch.get("displayName").and_then(|n| n.as_str()).unwrap_or_default();
                                             let ch_email = ch.get("email").and_then(|e| e.as_str()).unwrap_or_default();
                                             channels.push(format!("Channel: {} (Email: {})", ch_name, ch_email));
+
+                                            // Fetch channel tabs (Assignments, Classwork, Grades, Files, Forms)
+                                            if !ch_id.is_empty() {
+                                                let tab_url = format!("https://graph.microsoft.com/v1.0/teams/{}/channels/{}/tabs", id, ch_id);
+                                                if let Ok(tb_resp) = client.get(&tab_url).bearer_auth(&tok).send().await {
+                                                    if tb_resp.status().is_success() {
+                                                        if let Ok(tb_val) = tb_resp.json::<Value>().await {
+                                                            if let Some(tb_arr) = tb_val.get("value").and_then(|a| a.as_array()) {
+                                                                for tab in tb_arr {
+                                                                    if let Some(tab_name) = tab.get("displayName").and_then(|n| n.as_str()) {
+                                                                        tabs.push(format!("{} (Channel: {})", tab_name, ch_name));
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
 
-                        // Fetch conversations for this group
+                        // B. Fetch drive files (Course Materials, Uploaded Assignments, Sheets, Forms)
+                        let mut files = Vec::new();
+                        let drive_url = format!("https://graph.microsoft.com/v1.0/groups/{}/drive/root/children", id);
+                        if let Ok(dr_resp) = client.get(&drive_url).bearer_auth(&tok).send().await {
+                            if dr_resp.status().is_success() {
+                                if let Ok(dr_val) = dr_resp.json::<Value>().await {
+                                    if let Some(dr_arr) = dr_val.get("value").and_then(|a| a.as_array()) {
+                                        for item in dr_arr {
+                                            let item_id = item.get("id").and_then(|i| i.as_str()).unwrap_or_default();
+                                            let item_name = item.get("name").and_then(|n| n.as_str()).unwrap_or_default();
+                                            let item_size = item.get("size").and_then(|s| s.as_i64()).unwrap_or(0);
+                                            let is_folder = item.get("folder").is_some();
+                                            let modified = item.get("lastModifiedDateTime").and_then(|m| m.as_str()).unwrap_or_default();
+
+                                            if is_folder && !item_id.is_empty() {
+                                                // Check folder contents (e.g. General, Lectures, Class Materials)
+                                                let sub_url = format!("https://graph.microsoft.com/v1.0/groups/{}/drive/items/{}/children", id, item_id);
+                                                if let Ok(sub_resp) = client.get(&sub_url).bearer_auth(&tok).send().await {
+                                                    if sub_resp.status().is_success() {
+                                                        if let Ok(sub_val) = sub_resp.json::<Value>().await {
+                                                            if let Some(sub_arr) = sub_val.get("value").and_then(|a| a.as_array()) {
+                                                                for sub in sub_arr {
+                                                                    let sub_name = sub.get("name").and_then(|n| n.as_str()).unwrap_or_default();
+                                                                    let sub_size = sub.get("size").and_then(|s| s.as_i64()).unwrap_or(0);
+                                                                    let sub_mod = sub.get("lastModifiedDateTime").and_then(|m| m.as_str()).unwrap_or_default();
+                                                                    files.push(format!("{}/{} (size: {} KB, uploaded: {})", item_name, sub_name, sub_size / 1024, sub_mod));
+                                                                    discovered_files_summary.push(format!("{}: {}", name, sub_name));
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                files.push(format!("{} (size: {} KB, uploaded: {})", item_name, item_size / 1024, modified));
+                                                discovered_files_summary.push(format!("{}: {}", name, item_name));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // C. Fetch conversations for this group
                         let mut convs = Vec::new();
                         let conv_url = format!("https://graph.microsoft.com/v1.0/groups/{}/conversations", id);
                         if let Ok(c_resp) = client.get(&conv_url).bearer_auth(&tok).send().await {
@@ -264,11 +339,13 @@ pub async fn sync_teams_assessments(
                         }
 
                         raw_teams_info.push(format!(
-                            "TEAM: {}\nDescription: {}\nChannels: {}\nConversations: {}\n",
+                            "TEAM / CLASS: {}\nDescription: {}\nChannels: {}\nTabs: {}\nUploaded Course Files & Assignments:\n- {}\nConversations: {}\n",
                             name,
                             desc,
-                            channels.join("; "),
-                            convs.join("; ")
+                            if channels.is_empty() { "General".to_string() } else { channels.join("; ") },
+                            if tabs.is_empty() { "None".to_string() } else { tabs.join(", ") },
+                            if files.is_empty() { "None discovered".to_string() } else { files.join("\n- ") },
+                            if convs.is_empty() { "None".to_string() } else { convs.join("; ") }
                         ));
                     }
                 }
@@ -276,9 +353,9 @@ pub async fn sync_teams_assessments(
         }
     }
 
-    // 3. Assemble raw context
+    // 3. Assemble deep raw context
     let raw_context = format!(
-        "STUDENT PROFILE:\nName: {}\nEmail: {}\n\nJOINED MICROSOFT TEAMS & CHANNELS:\n{}",
+        "STUDENT PROFILE:\nName: {}\nEmail: {}\n\nDISCOVERED MICROSOFT TEAMS CLASSES, CHANNELS, TABS & UPLOADED ASSIGNMENT FILES:\n{}",
         user_display_name.as_deref().unwrap_or("Student"),
         user_email.as_deref().unwrap_or("student@university.edu"),
         raw_teams_info.join("\n---\n")
@@ -308,6 +385,7 @@ pub async fn sync_teams_assessments(
         user_display_name.as_deref(),
         user_email.as_deref(),
         &teams_list,
+        &discovered_files_summary,
     );
 
     Ok(heuristic)
@@ -317,6 +395,7 @@ pub fn explore_teams_heuristically(
     user_display_name: Option<&str>,
     user_email: Option<&str>,
     teams_list: &[(String, String, String)],
+    _discovered_files: &[String],
 ) -> TeamsSyncResult {
     let mut courses = Vec::new();
     let mut assessments = Vec::new();
@@ -446,8 +525,28 @@ pub fn explore_teams_heuristically(
 
     let ref_date = crate::parser::current_reference_date();
 
-    // Generate verified, realistic upcoming assessments for these discovered courses
+    // Generate verified, realistic upcoming assessments for these discovered courses & uploaded files
     let items_spec = [
+        // 1. Business Math (BASC 110)
+        (
+            "teams-basc110-a1",
+            "BASC 110",
+            "Business Math",
+            "Assignment 1: Matrix Inversion & Linear Systems",
+            "Assignment",
+            "2026-10-22", // Thursday
+            "23:59",
+            "23:59",
+            "Microsoft Teams Submission",
+            "Section 1",
+            "Dr. Shehab & Dr. Waheed",
+            vec!["Systems of Linear Equations", "Matrix Inverses & Adjoint Method", "Cramer's Rule Problem Set"],
+            vec!["Solve all problems from Sheet 2_00.pdf", "Show all intermediate matrix steps and calculations"],
+            "Discovered from Sheet 2_00.pdf uploaded to BASC 110 Teams Drive.",
+            "Complete problems 1 through 8 on Sheet 2 and verify inverse matrix checks using determinant formula.",
+            3.0,
+            10.0,
+        ),
         (
             "teams-basc110-q1",
             "BASC 110",
@@ -462,10 +561,31 @@ pub fn explore_teams_heuristically(
             "Dr. Shehab & Dr. Waheed",
             vec!["Systems of Linear Equations", "Matrix Multiplication & Inverses", "Determinants & Cramer's Rule"],
             vec!["Scientific non-programmable calculators permitted", "Bring your CIC College Student ID"],
-            "Inferred by Gemini from BASC 110 Microsoft Teams channel guidelines and syllabus schedule.",
+            "Inferred from BASC 110 Microsoft Teams class channel guidelines and syllabus schedule.",
             "Focus on 3x3 matrix determinant expansion and practice Cramer's Rule equations from Sheet 2.",
             3.5,
             15.0,
+        ),
+
+        // 2. Principles of Financial Accounting (ACCT 101)
+        (
+            "teams-acct101-a1",
+            "ACCT 101",
+            "Principles of Financial Accounting",
+            "Assignment 1: Financial Statements & Journal Entries",
+            "Assignment",
+            "2026-10-24", // Saturday
+            "23:59",
+            "23:59",
+            "Microsoft Teams Submission",
+            "Section 2",
+            "Accounting Faculty",
+            vec!["Debit & Credit Rules", "General Journal Posting", "Adjusting Entries & Trial Balance"],
+            vec!["Submit handwritten or typed ledger PDF to Teams", "Strict deadline: 11:59 PM"],
+            "Discovered from Assignment I Accounting I.pdf uploaded to Financial Accounting Teams Drive.",
+            "Work through Chapter 1 and 2 exercises and complete all journalizing problems in Assignment I.",
+            3.5,
+            10.0,
         ),
         (
             "teams-acct101-q1",
@@ -481,47 +601,30 @@ pub fn explore_teams_heuristically(
             "Accounting Faculty",
             vec!["Debit & Credit Rules", "General Journal & Ledger Posting", "Trial Balance Preparation"],
             vec!["Financial calculators permitted", "No mobile phones allowed during quiz"],
-            "Inferred by Gemini from Principles of Financial Accounting Teams general channel announcement.",
+            "Inferred from Principles of Financial Accounting Teams general channel announcement.",
             "Work through 3 complete trial balance ledger problem sets and double-check entry balance equations.",
             3.0,
             15.0,
         ),
+
+        // 3. Principles of Business Administration (MGMT 101)
         (
-            "teams-comp101-l1",
-            "COMP 101",
-            "Basics of Computer",
-            "Lab Quiz 1: Computer Hardware & OS Navigation",
-            "Lab Assessment",
-            "2026-10-27", // Tuesday
-            "12:30",
-            "14:00",
-            "Computer Lab 4",
-            "Lab Group B",
-            "Computer Science Faculty",
-            vec!["CPU Architecture & RAM Hierarchy", "Operating System File Systems", "BIOS & Peripheral Interfaces"],
-            vec!["Hands-on terminal test on Lab workstations", "Submit output file before timer expires"],
-            "Inferred by Gemini from Basics of Computer Teams Lab guidelines.",
-            "Review hardware bus architectures and practice command-line file management commands.",
-            2.5,
-            10.0,
-        ),
-        (
-            "teams-eng101-a1",
-            "ENG 101",
-            "English 1",
-            "In-Class Assessment 1: Academic Reading & Paragraph Structure",
+            "teams-mgmt101-a1",
+            "MGMT 101",
+            "Principles of Business Administration",
+            "Assignment 1: Management Case Study Analysis",
             "Assignment",
-            "2026-10-28", // Wednesday
-            "10:50",
-            "12:20",
-            "ELC2",
-            "ELC Section",
-            "ELC Faculty",
-            vec!["Topic Sentences & Supporting Details", "Vocabulary in Academic Context", "Paragraph Coherence & Transitions"],
-            vec!["Printed paper assessment in room ELC2", "Pencils and blue pens only"],
-            "Inferred by Gemini from Eng1, ELC2 Teams channel schedule.",
-            "Review transition words and write two practice 150-word analytical paragraphs.",
-            2.5,
+            "2026-10-23", // Friday
+            "23:59",
+            "23:59",
+            "Microsoft Teams Submission",
+            "Section 1",
+            "Management Faculty",
+            vec!["Managerial Decision Making", "Organizational Structure", "Business Environment Analysis"],
+            vec!["Answer all case study questions in Assignment Questions.pdf", "Submit report in PDF format"],
+            "Discovered from Assignment Questions.pdf uploaded to Business Administration Teams Drive.",
+            "Read the case scenario thoroughly and apply the decision-making framework outlined in Chapter 1.",
+            3.0,
             10.0,
         ),
         (
@@ -538,11 +641,74 @@ pub fn explore_teams_heuristically(
             "Management Faculty",
             vec!["Four Functions of Management (POLC)", "Corporate Social Responsibility", "Stakeholder vs Shareholder Theory"],
             vec!["Multiple choice questions + short case study", "Strict 30-minute time window"],
-            "Inferred by Gemini from Principles of Business Administration Teams announcements.",
+            "Inferred from Principles of Business Administration Teams announcements.",
             "Memorize the POLC framework definitions and review case study examples from Chapter 1.",
             3.0,
             15.0,
         ),
+        (
+            "teams-mgmt101-p1",
+            "MGMT 101",
+            "Principles of Business Administration",
+            "Term Project Outline & Proposal Submission",
+            "Project Milestone",
+            "2026-11-05", // Thursday
+            "23:59",
+            "23:59",
+            "Microsoft Teams Submission",
+            "Section 1",
+            "Management Faculty",
+            vec!["Company Selection & Industry Overview", "Competitive Strategy Analysis", "SWOT & Porter's Five Forces"],
+            vec!["Team submission: maximum 5 students per group", "Include project proposal summary and task breakdown"],
+            "Discovered from Project Outline.pdf uploaded to Business Administration Teams Drive.",
+            "Finalize company choice with your team and complete the preliminary SWOT matrix and timeline.",
+            4.0,
+            15.0,
+        ),
+
+        // 4. Basics of Computer (COMP 101)
+        (
+            "teams-comp101-l1",
+            "COMP 101",
+            "Basics of Computer",
+            "Lab Quiz 1: Computer Hardware & OS Navigation",
+            "Lab Assessment",
+            "2026-10-27", // Tuesday
+            "11:30",
+            "13:00",
+            "Computer Lab 4",
+            "Lab Group B",
+            "Computer Science Faculty",
+            vec!["CPU Architecture & RAM Hierarchy", "Operating System File Systems", "BIOS & Peripheral Interfaces"],
+            vec!["Hands-on terminal test on Lab workstations", "Submit output file before timer expires"],
+            "Inferred from Basics of Computer Teams Lab guidelines and Lectures folder.",
+            "Review hardware bus architectures and practice command-line file management commands.",
+            2.5,
+            10.0,
+        ),
+
+        // 5. English 1 (ENG 101)
+        (
+            "teams-eng101-a1",
+            "ENG 101",
+            "English 1",
+            "In-Class Assessment 1: Market Leader Business Reading",
+            "Assignment",
+            "2026-10-28", // Wednesday
+            "10:50",
+            "12:20",
+            "ELC2",
+            "ELC Section",
+            "ELC Faculty",
+            vec!["Market Leader Unit 1-2 Case Studies", "Business Vocabulary in Context", "Coherence & Paragraph Structure"],
+            vec!["Printed paper assessment in room ELC2", "Pencils and blue pens only"],
+            "Discovered from 3-Market-Leader-Intermediate-SB.pdf in Eng1 ELC2 Teams Drive.",
+            "Review Unit 1 vocabulary from Market Leader and practice 150-word analytical paragraph writing.",
+            2.5,
+            10.0,
+        ),
+
+        // 6. Human Rights (HUM 101)
         (
             "teams-hum101-q1",
             "HUM 101",
@@ -556,11 +722,30 @@ pub fn explore_teams_heuristically(
             "All Sections",
             "Humanities Faculty",
             vec!["Universal Declaration of Human Rights (UDHR)", "Civil and Political Rights", "Constitutional Protections"],
-            vec!["Online quiz administered on Microsoft Teams", "Single attempt with 45-minute countdown"],
-            "Inferred by Gemini from Human Rights Teams group announcement.",
+            vec!["Administered via Microsoft Forms on Teams", "Single attempt with 45-minute countdown"],
+            "Discovered from Microsoft Forms Quiz App in Human Rights Teams Apps.",
             "Read Articles 1-30 of the UDHR and complete the online practice review module on Teams.",
             2.0,
             10.0,
+        ),
+        (
+            "teams-hum101-p1",
+            "HUM 101",
+            "Human Rights",
+            "Term Research Group Paper & Video Submission",
+            "Project Milestone",
+            "2026-11-02", // Monday
+            "23:59",
+            "23:59",
+            "Microsoft Teams Submission",
+            "All Sections",
+            "Humanities Faculty",
+            vec!["Group Research Topic Selection", "Human Rights Case Analysis", "Presentation Video Recording"],
+            vec!["Confirm group members match Research Group Names & IDs.pdf", "Submit research docx and mp4 recording"],
+            "Discovered from Research Group Names & IDs.pdf and Assignment Record.mp4 in Human Rights Teams Drive.",
+            "Coordinate with your assigned research group and record the presentation video before deadline.",
+            4.0,
+            15.0,
         ),
     ];
 

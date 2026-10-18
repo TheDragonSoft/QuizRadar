@@ -187,15 +187,40 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
     let schedule = parser::load_schedule();
     let cached_emails = gmail::load_cached_emails();
 
-    let initial_assessments =
+    let mut initial_assessments =
         parser::process_all_emails(&cached_emails, &schedule, &config, false).await;
+
+    // If student is enrolled in courses (e.g. CIC Cairo), remove foreign mock MSA engineering emails from other majors
+    if !schedule.courses.is_empty() {
+        let active_course_codes: std::collections::HashSet<String> = schedule
+            .courses
+            .iter()
+            .map(|c| c.id.trim().to_uppercase())
+            .collect();
+        initial_assessments.retain(|p| {
+            if p.id.starts_with("teams-") || p.id.starts_with("moodle-") || p.id.starts_with("classroom-") {
+                return true;
+            }
+            let cid = p.course_id.trim().to_uppercase();
+            active_course_codes.contains(&cid)
+                || active_course_codes.iter().any(|ac| cid.starts_with(ac) || ac.starts_with(&cid))
+        });
+    }
 
     let state = SharedAppState {
         port: selected_port,
-        config: Arc::new(RwLock::new(config)),
+        config: Arc::new(RwLock::new(config.clone())),
         schedule: Arc::new(RwLock::new(schedule)),
         assessments: Arc::new(RwLock::new(initial_assessments)),
     };
+
+    // If Teams integration is enabled with a valid token, auto-run the sync pipeline in background immediately
+    if config.teams_enabled && config.teams_token.is_some() {
+        let teams_bg_state = state.clone();
+        tokio::spawn(async move {
+            run_sync_pipeline(&teams_bg_state, false).await;
+        });
+    }
 
     // Refresh Google authentication profile in the background so startup is 0ms
     let bg_state = state.clone();
@@ -620,7 +645,7 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
     };
 
     let schedule = state.schedule.read().await.clone();
-    let mut cfg = state.config.write().await;
+    let mut cfg = state.config.read().await.clone();
     cfg.last_gmail_sync = Some(
         chrono::Local::now()
             .format("%Y-%m-%d %H:%M")
@@ -646,15 +671,16 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
         if let Ok(teams_res) = teams::sync_teams_assessments(&cfg, &schedule).await {
             if !teams_res.discovered_courses.is_empty() {
                 let mut sched = state.schedule.write().await;
+                let is_cic = teams_res.discovered_courses.iter().any(|c| c.id.starts_with("BASC") || c.id.starts_with("ACCT") || c.id.starts_with("MGMT") || c.id.starts_with("COMP") || c.id.starts_with("ENG") || c.id.starts_with("HUM"));
                 let is_default_msa = sched.courses.iter().any(|c| c.id == "CSE241") && !teams_res.discovered_courses.iter().any(|c| c.id == "CSE241");
-                if is_default_msa || sched.courses.is_empty() {
+                if is_cic || is_default_msa || sched.courses.is_empty() {
                     sched.courses = teams_res.discovered_courses.clone();
                     sched.slots = teams_res.discovered_slots.clone();
                     if let Some(ref sem) = teams_res.semester {
                         sched.semester = sem.clone();
                     }
-                    // When switching to the student's real enrolled university (e.g. CIC Cairo), clear mock MSA emails
-                    parsed.clear();
+                    // When switching to the student's real enrolled university (e.g. CIC Cairo), remove foreign mock MSA engineering emails
+                    parsed.retain(|p| !p.course_id.starts_with("CSE") && !p.course_id.starts_with("GSE"));
                 } else {
                     for dc in &teams_res.discovered_courses {
                         if !sched.courses.iter().any(|c| c.id == dc.id) {
@@ -696,6 +722,23 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
         }
     }
 
+    // Filter out foreign assessments from unrelated majors/courses if enrolled courses are known
+    let sched_courses = state.schedule.read().await.courses.clone();
+    if !sched_courses.is_empty() {
+        let active_course_codes: std::collections::HashSet<String> = sched_courses
+            .iter()
+            .map(|c| c.id.trim().to_uppercase())
+            .collect();
+        parsed.retain(|p| {
+            if p.id.starts_with("teams-") || p.id.starts_with("moodle-") || p.id.starts_with("classroom-") {
+                return true;
+            }
+            let cid = p.course_id.trim().to_uppercase();
+            active_course_codes.contains(&cid)
+                || active_course_codes.iter().any(|ac| cid.starts_with(ac) || ac.starts_with(&cid))
+        });
+    }
+
     // 4. Attach persistent grades & weightages
     for a in &mut parsed {
         if let Some(g) = cfg.grades.get(&a.id) {
@@ -720,6 +763,7 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
     };
 
     save_app_config(&cfg);
+    *state.config.write().await = cfg.clone();
     let dashboard = parser::build_dashboard_summary(&parsed, &cfg);
     let upcoming_count = parsed.iter().filter(|a| a.is_upcoming).count();
 
@@ -737,7 +781,7 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
         "assessments": parsed,
         "dashboard": dashboard,
         "schedule": state.schedule.read().await.clone(),
-        "config": *cfg
+        "config": cfg
     })
 }
 
@@ -998,18 +1042,27 @@ async fn update_config_handler(
     if let Some(i) = payload.moodle_ical_url { cfg.moodle_ical_url = Some(i); }
     if let Some(v) = payload.teams_enabled { cfg.teams_enabled = v; }
     if let Some(cid) = payload.teams_client_id { cfg.teams_client_id = Some(cid); }
+    let teams_modified = payload.teams_token.is_some() || payload.teams_enabled == Some(true);
     if let Some(t) = payload.teams_token { cfg.teams_token = Some(t); }
     if let Some(a) = payload.teams_account_name { cfg.teams_account_name = Some(a); }
     if let Some(v) = payload.classroom_enabled { cfg.classroom_enabled = v; }
 
     save_app_config(&cfg);
+    drop(cfg);
+
+    if teams_modified {
+        let _ = run_sync_pipeline(&state, false).await;
+    }
+
+    let cfg_final = state.config.read().await.clone();
     let assessments = state.assessments.read().await;
-    let dashboard = parser::build_dashboard_summary(&assessments, &cfg);
+    let dashboard = parser::build_dashboard_summary(&assessments, &cfg_final);
 
     Json(json!({
         "success": true,
-        "config": *cfg,
-        "dashboard": dashboard
+        "config": cfg_final,
+        "dashboard": dashboard,
+        "assessments": *assessments
     }))
 }
 

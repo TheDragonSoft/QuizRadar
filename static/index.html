@@ -1211,23 +1211,23 @@
               <i data-lucide="sparkles" class="w-4 h-4"></i>
               <span>Take AI Practice Quiz</span>
             </button>
-            <a id="modal-gcal-link" href="#" target="_blank" class="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-[#1a73e8] hover:bg-[#1557b0] active:scale-[0.99] text-white text-xs font-semibold transition">
+            <button id="modal-gcal-btn" type="button" onclick="openCurrentAssessmentGCal()" class="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-[#1a73e8] hover:bg-[#1557b0] active:scale-[0.99] text-white text-xs font-semibold transition cursor-pointer">
               <i data-lucide="calendar-plus" class="w-4 h-4"></i>
               <span>Google Calendar</span>
-            </a>
+            </button>
             <button id="modal-jump-cal-btn" onclick="jumpFromModalToCalendar()" class="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 transition cursor-pointer">
               <i data-lucide="calendar-days" class="w-3.5 h-3.5 text-[#1a73e8] dark:text-blue-400"></i>
               <span>Week Calendar</span>
             </button>
-            <a id="modal-ics-link" href="#" class="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200 transition">
+            <button id="modal-ics-btn" type="button" onclick="exportCurrentAssessmentIcs()" class="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200 transition cursor-pointer">
               <i data-lucide="download" class="w-3.5 h-3.5"></i>
               <span>.ics</span>
-            </a>
+            </button>
           </div>
-          <a id="modal-course-link" href="#" target="_blank" class="text-xs font-semibold text-[#1a73e8] dark:text-blue-400 hover:underline flex items-center gap-1.5">
+          <button id="modal-course-link" type="button" onclick="openCurrentAssessmentAnnouncement()" class="text-xs font-semibold text-[#1a73e8] dark:text-blue-400 hover:underline flex items-center gap-1.5 cursor-pointer">
             <span>View Announcement</span>
             <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
-          </a>
+          </button>
         </div>
       </div>
     </div>
@@ -1433,8 +1433,12 @@
                   <div id="onboard-user-email" class="text-[10px] text-slate-400 truncate">alex.mercer@university.edu</div>
                 </div>
               </div>
-              <div id="onboard-scope-note" class="text-[10px] text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-700/60 pt-2">
-                Gmail & Calendar Sync active
+              <div id="onboard-scope-note" class="text-[10px] text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-700/60 pt-2 flex flex-col gap-1.5">
+                <span>Gmail & Calendar Sync active</span>
+                <button type="button" onclick="startGoogleAuth()" class="py-1 px-2 rounded-lg bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 text-[#1a73e8] dark:text-blue-300 text-[10px] font-bold transition flex items-center justify-center gap-1 cursor-pointer">
+                  <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+                  <span>Switch / Connect Account</span>
+                </button>
               </div>
             </div>
 
@@ -1835,12 +1839,16 @@
           <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
             Connect your university Google Workspace account to enable automatic Gmail quiz extraction and Google Calendar synchronization.
           </p>
-          <div class="flex items-center gap-2 pt-1">
-            <a href="/api/auth/google" class="flex-1 py-2 px-3 rounded-xl bg-[#1a73e8] hover:bg-[#1557b0] text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer">
+          <div class="flex flex-wrap items-center gap-2 pt-1">
+            <button type="button" onclick="startGoogleAuth()" id="account-auth-btn" class="flex-1 min-w-[130px] py-2 px-3 rounded-xl bg-[#1a73e8] hover:bg-[#1557b0] text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer">
               <i data-lucide="log-in" class="w-3.5 h-3.5"></i>
               <span id="account-auth-action-label">Connect Google</span>
-            </a>
-            <button onclick="triggerFullSync()" class="py-2 px-3 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer">
+            </button>
+            <button type="button" onclick="disconnectGoogleAccount()" id="account-disconnect-btn" class="hidden py-2 px-3 rounded-xl border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer">
+              <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+              <span>Disconnect</span>
+            </button>
+            <button type="button" onclick="triggerFullSync()" class="py-2 px-3 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer">
               <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
               <span>Sync Gmail</span>
             </button>
@@ -1955,10 +1963,14 @@
               </div>
             </div>
             <div class="flex flex-wrap items-center gap-2">
-              <a href="/api/auth/google/login" class="px-3.5 py-2 rounded-lg bg-[#1a73e8] hover:bg-[#1557b0] text-white text-xs font-semibold transition flex items-center gap-1.5">
+              <button type="button" onclick="startGoogleAuth()" id="settings-reauth-btn" class="px-3.5 py-2 rounded-lg bg-[#1a73e8] hover:bg-[#1557b0] text-white text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer">
                 <i data-lucide="log-in" class="w-3.5 h-3.5"></i>
-                <span>Switch / Re-Authorize</span>
-              </a>
+                <span id="settings-reauth-label">Switch / Re-Authorize</span>
+              </button>
+              <button type="button" onclick="disconnectGoogleAccount()" id="settings-disconnect-btn" class="hidden px-3.5 py-2 rounded-lg border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer">
+                <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+                <span>Disconnect</span>
+              </button>
               <button type="button" onclick="triggerFullSync()" class="px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 transition flex items-center gap-1.5 cursor-pointer">
                 <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
                 <span>Scan Gmail Now</span>
@@ -2041,10 +2053,10 @@
               <i data-lucide="sparkles" class="w-4 h-4 text-[#1a73e8] dark:text-blue-400"></i>
               <span>Gemini AI & Google Calendar Sync</span>
             </div>
-            <a href="/api/calendar/ics_all" class="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold transition flex items-center gap-1.5" title="Download all upcoming exams (.ics)">
+            <button type="button" onclick="exportCalendarIcs()" class="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer" title="Download all upcoming exams (.ics)">
               <i data-lucide="calendar-check-2" class="w-3.5 h-3.5 text-[#1a73e8] dark:text-blue-400"></i>
               <span>Export Calendar (.ics)</span>
-            </a>
+            </button>
           </div>
           <label class="flex items-center gap-2.5 text-xs text-slate-700 dark:text-slate-200 cursor-pointer">
             <input id="settings-auto-gcal" type="checkbox" checked class="w-4 h-4 accent-[#1a73e8] rounded cursor-pointer" />
@@ -2109,10 +2121,10 @@
                 </span>
               </label>
               <div class="flex items-center gap-1.5">
-                <a href="/api/microsoft/login" class="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold transition flex items-center gap-1">
+                <button type="button" onclick="startMicrosoftAuth()" class="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold transition flex items-center gap-1 cursor-pointer">
                   <i data-lucide="log-in" class="w-3 h-3"></i>
                   <span>Sign in with Microsoft</span>
-                </a>
+                </button>
                 <button type="button" onclick="testMicrosoftFromSettings()" class="px-2.5 py-1 rounded-lg border border-indigo-300 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 text-indigo-800 dark:text-indigo-200 text-[11px] font-semibold transition cursor-pointer">Test Graph</button>
               </div>
             </div>

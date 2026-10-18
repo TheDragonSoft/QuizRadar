@@ -20,7 +20,7 @@ function getApiBase() {
   return "http://10.0.2.2:5050";
 }
 
-// Proactive detection for Android emulator vs physical phone on local Wi-Fi
+// Proactive concurrent detection for Android emulator, physical phone (ADB reverse), or local Wi-Fi
 async function detectOptimalApiBase() {
   if (!IS_NATIVE) return;
   const stored = localStorage.getItem("quizradar_api_base");
@@ -30,25 +30,33 @@ async function detectOptimalApiBase() {
   }
 
   const candidates = [
-    "http://10.0.2.2:5050",
     "http://127.0.0.1:5050",
+    "http://10.0.2.2:5050",
     "http://192.168.2.115:5050"
   ];
 
-  for (const candidate of candidates) {
-    try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 600);
-      const res = await _originalFetch(`${candidate}/api/sync/pair/info`, { signal: ctrl.signal });
-      clearTimeout(timer);
-      if (res.ok) {
-        _detectedApiBase = candidate;
-        return;
-      }
-    } catch (e) {}
+  try {
+    const winner = await Promise.any(
+      candidates.map(async (candidate) => {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 1200);
+        try {
+          const res = await _originalFetch(`${candidate}/api/sync/pair/info`, { signal: ctrl.signal });
+          clearTimeout(timer);
+          if (res.ok) return candidate;
+          throw new Error("Candidate returned not ok");
+        } catch (err) {
+          clearTimeout(timer);
+          throw err;
+        }
+      })
+    );
+    _detectedApiBase = winner;
+    console.log("[QuizRadar Mobile] Connected to companion server:", winner);
+    return;
+  } catch (e) {
+    _detectedApiBase = "http://127.0.0.1:5050";
   }
-
-  _detectedApiBase = "http://10.0.2.2:5050";
 }
 detectOptimalApiBase();
 
@@ -166,11 +174,256 @@ function initAndroidNativeBridge() {
       // 5. Exit application if on root
       App.exitApp();
     });
+
+    App.addListener("appStateChange", ({ isActive }) => {
+      if (isActive) {
+        // App returned to foreground: refresh state if returning from external browser
+        loadFullState();
+      }
+    });
   }
 
   const isDark = document.documentElement.classList.contains("dark");
   updateNativeStatusBar(isDark);
 }
+
+// ============================================================================
+// AUTHENTICATION & EXTERNAL LINK HANDLERS (Safe WebView Bridge)
+// ============================================================================
+
+let _authPollInterval = null;
+
+async function openExternalUrl(url) {
+  if (!url) return;
+  triggerHaptic("selection");
+  if (IS_NATIVE && window.Capacitor?.Plugins?.Browser) {
+    try {
+      await window.Capacitor.Plugins.Browser.open({ url });
+      return;
+    } catch (e) {
+      console.warn("Capacitor Browser failed, falling back to window.open", e);
+    }
+  }
+  window.open(url, "_blank");
+}
+
+async function startGoogleAuth() {
+  triggerHaptic("medium");
+  const reauthBtn = document.getElementById("settings-reauth-btn");
+  const origHtml = reauthBtn ? reauthBtn.innerHTML : null;
+  if (reauthBtn) {
+    reauthBtn.disabled = true;
+    reauthBtn.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>Connecting...</span>`;
+    if (window.lucide) lucide.createIcons({ root: reauthBtn });
+  }
+
+  showToast("Requesting Google authorization...", "info", 3000);
+
+  try {
+    const res = await fetch("/api/auth/google/url");
+    if (!res.ok) {
+      throw new Error(`Server returned HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    if (!data.url) {
+      throw new Error("No authorization URL returned by server");
+    }
+
+    if (IS_NATIVE && window.Capacitor?.Plugins?.Browser) {
+      // In native Capacitor: NEVER navigate the webview! Open Chrome Custom Tab
+      await window.Capacitor.Plugins.Browser.open({
+        url: data.url,
+        windowName: "_system"
+      });
+      showToast("Opened Google Sign-In in browser. Complete authorization to link.", "info", 5000);
+      startAuthPolling();
+    } else {
+      // On desktop: navigate to Google OAuth URL
+      window.location.href = data.url;
+    }
+  } catch (err) {
+    console.error("Google Auth failed:", err);
+    const msg = IS_NATIVE
+      ? `Cannot reach QuizRadar companion server (${getApiBase()}). Ensure server is running on PC.`
+      : `Unable to initiate Google Sign-In: ${err.message}`;
+    showToast(msg, "error", 5000);
+    triggerHaptic("warning");
+  } finally {
+    if (reauthBtn) {
+      reauthBtn.disabled = false;
+      if (origHtml) reauthBtn.innerHTML = origHtml;
+      if (window.lucide) lucide.createIcons({ root: reauthBtn });
+    }
+  }
+}
+
+function startAuthPolling() {
+  if (_authPollInterval) clearInterval(_authPollInterval);
+  let attempts = 0;
+  const maxAttempts = 30; // 60 seconds (every 2s)
+
+  _authPollInterval = setInterval(async () => {
+    attempts++;
+    if (attempts > maxAttempts) {
+      clearInterval(_authPollInterval);
+      _authPollInterval = null;
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/state");
+      if (res.ok) {
+        const state = await res.json();
+        const email = state.auth?.email || state.config?.user_email;
+        if (state.auth?.authenticated || email) {
+          clearInterval(_authPollInterval);
+          _authPollInterval = null;
+          appState = state;
+          saveCache();
+          updateUserInterface();
+          triggerHaptic("success");
+          showToast(`Connected as ${email}!`, "success", 4000);
+
+          if (IS_NATIVE && window.Capacitor?.Plugins?.Browser) {
+            try {
+              await window.Capacitor.Plugins.Browser.close();
+            } catch (e) {}
+          }
+        }
+      }
+    } catch (e) {}
+  }, 2000);
+}
+
+async function disconnectGoogleAccount() {
+  triggerHaptic("medium");
+  const confirmed = confirm("Are you sure you want to disconnect your Google account from QuizRadar?");
+  if (!confirmed) return;
+
+  try {
+    showToast("Disconnecting Google account...", "info", 2000);
+    const res = await fetch("/api/auth/logout", { method: "POST" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    if (appState.auth) {
+      appState.auth.authenticated = false;
+      appState.auth.email = null;
+      appState.auth.name = null;
+      appState.auth.picture = null;
+      appState.auth.has_calendar_scope = false;
+    }
+    if (appState.config) {
+      appState.config.user_email = null;
+      appState.config.user_name = null;
+      appState.config.user_picture = null;
+    }
+
+    saveCache();
+    updateUserInterface();
+    triggerHaptic("success");
+    showToast("Google account disconnected successfully", "success", 3000);
+  } catch (err) {
+    console.error("Disconnect failed:", err);
+    showToast("Failed to disconnect: " + err.message, "error");
+    triggerHaptic("warning");
+  }
+}
+
+async function startMicrosoftAuth() {
+  triggerHaptic("medium");
+  showToast("Requesting Microsoft Teams authorization URL...", "info", 3000);
+
+  try {
+    const res = await fetch("/api/microsoft/url");
+    if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data.url) throw new Error("No authorization URL returned by server");
+
+    if (IS_NATIVE && window.Capacitor?.Plugins?.Browser) {
+      await window.Capacitor.Plugins.Browser.open({ url: data.url });
+      showToast("Opened Microsoft Sign-In in browser", "info", 4000);
+    } else {
+      window.location.href = data.url;
+    }
+  } catch (err) {
+    console.error("Microsoft auth failed:", err);
+    showToast("Unable to reach server for Teams sign-in: " + err.message, "error");
+    triggerHaptic("warning");
+  }
+}
+
+async function exportCalendarIcs(assessmentId = null) {
+  triggerHaptic("selection");
+  const path = assessmentId ? `/api/calendar/ics/${encodeURIComponent(assessmentId)}` : "/api/calendar/ics_all";
+  try {
+    showToast("Preparing calendar file (.ics)...", "info", 2000);
+    const res = await fetch(path);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const filename = assessmentId ? `exam-${assessmentId}.ics` : "quizradar-calendar.ics";
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast("Calendar (.ics) downloaded successfully!", "success");
+  } catch (err) {
+    console.error("Export ICS failed:", err);
+    showToast("Failed to export calendar file: " + err.message, "error");
+  }
+}
+
+let _currentAssessmentGCalUrl = null;
+let _currentAssessmentElearningUrl = null;
+
+function openCurrentAssessmentGCal() {
+  if (_currentAssessmentGCalUrl) {
+    openExternalUrl(_currentAssessmentGCalUrl);
+  } else {
+    showToast("No Google Calendar link available for this assessment", "info");
+  }
+}
+
+function openCurrentAssessmentAnnouncement() {
+  if (_currentAssessmentElearningUrl) {
+    openExternalUrl(_currentAssessmentElearningUrl);
+  }
+}
+
+function exportCurrentAssessmentIcs() {
+  if (activeModalAssessmentId) {
+    exportCalendarIcs(activeModalAssessmentId);
+  }
+}
+
+// Global safety guard: intercept all anchor clicks in mobile WebView to prevent destroying app
+document.addEventListener("click", function(e) {
+  const anchor = e.target.closest("a");
+  if (!anchor) return;
+  const href = anchor.getAttribute("href");
+  if (!href || href === "#" || href.startsWith("javascript:")) return;
+
+  if (href.startsWith("http://") || href.startsWith("https://")) {
+    if (IS_NATIVE) {
+      e.preventDefault();
+      openExternalUrl(href);
+    }
+  } else if (href.startsWith("/api/")) {
+    e.preventDefault();
+    console.warn("[QuizRadar] Prevented unsafe WebView navigation to:", href);
+    if (href.includes("/auth/google")) {
+      startGoogleAuth();
+    } else if (href.includes("/microsoft")) {
+      startMicrosoftAuth();
+    } else if (href.includes("/calendar/ics")) {
+      exportCalendarIcs();
+    }
+  }
+}, true);
 
 function openMobileSyncTab() {
   triggerHaptic("selection");
@@ -222,6 +475,15 @@ function openAccountModal() {
 
   if (actionLabel) {
     actionLabel.textContent = isAuth ? "Switch Account" : "Connect Google";
+  }
+
+  const disconnectBtn = document.getElementById("account-disconnect-btn");
+  if (disconnectBtn) {
+    if (isAuth) {
+      disconnectBtn.classList.remove("hidden");
+    } else {
+      disconnectBtn.classList.add("hidden");
+    }
   }
 
   modal.classList.add("is-open");
@@ -734,8 +996,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const params = new URLSearchParams(window.location.search);
   if (params.get("auth") === "success") {
-    showToast("Signed in with Google! Scanned Gmail with Gemini AI & synced Calendar.");
-    window.history.replaceState({}, document.title, "/");
+    showToast("Signed in with Google! Scanned Gmail with Gemini AI & synced Calendar.", "success", 4000);
+    window.history.replaceState({}, document.title, window.location.pathname);
+  } else if (params.get("auth") === "cancelled") {
+    showToast("Google Sign-In was cancelled.", "warning", 3000);
+    window.history.replaceState({}, document.title, window.location.pathname);
   }
 });
 
@@ -1164,6 +1429,7 @@ function applyDemoDummyData() {
 }
 
 function updateTopBarAndUser() {
+  const isAuth = !!(appState.auth?.authenticated || appState.config?.user_email);
   const email = appState.auth?.email || appState.config?.user_email || "Not signed in";
   const name = appState.auth?.name || appState.config?.user_name || "Connect Google Account";
   const initial = (name && name[0] ? name[0] : "G").toUpperCase();
@@ -1219,6 +1485,19 @@ function updateTopBarAndUser() {
   if (stBadge) {
     stBadge.textContent = badgeText;
     stBadge.className = badgeClass;
+  }
+
+  const stReauthLabel = document.getElementById("settings-reauth-label");
+  const stDisconnectBtn = document.getElementById("settings-disconnect-btn");
+  if (stReauthLabel) {
+    stReauthLabel.textContent = isAuth ? "Switch / Re-Authorize" : "Connect Google";
+  }
+  if (stDisconnectBtn) {
+    if (isAuth) {
+      stDisconnectBtn.classList.remove("hidden");
+    } else {
+      stDisconnectBtn.classList.add("hidden");
+    }
   }
 
   renderOnboardingPreview();
@@ -3001,15 +3280,16 @@ function openAssessmentModalById(id) {
     warnSec.classList.add("hidden");
   }
 
-  document.getElementById("modal-gcal-link").href = a.google_cal_url;
-  document.getElementById("modal-ics-link").href = `/api/calendar/ics/${a.id}`;
+  _currentAssessmentGCalUrl = a.google_cal_url || null;
+  _currentAssessmentElearningUrl = a.elearning_url || null;
 
   const courseLink = document.getElementById("modal-course-link");
-  if (a.elearning_url) {
-    courseLink.href = a.elearning_url;
-    courseLink.classList.remove("hidden");
-  } else {
-    courseLink.classList.add("hidden");
+  if (courseLink) {
+    if (a.elearning_url) {
+      courseLink.classList.remove("hidden");
+    } else {
+      courseLink.classList.add("hidden");
+    }
   }
 
   document.getElementById("event-detail-modal").classList.add("is-open");

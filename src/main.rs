@@ -249,10 +249,12 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
         .route("/api/status", get(get_legacy_status))
         .route("/api/schedule", get(get_schedule))
         .route("/api/quizzes", get(get_quizzes))
+        .route("/api/auth/google", get(google_login_redirect))
         .route("/api/auth/google/login", get(google_login_redirect))
         .route("/api/auth/google/url", get(google_login_url))
         .route("/api/auth/callback", get(google_oauth_callback))
         .route("/api/auth/logout", post(google_logout))
+        .route("/api/auth/google/logout", post(google_logout))
         .route("/api/onboarding/complete", post(complete_onboarding))
         .route("/api/onboarding/reset", post(reset_onboarding))
         .route("/api/sync", post(trigger_full_sync))
@@ -432,7 +434,31 @@ async fn google_oauth_callback(
             }
             Err(err) => {
                 let html = format!(
-                    "<h2>Google Sign-In Error</h2><p>{}</p><p><a href=\"/\">Return to QuizRadar</a></p>",
+                    r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QuizRadar — Google Sign-In</title>
+  <style>
+    body {{ background: #0b0f19; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }}
+    .card {{ background: #131927; border: 1px solid #1e293b; border-radius: 16px; padding: 28px; max-width: 440px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; }}
+    .icon {{ width: 48px; height: 48px; border-radius: 12px; background: rgba(239,68,68,0.15); color: #ef4444; display: inline-flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 16px; }}
+    h2 {{ font-size: 18px; margin: 0 0 8px 0; color: #ffffff; }}
+    p {{ font-size: 13px; color: #94a3b8; line-height: 1.5; margin: 0 0 20px 0; word-break: break-word; }}
+    .btn {{ display: inline-block; background: #1a73e8; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 600; padding: 10px 20px; border-radius: 10px; transition: background 0.2s; }}
+    .btn:hover {{ background: #1557b0; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">⚠️</div>
+    <h2>Google Sign-In Error</h2>
+    <p>{}</p>
+    <a href="/" class="btn">Return to QuizRadar</a>
+  </div>
+</body>
+</html>"#,
                     err
                 );
                 return Html(html).into_response();

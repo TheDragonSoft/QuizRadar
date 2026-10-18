@@ -6,6 +6,9 @@
 // Native Capacitor / Android Environment Setup
 const IS_NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 
+// Transparently route /api requests to backend host when running in native mobile WebView
+const _originalFetch = window.fetch.bind(window);
+
 let _detectedApiBase = null;
 
 function getApiBase() {
@@ -13,32 +16,42 @@ function getApiBase() {
   const stored = localStorage.getItem("quizradar_api_base");
   if (stored) return stored;
   if (_detectedApiBase) return _detectedApiBase;
-  return "http://192.168.2.115:5050";
+  // Standard Android emulator loopback to host PC is 10.0.2.2; ADB reverse uses 127.0.0.1
+  return "http://10.0.2.2:5050";
 }
 
 // Proactive detection for Android emulator vs physical phone on local Wi-Fi
 async function detectOptimalApiBase() {
   if (!IS_NATIVE) return;
   const stored = localStorage.getItem("quizradar_api_base");
-  if (stored) return;
+  if (stored) {
+    _detectedApiBase = stored;
+    return;
+  }
 
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 600);
-    const res = await _originalFetch("http://10.0.2.2:5050/api/sync/pair/info", { signal: ctrl.signal });
-    clearTimeout(timer);
-    if (res.ok) {
-      _detectedApiBase = "http://10.0.2.2:5050";
-      return;
-    }
-  } catch (e) {}
+  const candidates = [
+    "http://10.0.2.2:5050",
+    "http://127.0.0.1:5050",
+    "http://192.168.2.115:5050"
+  ];
 
-  _detectedApiBase = "http://192.168.2.115:5050";
+  for (const candidate of candidates) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 600);
+      const res = await _originalFetch(`${candidate}/api/sync/pair/info`, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (res.ok) {
+        _detectedApiBase = candidate;
+        return;
+      }
+    } catch (e) {}
+  }
+
+  _detectedApiBase = "http://10.0.2.2:5050";
 }
 detectOptimalApiBase();
 
-// Transparently route /api requests to backend host when running in native mobile WebView
-const _originalFetch = window.fetch.bind(window);
 window.fetch = function (resource, init) {
   if (typeof resource === "string" && resource.startsWith("/api/")) {
     const base = getApiBase();
@@ -239,6 +252,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   if (window.lucide) {
     lucide.createIcons();
+  }
+  if (IS_NATIVE) {
+    await detectOptimalApiBase();
   }
   await loadFullState();
 
@@ -579,7 +595,14 @@ async function loadFullState() {
       openOnboardingModal(1);
     }
   } catch (err) {
-    console.error("Failed to load state:", err);
+    console.warn("Failed to load live state from backend, falling back to cache or demo data:", err);
+    if (!appState || !appState.assessments || appState.assessments.length === 0) {
+      applyDemoDummyData();
+    }
+    updateTopBarAndUser();
+    renderSidebar();
+    renderDashboard();
+    renderWeekCalendar();
   }
 }
 
@@ -1278,9 +1301,57 @@ function renderDailyRoadmap() {
     .join("");
 }
 
-// ============================================================================
-// DASHBOARD VIEW RENDERING
-// ============================================================================
+let currentDashboardTab = "study";
+
+function switchDashboardTab(tab) {
+  currentDashboardTab = tab;
+
+  const studyPanel = document.getElementById("dashboard-study-panel");
+  const radarPanel = document.getElementById("all-assessments-panel");
+  const kpiSection = document.getElementById("dashboard-kpi-section");
+
+  const tabStudy = document.getElementById("dash-tab-study");
+  const tabRadar = document.getElementById("dash-tab-assessments");
+  const tabOverview = document.getElementById("dash-tab-overview");
+
+  const activeClass = "text-[#1a73e8] dark:text-blue-400 bg-white dark:bg-slate-900 shadow-2xs font-bold";
+  const inactiveClass = "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white font-medium";
+
+  if (tabStudy) tabStudy.className = "dash-subtab flex-1 py-2 px-2 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer " + (tab === "study" ? activeClass : inactiveClass);
+  if (tabRadar) tabRadar.className = "dash-subtab flex-1 py-2 px-2 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer " + (tab === "assessments" ? activeClass : inactiveClass);
+  if (tabOverview) tabOverview.className = "dash-subtab flex-1 py-2 px-2 rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer " + (tab === "overview" ? activeClass : inactiveClass);
+
+  if (window.innerWidth < 1024) {
+    if (studyPanel) {
+      studyPanel.classList.toggle("hidden", tab !== "study");
+      if (tab === "study") studyPanel.classList.add("flex");
+    }
+    if (radarPanel) {
+      radarPanel.classList.toggle("hidden", tab !== "assessments");
+      if (tab === "assessments") radarPanel.classList.add("flex");
+    }
+    if (kpiSection) {
+      kpiSection.classList.toggle("hidden", tab !== "overview");
+      if (tab === "overview") kpiSection.classList.add("grid");
+    }
+  } else {
+    if (studyPanel) studyPanel.classList.remove("hidden");
+    if (radarPanel) {
+      radarPanel.classList.remove("hidden");
+      radarPanel.classList.add("flex");
+    }
+    if (kpiSection) {
+      kpiSection.classList.remove("hidden");
+      kpiSection.classList.add("grid");
+    }
+  }
+
+  if (window.lucide) lucide.createIcons();
+}
+
+window.addEventListener("resize", () => {
+  switchDashboardTab(currentDashboardTab);
+});
 
 function renderDashboard() {
   const dash = appState.dashboard || {};
@@ -1366,63 +1437,69 @@ function renderDashboard() {
       nextUp.days_until === 0
         ? "Today"
         : nextUp.days_until === 1
-        ? "Tomorrow morning"
+        ? "Tomorrow"
         : `In ${nextUp.days_until} days`;
 
     heroEl.innerHTML = `
-      <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
-        <div class="space-y-3 max-w-3xl">
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-xs font-bold tabular-nums flex items-center gap-1.5 shadow-2xs">
-              <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 sm:gap-4">
+        <div class="space-y-2 min-w-0 flex-1">
+          <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
+            <span class="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[11px] sm:text-xs font-bold tabular-nums flex items-center gap-1 shadow-2xs">
+              <i data-lucide="zap" class="w-3 h-3"></i>
               <span>Up next · ${countdownLabel}</span>
             </span>
-            <span class="px-2.5 py-0.5 rounded-full bg-white/20 text-white text-xs font-semibold">
+            <span class="px-2 py-0.5 rounded-full bg-white/20 text-white text-[11px] sm:text-xs font-semibold">
               ${escapeHtml(nextUp.course_id)} · ${escapeHtml(nextUp.assessment_type)}
             </span>
-            <span class="px-2.5 py-0.5 rounded-full bg-emerald-400/20 text-emerald-100 border border-emerald-300/30 text-xs font-medium flex items-center gap-1">
+            <span class="hidden sm:inline-flex px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-100 border border-emerald-300/30 text-xs font-medium items-center gap-1">
               <i data-lucide="map-pin" class="w-3 h-3"></i>
-              <span>Room ${escapeHtml(nextUp.room)} (${escapeHtml(nextUp.group)})</span>
+              <span>Room ${escapeHtml(nextUp.room)}</span>
             </span>
           </div>
 
-          <h1 class="text-2xl sm:text-3xl font-bold tracking-tight">
-            ${escapeHtml(nextUp.title)} — <span class="font-normal text-blue-100">${escapeHtml(nextUp.course_name)}</span>
+          <h1 class="text-base sm:text-xl lg:text-2xl font-bold tracking-tight text-white leading-snug line-clamp-2">
+            ${escapeHtml(nextUp.title)} <span class="font-normal text-blue-100 text-xs sm:text-sm">(${escapeHtml(nextUp.course_name)})</span>
           </h1>
 
-          <div class="flex flex-wrap items-center gap-4 text-xs text-blue-100 tabular-nums">
-            <span class="flex items-center gap-1.5 font-medium">
-              <i data-lucide="calendar" class="w-4 h-4"></i>
+          <div class="flex flex-wrap items-center gap-2.5 sm:gap-4 text-[11px] sm:text-xs text-blue-100 tabular-nums">
+            <span class="flex items-center gap-1 font-medium">
+              <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
               <span>${escapeHtml(nextUp.display_time)}</span>
             </span>
-            <span class="flex items-center gap-1.5">
-              <i data-lucide="user-check" class="w-4 h-4"></i>
+            ${nextUp.instructor ? `
+            <span class="hidden sm:flex items-center gap-1">
+              <i data-lucide="user-check" class="w-3.5 h-3.5"></i>
               <span>${escapeHtml(nextUp.instructor)}</span>
+            </span>` : ""}
+            <span class="sm:hidden flex items-center gap-1">
+              <i data-lucide="map-pin" class="w-3 h-3"></i>
+              <span>${escapeHtml(nextUp.room)}</span>
             </span>
           </div>
 
-          <!-- Gemini Inference Pill -->
-          <div class="bg-slate-900/35 border border-white/15 rounded-xl p-3.5 text-xs text-blue-50 flex items-start gap-2.5 max-w-[68ch]">
-            <i data-lucide="sparkles" class="w-4 h-4 text-amber-300 shrink-0 mt-0.5"></i>
-            <div class="leading-relaxed">
-              <div class="font-semibold text-white">${escapeHtml(nextUp.ai_inference_note)}</div>
-              <div class="text-blue-100 mt-1"><span class="font-semibold text-white">Study focus:</span> ${escapeHtml(nextUp.ai_study_plan)}</div>
+          <!-- Compact Study Focus Pill -->
+          <div class="bg-slate-900/40 border border-white/15 rounded-xl p-2 sm:p-2.5 text-[11px] sm:text-xs text-blue-50 flex items-start gap-2 max-w-3xl">
+            <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-300 shrink-0 mt-0.5"></i>
+            <div class="line-clamp-2 leading-relaxed">
+              <span class="font-semibold text-white">Focus:</span> ${escapeHtml(nextUp.ai_study_plan || nextUp.ai_inference_note)}
             </div>
           </div>
         </div>
 
-        <div class="flex flex-wrap sm:flex-nowrap lg:flex-col gap-2.5 shrink-0">
-          <button onclick="jumpToAssessmentOnCalendar('${nextUp.id}')" class="px-4 py-2.5 rounded-xl bg-white text-[#1a73e8] hover:bg-blue-50 active:scale-[0.98] text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-xs">
-            <i data-lucide="calendar-days" class="w-4 h-4"></i>
-            <span>View on Week Calendar</span>
+        <!-- Action Buttons: Horizontal on mobile, neatly grouped on desktop -->
+        <div class="flex items-center gap-2 shrink-0 pt-1 md:pt-0">
+          <button onclick="openAssessmentModalById('${nextUp.id}')" class="flex-1 md:flex-initial px-3.5 py-2 rounded-xl bg-white text-[#1a73e8] hover:bg-blue-50 active:scale-[0.98] text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs">
+            <i data-lucide="book-open" class="w-3.5 h-3.5"></i>
+            <span>Study Plan</span>
           </button>
-          <a href="${nextUp.google_cal_url}" target="_blank" class="px-4 py-2.5 rounded-xl bg-blue-500/30 hover:bg-blue-500/45 border border-white/25 text-white text-xs font-semibold transition flex items-center justify-center gap-2">
-            <i data-lucide="calendar-plus" class="w-4 h-4"></i>
-            <span>Sync to Google Calendar</span>
+          <button onclick="jumpToAssessmentOnCalendar('${nextUp.id}')" class="px-2.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 active:scale-95 text-white text-xs font-semibold transition flex items-center justify-center gap-1 cursor-pointer" title="View on Calendar">
+            <i data-lucide="calendar-days" class="w-3.5 h-3.5"></i>
+            <span class="hidden sm:inline">Calendar</span>
+          </button>
+          <a href="${nextUp.google_cal_url}" target="_blank" class="px-2.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 active:scale-95 text-white text-xs font-semibold transition flex items-center justify-center gap-1 cursor-pointer" title="Sync to Google Calendar">
+            <i data-lucide="calendar-plus" class="w-3.5 h-3.5"></i>
+            <span class="hidden sm:inline">Google Cal</span>
           </a>
-          <button onclick="openAssessmentModalById('${nextUp.id}')" class="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition flex items-center justify-center gap-1.5 cursor-pointer">
-            <span>Open Full Study Window</span>
-          </button>
         </div>
       </div>
     `;
@@ -1485,6 +1562,17 @@ function renderDashboard() {
   // Study Readiness KPI
   updateReadinessKpiDom();
 
+  // Mobile Sub-Tabs Badges & Panel Toggle
+  const badgeStudy = document.getElementById("dash-badge-study");
+  if (badgeStudy) {
+    badgeStudy.textContent = (dash.study_recommendations || []).length;
+  }
+  const badgeRadar = document.getElementById("dash-badge-assessments");
+  if (badgeRadar) {
+    badgeRadar.textContent = (appState.assessments || []).length;
+  }
+  switchDashboardTab(currentDashboardTab);
+
   // 3. "What Should I Study?" Study Recommendations List
   // Entire card is clickable (Picture 4 feedback), no "View Full Details..." text link, and each quiz's rules are shown directly on its card
   const recsEl = document.getElementById("study-recommendations-list");
@@ -1521,13 +1609,13 @@ function renderDashboard() {
         const topicsChecklistHtml = (rec.topics || [])
           .map(
             (item) => `
-            <div class="flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/70 transition border border-transparent hover:border-slate-200 dark:hover:border-slate-700">
-              <label onclick="event.stopPropagation()" class="flex items-start gap-2.5 cursor-pointer flex-1 mr-2">
-                <input type="checkbox" data-topic-key="${escapeHtml(item.key)}" ${item.completed ? "checked" : ""} onchange="toggleTopicCheckbox('${escapeHtml(item.key)}', this.checked)" class="mt-0.5 w-4 h-4 accent-[#1a73e8] rounded cursor-pointer shrink-0" />
-                <span data-topic-label="${escapeHtml(item.key)}" class="text-xs transition-colors ${item.completed ? "line-through text-slate-400 dark:text-slate-500" : "text-slate-800 dark:text-slate-100 font-medium"}">${escapeHtml(item.topic)}</span>
+            <div class="flex items-center justify-between p-1.5 sm:p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/70 transition border border-transparent hover:border-slate-200 dark:hover:border-slate-700">
+              <label onclick="event.stopPropagation()" class="flex items-start gap-2 cursor-pointer flex-1 mr-2 min-w-0">
+                <input type="checkbox" data-topic-key="${escapeHtml(item.key)}" ${item.completed ? "checked" : ""} onchange="toggleTopicCheckbox('${escapeHtml(item.key)}', this.checked)" class="mt-0.5 w-3.5 h-3.5 accent-[#1a73e8] rounded cursor-pointer shrink-0" />
+                <span data-topic-label="${escapeHtml(item.key)}" class="text-[11px] sm:text-xs transition-colors ${item.completed ? "line-through text-slate-400 dark:text-slate-500" : "text-slate-800 dark:text-slate-100 font-medium"} truncate">${escapeHtml(item.topic)}</span>
               </label>
               <button type="button" title="Start Focus Pomodoro for this topic" onclick="event.stopPropagation(); openPomodoroForTask('${escapeHtml(rec.course_id)} • ${escapeHtml(rec.title)}', '${escapeHtml(item.topic)}', '${escapeHtml(item.key)}')" class="p-1 rounded-md hover:bg-rose-100 dark:hover:bg-rose-950/60 text-rose-500 transition cursor-pointer shrink-0">
-                <i data-lucide="timer" class="w-3.5 h-3.5"></i>
+                <i data-lucide="timer" class="w-3 h-3"></i>
               </button>
             </div>
           `
@@ -1538,8 +1626,8 @@ function renderDashboard() {
         const warnChips = uniqueWarnings
           .map(
             (w) =>
-              `<div class="flex items-start gap-2 text-[11px] font-medium text-amber-900 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 px-3 py-1.5 rounded-lg">
-                <i data-lucide="alert-circle" class="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5"></i>
+              `<div class="flex items-start gap-1.5 text-[10px] sm:text-[11px] font-medium text-amber-900 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 px-2.5 py-1 rounded-lg">
+                <i data-lucide="alert-circle" class="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5"></i>
                 <span>${escapeHtml(stripLeadingEmoji(w))}</span>
               </div>`
           )
@@ -1551,31 +1639,31 @@ function renderDashboard() {
         return `
           <div onclick="openAssessmentModalById('${rec.assessment_id}')" class="interactive-card bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-[#1a73e8] dark:hover:border-blue-500 cursor-pointer overflow-hidden group">
             <div class="h-1.5" style="background-color: ${rec.color}"></div>
-            <div class="p-4 sm:p-5 space-y-3.5">
-              <div class="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <div class="flex flex-wrap items-center gap-1.5 mb-1.5">
-                    <span class="text-[11px] font-bold tabular-nums px-2 py-0.5 rounded-md bg-slate-900 dark:bg-slate-800 text-white">Priority #${idx + 1}</span>
-                    <span class="text-[11px] font-bold px-2 py-0.5 rounded-md text-white" style="background-color: ${rec.color}">${escapeHtml(rec.course_id)}</span>
-                    <span class="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">${escapeHtml(rec.assessment_type)}</span>
-                    <span class="text-[11px] font-bold tabular-nums px-2 py-0.5 rounded-md border ${badgeColor}">${escapeHtml(rec.urgency_badge)}</span>
+            <div class="p-3 sm:p-4 space-y-2.5">
+              <div class="flex flex-wrap items-start justify-between gap-1.5">
+                <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-center gap-1.5 mb-1">
+                    <span class="text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded-md bg-slate-900 dark:bg-slate-800 text-white">#${idx + 1}</span>
+                    <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-md text-white" style="background-color: ${rec.color}">${escapeHtml(rec.course_id)}</span>
+                    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">${escapeHtml(rec.assessment_type)}</span>
+                    <span class="text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded-md border ${badgeColor}">${escapeHtml(rec.urgency_badge)}</span>
                   </div>
-                  <h4 class="text-base font-bold text-slate-900 dark:text-white group-hover:text-[#1a73e8] dark:group-hover:text-blue-400 transition">${escapeHtml(rec.title)} — <span class="font-normal text-slate-500 dark:text-slate-400 text-sm">${escapeHtml(rec.course_name)}</span></h4>
-                  <div class="text-xs tabular-nums text-slate-500 dark:text-slate-400 mt-0.5">${escapeHtml(rec.display_time)}${roomLabel ? ` · Room ${escapeHtml(roomLabel)}` : ""}</div>
+                  <h4 class="text-sm sm:text-base font-bold text-slate-900 dark:text-white group-hover:text-[#1a73e8] dark:group-hover:text-blue-400 transition leading-snug">${escapeHtml(rec.title)} — <span class="font-normal text-slate-500 dark:text-slate-400 text-xs sm:text-sm">${escapeHtml(rec.course_name)}</span></h4>
+                  <div class="text-[11px] tabular-nums text-slate-500 dark:text-slate-400 mt-0.5">${escapeHtml(rec.display_time)}${roomLabel ? ` · Room ${escapeHtml(roomLabel)}` : ""}</div>
                 </div>
 
                 <div class="text-right tabular-nums shrink-0">
-                  <div data-rec-pct-label="${rec.assessment_id}" class="text-xs font-bold text-slate-900 dark:text-white">${rec.progress_percent}% Ready</div>
-                  <div class="w-24 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mt-1">
+                  <div data-rec-pct-label="${rec.assessment_id}" class="text-[11px] font-bold text-slate-900 dark:text-white">${rec.progress_percent}% Ready</div>
+                  <div class="w-16 sm:w-24 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mt-1">
                     <div data-rec-pct-bar="${rec.assessment_id}" class="h-full bg-emerald-500 transition-all duration-300" style="width: ${rec.progress_percent}%"></div>
                   </div>
                 </div>
               </div>
 
               <!-- AI Study Recommendation Box -->
-              <div class="bg-blue-50/70 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/60 rounded-xl p-3 text-xs space-y-1 max-w-[68ch]">
-                <div class="font-bold text-[#1a73e8] dark:text-blue-400 flex items-center gap-1.5">
-                  <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+              <div class="bg-blue-50/70 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/60 rounded-xl p-2.5 sm:p-3 text-[11px] sm:text-xs space-y-1">
+                <div class="font-bold text-[#1a73e8] dark:text-blue-400 flex items-center gap-1">
+                  <i data-lucide="sparkles" class="w-3 h-3"></i>
                   <span>${escapeHtml(rec.why_study_now)}</span>
                 </div>
                 <p class="text-slate-700 dark:text-slate-300 leading-relaxed">${escapeHtml(rec.ai_study_plan)}</p>
@@ -1583,8 +1671,8 @@ function renderDashboard() {
 
               <!-- Interactive Topics Checklist -->
               <div>
-                <div class="text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">Topics to study (click to check off)</div>
-                <div class="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl p-1">
+                <div class="text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">Topics to study:</div>
+                <div class="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl p-0.5 sm:p-1">
                   ${topicsChecklistHtml}
                 </div>
               </div>
@@ -1592,8 +1680,8 @@ function renderDashboard() {
               <!-- Specific Exam Rules attached directly to this Quiz/Exam -->
               ${
                 warnChips
-                  ? `<div class="space-y-1.5">
-                       <div class="text-xs font-semibold text-amber-700 dark:text-amber-400">Exam rules & instructions</div>
+                  ? `<div class="space-y-1">
+                       <div class="text-[11px] font-semibold text-amber-700 dark:text-amber-400">Exam instructions:</div>
                        ${warnChips}
                      </div>`
                   : ""
@@ -1602,11 +1690,10 @@ function renderDashboard() {
               <div class="flex items-center justify-between pt-1 text-xs">
                 <button onclick="event.stopPropagation(); jumpToAssessmentOnCalendar('${rec.assessment_id}')" class="text-[#1a73e8] dark:text-blue-400 hover:underline font-semibold flex items-center gap-1.5 cursor-pointer">
                   <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
-                  <span>Show on Week Calendar</span>
+                  <span>Week Calendar</span>
                 </button>
                 <span class="text-[11px] font-medium text-slate-400 dark:text-slate-500 group-hover:text-[#1a73e8] dark:group-hover:text-blue-400 transition flex items-center gap-1">
-                  <span>Click card for details</span>
-                  <i data-lucide="arrow-up-right" class="w-3.5 h-3.5"></i>
+                  <span>View Details →</span>
                 </span>
               </div>
             </div>
@@ -1662,17 +1749,17 @@ function renderDashboard() {
           .join("");
 
         return `
-          <div onclick="openAssessmentModalById('${a.id}')" class="interactive-card p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-[#1a73e8] dark:hover:border-blue-500 bg-slate-50/60 dark:bg-slate-800/40 hover:bg-white dark:hover:bg-slate-800 cursor-pointer transition space-y-2">
-            <div class="flex items-center justify-between gap-2">
-              <div class="flex items-center gap-1.5 flex-wrap">
-                <span class="px-2 py-0.5 rounded-md text-[10px] font-bold text-white" style="background-color: ${a.color}">${escapeHtml(a.course_id)}</span>
-                <span class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-200">${escapeHtml(a.assessment_type)}</span>
-                <span class="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-900 flex items-center gap-1">
+          <div onclick="openAssessmentModalById('${a.id}')" class="interactive-card p-2.5 sm:p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-[#1a73e8] dark:hover:border-blue-500 bg-slate-50/60 dark:bg-slate-800/40 hover:bg-white dark:hover:bg-slate-800 cursor-pointer transition space-y-1.5">
+            <div class="flex items-center justify-between gap-1.5">
+              <div class="flex items-center gap-1 flex-wrap min-w-0">
+                <span class="px-1.5 py-0.5 rounded-md text-[10px] font-bold text-white shrink-0" style="background-color: ${a.color}">${escapeHtml(a.course_id)}</span>
+                <span class="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-200 shrink-0">${escapeHtml(a.assessment_type)}</span>
+                <span class="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-900 flex items-center gap-1 shrink-0">
                   <i data-lucide="${a.source_icon || 'mail'}" class="w-2.5 h-2.5"></i>
                   <span>${escapeHtml(a.source || 'Gmail')}</span>
                 </span>
-                ${a.conflict_warning ? `<span class="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-200 border border-amber-300 flex items-center gap-0.5" title="Overload conflict detected (<36h)"><i data-lucide="alert-triangle" class="w-2.5 h-2.5"></i><span>Conflict</span></span>` : ""}
-                ${a.achieved_score != null ? `<span class="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-200 border border-emerald-300 flex items-center gap-1"><i data-lucide="award" class="w-2.5 h-2.5"></i><span>${a.achieved_score}/${a.max_score} (${Math.round((a.achieved_score / a.max_score) * 100)}%)</span></span>` : ""}
+                ${a.conflict_warning ? `<span class="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-200 border border-amber-300 flex items-center gap-0.5 shrink-0" title="Overload conflict detected (<36h)"><i data-lucide="alert-triangle" class="w-2.5 h-2.5"></i><span>Conflict</span></span>` : ""}
+                ${a.achieved_score != null ? `<span class="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-200 border border-emerald-300 flex items-center gap-0.5 shrink-0"><i data-lucide="award" class="w-2.5 h-2.5"></i><span>${a.achieved_score}/${a.max_score}</span></span>` : ""}
               </div>
               <span class="text-[10px] font-bold tabular-nums shrink-0 ${
                 a.is_upcoming
@@ -1682,8 +1769,8 @@ function renderDashboard() {
                 ${a.is_upcoming ? (a.days_until === 0 ? "Today" : a.days_until === 1 ? "Tomorrow" : `In ${a.days_until}d`) : a.semester}
               </span>
             </div>
-            <div class="text-xs font-bold text-slate-900 dark:text-white">${escapeHtml(a.title)}</div>
-            <div class="flex items-center justify-between text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
+            <div class="text-xs font-bold text-slate-900 dark:text-white line-clamp-2 leading-snug">${escapeHtml(a.title)}</div>
+            <div class="flex items-center justify-between text-[10px] sm:text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
               <span class="flex items-center gap-1">
                 <i data-lucide="calendar" class="w-3 h-3"></i>
                 <span>${escapeHtml(a.date_iso)} · ${escapeHtml(a.start_time)}–${escapeHtml(a.end_time)}</span>
@@ -1693,7 +1780,7 @@ function renderDashboard() {
                 <span>${escapeHtml(a.room)}</span>
               </span>
             </div>
-            ${rulesHtml ? `<div class="space-y-1 pt-1">${rulesHtml}</div>` : ""}
+            ${rulesHtml ? `<div class="space-y-1 pt-0.5">${rulesHtml}</div>` : ""}
           </div>
         `;
       })

@@ -249,6 +249,7 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
         .route("/api/assessments/:id/practice", post(get_assessment_practice_handler))
         .route("/api/assessments/:id/grade", post(update_assessment_grade_handler))
         .route("/api/study/blocks/schedule", post(schedule_study_blocks_handler))
+        .route("/api/conflicts/dismiss", post(dismiss_conflicts_handler))
         .route("/api/updater/check", get(check_updater_handler))
         .route("/api/updater/install", post(install_updater_handler))
         .route("/static/app.js", get(serve_app_js))
@@ -1258,6 +1259,7 @@ async fn schedule_study_blocks_handler(
         }
     }
 
+    cfg.dismiss_conflict_banner = false;
     save_app_config(&cfg);
     drop(cfg);
 
@@ -1267,10 +1269,22 @@ async fn schedule_study_blocks_handler(
         "success": true,
         "status": "ok",
         "created_blocks_count": created_count,
-        "message": format!("Scheduled {} smart study preparation blocks into your timetable!", created_count),
+        "message": if created_count > 0 {
+            format!("Scheduled {} smart study preparation blocks into your timetable!", created_count)
+        } else {
+            "All upcoming exams are already protected with active smart study preparation blocks in your timetable!".to_string()
+        },
+        "config": state.config.read().await.clone(),
         "dashboard": res["dashboard"].clone(),
         "assessments": res["assessments"].clone()
     }))
+}
+
+async fn dismiss_conflicts_handler(State(state): State<SharedAppState>) -> Json<Value> {
+    let mut cfg = state.config.write().await;
+    cfg.dismiss_conflict_banner = true;
+    save_app_config(&cfg);
+    Json(json!({ "success": true, "status": "ok" }))
 }
 
 pub mod urlencoding {

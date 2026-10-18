@@ -157,6 +157,8 @@ pub struct ConflictAlert {
     pub gap_hours: i64,
     pub severity: String, // "critical" (< 24h) or "warning" (24..=36h)
     pub message: String,
+    #[serde(default)]
+    pub is_mitigated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -227,6 +229,8 @@ pub struct AppConfig {
     // Grade Tracking
     #[serde(default)]
     pub grades: HashMap<String, AssessmentGrade>,
+    #[serde(default)]
+    pub dismiss_conflict_banner: bool,
 }
 
 impl Default for AppConfig {
@@ -255,6 +259,7 @@ impl Default for AppConfig {
             teams_account_name: None,
             classroom_enabled: false,
             grades: HashMap::new(),
+            dismiss_conflict_banner: false,
         }
     }
 }

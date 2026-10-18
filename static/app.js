@@ -1009,30 +1009,70 @@ function renderDashboard() {
   const conflictBanner = document.getElementById("conflict-alert-banner");
   if (conflictBanner) {
     const alerts = dash.conflict_alerts || [];
-    if (alerts.length > 0) {
+    const isDismissed = !!appState.config?.dismiss_conflict_banner;
+    const studyBlocks = (appState.config?.custom_events || []).filter(
+      (e) => e.id && e.id.startsWith("study-block-")
+    );
+    const hasStudyBlocks = studyBlocks.length > 0;
+
+    if (alerts.length > 0 && !isDismissed) {
       conflictBanner.classList.remove("hidden");
-      conflictBanner.innerHTML = `
-        <div class="flex items-start gap-3 flex-1">
-          <div class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
-            <i data-lucide="alert-triangle" class="w-4 h-4"></i>
-          </div>
-          <div class="space-y-1">
-            <div class="text-xs font-bold text-amber-900 dark:text-amber-200">Exam Overload & Schedule Conflict Detected (${alerts.length} conflict${alerts.length > 1 ? "s" : ""})</div>
-            <div class="text-xs text-amber-800 dark:text-amber-300 space-y-1">
-              ${alerts.map(a => `<div>• <strong>${escapeHtml(a.course_a || a.course_1)}</strong> and <strong>${escapeHtml(a.course_b || a.course_2)}</strong>: ${escapeHtml(a.message)}</div>`).join("")}
+      if (hasStudyBlocks) {
+        // Resolved / Mitigated State (Emerald Shield)
+        conflictBanner.className =
+          "rounded-xl p-4 bg-emerald-500/10 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs";
+        conflictBanner.innerHTML = `
+          <div class="flex items-start gap-3 flex-1">
+            <div class="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
+              <i data-lucide="shield-check" class="w-4 h-4"></i>
+            </div>
+            <div class="space-y-1">
+              <div class="text-xs font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-2">
+                <span>Exam Overload Mitigated (${studyBlocks.length} Active Study Preparation Blocks)</span>
+                <span class="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">Protected</span>
+              </div>
+              <p class="text-xs text-emerald-800 dark:text-emerald-300">
+                All ${alerts.length} exam cluster${alerts.length > 1 ? "s have" : " has"} dedicated 90-minute preparation blocks booked in your timetable to distribute your study load and prevent last-minute cramming.
+              </p>
             </div>
           </div>
-        </div>
-        <div class="flex items-center gap-2 shrink-0">
-          <button onclick="scheduleSmartStudyBlocks()" class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer">
-            <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
-            <span>Auto-Schedule Study Blocks</span>
-          </button>
-          <button onclick="document.getElementById('conflict-alert-banner').classList.add('hidden')" class="p-1 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 cursor-pointer">
-            <i data-lucide="x" class="w-4 h-4"></i>
-          </button>
-        </div>
-      `;
+          <div class="flex items-center gap-2 shrink-0">
+            <button onclick="switchMainView('calendar')" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer">
+              <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
+              <span>View Blocks on Week Calendar</span>
+            </button>
+            <button onclick="dismissConflictBanner()" class="p-1.5 rounded-lg hover:bg-emerald-200 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 cursor-pointer" title="Dismiss banner">
+              <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+          </div>
+        `;
+      } else {
+        // Unresolved Conflict Warning State (Amber Alert)
+        conflictBanner.className =
+          "rounded-xl p-4 bg-amber-500/10 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row sm:items-start justify-between gap-3 shadow-xs";
+        conflictBanner.innerHTML = `
+          <div class="flex items-start gap-3 flex-1">
+            <div class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+              <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+            </div>
+            <div class="space-y-1">
+              <div class="text-xs font-bold text-amber-900 dark:text-amber-200">Exam Overload & Schedule Conflict Detected (${alerts.length} conflict${alerts.length > 1 ? "s" : ""})</div>
+              <div class="text-xs text-amber-800 dark:text-amber-300 space-y-1">
+                ${alerts.map(a => `<div>• <strong>${escapeHtml(a.course_a || a.course_1)}</strong> and <strong>${escapeHtml(a.course_b || a.course_2)}</strong>: ${escapeHtml(a.message)}</div>`).join("")}
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button id="auto-schedule-blocks-btn" onclick="scheduleSmartStudyBlocks()" class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer">
+              <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+              <span>Auto-Schedule Study Blocks</span>
+            </button>
+            <button onclick="dismissConflictBanner()" class="p-1 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 cursor-pointer" title="Dismiss banner">
+              <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+          </div>
+        `;
+      }
     } else {
       conflictBanner.classList.add("hidden");
     }
@@ -3760,19 +3800,32 @@ async function scheduleSmartStudyBlocks() {
       headers: { "Content-Type": "application/json" },
     });
     const data = await res.json();
-    if (data.status === "ok") {
+    if (data.status === "ok" || data.success) {
       showToast(data.message || "Smart study blocks scheduled!");
       if (data.assessments) appState.assessments = data.assessments;
       if (data.dashboard) appState.dashboard = data.dashboard;
+      if (data.config) appState.config = data.config;
+      if (appState.config) appState.config.dismiss_conflict_banner = false;
       saveStateCache();
       renderDashboard();
       renderWeekCalendar();
+      if (window.lucide) lucide.createIcons();
     } else {
       showToast(data.message || "Could not schedule study blocks.");
     }
   } catch (err) {
     showToast("Error scheduling study blocks.");
   }
+}
+
+async function dismissConflictBanner() {
+  const conflictBanner = document.getElementById("conflict-alert-banner");
+  if (conflictBanner) conflictBanner.classList.add("hidden");
+  if (appState.config) appState.config.dismiss_conflict_banner = true;
+  saveStateCache();
+  try {
+    await fetch("/api/conflicts/dismiss", { method: "POST" });
+  } catch (e) {}
 }
 
 async function testMoodleFromSettings() {

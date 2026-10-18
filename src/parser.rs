@@ -968,6 +968,10 @@ pub fn build_dashboard_summary(
                         a2.title,
                         gap_hours
                     );
+                    let has_study_block_1 = config.custom_events.iter().any(|e| e.id == format!("study-block-{}", a1.id));
+                    let has_study_block_2 = config.custom_events.iter().any(|e| e.id == format!("study-block-{}", a2.id));
+                    let is_mitigated = has_study_block_1 || has_study_block_2;
+
                     conflict_alerts.push(ConflictAlert {
                         assessment_id_a: a1.id.clone(),
                         assessment_id_b: a2.id.clone(),
@@ -978,6 +982,7 @@ pub fn build_dashboard_summary(
                         gap_hours,
                         severity,
                         message,
+                        is_mitigated,
                     });
                 }
             }

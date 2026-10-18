@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>QuizRadar — Academic Dashboard & Calendar</title>
   <link rel="icon" type="image/svg+xml" href="icon.svg">
 
@@ -731,7 +731,7 @@
   </header>
 
   <!-- ================= MAIN WORKSPACE AREA ================= -->
-  <div class="flex-1 flex overflow-hidden relative pb-[72px] md:pb-0">
+  <div class="flex-1 flex overflow-hidden relative pb-[calc(76px+env(safe-area-inset-bottom,0px))] md:pb-0">
 
     <!-- Mobile/Tablet Sidebar Backdrop -->
     <div id="sidebar-backdrop" onclick="toggleSidebar(false)" class="hidden fixed inset-0 top-16 bg-slate-950/40 z-30 lg:hidden backdrop-blur-2xs"></div>
@@ -2352,12 +2352,12 @@
   <button id="mobile-m3-fab"
           onclick="triggerHaptic('light'); openCreateEventModal();"
           aria-label="Create study event or task"
-          class="md:hidden fixed bottom-[84px] right-4 z-20 w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-xl shadow-blue-600/30 flex items-center justify-center active:scale-90 transition-transform cursor-pointer focus:outline-none focus:ring-4 focus:ring-blue-500/30">
+          class="md:hidden fixed bottom-[calc(80px+env(safe-area-inset-bottom,8px))] right-4 z-20 w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-xl shadow-blue-600/30 flex items-center justify-center active:scale-90 transition-transform cursor-pointer focus:outline-none focus:ring-4 focus:ring-blue-500/30">
     <i data-lucide="plus" class="w-6 h-6 stroke-[2.5]"></i>
   </button>
 
   <!-- ================= MOBILE MATERIAL 3 BOTTOM NAVIGATION BAR (Visible < md) ================= -->
-  <nav id="mobile-bottom-nav" aria-label="Mobile Navigation" class="md:hidden fixed bottom-0 left-0 right-0 h-[68px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200/90 dark:border-slate-800/90 flex items-center justify-around z-30 px-2 shadow-lg select-none pb-[env(safe-area-inset-bottom,0px)]">
+  <nav id="mobile-bottom-nav" aria-label="Mobile Navigation" class="md:hidden fixed bottom-0 left-0 right-0 min-h-[64px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200/90 dark:border-slate-800/90 flex items-center justify-around z-30 px-2 shadow-lg select-none pt-1.5 pb-[max(8px,env(safe-area-inset-bottom,8px))]">
     <!-- Dashboard -->
     <button onclick="triggerHaptic('selection'); switchMainView('dashboard');" id="mobile-nav-dashboard" class="flex flex-col items-center justify-center flex-1 h-full py-1 cursor-pointer focus:outline-none">
       <div id="mobile-nav-pill-dashboard" class="w-14 h-8 rounded-full bg-blue-100 dark:bg-blue-900/60 text-[#1a73e8] dark:text-blue-300 flex items-center justify-center transition-all duration-200">

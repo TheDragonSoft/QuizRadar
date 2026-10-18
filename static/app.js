@@ -1049,7 +1049,7 @@ function renderTasksView() {
   if (subEl) {
     const pending = studyTasksState.pending_tasks || 0;
     const examsCount = studyTasksState.readiness_cards?.length || 0;
-    const hours = studyTasksState.total_hours || 0;
+    const hours = Math.round((studyTasksState.total_hours || 0) * 10) / 10;
     subEl.textContent = `${pending} pending topics across ${examsCount} upcoming exams • Est. ${hours} hrs total`;
   }
 
@@ -1505,10 +1505,23 @@ function renderDashboard() {
     `;
   } else {
     heroEl.innerHTML = `
-      <div class="flex items-center justify-between">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 class="text-xl font-bold">No Upcoming Quizzes Scheduled</h2>
-          <p class="text-xs text-blue-100 mt-1">Select "Sync Gmail & Calendar" in the top bar to scan your inbox with Gemini AI.</p>
+          <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+            <i data-lucide="check-circle" class="w-4 h-4 text-emerald-300"></i>
+            <span>No Upcoming Quizzes Scheduled</span>
+          </h2>
+          <p class="text-xs text-blue-100 mt-0.5">All clear for now! Sync your inbox & calendar, or add custom study milestones.</p>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <button onclick="openCreateEventModal()" class="px-3.5 py-2 rounded-xl bg-white text-[#1a73e8] hover:bg-blue-50 text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer">
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+            <span>Add Event</span>
+          </button>
+          <button onclick="openCloudSyncModal()" class="px-3 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-semibold transition flex items-center gap-1 cursor-pointer">
+            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+            <span>Sync</span>
+          </button>
         </div>
       </div>
     `;
@@ -3503,6 +3516,19 @@ async function submitCreateCustomEvent() {
   const end_time = document.getElementById("create-ev-end").value;
   const room = document.getElementById("create-ev-room").value.trim();
 
+  if (!date_iso) {
+    showToast("Please choose a date for the event.");
+    return;
+  }
+  if (!start_time || !end_time) {
+    showToast("Please specify both start and end times.");
+    return;
+  }
+  if (start_time >= end_time) {
+    showToast("End time must be after start time.");
+    return;
+  }
+
   try {
     const res = await fetch("/api/events/custom", {
       method: "POST",
@@ -4202,6 +4228,23 @@ async function saveAssessmentGradeFromModal() {
   const score = scoreVal !== "" && !isNaN(parseFloat(scoreVal)) ? parseFloat(scoreVal) : null;
   const max = maxVal !== "" && !isNaN(parseFloat(maxVal)) ? parseFloat(maxVal) : null;
 
+  if (score !== null && score < 0) {
+    showToast("Score cannot be negative.");
+    return;
+  }
+  if (max !== null && max <= 0) {
+    showToast("Max score must be greater than 0.");
+    return;
+  }
+  if (score !== null && max !== null && score > max) {
+    showToast("Achieved score cannot exceed max score.");
+    return;
+  }
+  if (weight !== null && (weight < 0 || weight > 100)) {
+    showToast("Course weightage must be between 0% and 100%.");
+    return;
+  }
+
   try {
     const res = await fetch(`/api/assessments/${encodeURIComponent(activeModalAssessmentId)}/grade`, {
       method: "POST",
@@ -4465,9 +4508,28 @@ async function openPracticeModalForCurrentAssessment() {
       }
     }
   } catch (err) {
-    if (loadingEl) {
-      loadingEl.innerHTML = `<p class="text-xs text-rose-500 font-semibold">Network error generating practice quiz.</p>`;
-    }
+    // Resilient offline fallback: formulate study questions directly from cached topics
+    const fallbackTopics = a.topics && a.topics.length > 0 ? a.topics : ["Core Principles", "Formulas & Methods", "Problem-Solving Techniques"];
+    activePracticeQuiz = fallbackTopics.slice(0, 3).map((top, idx) => {
+      const topName = typeof top === "string" ? top : top.title || "Subject Principles";
+      return {
+        question: `Which study strategy is most critical for mastering "${topName}" in ${a.course_id}?`,
+        options: [
+          "Systematic step-by-step problem breakdown and formula verification",
+          "Rote memorization without understanding underlying mechanics",
+          "Skipping foundational terms to jump straight into complex proofs",
+          "Reviewing only the final answer sheet without practice exercises"
+        ],
+        correct_answer: 0,
+        explanation: `Systematic step-by-step methodology and checking intermediate work is the proven study strategy for ${a.course_id}.`
+      };
+    });
+    practiceQuizCurrentIndex = 0;
+    practiceQuizScore = 0;
+    if (loadingEl) loadingEl.classList.add("hidden");
+    if (contentEl) contentEl.classList.remove("hidden");
+    renderCurrentPracticeQuestion();
+    showToast("Offline mode: generated study review quiz.");
   }
 }
 

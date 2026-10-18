@@ -2,6 +2,7 @@
 
 pub mod auth;
 pub mod classroom;
+pub mod cloud_sync;
 pub mod gcal;
 pub mod gemini;
 pub mod gmail;
@@ -18,6 +19,7 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
+use tower_http::cors::CorsLayer;
 use models::{
     AppConfig, Assessment, AssessmentGrade, Course, CustomCalendarEvent, ScheduleData, ScheduleSlot,
 };
@@ -280,9 +282,15 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
         .route("/api/conflicts/dismiss", post(dismiss_conflicts_handler))
         .route("/api/updater/check", get(check_updater_handler))
         .route("/api/updater/install", post(install_updater_handler))
+        .route("/api/sync/cloud/push", post(push_cloud_sync_handler))
+        .route("/api/sync/cloud/pull", post(pull_cloud_sync_handler))
+        .route("/api/sync/pair/info", get(get_pairing_info_handler))
         .route("/static/app.js", get(serve_app_js))
+        .route("/app.js", get(serve_app_js))
         .route("/static/icon.svg", get(serve_icon_svg))
+        .route("/icon.svg", get(serve_icon_svg))
         .nest_service("/static", ServeDir::new("static"))
+        .layer(CorsLayer::permissive())
         .with_state(state);
 
     axum::serve(listener, app).await.unwrap();
@@ -1449,6 +1457,109 @@ async fn dismiss_conflicts_handler(State(state): State<SharedAppState>) -> Json<
     cfg.dismiss_conflict_banner = true;
     save_app_config(&cfg);
     Json(json!({ "success": true, "status": "ok" }))
+}
+
+async fn push_cloud_sync_handler(State(state): State<SharedAppState>) -> Json<Value> {
+    let cfg = state.config.read().await.clone();
+    let schedule = state.schedule.read().await.clone();
+    let assessments = state.assessments.read().await.clone();
+
+    match cloud_sync::push_cloud_state(&cfg, &schedule, &assessments, "desktop-windows").await {
+        Ok(report) => Json(json!({
+            "success": true,
+            "report": report
+        })),
+        Err(err) => Json(json!({
+            "success": false,
+            "error": err
+        })),
+    }
+}
+
+async fn pull_cloud_sync_handler(State(state): State<SharedAppState>) -> Json<Value> {
+    match cloud_sync::pull_cloud_state().await {
+        Ok(Some(cloud_state)) => {
+            let mut sched = state.schedule.write().await;
+            if !cloud_state.schedule.courses.is_empty() {
+                sched.courses = cloud_state.schedule.courses.clone();
+                sched.slots = cloud_state.schedule.slots.clone();
+                sched.semester = cloud_state.schedule.semester.clone();
+                parser::save_schedule(&sched);
+            }
+
+            let mut wcfg = state.config.write().await;
+            for (k, v) in cloud_state.completed_topics {
+                if v {
+                    wcfg.completed_topics.insert(k, true);
+                }
+            }
+            for (k, v) in cloud_state.grades {
+                wcfg.grades.insert(k, v);
+            }
+            for ce in cloud_state.custom_events {
+                if !wcfg.custom_events.iter().any(|e| e.id == ce.id) {
+                    wcfg.custom_events.push(ce);
+                }
+            }
+            if cloud_state.teams_enabled && cloud_state.teams_token.is_some() {
+                wcfg.teams_enabled = true;
+                wcfg.teams_token = cloud_state.teams_token;
+            }
+            save_app_config(&wcfg);
+            let final_cfg = wcfg.clone();
+            drop(wcfg);
+
+            let mut assessments_lock = state.assessments.write().await;
+            for ca in cloud_state.assessments {
+                if !assessments_lock.iter().any(|a| a.id == ca.id) {
+                    assessments_lock.push(ca);
+                }
+            }
+            let visible_assessments: Vec<Assessment> = assessments_lock
+                .iter()
+                .filter(|a| a.is_source_enabled(&final_cfg))
+                .cloned()
+                .collect();
+            let dashboard = parser::build_dashboard_summary(&visible_assessments, &final_cfg);
+
+            Json(json!({
+                "success": true,
+                "message": format!("Successfully synchronized from cloud! Loaded {} assessments and {} courses.", visible_assessments.len(), sched.courses.len()),
+                "assessments": visible_assessments,
+                "schedule": *sched,
+                "config": final_cfg,
+                "dashboard": dashboard
+            }))
+        }
+        Ok(None) => Json(json!({
+            "success": false,
+            "error": "No cloud state found on your Google Account yet. Click 'Push to Cloud' from Desktop first!"
+        })),
+        Err(err) => Json(json!({
+            "success": false,
+            "error": err
+        })),
+    }
+}
+
+async fn get_pairing_info_handler(State(state): State<SharedAppState>) -> Json<Value> {
+    let cfg = state.config.read().await;
+    let local_ip = cloud_sync::get_local_pairing_ip();
+    let port = state.port;
+    let connect_url = format!("http://{}:{}/", local_ip, port);
+    let emulator_url = format!("http://10.0.2.2:{}/", port);
+
+    Json(json!({
+        "success": true,
+        "local_ip": local_ip,
+        "port": port,
+        "connect_url": connect_url,
+        "emulator_url": emulator_url,
+        "user_email": cfg.user_email,
+        "user_name": cfg.user_name,
+        "google_authenticated": cfg.user_email.is_some(),
+        "teams_configured": cfg.teams_enabled && cfg.teams_token.is_some()
+    }))
 }
 
 pub mod urlencoding {

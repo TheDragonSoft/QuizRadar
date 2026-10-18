@@ -18,7 +18,8 @@ processed_quizzes.json
 .agents/
 skills-lock.json
 
-# Python cache & logs
+# Node & Capacitor
+node_modules/
 __pycache__/
 *.py[cod]
 *.log

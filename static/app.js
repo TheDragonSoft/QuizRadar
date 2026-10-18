@@ -272,11 +272,16 @@ function initSidebarResponsive() {
   if (window.innerWidth < 1024) {
     sb.classList.add("sidebar-collapsed");
     if (backdrop) backdrop.classList.add("hidden");
+  } else {
+    sb.classList.remove("sidebar-collapsed");
   }
 
   window.addEventListener("resize", () => {
-    if (window.innerWidth >= 1024 && backdrop) {
-      backdrop.classList.add("hidden");
+    if (window.innerWidth >= 1024) {
+      if (backdrop) backdrop.classList.add("hidden");
+      sb.classList.remove("sidebar-collapsed");
+    } else {
+      sb.classList.add("sidebar-collapsed");
     }
   });
 }
@@ -2487,10 +2492,48 @@ function closeEventDetailModal() {
 
 let currentOnboardingStep = 1;
 
+function selectOnboardingTrack(track) {
+  triggerHaptic("selection");
+  localStorage.setItem("quizradar_academic_track", track);
+  const chips = document.querySelectorAll(".onboard-track-chip");
+  chips.forEach((c) => {
+    const isSelected = c.getAttribute("data-track") === track;
+    c.classList.toggle("is-selected", isSelected);
+  });
+}
+
+function selectOnboardingRhythm(rhythm) {
+  triggerHaptic("selection");
+  localStorage.setItem("quizradar_study_rhythm", rhythm);
+  const cards = document.querySelectorAll(".onboard-rhythm-card");
+  cards.forEach((card) => {
+    const isSelected = card.getAttribute("data-rhythm") === rhythm;
+    card.classList.toggle("is-selected", isSelected);
+    const indicator = card.querySelector("span.rounded-full");
+    if (indicator) {
+      if (isSelected) {
+        indicator.className = "w-4 h-4 rounded-full border-2 border-[#1a73e8] bg-[#1a73e8] flex items-center justify-center text-white text-[9px]";
+        indicator.textContent = "✓";
+      } else {
+        indicator.className = "w-4 h-4 rounded-full border border-slate-300 dark:border-slate-600 flex items-center justify-center";
+        indicator.textContent = "";
+      }
+    }
+  });
+}
+
 function openOnboardingModal(initialStep = 1) {
+  triggerHaptic("light");
   renderOnboardingPreview();
   renderOnboardingCourses();
   updateOnboardingThemeButtons();
+
+  const savedTrack = localStorage.getItem("quizradar_academic_track") || "cs";
+  selectOnboardingTrack(savedTrack);
+
+  const savedRhythm = localStorage.getItem("quizradar_study_rhythm") || "balanced";
+  selectOnboardingRhythm(savedRhythm);
+
   setOnboardingStep(initialStep);
   document.getElementById("onboarding-modal")?.classList.add("is-open");
   if (window.lucide) lucide.createIcons();
@@ -2537,17 +2580,18 @@ function setOnboardingStep(step) {
   }
   if (nextBtn && nextLabel) {
     if (currentOnboardingStep === 1) {
-      nextLabel.textContent = "Continue to Inbox Scan";
+      nextLabel.textContent = "Continue to Hubs & Scan";
     } else if (currentOnboardingStep === 2) {
-      nextLabel.textContent = "Continue to Courses & Sync";
+      nextLabel.textContent = "Continue to Schedule & Launch";
     } else {
-      nextLabel.textContent = "Launch My Dashboard";
+      nextLabel.textContent = "🚀 Launch My Radar";
     }
   }
   if (window.lucide) lucide.createIcons();
 }
 
 function nextOnboardingStep() {
+  triggerHaptic("selection");
   if (currentOnboardingStep < 3) {
     setOnboardingStep(currentOnboardingStep + 1);
   } else {
@@ -2556,6 +2600,7 @@ function nextOnboardingStep() {
 }
 
 function prevOnboardingStep() {
+  triggerHaptic("selection");
   if (currentOnboardingStep > 1) {
     setOnboardingStep(currentOnboardingStep - 1);
   }
@@ -3074,6 +3119,15 @@ async function confirmDeleteCourse(courseId, courseName, event) {
 }
 
 function openSettingsModal() {
+  triggerHaptic("selection");
+  const gearStage = document.querySelector("#settings-nav-btn .settings-btn-stage");
+  if (gearStage) {
+    gearStage.classList.remove("is-spinning");
+    void gearStage.offsetWidth;
+    gearStage.classList.add("is-spinning");
+    setTimeout(() => gearStage.classList.remove("is-spinning"), 650);
+  }
+
   const modal = document.getElementById("settings-modal");
   if (!modal) return;
   modal.classList.remove("hidden");
@@ -3238,16 +3292,18 @@ async function runOnboardingScan() {
 
 // Instant response on "Save & Open My Dashboard": closes modal immediately in 0ms without blocking on network
 async function finishOnboarding() {
+  triggerHaptic("success");
   const autoSync = document.getElementById("onboard-auto-gcal")?.checked ?? true;
   const geminiEnabled = document.getElementById("onboard-gemini-toggle")?.checked ?? true;
   const geminiKey = document.getElementById("onboard-gemini-key")?.value || "";
 
   localStorage.setItem("quizradar_onboarding_done", "true");
+  if (!appState.config) appState.config = {};
   appState.config.onboarding_completed = true;
   saveStateCache();
   closeOnboardingModal();
   switchMainView("dashboard");
-  showToast("Setup saved! Your Dashboard & Calendar are ready.");
+  showToast("Welcome to QuizRadar! Your academic radar & study calendar are live.");
 
   try {
     const res = await fetch("/api/onboarding/complete", {

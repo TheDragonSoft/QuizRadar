@@ -142,6 +142,80 @@
       transform: rotate(0deg) scale(1);
     }
 
+    /* Settings Gear Cog Micro-Animation Choreography (Impeccable Animate) */
+    .settings-btn-stage {
+      position: relative;
+      width: 16px;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 400ms cubic-bezier(0.34, 1.56, 0.64, 1);
+      will-change: transform;
+    }
+
+    button:hover .settings-btn-stage,
+    .group:hover .settings-btn-stage {
+      transform: rotate(55deg);
+    }
+
+    button:active .settings-btn-stage,
+    .group:active .settings-btn-stage {
+      transform: rotate(180deg) scale(0.9);
+      transition-duration: 160ms;
+    }
+
+    .settings-btn-stage.is-spinning {
+      animation: settingsGearSpin 600ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes settingsGearSpin {
+      0% {
+        transform: rotate(0deg) scale(1);
+      }
+      40% {
+        transform: rotate(210deg) scale(1.12);
+      }
+      75% {
+        transform: rotate(170deg) scale(0.96);
+      }
+      100% {
+        transform: rotate(180deg) scale(1);
+      }
+    }
+
+    /* Interactive Onboarding Wizard Polish (Impeccable Craft Floor) */
+    .onboard-step-panel {
+      animation: onboardPanelEnter 240ms var(--ease-out-expo) both;
+    }
+    @keyframes onboardPanelEnter {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .onboard-choice-card {
+      transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, transform 160ms var(--ease-out-expo);
+    }
+    .onboard-choice-card:hover {
+      transform: translateY(-1px);
+    }
+    .onboard-choice-card.is-selected {
+      border-color: #1a73e8 !important;
+      background-color: rgba(26, 115, 232, 0.08) !important;
+      box-shadow: 0 0 0 1px #1a73e8, 0 4px 12px rgba(26, 115, 232, 0.12) !important;
+    }
+    html.dark .onboard-choice-card.is-selected {
+      border-color: #3b82f6 !important;
+      background-color: rgba(59, 130, 246, 0.14) !important;
+      box-shadow: 0 0 0 1px #3b82f6, 0 4px 14px rgba(59, 130, 246, 0.18) !important;
+    }
+
     /* Browser surfaces themed from palette (Impeccable Craft Floor) */
     ::selection {
       background-color: rgba(26, 115, 232, 0.16);
@@ -255,12 +329,14 @@
     }
     #left-sidebar.sidebar-collapsed {
       width: 0 !important;
+      transform: translateX(-100%);
       padding-left: 0 !important;
       padding-right: 0 !important;
       border-right-width: 0 !important;
       opacity: 0;
       overflow: hidden;
       pointer-events: none;
+      visibility: hidden;
     }
 
     /* Interactive Card Micro-feedback */
@@ -352,6 +428,10 @@
       .theme-icon-sun {
         transform: none !important;
         transition: opacity 140ms ease !important;
+      }
+      .settings-btn-stage {
+        transform: none !important;
+        animation: none !important;
       }
       #toast-notification {
         transform: none !important;
@@ -613,7 +693,7 @@
       <button onclick="toggleDarkMode()" id="dark-mode-btn" aria-label="Toggle theme" class="w-9 h-9 rounded-lg flex items-center justify-center border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-slate-600 dark:text-amber-300 transition cursor-pointer" title="Switch to Dark Mode">
         <span class="theme-toggle-stage" aria-hidden="true">
           <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 3a6 6 0 0 0 9 9 9 0 1 1-9-9Z"></path>
+            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
           </svg>
           <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="4"></circle>
@@ -630,8 +710,10 @@
       </button>
 
       <!-- Settings & Preferences Modal Trigger -->
-      <button onclick="openSettingsModal()" class="h-9 px-2.5 sm:px-3 rounded-lg flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-slate-700 dark:text-slate-200 text-xs font-semibold transition cursor-pointer" title="Settings & Preferences">
-        <i data-lucide="settings" class="w-4 h-4 text-slate-600 dark:text-slate-300"></i>
+      <button id="settings-nav-btn" onclick="openSettingsModal()" class="group h-9 px-2.5 sm:px-3 rounded-lg flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-slate-700 dark:text-slate-200 text-xs font-semibold transition cursor-pointer" title="Settings & Preferences">
+        <span class="settings-btn-stage">
+          <i data-lucide="settings" class="w-4 h-4 text-slate-600 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white transition-colors"></i>
+        </span>
         <span class="hidden md:inline">Settings</span>
       </button>
 
@@ -655,7 +737,7 @@
     <div id="sidebar-backdrop" onclick="toggleSidebar(false)" class="hidden fixed inset-0 top-16 bg-slate-950/40 z-30 lg:hidden backdrop-blur-2xs"></div>
 
     <!-- ================= LEFT SIDEBAR ================= -->
-    <aside id="left-sidebar" class="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between shrink-0 overflow-y-auto p-4 fixed lg:static inset-y-16 left-0 z-40">
+    <aside id="left-sidebar" class="sidebar-collapsed w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between shrink-0 overflow-y-auto p-4 fixed lg:static inset-y-16 left-0 z-40">
       <div class="space-y-5">
         <!-- + Create Button -->
         <div>
@@ -1154,126 +1236,253 @@
   </div>
 
   <!-- ================= MODAL 2: INTERACTIVE 3-STEP STANDALONE ONBOARDING WIZARD ================= -->
-  <div id="onboarding-modal" onclick="if(event.target === this) closeOnboardingModal()" class="modal-backdrop fixed inset-0 bg-slate-950/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
-    <div class="modal-panel bg-white dark:bg-slate-900 rounded-2xl max-w-3xl w-full shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+  <div id="onboarding-modal" onclick="if(event.target === this) closeOnboardingModal()" class="modal-backdrop fixed inset-0 bg-slate-950/70 z-50 flex items-center justify-center p-0 md:p-4 backdrop-blur-sm">
+    <div class="modal-panel bg-white dark:bg-slate-900 rounded-t-[28px] md:rounded-3xl max-w-3xl w-full shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh] md:max-h-[88vh]">
       <!-- M3 Bottom Sheet Drag Handle (Mobile only) -->
-      <div class="w-12 h-1 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto my-2.5 md:hidden shrink-0"></div>
+      <div class="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto my-3 md:hidden shrink-0"></div>
+
       <!-- Top Gradient Header + Interactive 3-Step Stepper -->
-      <div class="bg-gradient-to-r from-[#1e3a8a] via-[#1d4ed8] to-[#2563eb] p-5 sm:p-6 text-white space-y-4">
-        <div class="flex items-start justify-between gap-4">
+      <div class="relative bg-gradient-to-r from-blue-700 via-indigo-700 to-sky-700 p-5 sm:p-6 text-white shrink-0 overflow-hidden">
+        <!-- Subtle decorative glow element -->
+        <div class="absolute -right-12 -bottom-12 w-48 h-48 rounded-full bg-white/10 blur-xl pointer-events-none"></div>
+
+        <div class="flex items-start justify-between gap-4 relative z-10">
           <div class="flex items-center gap-3.5">
-            <div class="w-11 h-11 rounded-xl bg-white/15 border border-white/20 backdrop-blur-xs flex items-center justify-center shrink-0">
+            <div class="w-12 h-12 rounded-2xl bg-white/15 border border-white/20 backdrop-blur-md flex items-center justify-center shadow-inner shrink-0">
               <i data-lucide="radar" class="w-6 h-6 text-white"></i>
             </div>
             <div>
               <div class="flex items-center gap-2">
-                <span class="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-bold uppercase tracking-wider">First-Time Setup</span>
-                <span class="text-xs text-blue-100 font-medium">Standalone Academic Radar</span>
+                <span class="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black uppercase tracking-wider shadow-2xs">Quick Setup</span>
+                <span class="text-xs text-blue-100 font-medium">Academic Radar & Timetable</span>
               </div>
-              <h2 class="text-xl font-bold mt-0.5">Welcome to QuizRadar</h2>
-              <p class="text-xs text-blue-100">Connect your Gmail, scan course announcements with Gemini AI, and sync your Google Calendar.</p>
+              <h2 class="text-xl sm:text-2xl font-black mt-1 tracking-tight">Welcome to QuizRadar</h2>
+              <p class="text-xs text-blue-100 max-w-xl mt-0.5 leading-relaxed">Turn scattered course emails, Teams updates, and syllabus announcements into an organized calendar & smart study roadmap.</p>
             </div>
           </div>
-          <button onclick="closeOnboardingModal()" class="p-1.5 rounded-lg hover:bg-white/15 text-white/90 transition cursor-pointer shrink-0" title="Close (Esc)">
+          <button onclick="closeOnboardingModal()" class="p-2 rounded-xl hover:bg-white/15 active:scale-95 text-white/80 hover:text-white transition cursor-pointer shrink-0" title="Skip to Dashboard (Esc)">
             <i data-lucide="x" class="w-5 h-5"></i>
           </button>
         </div>
 
         <!-- Interactive 3-Step Navigation Pills -->
-        <div class="grid grid-cols-3 gap-2 pt-1">
+        <div class="grid grid-cols-3 gap-2 mt-5 relative z-10">
           <button onclick="setOnboardingStep(1)" id="onboard-tab-1" class="flex items-center gap-2.5 p-2.5 rounded-xl bg-white text-[#1a73e8] font-bold text-xs transition text-left cursor-pointer shadow-xs">
             <span id="onboard-tab-num-1" class="w-6 h-6 rounded-full bg-[#1a73e8] text-white text-xs font-bold tabular-nums flex items-center justify-center shrink-0">1</span>
             <div class="truncate">
               <div class="text-[10px] opacity-75 font-semibold">Step 1</div>
-              <div class="truncate">Google Account</div>
+              <div class="truncate">Track & Rhythm</div>
             </div>
           </button>
           <button onclick="setOnboardingStep(2)" id="onboard-tab-2" class="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs transition text-left cursor-pointer">
             <span id="onboard-tab-num-2" class="w-6 h-6 rounded-full bg-white/20 text-white text-xs font-bold tabular-nums flex items-center justify-center shrink-0">2</span>
             <div class="truncate">
               <div class="text-[10px] opacity-75 font-semibold">Step 2</div>
-              <div class="truncate">Gemini Inbox Scan</div>
+              <div class="truncate">Hubs & Scan</div>
             </div>
           </button>
           <button onclick="setOnboardingStep(3)" id="onboard-tab-3" class="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs transition text-left cursor-pointer">
             <span id="onboard-tab-num-3" class="w-6 h-6 rounded-full bg-white/20 text-white text-xs font-bold tabular-nums flex items-center justify-center shrink-0">3</span>
             <div class="truncate">
               <div class="text-[10px] opacity-75 font-semibold">Step 3</div>
-              <div class="truncate">Courses & Sync</div>
+              <div class="truncate">Schedule & Launch</div>
             </div>
           </button>
         </div>
       </div>
 
       <!-- Wizard Step Panels -->
-      <div class="p-5 sm:p-6 max-h-[68vh] overflow-y-auto">
+      <div class="p-5 sm:p-6 overflow-y-auto flex-1 overscroll-contain">
 
-        <!-- ================= STEP 1: GOOGLE ACCOUNT & OAUTH2 ================= -->
-        <div id="onboard-step-1" class="space-y-4 view-transition">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h3 class="text-base font-bold text-slate-900 dark:text-white">Step 1: Connect Your Google Account</h3>
-              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">One sign-in unlocks Gmail announcement reading, Gemini AI schedule matching, and Google Calendar sync.</p>
-            </div>
-            <span id="onboard-auth-badge" class="text-xs font-semibold px-3 py-1 rounded-full bg-emerald-100 text-emerald-800">Connected</span>
+        <!-- ================= STEP 1: ACADEMIC PROFILE, RHYTHM & THEME ================= -->
+        <div id="onboard-step-1" class="space-y-5 onboard-step-panel">
+          <div>
+            <h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <span>Personalize Your Academic Focus</span>
+              <span class="text-xs font-normal text-slate-500 dark:text-slate-400">· Step 1 of 3</span>
+            </h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">QuizRadar tailors course schedule inference and study interval recommendations to your field and pace.</p>
           </div>
 
-          <!-- Account Profile Card -->
-          <div class="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/60 flex flex-wrap items-center justify-between gap-4">
-            <div class="flex items-center gap-3.5">
-              <div id="onboard-user-avatar" class="w-12 h-12 rounded-xl bg-[#1a73e8] text-white flex items-center justify-center text-base font-bold shadow-xs">A</div>
-              <div>
-                <div id="onboard-user-name" class="text-sm font-bold text-slate-900 dark:text-white">Alex Mercer</div>
-                <div id="onboard-user-email" class="text-xs font-medium text-[#1a73e8] dark:text-blue-400">alex.mercer@university.edu</div>
-                <div id="onboard-scope-note" class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Gmail Read & Google Calendar Direct Sync Ready</div>
-              </div>
-            </div>
-            <div class="flex items-center gap-2">
-              <a href="/api/auth/google/login" class="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1a73e8] hover:bg-[#1557b0] active:scale-[0.98] text-white text-xs font-bold transition shadow-xs">
-                <i data-lucide="log-in" class="w-4 h-4"></i>
-                <span>Sign In / Authorize with Google</span>
-              </a>
+          <!-- Academic Field / Track Chips -->
+          <div class="space-y-2">
+            <label class="block text-xs font-bold text-slate-800 dark:text-slate-200">Academic Major / Field of Study</label>
+            <div id="onboard-track-chips" class="flex flex-wrap gap-2">
+              <button type="button" onclick="selectOnboardingTrack('cs')" data-track="cs" class="onboard-track-chip px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2 hover:border-[#1a73e8] transition cursor-pointer is-selected">
+                <span>💻</span>
+                <span>Computer Science & IT</span>
+              </button>
+              <button type="button" onclick="selectOnboardingTrack('eng')" data-track="eng" class="onboard-track-chip px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2 hover:border-[#1a73e8] transition cursor-pointer">
+                <span>⚙️</span>
+                <span>Engineering & Robotics</span>
+              </button>
+              <button type="button" onclick="selectOnboardingTrack('med')" data-track="med" class="onboard-track-chip px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2 hover:border-[#1a73e8] transition cursor-pointer">
+                <span>🩺</span>
+                <span>Medicine & Health Sciences</span>
+              </button>
+              <button type="button" onclick="selectOnboardingTrack('bus')" data-track="bus" class="onboard-track-chip px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2 hover:border-[#1a73e8] transition cursor-pointer">
+                <span>📊</span>
+                <span>Business & Economics</span>
+              </button>
+              <button type="button" onclick="selectOnboardingTrack('gen')" data-track="gen" class="onboard-track-chip px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2 hover:border-[#1a73e8] transition cursor-pointer">
+                <span>📚</span>
+                <span>Sciences & Humanities</span>
+              </button>
             </div>
           </div>
 
-          <!-- 3 Feature Pillars Grid -->
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-1.5">
-              <div class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950 text-[#1a73e8] dark:text-blue-400 flex items-center justify-center">
-                <i data-lucide="mail-search" class="w-4 h-4"></i>
+          <!-- Study Rhythm / Intensity Presets -->
+          <div class="space-y-2">
+            <label class="block text-xs font-bold text-slate-800 dark:text-slate-200">Target Study Rhythm</label>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div onclick="selectOnboardingRhythm('balanced')" data-rhythm="balanced" class="onboard-rhythm-card onboard-choice-card p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 cursor-pointer space-y-2 is-selected">
+                <div class="flex items-center justify-between">
+                  <div class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/80 text-[#1a73e8] dark:text-blue-400 flex items-center justify-center font-bold">
+                    <i data-lucide="target" class="w-4 h-4"></i>
+                  </div>
+                  <span class="w-4 h-4 rounded-full border-2 border-[#1a73e8] bg-[#1a73e8] flex items-center justify-center text-white text-[9px]">✓</span>
+                </div>
+                <div>
+                  <div class="text-xs font-bold text-slate-900 dark:text-white">Balanced Rhythm</div>
+                  <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">Daily 25-minute Pomodoro study blocks, regular spacing, and low stress.</p>
+                </div>
               </div>
-              <div class="text-xs font-bold text-slate-900 dark:text-white">1. Automatic Gmail Scan</div>
-              <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">Detects university & LMS emails for quizzes, midterms, lab exams, and deadlines.</p>
+
+              <div onclick="selectOnboardingRhythm('sprint')" data-rhythm="sprint" class="onboard-rhythm-card onboard-choice-card p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 cursor-pointer space-y-2">
+                <div class="flex items-center justify-between">
+                  <div class="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
+                    <i data-lucide="zap" class="w-4 h-4"></i>
+                  </div>
+                  <span class="w-4 h-4 rounded-full border border-slate-300 dark:border-slate-600 flex items-center justify-center"></span>
+                </div>
+                <div>
+                  <div class="text-xs font-bold text-slate-900 dark:text-white">Exam Sprint Mode</div>
+                  <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">Aggressive 7-day deadlines, high-alert countdowns, and intensive review.</p>
+                </div>
+              </div>
+
+              <div onclick="selectOnboardingRhythm('mastery')" data-rhythm="mastery" class="onboard-rhythm-card onboard-choice-card p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 cursor-pointer space-y-2">
+                <div class="flex items-center justify-between">
+                  <div class="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
+                    <i data-lucide="compass" class="w-4 h-4"></i>
+                  </div>
+                  <span class="w-4 h-4 rounded-full border border-slate-300 dark:border-slate-600 flex items-center justify-center"></span>
+                </div>
+                <div>
+                  <div class="text-xs font-bold text-slate-900 dark:text-white">Deep Mastery</div>
+                  <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">Comprehensive topic checklists, flashcard quizzes, and project milestones.</p>
+                </div>
+              </div>
             </div>
-            <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-1.5">
-              <div class="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950 text-purple-600 dark:text-purple-400 flex items-center justify-center">
-                <i data-lucide="sparkles" class="w-4 h-4"></i>
-              </div>
-              <div class="text-xs font-bold text-slate-900 dark:text-white">2. Gemini Time Inference</div>
-              <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">Cross-references vague phrases like <i>"next lecture"</i> with your exact weekly class slots.</p>
-            </div>
-            <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-1.5">
-              <div class="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                <i data-lucide="calendar-check" class="w-4 h-4"></i>
-              </div>
-              <div class="text-xs font-bold text-slate-900 dark:text-white">3. Google Calendar Sync</div>
-              <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">Pushes every exam, room number, and study topic checklist directly to your calendar.</p>
+          </div>
+
+          <!-- Appearance Theme Selector (Light vs Dark) -->
+          <div class="space-y-2">
+            <label class="block text-xs font-bold text-slate-800 dark:text-slate-200">Workspace Appearance</label>
+            <div class="grid grid-cols-2 gap-3">
+              <button type="button" onclick="setThemeFromOnboarding(false)" id="onboard-theme-light-btn" class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 flex items-center gap-3 text-left transition cursor-pointer">
+                <div class="w-9 h-9 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                  <i data-lucide="sun" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <div class="text-xs font-bold text-slate-900 dark:text-white">Light Mode</div>
+                  <div class="text-[11px] text-slate-500 dark:text-slate-400">Clean daylight timetable</div>
+                </div>
+              </button>
+              <button type="button" onclick="setThemeFromOnboarding(true)" id="onboard-theme-dark-btn" class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 flex items-center gap-3 text-left transition cursor-pointer">
+                <div class="w-9 h-9 rounded-lg bg-indigo-950 text-amber-300 flex items-center justify-center shrink-0">
+                  <i data-lucide="moon" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <div class="text-xs font-bold text-slate-900 dark:text-white">Dark Mode</div>
+                  <div class="text-[11px] text-slate-500 dark:text-slate-400">Low-glare night study</div>
+                </div>
+              </button>
             </div>
           </div>
         </div>
 
-        <!-- ================= STEP 2: GEMINI AI INBOX & TIMETABLE SCANNER ================= -->
-        <div id="onboard-step-2" class="hidden space-y-4 view-transition">
+        <!-- ================= STEP 2: CONNECT HUBS & GEMINI SCAN ================= -->
+        <div id="onboard-step-2" class="hidden space-y-5 onboard-step-panel">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 class="text-base font-bold text-slate-900 dark:text-white">Step 2: Scan Your Inbox with Gemini Schedule AI</h3>
-              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">QuizRadar matches your Gmail announcements against your Fall 2026 weekly timetable (6 courses, 14 slots).</p>
+              <h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span>Connect Your University Hubs</span>
+                <span class="text-xs font-normal text-slate-500 dark:text-slate-400">· Step 2 of 3</span>
+              </h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">QuizRadar scans announcements and schedules across your active academic sources.</p>
             </div>
             <button onclick="runOnboardingScan()" id="onboard-scan-btn" class="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white text-xs font-bold transition cursor-pointer shadow-xs">
               <i data-lucide="sparkles" class="w-4 h-4"></i>
-              <span>Scan Inbox Now</span>
+              <span>Scan All Sources</span>
             </button>
           </div>
+
+          <!-- Connected Hubs Grid -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <!-- Hub 1: Google Account -->
+            <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/70 space-y-2 flex flex-col justify-between">
+              <div>
+                <div class="flex items-center justify-between gap-2">
+                  <div class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950 text-[#1a73e8] dark:text-blue-400 flex items-center justify-center font-bold">
+                    <i data-lucide="mail-search" class="w-4 h-4"></i>
+                  </div>
+                  <span id="onboard-auth-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300">Connected</span>
+                </div>
+                <div class="mt-2">
+                  <div class="text-xs font-bold text-slate-900 dark:text-white">Google Workspace</div>
+                  <div id="onboard-user-name" class="text-[11px] font-medium text-slate-600 dark:text-slate-300">Alex Mercer</div>
+                  <div id="onboard-user-email" class="text-[10px] text-slate-400 truncate">alex.mercer@university.edu</div>
+                </div>
+              </div>
+              <div id="onboard-scope-note" class="text-[10px] text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-700/60 pt-2">
+                Gmail & Calendar Sync active
+              </div>
+            </div>
+
+            <!-- Hub 2: Microsoft Teams -->
+            <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/70 space-y-2 flex flex-col justify-between">
+              <div>
+                <div class="flex items-center justify-between gap-2">
+                  <div class="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
+                    <i data-lucide="message-square" class="w-4 h-4"></i>
+                  </div>
+                  <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300">Ready</span>
+                </div>
+                <div class="mt-2">
+                  <div class="text-xs font-bold text-slate-900 dark:text-white">Microsoft Teams</div>
+                  <div class="text-[11px] font-medium text-slate-600 dark:text-slate-300">Classes, Channels & Calendar</div>
+                  <div class="text-[10px] text-slate-400">Activity & Assignment radar</div>
+                </div>
+              </div>
+              <div class="text-[10px] text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-700/60 pt-2">
+                Discovers class channels & posts
+              </div>
+            </div>
+
+            <!-- Hub 3: Moodle / University LMS -->
+            <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/70 space-y-2 flex flex-col justify-between">
+              <div>
+                <div class="flex items-center justify-between gap-2">
+                  <div class="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
+                    <i data-lucide="graduation-cap" class="w-4 h-4"></i>
+                  </div>
+                  <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300">Ready</span>
+                </div>
+                <div class="mt-2">
+                  <div class="text-xs font-bold text-slate-900 dark:text-white">Moodle LMS</div>
+                  <div class="text-[11px] font-medium text-slate-600 dark:text-slate-300">Course Syllabi & Quizzes</div>
+                  <div class="text-[10px] text-slate-400">Weekly iCal feed integration</div>
+                </div>
+              </div>
+              <div class="text-[10px] text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-700/60 pt-2">
+                Automatic submission deadlines
+              </div>
+            </div>
+          </div>
+
+          <!-- Hidden avatar anchor for JS backwards-compatibility -->
+          <div id="onboard-user-avatar" class="hidden">A</div>
 
           <!-- Live Animated Scan Progress Bar -->
           <div id="onboard-scan-progress-wrap" class="p-3.5 rounded-xl bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200/70 dark:border-blue-800/60 space-y-2">
@@ -1292,10 +1501,10 @@
           <!-- Discovered Upcoming Assessments Preview List -->
           <div>
             <div class="flex items-center justify-between mb-2">
-              <span class="text-xs font-semibold text-slate-700 dark:text-slate-200">Detected Upcoming Assessments (Matched with Class Schedule)</span>
+              <span class="text-xs font-semibold text-slate-700 dark:text-slate-200">Discovered Assessments (Matched with Fall 2026 Schedule)</span>
               <span id="onboard-detected-count-badge" class="text-[11px] font-bold tabular-nums px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300">4 Upcoming</span>
             </div>
-            <div id="onboard-scan-results" class="bg-slate-50/70 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2 max-h-52 overflow-y-auto">
+            <div id="onboard-scan-results" class="bg-slate-50/70 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2 max-h-48 overflow-y-auto">
               <!-- Populated by JS -->
             </div>
           </div>
@@ -1303,16 +1512,19 @@
           <!-- Optional Gemini API Key Override -->
           <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-1.5">
             <label class="block text-xs font-semibold text-slate-700 dark:text-slate-200">Optional: Custom Gemini API Key</label>
-            <p class="text-[11px] text-slate-500 dark:text-slate-400">Leave blank to use your signed-in Google account and QuizRadar's built-in schedule inference engine automatically.</p>
-            <input id="onboard-gemini-key" type="password" placeholder="AIzaSy... (Optional — automatic schedule-aware AI is already active)" class="w-full mt-1 px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 outline-none focus:border-[#1a73e8]" />
+            <p class="text-[11px] text-slate-500 dark:text-slate-400">Leave blank to use QuizRadar's built-in timetable AI engine automatically.</p>
+            <input id="onboard-gemini-key" type="password" placeholder="AIzaSy... (Optional — built-in schedule-aware AI is active)" class="w-full mt-1 px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 outline-none focus:border-[#1a73e8]" />
           </div>
         </div>
 
-        <!-- ================= STEP 3: COURSES, TIMETABLE & THEME ================= -->
-        <div id="onboard-step-3" class="hidden space-y-4 view-transition">
+        <!-- ================= STEP 3: COURSES, TIMETABLE & LAUNCH ================= -->
+        <div id="onboard-step-3" class="hidden space-y-5 onboard-step-panel">
           <div>
-            <h3 class="text-base font-bold text-slate-900 dark:text-white">Step 3: Customize Courses, Timetable & Theme</h3>
-            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Upload your weekly timetable to let Gemini extract all class slots automatically, or manage courses manually.</p>
+            <h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <span>Your Schedule Roadmap & Launch</span>
+              <span class="text-xs font-normal text-slate-500 dark:text-slate-400">· Step 3 of 3</span>
+            </h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">QuizRadar extracted your weekly timetable slots. Upload an updated schedule or launch right into your dashboard.</p>
           </div>
 
           <!-- AI Schedule Timetable Importer Card -->
@@ -1324,7 +1536,7 @@
                 </div>
                 <div>
                   <div class="text-xs font-bold text-slate-900 dark:text-white">Upload Weekly Timetable (Gemini AI Extraction)</div>
-                  <div class="text-[11px] text-slate-500 dark:text-slate-400">Upload schedule image or PDF — Gemini extracts all subjects, rooms, and class times</div>
+                  <div class="text-[11px] text-slate-500 dark:text-slate-400">Schedule PDF or image — automatically extracts course rooms, subjects, and times</div>
                 </div>
               </div>
               <label class="px-3 py-1.5 rounded-lg bg-[#1a73e8] hover:bg-[#1557b0] active:scale-95 text-white text-xs font-semibold cursor-pointer transition shadow-2xs flex items-center gap-1.5 shrink-0">
@@ -1357,63 +1569,49 @@
             </div>
           </div>
 
-          <!-- Appearance Theme Selector (Light vs Dark) -->
-          <div class="space-y-2">
-            <span class="block text-xs font-semibold text-slate-700 dark:text-slate-200">Workspace Appearance</span>
-            <div class="grid grid-cols-2 gap-3">
-              <button type="button" onclick="setThemeFromOnboarding(false)" id="onboard-theme-light-btn" class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 flex items-center gap-3 text-left transition cursor-pointer">
-                <div class="w-8 h-8 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
-                  <i data-lucide="sun" class="w-4 h-4"></i>
-                </div>
-                <div>
-                  <div class="text-xs font-bold text-slate-900 dark:text-white">Light Mode</div>
-                  <div class="text-[11px] text-slate-500 dark:text-slate-400">Clean daylight calendar</div>
-                </div>
-              </button>
-              <button type="button" onclick="setThemeFromOnboarding(true)" id="onboard-theme-dark-btn" class="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 flex items-center gap-3 text-left transition cursor-pointer">
-                <div class="w-8 h-8 rounded-lg bg-indigo-950 text-amber-300 flex items-center justify-center shrink-0">
-                  <i data-lucide="moon" class="w-4 h-4"></i>
-                </div>
-                <div>
-                  <div class="text-xs font-bold text-slate-900 dark:text-white">Dark Mode</div>
-                  <div class="text-[11px] text-slate-500 dark:text-slate-400">Low-glare night study</div>
-                </div>
-              </button>
-            </div>
-          </div>
-
-          <!-- Synchronization Toggles -->
-          <div class="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 space-y-2.5">
-            <div class="text-xs font-semibold text-slate-800 dark:text-slate-100">Automation Preferences</div>
+          <!-- Automation Preferences -->
+          <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 space-y-2">
+            <div class="text-xs font-bold text-slate-800 dark:text-slate-100">Automation Settings</div>
             <label class="flex items-center gap-2.5 text-xs text-slate-700 dark:text-slate-200 cursor-pointer">
               <input id="onboard-auto-gcal" type="checkbox" checked class="w-4 h-4 accent-[#1a73e8] rounded cursor-pointer" />
               <span>Automatically sync detected quizzes, midterms, and study checklists to my Google Calendar</span>
             </label>
             <label class="flex items-center gap-2.5 text-xs text-slate-700 dark:text-slate-200 cursor-pointer">
               <input id="onboard-gemini-toggle" type="checkbox" checked class="w-4 h-4 accent-[#1a73e8] rounded cursor-pointer" />
-              <span>Enable Gemini AI study priority planner and relative-date timetable inference</span>
+              <span>Enable Gemini AI relative-date timetable inference (e.g. "next Tuesday slot")</span>
             </label>
+          </div>
+
+          <!-- Celebratory Success Banner -->
+          <div class="p-3.5 rounded-xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-blue-500/10 border border-emerald-500/30 flex items-center gap-3">
+            <div class="w-9 h-9 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <i data-lucide="check" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <div class="text-xs font-bold text-emerald-900 dark:text-emerald-200">You're All Set!</div>
+              <div class="text-[11px] text-emerald-800/80 dark:text-emerald-300/80">Your personalized academic calendar, focus timer, and AI practice quizzes are ready.</div>
+            </div>
           </div>
         </div>
 
       </div>
 
       <!-- Persistent Wizard Footer -->
-      <div class="px-5 sm:px-6 py-4 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+      <div class="px-5 sm:px-6 py-4 bg-slate-50 dark:bg-slate-900/90 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div class="flex items-center gap-2">
           <button type="button" id="onboard-prev-btn" onclick="prevOnboardingStep()" class="hidden px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 transition cursor-pointer flex items-center gap-1.5">
             <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i>
             <span>Back</span>
           </button>
-          <span id="onboard-step-counter" class="text-xs font-medium tabular-nums text-slate-500 dark:text-slate-400">Step 1 of 3</span>
+          <span id="onboard-step-counter" class="text-xs font-semibold tabular-nums text-slate-500 dark:text-slate-400">Step 1 of 3</span>
         </div>
 
         <div class="flex items-center gap-2.5">
-          <button type="button" onclick="finishOnboarding()" class="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 transition cursor-pointer">
-            Save & Open My Dashboard
+          <button type="button" onclick="finishOnboarding()" class="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition cursor-pointer">
+            Skip to Dashboard
           </button>
           <button type="button" id="onboard-next-btn" onclick="nextOnboardingStep()" class="px-5 py-2.5 rounded-xl bg-[#1a73e8] hover:bg-[#1557b0] active:scale-[0.98] text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs">
-            <span id="onboard-next-btn-label">Continue to Inbox Scan</span>
+            <span id="onboard-next-btn-label">Continue to Hubs & Scan</span>
             <i data-lucide="arrow-right" class="w-4 h-4"></i>
           </button>
         </div>
@@ -1574,12 +1772,12 @@
   </div>
 
   <!-- ================= MODAL 4: SETTINGS & PREFERENCES ================= -->
-  <div id="settings-modal" onclick="if(event.target === this) closeSettingsModal()" class="modal-backdrop fixed inset-0 bg-slate-950/50 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
-    <div class="modal-panel bg-white dark:bg-slate-900 rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+  <div id="settings-modal" onclick="if(event.target === this) closeSettingsModal()" class="modal-backdrop fixed inset-0 bg-slate-950/60 z-50 flex items-center justify-center p-0 md:p-4 backdrop-blur-xs">
+    <div class="modal-panel bg-white dark:bg-slate-900 rounded-t-[28px] md:rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh] md:max-h-[85vh]">
       <!-- M3 Bottom Sheet Drag Handle (Mobile only) -->
-      <div class="w-12 h-1 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto my-2.5 md:hidden shrink-0"></div>
+      <div class="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto my-3 md:hidden shrink-0"></div>
       <!-- Top Header -->
-      <div class="px-6 py-4 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+      <div class="px-6 py-4 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
         <div class="flex items-center gap-2.5">
           <div class="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/80 text-[#1a73e8] dark:text-blue-400 flex items-center justify-center">
             <i data-lucide="settings" class="w-5 h-5"></i>
@@ -1595,7 +1793,7 @@
       </div>
 
       <!-- Settings Body -->
-      <div class="p-6 space-y-5 max-h-[74vh] overflow-y-auto">
+      <div class="p-4 sm:p-6 space-y-5 overflow-y-auto flex-1 overscroll-contain">
         <!-- 1. Google Account & OAuth Connection -->
         <div class="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 space-y-3">
           <div class="flex items-center justify-between">
@@ -1832,7 +2030,7 @@
       </div>
 
       <!-- Settings Footer -->
-      <div class="px-6 py-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+      <div class="px-6 py-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
         <button type="button" onclick="reopenFirstTimeWizardFromSettings()" class="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-[#1a73e8] dark:hover:text-blue-400 hover:underline cursor-pointer">
           Re-run First-Time Setup Wizard
         </button>

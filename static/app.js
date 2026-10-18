@@ -3,6 +3,149 @@
 // Views: 1) First-Time Onboarding Wizard  2) Smart Dashboard  3) Week Calendar
 // ============================================================================
 
+// Native Capacitor / Android Environment Setup
+const IS_NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+
+function getApiBase() {
+  if (!IS_NATIVE) return "";
+  return localStorage.getItem("quizradar_api_base") || "http://10.0.2.2:5050";
+}
+
+// Transparently route /api requests to backend host when running in native mobile WebView
+const _originalFetch = window.fetch.bind(window);
+window.fetch = function (resource, init) {
+  if (typeof resource === "string" && resource.startsWith("/api/")) {
+    const base = getApiBase();
+    if (base) {
+      resource = base.replace(/\/+$/, "") + resource;
+    }
+  }
+  return _originalFetch(resource, init);
+};
+
+// ============================================================================
+// NATIVE ANDROID BRIDGE & HAPTICS (Capacitor 6 / Material Design 3)
+// ============================================================================
+
+function triggerHaptic(type = "light") {
+  try {
+    const Haptics = window.Capacitor?.Plugins?.Haptics;
+    if (Haptics) {
+      if (type === "selection") {
+        Haptics.selectionChanged().catch(() => {});
+      } else if (type === "medium") {
+        Haptics.impact({ style: "MEDIUM" }).catch(() => {});
+      } else if (type === "heavy") {
+        Haptics.impact({ style: "HEAVY" }).catch(() => {});
+      } else if (type === "success") {
+        Haptics.notification({ type: "SUCCESS" }).catch(() => {});
+      } else if (type === "error") {
+        Haptics.notification({ type: "ERROR" }).catch(() => {});
+      } else {
+        Haptics.impact({ style: "LIGHT" }).catch(() => {});
+      }
+      return;
+    }
+    if (typeof navigator !== "undefined" && navigator.vibrate) {
+      if (type === "medium") navigator.vibrate(25);
+      else if (type === "heavy") navigator.vibrate(45);
+      else if (type === "success") navigator.vibrate([15, 60, 20]);
+      else navigator.vibrate(12);
+    }
+  } catch (e) {
+    // Graceful no-op
+  }
+}
+
+async function updateNativeStatusBar(isDark) {
+  try {
+    const StatusBar = window.Capacitor?.Plugins?.StatusBar;
+    if (!StatusBar) return;
+    await StatusBar.setBackgroundColor({ color: isDark ? "#0b0f19" : "#ffffff" });
+    await StatusBar.setStyle({ style: isDark ? "DARK" : "LIGHT" });
+  } catch (err) {
+    console.debug("StatusBar update error:", err);
+  }
+}
+
+function initAndroidNativeBridge() {
+  if (!IS_NATIVE) return;
+
+  const App = window.Capacitor?.Plugins?.App;
+  if (App && App.addListener) {
+    App.addListener("backButton", () => {
+      // 1. Close topmost open modal/bottom sheet
+      const modals = [
+        { id: "event-detail-modal", close: closeEventDetailModal },
+        { id: "create-event-modal", close: closeCreateEventModal },
+        { id: "cloud-sync-modal", close: closeCloudSyncModal },
+        { id: "settings-modal", close: closeSettingsModal },
+        { id: "schedule-preview-modal", close: closeSchedulePreviewModal },
+        { id: "add-course-modal", close: closeAddCourseModal },
+        { id: "practice-quiz-modal", close: closePracticeQuizModal },
+        { id: "pomodoro-modal", close: closePomodoroModal },
+        { id: "onboarding-modal", close: closeOnboardingModal },
+      ];
+
+      for (const m of modals) {
+        const el = document.getElementById(m.id);
+        if (el && el.classList.contains("is-open")) {
+          triggerHaptic("light");
+          m.close();
+          return;
+        }
+      }
+
+      // 2. Close Search dropdown if open
+      const palette = document.getElementById("search-dropdown-palette");
+      if (palette && palette.classList.contains("is-open")) {
+        triggerHaptic("light");
+        closeSearchPalette();
+        document.getElementById("global-search-input")?.blur();
+        return;
+      }
+
+      // 3. Close Mobile Sidebar if open
+      const sb = document.getElementById("left-sidebar");
+      if (sb && !sb.classList.contains("sidebar-collapsed") && window.innerWidth < 1024) {
+        triggerHaptic("light");
+        toggleSidebar(true);
+        return;
+      }
+
+      // 4. Return to Dashboard from secondary tabs
+      if (currentMainView !== "dashboard") {
+        triggerHaptic("selection");
+        switchMainView("dashboard");
+        return;
+      }
+
+      // 5. Exit application if on root
+      App.exitApp();
+    });
+  }
+
+  const isDark = document.documentElement.classList.contains("dark");
+  updateNativeStatusBar(isDark);
+}
+
+function openMobileSyncTab() {
+  triggerHaptic("selection");
+  openCloudSyncModal();
+}
+
+function openMobileSearchPalette() {
+  triggerHaptic("selection");
+  const desktopSearch = document.getElementById("global-search-input");
+  const mobileSearch = document.getElementById("mobile-search-input");
+  if (desktopSearch) {
+    openSearchPalette();
+    desktopSearch.focus();
+  } else if (mobileSearch) {
+    mobileSearch.focus();
+  }
+}
+
 let appState = {
   config: {},
   auth: {},
@@ -66,6 +209,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   initKeyboardShortcuts();
   initSearchBar();
   initAppUpdater();
+  initAndroidNativeBridge();
 
   if (window.lucide) {
     lucide.createIcons();
@@ -88,6 +232,7 @@ function initDarkMode() {
   const isDark = saved === "dark";
   document.documentElement.classList.toggle("dark", isDark);
   updateDarkModeIcon(isDark);
+  updateNativeStatusBar(isDark);
 }
 
 function applySmoothThemeSwitch(isDark) {
@@ -96,6 +241,7 @@ function applySmoothThemeSwitch(isDark) {
     localStorage.setItem("quizradar_theme", isDark ? "dark" : "light");
     updateDarkModeIcon(isDark);
     updateOnboardingThemeButtons();
+    updateNativeStatusBar(isDark);
   };
 
   if (document.startViewTransition && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -106,6 +252,7 @@ function applySmoothThemeSwitch(isDark) {
 }
 
 function toggleDarkMode() {
+  triggerHaptic("selection");
   const nextDark = !document.documentElement.classList.contains("dark");
   applySmoothThemeSwitch(nextDark);
 }
@@ -628,6 +775,26 @@ function switchMainView(view) {
     }
     renderWeekCalendar();
   }
+
+  // Sync Material 3 mobile bottom navigation active indicator pills and labels
+  const m3Tabs = ["dashboard", "tasks", "calendar", "sync"];
+  m3Tabs.forEach((tab) => {
+    const isCur = tab === view;
+    const pill = document.getElementById(`mobile-nav-pill-${tab}`);
+    const label = document.getElementById(`mobile-nav-label-${tab}`);
+
+    if (pill) {
+      pill.className = isCur
+        ? "w-14 h-8 rounded-full bg-blue-100 dark:bg-blue-900/60 text-[#1a73e8] dark:text-blue-300 flex items-center justify-center transition-all duration-200"
+        : "w-14 h-8 rounded-full bg-transparent text-slate-500 dark:text-slate-400 flex items-center justify-center transition-all duration-200";
+    }
+    if (label) {
+      label.className = isCur
+        ? "text-[11px] font-bold text-slate-900 dark:text-white mt-0.5 tracking-tight transition-colors"
+        : "text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-0.5 tracking-tight transition-colors";
+    }
+  });
+
   if (window.lucide) lucide.createIcons();
 }
 
@@ -653,13 +820,25 @@ async function loadStudyTasks(forceRefresh = false) {
 
 function updateTasksBadgeCount() {
   const badge = document.getElementById("tasks-badge-count");
-  if (!badge) return;
+  const mobBadge = document.getElementById("mobile-tasks-badge-count");
   const pending = studyTasksState?.pending_tasks || 0;
-  if (pending > 0) {
-    badge.textContent = pending;
-    badge.classList.remove("hidden");
-  } else {
-    badge.classList.add("hidden");
+
+  if (badge) {
+    if (pending > 0) {
+      badge.textContent = pending;
+      badge.classList.remove("hidden");
+    } else {
+      badge.classList.add("hidden");
+    }
+  }
+
+  if (mobBadge) {
+    if (pending > 0) {
+      mobBadge.textContent = pending;
+      mobBadge.classList.remove("hidden");
+    } else {
+      mobBadge.classList.add("hidden");
+    }
   }
 }
 
@@ -707,6 +886,7 @@ async function optimizeStudyTasks() {
 
 async function toggleDailyTask(key, ev) {
   if (ev) ev.stopPropagation();
+  triggerHaptic("light");
   if (!studyTasksState) return;
 
   // Find task in local state and toggle optimistically
@@ -1516,6 +1696,7 @@ function filterDashboardByType(examType) {
 
 // Optimistic zero-latency topic toggle: updates checkboxes, recommendation progress bars, KPI bar, and modal progress in 0ms without scroll jump
 async function toggleTopicCheckbox(key, completed) {
+  triggerHaptic("light");
   if (!appState.config) appState.config = {};
   if (!appState.config.completed_topics) appState.config.completed_topics = {};
   appState.config.completed_topics[key] = completed;
@@ -4316,6 +4497,7 @@ function setPomodoroMode(mode) {
 }
 
 function togglePomodoroTimer() {
+  triggerHaptic("medium");
   if (pomodoroIsRunning) {
     clearInterval(pomodoroTimerInterval);
     pomodoroIsRunning = false;
@@ -4330,6 +4512,7 @@ function togglePomodoroTimer() {
         clearInterval(pomodoroTimerInterval);
         pomodoroIsRunning = false;
         playPomodoroChime();
+        triggerHaptic("success");
         showToast("Pomodoro session complete! Great work!");
         updatePomodoroControls();
       }
@@ -4396,9 +4579,179 @@ function playPomodoroChime() {
 function markCurrentPomodoroTaskDone() {
   if (pomodoroCurrentTaskKey) {
     toggleTopicCheckbox(pomodoroCurrentTaskKey, true);
+    triggerHaptic("success");
     showToast("Topic marked as studied!");
     closePomodoroModal();
   } else {
     showToast("No active topic checklist linked.");
   }
 }
+
+// ============================================================================
+// Cross-Device Synchronization & Mobile Pairing Modal Handlers
+// ============================================================================
+
+async function openCloudSyncModal() {
+  const modal = document.getElementById("cloud-sync-modal");
+  if (!modal) return;
+  modal.classList.add("is-open");
+
+  const emailEl = document.getElementById("cloud-sync-user-email");
+  const badgeEl = document.getElementById("cloud-sync-status-badge");
+  const lanEl = document.getElementById("pairing-lan-url");
+  const emuEl = document.getElementById("pairing-emulator-url");
+  const msgEl = document.getElementById("cloud-sync-message");
+
+  if (msgEl) {
+    msgEl.classList.add("hidden");
+    msgEl.textContent = "";
+  }
+
+  try {
+    const res = await fetch("/api/sync/pair/info");
+    if (res.ok) {
+      const data = await res.json();
+      if (emailEl) {
+        emailEl.textContent = data.user_email || "Google Account Connected";
+      }
+      if (badgeEl) {
+        if (data.google_authenticated) {
+          badgeEl.className = "px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300";
+          badgeEl.textContent = "Google Cloud Ready";
+        } else {
+          badgeEl.className = "px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300";
+          badgeEl.textContent = "Offline / Local Only";
+        }
+      }
+      if (lanEl) {
+        lanEl.textContent = data.connect_url || "http://127.0.0.1:5050";
+      }
+      if (emuEl) {
+        emuEl.textContent = data.emulator_url || "http://10.0.2.2:5050";
+      }
+    }
+  } catch (err) {
+    console.warn("Failed to fetch pairing info:", err);
+    if (emailEl && appState.config?.user_email) {
+      emailEl.textContent = appState.config.user_email;
+    }
+  }
+
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeCloudSyncModal() {
+  const modal = document.getElementById("cloud-sync-modal");
+  if (modal) modal.classList.remove("is-open");
+}
+
+async function pushStateToCloud() {
+  const btn = document.getElementById("cloud-push-btn");
+  const msgEl = document.getElementById("cloud-sync-message");
+  const originalHtml = btn ? btn.innerHTML : "";
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>Pushing...</span>`;
+    if (window.lucide) lucide.createIcons();
+  }
+
+  try {
+    const res = await fetch("/api/sync/cloud/push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        device_id: IS_NATIVE ? "Android-Capacitor-Mobile" : "Desktop-Web-Client"
+      }),
+    });
+    const data = await res.json();
+
+    if (data.success && data.report) {
+      triggerHaptic("success");
+      showToast("State pushed to Cloud successfully!");
+      if (msgEl) {
+        msgEl.className = "text-xs p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-start gap-2";
+        msgEl.innerHTML = `<strong>Synced:</strong> ${escapeHtml(data.report.message)} (${data.report.assessments_count} assessments, ${data.report.courses_count} courses)`;
+      }
+    } else {
+      const errMsg = data.error || "Failed to push state to cloud.";
+      showToast(errMsg);
+      if (msgEl) {
+        msgEl.className = "text-xs p-3 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800";
+        msgEl.textContent = errMsg;
+      }
+    }
+  } catch (err) {
+    console.error("Push state error:", err);
+    showToast("Network error syncing to cloud.");
+    if (msgEl) {
+      msgEl.className = "text-xs p-3 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800";
+      msgEl.textContent = "Network error: unable to reach sync service.";
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+      if (window.lucide) lucide.createIcons();
+    }
+  }
+}
+
+async function pullStateFromCloud() {
+  const btn = document.getElementById("cloud-pull-btn");
+  const msgEl = document.getElementById("cloud-sync-message");
+  const originalHtml = btn ? btn.innerHTML : "";
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>Pulling...</span>`;
+    if (window.lucide) lucide.createIcons();
+  }
+
+  try {
+    const res = await fetch("/api/sync/cloud/pull", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      triggerHaptic("success");
+      if (data.assessments) appState.assessments = data.assessments;
+      if (data.schedule) appState.schedule = data.schedule;
+      if (data.config) appState.config = data.config;
+      if (data.dashboard) appState.dashboard = data.dashboard;
+
+      filterStateByEnabledSources();
+      saveStateCache();
+      hydrateAndRenderState(appState);
+      showToast(data.message || "State pulled from cloud!");
+
+      if (msgEl) {
+        msgEl.className = "text-xs p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-start gap-2";
+        msgEl.innerHTML = `<strong>Restored:</strong> ${escapeHtml(data.message)}`;
+      }
+    } else {
+      const errMsg = data.error || "Failed to pull state from cloud.";
+      showToast(errMsg);
+      if (msgEl) {
+        msgEl.className = "text-xs p-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800";
+        msgEl.textContent = errMsg;
+      }
+    }
+  } catch (err) {
+    console.error("Pull state error:", err);
+    showToast("Network error pulling state.");
+    if (msgEl) {
+      msgEl.className = "text-xs p-3 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800";
+      msgEl.textContent = "Network error: unable to contact sync service.";
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+      if (window.lucide) lucide.createIcons();
+    }
+  }
+}
+

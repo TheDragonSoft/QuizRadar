@@ -8,16 +8,16 @@
 
 [![Latest Release](https://img.shields.io/badge/Release-v3.1.0-1a73e8?style=for-the-badge&logo=github&label=Release&color=1a73e8)](https://github.com/TheDragonSoft/QuizRadar/releases/latest)
 [![Android Mobile App](https://img.shields.io/badge/Android-APK_v3.1.0-3ddc84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/TheDragonSoft/QuizRadar/releases/latest)
+[![Live Web App](https://img.shields.io/badge/Web_App-Installable_PWA-ea4335?style=for-the-badge&logo=pwa&logoColor=white)](https://thedragonsoft.github.io/QuizRadar/)
 [![100% Local Privacy](https://img.shields.io/badge/Privacy-100%25_Local_Data-0f9d58?style=for-the-badge&logo=shield&logoColor=white)](#-your-data-stays-100-local)
 [![Gemini AI](https://img.shields.io/badge/Gemini_AI-Smart_Study_Planner-8e24aa?style=for-the-badge&logo=googlegemini&logoColor=white)](#-features--parity)
-[![Google Calendar](https://img.shields.io/badge/Google_Calendar-Auto_Sync-1a73e8?style=for-the-badge&logo=googlecalendar&logoColor=white)](#-features--parity)
 
 <p align="center">
-  <a href="https://github.com/TheDragonSoft/QuizRadar/releases/latest"><strong>⬇ Download App (v3.1.0)</strong></a> ·
+  <a href="https://thedragonsoft.github.io/QuizRadar/"><strong>🌐 Open Web App (iPhone / PWA)</strong></a> ·
+  <a href="https://github.com/TheDragonSoft/QuizRadar/releases/latest"><strong>⬇ Download Native App (v3.1.0)</strong></a> ·
   <a href="#-android-mobile-app"><strong>📱 Android App</strong></a> ·
   <a href="#-features--parity"><strong>✨ Features & Parity</strong></a> ·
   <a href="#-visual-tour--screenshots"><strong>📸 Screenshots</strong></a> ·
-  <a href="#-your-data-stays-100-local"><strong>🔒 Local Privacy</strong></a> ·
   <a href="#-quick-start"><strong>🚀 Quick Start</strong></a>
 </p>
 
@@ -140,6 +140,12 @@ QuizRadar 3.0 introduces a brand new native **Android Mobile Application** built
 ---
 
 ## 🚀 Quick Start
+
+### 🍏 iPhone, iPad & Web App (PWA)
+1. Open **[thedragonsoft.github.io/QuizRadar](https://thedragonsoft.github.io/QuizRadar/)** in Safari on your iPhone or iPad.
+2. Tap the Safari **Share** button (the square with an arrow pointing up).
+3. Tap **"Add to Home Screen"**.
+4. QuizRadar is now installed on your home screen with its own app icon, launching full-screen with offline support!
 
 ### 📱 Android Mobile App
 1. Download **`QuizRadar-v3.1.0-Android.apk`** from the **[Latest GitHub Release](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.

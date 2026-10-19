@@ -289,7 +289,11 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
         .route("/app.js", get(serve_app_js))
         .route("/static/icon.svg", get(serve_icon_svg))
         .route("/icon.svg", get(serve_icon_svg))
+        .route("/manifest.webmanifest", get(serve_manifest))
+        .route("/manifest.json", get(serve_manifest))
+        .route("/sw.js", get(serve_sw_js))
         .nest_service("/static", ServeDir::new("static"))
+        .fallback_service(ServeDir::new("static"))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -324,6 +328,36 @@ async fn serve_icon_svg() -> Response {
     headers.insert(
         header::CACHE_CONTROL,
         HeaderValue::from_static("public, max-age=86400"),
+    );
+    (StatusCode::OK, headers, content).into_response()
+}
+
+async fn serve_manifest() -> Response {
+    let content = fs::read_to_string("static/manifest.webmanifest")
+        .unwrap_or_else(|_| include_str!("../static/manifest.webmanifest").to_string());
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/manifest+json; charset=utf-8"),
+    );
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=3600"),
+    );
+    (StatusCode::OK, headers, content).into_response()
+}
+
+async fn serve_sw_js() -> Response {
+    let content = fs::read_to_string("static/sw.js")
+        .unwrap_or_else(|_| include_str!("../static/sw.js").to_string());
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/javascript; charset=utf-8"),
+    );
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("no-cache"),
     );
     (StatusCode::OK, headers, content).into_response()
 }

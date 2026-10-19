@@ -495,3 +495,227 @@ pub fn generate_moodle_sample_assessments(schedule: &ScheduleData) -> Vec<Assess
 
     list
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{Course, ScheduleSlot, ScheduleData};
+
+    fn sample_schedule() -> ScheduleData {
+        ScheduleData {
+            semester: "Fall 2026".to_string(),
+            courses: vec![
+                Course {
+                    id: "CS101".to_string(),
+                    name: "Introduction to Computer Science".to_string(),
+                    color: "#3b82f6".to_string(),
+                    bg: "".to_string(),
+                    border: "".to_string(),
+                },
+                Course {
+                    id: "MATH201".to_string(),
+                    name: "Calculus II".to_string(),
+                    color: "#ef4444".to_string(),
+                    bg: "".to_string(),
+                    border: "".to_string(),
+                },
+            ],
+            slots: vec![
+                ScheduleSlot {
+                    id: "s1".to_string(),
+                    day: "Monday".to_string(),
+                    day_index: 1,
+                    course_id: "CS101".to_string(),
+                    course_name: "Introduction to Computer Science".to_string(),
+                    room: "Lab 301".to_string(),
+                    slot_type: "Lab".to_string(),
+                    group: "G1".to_string(),
+                    start_time: "10:00".to_string(),
+                    end_time: "11:30".to_string(),
+                    display_time: "".to_string(),
+                    has_quiz: false,
+                    quiz_title: None,
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn test_parse_moodle_ics_content_happy_path() {
+        let schedule = sample_schedule();
+        let ics = r#"
+BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+SUMMARY:CS101 Online Quiz 1
+DESCRIPTION:Covering Chapter 1 and Chapter 2
+DTSTART:20261020T100000Z
+DTEND:20261020T110000Z
+UID:quiz123@moodle.univ.edu
+URL:https://moodle.univ.edu/mod/quiz/view.php?id=123
+END:VEVENT
+END:VCALENDAR
+"#;
+
+        let assessments = parse_moodle_ics_content(ics, &schedule, None);
+        assert_eq!(assessments.len(), 1);
+        let a = &assessments[0];
+        assert_eq!(a.id, "moodle-quiz123_moodle.univ.edu");
+        assert_eq!(a.course_id, "CS101");
+        assert_eq!(a.course_name, "Introduction to Computer Science");
+        assert_eq!(a.title, "CS101 Online Quiz 1");
+        assert_eq!(a.assessment_type, "Online Quiz");
+        assert_eq!(a.date_iso, "2026-10-20");
+        assert_eq!(a.start_time, "10:00");
+        assert_eq!(a.end_time, "11:00");
+        assert_eq!(a.room, "Lab 301");
+        assert_eq!(a.elearning_url, "https://moodle.univ.edu/mod/quiz/view.php?id=123");
+        assert_eq!(a.source, "Moodle");
+    }
+
+    #[test]
+    fn test_parse_moodle_ics_content_course_and_slot_matching() {
+        let schedule = sample_schedule();
+        let ics = r#"
+BEGIN:VEVENT
+SUMMARY:Calculus II Midterm Exam
+DESCRIPTION:Calculus II midterm review
+DTSTART:20261105T140000
+DTEND:20261105T160000
+UID:midterm456
+END:VEVENT
+"#;
+
+        let assessments = parse_moodle_ics_content(ics, &schedule, None);
+        assert_eq!(assessments.len(), 1);
+        let a = &assessments[0];
+        assert_eq!(a.course_id, "MATH201");
+        assert_eq!(a.course_name, "Calculus II");
+        assert_eq!(a.color, "#ef4444");
+        assert_eq!(a.room, "E-Learning Lab / Online");
+    }
+
+    #[test]
+    fn test_parse_moodle_ics_content_filtering() {
+        let schedule = sample_schedule();
+        let ics = r#"
+BEGIN:VEVENT
+SUMMARY:General Lecture Intro
+DESCRIPTION:Welcome to the term orientation
+DTSTART:20260901T090000Z
+END:VEVENT
+BEGIN:VEVENT
+SUMMARY:Study Group Meeting
+DESCRIPTION:Weekly sync up for project discussions
+DTSTART:20260902T100000Z
+END:VEVENT
+"#;
+
+        let assessments = parse_moodle_ics_content(ics, &schedule, None);
+        assert!(assessments.is_empty());
+    }
+
+    #[test]
+    fn test_parse_moodle_ics_content_assessment_types() {
+        let schedule = sample_schedule();
+        let ics = r#"
+BEGIN:VEVENT
+SUMMARY:CS101 Midterm
+DTSTART:20261010T090000
+END:VEVENT
+BEGIN:VEVENT
+SUMMARY:CS101 Final Exam
+DTSTART:20261210T090000
+END:VEVENT
+BEGIN:VEVENT
+SUMMARY:CS101 Lab Assessment 1
+DTSTART:20261015T090000
+END:VEVENT
+BEGIN:VEVENT
+SUMMARY:CS101 Homework Assignment
+DTSTART:20261020T090000
+END:VEVENT
+BEGIN:VEVENT
+SUMMARY:CS101 Quiz 2
+DTSTART:20261025T090000
+END:VEVENT
+"#;
+
+        let assessments = parse_moodle_ics_content(ics, &schedule, None);
+        assert_eq!(assessments.len(), 5);
+        assert_eq!(assessments[0].assessment_type, "Midterm Exam");
+        assert_eq!(assessments[1].assessment_type, "Final Exam");
+        assert_eq!(assessments[2].assessment_type, "Lab Assessment");
+        assert_eq!(assessments[3].assessment_type, "Assignment");
+        assert_eq!(assessments[4].assessment_type, "Online Quiz");
+    }
+
+    #[test]
+    fn test_parse_moodle_ics_content_date_parsing_and_fallbacks() {
+        let schedule = sample_schedule();
+        let ics = r#"
+BEGIN:VEVENT
+SUMMARY:CS101 Quiz Date Only
+DTSTART:20261018
+END:VEVENT
+BEGIN:VEVENT
+SUMMARY:CS101 Exam Fallback Date
+UID:no-date-1
+END:VEVENT
+"#;
+
+        let assessments = parse_moodle_ics_content(ics, &schedule, None);
+        assert_eq!(assessments.len(), 2);
+
+        assert_eq!(assessments[0].date_iso, "2026-10-18");
+        assert_eq!(assessments[0].start_time, "09:00");
+        assert_eq!(assessments[0].end_time, "10:30");
+
+        assert_eq!(assessments[1].date_iso, "2026-10-25");
+        assert_eq!(assessments[1].start_time, "09:00");
+        assert_eq!(assessments[1].end_time, "10:30");
+        assert_eq!(assessments[1].id, "moodle-no-date-1");
+    }
+
+    #[test]
+    fn test_parse_moodle_ics_content_formatting_topics_warnings() {
+        let schedule = sample_schedule();
+        let ics = r#"
+BEGIN:VEVENT
+SUMMARY:CS101 Quiz\, Chapter 1
+DESCRIPTION:Instructions:\n• Lecture 1 - Basics\n- Chapter 2 - Functions\n* Arrays and Strings\nNote: 30 minute time limit\, password required
+DTSTART:20261020T100000Z
+END:VEVENT
+"#;
+
+        let assessments = parse_moodle_ics_content(ics, &schedule, None);
+        assert_eq!(assessments.len(), 1);
+        let a = &assessments[0];
+
+        assert_eq!(a.title, "CS101 Quiz, Chapter 1");
+        assert!(a.warnings.iter().any(|w| w.contains("Timed submission")));
+        assert!(a.warnings.iter().any(|w| w.contains("password")));
+        assert!(a.topics.contains(&"Lecture 1 - Basics".to_string()));
+        assert!(a.topics.contains(&"Chapter 2 - Functions".to_string()));
+        assert!(a.topics.contains(&"Arrays and Strings".to_string()));
+    }
+
+    #[test]
+    fn test_parse_moodle_ics_content_portal_url_fallback() {
+        let schedule = sample_schedule();
+        let ics_no_url = r#"
+BEGIN:VEVENT
+SUMMARY:CS101 Quiz 3
+DTSTART:20261020T100000Z
+END:VEVENT
+"#;
+
+        let assessments_with_portal = parse_moodle_ics_content(ics_no_url, &schedule, Some("https://moodle.university.edu/"));
+        assert_eq!(assessments_with_portal.len(), 1);
+        assert_eq!(assessments_with_portal[0].elearning_url, "https://moodle.university.edu/calendar/view.php?view=upcoming");
+
+        let assessments_default = parse_moodle_ics_content(ics_no_url, &schedule, None);
+        assert_eq!(assessments_default.len(), 1);
+        assert_eq!(assessments_default[0].elearning_url, "https://moodle.org");
+    }
+}

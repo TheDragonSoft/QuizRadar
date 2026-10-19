@@ -2,18 +2,18 @@
 
 <img src="static/icon.svg" width="112" height="112" alt="QuizRadar App Icon" />
 
-# QuizRadar v3.0.0
+# QuizRadar v3.1.0
 
 **Never miss a quiz, lab assessment, or midterm buried in your university inbox, Microsoft Teams, Moodle, or Google Classroom.**
 
-[![Latest Release](https://img.shields.io/badge/Release-v3.0.0-1a73e8?style=for-the-badge&logo=github&label=Release&color=1a73e8)](https://github.com/TheDragonSoft/QuizRadar/releases/latest)
-[![Android Mobile App](https://img.shields.io/badge/Android-APK_v3.0.0-3ddc84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/TheDragonSoft/QuizRadar/releases/latest)
+[![Latest Release](https://img.shields.io/badge/Release-v3.1.0-1a73e8?style=for-the-badge&logo=github&label=Release&color=1a73e8)](https://github.com/TheDragonSoft/QuizRadar/releases/latest)
+[![Android Mobile App](https://img.shields.io/badge/Android-APK_v3.1.0-3ddc84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/TheDragonSoft/QuizRadar/releases/latest)
 [![100% Local Privacy](https://img.shields.io/badge/Privacy-100%25_Local_Data-0f9d58?style=for-the-badge&logo=shield&logoColor=white)](#-your-data-stays-100-local)
 [![Gemini AI](https://img.shields.io/badge/Gemini_AI-Smart_Study_Planner-8e24aa?style=for-the-badge&logo=googlegemini&logoColor=white)](#-features--parity)
 [![Google Calendar](https://img.shields.io/badge/Google_Calendar-Auto_Sync-1a73e8?style=for-the-badge&logo=googlecalendar&logoColor=white)](#-features--parity)
 
 <p align="center">
-  <a href="https://github.com/TheDragonSoft/QuizRadar/releases/latest"><strong>⬇ Download App (v3.0.0)</strong></a> ·
+  <a href="https://github.com/TheDragonSoft/QuizRadar/releases/latest"><strong>⬇ Download App (v3.1.0)</strong></a> ·
   <a href="#-android-mobile-app"><strong>📱 Android App</strong></a> ·
   <a href="#-features--parity"><strong>✨ Features & Parity</strong></a> ·
   <a href="#-visual-tour--screenshots"><strong>📸 Screenshots</strong></a> ·
@@ -142,10 +142,10 @@ QuizRadar 3.0 introduces a brand new native **Android Mobile Application** built
 ## 🚀 Quick Start
 
 ### 📱 Android Mobile App
-1. Download **`QuizRadar-v3.0.0-Android.apk`** from the **[Latest GitHub Release](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
+1. Download **`QuizRadar-v3.1.0-Android.apk`** from the **[Latest GitHub Release](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
 2. Install the APK on your Android device:
    ```powershell
-   adb install -r QuizRadar-v3.0.0-Android.apk
+   adb install -r QuizRadar-v3.1.0-Android.apk
    ```
 3. Or build directly from source:
    ```powershell
@@ -156,7 +156,7 @@ QuizRadar 3.0 introduces a brand new native **Android Mobile Application** built
    ```
 
 ### 💻 Desktop Application
-1. Download **`QuizRadar-Setup-v3.0.0-x64.exe`** (or portable ZIP) from **[GitHub Releases](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
+1. Download **`QuizRadar-Setup-v3.1.0-x64.exe`** (or portable ZIP) from **[GitHub Releases](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
 2. Run the installer or extract the portable ZIP.
 3. Or build directly from source:
    ```powershell

@@ -18,7 +18,8 @@ mkdir -p "${APP_BUNDLE}/Contents/Resources/data"
 cp target/release/quizradar "${APP_BUNDLE}/Contents/MacOS/quizradar-bin"
 chmod 755 "${APP_BUNDLE}/Contents/MacOS/quizradar-bin"
 cp -r static/* "${APP_BUNDLE}/Contents/Resources/static/"
-cp data/schedule.json "${APP_BUNDLE}/Contents/Resources/data/"
+cp data/schedule.template.json "${APP_BUNDLE}/Contents/Resources/data/"
+cp data/schedule.template.json "${APP_BUNDLE}/Contents/Resources/data/schedule.json"
 
 # Launcher script
 cat > "${APP_BUNDLE}/Contents/MacOS/quizradar" << 'LAUNCHER'

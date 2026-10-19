@@ -20,7 +20,8 @@ mkdir -p "${STAGE_DIR}/usr/share/icons/hicolor/scalable/apps"
 cp target/release/quizradar "${STAGE_DIR}/usr/lib/quizradar/quizradar-bin"
 chmod 755 "${STAGE_DIR}/usr/lib/quizradar/quizradar-bin"
 cp -r static/* "${STAGE_DIR}/usr/lib/quizradar/static/"
-cp data/schedule.json "${STAGE_DIR}/usr/lib/quizradar/data/"
+cp data/schedule.template.json "${STAGE_DIR}/usr/lib/quizradar/data/"
+cp data/schedule.template.json "${STAGE_DIR}/usr/lib/quizradar/data/schedule.json"
 
 # User wrapper launcher
 cat > "${STAGE_DIR}/usr/bin/quizradar" << 'LAUNCHER'

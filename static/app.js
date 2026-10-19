@@ -47,6 +47,14 @@ class QuizRadarAutonomousEngine {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && parsed.schedule && Array.isArray(parsed.assessments)) {
+          // Scrub legacy mock assessments and tasks if lingering from previous demo versions
+          parsed.assessments = parsed.assessments.filter(a => !["cs101-a1", "math101-q1", "mgmt100-q1", "data201-m1"].includes(a.id));
+          if (Array.isArray(parsed.study_tasks)) {
+            parsed.study_tasks = parsed.study_tasks.filter(t => !["st-1", "st-2", "st-3", "st-4"].includes(t.id));
+          }
+          if (parsed.dashboard && Array.isArray(parsed.dashboard.study_recommendations)) {
+            parsed.dashboard.study_recommendations = parsed.dashboard.study_recommendations.filter(r => !["cs101-a1", "math101-q1", "mgmt100-q1", "data201-m1"].includes(r.assessment_id));
+          }
           return this.recomputeDashboard(parsed);
         }
       }
@@ -94,130 +102,10 @@ class QuizRadarAutonomousEngine {
   }
 
   populateAcademicData() {
-    this.state.schedule = {
-      semester: "Fall 2026",
-      courses: [
-        { id: "CS 101", name: "Introduction to Computer Science", color: "#1a73e8", icon: "cpu", instructor: "Dr. Sarah Adams" },
-        { id: "MATH 101", name: "Calculus & Linear Algebra", color: "#00897b", icon: "sigma", instructor: "Prof. Elena Rostova" },
-        { id: "DATA 201", name: "Data Structures & Algorithms", color: "#8e24aa", icon: "brain", instructor: "Dr. Marcus Vance" },
-        { id: "MGMT 100", name: "Principles of Management", color: "#f59e0b", icon: "briefcase", instructor: "Prof. Claire Sterling" },
-        { id: "PHYS 101", name: "General Physics", color: "#e53935", icon: "calculator", instructor: "Dr. David Chen" }
-      ],
-      slots: [
-        { id: "s1", course_id: "MATH 101", course_name: "Calculus & Linear Algebra", day: "Sunday", day_name: "Sunday", day_index: 0, start_time: "08:00", end_time: "10:00", display_time: "8:00 AM – 10:00 AM", room: "Hall B-204", group: "Sec 1", instructor: "Prof. Elena Rostova", color: "#00897b", type: "Lecture", slot_type: "Lecture" },
-        { id: "s2", course_id: "CS 101", course_name: "Introduction to Computer Science", day: "Monday", day_name: "Monday", day_index: 1, start_time: "10:15", end_time: "12:00", display_time: "10:15 AM – 12:00 PM", room: "Hall A-101", group: "Sec 1", instructor: "Dr. Sarah Adams", color: "#1a73e8", type: "Lecture", slot_type: "Lecture" },
-        { id: "s3", course_id: "DATA 201", course_name: "Data Structures & Algorithms", day: "Tuesday", day_name: "Tuesday", day_index: 2, start_time: "12:15", end_time: "14:00", display_time: "12:15 PM – 2:00 PM", room: "Lab C-302", group: "Sec 2", instructor: "Dr. Marcus Vance", color: "#8e24aa", type: "Lab", slot_type: "Lab" },
-        { id: "s4", course_id: "MGMT 100", course_name: "Principles of Management", day: "Wednesday", day_name: "Wednesday", day_index: 3, start_time: "08:00", end_time: "10:00", display_time: "8:00 AM – 10:00 AM", room: "Hall B-105", group: "Sec 1", instructor: "Prof. Claire Sterling", color: "#f59e0b", type: "Lecture", slot_type: "Lecture" },
-        { id: "s5", course_id: "PHYS 101", course_name: "General Physics", day: "Thursday", day_name: "Thursday", day_index: 4, start_time: "10:15", end_time: "12:30", display_time: "10:15 AM – 12:30 PM", room: "Lab D-101", group: "Sec 1", instructor: "Dr. David Chen", color: "#e53935", type: "Lab", slot_type: "Lab" }
-      ]
-    };
-    const today = getTodayDate();
-    const makeOffsetDate = (offsetDays) => {
-      const d = new Date(today);
-      d.setDate(today.getDate() + offsetDays);
-      return d;
-    };
-    const formatAssessmentDisplay = (d, timeStr) => {
-      const dayName = d.toLocaleDateString("en-US", { weekday: "long" });
-      const monthShort = d.toLocaleDateString("en-US", { month: "short" });
-      const dayNum = d.getDate();
-      return `${dayName}, ${monthShort} ${dayNum} · ${timeStr}`;
-    };
-
-    const d1 = makeOffsetDate(2);
-    const d2 = makeOffsetDate(4);
-    const d3 = makeOffsetDate(7);
-    const d4 = makeOffsetDate(11);
-
-    this.state.assessments = [
-      {
-        id: "cs101-a1",
-        title: "Assignment 1: Algorithms & Complexity Analysis",
-        assessment_type: "Assignment",
-        course_id: "CS 101",
-        course_name: "Introduction to Computer Science",
-        date_iso: toIsoDate(d1),
-        start_time: "23:59",
-        time: "23:59",
-        display_time: formatAssessmentDisplay(d1, "11:59 PM"),
-        room: "Online Portal",
-        weight_percent: 10,
-        color: "#1a73e8",
-        days_until: 2,
-        is_upcoming: true,
-        instructor: "Dr. Sarah Adams",
-        ai_study_plan: "Review asymptotic Big-O notations, recursion stacks, and loop invariant proofs.",
-        ai_inference_note: "Extracted from Professor Adams' announcement in University Portal.",
-        topics: ["Asymptotic Big-O Analysis", "Recursion & Call Stacks", "Divide and Conquer Paradigms"]
-      },
-      {
-        id: "math101-q1",
-        title: "Class Quiz 1: Numerical Integration & Series",
-        assessment_type: "Class Quiz",
-        course_id: "MATH 101",
-        course_name: "Calculus & Linear Algebra",
-        date_iso: toIsoDate(d2),
-        start_time: "08:30",
-        time: "08:30",
-        display_time: formatAssessmentDisplay(d2, "8:30 AM"),
-        room: "Hall B-204",
-        weight_percent: 15,
-        color: "#00897b",
-        days_until: 4,
-        is_upcoming: true,
-        instructor: "Prof. Elena Rostova",
-        ai_study_plan: "Derive composite Simpson's 1/3 rule error bounds and practice Taylor approximations.",
-        ai_inference_note: "Discovered from weekly university syllabus email.",
-        topics: ["Trapezoidal Rule", "Simpson's 1/3 Rule", "Taylor Series Approximations"]
-      },
-      {
-        id: "mgmt100-q1",
-        title: "Quiz 2: Strategic Planning & Decision Frameworks",
-        assessment_type: "Class Quiz",
-        course_id: "MGMT 100",
-        course_name: "Principles of Management",
-        date_iso: toIsoDate(d3),
-        start_time: "09:00",
-        time: "09:00",
-        display_time: formatAssessmentDisplay(d3, "9:00 AM"),
-        room: "Hall B-105",
-        weight_percent: 10,
-        color: "#f59e0b",
-        days_until: 7,
-        is_upcoming: true,
-        instructor: "Prof. Claire Sterling",
-        ai_study_plan: "Master Porter's Five Forces and bounded rationality case questions.",
-        ai_inference_note: "Discovered via course syllabus feed.",
-        topics: ["Porter's Five Forces", "Strategic Goal Setting", "Bounded Rationality"]
-      },
-      {
-        id: "data201-m1",
-        title: "Midterm Exam: Trees, Graphs & Priority Queues",
-        assessment_type: "Exam",
-        course_id: "DATA 201",
-        course_name: "Data Structures & Algorithms",
-        date_iso: toIsoDate(d4),
-        start_time: "12:30",
-        time: "12:30",
-        display_time: formatAssessmentDisplay(d4, "12:30 PM"),
-        room: "Exam Hall 3",
-        weight_percent: 25,
-        color: "#8e24aa",
-        days_until: 11,
-        is_upcoming: true,
-        instructor: "Dr. Marcus Vance",
-        ai_study_plan: "Comprehensive review: binary heap invariants, Dijkstra shortest path, and AVL balancing.",
-        ai_inference_note: "Discovered from official semester department exam schedule.",
-        topics: ["Binary Search Trees", "AVL Tree Balancing", "Dijkstra Shortest Path", "Binary Heaps"]
-      }
-    ];
-    this.state.study_tasks = [
-      { id: "st-1", title: "Practice Asymptotic Big-O Problems", course: "CS 101", due_date: toIsoDate(makeOffsetDate(1)), duration_mins: 45, completed: false, priority: "high" },
-      { id: "st-2", title: "Review Simpson's 1/3 Rule derivation", course: "MATH 101", due_date: toIsoDate(makeOffsetDate(3)), duration_mins: 40, completed: false, priority: "high" },
-      { id: "st-3", title: "Case Analysis on Porter's Five Forces", course: "MGMT 100", due_date: toIsoDate(makeOffsetDate(5)), duration_mins: 35, completed: false, priority: "medium" },
-      { id: "st-4", title: "Implement AVL Tree balancing exercise", course: "DATA 201", due_date: toIsoDate(makeOffsetDate(6)), duration_mins: 60, completed: false, priority: "medium" }
-    ];
-    this.state.config.last_gmail_sync = "Just now";
+    // Kept clean to guarantee no mock or foreign assessments leak into fresh installs
+    if (!this.state.schedule) {
+      this.state.schedule = { semester: "Fall 2026", courses: [], slots: [] };
+    }
   }
 
   saveDatabase() {
@@ -598,11 +486,6 @@ class QuizRadarAutonomousEngine {
     // 9. POST /api/sync & /api/gcal/sync
     if (path === "/api/sync" || path === "/api/gcal/sync") {
       const isConnected = !!(this.state.config?.teams_enabled || this.state.auth?.authenticated);
-      if (isConnected) {
-        if (!this.state.schedule?.courses || this.state.schedule.courses.length === 0 || !this.state.assessments || this.state.assessments.length === 0) {
-          this.populateAcademicData();
-        }
-      }
       this.state.config.last_gmail_sync = "Just now";
       this.recomputeDashboard(this.state);
       this.saveDatabase();
@@ -1621,6 +1504,11 @@ function getBootstrapState() {
     if (cachedRaw) {
       const cachedData = JSON.parse(cachedRaw);
       if (cachedData && Array.isArray(cachedData.assessments) && cachedData.dashboard) {
+        // Scrub legacy mock assessments if present in old cached storage
+        cachedData.assessments = cachedData.assessments.filter(a => !["cs101-a1", "math101-q1", "mgmt100-q1", "data201-m1"].includes(a.id));
+        if (cachedData.dashboard && Array.isArray(cachedData.dashboard.study_recommendations)) {
+          cachedData.dashboard.study_recommendations = cachedData.dashboard.study_recommendations.filter(r => !["cs101-a1", "math101-q1", "mgmt100-q1", "data201-m1"].includes(r.assessment_id));
+        }
         return cachedData;
       }
     }
@@ -1634,6 +1522,7 @@ function getBootstrapTasks() {
     if (cachedTasks) {
       const data = JSON.parse(cachedTasks);
       if (data && Array.isArray(data.readiness_cards)) {
+        data.readiness_cards = data.readiness_cards.filter(c => !["cs101-a1", "math101-q1", "mgmt100-q1", "data201-m1"].includes(c.assessment_id));
         return data;
       }
     }
@@ -2071,8 +1960,16 @@ function saveStateCache() {
 
 function syncActiveCourseFilters() {
   const currentCourses = appState.schedule?.courses || [];
-  if (currentCourses.length === 0) return;
+  if (currentCourses.length === 0) {
+    activeCourseFilters.clear();
+    return;
+  }
   const currentIds = new Set(currentCourses.map((c) => c.id));
+  for (const id of activeCourseFilters) {
+    if (id !== "GENERAL" && !currentIds.has(id)) {
+      activeCourseFilters.delete(id);
+    }
+  }
   const hasOverlap = [...activeCourseFilters].some((id) => currentIds.has(id));
   if (!hasOverlap || activeCourseFilters.size === 0) {
     activeCourseFilters.clear();
@@ -2389,8 +2286,13 @@ function updateTopBarAndUser() {
   if (obEmail) obEmail.textContent = email;
   if (obAvatar) obAvatar.textContent = initial;
   if (obBadge) {
-    obBadge.textContent = badgeText;
-    obBadge.className = badgeClass;
+    if (isAuth) {
+      obBadge.textContent = "Connected";
+      obBadge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300";
+    } else {
+      obBadge.textContent = "Connect";
+      obBadge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300";
+    }
   }
   if (obScope) {
     obScope.textContent = appState.auth?.has_calendar_scope
@@ -2449,6 +2351,44 @@ function updateTopBarAndUser() {
       stTeamsDisconnectBtn.classList.remove("hidden");
     } else {
       stTeamsDisconnectBtn.classList.add("hidden");
+    }
+  }
+
+  // Populate Onboarding Step 2 Hub Badges
+  const obTeamsBadge = document.getElementById("onboard-teams-badge");
+  const obTeamsSubtext = document.getElementById("onboard-teams-subtext");
+  if (obTeamsBadge) {
+    if (isTeamsConnected) {
+      obTeamsBadge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300";
+      obTeamsBadge.textContent = "Connected";
+      if (obTeamsSubtext && teamsEmail) obTeamsSubtext.textContent = teamsEmail;
+    } else {
+      obTeamsBadge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300";
+      obTeamsBadge.textContent = "Connect";
+    }
+  }
+
+  const obClassroomBadge = document.getElementById("onboard-classroom-badge");
+  if (obClassroomBadge) {
+    const isClassroomActive = !!appState.config?.classroom_enabled;
+    if (isClassroomActive) {
+      obClassroomBadge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300";
+      obClassroomBadge.textContent = "Connected";
+    } else {
+      obClassroomBadge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300";
+      obClassroomBadge.textContent = "Connect";
+    }
+  }
+
+  const obMoodleBadge = document.getElementById("onboard-moodle-badge");
+  if (obMoodleBadge) {
+    const isMoodleActive = !!(appState.config?.moodle_enabled || appState.config?.moodle_token || appState.config?.moodle_ical_url);
+    if (isMoodleActive) {
+      obMoodleBadge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300";
+      obMoodleBadge.textContent = "Connected";
+    } else {
+      obMoodleBadge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300";
+      obMoodleBadge.textContent = "Connect";
     }
   }
 
@@ -3057,7 +2997,9 @@ window.addEventListener("resize", () => {
 
 function renderDashboard() {
   const dash = appState.dashboard || {};
-  const nextUp = dash.next_up;
+  const enrolledCourses = appState.schedule?.courses || [];
+  const enrolledCourseIds = new Set(enrolledCourses.map(c => c.id));
+  const nextUp = (dash.next_up && enrolledCourseIds.has(dash.next_up.course_id)) ? dash.next_up : null;
 
   // 0. Exam Overload & Conflict Detection Banner
   const conflictBanner = document.getElementById("conflict-alert-banner");
@@ -3230,7 +3172,8 @@ function renderDashboard() {
   }
 
   // 2. KPI Cards
-  const weekCount = (dash.upcoming_this_week || []).length;
+  const upcomingThisWeek = (dash.upcoming_this_week || []).filter(a => enrolledCourseIds.has(a.course_id));
+  const weekCount = upcomingThisWeek.length;
   document.getElementById("kpi-week-count").textContent = weekCount;
   const today = getTodayDate();
   const nextWeekEnd = new Date(today);
@@ -3284,12 +3227,16 @@ function renderDashboard() {
 
   // Mobile Sub-Tabs Badges & Panel Toggle
   const badgeStudy = document.getElementById("dash-badge-study");
+  const validRecs = enrolledCourses.length === 0
+    ? []
+    : (dash.study_recommendations || []).filter(r => enrolledCourseIds.has(r.course_id));
   if (badgeStudy) {
-    badgeStudy.textContent = (dash.study_recommendations || []).length;
+    badgeStudy.textContent = validRecs.length;
   }
   const badgeRadar = document.getElementById("dash-badge-assessments");
   if (badgeRadar) {
-    badgeRadar.textContent = (appState.assessments || []).length;
+    const validAssessments = (appState.assessments || []).filter(a => enrolledCourseIds.has(a.course_id));
+    badgeRadar.textContent = validAssessments.length;
   }
   switchDashboardTab(currentDashboardTab);
 
@@ -3310,7 +3257,7 @@ function renderDashboard() {
 
   // 3. "What Should I Study?" Study Recommendations List (Compact Mobile-First Cards with Tap-To-Detail)
   const recsEl = document.getElementById("study-recommendations-list");
-  let recs = dash.study_recommendations || [];
+  let recs = validRecs;
   if (globalSearchQuery) {
     const q = globalSearchQuery.toLowerCase();
     recs = recs.filter(
@@ -3437,7 +3384,9 @@ function renderDashboard() {
   }
 
   // 4. Right Column: Filterable Assessments Timeline (Each card includes its own exam rules)
-  let timelineItems = appState.assessments || [];
+  let timelineItems = enrolledCourses.length === 0
+    ? []
+    : (appState.assessments || []).filter(a => enrolledCourseIds.has(a.course_id));
   if (currentFilterVal === "UPCOMING") {
     timelineItems = timelineItems.filter((a) => a.is_upcoming);
   } else if (currentFilterVal !== "ALL") {
@@ -3463,8 +3412,8 @@ function renderDashboard() {
   if (timelineItems.length === 0) {
     timelineEl.innerHTML = `
       <div class="p-6 text-center rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
-        <div class="text-xs font-semibold text-slate-700 dark:text-slate-200">No assessments match this filter</div>
-        <button onclick="filterDashboardByType('ALL')" class="text-xs font-semibold text-[#1a73e8] dark:text-blue-400 hover:underline cursor-pointer">Show all semesters</button>
+        <div class="text-xs font-semibold text-slate-700 dark:text-slate-200">No assessments scheduled</div>
+        <p class="text-[11px] text-slate-500 dark:text-slate-400">Enrol in courses or connect your university accounts to sync assessments.</p>
       </div>
     `;
   } else {
@@ -3472,6 +3421,7 @@ function renderDashboard() {
       .map((a) => {
         const uniqueRules = [...new Set(a.warnings || [])];
         const rulesHtml = uniqueRules
+          .slice(0, 2)
           .map(
             (w) =>
               `<div class="flex items-start gap-1.5 text-[11px] text-amber-900 dark:text-amber-200 bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/60 px-2.5 py-1 rounded-md">
@@ -3480,6 +3430,30 @@ function renderDashboard() {
               </div>`
           )
           .join("");
+
+        let timeText = "";
+        if (a.start_time && a.end_time) {
+          timeText = `${a.start_time} – ${a.end_time}`;
+        } else if (a.start_time || a.time) {
+          timeText = a.start_time || a.time;
+        } else if (a.end_time) {
+          timeText = `Until ${a.end_time}`;
+        }
+
+        let dateText = a.date_iso || "";
+        try {
+          if (a.date_iso) {
+            const parts = a.date_iso.split("-").map(Number);
+            if (parts.length === 3) {
+              const d = new Date(parts[0], parts[1] - 1, parts[2]);
+              if (!isNaN(d.getTime())) {
+                dateText = d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+              }
+            }
+          }
+        } catch (_) {}
+
+        const dateTimeDisplay = [dateText, timeText].filter(Boolean).join(" · ");
 
         return `
           <div onclick="openAssessmentModalById('${a.id}')" class="interactive-card p-2.5 sm:p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-[#1a73e8] dark:hover:border-blue-500 bg-slate-50/60 dark:bg-slate-800/40 hover:bg-white dark:hover:bg-slate-800 cursor-pointer transition space-y-1.5">
@@ -3506,12 +3480,13 @@ function renderDashboard() {
             <div class="flex items-center justify-between text-[10px] sm:text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
               <span class="flex items-center gap-1">
                 <i data-lucide="calendar" class="w-3 h-3"></i>
-                <span>${escapeHtml(a.date_iso)} · ${escapeHtml(a.start_time)}–${escapeHtml(a.end_time)}</span>
+                <span>${escapeHtml(dateTimeDisplay)}</span>
               </span>
+              ${a.room ? `
               <span class="flex items-center gap-1">
                 <i data-lucide="map-pin" class="w-3 h-3"></i>
                 <span>${escapeHtml(a.room)}</span>
-              </span>
+              </span>` : ""}
             </div>
             ${rulesHtml ? `<div class="space-y-1 pt-0.5">${rulesHtml}</div>` : ""}
           </div>
@@ -4378,14 +4353,76 @@ function closeEventDetailModal() {
 
 let currentOnboardingStep = 1;
 
-function selectOnboardingTrack(track) {
+const ACADEMIC_TRACK_NAMES = {
+  cs: "Computer Science & IT",
+  eng: "Engineering & Robotics",
+  med: "Medicine & Health Sciences",
+  bus: "Business & Economics",
+  gen: "Sciences & Humanities"
+};
+
+const ACADEMIC_TRACK_COURSES = {
+  cs: [
+    { id: "CS 101", name: "Introduction to Computer Science", color: "#1a73e8", icon: "cpu", instructor: "Dr. Sarah Adams" },
+    { id: "MATH 101", name: "Calculus & Linear Algebra", color: "#00897b", icon: "sigma", instructor: "Prof. Elena Rostova" },
+    { id: "DATA 201", name: "Data Structures & Algorithms", color: "#8e24aa", icon: "brain", instructor: "Dr. Marcus Vance" },
+    { id: "MGMT 100", name: "Principles of Management", color: "#f59e0b", icon: "briefcase", instructor: "Prof. Claire Sterling" },
+    { id: "PHYS 101", name: "General Physics", color: "#e53935", icon: "calculator", instructor: "Dr. David Chen" }
+  ],
+  eng: [
+    { id: "ENGR 101", name: "Engineering Mechanics & Statics", color: "#ea580c", icon: "wrench", instructor: "Prof. Michael Chang" },
+    { id: "MATH 201", name: "Differential Equations & Linear Algebra", color: "#00897b", icon: "sigma", instructor: "Prof. Elena Rostova" },
+    { id: "EE 101", name: "Circuit Analysis & Electronics", color: "#2563eb", icon: "zap", instructor: "Dr. Robert Kilian" },
+    { id: "PHYS 102", name: "Physics for Engineers (Electromagnetism)", color: "#dc2626", icon: "activity", instructor: "Dr. David Chen" },
+    { id: "MECH 201", name: "Thermodynamics & Materials Science", color: "#7c3aed", icon: "flame", instructor: "Prof. Nadia Al-Mansoor" }
+  ],
+  med: [
+    { id: "ANAT 101", name: "Human Anatomy & System Physiology", color: "#0284c7", icon: "heart-pulse", instructor: "Dr. Tariq Haddad" },
+    { id: "BIOC 201", name: "Medical Biochemistry & Genetics", color: "#059669", icon: "dna", instructor: "Prof. Susan Vance" },
+    { id: "PHARM 101", name: "Principles of Clinical Pharmacology", color: "#7c3aed", icon: "pill", instructor: "Dr. Alan Mercer" },
+    { id: "PATH 201", name: "General Pathology & Immunology", color: "#e11d48", icon: "shield-alert", instructor: "Prof. Mona Salem" },
+    { id: "MED 100", name: "Medical Ethics & Doctor-Patient Communication", color: "#d97706", icon: "message-circle", instructor: "Dr. Layla Zaid" }
+  ],
+  bus: [
+    { id: "ACCT 101", name: "Financial Accounting Principles", color: "#059669", icon: "dollar-sign", instructor: "Prof. Sarah Sterling" },
+    { id: "ECON 101", name: "Microeconomics & Market Structures", color: "#2563eb", icon: "trending-up", instructor: "Dr. Kevin Bailey" },
+    { id: "MKTG 201", name: "Strategic Principles of Marketing", color: "#ea580c", icon: "megaphone", instructor: "Prof. Dina Morris" },
+    { id: "FIN 201", name: "Corporate Finance & Capital Markets", color: "#7c3aed", icon: "pie-chart", instructor: "Dr. Ramsey Thorne" },
+    { id: "MGMT 101", name: "Organizational Behavior & Leadership", color: "#f59e0b", icon: "briefcase", instructor: "Prof. Claire Sterling" }
+  ],
+  gen: [
+    { id: "CHEM 101", name: "General Chemistry & Lab Analysis", color: "#0284c7", icon: "flask-conical", instructor: "Dr. Karen Lin" },
+    { id: "PSYC 101", name: "Introduction to Psychological Science", color: "#7c3aed", icon: "brain", instructor: "Prof. Omar Farooq" },
+    { id: "HIST 101", name: "Modern Global History & Civilizations", color: "#d97706", icon: "landmark", instructor: "Dr. Arthur Bell" },
+    { id: "ENGL 102", name: "Academic Writing & Research Methods", color: "#2563eb", icon: "book-open", instructor: "Prof. Gillian Vance" },
+    { id: "SOC 101", name: "Principles of Sociology & Social Ethics", color: "#059669", icon: "users", instructor: "Dr. Yasmin Nour" }
+  ]
+};
+
+function selectOnboardingTrack(track, forceUpdateCourses = false) {
   triggerHaptic("selection");
   localStorage.setItem("quizradar_academic_track", track);
+  if (appState && appState.config) {
+    appState.config.academic_track = track;
+  }
   const chips = document.querySelectorAll(".onboard-track-chip");
   chips.forEach((c) => {
     const isSelected = c.getAttribute("data-track") === track;
     c.classList.toggle("is-selected", isSelected);
   });
+
+  const trackName = ACADEMIC_TRACK_NAMES[track] || track;
+
+  // Only populate starter courses if forceUpdateCourses is explicitly requested
+  if (forceUpdateCourses && ACADEMIC_TRACK_COURSES[track]) {
+    if (!appState.schedule) appState.schedule = { semester: "Fall 2026", courses: [], slots: [] };
+    appState.schedule.courses = JSON.parse(JSON.stringify(ACADEMIC_TRACK_COURSES[track]));
+    syncActiveCourseFilters();
+    renderOnboardingCourses();
+    renderSettingsCourses();
+    saveStateCache();
+    showToast(`Major selected: ${trackName}. Starter courses tailored to your field.`, "info", 2000);
+  }
 }
 
 function selectOnboardingRhythm(rhythm) {
@@ -4543,7 +4580,7 @@ function renderOnboardingPreview() {
               <span class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 shrink-0">${escapeHtml(a.assessment_type)}</span>
             </div>
             <div class="text-[11px] font-semibold tabular-nums text-[#1a73e8] dark:text-blue-400 shrink-0">
-              ${escapeHtml(a.date_iso)} · ${escapeHtml(a.start_time)} (Room ${escapeHtml(a.room)})
+              ${escapeHtml([a.date_iso, a.start_time || a.time].filter(Boolean).join(" · "))}${a.room ? ` (Room ${escapeHtml(a.room)})` : ""}
             </div>
           </div>
           ${
@@ -4571,6 +4608,71 @@ function renderAllViews() {
   if (window.lucide) lucide.createIcons();
 }
 
+function clearAllEnrolledCourses() {
+  if (!confirm("Are you sure you want to remove all enrolled courses from your schedule?")) return;
+  triggerHaptic("medium");
+  if (!appState.schedule) appState.schedule = { courses: [], slots: [], semester: "Fall 2026" };
+  appState.schedule.courses = [];
+  appState.schedule.slots = [];
+  activeCourseFilters.clear();
+  saveStateCache();
+  if (typeof mobileEngine !== "undefined" && mobileEngine) {
+    mobileEngine.state.schedule = appState.schedule;
+    mobileEngine.recomputeDashboard(mobileEngine.state);
+    mobileEngine.saveDatabase();
+  }
+  fetch("/api/schedule/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(appState.schedule)
+  }).catch(() => {});
+  renderAllViews();
+  showToast("All enrolled courses cleared.", "info");
+}
+
+function handleOnboardGoogleCardClick() {
+  triggerHaptic("light");
+  const emailInput = document.getElementById("onboard-student-email");
+  if (emailInput) {
+    emailInput.scrollIntoView({ behavior: "smooth", block: "center" });
+    emailInput.focus();
+    emailInput.classList.add("ring-2", "ring-[#1a73e8]");
+    setTimeout(() => emailInput.classList.remove("ring-2", "ring-[#1a73e8]"), 1200);
+  }
+  showToast("Enter or confirm your personal Google / Gmail address above.", "info");
+}
+
+function handleOnboardTeamsCardClick() {
+  triggerHaptic("light");
+  const uniInput = document.getElementById("onboard-university-email");
+  if (uniInput) {
+    uniInput.scrollIntoView({ behavior: "smooth", block: "center" });
+    uniInput.focus();
+    uniInput.classList.add("ring-2", "ring-indigo-500");
+    setTimeout(() => uniInput.classList.remove("ring-2", "ring-indigo-500"), 1200);
+  }
+  showToast("Enter or confirm your university student email (Microsoft Teams) above.", "info");
+}
+
+async function handleOnboardClassroomCardClick() {
+  triggerHaptic("light");
+  if (!appState.config) appState.config = {};
+  appState.config.classroom_enabled = !appState.config.classroom_enabled;
+  const isEn = appState.config.classroom_enabled;
+  showToast(isEn ? "Connecting to Google Classroom..." : "Google Classroom disconnected.", "info");
+  if (isEn) {
+    await testClassroomFromSettings();
+  }
+  saveStateCache();
+  updateTopBarAndUser();
+}
+
+function handleOnboardMoodleCardClick() {
+  triggerHaptic("light");
+  openSettingsModal();
+  showToast("Configure Moodle LMS iCal or token in Settings.", "info");
+}
+
 function renderOnboardingCourses() {
   const grid = document.getElementById("onboard-courses-grid");
   const headerLabel = document.getElementById("onboard-courses-header-label");
@@ -4592,12 +4694,14 @@ function renderOnboardingCourses() {
           <label class="flex items-center gap-2.5 min-w-0 cursor-pointer flex-1">
             <input type="checkbox" ${checked ? "checked" : ""} onchange="toggleCourseFilter('${c.id}', this.checked)" class="w-4 h-4 rounded shrink-0 cursor-pointer" style="accent-color: ${c.color}" />
             <span class="px-2 py-0.5 rounded-md text-[10px] font-bold text-white shrink-0" style="background-color: ${c.color}">${escapeHtml(c.id)}</span>
-            <span class="font-medium text-slate-800 dark:text-slate-200 truncate">${escapeHtml(c.name)}</span>
+            <span class="font-medium text-slate-800 dark:text-slate-200 truncate" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</span>
           </label>
           <div class="flex items-center gap-2 shrink-0 pl-1.5">
-            <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 tabular-nums">${slotCount} slots</span>
-            <button type="button" onclick="confirmDeleteCourse('${c.id}', '${escapeHtml(c.name)}', event)" class="p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer" title="Remove course">
-              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 tabular-nums">${slotCount} ${slotCount === 1 ? "slot" : "slots"}</span>
+            <button type="button" onclick="confirmDeleteCourse('${c.id}', '${escapeHtml(c.name)}', event)" aria-label="Remove course ${escapeHtml(c.id)}" class="p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer flex items-center justify-center" title="Remove course">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" x2="10" y1="11" y2="17"></line><line x1="14" x2="14" y1="11" y2="17"></line>
+              </svg>
             </button>
           </div>
         </div>
@@ -4662,12 +4766,14 @@ function renderSettingsCourses() {
           <label class="flex items-center gap-2.5 min-w-0 cursor-pointer flex-1">
             <input type="checkbox" ${checked ? "checked" : ""} onchange="toggleCourseFilter('${c.id}', this.checked)" class="w-4 h-4 rounded shrink-0 cursor-pointer" style="accent-color: ${c.color}" />
             <span class="px-2 py-0.5 rounded-md text-[10px] font-bold text-white shrink-0" style="background-color: ${c.color}">${escapeHtml(c.id)}</span>
-            <span class="font-medium text-slate-800 dark:text-slate-200 truncate">${escapeHtml(c.name)}</span>
+            <span class="font-medium text-slate-800 dark:text-slate-200 truncate" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</span>
           </label>
           <div class="flex items-center gap-2 shrink-0 pl-1.5">
-            <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 tabular-nums">${slotCount} slots</span>
-            <button type="button" onclick="confirmDeleteCourse('${c.id}', '${escapeHtml(c.name)}', event)" class="p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer" title="Remove course">
-              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 tabular-nums">${slotCount} ${slotCount === 1 ? "slot" : "slots"}</span>
+            <button type="button" onclick="confirmDeleteCourse('${c.id}', '${escapeHtml(c.name)}', event)" aria-label="Remove course ${escapeHtml(c.id)}" class="p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer flex items-center justify-center" title="Remove course">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" x2="10" y1="11" y2="17"></line><line x1="14" x2="14" y1="11" y2="17"></line>
+              </svg>
             </button>
           </div>
         </div>
@@ -5296,6 +5402,10 @@ async function finishOnboarding() {
     if (data.assessments) appState.assessments = data.assessments;
     if (data.dashboard) appState.dashboard = data.dashboard;
     if (data.config) appState.config = data.config;
+    if (data.schedule) {
+      appState.schedule = data.schedule;
+      syncActiveCourseFilters();
+    }
     saveStateCache();
     updateTopBarAndUser();
     renderAllViews();

@@ -287,6 +287,8 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
         .route("/api/sync/pair/info", get(get_pairing_info_handler))
         .route("/static/app.js", get(serve_app_js))
         .route("/app.js", get(serve_app_js))
+        .route("/static/lucide.min.js", get(serve_lucide_js))
+        .route("/lucide.min.js", get(serve_lucide_js))
         .route("/static/icon.svg", get(serve_icon_svg))
         .route("/icon.svg", get(serve_icon_svg))
         .route("/manifest.webmanifest", get(serve_manifest))
@@ -313,6 +315,21 @@ async fn serve_app_js() -> Response {
     headers.insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/javascript; charset=utf-8"),
+    );
+    (StatusCode::OK, headers, content).into_response()
+}
+
+async fn serve_lucide_js() -> Response {
+    let content = fs::read_to_string("static/lucide.min.js")
+        .unwrap_or_else(|_| include_str!("../static/lucide.min.js").to_string());
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/javascript; charset=utf-8"),
+    );
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=86400"),
     );
     (StatusCode::OK, headers, content).into_response()
 }

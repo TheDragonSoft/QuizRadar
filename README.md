@@ -2,19 +2,19 @@
 
 <img src="static/icon.svg" width="112" height="112" alt="QuizRadar App Icon" />
 
-# QuizRadar v3.1.0
+# QuizRadar v3.2.0
 
 **Never miss a quiz, lab assessment, or midterm buried in your university inbox, Microsoft Teams, Moodle, or Google Classroom.**
 
-[![Latest Release](https://img.shields.io/badge/Release-v3.1.0-1a73e8?style=for-the-badge&logo=github&label=Release&color=1a73e8)](https://github.com/TheDragonSoft/QuizRadar/releases/latest)
-[![Android Mobile App](https://img.shields.io/badge/Android-APK_v3.1.0-3ddc84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/TheDragonSoft/QuizRadar/releases/latest)
+[![Latest Release](https://img.shields.io/badge/Release-v3.2.0-1a73e8?style=for-the-badge&logo=github&label=Release&color=1a73e8)](https://github.com/TheDragonSoft/QuizRadar/releases/latest)
+[![Android Mobile App](https://img.shields.io/badge/Android-APK_v3.2.0-3ddc84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/TheDragonSoft/QuizRadar/releases/latest)
 [![Live Web App](https://img.shields.io/badge/Web_App-Installable_PWA-ea4335?style=for-the-badge&logo=pwa&logoColor=white)](https://thedragonsoft.github.io/QuizRadar/)
 [![100% Local Privacy](https://img.shields.io/badge/Privacy-100%25_Local_Data-0f9d58?style=for-the-badge&logo=shield&logoColor=white)](#-your-data-stays-100-local)
 [![Gemini AI](https://img.shields.io/badge/Gemini_AI-Smart_Study_Planner-8e24aa?style=for-the-badge&logo=googlegemini&logoColor=white)](#-features--parity)
 
 <p align="center">
   <a href="https://thedragonsoft.github.io/QuizRadar/"><strong>🌐 Open Web App (iPhone / PWA)</strong></a> ·
-  <a href="https://github.com/TheDragonSoft/QuizRadar/releases/latest"><strong>⬇ Download Native App (v3.1.0)</strong></a> ·
+  <a href="https://github.com/TheDragonSoft/QuizRadar/releases/latest"><strong>⬇ Download Native App (v3.2.0)</strong></a> ·
   <a href="#-android-mobile-app"><strong>📱 Android App</strong></a> ·
   <a href="#-features--parity"><strong>✨ Features & Parity</strong></a> ·
   <a href="#-visual-tour--screenshots"><strong>📸 Screenshots</strong></a> ·
@@ -148,10 +148,10 @@ QuizRadar 3.0 introduces a brand new native **Android Mobile Application** built
 4. QuizRadar is now installed on your home screen with its own app icon, launching full-screen with offline support!
 
 ### 📱 Android Mobile App
-1. Download **`QuizRadar-v3.1.0-Android.apk`** from the **[Latest GitHub Release](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
+1. Download **`QuizRadar-v3.2.0-Android.apk`** from the **[Latest GitHub Release](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
 2. Install the APK on your Android device:
    ```powershell
-   adb install -r QuizRadar-v3.1.0-Android.apk
+   adb install -r QuizRadar-v3.2.0-Android.apk
    ```
 3. Or build directly from source:
    ```powershell
@@ -164,18 +164,18 @@ QuizRadar 3.0 introduces a brand new native **Android Mobile Application** built
 ### 💻 Desktop Applications
 
 #### 🪟 Windows
-1. Download **`QuizRadar-Setup-v3.1.0-x64.exe`** (or portable ZIP) from **[GitHub Releases](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
+1. Download **`QuizRadar-Setup-v3.2.0-x64.exe`** (or portable ZIP) from **[GitHub Releases](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
 2. Run the installer or extract the portable ZIP.
 
 #### 🍎 macOS (Apple Silicon)
-1. Download **`QuizRadar-v3.1.0-macos-arm64.dmg`** from **[GitHub Releases](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
+1. Download **`QuizRadar-v3.2.0-macos-arm64.dmg`** from **[GitHub Releases](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
 2. Open the disk image and drag **QuizRadar.app** to your `/Applications` folder.
 
 #### 🐧 Linux (Debian / Ubuntu / Linux Mint)
-1. Download **`QuizRadar-v3.1.0-linux-amd64.deb`** from **[GitHub Releases](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
+1. Download **`QuizRadar-v3.2.0-linux-amd64.deb`** from **[GitHub Releases](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
 2. Install via package manager:
    ```bash
-   sudo dpkg -i QuizRadar-v3.1.0-linux-amd64.deb
+   sudo dpkg -i QuizRadar-v3.2.0-linux-amd64.deb
    ```
 
 #### 🛠️ Build from Source

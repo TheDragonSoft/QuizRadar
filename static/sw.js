@@ -1,4 +1,4 @@
-const CACHE_NAME = 'quizradar-pwa-v3.1.0';
+const CACHE_NAME = 'quizradar-pwa-v3.2.0';
 const STATIC_ASSETS = [
   './',
   './index.html',

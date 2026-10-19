@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VER="${1:-3.1.0}"
+VER="${1:-3.2.0}"
 ARCH="${2:-arm64}"
 STAGE_DIR="dist/dmg-staging"
 OUTPUT_DMG="dist/QuizRadar-v${VER}-macos-${ARCH}.dmg"

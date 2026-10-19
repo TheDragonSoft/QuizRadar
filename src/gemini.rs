@@ -1274,3 +1274,41 @@ pub async fn explore_and_extract_academic_universe(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_day_index() {
+        // Full day names
+        assert_eq!(normalize_day_index("sunday"), 0);
+        assert_eq!(normalize_day_index("monday"), 1);
+        assert_eq!(normalize_day_index("tuesday"), 2);
+        assert_eq!(normalize_day_index("wednesday"), 3);
+        assert_eq!(normalize_day_index("thursday"), 4);
+        assert_eq!(normalize_day_index("friday"), 5);
+        assert_eq!(normalize_day_index("saturday"), 6);
+
+        // Short day names
+        assert_eq!(normalize_day_index("sun"), 0);
+        assert_eq!(normalize_day_index("mon"), 1);
+        assert_eq!(normalize_day_index("tue"), 2);
+        assert_eq!(normalize_day_index("wed"), 3);
+        assert_eq!(normalize_day_index("thu"), 4);
+        assert_eq!(normalize_day_index("fri"), 5);
+        assert_eq!(normalize_day_index("sat"), 6);
+
+        // Mixed case and padding
+        assert_eq!(normalize_day_index("Sunday"), 0);
+        assert_eq!(normalize_day_index("MONDAY"), 1);
+        assert_eq!(normalize_day_index("  tUeSdAy  "), 2);
+        assert_eq!(normalize_day_index("WED  "), 3);
+        assert_eq!(normalize_day_index("\tThu\n"), 4);
+
+        // Fallback / invalid inputs
+        assert_eq!(normalize_day_index("unknown"), 0);
+        assert_eq!(normalize_day_index(""), 0);
+        assert_eq!(normalize_day_index("123"), 0);
+        assert_eq!(normalize_day_index("funday"), 0);
+    }
+}

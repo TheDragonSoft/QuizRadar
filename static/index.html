@@ -466,7 +466,7 @@
     <!-- Left: Sidebar Toggle, Brand Logo, View Switcher, Date Controls -->
     <div class="flex items-center gap-2 sm:gap-3 min-w-0">
       <!-- Toggle Sidebar Button (Hidden on Mobile) -->
-      <button onclick="toggleSidebar()" class="hidden md:flex w-9 h-9 rounded-lg items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-slate-600 dark:text-slate-300 transition cursor-pointer shrink-0" title="Toggle sidebar">
+      <button onclick="toggleSidebar()" aria-label="Toggle sidebar" class="hidden md:flex w-9 h-9 rounded-lg items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-slate-600 dark:text-slate-300 transition cursor-pointer shrink-0" title="Toggle sidebar">
         <i data-lucide="panel-left" class="w-4 h-4"></i>
       </button>
 
@@ -561,10 +561,10 @@
           Today
         </button>
         <div class="flex items-center">
-          <button onclick="shiftWeek(-1)" class="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition cursor-pointer" title="Previous week">
+          <button onclick="shiftWeek(-1)" aria-label="Previous week" class="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition cursor-pointer" title="Previous week">
             <i data-lucide="chevron-left" class="w-4 h-4"></i>
           </button>
-          <button onclick="shiftWeek(1)" class="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition cursor-pointer" title="Next week">
+          <button onclick="shiftWeek(1)" aria-label="Next week" class="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition cursor-pointer" title="Next week">
             <i data-lucide="chevron-right" class="w-4 h-4"></i>
           </button>
         </div>
@@ -584,6 +584,7 @@
           <!-- Input -->
           <input id="global-search-input"
                  type="text"
+                 aria-label="Search courses, topics, and exams"
                  autocomplete="off"
                  spellcheck="false"
                  oninput="handleGlobalSearch(this.value)"
@@ -596,6 +597,7 @@
           <div class="flex items-center gap-1.5 pr-2.5 shrink-0">
             <button id="search-clear-btn"
                     type="button"
+                    aria-label="Clear search"
                     onclick="clearGlobalSearch()"
                     class="hidden w-5 h-5 rounded-full items-center justify-center bg-slate-200/80 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-500 dark:text-slate-300 transition cursor-pointer"
                     title="Clear search">
@@ -665,12 +667,12 @@
       </button>
 
       <!-- Mobile Quick Search Trigger (Mobile only) -->
-      <button onclick="openMobileSearchPalette()" class="md:hidden w-9 h-9 rounded-lg flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-slate-600 dark:text-slate-300 transition cursor-pointer" title="Search">
+      <button onclick="openMobileSearchPalette()" aria-label="Search" class="md:hidden w-9 h-9 rounded-lg flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-slate-600 dark:text-slate-300 transition cursor-pointer" title="Search">
         <i data-lucide="search" class="w-4 h-4"></i>
       </button>
 
       <!-- Dedicated Mobile Sync Button (One-tap AI & Feed Refresh) -->
-      <button id="mobile-top-sync-btn" onclick="triggerFullSync()" class="md:hidden w-9 h-9 rounded-lg flex items-center justify-center border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-[#1a73e8] dark:text-blue-400 transition cursor-pointer" title="Sync Academic Radar">
+      <button id="mobile-top-sync-btn" onclick="triggerFullSync()" aria-label="Sync Academic Radar" class="md:hidden w-9 h-9 rounded-lg flex items-center justify-center border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-[#1a73e8] dark:text-blue-400 transition cursor-pointer" title="Sync Academic Radar">
         <i id="mobile-top-sync-icon" data-lucide="refresh-cw" class="w-4 h-4"></i>
       </button>
 
@@ -747,7 +749,7 @@
         <!-- Mobile Search Input (Visible < lg) -->
         <div class="lg:hidden relative">
           <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
-          <input id="mobile-search-input" type="text" oninput="handleGlobalSearch(this.value)" placeholder="Search courses, topics..." class="w-full h-9 pl-8 pr-3 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-slate-100" />
+          <input id="mobile-search-input" type="text" aria-label="Search courses and topics" oninput="handleGlobalSearch(this.value)" placeholder="Search courses, topics..." class="w-full h-9 pl-8 pr-3 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-slate-100" />
         </div>
 
         <!-- Interactive Mini Month Calendar -->
@@ -755,10 +757,10 @@
           <div class="flex items-center justify-between mb-2">
             <span id="mini-cal-month-label" class="text-xs font-semibold text-slate-800 dark:text-slate-200">October 2026</span>
             <div class="flex items-center gap-0.5">
-              <button onclick="shiftWeek(-1)" class="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-pointer" title="Previous week">
+              <button onclick="shiftWeek(-1)" aria-label="Previous week" class="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-pointer" title="Previous week">
                 <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i>
               </button>
-              <button onclick="shiftWeek(1)" class="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-pointer" title="Next week">
+              <button onclick="shiftWeek(1)" aria-label="Next week" class="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-pointer" title="Next week">
                 <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
               </button>
             </div>
@@ -1129,7 +1131,7 @@
             </div>
             <h3 id="modal-title" class="text-xl font-bold text-slate-900 dark:text-white leading-snug">Assessment Details</h3>
           </div>
-          <button onclick="closeEventDetailModal()" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 shrink-0 transition cursor-pointer" title="Close (Esc)">
+          <button onclick="closeEventDetailModal()" aria-label="Close" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 shrink-0 transition cursor-pointer" title="Close (Esc)">
             <i data-lucide="x" class="w-5 h-5"></i>
           </button>
         </div>
@@ -1277,7 +1279,7 @@
               <p class="text-xs text-blue-100/85 leading-relaxed line-clamp-2">Turn scattered course emails, Teams updates, and syllabus announcements into an organized calendar & smart study roadmap.</p>
             </div>
           </div>
-          <button onclick="closeOnboardingModal()" class="p-2 -mr-1 -mt-1 rounded-xl hover:bg-white/15 active:scale-95 text-white/80 hover:text-white transition cursor-pointer shrink-0" title="Skip to Dashboard (Esc)">
+          <button onclick="closeOnboardingModal()" aria-label="Skip to Dashboard" class="p-2 -mr-1 -mt-1 rounded-xl hover:bg-white/15 active:scale-95 text-white/80 hover:text-white transition cursor-pointer shrink-0" title="Skip to Dashboard (Esc)">
             <i data-lucide="x" class="w-5 h-5"></i>
           </button>
         </div>
@@ -1672,7 +1674,7 @@
       <div class="p-5 space-y-4">
         <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
           <h3 class="text-base font-bold text-slate-900 dark:text-white">Create Study Session or Custom Assessment</h3>
-          <button onclick="closeCreateEventModal()" class="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-pointer" title="Close (Esc)">
+          <button onclick="closeCreateEventModal()" aria-label="Close" class="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-pointer" title="Close (Esc)">
             <i data-lucide="x" class="w-4 h-4"></i>
           </button>
         </div>
@@ -1744,7 +1746,7 @@
             <p class="text-[11px] text-slate-500 dark:text-slate-400">100% Offline & Autonomous — Zero Laptop Server Required</p>
           </div>
         </div>
-        <button onclick="closeCloudSyncModal()" class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer">
+        <button onclick="closeCloudSyncModal()" aria-label="Close" class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer" title="Close">
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       </div>
@@ -1833,7 +1835,7 @@
             </div>
           </div>
         </div>
-        <button onclick="closeAccountModal()" class="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition cursor-pointer" title="Close">
+        <button onclick="closeAccountModal()" aria-label="Close" class="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition cursor-pointer" title="Close">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -1987,11 +1989,12 @@
           <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none"></i>
           <input id="mobile-modal-search-input"
                  type="text"
+                 aria-label="Search courses, exams, and topics"
                  autocomplete="off"
                  oninput="handleMobileModalSearch(this.value)"
                  placeholder="Search courses, exams, topics..."
                  class="w-full h-10 pl-9 pr-8 text-xs sm:text-sm bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-[#1a73e8] focus:ring-2 focus:ring-[#1a73e8]/15" />
-          <button id="mobile-modal-search-clear" onclick="clearMobileModalSearch()" class="hidden absolute right-2.5 w-5 h-5 rounded-full items-center justify-center bg-slate-200 dark:bg-slate-700 text-slate-500 hover:text-slate-700 dark:hover:text-white transition cursor-pointer">
+          <button id="mobile-modal-search-clear" onclick="clearMobileModalSearch()" aria-label="Clear search" class="hidden absolute right-2.5 w-5 h-5 rounded-full items-center justify-center bg-slate-200 dark:bg-slate-700 text-slate-500 hover:text-slate-700 dark:hover:text-white transition cursor-pointer" title="Clear search">
             <i data-lucide="x" class="w-3 h-3"></i>
           </button>
         </div>
@@ -2031,7 +2034,7 @@
             <p class="text-xs text-slate-500 dark:text-slate-400">Manage your Google account, Gemini AI key, courses, theme, and calendar sync</p>
           </div>
         </div>
-        <button onclick="closeSettingsModal()" class="p-1.5 rounded-lg hover:bg-slate-200/70 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition cursor-pointer" title="Close (Esc)">
+        <button onclick="closeSettingsModal()" aria-label="Close" class="p-1.5 rounded-lg hover:bg-slate-200/70 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition cursor-pointer" title="Close (Esc)">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -2289,7 +2292,7 @@
             <p id="schedule-preview-subtitle" class="text-xs text-slate-500 dark:text-slate-400">Gemini extracted courses and recurring weekly class timeslots</p>
           </div>
         </div>
-        <button onclick="closeSchedulePreviewModal()" class="p-1.5 rounded-lg hover:bg-slate-200/70 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition cursor-pointer">
+        <button onclick="closeSchedulePreviewModal()" aria-label="Close" class="p-1.5 rounded-lg hover:bg-slate-200/70 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition cursor-pointer" title="Close">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -2349,7 +2352,7 @@
             <p class="text-xs text-slate-500 dark:text-slate-400">Define course code, name, theme color, and weekly class times</p>
           </div>
         </div>
-        <button onclick="closeAddCourseModal()" class="p-1.5 rounded-lg hover:bg-slate-200/70 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition cursor-pointer">
+        <button onclick="closeAddCourseModal()" aria-label="Close" class="p-1.5 rounded-lg hover:bg-slate-200/70 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition cursor-pointer" title="Close">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -2416,7 +2419,7 @@
             <h3 id="practice-quiz-title" class="text-base font-bold text-white truncate max-w-md">Practice Quiz</h3>
           </div>
         </div>
-        <button onclick="closePracticeQuizModal()" class="p-1.5 rounded-lg hover:bg-white/10 text-white/80 transition cursor-pointer" title="Close (Esc)">
+        <button onclick="closePracticeQuizModal()" aria-label="Close" class="p-1.5 rounded-lg hover:bg-white/10 text-white/80 transition cursor-pointer" title="Close (Esc)">
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
@@ -2493,7 +2496,7 @@
           <i data-lucide="timer" class="w-4 h-4 text-rose-500"></i>
           <span>Study Task Focus Timer</span>
         </span>
-        <button onclick="closePomodoroModal()" class="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 cursor-pointer">
+        <button onclick="closePomodoroModal()" aria-label="Close" class="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 cursor-pointer" title="Close">
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       </div>
@@ -2525,7 +2528,7 @@
           <i id="pomodoro-toggle-icon" data-lucide="play" class="w-4 h-4"></i>
           <span id="pomodoro-toggle-label">Start Focus</span>
         </button>
-        <button onclick="resetPomodoroTimer()" class="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition cursor-pointer" title="Reset Timer">
+        <button onclick="resetPomodoroTimer()" aria-label="Reset timer" class="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition cursor-pointer" title="Reset Timer">
           <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
         </button>
       </div>

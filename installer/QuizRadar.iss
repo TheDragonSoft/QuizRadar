@@ -2,7 +2,7 @@
 ; Builds QuizRadar-Setup-v2.2.0-x64.exe with custom QuizRadar icon & wizard branding
 
 #ifndef MyAppVersion
-  #define MyAppVersion "2.2.0"
+  #define MyAppVersion "3.0.0"
 #endif
 
 #define MyAppName "QuizRadar"

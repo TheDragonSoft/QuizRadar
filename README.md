@@ -7,15 +7,16 @@
 **Never miss a quiz, lab assessment, or midterm buried in your university inbox, Microsoft Teams, Moodle, or Google Classroom.**
 
 [![Latest Release](https://img.shields.io/badge/Release-v3.0.0-1a73e8?style=for-the-badge&logo=github&label=Release&color=1a73e8)](https://github.com/TheDragonSoft/QuizRadar/releases/latest)
-[![Android Mobile App](https://img.shields.io/badge/Android-APK_v3.0.0-3ddc84?style=for-the-badge&logo=android&logoColor=white)](android/app/build/outputs/apk/debug/app-debug.apk)
+[![Android Mobile App](https://img.shields.io/badge/Android-APK_v3.0.0-3ddc84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/TheDragonSoft/QuizRadar/releases/latest)
 [![100% Local Privacy](https://img.shields.io/badge/Privacy-100%25_Local_Data-0f9d58?style=for-the-badge&logo=shield&logoColor=white)](#-your-data-stays-100-local)
-[![Gemini AI](https://img.shields.io/badge/Gemini_AI-Smart_Study_Planner-8e24aa?style=for-the-badge&logo=googlegemini&logoColor=white)](#-features-and-parity)
-[![Google Calendar](https://img.shields.io/badge/Google_Calendar-Auto_Sync-1a73e8?style=for-the-badge&logo=googlecalendar&logoColor=white)](#-features-and-parity)
+[![Gemini AI](https://img.shields.io/badge/Gemini_AI-Smart_Study_Planner-8e24aa?style=for-the-badge&logo=googlegemini&logoColor=white)](#-features--parity)
+[![Google Calendar](https://img.shields.io/badge/Google_Calendar-Auto_Sync-1a73e8?style=for-the-badge&logo=googlecalendar&logoColor=white)](#-features--parity)
 
 <p align="center">
-  <a href="https://github.com/TheDragonSoft/QuizRadar/releases/latest"><strong>⬇ Download Desktop (v3.0.0)</strong></a> ·
+  <a href="https://github.com/TheDragonSoft/QuizRadar/releases/latest"><strong>⬇ Download App (v3.0.0)</strong></a> ·
   <a href="#-android-mobile-app"><strong>📱 Android App</strong></a> ·
-  <a href="#-features-and-parity"><strong>✨ Features & Parity</strong></a> ·
+  <a href="#-features--parity"><strong>✨ Features & Parity</strong></a> ·
+  <a href="#-visual-tour--screenshots"><strong>📸 Screenshots</strong></a> ·
   <a href="#-your-data-stays-100-local"><strong>🔒 Local Privacy</strong></a> ·
   <a href="#-quick-start"><strong>🚀 Quick Start</strong></a>
 </p>
@@ -38,7 +39,7 @@ Figuring out when that quiz actually happens means checking when the announcemen
 
 ## 📱 Android Mobile App
 
-QuizRadar 3.0 introduces a brand new native **Android Mobile Application** built for high performance and offline independence:
+QuizRadar 3.0 introduces a brand new native **Android Mobile Application** built for high performance, gestures, and offline independence:
 
 - **Complete Feature Parity**: Access all dashboard views, study task roadmaps, 7-day week calendar, Pomodoro focus timer, AI study plans, and account connections directly on your Android phone or tablet.
 - **Autonomous On-Device Engine**: Runs 100% offline using a dedicated local storage and calculation engine. No background server connection required.
@@ -49,21 +50,81 @@ QuizRadar 3.0 introduces a brand new native **Android Mobile Application** built
 
 ---
 
-## ✨ Features & Desktop/Mobile Parity
+## ✨ Features & Parity
 
 | Feature | Desktop (Rust + Axum) | Android Mobile (Capacitor) |
 |---|:---:|:---:|
 | **Multi-Source Ingestion** (Gmail, Teams, Moodle, Classroom) | ✅ | ✅ |
 | **Smart Academic Dashboard** with Urgent Deadlines | ✅ | ✅ |
-| **"What Should I Study?" AI Roadmap** | ✅ | ✅ |
+| **"What Should I Study?" AI Priority Planner** | ✅ | ✅ |
 | **7-Day Interactive Week Calendar** (8 AM – 8 PM) | ✅ | ✅ |
-| **Dynamic Date Synchronization** (Real-time Day Highlights) | ✅ | ✅ |
+| **Dynamic Date Engine** (Real-time Day Highlights & Countdowns) | ✅ | ✅ |
 | **Pull-to-Refresh & Dedicated Sync Button** | ✅ | ✅ |
 | **Autonomous On-Device Processing** | ✅ | ✅ |
-| **Exam Overload & Clash Detection** | ✅ | ✅ |
+| **Exam Overload & Clash Detection Banner** | ✅ | ✅ |
 | **1-Click Google Calendar Push & `.ics` Export** | ✅ | ✅ |
 | **Impeccable Light & Dark Mode** | ✅ | ✅ |
 | **Zero Server Tracking / 100% Local Privacy** | ✅ | ✅ |
+
+---
+
+## 📸 Visual Tour & Screenshots
+
+### 📱 Android Mobile App (New in v3.0.0)
+<table>
+  <thead>
+    <tr>
+      <th align="center">📊 Smart Academic Dashboard</th>
+      <th align="center">🗓 7-Day Week Calendar</th>
+      <th align="center">🔄 Native Pull-to-Refresh</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center">
+        <img src="docs/screenshots/mobile-dashboard.png" width="260" alt="QuizRadar Mobile — Smart Academic Dashboard" />
+      </td>
+      <td align="center">
+        <img src="docs/screenshots/mobile-calendar.png" width="260" alt="QuizRadar Mobile — 7-Day Calendar (Monday Active)" />
+      </td>
+      <td align="center">
+        <img src="docs/screenshots/mobile-pull-refresh.png" width="260" alt="QuizRadar Mobile — Animated Pull to Refresh" />
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+### 💻 Desktop Workspace Views
+<table>
+  <thead>
+    <tr>
+      <th align="center">📊 Smart Academic Dashboard</th>
+      <th align="center">🗓 7-Day Week Calendar</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center">
+        <strong>☀️ Light Mode</strong><br />
+        <img src="docs/screenshots/dashboard-light.png" width="420" alt="Smart Academic Dashboard — Light Mode" />
+      </td>
+      <td align="center">
+        <strong>☀️ Light Mode</strong><br />
+        <img src="docs/screenshots/week-calendar.png" width="420" alt="7-Day Week Calendar — Light Mode" />
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <strong>🌙 Dark Mode</strong><br />
+        <img src="docs/screenshots/dashboard-dark.png" width="420" alt="Smart Academic Dashboard — Dark Mode" />
+      </td>
+      <td align="center">
+        <strong>🌙 Dark Mode</strong><br />
+        <img src="docs/screenshots/week-calendar-dark.png" width="420" alt="7-Day Week Calendar — Dark Mode" />
+      </td>
+    </tr>
+  </tbody>
+</table>
 
 ---
 
@@ -80,22 +141,23 @@ QuizRadar 3.0 introduces a brand new native **Android Mobile Application** built
 
 ## 🚀 Quick Start
 
-### Android Mobile App
-1. Download **`app-debug.apk`** from the release assets or build from source:
+### 📱 Android Mobile App
+1. Download **`QuizRadar-v3.0.0-Android.apk`** from the **[Latest GitHub Release](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
+2. Install the APK on your Android device:
+   ```powershell
+   adb install -r QuizRadar-v3.0.0-Android.apk
+   ```
+3. Or build directly from source:
    ```powershell
    npx cap sync android
    cd android
    $env:JAVA_HOME = "C:\Program Files\Java\jdk-21"
    ./gradlew.bat assembleDebug
    ```
-2. Install on your Android device or emulator:
-   ```powershell
-   adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-   ```
 
-### Desktop Application
-1. Download **`QuizRadar-v3.0.0-win-x64.zip`** from **[GitHub Releases](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
-2. Run **`quizradar.exe`**.
+### 💻 Desktop Application
+1. Download **`QuizRadar-Setup-v3.0.0-x64.exe`** (or portable ZIP) from **[GitHub Releases](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
+2. Run the installer or extract the portable ZIP.
 3. Or build directly from source:
    ```powershell
    cargo build --release

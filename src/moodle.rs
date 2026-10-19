@@ -431,8 +431,8 @@ pub fn generate_moodle_sample_assessments(schedule: &ScheduleData) -> Vec<Assess
     let mut list = Vec::new();
 
     let sample_items = [
-        ("CSE263", "Moodle Lab Quiz 2: Pattern Classification", "2026-10-26", "14:00", "15:00", "Lab Quiz", vec!["k-NN Decision Boundaries", "Bayes Decision Theory"]),
-        ("CSE261", "Moodle Online Assignment: Graph Traversal", "2026-10-28", "23:59", "23:59", "Assignment", vec!["Breadth-First Search (BFS)", "Depth-First Search (DFS) implementation"]),
+        ("DATA 201", "Moodle Lab Quiz 2: Pattern Classification", "2026-10-26", "14:00", "15:00", "Lab Quiz", vec!["Algorithm Analysis", "Decision Boundaries"]),
+        ("CS 101", "Moodle Online Assignment: Graph Traversal", "2026-10-28", "23:59", "23:59", "Assignment", vec!["Breadth-First Search (BFS)", "Depth-First Search (DFS) implementation"]),
     ];
 
     let ref_date = crate::parser::current_reference_date();
@@ -472,7 +472,7 @@ pub fn generate_moodle_sample_assessments(schedule: &ScheduleData) -> Vec<Assess
             ai_inference_note: "Synced via Moodle LMS calendar integration.".to_string(),
             ai_study_plan: "Complete and submit on Moodle before the deadline cutoff.".to_string(),
             estimated_study_hours: 2.5,
-            elearning_url: "https://e-learning.msa.edu.eg".to_string(),
+            elearning_url: "https://moodle.university.edu".to_string(),
             google_cal_url: String::new(),
             gcal_synced: false,
             gcal_event_id: None,

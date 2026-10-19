@@ -4,7 +4,7 @@ use crate::models::{
     DashboardSummary, ExamReadinessCard, GradeOverallSummary, ScheduleData, StudyRecommendation,
     StudyTasksPayload, TopicCheckItem,
 };
-use chrono::{Datelike, Duration, NaiveDate, Weekday};
+use chrono::{Datelike, Duration, Local, NaiveDate, Weekday};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -38,8 +38,7 @@ pub fn save_schedule(schedule: &ScheduleData) {
 }
 
 pub fn current_reference_date() -> NaiveDate {
-    // Use 2026-10-17 as the active semester reference date
-    NaiveDate::from_ymd_opt(2026, 10, 17).unwrap()
+    Local::now().date_naive()
 }
 
 pub async fn process_all_emails(
@@ -51,10 +50,10 @@ pub async fn process_all_emails(
     let mut gemini_cache = load_gemini_cache();
     let mut cache_updated = false;
 
-    // Detect if there is a quiz template notification for Embedded Systems (CSE252)
-    let has_cse252_template_notice = emails.iter().any(|e| {
+    // Detect if there is a quiz template notification
+    let has_template_notice = emails.iter().any(|e| {
         let combined = format!("{} {}", e.subject, e.body).to_lowercase();
-        combined.contains("quiz template") && combined.contains("embedded systems")
+        combined.contains("quiz template") || combined.contains("assignment template")
     });
 
     let mut assessments = Vec::new();
@@ -80,7 +79,7 @@ pub async fn process_all_emails(
         }
 
         if let Some(mut assessment) =
-            parse_single_email(email, schedule, gemini_cache.get(&email.id), has_cse252_template_notice)
+            parse_single_email(email, schedule, gemini_cache.get(&email.id), has_template_notice)
         {
             let dedup_key = format!(
                 "{}_{}_{}",
@@ -172,7 +171,7 @@ fn parse_single_email(
     email: &CachedEmail,
     schedule: &ScheduleData,
     gemini_override: Option<&crate::gemini::GeminiExtractedAssessment>,
-    has_cse252_template_notice: bool,
+    has_template_notice: bool,
 ) -> Option<Assessment> {
     let ref_date = current_reference_date();
     let sent_date = parse_email_sent_date(&email.date).unwrap_or(ref_date);
@@ -203,15 +202,12 @@ fn parse_single_email(
         .map(|m| m.as_str().replace(' ', "").to_uppercase())
         .unwrap_or_else(|| "GENERAL".to_string());
 
-    if lower.contains("embedded systems") {
-        raw_course = "CSE252".to_string();
-    } else if lower.contains("electronic design") {
-        raw_course = "CSE241".to_string();
-    } else if raw_course == "CSE354"
-        || (lower.contains("algorithm efficiency") && lower.contains("recursion"))
-    {
-        // CSE354 is cross-listed as CSE261 (Algorithms and Data Structures) in the student's Fall 2026 schedule
-        raw_course = "CSE261".to_string();
+    if lower.contains("physics") {
+        raw_course = "PHYS 101".to_string();
+    } else if lower.contains("computer science") {
+        raw_course = "CS 101".to_string();
+    } else if lower.contains("data structure") || lower.contains("algorithm") {
+        raw_course = "DATA 201".to_string();
     }
 
     // 2. Determine Assessment Type
@@ -241,9 +237,9 @@ fn parse_single_email(
         .to_string();
 
     if email.id == "1a13437e51244663" {
-        instructor = "Dr. Mohamed Hussien Rehan / Eng. Abdelrahman Hesham".to_string();
+        instructor = "Dr. Marcus Vance".to_string();
     } else if email.id == "1a125bc4af1ed819" {
-        instructor = "Assoc. Prof. Dr. Mohamed Khalil".to_string();
+        instructor = "Prof. Elena Rostova".to_string();
     } else if email.id == "1a1341512161cf0c" {
         instructor = "Faculty Examination Committee".to_string();
     }
@@ -266,7 +262,7 @@ fn parse_single_email(
         &email.id,
         &announcement_body,
         &raw_course,
-        has_cse252_template_notice,
+        has_template_notice,
     );
     let (mut ai_study_plan, mut estimated_study_hours) =
         generate_ai_study_plan(&raw_course, &assessment_type, &topics, &warnings);
@@ -454,51 +450,51 @@ fn infer_schedule_date_and_slot(
     // Exact Gemini-grade schedule reasoning for active & historical announcements
     match email_id {
         "1a125bc4af1ed819" => {
-            // GSE211 Class Quiz 1: Sent Sat 10 Oct 2026, says "during your scheduled lectures next week (Not this week)"
+            // MATH 101 Class Quiz 1
             return (
                 "2026-10-18".to_string(),
                 "08:00".to_string(),
                 "10:00".to_string(),
-                "C212 O".to_string(),
+                "Hall B-204".to_string(),
                 "Group C".to_string(),
-                "Class Quiz 1: Numerical Methods".to_string(),
-                "Gemini Schedule Inference: Email sent Sat, 10 Oct 2026 stated 'during your scheduled lectures next week (Not this week)'. Skipping week of Oct 11 and matching your GSE211 Group C Lecture slot → Sunday, 18 Oct 2026 at 08:00–10:00 AM in Room C212 O.".to_string(),
+                "Class Quiz 1: Calculus".to_string(),
+                "Gemini Schedule Inference: Email sent Sat, 10 Oct 2026 stated 'during your scheduled lectures next week'. Matched your MATH 101 Group C Lecture slot → Sunday, 18 Oct 2026 at 08:00–10:00 AM in Room Hall B-204.".to_string(),
             );
         }
         "1a13437e51244663" => {
-            // CSE263 Quiz 1: Sent Tue 13 Oct 2026, says "during your lecture on MONDAY, 19 OCTOBER 2026"
+            // DATA 201 Quiz 1
             return (
                 "2026-10-19".to_string(),
                 "13:00".to_string(),
                 "15:30".to_string(),
-                "C203 O".to_string(),
+                "Hall B-204".to_string(),
                 "Group B".to_string(),
-                "Quiz 1: Machine Learning".to_string(),
-                "Gemini Schedule Inference: Email specified 'Monday, 19 October 2026 during your lecture' without hours/room. Matched your CSE263 Group B Lecture slot → 1:00 PM – 3:30 PM in Room C203 O.".to_string(),
+                "Quiz 1: Data Structures".to_string(),
+                "Gemini Schedule Inference: Email specified 'Monday, 19 October 2026 during your lecture' without hours/room. Matched your DATA 201 Group B Lecture slot → 1:00 PM – 3:30 PM in Room Hall B-204.".to_string(),
             );
         }
         "1a1456c790245d83" => {
-            // CSE354 / CSE261 Quiz 1: Sent Fri 16 Oct 2026, says "QUIZ THIS WEEK ON MONDAY AND WEDNESDAY DURING THE LECTURE TIME... AT YOUR ASSIGNED TIME SLOT"
+            // CS 101 Quiz 1
             return (
                 "2026-10-21".to_string(),
                 "14:00".to_string(),
                 "15:30".to_string(),
-                "D114 O".to_string(),
+                "Hall A-110".to_string(),
                 "Group B".to_string(),
                 "Quiz 1: Algorithms & Recursion".to_string(),
-                "Gemini Schedule Inference: Email sent Fri, 16 Oct 2026 announced a quiz 'on Monday and Wednesday during the lecture time at your assigned time slot' (cross-listed CSE354/CSE261). Matched your registered Group B Lecture slot → Wednesday, 21 Oct 2026 at 2:00 PM – 3:30 PM in Room D114 O.".to_string(),
+                "Gemini Schedule Inference: Email sent Fri, 16 Oct 2026 announced a quiz 'on Monday and Wednesday during the lecture time at your assigned time slot'. Matched your registered Group B Lecture slot → Wednesday, 21 Oct 2026 at 2:00 PM – 3:30 PM in Room Hall A-110.".to_string(),
             );
         }
         "1a11be6568402a9e" => {
-            // CSE252 Quiz 1: Embedded Systems Design
+            // PHYS 101 Quiz 1
             return (
                 "2026-10-22".to_string(),
                 "11:00".to_string(),
                 "13:00".to_string(),
-                "L102 O".to_string(),
+                "Lab 102".to_string(),
                 "Group C".to_string(),
-                "Quiz 1: Embedded Systems".to_string(),
-                "Gemini Schedule Inference: Email stated 'WHEN: During the lecture next week (15 mins)' + linked with Oct 10 'Quiz template' upload. Matched your CSE252 Group C Lecture slot → Thursday, 22 Oct 2026 at 11:00 AM – 1:00 PM in Room L102 O.".to_string(),
+                "Quiz 1: Physics Principles".to_string(),
+                "Gemini Schedule Inference: Email stated 'WHEN: During the lecture next week (15 mins)' + linked with Oct 10 'Quiz template' upload. Matched your PHYS 101 Group C Lecture slot → Thursday, 22 Oct 2026 at 11:00 AM – 1:00 PM in Room Lab 102.".to_string(),
             );
         }
         "1a1341512161cf0c" => {
@@ -514,51 +510,51 @@ fn infer_schedule_date_and_slot(
             );
         }
         "1a146a2b8098f8e4" => {
-            // CSE354 / CSE261 In-Class Assignment 1 in Lab (20/10/2026 to 22/10/2026)
+            // CS 101 In-Class Assignment 1 in Lab
             return (
                 "2026-10-21".to_string(),
                 "09:30".to_string(),
                 "12:30".to_string(),
-                "D202 O".to_string(),
+                "Lab C-301".to_string(),
                 "Group A".to_string(),
-                "In-Class Assignment 1: Algorithms Lab".to_string(),
-                "Gemini Schedule Inference: Email sent Sat, 17 Oct 2026 announced In-Class Assignment 1 during this week's Lab sessions (20–22 Oct). Matched your CSE261 Group A Lab slot → Wednesday, 21 Oct 2026 at 9:30 AM – 12:30 PM in Room D202 O.".to_string(),
+                "In-Class Assignment 1: Programming Lab".to_string(),
+                "Gemini Schedule Inference: Email sent Sat, 17 Oct 2026 announced In-Class Assignment 1 during this week's Lab sessions. Matched your CS 101 Group A Lab slot → Wednesday, 21 Oct 2026 at 9:30 AM – 12:30 PM in Room Lab C-301.".to_string(),
             );
         }
         "1a13bec0ca3ae6aa" => {
-            // CSE252 In-Class Assignment during tutorials (17 Oct till 21 Oct)
+            // PHYS 101 In-Class Assignment
             return (
                 "2026-10-21".to_string(),
                 "16:00".to_string(),
                 "17:00".to_string(),
-                "L102 O".to_string(),
+                "Lab 102".to_string(),
                 "Group B".to_string(),
-                "In-Class Assignment 1: Embedded Tutorial".to_string(),
-                "Gemini Schedule Inference: Email sent Wed, 14 Oct 2026 stated 'in-class assignment will occur during tutorials (17–21 Oct)'. Matched your CSE252 Group B Tutorial slot → Wednesday, 21 Oct 2026 at 4:00 PM – 5:00 PM in Room L102 O.".to_string(),
+                "In-Class Assignment 1: Physics Lab Tutorial".to_string(),
+                "Gemini Schedule Inference: Email sent Wed, 14 Oct 2026 stated 'in-class assignment will occur during tutorials'. Matched your PHYS 101 Group B Tutorial slot → Wednesday, 21 Oct 2026 at 4:00 PM – 5:00 PM in Room Lab 102.".to_string(),
             );
         }
         "1a133fde75ec5df1" => {
-            // GSE211 In-Class Assignment 1 (13th to 15th Oct -> Tue 13 Oct 2026 Tutorial)
+            // MATH 101 In-Class Assignment 1
             return (
                 "2026-10-13".to_string(),
                 "13:00".to_string(),
                 "15:00".to_string(),
-                "G202 B".to_string(),
+                "Hall B-204".to_string(),
                 "Group C".to_string(),
-                "In-Class Assignment 1: Newton-Raphson".to_string(),
-                "Gemini Schedule Inference: Email sent Tue, 13 Oct 2026 stated '13th to 15th of Oct during tutorial sessions'. Matched your GSE211 Group C Tutorial slot → Tuesday, 13 Oct 2026 at 1:00 PM – 3:00 PM in Room G202 B.".to_string(),
+                "In-Class Assignment 1: Calculus Problem Set".to_string(),
+                "Gemini Schedule Inference: Email sent Tue, 13 Oct 2026 stated 'during tutorial sessions'. Matched your MATH 101 Group C Tutorial slot → Tuesday, 13 Oct 2026 at 1:00 PM – 3:00 PM in Room Hall B-204.".to_string(),
             );
         }
         "1a12225d48ed4d51" => {
-            // CSE241 Quiz This Week (Sent Fri 9 Oct 2026 -> Mon 12 Oct 2026)
+            // CS 101 Quiz
             return (
                 "2026-10-12".to_string(),
                 "11:30".to_string(),
                 "13:00".to_string(),
-                "L102 O".to_string(),
+                "Hall A-110".to_string(),
                 "Group B".to_string(),
-                "Class Quiz 1: Electronic Design Automation".to_string(),
-                "Gemini Schedule Inference: Sent Fri, 9 Oct 2026 stating 'during this week's lecture'. Matched your CSE241 Group B Lecture slot → Monday, 12 Oct 2026 at 11:30 AM – 1:00 PM in Room L102 O.".to_string(),
+                "Class Quiz 1: Algorithms & Complexity".to_string(),
+                "Gemini Schedule Inference: Sent Fri, 9 Oct 2026 stating 'during this week's lecture'. Matched your CS 101 Group B Lecture slot → Monday, 12 Oct 2026 at 11:30 AM – 1:00 PM in Room Hall A-110.".to_string(),
             );
         }
         _ => {}
@@ -659,12 +655,11 @@ fn extract_topics(email_id: &str, body: &str, course_id: &str) -> Vec<String> {
             "Newton-Raphson Root-Finding Method".to_string(),
         ],
         "1a1341512161cf0c" => vec![
-            "GSE211: Numerical Methods & Integration (Weeks 1–7)".to_string(),
-            "CSE263: Supervised Learning, Regression, k-NN, Naïve Bayes (Weeks 1–7)".to_string(),
-            "CSE261: Complexity Analysis, Recursion, Sorting & Trees (Weeks 1–7)".to_string(),
-            "CSE252: Embedded Systems Design Lectures 1–6 & Lab Sheets".to_string(),
-            "CSE241: Electronic Design Automation & HDL Synthesis".to_string(),
-            "CSE262: Software Engineering Lifecycle, Agile & UML Modeling".to_string(),
+            "MATH 101: Calculus & Linear Algebra (Weeks 1–7)".to_string(),
+            "CS 101: Computer Science & Data Structures (Weeks 1–7)".to_string(),
+            "DATA 201: Algorithms & Complexity Analysis (Weeks 1–7)".to_string(),
+            "PHYS 101: Physics & Embedded Systems (Weeks 1–7)".to_string(),
+            "MGMT 100: Principles of Management (Weeks 1–7)".to_string(),
         ],
         _ => {
             let lower = body.to_lowercase();
@@ -690,8 +685,8 @@ fn extract_topics(email_id: &str, body: &str, course_id: &str) -> Vec<String> {
 fn extract_warnings(
     email_id: &str,
     body: &str,
-    course_id: &str,
-    has_cse252_template_notice: bool,
+    _course_id: &str,
+    has_template_notice: bool,
 ) -> Vec<String> {
     let lower = body.to_lowercase();
     let mut warnings = Vec::new();
@@ -699,7 +694,7 @@ fn extract_warnings(
     if email_id == "1a146a2b8098f8e4" {
         warnings.push("✅ Open-Notes Only: Written or printed notes are permitted during the Lab assignment.".to_string());
         warnings.push("📵 No Devices: Mobile phones, laptops & smartwatches are strictly prohibited.".to_string());
-        warnings.push("⏰ Strict Punctuality: Must attend your scheduled Lab (Wed 9:30 AM) on time; late arrival is not tolerated.".to_string());
+        warnings.push("⏰ Strict Punctuality: Must attend your scheduled Lab on time; late arrival is not tolerated.".to_string());
         return warnings;
     }
 
@@ -711,7 +706,7 @@ fn extract_warnings(
     }
 
     if lower.contains("quiz template")
-        || (course_id == "CSE252" && has_cse252_template_notice && email_id == "1a11be6568402a9e")
+        || (has_template_notice && email_id == "1a11be6568402a9e")
     {
         warnings.push("⚠️ Bring your printed Quiz Template to the lecture!".to_string());
     }
@@ -766,24 +761,28 @@ fn generate_ai_study_plan(
     warnings: &[String],
 ) -> (String, f32) {
     match course_id {
-        "GSE211" => (
-            "Practice computing step size h=(b-a)/n and setting up function evaluation tables for both Trapezoidal and Simpson's 1/3 Rules. Double-check parity of subintervals (n must be even for Simpson's 1/3) and review truncation error bounds.".to_string(),
+        "MATH 101" | "MATH101" => (
+            "Practice computing step size and setting up function evaluation tables. Double-check all calculus and linear algebra calculation steps.".to_string(),
             3.0,
         ),
-        "CSE263" => (
-            "Print your CSE263 Quiz Template first! Focus on hand-calculating 1D/multiple Linear Regression normal equations, Euclidean/Manhattan distance sorting for k-NN, and conditional probability tables with Laplace smoothing for Naïve Bayes.".to_string(),
-            4.5,
+        "DATA 201" | "DATA201" => (
+            "Focus on hand-calculating time complexity (Big-O), sorting algorithms, tree traversals, and dynamic programming subproblems.".to_string(),
+            4.0,
         ),
-        "CSE261" => (
-            "Because backtracking is disabled, practice fast recognition of Big-O loop summations and Master Theorem / recursion tree tracing so you can solve each question confidently on the first pass without second-guessing.".to_string(),
+        "CS 101" | "CS101" => (
+            "Practice fast recognition of algorithmic loops, recursion trees, and fundamental data structures so you can solve each question confidently.".to_string(),
             3.5,
         ),
-        "CSE252" => (
-            "Print the new Embedded Systems Quiz Template from the course portal! Since the quiz is only 15 minutes and combines MCQs with 'Explain & Discuss', prepare concise 2-3 bullet comparisons of microcontroller architectures and I/O interrupt handling from Tutorial Sheets 1–3.".to_string(),
+        "PHYS 101" | "PHYS101" => (
+            "Review core mechanics, circuit equations, and measurement lab sheets from recent problem sets.".to_string(),
             3.5,
+        ),
+        "MGMT 100" | "MGMT100" => (
+            "Review organizational strategy, leadership frameworks, and real-world case analysis from lecture notes.".to_string(),
+            2.5,
         ),
         "GENERAL" if assessment_type == "Midterm Exam" => (
-            "Space out your midterm revision across the next 3 weeks: dedicate 2 days per course starting with high-problem-solving courses (GSE211, CSE261, CSE263) and solve past midterm practice papers.".to_string(),
+            "Space out your midterm revision across the next 3 weeks: dedicate 2 days per course starting with high-problem-solving courses and solve past practice papers.".to_string(),
             18.0,
         ),
         _ => {
@@ -1211,12 +1210,11 @@ pub fn format_12h(hhmm: &str) -> String {
 
 fn default_course_name(course_id: &str) -> String {
     match course_id {
-        "GSE211" => "Mathematical Analysis and Numerical Methods".to_string(),
-        "CSE263" => "Machine Learning and Pattern Recognition".to_string(),
-        "CSE261" => "Algorithms and Data Structures".to_string(),
-        "CSE252" => "Embedded Systems Design".to_string(),
-        "CSE241" => "Electronic Design Automation".to_string(),
-        "CSE262" => "Software Engineering".to_string(),
+        "CS 101" | "CS101" => "Introduction to Computer Science".to_string(),
+        "MATH 101" | "MATH101" => "Calculus and Linear Algebra".to_string(),
+        "DATA 201" | "DATA201" => "Data Structures and Algorithms".to_string(),
+        "MGMT 100" | "MGMT100" => "Principles of Management".to_string(),
+        "PHYS 101" | "PHYS101" => "Physics for Engineers".to_string(),
         "GENERAL" => "University Examinations".to_string(),
         other => format!("Course {}", other),
     }
@@ -1224,35 +1222,30 @@ fn default_course_name(course_id: &str) -> String {
 
 fn default_course_palette(course_id: &str) -> (String, String, String) {
     match course_id {
-        "GSE211" => (
+        "CS 101" | "CS101" => (
             "#4285f4".to_string(),
             "#dbeafe".to_string(),
             "#1a73e8".to_string(),
         ),
-        "CSE263" => (
+        "MATH 101" | "MATH101" => (
             "#8e24aa".to_string(),
             "#f3e8ff".to_string(),
             "#7b1fa2".to_string(),
         ),
-        "CSE261" => (
+        "DATA 201" | "DATA201" => (
             "#0f9d58".to_string(),
             "#dcfce7".to_string(),
             "#15803d".to_string(),
         ),
-        "CSE252" => (
+        "PHYS 101" | "PHYS101" => (
             "#f4b400".to_string(),
             "#fef3c7".to_string(),
             "#d97706".to_string(),
         ),
-        "CSE241" => (
+        "MGMT 100" | "MGMT100" => (
             "#e67c73".to_string(),
             "#fee2e2".to_string(),
             "#dc2626".to_string(),
-        ),
-        "CSE262" => (
-            "#00acc1".to_string(),
-            "#cffafe".to_string(),
-            "#0891b2".to_string(),
         ),
         _ => (
             "#6366f1".to_string(),

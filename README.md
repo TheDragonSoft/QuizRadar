@@ -2,20 +2,21 @@
 
 <img src="static/icon.svg" width="112" height="112" alt="QuizRadar App Icon" />
 
-# QuizRadar
+# QuizRadar v3.0.0
 
-**Never miss a quiz, lab assessment, or midterm buried in your university inbox.**
+**Never miss a quiz, lab assessment, or midterm buried in your university inbox, Microsoft Teams, Moodle, or Google Classroom.**
 
-[![Latest Release](https://img.shields.io/github/v/release/TheDragonSoft/QuizRadar?style=for-the-badge&logo=github&label=Release&color=1a73e8)](https://github.com/TheDragonSoft/QuizRadar/releases/latest)
+[![Latest Release](https://img.shields.io/badge/Release-v3.0.0-1a73e8?style=for-the-badge&logo=github&label=Release&color=1a73e8)](https://github.com/TheDragonSoft/QuizRadar/releases/latest)
+[![Android Mobile App](https://img.shields.io/badge/Android-APK_v3.0.0-3ddc84?style=for-the-badge&logo=android&logoColor=white)](android/app/build/outputs/apk/debug/app-debug.apk)
 [![100% Local Privacy](https://img.shields.io/badge/Privacy-100%25_Local_Data-0f9d58?style=for-the-badge&logo=shield&logoColor=white)](#-your-data-stays-100-local)
-[![Gemini AI](https://img.shields.io/badge/Gemini_AI-Smart_Study_Planner-8e24aa?style=for-the-badge&logo=googlegemini&logoColor=white)](#-important-features)
-[![Google Calendar](https://img.shields.io/badge/Google_Calendar-Auto_Sync-1a73e8?style=for-the-badge&logo=googlecalendar&logoColor=white)](#-important-features)
+[![Gemini AI](https://img.shields.io/badge/Gemini_AI-Smart_Study_Planner-8e24aa?style=for-the-badge&logo=googlegemini&logoColor=white)](#-features-and-parity)
+[![Google Calendar](https://img.shields.io/badge/Google_Calendar-Auto_Sync-1a73e8?style=for-the-badge&logo=googlecalendar&logoColor=white)](#-features-and-parity)
 
 <p align="center">
-  <a href="https://github.com/TheDragonSoft/QuizRadar/releases/latest"><strong>⬇ Download Standalone App (v2.0.0)</strong></a> ·
-  <a href="#-important-features"><strong>✨ Important Features</strong></a> ·
+  <a href="https://github.com/TheDragonSoft/QuizRadar/releases/latest"><strong>⬇ Download Desktop (v3.0.0)</strong></a> ·
+  <a href="#-android-mobile-app"><strong>📱 Android App</strong></a> ·
+  <a href="#-features-and-parity"><strong>✨ Features & Parity</strong></a> ·
   <a href="#-your-data-stays-100-local"><strong>🔒 Local Privacy</strong></a> ·
-  <a href="#-visual-tour--screenshots"><strong>📸 Screenshots</strong></a> ·
   <a href="#-quick-start"><strong>🚀 Quick Start</strong></a>
 </p>
 
@@ -25,25 +26,44 @@
 
 ## 🎯 Overview
 
-Professors and course portals rarely give you an exact calendar date when announcing a quiz or assignment. Instead, you get emails like:
+Professors and academic portals rarely give you an exact calendar date when announcing a quiz or assignment. Instead, you get announcements like:
 
 > *"Dear Students, you will have Class Quiz 1 during your scheduled lecture next week (not this week). Bring a scientific calculator."*
 
-Figuring out when that quiz actually happens means checking when the email was sent, looking up your weekly lecture slot, finding the right room number, and adding it to your calendar by hand—for every single course.
+Figuring out when that quiz actually happens means checking when the announcement was posted, cross-referencing your weekly lecture slot, finding the right hall/room number, and calculating the date by hand—across Gmail, Microsoft Teams, Moodle, and Google Classroom.
 
-**QuizRadar** does all of that for you automatically. It is a standalone desktop companion that connects your university inbox, your weekly class schedule, and your calendar into one clean workspace—while keeping **100% of your data locally on your own computer**.
+**QuizRadar 3.0** does all of that automatically on **both Desktop and Mobile**. It connects your university accounts, weekly timetable, and calendar into one clean, unified workspace—with **100% feature parity** and **complete local privacy**.
 
 ---
 
-## ✨ Important Features
+## 📱 Android Mobile App
 
-- **📬 Automatic Inbox Scanner**: Scans your Gmail for course announcements, quizzes, lab tests, in-class assignments, and midterms so nothing ever slips through the cracks.
-- **🧠 Schedule-Aware Date & Room Matching**: Understands relative phrases like *"next week's lecture (not this week)"* or *"during your assigned lab"* by cross-referencing each email against your actual weekly class timetable—giving you the exact date, start/end time, section, and room number.
-- **📚 "What Should I Study?" Priority Planner**: Ranks upcoming assessments by urgency, extracts the exact lecture topics and sheets you need to review, and updates your **Study Readiness** progress bar in real time as you check topics off.
-- **⚠️ Per-Exam Rules & Reminders**: Highlights critical instructions directly on each quiz card and study window—such as *"Bring a scientific calculator"*, *"Print the quiz template before class"*, or *"15-minute time limit — no backtracking"*.
-- **🗓 Built-In 7-Day Week Calendar**: Shows your recurring weekly lectures, tutorials, and labs side by side with color-coded exam overlays (`8:00 AM – 8:00 PM`), plus a **Create Study Event** button to block out dedicated study sessions.
-- **🔄 Automatic Google Calendar Sync & `.ics` Export**: Pushes your detected quizzes, room numbers, and study checklists straight to Google Calendar (or exports them as a standard `.ics` calendar file from Settings).
-- **🪄 One-Time Guided Setup & Anytime Settings**: Walks you through connecting your account, scanning your inbox, and picking your courses on first launch—with a dedicated **Settings** menu to switch accounts, toggle courses, export `.ics`, or switch between **Light & Dark Mode** anytime.
+QuizRadar 3.0 introduces a brand new native **Android Mobile Application** built for high performance and offline independence:
+
+- **Complete Feature Parity**: Access all dashboard views, study task roadmaps, 7-day week calendar, Pomodoro focus timer, AI study plans, and account connections directly on your Android phone or tablet.
+- **Autonomous On-Device Engine**: Runs 100% offline using a dedicated local storage and calculation engine. No background server connection required.
+- **Dynamic Date & Day-of-Week Synchronization**: Real-time relative countdowns (`Today`, `Tomorrow`, `In X days`) that automatically update with your device clock.
+- **Native Touch & Gestures**: Smooth pull-to-refresh to rescan university feeds on demand, swipe-to-scroll timetable, back-button handling, and tactile haptic feedback.
+- **Accessible Light & Dark Theming**: Adaptive status bar and dynamic theme switching with Impeccable contrast standards.
+- **Clean First-Run State**: Zero preloaded personal data or hardcoded subjects on clean install. Complete blank canvas with a guided 3-step setup wizard.
+
+---
+
+## ✨ Features & Desktop/Mobile Parity
+
+| Feature | Desktop (Rust + Axum) | Android Mobile (Capacitor) |
+|---|:---:|:---:|
+| **Multi-Source Ingestion** (Gmail, Teams, Moodle, Classroom) | ✅ | ✅ |
+| **Smart Academic Dashboard** with Urgent Deadlines | ✅ | ✅ |
+| **"What Should I Study?" AI Roadmap** | ✅ | ✅ |
+| **7-Day Interactive Week Calendar** (8 AM – 8 PM) | ✅ | ✅ |
+| **Dynamic Date Synchronization** (Real-time Day Highlights) | ✅ | ✅ |
+| **Pull-to-Refresh & Dedicated Sync Button** | ✅ | ✅ |
+| **Autonomous On-Device Processing** | ✅ | ✅ |
+| **Exam Overload & Clash Detection** | ✅ | ✅ |
+| **1-Click Google Calendar Push & `.ics` Export** | ✅ | ✅ |
+| **Impeccable Light & Dark Mode** | ✅ | ✅ |
+| **Zero Server Tracking / 100% Local Privacy** | ✅ | ✅ |
 
 ---
 
@@ -51,101 +71,37 @@ Figuring out when that quiz actually happens means checking when the email was s
 
 > [!IMPORTANT]
 > **Zero Cloud Servers · Zero Tracking · Complete Local Ownership**
-> QuizRadar runs entirely on your own computer (`127.0.0.1`). Your personal information never leaves your device.
+> QuizRadar stores your data strictly on your own hardware. Your coursework, schedules, and login tokens are never sent to external third-party tracking databases.
 
-- **Stored Only on Your Machine**: Your scanned emails, class schedule, study checklist progress, and settings are saved strictly as local files on your computer—never uploaded to any external QuizRadar server or third-party database.
-- **Direct Google Connection**: When you sign in with Google, your authorization token stays on your device and communicates directly with Google's official Gmail, Calendar, and Gemini APIs.
-- **Offline Ready**: Once your inbox is scanned, your dashboard, study checklists, and weekly calendar work instantly offline with zero loading delays.
-
----
-
-## 📸 Visual Tour & Screenshots
-
-### Workspace Views — Dashboard & 7-Day Week Calendar
-<table>
-  <thead>
-    <tr>
-      <th align="center">📊 Smart Academic Dashboard</th>
-      <th align="center">🗓 7-Day Week Calendar</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td align="center">
-        <strong>☀️ Light Mode</strong><br />
-        <img src="docs/screenshots/dashboard-light.png" width="420" alt="Smart Academic Dashboard — Light Mode" />
-      </td>
-      <td align="center">
-        <strong>☀️ Light Mode</strong><br />
-        <img src="docs/screenshots/week-calendar.png" width="420" alt="7-Day Week Calendar — Light Mode" />
-      </td>
-    </tr>
-    <tr>
-      <td align="center">
-        <strong>🌙 Dark Mode</strong><br />
-        <img src="docs/screenshots/dashboard-dark.png" width="420" alt="Smart Academic Dashboard — Dark Mode" />
-      </td>
-      <td align="center">
-        <strong>🌙 Dark Mode</strong><br />
-        <img src="docs/screenshots/week-calendar-dark.png" width="420" alt="7-Day Week Calendar — Dark Mode" />
-      </td>
-    </tr>
-  </tbody>
-</table>
-
-### Guided First-Time Setup & Full Study Window
-<table>
-  <thead>
-    <tr>
-      <th align="center">🪄 First-Time Setup Wizard</th>
-      <th align="center">📝 Assessment & Study Checklist Window</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td align="center">
-        <strong>☀️ Light Mode</strong><br />
-        <img src="docs/screenshots/onboarding-wizard.png" width="420" alt="First-Time Setup Wizard — Light Mode" />
-      </td>
-      <td align="center">
-        <strong>☀️ Light Mode</strong><br />
-        <img src="docs/screenshots/assessment-modal.png" width="420" alt="Assessment & Study Window — Light Mode" />
-      </td>
-    </tr>
-    <tr>
-      <td align="center">
-        <strong>🌙 Dark Mode</strong><br />
-        <img src="docs/screenshots/onboarding-wizard-dark.png" width="420" alt="First-Time Setup Wizard — Dark Mode" />
-      </td>
-      <td align="center">
-        <strong>🌙 Dark Mode</strong><br />
-        <img src="docs/screenshots/assessment-modal-dark.png" width="420" alt="Assessment & Study Window — Dark Mode" />
-      </td>
-    </tr>
-  </tbody>
-</table>
+- **Direct University API Connection**: When connecting Microsoft Teams, Google Classroom, or Gmail, tokens remain stored on your local device.
+- **Offline Ready**: Full timetable exploration, topic checklists, and calendar navigation function without internet access.
 
 ---
 
 ## 🚀 Quick Start
 
-### Option 1: Windows Installer (Recommended)
-1. Download **`QuizRadar-Setup-v2.0.0-x64.exe`** from the **[Latest GitHub Release](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
-2. Run the installer — it installs cleanly in your user folder (no administrator privileges required) and creates Start Menu / Desktop shortcuts.
-3. Launch **QuizRadar** to automatically open your academic dashboard and complete the **First-Time Setup Wizard**.
+### Android Mobile App
+1. Download **`app-debug.apk`** from the release assets or build from source:
+   ```powershell
+   npx cap sync android
+   cd android
+   $env:JAVA_HOME = "C:\Program Files\Java\jdk-21"
+   ./gradlew.bat assembleDebug
+   ```
+2. Install on your Android device or emulator:
+   ```powershell
+   adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+   ```
 
-### Option 2: Portable ZIP / Linux / macOS
-1. Download **`QuizRadar-Portable-v2.0.0-win-x64.zip`** (or the Linux/macOS `.tar.gz` archive) from **[GitHub Releases](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
-2. Extract the archive anywhere and run **`quizradar.exe`** (or `./quizradar` on Linux/macOS).
+### Desktop Application
+1. Download **`QuizRadar-v3.0.0-win-x64.zip`** from **[GitHub Releases](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
+2. Run **`quizradar.exe`**.
+3. Or build directly from source:
+   ```powershell
+   cargo build --release
+   .\target\release\quizradar.exe
+   ```
 
-### Option 3: Build from Source
-```powershell
-git clone https://github.com/TheDragonSoft/QuizRadar.git
-cd QuizRadar
-cargo build --release
-.\target\release\quizradar.exe
-```
+---
 
-> For technical documentation and architecture details, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-
-
+<p align="center">Made with ❤️ for students everywhere.</p>

@@ -1,9 +1,9 @@
 {
-  "semester": "Fall 2026 (CIC Cairo)",
+  "semester": "Fall 2026",
   "courses": [
     {
-      "id": "BASC 110",
-      "name": "Business Math",
+      "id": "MATH 101",
+      "name": "Calculus & Linear Algebra",
       "color": "#1a73e8",
       "bg": "#e8f0fe",
       "border": "#1a73e8"
@@ -16,8 +16,8 @@
       "border": "#137333"
     },
     {
-      "id": "MGMT 101",
-      "name": "Principles of Business Administration",
+      "id": "MGMT 100",
+      "name": "Principles of Management",
       "color": "#ea8600",
       "bg": "#fef7e0",
       "border": "#ea8600"
@@ -46,11 +46,11 @@
   ],
   "slots": [
     {
-      "id": "slot-cic-1",
+      "id": "slot-1",
       "day": "Sunday",
       "day_index": 0,
-      "course_id": "BASC 110",
-      "course_name": "Business Math",
+      "course_id": "MATH 101",
+      "course_name": "Calculus & Linear Algebra",
       "room": "Hall 201",
       "type": "Lecture",
       "group": "Section 1",
@@ -61,7 +61,7 @@
       "quiz_title": "Class Quiz 1: Equations & Matrix Algebra"
     },
     {
-      "id": "slot-cic-2",
+      "id": "slot-2",
       "day": "Sunday",
       "day_index": 0,
       "course_id": "ENG 101",
@@ -76,11 +76,11 @@
       "quiz_title": null
     },
     {
-      "id": "slot-cic-3",
+      "id": "slot-3",
       "day": "Sunday",
       "day_index": 0,
-      "course_id": "MGMT 101",
-      "course_name": "Principles of Business Administration",
+      "course_id": "MGMT 100",
+      "course_name": "Principles of Management",
       "room": "Hall 105",
       "type": "Lecture",
       "group": "Section 1",
@@ -91,7 +91,7 @@
       "quiz_title": null
     },
     {
-      "id": "slot-cic-4",
+      "id": "slot-4",
       "day": "Monday",
       "day_index": 1,
       "course_id": "ACCT 101",
@@ -106,7 +106,7 @@
       "quiz_title": "Class Quiz 1: The Accounting Cycle & Journal Entries"
     },
     {
-      "id": "slot-cic-5",
+      "id": "slot-5",
       "day": "Monday",
       "day_index": 1,
       "course_id": "ENG 101",
@@ -121,7 +121,7 @@
       "quiz_title": null
     },
     {
-      "id": "slot-cic-6",
+      "id": "slot-6",
       "day": "Monday",
       "day_index": 1,
       "course_id": "COMP 101",
@@ -136,11 +136,11 @@
       "quiz_title": null
     },
     {
-      "id": "slot-cic-7",
+      "id": "slot-7",
       "day": "Tuesday",
       "day_index": 2,
-      "course_id": "BASC 110",
-      "course_name": "Business Math",
+      "course_id": "MATH 101",
+      "course_name": "Calculus & Linear Algebra",
       "room": "Room 302",
       "type": "Tutorial",
       "group": "Section 1",
@@ -151,7 +151,7 @@
       "quiz_title": null
     },
     {
-      "id": "slot-cic-8",
+      "id": "slot-8",
       "day": "Tuesday",
       "day_index": 2,
       "course_id": "COMP 101",
@@ -166,7 +166,7 @@
       "quiz_title": "Lab Quiz 1: Computer Hardware & OS Navigation"
     },
     {
-      "id": "slot-cic-9",
+      "id": "slot-9",
       "day": "Wednesday",
       "day_index": 3,
       "course_id": "ACCT 101",
@@ -181,11 +181,11 @@
       "quiz_title": null
     },
     {
-      "id": "slot-cic-10",
+      "id": "slot-10",
       "day": "Wednesday",
       "day_index": 3,
-      "course_id": "MGMT 101",
-      "course_name": "Principles of Business Administration",
+      "course_id": "MGMT 100",
+      "course_name": "Principles of Management",
       "room": "Room 205",
       "type": "Tutorial",
       "group": "Section 1",
@@ -196,7 +196,7 @@
       "quiz_title": null
     },
     {
-      "id": "slot-cic-11",
+      "id": "slot-11",
       "day": "Thursday",
       "day_index": 4,
       "course_id": "HUM 101",

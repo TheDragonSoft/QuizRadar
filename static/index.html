@@ -658,15 +658,20 @@
         <span id="top-sync-text" class="hidden sm:inline">Sync Gmail</span>
       </button>
 
-      <!-- Cross-Device Cloud Sync & Mobile Pairing Button (Desktop/Tablet) -->
-      <button id="top-cloud-sync-btn" onclick="openCloudSyncModal()" class="hidden md:flex h-9 items-center gap-1.5 px-2.5 sm:px-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 active:scale-[0.98] text-emerald-700 dark:text-emerald-300 text-xs font-semibold transition border border-emerald-200/70 dark:border-emerald-800/60 cursor-pointer" title="Cross-Device Cloud Sync (Google Account & Mobile)">
-        <i data-lucide="smartphone" class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400"></i>
-        <span>Device Sync</span>
+      <!-- On-Device Engine & Local Backup Button (Desktop/Tablet) -->
+      <button id="top-cloud-sync-btn" onclick="openCloudSyncModal()" class="hidden md:flex h-9 items-center gap-1.5 px-2.5 sm:px-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 active:scale-[0.98] text-emerald-700 dark:text-emerald-300 text-xs font-semibold transition border border-emerald-200/70 dark:border-emerald-800/60 cursor-pointer" title="On-Device Engine & Local Data Backup">
+        <i data-lucide="database" class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400"></i>
+        <span>Data & Backup</span>
       </button>
 
       <!-- Mobile Quick Search Trigger (Mobile only) -->
       <button onclick="openMobileSearchPalette()" class="md:hidden w-9 h-9 rounded-lg flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-slate-600 dark:text-slate-300 transition cursor-pointer" title="Search">
         <i data-lucide="search" class="w-4 h-4"></i>
+      </button>
+
+      <!-- Dedicated Mobile Sync Button (One-tap AI & Feed Refresh) -->
+      <button id="mobile-top-sync-btn" onclick="triggerFullSync()" class="md:hidden w-9 h-9 rounded-lg flex items-center justify-center border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-[#1a73e8] dark:text-blue-400 transition cursor-pointer" title="Sync Academic Radar">
+        <i id="mobile-top-sync-icon" data-lucide="refresh-cw" class="w-4 h-4"></i>
       </button>
 
       <!-- Dark Mode Toggle Button (Choreographed Dual Moon / Sun Stage) -->
@@ -712,6 +717,18 @@
 
   <!-- ================= MAIN WORKSPACE AREA ================= -->
   <div class="flex-1 flex overflow-hidden relative pb-[calc(76px+env(safe-area-inset-bottom,0px))] md:pb-0">
+
+    <!-- Native-Grade Mobile Pull-to-Refresh Floating Indicator -->
+    <div id="pull-refresh-indicator" class="fixed top-16 left-1/2 -translate-x-1/2 z-40 pointer-events-none opacity-0 -translate-y-12 transition-transform duration-100 ease-out flex items-center justify-center">
+      <div class="flex items-center gap-2.5 px-4 py-2 rounded-full bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 shadow-xl border border-slate-200/90 dark:border-slate-700 text-xs font-semibold select-none whitespace-nowrap">
+        <div id="pull-refresh-icon-box" class="w-4 h-4 flex items-center justify-center transition-transform duration-200 shrink-0">
+          <i id="pull-refresh-arrow" data-lucide="arrow-down" class="w-4 h-4 text-[#1a73e8] dark:text-blue-400"></i>
+          <i id="pull-refresh-spinner" data-lucide="loader-2" class="w-4 h-4 text-[#1a73e8] dark:text-blue-400 animate-spin hidden"></i>
+          <i id="pull-refresh-check" data-lucide="check" class="w-4 h-4 text-emerald-500 hidden"></i>
+        </div>
+        <span id="pull-refresh-text" class="text-[11px] font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">Pull to refresh</span>
+      </div>
+    </div>
 
     <!-- Mobile/Tablet Sidebar Backdrop -->
     <div id="sidebar-backdrop" onclick="toggleSidebar(false)" class="hidden fixed inset-0 top-16 bg-slate-950/40 z-30 lg:hidden backdrop-blur-2xs"></div>
@@ -777,19 +794,19 @@
           <div id="sidebar-calendars-list" class="space-y-1 text-xs">
             <!-- Populated by JS -->
           </div>
-        <!-- Mobile Cross-Device Sync Quick Card -->
+        <!-- Mobile Standalone On-Device Engine Card -->
         <div class="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-800/60 space-y-2">
           <div class="flex items-center justify-between">
             <span class="text-xs font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
-              <i data-lucide="smartphone" class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400"></i>
-              <span>Device Sync</span>
+              <i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400"></i>
+              <span>On-Device Engine</span>
             </span>
-            <span class="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Mobile & Cloud</span>
+            <span class="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">100% Standalone</span>
           </div>
-          <p class="text-[10px] text-slate-500 dark:text-slate-400">Pair this device with desktop or sync via Google Account.</p>
+          <p class="text-[10px] text-slate-500 dark:text-slate-400">Autonomous academic engine running locally in device sandbox.</p>
           <button onclick="openCloudSyncModal()" id="sidebar-open-sync-btn" class="w-full py-1.5 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-semibold shadow-xs flex items-center justify-center gap-1.5 transition cursor-pointer">
-            <i data-lucide="refresh-cw" class="w-3 h-3"></i>
-            <span>Open Sync Center</span>
+            <i data-lucide="database" class="w-3 h-3"></i>
+            <span>Local Storage & Backup</span>
           </button>
         </div>
       </div>
@@ -803,7 +820,7 @@
           </span>
           <button onclick="syncGoogleCalendarOnly()" class="text-[#1a73e8] dark:text-blue-400 hover:underline font-medium cursor-pointer">Push GCal</button>
         </div>
-        <div id="last-sync-timestamp" class="text-[10px] tabular-nums text-slate-400 dark:text-slate-500">Last scanned: Oct 17, 2026</div>
+        <div id="last-sync-timestamp" class="text-[10px] tabular-nums text-slate-400 dark:text-slate-500">Not yet scanned</div>
       </div>
     </aside>
 
@@ -865,7 +882,7 @@
                 <span id="kpi-week-count" class="text-3xl font-bold tabular-nums text-slate-900 dark:text-white">4</span>
                 <span class="text-xs font-medium text-emerald-600 dark:text-emerald-400">Assessments</span>
               </div>
-              <p id="kpi-week-subtext" class="text-xs tabular-nums text-slate-500 dark:text-slate-400 mt-1">Sun 18 Oct – Thu 22 Oct 2026</p>
+              <p id="kpi-week-subtext" class="text-xs tabular-nums text-slate-500 dark:text-slate-400 mt-1">Upcoming 7 Days</p>
             </div>
           </div>
 
@@ -912,7 +929,7 @@
             <div class="mt-3">
               <div class="flex items-center gap-1.5">
                 <span class="inline-block w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
-                <span id="kpi-sync-account" class="text-sm font-bold text-slate-900 dark:text-white truncate">alex.mercer@university.edu</span>
+                <span id="kpi-sync-account" class="text-sm font-bold text-slate-900 dark:text-white truncate">student@university.edu</span>
               </div>
               <div class="flex items-center justify-between mt-2">
                 <span class="text-[11px] text-slate-500 dark:text-slate-400">Schedule-aware AI active</span>
@@ -953,7 +970,7 @@
                   <i data-lucide="radar" class="w-4 h-4 text-[#1a73e8] dark:text-blue-400 shrink-0"></i>
                   <span>All Scanned Assessments</span>
                 </h3>
-                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Filter by assessment type or browse all 50 course records.</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Filter by assessment type or browse across all course records.</p>
               </div>
               <select id="dashboard-type-filter" onchange="renderDashboard()" class="text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 outline-none cursor-pointer shrink-0">
                 <option value="UPCOMING">Upcoming Only</option>
@@ -1104,13 +1121,13 @@
         <div class="flex items-start justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
           <div class="space-y-1.5 min-w-0">
             <div class="flex flex-wrap items-center gap-2">
-              <span id="modal-course-badge" class="text-xs font-bold px-2.5 py-0.5 rounded-md text-white shrink-0 whitespace-nowrap">GSE211</span>
-              <span id="modal-type-badge" class="text-xs font-semibold px-2.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 shrink-0 whitespace-nowrap">Class Quiz</span>
-              <span id="modal-urgency-badge" class="text-xs font-semibold tabular-nums px-2.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 shrink-0 whitespace-nowrap">In 3 days</span>
+              <span id="modal-course-badge" class="text-xs font-bold px-2.5 py-0.5 rounded-md text-white shrink-0 whitespace-nowrap">Course</span>
+              <span id="modal-type-badge" class="text-xs font-semibold px-2.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 shrink-0 whitespace-nowrap">Assessment</span>
+              <span id="modal-urgency-badge" class="text-xs font-semibold tabular-nums px-2.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 shrink-0 whitespace-nowrap">Upcoming</span>
               <span id="modal-source-badge" class="text-xs font-semibold px-2.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 shrink-0 flex items-center gap-1"></span>
-              <span id="modal-course-fullname" class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">Mathematical Analysis and Numerical Methods</span>
+              <span id="modal-course-fullname" class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">Course Name</span>
             </div>
-            <h3 id="modal-title" class="text-xl font-bold text-slate-900 dark:text-white leading-snug">Class Quiz 1: Numerical Methods</h3>
+            <h3 id="modal-title" class="text-xl font-bold text-slate-900 dark:text-white leading-snug">Assessment Details</h3>
           </div>
           <button onclick="closeEventDetailModal()" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 shrink-0 transition cursor-pointer" title="Close (Esc)">
             <i data-lucide="x" class="w-5 h-5"></i>
@@ -1126,15 +1143,15 @@
               <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Schedule & location</div>
               <div class="flex items-center gap-2.5">
                 <i data-lucide="clock" class="w-4 h-4 text-[#1a73e8] dark:text-blue-400 shrink-0"></i>
-                <span id="modal-time" class="font-semibold tabular-nums">Sunday, 18 October 2026 (8:00 AM – 10:00 AM)</span>
+                <span id="modal-time" class="font-semibold tabular-nums">—</span>
               </div>
               <div class="flex items-center gap-2.5">
                 <i data-lucide="map-pin" class="w-4 h-4 text-[#1a73e8] dark:text-blue-400 shrink-0"></i>
-                <span id="modal-room" class="font-medium">Room C212 O (Group C)</span>
+                <span id="modal-room" class="font-medium">—</span>
               </div>
               <div class="flex items-center gap-2.5">
                 <i data-lucide="user" class="w-4 h-4 text-[#1a73e8] dark:text-blue-400 shrink-0"></i>
-                <span id="modal-instructor">Assoc. Prof. Dr. Mohamed Khalil</span>
+                <span id="modal-instructor">Faculty Instructor</span>
               </div>
             </div>
 
@@ -1244,46 +1261,48 @@
         <!-- Subtle decorative glow element -->
         <div class="absolute -right-12 -bottom-12 w-48 h-48 rounded-full bg-white/10 blur-xl pointer-events-none"></div>
 
-        <div class="flex items-start justify-between gap-4 relative z-10">
-          <div class="flex items-center gap-3.5">
-            <div class="w-12 h-12 rounded-2xl bg-white/15 border border-white/20 backdrop-blur-md flex items-center justify-center shadow-inner shrink-0">
-              <i data-lucide="radar" class="w-6 h-6 text-white"></i>
+        <div class="flex items-start justify-between gap-3 relative z-10">
+          <div class="flex items-start gap-3 sm:gap-3.5 min-w-0 flex-1">
+            <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-white/15 border border-white/20 backdrop-blur-md flex items-center justify-center shadow-inner shrink-0 mt-0.5">
+              <i data-lucide="radar" class="w-5 h-5 sm:w-6 sm:h-6 text-white"></i>
             </div>
-            <div>
+            <div class="min-w-0 flex-1 space-y-1">
               <div class="flex items-center gap-2">
-                <span class="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black uppercase tracking-wider shadow-2xs">Quick Setup</span>
-                <span class="text-xs text-blue-100 font-medium">Academic Radar & Timetable</span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black tracking-wide uppercase shadow-2xs whitespace-nowrap shrink-0">
+                  Quick Setup
+                </span>
+                <span class="text-[11px] text-blue-100/90 font-medium truncate">Academic Timetable & Radar</span>
               </div>
-              <h2 class="text-xl sm:text-2xl font-black mt-1 tracking-tight">Welcome to QuizRadar</h2>
-              <p class="text-xs text-blue-100 max-w-xl mt-0.5 leading-relaxed">Turn scattered course emails, Teams updates, and syllabus announcements into an organized calendar & smart study roadmap.</p>
+              <h2 class="text-lg sm:text-2xl font-black tracking-tight text-white leading-tight">Welcome to QuizRadar</h2>
+              <p class="text-xs text-blue-100/85 leading-relaxed line-clamp-2">Turn scattered course emails, Teams updates, and syllabus announcements into an organized calendar & smart study roadmap.</p>
             </div>
           </div>
-          <button onclick="closeOnboardingModal()" class="p-2 rounded-xl hover:bg-white/15 active:scale-95 text-white/80 hover:text-white transition cursor-pointer shrink-0" title="Skip to Dashboard (Esc)">
+          <button onclick="closeOnboardingModal()" class="p-2 -mr-1 -mt-1 rounded-xl hover:bg-white/15 active:scale-95 text-white/80 hover:text-white transition cursor-pointer shrink-0" title="Skip to Dashboard (Esc)">
             <i data-lucide="x" class="w-5 h-5"></i>
           </button>
         </div>
 
         <!-- Interactive 3-Step Navigation Pills -->
-        <div class="grid grid-cols-3 gap-2 mt-5 relative z-10">
-          <button onclick="setOnboardingStep(1)" id="onboard-tab-1" class="flex items-center gap-2.5 p-2.5 rounded-xl bg-white text-[#1a73e8] font-bold text-xs transition text-left cursor-pointer shadow-xs">
-            <span id="onboard-tab-num-1" class="w-6 h-6 rounded-full bg-[#1a73e8] text-white text-xs font-bold tabular-nums flex items-center justify-center shrink-0">1</span>
-            <div class="truncate">
-              <div class="text-[10px] opacity-75 font-semibold">Step 1</div>
-              <div class="truncate">Track & Rhythm</div>
+        <div class="grid grid-cols-3 gap-1.5 sm:gap-2 mt-4 relative z-10">
+          <button onclick="setOnboardingStep(1)" id="onboard-tab-1" class="flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 p-2 sm:p-2.5 rounded-xl bg-white text-[#1a73e8] font-bold text-xs transition cursor-pointer shadow-xs">
+            <span id="onboard-tab-num-1" class="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-[#1a73e8] text-white text-[11px] sm:text-xs font-bold tabular-nums flex items-center justify-center shrink-0">1</span>
+            <div class="min-w-0 truncate text-left">
+              <div class="text-[9px] sm:text-[10px] opacity-75 font-semibold uppercase tracking-wider">Step 1</div>
+              <div class="truncate text-[11px] sm:text-xs font-bold">Focus</div>
             </div>
           </button>
-          <button onclick="setOnboardingStep(2)" id="onboard-tab-2" class="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs transition text-left cursor-pointer">
-            <span id="onboard-tab-num-2" class="w-6 h-6 rounded-full bg-white/20 text-white text-xs font-bold tabular-nums flex items-center justify-center shrink-0">2</span>
-            <div class="truncate">
-              <div class="text-[10px] opacity-75 font-semibold">Step 2</div>
-              <div class="truncate">Hubs & Scan</div>
+          <button onclick="setOnboardingStep(2)" id="onboard-tab-2" class="flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 p-2 sm:p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs transition cursor-pointer">
+            <span id="onboard-tab-num-2" class="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-white/20 text-white text-[11px] sm:text-xs font-bold tabular-nums flex items-center justify-center shrink-0">2</span>
+            <div class="min-w-0 truncate text-left">
+              <div class="text-[9px] sm:text-[10px] opacity-75 font-semibold uppercase tracking-wider">Step 2</div>
+              <div class="truncate text-[11px] sm:text-xs">Hubs</div>
             </div>
           </button>
-          <button onclick="setOnboardingStep(3)" id="onboard-tab-3" class="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs transition text-left cursor-pointer">
-            <span id="onboard-tab-num-3" class="w-6 h-6 rounded-full bg-white/20 text-white text-xs font-bold tabular-nums flex items-center justify-center shrink-0">3</span>
-            <div class="truncate">
-              <div class="text-[10px] opacity-75 font-semibold">Step 3</div>
-              <div class="truncate">Schedule & Launch</div>
+          <button onclick="setOnboardingStep(3)" id="onboard-tab-3" class="flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 p-2 sm:p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs transition cursor-pointer">
+            <span id="onboard-tab-num-3" class="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-white/20 text-white text-[11px] sm:text-xs font-bold tabular-nums flex items-center justify-center shrink-0">3</span>
+            <div class="min-w-0 truncate text-left">
+              <div class="text-[9px] sm:text-[10px] opacity-75 font-semibold uppercase tracking-wider">Step 3</div>
+              <div class="truncate text-[11px] sm:text-xs">Schedule</div>
             </div>
           </button>
         </div>
@@ -1300,6 +1319,18 @@
               <span class="text-xs font-normal text-slate-500 dark:text-slate-400">· Step 1 of 3</span>
             </h3>
             <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">QuizRadar tailors course schedule inference and study interval recommendations to your field and pace.</p>
+          </div>
+
+          <!-- Student Identity Input -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80">
+            <div class="space-y-1">
+              <label class="block text-xs font-bold text-slate-800 dark:text-slate-200">Your Name</label>
+              <input id="onboard-student-name" type="text" placeholder="e.g. Student Name" class="w-full h-9 px-3 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-[#1a73e8]" />
+            </div>
+            <div class="space-y-1">
+              <label class="block text-xs font-bold text-slate-800 dark:text-slate-200">Personal Google / Gmail Account</label>
+              <input id="onboard-student-email" type="email" placeholder="e.g. student@gmail.com" class="w-full h-9 px-3 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-[#1a73e8]" />
+            </div>
           </div>
 
           <!-- Academic Field / Track Chips -->
@@ -1416,6 +1447,22 @@
             </button>
           </div>
 
+          <!-- Academic Feeds & University Setup -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-900/60">
+            <div class="space-y-1">
+              <label class="block text-xs font-bold text-slate-800 dark:text-slate-200">University Email (Microsoft Teams / 365)</label>
+              <input id="onboard-university-email" type="email" placeholder="e.g. student@university.edu" class="w-full h-9 px-3 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-indigo-500" />
+            </div>
+            <div class="space-y-1">
+              <label class="block text-xs font-bold text-slate-800 dark:text-slate-200">Institution / University Name</label>
+              <input id="onboard-university-name" type="text" placeholder="e.g. State University / College" class="w-full h-9 px-3 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-indigo-500" />
+            </div>
+            <div class="space-y-1 sm:col-span-2">
+              <label class="block text-xs font-bold text-slate-800 dark:text-slate-200">Google Gemini API Key <span class="font-normal text-slate-400 dark:text-slate-500">(Optional for direct on-device AI planning)</span></label>
+              <input id="onboard-gemini-key" type="password" placeholder="AIzaSy... (leave blank to use local heuristic engine)" class="w-full h-9 px-3 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-blue-500" />
+            </div>
+          </div>
+
           <!-- Connected Hubs Grid -->
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <!-- Hub 1: Google Account -->
@@ -1425,20 +1472,16 @@
                   <div class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950 text-[#1a73e8] dark:text-blue-400 flex items-center justify-center font-bold">
                     <i data-lucide="mail-search" class="w-4 h-4"></i>
                   </div>
-                  <span id="onboard-auth-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300">Connected</span>
+                  <span id="onboard-auth-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300">Ready</span>
                 </div>
                 <div class="mt-2">
                   <div class="text-xs font-bold text-slate-900 dark:text-white">Google Workspace</div>
-                  <div id="onboard-user-name" class="text-[11px] font-medium text-slate-600 dark:text-slate-300">Alex Mercer</div>
-                  <div id="onboard-user-email" class="text-[10px] text-slate-400 truncate">alex.mercer@university.edu</div>
+                  <div id="onboard-user-name" class="text-[11px] font-medium text-slate-600 dark:text-slate-300">Student Profile</div>
+                  <div id="onboard-user-email" class="text-[10px] text-slate-400 truncate">Configured in Step 1</div>
                 </div>
               </div>
               <div id="onboard-scope-note" class="text-[10px] text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-700/60 pt-2 flex flex-col gap-1.5">
-                <span>Gmail & Calendar Sync active</span>
-                <button type="button" onclick="startGoogleAuth()" class="py-1 px-2 rounded-lg bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 text-[#1a73e8] dark:text-blue-300 text-[10px] font-bold transition flex items-center justify-center gap-1 cursor-pointer">
-                  <i data-lucide="refresh-cw" class="w-3 h-3"></i>
-                  <span>Switch / Connect Account</span>
-                </button>
+                <span>Personal study radar</span>
               </div>
             </div>
 
@@ -1537,7 +1580,7 @@
                   <i data-lucide="sparkles" class="w-4 h-4"></i>
                 </div>
                 <div>
-                  <div class="text-xs font-bold text-slate-900 dark:text-white">Upload Weekly Timetable (Gemini AI Extraction)</div>
+                  <div class="text-xs font-bold text-slate-900 dark:text-white">Upload Weekly Timetable (AI Timetable Extraction)</div>
                   <div class="text-[11px] text-slate-500 dark:text-slate-400">Schedule PDF or image — automatically extracts course rooms, subjects, and times</div>
                 </div>
               </div>
@@ -1550,7 +1593,7 @@
 
             <div id="onboard-schedule-loader" class="hidden p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-900 flex items-center gap-2.5">
               <div class="w-4 h-4 border-2 border-[#1a73e8] border-t-transparent rounded-full animate-spin shrink-0"></div>
-              <span class="text-xs font-semibold text-[#1a73e8] dark:text-blue-400">Gemini AI is analyzing your schedule timetable...</span>
+              <span class="text-xs font-semibold text-[#1a73e8] dark:text-blue-400">AI is analyzing your schedule timetable...</span>
             </div>
           </div>
 
@@ -1637,18 +1680,13 @@
         <div class="space-y-3 text-xs">
           <div>
             <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Title</label>
-            <input id="create-ev-title" type="text" placeholder="e.g. Study Hall: CSE263 Regression & k-NN" class="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg outline-none focus:border-[#1a73e8]" />
+            <input id="create-ev-title" type="text" placeholder="e.g. Study Session: Midterm Prep" class="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg outline-none focus:border-[#1a73e8]" />
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Course</label>
               <select id="create-ev-course" class="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
-                <option value="GSE211">GSE211 (Math Analysis)</option>
-                <option value="CSE263">CSE263 (Machine Learning)</option>
-                <option value="CSE261">CSE261 (Algorithms)</option>
-                <option value="CSE252">CSE252 (Embedded Systems)</option>
-                <option value="CSE241">CSE241 (EDA)</option>
-                <option value="CSE262">CSE262 (Software Eng)</option>
+                <option value="SELF">General Study Session</option>
               </select>
             </div>
             <div>
@@ -1664,7 +1702,7 @@
           <div class="grid grid-cols-3 gap-2">
             <div>
               <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Date</label>
-              <input id="create-ev-date" type="date" value="2026-10-18" class="w-full px-2.5 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg outline-none tabular-nums" />
+              <input id="create-ev-date" type="date" class="w-full px-2.5 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg outline-none tabular-nums" />
             </div>
             <div>
               <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Start</label>
@@ -1689,7 +1727,7 @@
     </div>
   </div>
 
-  <!-- ================= MODAL: CROSS-DEVICE CLOUD SYNC & MOBILE PAIRING ================= -->
+  <!-- ================= MODAL: ON-DEVICE AUTONOMOUS ENGINE & LOCAL BACKUP ================= -->
   <div id="cloud-sync-modal" onclick="if(event.target === this) closeCloudSyncModal()" class="modal-backdrop fixed inset-0 bg-slate-950/50 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
     <div class="modal-panel bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
       <!-- M3 Bottom Sheet Drag Handle (Mobile only) -->
@@ -1699,11 +1737,11 @@
       <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/40">
         <div class="flex items-center gap-2.5">
           <div class="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
-            <i data-lucide="smartphone" class="w-5 h-5"></i>
+            <i data-lucide="shield-check" class="w-5 h-5"></i>
           </div>
           <div>
-            <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100">Cross-Device Synchronization</h3>
-            <p class="text-[11px] text-slate-500 dark:text-slate-400">Sync courses, assignments & study progress across Desktop & Mobile</p>
+            <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100">On-Device Academic Engine</h3>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400">100% Offline & Autonomous — Zero Laptop Server Required</p>
           </div>
         </div>
         <button onclick="closeCloudSyncModal()" class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer">
@@ -1712,67 +1750,54 @@
       </div>
 
       <!-- Body -->
-      <div class="p-6 space-y-5 overflow-y-auto">
-        <!-- Google Account Cloud Sync Card -->
+      <div class="p-6 space-y-4 overflow-y-auto">
+        <!-- Standalone Sandbox Card -->
         <div class="p-4 rounded-xl border border-emerald-200/80 dark:border-emerald-800/60 bg-emerald-50/50 dark:bg-emerald-950/20 space-y-3">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
-              <i data-lucide="cloud" class="w-4 h-4 text-emerald-600 dark:text-emerald-400"></i>
-              <span class="text-xs font-bold text-emerald-900 dark:text-emerald-200">Google Account Cloud Sync</span>
+              <i data-lucide="cpu" class="w-4 h-4 text-emerald-600 dark:text-emerald-400"></i>
+              <span class="text-xs font-bold text-emerald-900 dark:text-emerald-200">Autonomous Client Engine</span>
             </div>
-            <span id="cloud-sync-status-badge" class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300">Active</span>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300">Fully Standalone</span>
           </div>
-          <p class="text-[11px] text-slate-600 dark:text-slate-300">
-            Synchronizes your timetable, active assignments, completed study topics, and grade records through your authenticated Google Account (<span id="cloud-sync-user-email" class="font-medium text-slate-800 dark:text-slate-100">Loading...</span>).
+          <p class="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+            QuizRadar executes completely inside your mobile device sandbox. All course timetables, assessment deadlines, study task priorities, and account profiles are stored directly in encrypted on-device storage.
           </p>
-          <div class="flex items-center gap-2 pt-1">
-            <button onclick="pushStateToCloud()" id="cloud-push-btn" class="flex-1 py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white text-xs font-semibold shadow-xs flex items-center justify-center gap-1.5 transition cursor-pointer">
-              <i data-lucide="upload-cloud" class="w-3.5 h-3.5"></i>
-              <span>Push State to Cloud</span>
-            </button>
-            <button onclick="pullStateFromCloud()" id="cloud-pull-btn" class="flex-1 py-2 px-3 rounded-lg bg-white dark:bg-slate-800 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-slate-700 active:scale-[0.98] text-emerald-700 dark:text-emerald-300 text-xs font-semibold shadow-xs flex items-center justify-center gap-1.5 transition cursor-pointer">
-              <i data-lucide="download-cloud" class="w-3.5 h-3.5"></i>
-              <span>Pull from Cloud</span>
-            </button>
+          <div class="grid grid-cols-2 gap-2 text-xs pt-1">
+            <div class="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-emerald-200/60 dark:border-emerald-900/40">
+              <span class="block text-[10px] font-medium text-slate-400">Network Dependency</span>
+              <span class="font-bold text-emerald-600 dark:text-emerald-400">None (100% Offline)</span>
+            </div>
+            <div class="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-emerald-200/60 dark:border-emerald-900/40">
+              <span class="block text-[10px] font-medium text-slate-400">Laptop Server</span>
+              <span class="font-bold text-slate-700 dark:text-slate-300">Not Needed</span>
+            </div>
           </div>
         </div>
 
-        <!-- Mobile App Direct Connection & Pairing -->
+        <!-- Local Backup & Portability Card -->
         <div class="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-3">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
-              <i data-lucide="wifi" class="w-4 h-4 text-indigo-500"></i>
-              <span class="text-xs font-bold text-slate-800 dark:text-slate-200">Local Network Pairing</span>
+              <i data-lucide="hard-drive" class="w-4 h-4 text-blue-500"></i>
+              <span class="text-xs font-bold text-slate-800 dark:text-slate-200">Data Portability & Backup</span>
             </div>
-            <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">Port 5050</span>
+            <span class="text-[10px] font-mono text-slate-400">JSON Archive</span>
           </div>
           <p class="text-[11px] text-slate-500 dark:text-slate-400">
-            When running the QuizRadar native mobile app on the same network or Android emulator:
+            Export or restore your full academic radar database at any time.
           </p>
-          <div class="space-y-1.5 text-xs font-mono">
-            <div class="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <span class="text-slate-500 font-sans">Emulator Host:</span>
-              <span class="font-bold text-indigo-600 dark:text-indigo-400" id="pairing-emulator-url">http://10.0.2.2:5050</span>
-            </div>
-            <div class="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <span class="text-slate-500 font-sans">Physical Phone LAN:</span>
-              <span class="font-bold text-indigo-600 dark:text-indigo-400" id="pairing-lan-url">Loading...</span>
-            </div>
+          <div class="flex flex-wrap items-center gap-2 pt-1">
+            <button onclick="exportLocalBackup()" class="flex-1 py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-xs font-semibold shadow-xs flex items-center justify-center gap-1.5 transition cursor-pointer">
+              <i data-lucide="download" class="w-3.5 h-3.5"></i>
+              <span>Export Local Backup</span>
+            </button>
+            <button onclick="restoreLocalBackup()" class="flex-1 py-2 px-3 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-[0.98] text-slate-700 dark:text-slate-200 text-xs font-semibold shadow-xs flex items-center justify-center gap-1.5 transition cursor-pointer">
+              <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+              <span>Restore Backup</span>
+            </button>
           </div>
-
-          <!-- Mobile App Server Address Config -->
-          <div class="pt-2 border-t border-slate-200/60 dark:border-slate-800/60 space-y-2">
-            <label class="block text-[11px] font-semibold text-slate-700 dark:text-slate-300">Active Mobile Connection URL:</label>
-            <div class="flex gap-2">
-              <input type="text" id="mobile-server-url-input" placeholder="http://192.168.2.115:5050" class="flex-1 px-3 py-1.5 text-xs font-mono rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-500">
-              <button onclick="saveMobileServerUrl()" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-xs font-semibold shadow-xs transition cursor-pointer">Connect</button>
-            </div>
-            <div class="flex flex-wrap items-center gap-1.5">
-              <span class="text-[10px] text-slate-400">Presets:</span>
-              <button onclick="setMobileServerPreset('http://192.168.2.115:5050')" class="text-[10px] px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 hover:bg-indigo-100 transition cursor-pointer">Wi-Fi LAN (192.168.2.115)</button>
-              <button onclick="setMobileServerPreset('http://10.0.2.2:5050')" class="text-[10px] px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/80 hover:bg-slate-200 transition cursor-pointer">Emulator (10.0.2.2)</button>
-            </div>
-          </div>
+          <input type="file" id="backup-file-input" accept=".json" class="hidden" onchange="handleBackupFileSelected(event)" />
         </div>
 
         <div id="cloud-sync-message" class="hidden text-xs p-3 rounded-lg"></div>
@@ -1831,18 +1856,39 @@
         <div class="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 space-y-2.5">
           <div class="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between">
             <span class="flex items-center gap-1.5">
-              <i data-lucide="mail" class="w-4 h-4 text-[#1a73e8] dark:text-blue-400"></i>
-              <span>Google Account & Gmail Scanner</span>
+              <i data-lucide="sparkles" class="w-4 h-4 text-[#1a73e8] dark:text-blue-400"></i>
+              <span>Google Account & Gemini AI Insights</span>
             </span>
             <span id="account-google-status" class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">Not Connected</span>
           </div>
           <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-            Connect your primary Google Workspace / Gmail account to enable automatic quiz extraction and Google Calendar synchronization.
+            Link your personal Google account to power personalized Gemini AI insights, priority study roadmaps, automated timetable parsing, and Google Calendar sync.
           </p>
+
+          <!-- Inline Edit Form (Hidden by default) -->
+          <div id="account-google-edit-box" class="hidden p-3 rounded-xl bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-900/60 space-y-2.5">
+            <div class="space-y-1">
+              <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300">Your Full Name</label>
+              <input id="account-input-name" type="text" placeholder="e.g. Student Name" class="w-full h-8 px-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-[#1a73e8]" />
+            </div>
+            <div class="space-y-1">
+              <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300">Google / Gmail Address</label>
+              <input id="account-input-email" type="email" placeholder="e.g. student@gmail.com" class="w-full h-8 px-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-[#1a73e8]" />
+            </div>
+            <div class="space-y-1">
+              <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300">Google Gemini API Key <span class="font-normal text-slate-400">(Optional for personal AI Studio quota)</span></label>
+              <input id="account-input-gemini" type="password" placeholder="AIzaSy... (optional)" class="w-full h-8 px-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-[#1a73e8]" />
+            </div>
+            <div class="flex items-center justify-end gap-2 pt-1">
+              <button type="button" onclick="toggleGoogleEditBox(false)" class="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer">Cancel</button>
+              <button type="button" onclick="saveGoogleAccountProfile()" class="px-3.5 py-1.5 rounded-lg bg-[#1a73e8] hover:bg-[#1557b0] text-white text-xs font-bold transition shadow-xs cursor-pointer">Save Account</button>
+            </div>
+          </div>
+
           <div class="flex flex-wrap items-center gap-2 pt-1">
-            <button type="button" onclick="startGoogleAuth()" id="account-auth-btn" class="flex-1 min-w-[130px] py-2 px-3 rounded-xl bg-[#1a73e8] hover:bg-[#1557b0] text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer">
-              <i data-lucide="log-in" class="w-3.5 h-3.5"></i>
-              <span id="account-auth-action-label">Connect Google</span>
+            <button type="button" onclick="toggleGoogleEditBox(true)" id="account-auth-btn" class="flex-1 min-w-[130px] py-2 px-3 rounded-xl bg-[#1a73e8] hover:bg-[#1557b0] text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer">
+              <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+              <span id="account-auth-action-label">Set Up Google Account</span>
             </button>
             <button type="button" onclick="disconnectGoogleAccount()" id="account-disconnect-btn" class="hidden py-2 px-3 rounded-xl border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer">
               <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
@@ -1850,7 +1896,7 @@
             </button>
             <button type="button" onclick="triggerFullSync()" class="py-2 px-3 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer">
               <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
-              <span>Sync Gmail</span>
+              <span>Sync Radar</span>
             </button>
           </div>
         </div>
@@ -1865,18 +1911,35 @@
             <span id="account-teams-status" class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">Not Connected</span>
           </div>
           <div id="account-teams-details" class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-            Connect your university student email (e.g. CIC, MSA, Cairo Univ) to synchronize course teams, assignments, and exam dates without overwriting your primary account.
+            Connect your university student email (e.g. student@university.edu) to synchronize course teams, assignments, and exam dates without overwriting your primary account.
           </div>
+
+          <!-- Inline Edit Form (Hidden by default) -->
+          <div id="account-teams-edit-box" class="hidden p-3 rounded-xl bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-900/60 space-y-2.5">
+            <div class="space-y-1">
+              <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300">University Student Email</label>
+              <input id="account-input-teams-email" type="email" placeholder="e.g. student@university.edu" class="w-full h-8 px-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-indigo-500" />
+            </div>
+            <div class="space-y-1">
+              <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300">Institution / University Name</label>
+              <input id="account-input-teams-name" type="text" placeholder="e.g. State University / College" class="w-full h-8 px-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-indigo-500" />
+            </div>
+            <div class="flex items-center justify-end gap-2 pt-1">
+              <button type="button" onclick="toggleTeamsEditBox(false)" class="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer">Cancel</button>
+              <button type="button" onclick="saveTeamsAccountProfile()" class="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition shadow-xs cursor-pointer">Save University</button>
+            </div>
+          </div>
+
           <div class="flex flex-wrap items-center gap-2 pt-1">
-            <button type="button" onclick="startMicrosoftAuth()" id="account-teams-auth-btn" class="flex-1 min-w-[130px] py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer">
-              <i data-lucide="log-in" class="w-3.5 h-3.5"></i>
-              <span id="account-teams-auth-action-label">Connect University</span>
+            <button type="button" onclick="toggleTeamsEditBox(true)" id="account-teams-auth-btn" class="flex-1 min-w-[130px] py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer">
+              <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+              <span id="account-teams-auth-action-label">Set Up University Account</span>
             </button>
             <button type="button" onclick="disconnectMicrosoftAccount()" id="account-teams-disconnect-btn" class="hidden py-2 px-3 rounded-xl border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer">
               <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
               <span>Disconnect</span>
             </button>
-            <button type="button" onclick="testMicrosoftFromSettings()" class="py-2 px-3 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer">
+            <button type="button" onclick="triggerFullSync()" class="py-2 px-3 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer">
               <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
               <span>Sync Teams</span>
             </button>
@@ -1914,8 +1977,10 @@
   </div>
 
   <!-- ================= MODAL: MOBILE DEDICATED SEARCH SHEET ================= -->
-  <div id="mobile-search-modal" onclick="if(event.target === this) closeMobileSearchModal()" class="modal-backdrop fixed inset-0 bg-slate-950/60 z-50 flex items-start justify-center p-0 md:p-4 md:backdrop-blur-xs">
-    <div class="modal-panel bg-white dark:bg-slate-900 rounded-b-[24px] md:rounded-2xl max-w-xl w-full shadow-2xl border-b md:border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
+  <div id="mobile-search-modal" onclick="if(event.target === this) closeMobileSearchModal()" class="modal-backdrop fixed inset-0 bg-slate-950/60 z-50 flex items-center justify-center p-0 md:p-4 md:backdrop-blur-xs">
+    <div class="modal-panel bg-white dark:bg-slate-900 rounded-t-[28px] md:rounded-2xl max-w-xl w-full shadow-2xl border-t md:border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
+      <!-- M3 Bottom Sheet Drag Handle (Mobile only) -->
+      <div class="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto my-3 md:hidden shrink-0"></div>
       <!-- Search Input Header -->
       <div class="p-3.5 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2 shrink-0">
         <div class="relative flex-1 flex items-center">
@@ -1973,37 +2038,18 @@
 
       <!-- Settings Body -->
       <div class="p-4 sm:p-6 space-y-5 overflow-y-auto flex-1 overscroll-contain">
-        <!-- 1. Google Account & OAuth Connection -->
-        <div class="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 space-y-3">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-              <i data-lucide="user-check" class="w-4 h-4 text-[#1a73e8] dark:text-blue-400"></i>
-              <span>Connected Google Account</span>
-            </span>
-            <span id="settings-auth-badge" class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300">Connected</span>
+        <!-- 1. Quick Student Profile Banner & Account Manager Link -->
+        <div onclick="closeSettingsModal(); openAccountModal();" class="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 flex items-center justify-between cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition group shadow-2xs">
+          <div class="flex items-center gap-3 min-w-0">
+            <div id="settings-user-avatar" class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center text-sm font-bold shadow-xs shrink-0">S</div>
+            <div class="min-w-0">
+              <div id="settings-user-name" class="text-xs font-bold text-slate-900 dark:text-white truncate">Student</div>
+              <div id="settings-user-email" class="text-[11px] text-slate-500 dark:text-slate-400 truncate">Offline Student Profile</div>
+            </div>
           </div>
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div class="flex items-center gap-3">
-              <div id="settings-user-avatar" class="w-10 h-10 rounded-xl bg-[#1a73e8] text-white flex items-center justify-center text-sm font-bold">A</div>
-              <div>
-                <div id="settings-user-name" class="text-xs font-bold text-slate-900 dark:text-white">Alex Mercer</div>
-                <div id="settings-user-email" class="text-xs text-[#1a73e8] dark:text-blue-400 font-medium">alex.mercer@university.edu</div>
-              </div>
-            </div>
-            <div class="flex flex-wrap items-center gap-2">
-              <button type="button" onclick="startGoogleAuth()" id="settings-reauth-btn" class="px-3.5 py-2 rounded-lg bg-[#1a73e8] hover:bg-[#1557b0] text-white text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer">
-                <i data-lucide="log-in" class="w-3.5 h-3.5"></i>
-                <span id="settings-reauth-label">Switch / Re-Authorize</span>
-              </button>
-              <button type="button" onclick="disconnectGoogleAccount()" id="settings-disconnect-btn" class="hidden px-3.5 py-2 rounded-lg border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer">
-                <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
-                <span>Disconnect</span>
-              </button>
-              <button type="button" onclick="triggerFullSync()" class="px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 transition flex items-center gap-1.5 cursor-pointer">
-                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
-                <span>Scan Gmail Now</span>
-              </button>
-            </div>
+          <div class="flex items-center gap-1.5 text-xs text-[#1a73e8] dark:text-blue-400 font-semibold shrink-0">
+            <span>Manage Accounts</span>
+            <i data-lucide="chevron-right" class="w-4 h-4 group-hover:translate-x-0.5 transition-transform"></i>
           </div>
         </div>
 
@@ -2042,8 +2088,8 @@
                   <i data-lucide="sparkles" class="w-4 h-4"></i>
                 </div>
                 <div>
-                  <div class="text-xs font-bold text-slate-900 dark:text-white">Upload Weekly Timetable (Gemini AI Extraction)</div>
-                  <div class="text-[11px] text-slate-500 dark:text-slate-400">Upload schedule image or PDF — Gemini extracts all subjects, rooms, and class times</div>
+                  <div class="text-xs font-bold text-slate-900 dark:text-white">Upload Weekly Timetable (AI Timetable Extraction)</div>
+                  <div class="text-[11px] text-slate-500 dark:text-slate-400">Upload schedule image or PDF — extracts all subjects, rooms, and class times automatically</div>
                 </div>
               </div>
               <label class="px-3 py-1.5 rounded-lg bg-[#1a73e8] hover:bg-[#1557b0] active:scale-95 text-white text-xs font-semibold cursor-pointer transition shadow-2xs flex items-center gap-1.5 shrink-0">
@@ -2055,7 +2101,7 @@
 
             <div id="settings-schedule-loader" class="hidden p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-900 flex items-center gap-2.5">
               <div class="w-4 h-4 border-2 border-[#1a73e8] border-t-transparent rounded-full animate-spin shrink-0"></div>
-              <span class="text-xs font-semibold text-[#1a73e8] dark:text-blue-400">Gemini AI is analyzing your schedule timetable...</span>
+              <span class="text-xs font-semibold text-[#1a73e8] dark:text-blue-400">AI is analyzing your schedule timetable...</span>
             </div>
           </div>
 
@@ -2096,7 +2142,7 @@
           </label>
           <div class="pt-1">
             <label class="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">Optional: Custom Gemini API Key</label>
-            <input id="settings-gemini-key" type="password" placeholder="AIzaSy... (Leave blank to use signed-in account & schedule engine)" class="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 outline-none focus:border-[#1a73e8]" />
+            <input id="settings-gemini-key" type="password" placeholder="AIzaSy... (Optional: Only if using custom personal Google AI Studio quota; not needed when signed in)" class="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 outline-none focus:border-[#1a73e8]" />
           </div>
         </div>
 
@@ -2128,11 +2174,11 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
               <div>
                 <label class="block text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-0.5">Moodle Portal URL</label>
-                <input id="settings-moodle-url" type="text" placeholder="https://e-learning.msa.edu.eg" class="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none" />
+                <input id="settings-moodle-url" type="text" placeholder="https://moodle.university.edu" class="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none" />
               </div>
               <div>
                 <label class="block text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-0.5">Calendar Export iCal URL (Secret Link)</label>
-                <input id="settings-moodle-ical" type="text" placeholder="https://e-learning.../calendar/export.php?..." class="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none" />
+                <input id="settings-moodle-ical" type="text" placeholder="https://moodle.../calendar/export.php?..." class="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none" />
               </div>
             </div>
             <div id="settings-moodle-status" class="hidden text-[11px] p-2 rounded-lg bg-white dark:bg-slate-900 border font-medium"></div>
@@ -2172,7 +2218,7 @@
             <div class="p-2.5 rounded-lg bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 text-[11px] text-blue-900 dark:text-blue-200 leading-relaxed space-y-1">
               <div class="font-bold flex items-center gap-1.5 text-blue-700 dark:text-blue-300">
                 <i data-lucide="info" class="w-3.5 h-3.5 shrink-0"></i>
-                <span>College / University Tenants (CIC, MSA, etc.)</span>
+                <span>College / University Microsoft 365 Tenants</span>
               </div>
               <p>If your college blocks third-party app consent, you can get an instant token from <a href="https://developer.microsoft.com/en-us/graph/graph-explorer" target="_blank" class="underline font-bold text-blue-600 dark:text-blue-400 hover:text-blue-800">Microsoft Graph Explorer</a>: sign in with your student account, copy the <em>Access token</em>, and paste it here.</p>
             </div>
@@ -2364,7 +2410,7 @@
           </div>
           <div>
             <div class="flex items-center gap-2">
-              <span id="practice-course-badge" class="px-2 py-0.5 rounded text-[11px] font-bold bg-white/25">CSE263</span>
+              <span id="practice-course-badge" class="px-2 py-0.5 rounded text-[11px] font-bold bg-white/25">Practice</span>
               <span class="text-xs font-semibold text-purple-200">AI Exam Readiness Trainer</span>
             </div>
             <h3 id="practice-quiz-title" class="text-base font-bold text-white truncate max-w-md">Practice Quiz</h3>
@@ -2454,8 +2500,8 @@
 
       <!-- Task Title Context -->
       <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 text-left">
-        <div id="pomodoro-task-course" class="text-[11px] font-bold text-rose-600 dark:text-rose-400">GSE211 • Numerical Methods</div>
-        <div id="pomodoro-task-title" class="text-xs font-bold text-slate-900 dark:text-white truncate mt-0.5">Simpson's 1/3 Rule & Integration</div>
+        <div id="pomodoro-task-course" class="text-[11px] font-bold text-rose-600 dark:text-rose-400">Study Session</div>
+        <div id="pomodoro-task-title" class="text-xs font-bold text-slate-900 dark:text-white truncate mt-0.5">Focus Timer</div>
       </div>
 
       <!-- Mode Tabs (25m Focus, 5m Break, 15m Long Break) -->
@@ -2536,12 +2582,12 @@
       <span id="mobile-nav-label-calendar" class="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-0.5 tracking-tight transition-colors">Calendar</span>
     </button>
 
-    <!-- Device Sync -->
-    <button onclick="openMobileSyncTab();" id="mobile-nav-sync" class="flex flex-col items-center justify-center flex-1 h-full py-1 cursor-pointer focus:outline-none">
-      <div id="mobile-nav-pill-sync" class="w-14 h-8 rounded-full bg-transparent text-slate-500 dark:text-slate-400 flex items-center justify-center transition-all duration-200">
-        <i data-lucide="smartphone" class="w-5 h-5"></i>
+    <!-- Focus Timer -->
+    <button onclick="triggerHaptic('selection'); openPomodoroModal();" id="mobile-nav-focus" class="flex flex-col items-center justify-center flex-1 h-full py-1 cursor-pointer focus:outline-none">
+      <div id="mobile-nav-pill-focus" class="w-14 h-8 rounded-full bg-transparent text-slate-500 dark:text-slate-400 flex items-center justify-center transition-all duration-200">
+        <i data-lucide="timer" class="w-5 h-5"></i>
       </div>
-      <span id="mobile-nav-label-sync" class="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-0.5 tracking-tight transition-colors">Sync</span>
+      <span id="mobile-nav-label-focus" class="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-0.5 tracking-tight transition-colors">Focus</span>
     </button>
   </nav>
 

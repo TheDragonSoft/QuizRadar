@@ -117,6 +117,7 @@ pub async fn sync_gmail_messages() -> Result<Vec<CachedEmail>, String> {
     let queries = [
         "quiz",
         "exam OR midterm OR final",
+        "assignment OR test OR homework OR project OR deadline",
         "from:e-learning OR from:edu",
         "from:canvas OR from:blackboard OR from:gradescope OR from:classroom.google.com",
     ];

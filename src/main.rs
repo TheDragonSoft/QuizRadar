@@ -192,7 +192,7 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
     let mut initial_assessments =
         parser::process_all_emails(&cached_emails, &schedule, &config, false).await;
 
-    // If student is enrolled in courses (e.g. CIC Cairo), remove foreign mock MSA engineering emails from other majors
+    // If student is enrolled in courses, remove non-matching demo emails
     if !schedule.courses.is_empty() {
         let active_course_codes: std::collections::HashSet<String> = schedule
             .courses
@@ -236,9 +236,6 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
             cfg.user_email = profile.email.clone();
             cfg.user_name = profile.name.clone();
             cfg.user_picture = profile.picture.clone();
-            if cfg.last_gmail_sync.is_none() {
-                cfg.last_gmail_sync = Some("2026-10-17 19:35".to_string());
-            }
             save_app_config(&cfg);
         }
     });
@@ -725,27 +722,10 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
         if let Ok(teams_res) = teams::sync_teams_assessments(&cfg, &schedule).await {
             if !teams_res.discovered_courses.is_empty() {
                 let mut sched = state.schedule.write().await;
-                let is_cic = teams_res.discovered_courses.iter().any(|c| c.id.starts_with("BASC") || c.id.starts_with("ACCT") || c.id.starts_with("MGMT") || c.id.starts_with("COMP") || c.id.starts_with("ENG") || c.id.starts_with("HUM"));
-                let is_default_msa = sched.courses.iter().any(|c| c.id == "CSE241") && !teams_res.discovered_courses.iter().any(|c| c.id == "CSE241");
-                if is_cic || is_default_msa || sched.courses.is_empty() {
-                    sched.courses = teams_res.discovered_courses.clone();
-                    sched.slots = teams_res.discovered_slots.clone();
-                    if let Some(ref sem) = teams_res.semester {
-                        sched.semester = sem.clone();
-                    }
-                    // When switching to the student's real enrolled university (e.g. CIC Cairo), remove foreign mock MSA engineering emails
-                    parsed.retain(|p| !p.course_id.starts_with("CSE") && !p.course_id.starts_with("GSE"));
-                } else {
-                    for dc in &teams_res.discovered_courses {
-                        if !sched.courses.iter().any(|c| c.id == dc.id) {
-                            sched.courses.push(dc.clone());
-                        }
-                    }
-                    for ds in &teams_res.discovered_slots {
-                        if !sched.slots.iter().any(|s| s.course_id == ds.course_id && s.day == ds.day && s.start_time == ds.start_time) {
-                            sched.slots.push(ds.clone());
-                        }
-                    }
+                sched.courses = teams_res.discovered_courses.clone();
+                sched.slots = teams_res.discovered_slots.clone();
+                if let Some(ref sem) = teams_res.semester {
+                    sched.semester = sem.clone();
                 }
                 parser::save_schedule(&sched);
             }
@@ -929,12 +909,11 @@ async fn add_custom_event(
     let mut cfg = state.config.write().await;
     let id = format!("custom-{}", chrono::Utc::now().timestamp_millis());
     let color = match payload.course_id.as_str() {
-        "GSE211" => "#4285f4",
-        "CSE263" => "#8e24aa",
-        "CSE261" => "#0f9d58",
-        "CSE252" => "#f4b400",
-        "CSE241" => "#e67c73",
-        "CSE262" => "#00acc1",
+        "CS 101" | "CS101" => "#4285f4",
+        "MATH 101" | "MATH101" => "#8e24aa",
+        "DATA 201" | "DATA201" => "#0f9d58",
+        "PHYS 101" | "PHYS101" => "#f4b400",
+        "MGMT 100" | "MGMT100" => "#e67c73",
         _ => "#ec4899",
     };
 
@@ -1016,10 +995,10 @@ async fn check_updater_handler(Query(q): Query<UpdateCheckQuery>) -> Json<Value>
             "success": true,
             "update_available": true,
             "current_version": updater::CURRENT_VERSION,
-            "latest_version": "v2.2.0",
-            "release_name": "QuizRadar v2.2.0 — Tasks & Auto-Updater",
-            "release_date": "2026-10-18",
-            "release_notes": "## What's New\n\n- **Study Tasks Roadmap**: Plan and track daily study topics for exams & assignments\n- **Gemini AI Ranking**: Smart workload balancing across deadlines\n- **Auto-Updater System**: Live release notifications and one-click in-app update\n- **Google OAuth Fix**: Embedded active Google Cloud client credentials\n\n## Fixes & Polish\n\n- Improved native desktop window lifecycle\n- Centered command palette search bar",
+            "latest_version": "v3.0.0",
+            "release_name": "QuizRadar v3.0.0 — Android Mobile App & Multi-Source Radar",
+            "release_date": "2026-10-19",
+            "release_notes": "## What's New in v3.0.0\n\n- **Android Mobile App**: Full feature parity mobile application powered by Capacitor, SQLite offline storage, and native touch navigation\n- **Multi-Source Ingestion**: Full Microsoft Teams, Google Classroom, and Moodle integration alongside Gmail\n- **Dynamic Calendar Engine**: Real-time relative deadlines and day-of-week synchronization\n- **Autonomous On-Device AI**: Zero-latency local study roadmap & Gemini schedule inference\n- **Impeccable Polish**: Accessible dark/light theming, smooth pull-to-refresh, and clean state onboarding\n\n## Fixes & Polish\n\n- Purged legacy static course codes and hardcoded sample dates\n- Real-time pull-to-refresh rescan and state hydration\n- Optimized touch target responsiveness and modal handling",
             "download_url": "https://github.com/TheDragonSoft/QuizRadar/releases/latest",
             "portable_url": "https://github.com/TheDragonSoft/QuizRadar/releases/latest",
             "html_url": "https://github.com/TheDragonSoft/QuizRadar/releases/latest",

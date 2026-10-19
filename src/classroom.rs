@@ -175,7 +175,7 @@ pub fn generate_classroom_sample_assessments(schedule: &ScheduleData) -> Vec<Ass
     let mut list = Vec::new();
 
     let sample_items = [
-        ("CSE241", "Classroom Form Quiz: Relational Algebra & SQL Views", "2026-10-25", "16:00", "17:00", "Online Quiz", vec!["Relational Algebra Operations", "SQL Aggregation & Group By", "Join optimization"]),
+        ("CS 101", "Classroom Form Quiz: Relational Algebra & SQL Views", "2026-10-25", "16:00", "17:00", "Online Quiz", vec!["Relational Algebra Operations", "SQL Aggregation & Group By", "Join optimization"]),
     ];
 
     let ref_date = crate::parser::current_reference_date();

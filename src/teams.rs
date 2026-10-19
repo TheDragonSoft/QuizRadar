@@ -989,3 +989,83 @@ pub fn explore_teams_heuristically(
         user_email: user_email.map(String::from),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_clean_team_course_name_ignored() {
+        assert_eq!(clean_team_course_name("Academic Advising"), "");
+        assert_eq!(clean_team_course_name("advising session"), "");
+        assert_eq!(clean_team_course_name("Cohort 2026 Students"), "");
+        assert_eq!(clean_team_course_name("cohort 2026 cs"), "");
+    }
+
+    #[test]
+    fn test_clean_team_course_name_math() {
+        assert_eq!(clean_team_course_name("Math 101"), "MATH 101: Calculus & Linear Algebra");
+        assert_eq!(clean_team_course_name("Advanced Calculus"), "MATH 101: Calculus & Linear Algebra");
+        assert_eq!(clean_team_course_name("CALCULUS AND ALGEBRA"), "MATH 101: Calculus & Linear Algebra");
+    }
+
+    #[test]
+    fn test_clean_team_course_name_accounting() {
+        assert_eq!(
+            clean_team_course_name("Financial Accounting I"),
+            "ACCT 101: Principles of Financial Accounting"
+        );
+        assert_eq!(
+            clean_team_course_name("FINANCIAL ACCOUNTING 2026"),
+            "ACCT 101: Principles of Financial Accounting"
+        );
+    }
+
+    #[test]
+    fn test_clean_team_course_name_management() {
+        assert_eq!(
+            clean_team_course_name("Principles of Management"),
+            "MGMT 100: Principles of Management"
+        );
+        assert_eq!(
+            clean_team_course_name("Business Administration"),
+            "MGMT 100: Principles of Management"
+        );
+        assert_eq!(
+            clean_team_course_name("MANAGEMENT & ORGANIZATIONS"),
+            "MGMT 100: Principles of Management"
+        );
+    }
+
+    #[test]
+    fn test_clean_team_course_name_computer() {
+        assert_eq!(
+            clean_team_course_name("Basics of Computer Science"),
+            "COMP 101: Basics of Computer"
+        );
+        assert_eq!(
+            clean_team_course_name("BASICS OF COMPUTER"),
+            "COMP 101: Basics of Computer"
+        );
+    }
+
+    #[test]
+    fn test_clean_team_course_name_english() {
+        assert_eq!(clean_team_course_name("ENG1 Reading"), "ENG 101: English 1 (ELC2)");
+        assert_eq!(clean_team_course_name("Course ELC2"), "ENG 101: English 1 (ELC2)");
+    }
+
+    #[test]
+    fn test_clean_team_course_name_human_rights() {
+        assert_eq!(clean_team_course_name("Human Rights & Law"), "HUM 101: Human Rights");
+        assert_eq!(clean_team_course_name("HUMAN RIGHTS 101"), "HUM 101: Human Rights");
+    }
+
+    #[test]
+    fn test_clean_team_course_name_fallback_and_trimming() {
+        assert_eq!(clean_team_course_name("  Physics 101  "), "Physics 101");
+        assert_eq!(clean_team_course_name("Chemistry 201"), "Chemistry 201");
+        assert_eq!(clean_team_course_name("   "), "");
+        assert_eq!(clean_team_course_name(""), "");
+    }
+}

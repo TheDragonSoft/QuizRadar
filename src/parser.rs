@@ -1513,6 +1513,25 @@ mod tests {
         assert_eq!(payload.readiness_cards[0].readiness_percent, 33);
         assert!(payload.days.len() >= 2);
     }
+
+    #[test]
+    fn test_format_12h() {
+        // Standard / Happy path
+        assert_eq!(format_12h("00:00"), "12:00 AM");
+        assert_eq!(format_12h("09:30"), "9:30 AM");
+        assert_eq!(format_12h("12:00"), "12:00 PM");
+        assert_eq!(format_12h("13:45"), "1:45 PM");
+        assert_eq!(format_12h("23:59"), "11:59 PM");
+
+        // Edge cases & malformed inputs
+        assert_eq!(format_12h("24:00"), "12:00 PM");
+        assert_eq!(format_12h("abc"), "abc");
+        assert_eq!(format_12h(""), "");
+        assert_eq!(format_12h("abc:def"), "9:def AM");
+        assert_eq!(format_12h("10:15:30"), "10:15:30");
+        assert_eq!(format_12h("15:"), "3: PM");
+        assert_eq!(format_12h(":30"), "9:30 AM");
+    }
 }
 
 

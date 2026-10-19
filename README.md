@@ -155,14 +155,28 @@ QuizRadar 3.0 introduces a brand new native **Android Mobile Application** built
    ./gradlew.bat assembleDebug
    ```
 
-### 💻 Desktop Application
+### 💻 Desktop Applications
+
+#### 🪟 Windows
 1. Download **`QuizRadar-Setup-v3.1.0-x64.exe`** (or portable ZIP) from **[GitHub Releases](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
 2. Run the installer or extract the portable ZIP.
-3. Or build directly from source:
-   ```powershell
-   cargo build --release
-   .\target\release\quizradar.exe
+
+#### 🍎 macOS (Apple Silicon)
+1. Download **`QuizRadar-v3.1.0-macos-arm64.dmg`** from **[GitHub Releases](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
+2. Open the disk image and drag **QuizRadar.app** to your `/Applications` folder.
+
+#### 🐧 Linux (Debian / Ubuntu / Linux Mint)
+1. Download **`QuizRadar-v3.1.0-linux-amd64.deb`** from **[GitHub Releases](https://github.com/TheDragonSoft/QuizRadar/releases/latest)**.
+2. Install via package manager:
+   ```bash
+   sudo dpkg -i QuizRadar-v3.1.0-linux-amd64.deb
    ```
+
+#### 🛠️ Build from Source
+```powershell
+cargo build --release
+.\target\release\quizradar.exe
+```
 
 ---
 

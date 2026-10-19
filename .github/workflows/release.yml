@@ -107,11 +107,160 @@ jobs:
           cp README.md "${STAGE}/"
           tar -czf "dist/QuizRadar-v${VER}-${{ matrix.artifact_label }}.tar.gz" -C dist "QuizRadar-v${VER}-${{ matrix.artifact_label }}"
 
+      - name: Package Linux .deb Installer
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          VER="${{ steps.version.outputs.version }}"
+          DEB_DIR="dist/deb-staging"
+          mkdir -p "${DEB_DIR}/DEBIAN"
+          mkdir -p "${DEB_DIR}/usr/bin"
+          mkdir -p "${DEB_DIR}/usr/lib/quizradar/static"
+          mkdir -p "${DEB_DIR}/usr/lib/quizradar/data"
+          mkdir -p "${DEB_DIR}/usr/share/applications"
+          mkdir -p "${DEB_DIR}/usr/share/icons/hicolor/scalable/apps"
+
+          cp target/release/quizradar "${DEB_DIR}/usr/lib/quizradar/quizradar-bin"
+          chmod 755 "${DEB_DIR}/usr/lib/quizradar/quizradar-bin"
+          cp -r static/* "${DEB_DIR}/usr/lib/quizradar/static/"
+          cp data/schedule.json "${DEB_DIR}/usr/lib/quizradar/data/"
+
+          cat << 'EOF' > "${DEB_DIR}/usr/bin/quizradar"
+#!/bin/sh
+APP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/quizradar"
+mkdir -p "$APP_DIR/data"
+if [ ! -f "$APP_DIR/data/schedule.json" ]; then
+    cp /usr/lib/quizradar/data/schedule.json "$APP_DIR/data/schedule.json" 2>/dev/null || true
+fi
+if [ ! -d "$APP_DIR/static" ]; then
+    ln -s /usr/lib/quizradar/static "$APP_DIR/static" 2>/dev/null || cp -r /usr/lib/quizradar/static "$APP_DIR/static"
+fi
+cd "$APP_DIR"
+exec /usr/lib/quizradar/quizradar-bin "$@"
+EOF
+          chmod 755 "${DEB_DIR}/usr/bin/quizradar"
+
+          cat << EOF > "${DEB_DIR}/usr/share/applications/quizradar.desktop"
+[Desktop Entry]
+Name=QuizRadar
+Comment=Academic Dashboard & Multi-Source Exam Calendar
+Exec=/usr/bin/quizradar
+Icon=quizradar
+Terminal=false
+Type=Application
+Categories=Education;Office;Utility;
+Keywords=quiz;exam;calendar;moodle;teams;academic;
+EOF
+
+          cp static/icon.svg "${DEB_DIR}/usr/share/icons/hicolor/scalable/apps/quizradar.svg"
+
+          cat << EOF > "${DEB_DIR}/DEBIAN/control"
+Package: quizradar
+Version: ${VER}
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: TheDragonSoft <https://github.com/TheDragonSoft/QuizRadar>
+Homepage: https://github.com/TheDragonSoft/QuizRadar
+Description: Academic Dashboard & Multi-Source Exam Calendar
+ QuizRadar automatically detects quizzes, midterms, lab assessments, and
+ deadlines across Gmail, Microsoft Teams, Moodle, and Google Classroom,
+ syncing them into a unified local weekly calendar and mobile app.
+EOF
+
+          dpkg-deb --build "${DEB_DIR}" "dist/QuizRadar-v${VER}-linux-amd64.deb"
+          rm -rf "${DEB_DIR}"
+
+      - name: Package macOS .dmg Installer
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          VER="${{ steps.version.outputs.version }}"
+          DMG_STAGE="dist/dmg-staging"
+          APP_BUNDLE="${DMG_STAGE}/QuizRadar.app"
+          mkdir -p "${APP_BUNDLE}/Contents/MacOS"
+          mkdir -p "${APP_BUNDLE}/Contents/Resources/static"
+          mkdir -p "${APP_BUNDLE}/Contents/Resources/data"
+
+          cp target/release/quizradar "${APP_BUNDLE}/Contents/MacOS/quizradar-bin"
+          chmod 755 "${APP_BUNDLE}/Contents/MacOS/quizradar-bin"
+          cp -r static/* "${APP_BUNDLE}/Contents/Resources/static/"
+          cp data/schedule.json "${APP_BUNDLE}/Contents/Resources/data/"
+
+          cat << 'EOF' > "${APP_BUNDLE}/Contents/MacOS/quizradar"
+#!/bin/sh
+DIR="$(cd "$(dirname "$0")" && pwd)"
+APP_DIR="$HOME/Library/Application Support/QuizRadar"
+mkdir -p "$APP_DIR/data"
+if [ ! -f "$APP_DIR/data/schedule.json" ]; then
+    cp "$DIR/../Resources/data/schedule.json" "$APP_DIR/data/schedule.json" 2>/dev/null || true
+fi
+if [ ! -d "$APP_DIR/static" ]; then
+    ln -s "$DIR/../Resources/static" "$APP_DIR/static" 2>/dev/null || cp -r "$DIR/../Resources/static" "$APP_DIR/static"
+fi
+cd "$APP_DIR"
+exec "$DIR/quizradar-bin" "$@"
+EOF
+          chmod 755 "${APP_BUNDLE}/Contents/MacOS/quizradar"
+
+          cat << EOF > "${APP_BUNDLE}/Contents/Info.plist"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>quizradar</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.thedragonsoft.quizradar</string>
+    <key>CFBundleName</key>
+    <string>QuizRadar</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>${VER}</string>
+    <key>CFBundleVersion</key>
+    <string>${VER}</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+</dict>
+</plist>
+EOF
+
+          ICONSET="AppIcon.iconset"
+          mkdir -p "$ICONSET"
+          sips -z 16 16     assets/icon.png --out "$ICONSET/icon_16x16.png"
+          sips -z 32 32     assets/icon.png --out "$ICONSET/icon_16x16@2x.png"
+          sips -z 32 32     assets/icon.png --out "$ICONSET/icon_32x32.png"
+          sips -z 64 64     assets/icon.png --out "$ICONSET/icon_32x32@2x.png"
+          sips -z 128 128   assets/icon.png --out "$ICONSET/icon_128x128.png"
+          sips -z 256 256   assets/icon.png --out "$ICONSET/icon_128x128@2x.png"
+          sips -z 256 256   assets/icon.png --out "$ICONSET/icon_256x256.png"
+          sips -z 512 512   assets/icon.png --out "$ICONSET/icon_256x256@2x.png"
+          sips -z 512 512   assets/icon.png --out "$ICONSET/icon_512x512.png"
+          iconutil -c icns "$ICONSET" -o "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"
+          rm -rf "$ICONSET"
+
+          ln -s /Applications "${DMG_STAGE}/Applications"
+
+          hdiutil create \
+            -volname "QuizRadar" \
+            -srcfolder "${DMG_STAGE}" \
+            -ov \
+            -format UDZO \
+            "dist/QuizRadar-v${VER}-macos-arm64.dmg"
+
+          rm -rf "${DMG_STAGE}"
+
       - name: Upload Unix Archive
         uses: actions/upload-artifact@v4
         with:
           name: unix-${{ matrix.artifact_label }}
-          path: dist/*.tar.gz
+          path: |
+            dist/*.tar.gz
+            dist/*.deb
+            dist/*.dmg
 
   build-android-apk:
     name: Android Mobile App APK
@@ -221,8 +370,10 @@ jobs:
             - 📱 **Android Mobile App**: `QuizRadar-v${{ steps.version.outputs.version }}-Android.apk` — Complete standalone native Android application with offline autonomous engine, pull-to-refresh, dynamic date sync, and tactile haptics.
             - 🪟 **Windows Installer (Recommended)**: `QuizRadar-Setup-v${{ steps.version.outputs.version }}-x64.exe` — Standard Windows setup wizard with Start Menu & Desktop shortcuts (no administrator privileges required).
             - 📁 **Windows Portable ZIP**: `QuizRadar-Portable-v${{ steps.version.outputs.version }}-win-x64.zip` — Extract anywhere and run `quizradar.exe` or `start.bat`.
-            - 🐧 **Linux (x64)**: `QuizRadar-v${{ steps.version.outputs.version }}-linux-x64.tar.gz`
-            - 🍎 **macOS (Apple Silicon)**: `QuizRadar-v${{ steps.version.outputs.version }}-macos-arm64.tar.gz`
+            - 🍎 **macOS Disk Image (Apple Silicon)**: `QuizRadar-v${{ steps.version.outputs.version }}-macos-arm64.dmg` — Drag-and-drop installer for macOS with native `.app` bundle.
+            - 🍎 **macOS Tarball (Apple Silicon)**: `QuizRadar-v${{ steps.version.outputs.version }}-macos-arm64.tar.gz`
+            - 🐧 **Linux Debian / Ubuntu Package**: `QuizRadar-v${{ steps.version.outputs.version }}-linux-amd64.deb` — Native Debian package with desktop menu entry and app icon.
+            - 🐧 **Linux Tarball (x64)**: `QuizRadar-v${{ steps.version.outputs.version }}-linux-x64.tar.gz`
 
             ### 🔒 100% Local Privacy
             All OAuth tokens, cached announcements, and study progress stay strictly on your own hardware.

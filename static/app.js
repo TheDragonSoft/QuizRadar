@@ -6,6 +6,9 @@
 // Native Capacitor / Android Environment Setup
 const IS_NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 
+// Single source of truth for the UI version (keep in sync with Cargo.toml / package.json)
+const APP_VERSION = "3.3.0";
+
 // ============================================================================
 // QUIZRADAR AUTONOMOUS ON-DEVICE BACKEND ENGINE (100% Isolated, Zero Latency)
 // ============================================================================
@@ -153,8 +156,8 @@ class QuizRadarAutonomousEngine {
         days_until: daysUntil,
         urgency_badge: daysUntil === 0 ? "TODAY" : daysUntil === 1 ? "TOMORROW" : daysUntil < 0 ? "PAST" : `IN ${daysUntil} DAYS`,
         color: a.color || "#1a73e8",
-        room: a.room || "Hall B-204",
-        instructor: a.instructor || "Faculty",
+        room: a.room || "Room TBD",
+        instructor: a.instructor || "Instructor TBA",
         readiness_percent: readiness,
         progress_percent: readiness,
         completed_count: compCount,
@@ -162,7 +165,7 @@ class QuizRadarAutonomousEngine {
         priority_score: Math.round(priorityScore),
         why_study_now: a.ai_study_plan || (daysUntil === 0 ? "Scheduled today. Review key lecture concepts." : daysUntil === 1 ? "Scheduled tomorrow. Review key problem sets." : `Scheduled in ${daysUntil} days. Review key lecture concepts.`),
         ai_study_plan: a.ai_study_plan || "Review key lecture notes and problem sets.",
-        ai_inference_note: a.ai_inference_note || "Synchronized from course announcements.",
+        ai_inference_note: a.ai_inference_note || "Data stored on this device.",
         google_cal_url: a.google_cal_url || "#",
         warnings: a.warnings || [],
         topics: topics.map((t, i) => ({
@@ -182,7 +185,7 @@ class QuizRadarAutonomousEngine {
 
     const avgReadiness = recommendations.length > 0
       ? Math.round(recommendations.reduce((acc, r) => acc + r.readiness_percent, 0) / recommendations.length)
-      : (assessments.length === 0 ? 0 : 80);
+      : 0;
 
     const typeCounts = {};
     assessments.forEach((a) => {
@@ -200,8 +203,10 @@ class QuizRadarAutonomousEngine {
       stats: {
         readiness_score: avgReadiness,
         upcoming_quizzes_count: assessments.filter(a => (a.days_until ?? 0) >= 0).length,
-        hours_studied: assessments.length > 0 ? (12 + Object.values(completed).filter(Boolean).length * 1.5) : 0,
-        study_streak_days: assessments.length > 0 ? 4 : 0
+        // Honest on-device stats: hours from completed topics only (35 min each),
+        // no streak counter exists on-device so it stays 0 until real tracking.
+        hours_studied: Math.round((Object.values(completed).filter(Boolean).length * 35) / 6) / 10,
+        study_streak_days: 0
       },
       exam_type_counts: typeCounts,
       study_recommendations: recommendations.filter(r => (r.days_until ?? 0) >= 0),
@@ -485,11 +490,11 @@ class QuizRadarAutonomousEngine {
 
     // 9. POST /api/sync & /api/gcal/sync
     if (path === "/api/sync" || path === "/api/gcal/sync") {
-      const isConnected = !!(this.state.config?.teams_enabled || this.state.auth?.authenticated);
-      this.state.config.last_gmail_sync = "Just now";
+      this.state.config.last_gmail_sync = "Local check";
       this.recomputeDashboard(this.state);
       this.saveDatabase();
-      return { ok: true, status: 200, data: { success: true, message: isConnected ? "University academic feeds & Gemini AI summaries refreshed!" : "Radar synced. No connected university accounts found.", assessments: this.state.assessments, dashboard: this.state.dashboard, schedule: this.state.schedule } };
+      const message = "On-device data check complete. This app stores your data locally; for live Gmail/Teams/Classroom scanning, pair this device with the QuizRadar desktop app.";
+      return { ok: true, status: 200, data: { success: true, message, assessments: this.state.assessments, dashboard: this.state.dashboard, schedule: this.state.schedule } };
     }
 
     // 10. GET /api/calendar/ics_all
@@ -521,11 +526,19 @@ class QuizRadarAutonomousEngine {
             `Applying arbitrary approximations without verifying error margins.`,
             `Restricting analysis strictly to single-variable linear models.`
           ],
-          correct: 0,
+          correct_index: 0,
           explanation: `In ${topTitle}, exact problem formulation, standard definitions, and boundary condition verification form the solid foundation.`
         };
       });
-      return { ok: true, status: 200, data: { success: true, questions: questions } };
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          success: true,
+          generated_by_ai: false,
+          questions: questions
+        }
+      };
     }
 
     // 13. Assessment Grading / Recording
@@ -585,40 +598,15 @@ Extract enrolled courses and weekly class slots from this schedule. Return ONLY 
         }
       }
 
-      // Robust on-device fallback schedule extraction:
-      // When signed in with Google or offline, students never need an API key to scan schedules
+      // Honest failure: no API key means no extraction. Never invent a schedule.
       if (!extracted) {
-        const defaultCourses = (this.state.schedule?.courses && this.state.schedule.courses.length > 0)
-          ? this.state.schedule.courses
-          : [
-              { id: "CS 101", name: "Introduction to Computer Science", color: "#1a73e8", icon: "cpu", instructor: "Dr. Sarah Adams" },
-              { id: "MATH 101", name: "Calculus & Linear Algebra", color: "#00897b", icon: "sigma", instructor: "Prof. Elena Rostova" },
-              { id: "DATA 201", name: "Data Structures & Algorithms", color: "#8e24aa", icon: "brain", instructor: "Dr. Marcus Vance" },
-              { id: "MGMT 100", name: "Principles of Management", color: "#f59e0b", icon: "briefcase", instructor: "Prof. Claire Sterling" },
-              { id: "PHYS 101", name: "General Physics", color: "#e53935", icon: "calculator", instructor: "Dr. David Chen" }
-            ];
-
-        const defaultSlots = (this.state.schedule?.slots && this.state.schedule.slots.length > 0)
-          ? this.state.schedule.slots
-          : [
-              { id: "s1", course_id: "MATH 101", course_name: "Calculus & Linear Algebra", day: "Sunday", day_name: "Sunday", day_index: 0, start_time: "08:00", end_time: "10:00", display_time: "8:00 AM – 10:00 AM", room: "Hall B-204", group: "Sec 1", instructor: "Prof. Elena Rostova", color: "#00897b", type: "Lecture", slot_type: "Lecture" },
-              { id: "s2", course_id: "CS 101", course_name: "Introduction to Computer Science", day: "Monday", day_name: "Monday", day_index: 1, start_time: "10:15", end_time: "12:00", display_time: "10:15 AM – 12:00 PM", room: "Hall A-101", group: "Sec 1", instructor: "Dr. Sarah Adams", color: "#1a73e8", type: "Lecture", slot_type: "Lecture" },
-              { id: "s3", course_id: "DATA 201", course_name: "Data Structures & Algorithms", day: "Tuesday", day_name: "Tuesday", day_index: 2, start_time: "12:15", end_time: "14:00", display_time: "12:15 PM – 2:00 PM", room: "Lab C-302", group: "Sec 2", instructor: "Dr. Marcus Vance", color: "#8e24aa", type: "Lab", slot_type: "Lab" },
-              { id: "s4", course_id: "MGMT 100", course_name: "Principles of Management", day: "Wednesday", day_name: "Wednesday", day_index: 3, start_time: "08:00", end_time: "10:00", display_time: "8:00 AM – 10:00 AM", room: "Hall B-105", group: "Sec 1", instructor: "Prof. Claire Sterling", color: "#f59e0b", type: "Lecture", slot_type: "Lecture" },
-              { id: "s5", course_id: "PHYS 101", course_name: "General Physics", day: "Thursday", day_name: "Thursday", day_index: 4, start_time: "10:15", end_time: "12:30", display_time: "10:15 AM – 12:30 PM", room: "Lab D-101", group: "Sec 1", instructor: "Dr. David Chen", color: "#e53935", type: "Lab", slot_type: "Lab" }
-            ];
-
-        extracted = {
-          semester: this.state.schedule?.semester || "Fall 2026 Academic Timetable",
-          courses: defaultCourses,
-          slots: defaultSlots.map(s => ({
-            ...s,
-            day: s.day || s.day_name || "Monday",
-            day_name: s.day_name || s.day || "Monday",
-            slot_type: s.slot_type || s.type || "Lecture",
-            type: s.type || s.slot_type || "Lecture",
-            display_time: s.display_time || `${s.start_time} - ${s.end_time}`
-          }))
+        return {
+          ok: true,
+          status: 200,
+          data: {
+            success: false,
+            error: "Automatic schedule extraction needs a Gemini API key. Add your free key in Server Settings, or enter your courses and classes manually."
+          }
         };
       }
 
@@ -628,7 +616,7 @@ Extract enrolled courses and weekly class slots from this schedule. Return ONLY 
         data: {
           success: true,
           schedule: extracted,
-          extractor: (apiKey && apiKey.trim()) ? "Gemini 2.5 Flash Vision AI" : "On-Device Neural OCR Extractor"
+          extractor: "Gemini 2.5 Flash Vision AI"
         }
       };
     }
@@ -650,9 +638,10 @@ Extract enrolled courses and weekly class slots from this schedule. Return ONLY 
           success: true,
           standalone: true,
           offline_capable: true,
-          user_email: this.state.config.user_email || "Offline Student",
-          google_authenticated: !!this.state.config.user_email,
-          engine_type: "Embedded Autonomous On-Device Engine"
+          user_email: this.state.config.user_email,
+          google_authenticated: false,
+          google_auth_note: "This device uses an on-device engine (manual entry). Pair with the desktop app to access live Gmail/Teams scanning.",
+          engine_type: "On-device engine (manual entry)"
         }
       };
     }
@@ -665,7 +654,7 @@ Extract enrolled courses and weekly class slots from this schedule. Return ONLY 
         status: 200,
         data: {
           success: true,
-          message: "Data backed up to on-device encrypted storage.",
+          message: "Data saved to on-device storage (no encryption beyond device protection).",
           state: this.state
         }
       };
@@ -679,13 +668,20 @@ Extract enrolled courses and weekly class slots from this schedule. Return ONLY 
         data: {
           success: true,
           has_update: false,
-          current_version: "2.1.0-standalone"
+          current_version: APP_VERSION
         }
       };
     }
 
-    // 19. Default 200 fallback for any unhandled /api call
-    return { ok: true, status: 200, data: { success: true, standalone: true } };
+    // 19. Honest failure fallback: report unmatched endpoints instead of faking success
+    return {
+      ok: true,
+      status: 200,
+      data: {
+        success: false,
+        error: `This feature (${url.split("?")[0]}) is not available on this device. It works in the desktop app.`
+      }
+    };
   }
 
   generateIcs() {
@@ -717,35 +713,56 @@ Extract enrolled courses and weekly class slots from this schedule. Return ONLY 
 
 const mobileEngine = new QuizRadarAutonomousEngine();
 
-// Intercept all /api calls on mobile or in standalone mode
-window.fetch = async function (resource, init) {
-  const url = typeof resource === "string" ? resource : resource?.url || "";
-  if (url.startsWith("/api/") || url.includes("/api/")) {
-    try {
-      const result = await mobileEngine.handleApi(url, init);
-      if (result) {
-        if (result.text !== undefined) {
-          return new Response(result.text, {
+// ============================================================================
+// API ROUTING POLICY (CRITICAL, DO NOT CHANGE LIGHTLY)
+// - Desktop app / browser PWA: window.fetch is left 100% UNTOUCHED so the UI
+//   talks to the REAL Rust backend (Google OAuth, Gmail scan, Teams, Moodle,
+//   Classroom, calendar push, pairing). Never intercept /api/* here.
+// - Android/iOS native (Capacitor): the on-device engine answers /api/* calls
+//   because there is no bundled Rust server. Absolute http(s) URLs are passed
+//   through so the app can pair with a desktop instance on the LAN.
+// ============================================================================
+if (IS_NATIVE) {
+  window.fetch = async function (resource, init) {
+    const url = typeof resource === "string" ? resource : resource?.url || "";
+    const isRelative = /^\/[^/]/.test(url) || url.startsWith("./");
+    if (!isRelative) {
+      // Cross-origin (e.g. http://192.168.x.x:5050 desktop pairing) → real network
+      return _originalFetch(resource, init);
+    }
+    if (url.startsWith("/api/")) {
+      try {
+        const result = await mobileEngine.handleApi(url, init);
+        if (result) {
+          if (result.text !== undefined) {
+            return new Response(result.text, {
+              status: result.status || 200,
+              headers: { "Content-Type": result.contentType || "text/plain" }
+            });
+          }
+          return new Response(JSON.stringify(result.data !== undefined ? result.data : { success: true }), {
             status: result.status || 200,
-            headers: { "Content-Type": result.contentType || "text/plain" }
+            headers: { "Content-Type": "application/json" }
           });
         }
-        return new Response(JSON.stringify(result.data !== undefined ? result.data : { success: true }), {
-          status: result.status || 200,
-          headers: { "Content-Type": "application/json" }
-        });
+      } catch (e) {
+        console.warn("[QuizRadar Local Fetch Interceptor]:", e);
       }
-    } catch (e) {
-      console.warn("[QuizRadar Local Fetch Interceptor]:", e);
+      // On-device engine covers everything it knows; anything else fails honestly
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Feature not available on this device; use the desktop app."
+        }),
+        {
+          status: 501,
+          headers: { "Content-Type": "application/json" }
+        }
+      );
     }
-    // Hard guard: Standalone mobile engine never leaks API calls to external hosts or PC server
-    return new Response(JSON.stringify({ success: true, standalone: true }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-  return _originalFetch(resource, init);
-};
+    return _originalFetch(resource, init);
+  };
+}
 
 // ============================================================================
 // NATIVE ANDROID BRIDGE & HAPTICS (Capacitor 6 / Material Design 3)
@@ -920,7 +937,7 @@ async function saveGoogleAccountProfile() {
     return;
   }
 
-  showToast("Saving personal student identity...", "info", 1500);
+  showToast("Saving local student profile...", "info", 1500);
 
   await fetch("/api/config/update", {
     method: "POST",
@@ -955,11 +972,22 @@ async function saveGoogleAccountProfile() {
     openAccountModal();
   }
   triggerHaptic("success");
-  showToast(`Connected Google Account: ${email}!`, "success", 3500);
+  showToast(
+    IS_NATIVE
+      ? `Local profile saved: ${email}. Pair with the desktop app to enable real Google scanning.`
+      : `Local profile saved: ${email}.`,
+    "success",
+    3500
+  );
 }
 
 function startGoogleAuth() {
   triggerHaptic("selection");
+  if (!IS_NATIVE) {
+    // Desktop / browser PWA: run the REAL Google OAuth flow against the Rust backend.
+    window.location.href = "/api/auth/google";
+    return;
+  }
   const modal = document.getElementById("account-profile-modal");
   if (!modal || !modal.classList.contains("is-open")) {
     openAccountModal();
@@ -999,7 +1027,7 @@ async function saveTeamsAccountProfile() {
     return;
   }
 
-  showToast("Linking University Microsoft Account...", "info", 1500);
+  showToast("Saving local university profile...", "info", 1500);
 
   if (appState.config) {
     appState.config.teams_enabled = true;
@@ -1025,11 +1053,22 @@ async function saveTeamsAccountProfile() {
     openAccountModal();
   }
   triggerHaptic("success");
-  showToast(`University Account linked: ${email}!`, "success", 3500);
+  showToast(
+    IS_NATIVE
+      ? `University profile saved locally: ${email}. Real Teams sync needs the desktop app.`
+      : `University profile saved locally: ${email}. Use Add University (Microsoft) to connect for real Teams scanning.`,
+    "success",
+    4000
+  );
 }
 
 function startMicrosoftAuth() {
   triggerHaptic("selection");
+  if (!IS_NATIVE) {
+    // Desktop / browser PWA: run the REAL Microsoft OAuth flow against the Rust backend.
+    window.location.href = "/api/microsoft/login";
+    return;
+  }
   const modal = document.getElementById("account-profile-modal");
   if (!modal || !modal.classList.contains("is-open")) {
     openAccountModal();
@@ -2067,6 +2106,22 @@ function recalculateAssessmentDeadlines(state) {
       state.dashboard.all_upcoming = state.assessments.filter((a) => (a.days_until ?? 0) >= 0);
     }
     state.dashboard.next_up = state.assessments.find((a) => (a.days_until ?? 0) >= 0) || null;
+    // Keep study recommendation cards honest: refresh counters & urgency badges
+    // so they never advertise a stale "IN X DAYS" after a date has rolled past.
+    if (Array.isArray(state.dashboard.study_recommendations)) {
+      state.dashboard.study_recommendations = state.dashboard.study_recommendations.filter((r) => {
+        const match = state.assessments.find((a) => a.id === r.assessment_id || a.id === r.id);
+        if (!match) return false;
+        r.days_until = match.days_until;
+        r.is_upcoming = match.is_upcoming;
+        r.display_date = match.display_date || r.display_date;
+        r.urgency_badge = match.urgency_badge || r.urgency_badge;
+        r.display_time = match.display_time || r.display_time;
+        return r.is_upcoming;
+      });
+      state.dashboard.recommendations = state.dashboard.study_recommendations;
+      state.dashboard.upcoming_this_week = state.dashboard.upcoming_this_week || state.dashboard.study_recommendations.filter((r) => (r.days_until ?? 99) <= 7);
+    }
   }
 }
 
@@ -2220,19 +2275,8 @@ function applyDemoDummyData() {
       rec.ai_study_plan = scrubText(rec.ai_study_plan);
     });
 
-    // Mark a couple of sample topics completed in demo mode so readiness progress bar looks realistic
-    const recs = appState.dashboard.study_recommendations || [];
-    if (recs[0]?.topics?.[0]) {
-      recs[0].topics[0].completed = true;
-      if (!appState.config.completed_topics) appState.config.completed_topics = {};
-      appState.config.completed_topics[recs[0].topics[0].key] = true;
-      recs[0].progress_percent = Math.round((1 / recs[0].topics.length) * 100);
-    }
-    if (recs[1]?.topics?.[0]) {
-      recs[1].topics[0].completed = true;
-      appState.config.completed_topics[recs[1].topics[0].key] = true;
-      recs[1].progress_percent = Math.round((1 / recs[1].topics.length) * 100);
-    }
+    // Demo overrides stay 100% in-memory: never mutate persisted completed_topics
+    // progress or the dashboard readiness counters (that used to pollute real state).
     appState.dashboard.completed_topics_count = 6;
     appState.dashboard.total_topics_count = 23;
     appState.dashboard.readiness_percent = 26;
@@ -2249,9 +2293,11 @@ function applyDemoDummyData() {
 }
 
 function updateTopBarAndUser() {
-  const isAuth = !!(appState.auth?.authenticated || appState.config?.user_email);
+  // "Connected" means REAL authentication (Google OAuth token). A manually typed
+  // email must never surface as a signed-in state.
+  const isAuth = !!appState.auth?.authenticated;
   const email = appState.auth?.email || appState.config?.user_email || "Not signed in";
-  const name = appState.auth?.name || appState.config?.user_name || "Connect Google Account";
+  const name = appState.auth?.name || appState.config?.user_name || "Student";
   const initial = (name && name[0] ? name[0] : "G").toUpperCase();
 
   const nameEl = document.getElementById("user-name-label");
@@ -5322,15 +5368,14 @@ async function runOnboardingScan() {
     if (statusEl) statusEl.innerHTML = `<span>${escapeHtml(msg)}</span>`;
   };
 
-  updateStage(25, "Connecting to Gmail API & fetching university announcements...");
-  await new Promise((r) => setTimeout(r, 220));
-  updateStage(60, "Cross-referencing emails against 6 Fall 2026 courses & 14 weekly slots...");
+  updateStage(25, "Checking your configured accounts & scanning enabled sources...");
+  await new Promise((r) => setTimeout(r, 150));
 
   await triggerFullSync();
 
   const upcomingCount = (appState.assessments || []).filter((a) => a.is_upcoming).length;
   const totalCount = (appState.assessments || []).length;
-  updateStage(100, `Scan complete — ${upcomingCount} upcoming assessments & ${totalCount} total records resolved!`);
+  updateStage(100, `Scan complete — ${upcomingCount} upcoming & ${totalCount} total records in your radar.`);
 
   if (btn) {
     btn.disabled = false;
@@ -5363,12 +5408,11 @@ async function finishOnboarding() {
   if (studentEmail) {
     appState.config.user_email = studentEmail;
     if (appState.auth) {
+      // Manual entry is a LOCAL profile anchor — never claim real authentication.
       appState.auth.email = studentEmail;
-      appState.auth.authenticated = true;
     }
   }
   if (universityEmail) {
-    appState.config.teams_enabled = true;
     appState.config.teams_account_email = universityEmail;
     appState.config.teams_account_name = universityName || "University";
   }
@@ -5389,13 +5433,13 @@ async function finishOnboarding() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        user_name: studentName || "Student",
+        user_name: studentName || null,
         user_email: studentEmail || null,
         teams_email: universityEmail || null,
         teams_name: universityName || null,
         auto_sync_gcal: autoSync,
         gemini_enabled: geminiEnabled,
-        gemini_api_key: geminiKey,
+        gemini_api_key: geminiKey || null,
       }),
     });
     const data = await res.json();
@@ -5426,7 +5470,7 @@ async function triggerFullSync() {
   if (mobileBtn) mobileBtn.disabled = true;
   if (mobileIcon) mobileIcon.classList.add("animate-spin");
 
-  showToast("Syncing University Feeds & Gemini AI Summaries...", "info", 1800);
+  showToast("Checking connected accounts for new announcements...", "info", 1800);
 
   try {
     const res = await fetch("/api/sync", { method: "POST" });
@@ -5441,10 +5485,15 @@ async function triggerFullSync() {
     saveStateCache();
 
     renderAllViews();
-    triggerHaptic("success");
-    showToast(data.message || "Synced all university sources & assessments!", "success", 3000);
+    if (data.success === false) {
+      triggerHaptic("warning");
+      showToast(data.error || data.message || "Sync could not complete.", "warning", 4000);
+    } else {
+      triggerHaptic("success");
+      showToast(data.message || "Sync finished.", "success", 3000);
+    }
   } catch (err) {
-    showToast("Sync completed using local cache.");
+    showToast("Sync failed — could not reach the backend.", "warning");
   } finally {
     if (txt) txt.textContent = "Sync Gmail & Calendar";
     if (btn) btn.disabled = false;
@@ -5462,9 +5511,15 @@ async function syncGoogleCalendarOnly() {
     saveStateCache();
     renderDashboard();
     renderWeekCalendar();
-    showToast(data.report?.message || "Synced upcoming exams to Google Calendar!");
+    const rep = data.report;
+    if (rep && rep.success === false) {
+      showToast(rep.message || "Google Calendar sync failed — connect your Google account first.", "warning", 4000);
+    } else {
+      showToast(rep?.message || "Synced upcoming exams to Google Calendar!", "success");
+    }
   } catch (err) {
     console.error("GCal sync error:", err);
+    showToast("Google Calendar sync failed.", "warning");
   }
 }
 
@@ -6456,7 +6511,7 @@ async function openPracticeModalForCurrentAssessment() {
     loadingEl.classList.remove("hidden");
     loadingEl.innerHTML = `
       <div class="w-8 h-8 border-3 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
-      <p class="text-xs font-semibold text-slate-600 dark:text-slate-300">Gemini AI is analyzing syllabus topics and formulating practice questions...</p>
+      <p class="text-xs font-semibold text-slate-600 dark:text-slate-300">Generating practice questions from your course topics...</p>
     `;
   }
   if (contentEl) contentEl.classList.add("hidden");
@@ -6479,6 +6534,10 @@ async function openPracticeModalForCurrentAssessment() {
       activePracticeQuiz = data.questions;
       practiceQuizCurrentIndex = 0;
       practiceQuizScore = 0;
+      // Honest provenance labeling: AI-crafted vs on-device fallback
+      if (titleEl) {
+        titleEl.textContent = `${data.generated_by_ai === false ? "On-device Practice" : "AI Practice"}: ${a.title}`;
+      }
       if (loadingEl) loadingEl.classList.add("hidden");
       if (contentEl) contentEl.classList.remove("hidden");
       renderCurrentPracticeQuestion();
@@ -6500,7 +6559,7 @@ async function openPracticeModalForCurrentAssessment() {
           "Skipping foundational terms to jump straight into complex proofs",
           "Reviewing only the final answer sheet without practice exercises"
         ],
-        correct_answer: 0,
+        correct_index: 0,
         explanation: `Systematic step-by-step methodology and checking intermediate work is the proven study strategy for ${a.course_id}.`
       };
     });
@@ -6814,6 +6873,10 @@ function openMobileSyncTab() {
 async function openCloudSyncModal() {
   const modal = document.getElementById("cloud-sync-modal");
   if (!modal) return;
+  const pairInput = document.getElementById("pair-desktop-url");
+  if (pairInput && !pairInput.value) {
+    pairInput.value = localStorage.getItem(DESKTOP_PAIRING_URL_KEY) || "";
+  }
   modal.classList.add("is-open");
   if (window.lucide) lucide.createIcons({ root: modal });
 }
@@ -6891,6 +6954,111 @@ function resetLocalDatabase() {
     triggerHaptic("medium");
     showToast("Database reset to clean baseline.");
     closeCloudSyncModal();
+  }
+}
+
+// ============================================================================
+// DESKTOP PAIRING (mobile engine → real QuizRadar desktop instance on the LAN)
+// ============================================================================
+
+const DESKTOP_PAIRING_URL_KEY = "quizradar_desktop_pairing_url";
+
+function normalizeDesktopUrl(raw) {
+  let u = (raw || "").trim();
+  if (!u) return null;
+  if (!/^https?:\/\//i.test(u)) u = `http://${u}`;
+  try {
+    const parsed = new URL(u);
+    if (parsed.pathname && parsed.pathname !== "/") {
+      // Accept both http://ip:port and http://ip:port/ — strip any extra path
+      return `${parsed.protocol}//${parsed.host}`;
+    }
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch (e) {
+    return null;
+  }
+}
+
+function showPairingStatus(text, isError) {
+  const el = document.getElementById("pairing-status");
+  if (!el) return;
+  el.classList.remove("hidden");
+  el.textContent = text;
+  el.className = "text-[11px] rounded-lg px-3 py-2 " + (isError
+    ? "bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300"
+    : "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300");
+}
+
+async function getValidatedDesktopUrl() {
+  const input = document.getElementById("pair-desktop-url");
+  const saved = input?.value || localStorage.getItem(DESKTOP_PAIRING_URL_KEY) || "";
+  const normalized = normalizeDesktopUrl(saved);
+  if (!normalized) {
+    showPairingStatus("Enter a valid desktop address, e.g. http://192.168.1.10:5050", true);
+    return null;
+  }
+  return normalized;
+}
+
+async function testDesktopPairing() {
+  triggerHaptic("selection");
+  const desktopUrl = await getValidatedDesktopUrl();
+  if (!desktopUrl) return;
+  const btn = document.getElementById("pair-test-btn");
+  if (btn) { btn.disabled = true; btn.textContent = "Testing..."; }
+  try {
+    const res = await _originalFetch(`${desktopUrl}/api/state`, {
+      signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data || !data.schedule || !data.assessments) throw new Error("Not a QuizRadar desktop instance");
+    localStorage.setItem(DESKTOP_PAIRING_URL_KEY, desktopUrl);
+    const courses = data.schedule.courses?.length || 0;
+    const upcoming = (data.assessments || []).filter((a) => a.is_upcoming).length;
+    showPairingStatus(`Connected! QuizRadar desktop has ${courses} course(s), ${upcoming} upcoming item(s). Signed in: ${data.auth?.authenticated ? (data.auth.email || "yes") : "no Google account"}.`, false);
+  } catch (err) {
+    showPairingStatus(`Could not connect: ${err.message}. Check that the PC runs QuizRadar with --lan and both devices share the Wi-Fi.`, true);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "Test"; }
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+async function importFromDesktop() {
+  triggerHaptic("medium");
+  const desktopUrl = await getValidatedDesktopUrl();
+  if (!desktopUrl) return;
+  const btn = document.getElementById("pair-import-btn");
+  if (btn) { btn.disabled = true; btn.textContent = "Pulling..."; }
+  try {
+    const res = await _originalFetch(`${desktopUrl}/api/state`, {
+      signal: AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    // Pull ONLY your own data. Authentication tokens NEVER cross the network.
+    const st = mobileEngine.state;
+    st.schedule = data.schedule || st.schedule;
+    st.assessments = data.assessments || st.assessments;
+    st.completed_topics = data.config?.completed_topics || st.completed_topics;
+    st.study_tasks = data.study_tasks_payload?.days || st.study_tasks;
+    st.config = { ...st.config, user_name: data.config?.user_name || st.config.user_name };
+    st.dashboard = null;
+    mobileEngine.state = mobileEngine.recomputeDashboard(st);
+    mobileEngine.saveDatabase();
+
+    appState = mobileEngine.state;
+    saveStateCache();
+    hydrateAndRenderState(appState);
+    triggerHaptic("success");
+    showToast("Desktop data imported on this device!", "success", 3500);
+  } catch (err) {
+    showToast(`Import failed: ${err.message}. Run "Test" first to verify the address.`, "warning");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "Pull Desktop Data"; }
+    if (window.lucide) lucide.createIcons();
   }
 }
 

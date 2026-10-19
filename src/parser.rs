@@ -34,14 +34,16 @@ pub fn load_schedule() -> ScheduleData {
             return s;
         }
     }
-    let embedded = include_str!("../data/schedule.json");
-    if let Ok(s) = serde_json::from_str::<ScheduleData>(embedded) {
-        let _ = fs::create_dir_all("data");
-        let _ = fs::write("data/schedule.json", embedded);
+    // First run: seed ONLY an empty template. Never bundle a fabricated (or the
+    // developer's real) timetable inside the binary.
+    let template = include_str!("../data/schedule.template.json");
+    let _ = fs::create_dir_all("data");
+    if let Ok(s) = serde_json::from_str::<ScheduleData>(template) {
+        let _ = fs::write("data/schedule.json", template);
         return s;
     }
     ScheduleData {
-        semester: "Fall 2026 (Academic Schedule)".to_string(),
+        semester: "My Semester".to_string(),
         courses: Vec::new(),
         slots: Vec::new(),
     }
@@ -81,12 +83,12 @@ pub async fn process_all_emails(
             continue;
         }
 
-        // If live Gemini is requested for recent Fall 2026 emails and not cached yet
-        if use_live_gemini
-            && config.gemini_enabled
-            && email.date.contains("Oct 2026")
-            && !gemini_cache.contains_key(&email.id)
-        {
+    // If live Gemini is enabled, analyze recent emails (last 60 days) that aren't cached yet
+    if use_live_gemini
+        && config.gemini_enabled
+        && is_email_recent(&email.date, 60)
+        && !gemini_cache.contains_key(&email.id)
+    {
             if let Some(extracted) =
                 analyze_email_with_gemini(email, schedule, config.gemini_api_key.as_deref()).await
             {
@@ -139,13 +141,8 @@ fn is_candidate_assessment_email(email: &CachedEmail) -> bool {
     let from = email.from.to_lowercase();
     let body = email.body.to_lowercase();
 
-    // Filter out marketing/external newsletters and student's own outgoing replies
-    if from.contains("datacamp")
-        || subj.contains("imagine cup")
-        || subj.contains("she impacts")
-        || subj.contains("tot program")
-        || subj.starts_with("re:")
-    {
+    // Filter out student's own outgoing replies
+    if subj.starts_with("re:") {
         return false;
     }
 
@@ -218,14 +215,6 @@ fn parse_single_email(
         .map(|m| m.as_str().replace(' ', "").to_uppercase())
         .unwrap_or_else(|| "GENERAL".to_string());
 
-    if lower.contains("physics") {
-        raw_course = "PHYS 101".to_string();
-    } else if lower.contains("computer science") {
-        raw_course = "CS 101".to_string();
-    } else if lower.contains("data structure") || lower.contains("algorithm") {
-        raw_course = "DATA 201".to_string();
-    }
-
     // 2. Determine Assessment Type
     let assessment_type = if lower.contains("midterm") {
         "Midterm Exam".to_string()
@@ -241,8 +230,8 @@ fn parse_single_email(
         "Class Quiz".to_string()
     };
 
-    // 3. Instructor extraction
-    let mut instructor = email
+    // 3. Instructor extraction (from the sender only — never hardcoded)
+    let instructor = email
         .from
         .split('<')
         .next()
@@ -252,18 +241,9 @@ fn parse_single_email(
         .trim()
         .to_string();
 
-    if email.id == "1a13437e51244663" {
-        instructor = "Dr. Marcus Vance".to_string();
-    } else if email.id == "1a125bc4af1ed819" {
-        instructor = "Prof. Elena Rostova".to_string();
-    } else if email.id == "1a1341512161cf0c" {
-        instructor = "Faculty Examination Committee".to_string();
-    }
-
-    // 4. Schedule-Aware Date, Time, Room & AI Inference Reasoning
+    // 4. Schedule-Aware Date, Time, Room & Inference Reasoning
     let (mut date_iso, mut start_time, mut end_time, mut room, mut group, mut title, mut ai_inference_note) =
         infer_schedule_date_and_slot(
-            &email.id,
             &raw_course,
             &email.subject,
             &announcement_body,
@@ -273,11 +253,9 @@ fn parse_single_email(
         );
 
     // 5. Topics & Warnings extraction
-    let mut topics = extract_topics(&email.id, &announcement_body, &raw_course);
+    let mut topics = extract_topics(&announcement_body, &raw_course);
     let mut warnings = extract_warnings(
-        &email.id,
         &announcement_body,
-        &raw_course,
         has_template_notice,
     );
     let (mut ai_study_plan, mut estimated_study_hours) =
@@ -425,7 +403,6 @@ fn parse_single_email(
 }
 
 fn infer_schedule_date_and_slot(
-    email_id: &str,
     course_id: &str,
     subject: &str,
     body: &str,
@@ -449,6 +426,7 @@ fn infer_schedule_date_and_slot(
         .find(|s| s.course_id == course_id && s.slot_type.eq_ignore_ascii_case(preferred_slot_type))
         .or_else(|| schedule.slots.iter().find(|s| s.course_id == course_id));
 
+    let date_was_relative = extract_explicit_date(&lower).is_none();
     let default_start = matched_slot
         .map(|s| s.start_time.clone())
         .unwrap_or_else(|| "09:00".to_string());
@@ -457,125 +435,12 @@ fn infer_schedule_date_and_slot(
         .unwrap_or_else(|| "10:30".to_string());
     let default_room = matched_slot
         .map(|s| s.room.clone())
-        .unwrap_or_else(|| "Lecture Hall".to_string());
+        .unwrap_or_else(|| "Room unspecified".to_string());
     let default_group = matched_slot
         .map(|s| format!("Group {}", s.group))
         .unwrap_or_else(|| "All Groups".to_string());
 
-    // Exact Gemini-grade schedule reasoning for active & historical announcements
-    match email_id {
-        "1a125bc4af1ed819" => {
-            // MATH 101 Class Quiz 1
-            return (
-                "2026-10-18".to_string(),
-                "08:00".to_string(),
-                "10:00".to_string(),
-                "Hall B-204".to_string(),
-                "Group C".to_string(),
-                "Class Quiz 1: Calculus".to_string(),
-                "Gemini Schedule Inference: Email sent Sat, 10 Oct 2026 stated 'during your scheduled lectures next week'. Matched your MATH 101 Group C Lecture slot → Sunday, 18 Oct 2026 at 08:00–10:00 AM in Room Hall B-204.".to_string(),
-            );
-        }
-        "1a13437e51244663" => {
-            // DATA 201 Quiz 1
-            return (
-                "2026-10-19".to_string(),
-                "13:00".to_string(),
-                "15:30".to_string(),
-                "Hall B-204".to_string(),
-                "Group B".to_string(),
-                "Quiz 1: Data Structures".to_string(),
-                "Gemini Schedule Inference: Email specified 'Monday, 19 October 2026 during your lecture' without hours/room. Matched your DATA 201 Group B Lecture slot → 1:00 PM – 3:30 PM in Room Hall B-204.".to_string(),
-            );
-        }
-        "1a1456c790245d83" => {
-            // CS 101 Quiz 1
-            return (
-                "2026-10-21".to_string(),
-                "14:00".to_string(),
-                "15:30".to_string(),
-                "Hall A-110".to_string(),
-                "Group B".to_string(),
-                "Quiz 1: Algorithms & Recursion".to_string(),
-                "Gemini Schedule Inference: Email sent Fri, 16 Oct 2026 announced a quiz 'on Monday and Wednesday during the lecture time at your assigned time slot'. Matched your registered Group B Lecture slot → Wednesday, 21 Oct 2026 at 2:00 PM – 3:30 PM in Room Hall A-110.".to_string(),
-            );
-        }
-        "1a11be6568402a9e" => {
-            // PHYS 101 Quiz 1
-            return (
-                "2026-10-22".to_string(),
-                "11:00".to_string(),
-                "13:00".to_string(),
-                "Lab 102".to_string(),
-                "Group C".to_string(),
-                "Quiz 1: Physics Principles".to_string(),
-                "Gemini Schedule Inference: Email stated 'WHEN: During the lecture next week (15 mins)' + linked with Oct 10 'Quiz template' upload. Matched your PHYS 101 Group C Lecture slot → Thursday, 22 Oct 2026 at 11:00 AM – 1:00 PM in Room Lab 102.".to_string(),
-            );
-        }
-        "1a1341512161cf0c" => {
-            // Fall 2026 Midterm Exam Date Rescheduled
-            return (
-                "2026-11-07".to_string(),
-                "09:00".to_string(),
-                "12:00".to_string(),
-                "Assigned Examination Halls".to_string(),
-                "All Engineering Groups".to_string(),
-                "Fall 2026 Midterm Examinations".to_string(),
-                "Gemini Schedule Inference: Detected official University rescheduling notice updating Midterm Examinations from Saturday, 31 Oct 2026 to New Date: Saturday, 7 November 2026.".to_string(),
-            );
-        }
-        "1a146a2b8098f8e4" => {
-            // CS 101 In-Class Assignment 1 in Lab
-            return (
-                "2026-10-21".to_string(),
-                "09:30".to_string(),
-                "12:30".to_string(),
-                "Lab C-301".to_string(),
-                "Group A".to_string(),
-                "In-Class Assignment 1: Programming Lab".to_string(),
-                "Gemini Schedule Inference: Email sent Sat, 17 Oct 2026 announced In-Class Assignment 1 during this week's Lab sessions. Matched your CS 101 Group A Lab slot → Wednesday, 21 Oct 2026 at 9:30 AM – 12:30 PM in Room Lab C-301.".to_string(),
-            );
-        }
-        "1a13bec0ca3ae6aa" => {
-            // PHYS 101 In-Class Assignment
-            return (
-                "2026-10-21".to_string(),
-                "16:00".to_string(),
-                "17:00".to_string(),
-                "Lab 102".to_string(),
-                "Group B".to_string(),
-                "In-Class Assignment 1: Physics Lab Tutorial".to_string(),
-                "Gemini Schedule Inference: Email sent Wed, 14 Oct 2026 stated 'in-class assignment will occur during tutorials'. Matched your PHYS 101 Group B Tutorial slot → Wednesday, 21 Oct 2026 at 4:00 PM – 5:00 PM in Room Lab 102.".to_string(),
-            );
-        }
-        "1a133fde75ec5df1" => {
-            // MATH 101 In-Class Assignment 1
-            return (
-                "2026-10-13".to_string(),
-                "13:00".to_string(),
-                "15:00".to_string(),
-                "Hall B-204".to_string(),
-                "Group C".to_string(),
-                "In-Class Assignment 1: Calculus Problem Set".to_string(),
-                "Gemini Schedule Inference: Email sent Tue, 13 Oct 2026 stated 'during tutorial sessions'. Matched your MATH 101 Group C Tutorial slot → Tuesday, 13 Oct 2026 at 1:00 PM – 3:00 PM in Room Hall B-204.".to_string(),
-            );
-        }
-        "1a12225d48ed4d51" => {
-            // CS 101 Quiz
-            return (
-                "2026-10-12".to_string(),
-                "11:30".to_string(),
-                "13:00".to_string(),
-                "Hall A-110".to_string(),
-                "Group B".to_string(),
-                "Class Quiz 1: Algorithms & Complexity".to_string(),
-                "Gemini Schedule Inference: Sent Fri, 9 Oct 2026 stating 'during this week's lecture'. Matched your CS 101 Group B Lecture slot → Monday, 12 Oct 2026 at 11:30 AM – 1:00 PM in Room Hall A-110.".to_string(),
-            );
-        }
-        _ => {}
-    }
-
-    // General Date & Slot resolution for any other/new email
+    // General Date & Slot resolution
     let mut target_date = extract_explicit_date(&lower).unwrap_or_else(|| {
         if lower.contains("next week (not this week)") {
             sent_date + Duration::days(8)
@@ -614,15 +479,27 @@ fn infer_schedule_date_and_slot(
         subject.to_string()
     };
 
-    let note = format!(
-        "Gemini Schedule Inference: Analyzed announcement sent {} and aligned with {} {} slot ({} – {}, Room {}).",
-        sent_date.format("%d %b %Y"),
-        course_id,
-        preferred_slot_type,
-        format_12h(&default_start),
-        format_12h(&default_end),
-        default_room
-    );
+    let note = if date_was_relative {
+        if matched_slot.is_some() {
+            format!(
+                "Estimated (local heuristic): the announcement had no explicit date — approximate timing inferred from wording (\"this/next week\"). Room/time aligned with your {} {} slot ({} – {}, Room {}). Configure a Gemini API key for precise extraction.",
+                course_id,
+                preferred_slot_type,
+                format_12h(&default_start),
+                format_12h(&default_end),
+                default_room
+            )
+        } else {
+            "Estimated (local heuristic): the announcement had no explicit date and this course is not in your schedule, so the date/timing is an approximation. Add the course to your weekly schedule or configure a Gemini API key for precise extraction.".to_string()
+        }
+    } else if matched_slot.is_some() {
+        format!(
+            "Parsed from announcement: explicit date found and aligned with your {} {} slot ({} – {}, Room {}).",
+            course_id, preferred_slot_type, format_12h(&default_start), format_12h(&default_end), default_room
+        )
+    } else {
+        "Parsed from announcement: explicit date found. Time/room are best-effort estimates because this course is not in your weekly schedule.".to_string()
+    };
 
     (
         target_date.format("%Y-%m-%d").to_string(),
@@ -635,93 +512,27 @@ fn infer_schedule_date_and_slot(
     )
 }
 
-fn extract_topics(email_id: &str, body: &str, course_id: &str) -> Vec<String> {
-    match email_id {
-        "1a125bc4af1ed819" => vec![
-            "Numerical Integration Methods Overview".to_string(),
-            "Trapezoidal Rule (Composite & Single-Segment)".to_string(),
-            "Simpson’s 1/3 Rule & Error Estimation".to_string(),
-        ],
-        "1a13437e51244663" => vec![
-            "Lecture 1: Introduction to Machine Learning & Pattern Recognition".to_string(),
-            "Lecture 2: Linear & Polynomial Regression".to_string(),
-            "Lecture 3: k-Nearest Neighbors (k-NN) Classifier & Distance Metrics".to_string(),
-            "Lecture 4: Probabilistic Models & Naïve Bayes Classifier".to_string(),
-        ],
-        "1a146a2b8098f8e4" => vec![
-            "Lecture 1: Algorithm Complexity (Big-O Notation) Lab Exercises".to_string(),
-            "Lecture 2: Recursion Implementation & Tracing".to_string(),
-        ],
-        "1a1456c790245d83" => vec![
-            "Lecture 1: Algorithm Efficiency, Asymptotic Complexity (Big-O, Ω, Θ)".to_string(),
-            "Lecture 2: Recursion & Recurrence Relations Analysis".to_string(),
-        ],
-        "1a13bec0ca3ae6aa" => vec![
-            "Lectures 1, 2 & 3 Core Concepts".to_string(),
-            "Tutorial Sheets 1, 2 & 3 Written Notes Prep".to_string(),
-        ],
-        "1a11be6568402a9e" => vec![
-            "Lecture 1: Embedded Systems Architecture & Microcontrollers".to_string(),
-            "Lecture 2: Real-Time Constraints & Hardware Interfacing".to_string(),
-            "Lecture 3: I/O Peripherals, Interrupts & Timers".to_string(),
-            "Tutorial Sheets 1, 2 & 3 Problem Sets".to_string(),
-        ],
-        "1a133fde75ec5df1" => vec![
-            "Newton-Raphson Root-Finding Method".to_string(),
-        ],
-        "1a1341512161cf0c" => vec![
-            "MATH 101: Calculus & Linear Algebra (Weeks 1–7)".to_string(),
-            "CS 101: Computer Science & Data Structures (Weeks 1–7)".to_string(),
-            "DATA 201: Algorithms & Complexity Analysis (Weeks 1–7)".to_string(),
-            "PHYS 101: Physics & Embedded Systems (Weeks 1–7)".to_string(),
-            "MGMT 100: Principles of Management (Weeks 1–7)".to_string(),
-        ],
-        _ => {
-            let lower = body.to_lowercase();
-            let mut items = Vec::new();
-            if lower.contains("bjt") {
-                items.push("BJT Transistor Analysis & Biasing".to_string());
-            }
-            if lower.contains("mosfet") {
-                items.push("MOSFET Characteristics & Small-Signal Models".to_string());
-            }
-            if lower.contains("arrays") || lower.contains("classes") {
-                items.push("Lecture 5: Arrays & Array Lists".to_string());
-                items.push("Lecture 6: Object-Oriented Classes".to_string());
-            }
-            if items.is_empty() {
-                items.push(format!("{} Core Lecture & Tutorial Material", course_id));
-            }
-            items
-        }
+fn extract_topics(body: &str, course_id: &str) -> Vec<String> {
+    let lower = body.to_lowercase();
+    let mut items = Vec::new();
+    if lower.contains("bjt") {
+        items.push("BJT Transistor Analysis & Biasing".to_string());
     }
+    if lower.contains("mosfet") {
+        items.push("MOSFET Characteristics & Small-Signal Models".to_string());
+    }
+    if items.is_empty() {
+        items.push(format!("{} announced syllabus material", course_id));
+    }
+    items
 }
 
-fn extract_warnings(
-    email_id: &str,
-    body: &str,
-    _course_id: &str,
-    has_template_notice: bool,
-) -> Vec<String> {
+fn extract_warnings(body: &str, has_template_notice: bool) -> Vec<String> {
     let lower = body.to_lowercase();
     let mut warnings = Vec::new();
 
-    if email_id == "1a146a2b8098f8e4" {
-        warnings.push("✅ Open-Notes Only: Written or printed notes are permitted during the Lab assignment.".to_string());
-        warnings.push("📵 No Devices: Mobile phones, laptops & smartwatches are strictly prohibited.".to_string());
-        warnings.push("⏰ Strict Punctuality: Must attend your scheduled Lab on time; late arrival is not tolerated.".to_string());
-        return warnings;
-    }
-
-    if email_id == "1a13bec0ca3ae6aa" {
-        warnings.push("⚠️ Print your Assignment Template before entering the Tutorial!".to_string());
-        warnings.push("✅ Allowed Materials: Only printed or written notes are permitted.".to_string());
-        warnings.push("📵 Strictly No Phones, AI tools, or talking with other students.".to_string());
-        return warnings;
-    }
-
     if lower.contains("quiz template")
-        || (has_template_notice && email_id == "1a11be6568402a9e")
+        || (has_template_notice && lower.contains("quiz"))
     {
         warnings.push("⚠️ Bring your printed Quiz Template to the lecture!".to_string());
     }
@@ -750,18 +561,6 @@ fn extract_warnings(
     if lower.contains("assigned time slot") || lower.contains("assigned group") {
         warnings.push(
             "📍 Group Enforcement: You must attend ONLY during your registered group slot."
-                .to_string(),
-        );
-    }
-    if email_id == "1a125bc4af1ed819" {
-        warnings.push(
-            "🧮 Bring a scientific calculator for Trapezoidal & Simpson's 1/3 numerical tables."
-                .to_string(),
-        );
-    }
-    if email_id == "1a1341512161cf0c" {
-        warnings.push(
-            "📅 Rescheduled: Moved to Saturday, 7 November 2026 (previously 31 October 2026)."
                 .to_string(),
         );
     }
@@ -1121,6 +920,15 @@ fn parse_email_sent_date(date_header: &str) -> Option<NaiveDate> {
     };
     let year: i32 = caps.get(3)?.as_str().parse().ok()?;
     NaiveDate::from_ymd_opt(year, mon, day)
+}
+
+// True when the email was sent within the last `max_age_days` days (used to gate
+// live Gemini analysis so very old announcements are never re-billed).
+fn is_email_recent(date_header: &str, max_age_days: i64) -> bool {
+    match parse_email_sent_date(date_header) {
+        Some(d) => (Local::now().date_naive() - d).num_days() <= max_age_days,
+        None => true,
+    }
 }
 
 fn extract_explicit_date(text: &str) -> Option<NaiveDate> {

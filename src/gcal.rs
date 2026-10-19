@@ -178,7 +178,7 @@ pub async fn sync_assessments_to_google_calendar(
 
 pub fn generate_single_ics(a: &Assessment) -> String {
     let mut ics = String::from(
-        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//QuizRadar v2.0//Standalone Rust//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\n",
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//QuizRadar v3.3.0//Standalone Rust//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\n",
     );
     ics.push_str(&format_vevent(a));
     ics.push_str("END:VCALENDAR\r\n");
@@ -187,7 +187,7 @@ pub fn generate_single_ics(a: &Assessment) -> String {
 
 pub fn generate_all_ics(assessments: &[Assessment]) -> String {
     let mut ics = String::from(
-        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//QuizRadar v2.0//Standalone Rust//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nX-WR-CALNAME:QuizRadar - Academic Exams & Quizzes\r\n",
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//QuizRadar v3.3.0//Standalone Rust//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nX-WR-CALNAME:QuizRadar - Academic Exams & Quizzes\r\n",
     );
     for a in assessments.iter().filter(|x| x.is_upcoming) {
         ics.push_str(&format_vevent(a));

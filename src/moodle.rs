@@ -421,82 +421,8 @@ pub async fn sync_moodle_assessments(
         }
     }
 
-    // 3. If enabled but no URLs configured yet, provide intelligent mock demo for testing
-    if all.is_empty() && config.moodle_ical_url.is_none() && config.moodle_token.is_none() {
-        all.extend(generate_moodle_sample_assessments(schedule));
-    }
-
+    // 3. Nothing configured: return an honest empty result. Never fabricate "sample" quizzes.
     Ok(all)
-}
-
-/// Generate demo Moodle assessments for student verification and offline exploration
-pub fn generate_moodle_sample_assessments(schedule: &ScheduleData) -> Vec<Assessment> {
-    let mut list = Vec::new();
-
-    let sample_items = [
-        ("DATA 201", "Moodle Lab Quiz 2: Pattern Classification", "2026-10-26", "14:00", "15:00", "Lab Quiz", vec!["Algorithm Analysis", "Decision Boundaries"]),
-        ("CS 101", "Moodle Online Assignment: Graph Traversal", "2026-10-28", "23:59", "23:59", "Assignment", vec!["Breadth-First Search (BFS)", "Depth-First Search (DFS) implementation"]),
-    ];
-
-    let ref_date = crate::parser::current_reference_date();
-
-    for (cid, title, date_str, st, et, atype, topics) in sample_items {
-        let (color, room) = schedule
-            .courses
-            .iter()
-            .find(|c| c.id == cid)
-            .map(|c| (c.color.clone(), "Computer Lab / Online".to_string()))
-            .unwrap_or_else(|| ("#f97316".to_string(), "Online Portal".to_string()));
-
-        let (bg, border) = crate::gemini::generate_course_palette(&color);
-        let parsed_date = NaiveDate::parse_from_str(date_str, "%Y-%m-%d").unwrap_or(ref_date);
-        let days_until = (parsed_date - ref_date).num_days();
-
-        let mut a = Assessment {
-            id: format!("moodle-sample-{}", cid),
-            course_id: cid.to_string(),
-            course_name: format!("{} Course", cid),
-            title: title.to_string(),
-            assessment_type: atype.to_string(),
-            date_iso: date_str.to_string(),
-            day_name: parsed_date.format("%A").to_string(),
-            start_time: st.to_string(),
-            end_time: et.to_string(),
-            display_time: format!("{}, {} ({} – {})", parsed_date.format("%A"), date_str, st, et),
-            room,
-            group: "Group B".to_string(),
-            instructor: "Course Instructor".to_string(),
-            is_upcoming: days_until >= 0,
-            days_until,
-            urgency_level: "upcoming".to_string(),
-            priority_score: 82,
-            topics: topics.into_iter().map(String::from).collect(),
-            warnings: vec!["🎓 Synced from university Moodle LMS portal.".to_string(), "⏱️ Automated grading upon submission.".to_string()],
-            ai_inference_note: "Synced via Moodle LMS calendar integration.".to_string(),
-            ai_study_plan: "Complete and submit on Moodle before the deadline cutoff.".to_string(),
-            estimated_study_hours: 2.5,
-            elearning_url: "https://moodle.university.edu".to_string(),
-            google_cal_url: String::new(),
-            gcal_synced: false,
-            gcal_event_id: None,
-            color,
-            bg,
-            border,
-            semester: "Fall 2026".to_string(),
-            email_subject: "Moodle LMS Announcement".to_string(),
-            email_sent_date: Local::now().format("%Y-%m-%d").to_string(),
-            source: "Moodle".to_string(),
-            source_icon: "graduation-cap".to_string(),
-            weightage_percent: Some(10.0),
-            achieved_score: None,
-            max_score: Some(10.0),
-            conflict_warning: None,
-        };
-        a.google_cal_url = crate::parser::build_google_calendar_template_url(&a);
-        list.push(a);
-    }
-
-    list
 }
 
 #[cfg(test)]

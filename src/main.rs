@@ -173,8 +173,13 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
     let mut selected_port = 5050;
     let mut listener = None;
 
+    // Security: bind to localhost only by default. Expose on the LAN only when the
+    // user explicitly passes --lan (e.g. to pair the Android app with this desktop).
+    let expose_lan = std::env::args().any(|a| a == "--lan" || a == "--pairing");
+    let bind_ip = if expose_lan { [0, 0, 0, 0] } else { [127, 0, 0, 1] };
+
     for port in ports {
-        let addr = SocketAddr::from(([0, 0, 0, 0], port));
+        let addr = SocketAddr::from((bind_ip, port));
         if let Ok(l) = tokio::net::TcpListener::bind(addr).await {
             selected_port = l.local_addr().map(|a| a.port()).unwrap_or(port);
             listener = Some(l);
@@ -534,6 +539,10 @@ pub struct OnboardingPayload {
     pub sync_weekly_classes_to_gcal: Option<bool>,
     pub gemini_enabled: Option<bool>,
     pub gemini_api_key: Option<String>,
+    pub user_name: Option<String>,
+    pub user_email: Option<String>,
+    pub teams_email: Option<String>,
+    pub teams_name: Option<String>,
 }
 
 async fn complete_onboarding(
@@ -557,6 +566,41 @@ async fn complete_onboarding(
                 cfg.gemini_api_key = Some(k.trim().to_string());
             }
         }
+        if let Some(v) = payload.user_name {
+            if !v.trim().is_empty() {
+                cfg.user_name = Some(v.trim().to_string());
+            }
+        }
+        if let Some(v) = payload.user_email {
+            let trimmed = v.trim();
+            // Manual email entry is only a local profile anchor. Never claim real
+            // OAuth: only store it when the user hasn't authenticated with Google.
+            if trimmed.contains('@') {
+                if cfg.user_email.is_none() {
+                    cfg.user_email = Some(trimmed.to_string());
+                }
+            } else if !trimmed.is_empty() {
+                eprintln!("Onboarding: ignoring invalid email anchor: {}", trimmed);
+            }
+        }
+        if let Some(v) = payload.teams_email {
+            let trimmed = v.trim();
+            if !trimmed.is_empty() {
+                if trimmed.contains('@') {
+                    // Store as a local PROFILE ANCHOR only. Never enable Teams
+                    // scanning from manual entry — Teams needs a Microsoft sign-in.
+                    cfg.teams_account_email = Some(trimmed.to_string());
+                    if let Some(n) = payload.teams_name.as_ref() {
+                        if !n.trim().is_empty() {
+                            cfg.teams_account_name = Some(n.trim().to_string());
+                        }
+                    }
+                } else {
+                    eprintln!("Onboarding: ignoring invalid university email anchor: {}", trimmed);
+                }
+            }
+        }
+        // Manual local profile entry is stored but labeled as such in the UI.
         save_app_config(&cfg);
         cfg.clone()
     };
@@ -741,18 +785,30 @@ async fn delete_course_handler(
 }
 
 async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Value {
-    let emails = match gmail::sync_gmail_messages().await {
-        Ok(list) => list,
-        Err(_) => gmail::load_cached_emails(),
-    };
-
     let schedule = state.schedule.read().await.clone();
     let mut cfg = state.config.read().await.clone();
-    cfg.last_gmail_sync = Some(
-        chrono::Local::now()
-            .format("%Y-%m-%d %H:%M")
-            .to_string(),
-    );
+    let mut sync_notes: Vec<String> = Vec::new();
+
+    // Gmail: only actually scrape when a Google token exists; otherwise parse cache only
+    let emails = if crate::auth::load_stored_token().is_some() {
+        match gmail::sync_gmail_messages().await {
+            Ok(list) => {
+                sync_notes.push(format!("Gmail: {} emails scanned", list.len()));
+                cfg.last_gmail_sync = Some(
+                    chrono::Local::now()
+                        .format("%Y-%m-%d %H:%M")
+                        .to_string(),
+                );
+                list
+            }
+            Err(e) => {
+                sync_notes.push(format!("Gmail sync failed: {}", e));
+                gmail::load_cached_emails()
+            }
+        }
+    } else {
+        gmail::load_cached_emails()
+    };
 
     let mut parsed =
         parser::process_all_emails(&emails, &schedule, &cfg, use_live_gemini).await;
@@ -760,6 +816,9 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
     // 1. Ingest from Moodle LMS if enabled
     if cfg.moodle_enabled {
         if let Ok(moodle_items) = moodle::sync_moodle_assessments(&cfg, &schedule).await {
+            if !moodle_items.is_empty() {
+                sync_notes.push(format!("Moodle: {} items", moodle_items.len()));
+            }
             for m in moodle_items {
                 if !parsed.iter().any(|p| p.course_id == m.course_id && p.title == m.title && p.date_iso == m.date_iso) {
                     parsed.push(m);
@@ -771,7 +830,12 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
     // 2. Ingest from Microsoft Teams / Outlook if enabled
     if cfg.teams_enabled {
         if let Ok(teams_res) = teams::sync_teams_assessments(&cfg, &schedule).await {
-            if !teams_res.discovered_courses.is_empty() {
+            // Only ADOPT discovered courses/slots when the user has no schedule yet
+            // (or nothing was saved): never clobber a timetable the user set up.
+            let current_course_count = state.schedule.read().await.courses.len();
+            let adopt = teams_res.semester.is_some()
+                || (!teams_res.discovered_courses.is_empty() && current_course_count == 0);
+            if adopt && !teams_res.discovered_courses.is_empty() {
                 let mut sched = state.schedule.write().await;
                 sched.courses = teams_res.discovered_courses.clone();
                 sched.slots = teams_res.discovered_slots.clone();
@@ -779,6 +843,9 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
                     sched.semester = sem.clone();
                 }
                 parser::save_schedule(&sched);
+            } else if !teams_res.discovered_courses.is_empty() {
+                sync_notes
+                    .push("Teams discovered course list (kept your existing schedule)".to_string());
             }
 
             if let Some(ref uname) = teams_res.user_display_name {
@@ -793,7 +860,9 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
                     cfg.user_email = Some(uemail.clone());
                 }
             }
-
+            if !teams_res.assessments.is_empty() {
+                sync_notes.push(format!("Teams: {} items", teams_res.assessments.len()));
+            }
             for t in teams_res.assessments {
                 if !parsed.iter().any(|p| p.course_id == t.course_id && p.title == t.title && p.date_iso == t.date_iso) {
                     parsed.push(t);
@@ -805,6 +874,9 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
     // 3. Ingest from Google Classroom if enabled
     if cfg.classroom_enabled {
         if let Ok(cr_items) = classroom::sync_classroom_assessments(&cfg, &schedule).await {
+            if !cr_items.is_empty() {
+                sync_notes.push(format!("Classroom: {} items", cr_items.len()));
+            }
             for c in cr_items {
                 if !parsed.iter().any(|p| p.course_id == c.course_id && p.title == c.title && p.date_iso == c.date_iso) {
                     parsed.push(c);
@@ -864,13 +936,21 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
     let mut assessments_lock = state.assessments.write().await;
     *assessments_lock = parsed.clone();
 
+    // Honest closure message: report exactly what actually ran
+    let detail = if sync_notes.is_empty() {
+        "No connected sources produced new data. Connect Google / Microsoft accounts or Moodle in Settings, or add your schedule manually."
+            .to_string()
+    } else {
+        sync_notes.join(" · ")
+    };
+    let message = format!(
+        "Sync complete ({}): {} upcoming exams & quizzes active.",
+        detail, upcoming_count
+    );
+
     json!({
         "success": true,
-        "message": format!(
-            "Omni-Channel Sync complete! Scanned Gmail, Moodle, Teams & Classroom. Found {} upcoming exams & quizzes across {} sources.",
-            upcoming_count,
-            dashboard.sources_count.len()
-        ),
+        "message": message,
         "gcal_report": gcal_report,
         "assessments": parsed,
         "dashboard": dashboard,
@@ -1563,7 +1643,28 @@ async fn schedule_study_blocks_handler(
 
         let block_id = format!("study-block-{}", a.id);
         if !cfg.custom_events.iter().any(|e| e.id == block_id) {
-            let (start_time, end_time) = ("17:00".to_string(), "18:30".to_string());
+            // Pick the first free evening study window (16:00–21:30) that does not
+            // clash with an existing event on that date instead of a fixed 17:00.
+            let (mut start_time, mut end_time) =
+                ("17:00".to_string(), "18:30".to_string());
+            let windows: [(&str, &str); 5] = [
+                ("16:00", "17:30"),
+                ("17:00", "18:30"),
+                ("18:00", "19:30"),
+                ("19:00", "20:30"),
+                ("20:00", "21:30"),
+            ];
+            for (ws, we) in windows {
+                let clashes = cfg.custom_events.iter().any(|e| {
+                    e.date_iso == block_date
+                        && !(e.end_time <= ws.to_string() || e.start_time >= we.to_string())
+                });
+                if !clashes {
+                    start_time = ws.to_string();
+                    end_time = we.to_string();
+                    break;
+                }
+            }
             let notes = format!("Focused review of topics: {}", a.topics.join(", "));
             cfg.custom_events.push(CustomCalendarEvent {
                 id: block_id,

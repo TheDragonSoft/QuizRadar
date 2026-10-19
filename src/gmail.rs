@@ -155,10 +155,10 @@ pub async fn sync_gmail_messages() -> Result<Vec<CachedEmail>, String> {
     let mut by_id: HashMap<String, CachedEmail> =
         existing.into_iter().map(|e| (e.id.clone(), e)).collect();
 
-    // Fetch any message not yet in cache (or up to 40 newest messages)
+    // Fetch messages not yet cached; refresh at most the 10 newest cached ones
     let mut fetched_count = 0;
     for msg_id in message_ids {
-        if by_id.contains_key(&msg_id) && fetched_count > 10 {
+        if by_id.contains_key(&msg_id) && fetched_count >= 10 {
             continue;
         }
         let url = format!(

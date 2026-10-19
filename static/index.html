@@ -1492,14 +1492,15 @@
             <div class="space-y-1">
               <label class="block text-xs font-bold text-slate-800 dark:text-slate-200">University Email (Microsoft Teams / 365)</label>
               <input id="onboard-university-email" type="email" placeholder="e.g. student@university.edu" class="w-full h-9 px-3 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-indigo-500" />
+              <p class="text-[10px] text-slate-400">Saved as your profile info. For live Teams scanning, connect Microsoft in Settings on the desktop app.</p>
             </div>
             <div class="space-y-1">
               <label class="block text-xs font-bold text-slate-800 dark:text-slate-200">Institution / University Name</label>
               <input id="onboard-university-name" type="text" placeholder="e.g. State University / College" class="w-full h-9 px-3 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-indigo-500" />
             </div>
             <div class="space-y-1 sm:col-span-2">
-              <label class="block text-xs font-bold text-slate-800 dark:text-slate-200">Google Gemini API Key <span class="font-normal text-slate-400 dark:text-slate-500">(Optional for direct on-device AI planning)</span></label>
-              <input id="onboard-gemini-key" type="password" placeholder="AIzaSy... (leave blank to use local heuristic engine)" class="w-full h-9 px-3 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-blue-500" />
+              <label class="block text-xs font-bold text-slate-800 dark:text-slate-200">Google Gemini API Key <span class="font-normal text-slate-400 dark:text-slate-500">(Optional — enables AI-guided email analysis & schedule scans)</span></label>
+              <input id="onboard-gemini-key" type="password" placeholder="AIzaSy... (optional — core features work without AI)" class="w-full h-9 px-3 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-blue-500" />
             </div>
           </div>
 
@@ -1512,7 +1513,7 @@
                   <div class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950 text-[#1a73e8] dark:text-blue-400 flex items-center justify-center font-bold group-hover:scale-105 transition-transform">
                     <i data-lucide="mail-search" class="w-4 h-4"></i>
                   </div>
-                  <span id="onboard-auth-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300">Ready</span>
+                  <span id="onboard-auth-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300">Connect</span>
                 </div>
                 <div class="mt-2">
                   <div class="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
@@ -1560,7 +1561,7 @@
                   <div class="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold group-hover:scale-105 transition-transform">
                     <i data-lucide="book-open" class="w-4 h-4"></i>
                   </div>
-                  <span id="onboard-classroom-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300">Ready</span>
+                  <span id="onboard-classroom-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300">Optional</span>
                 </div>
                 <div class="mt-2">
                   <div class="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
@@ -1584,7 +1585,7 @@
                   <div class="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold group-hover:scale-105 transition-transform">
                     <i data-lucide="graduation-cap" class="w-4 h-4"></i>
                   </div>
-                  <span id="onboard-moodle-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300">Ready</span>
+                  <span id="onboard-moodle-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300">Optional</span>
                 </div>
                 <div class="mt-2">
                   <div class="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
@@ -1610,7 +1611,7 @@
             <div class="flex items-center justify-between text-xs">
               <span id="onboard-scan-status-text" class="font-semibold text-[#1a73e8] dark:text-blue-300 flex items-center gap-1.5">
                 <i data-lucide="radio" class="w-3.5 h-3.5 text-[#1a73e8]"></i>
-                <span>Ready to scan connected university sources</span>
+                <span>Ready to scan your connected university sources</span>
               </span>
               <span id="onboard-scan-pct" class="font-bold tabular-nums text-[#1a73e8] dark:text-blue-400">0%</span>
             </div>
@@ -1622,7 +1623,7 @@
           <!-- Discovered Upcoming Assessments Preview List -->
           <div>
             <div class="flex items-center justify-between mb-2">
-              <span class="text-xs font-semibold text-slate-700 dark:text-slate-200">Discovered Assessments (Matched with Fall 2026 Schedule)</span>
+              <span class="text-xs font-semibold text-slate-700 dark:text-slate-200">Discovered Assessments</span>
               <span id="onboard-detected-count-badge" class="text-[11px] font-bold tabular-nums px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">0 Upcoming</span>
             </div>
             <div id="onboard-scan-results" class="bg-slate-50/70 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2 max-h-48 overflow-y-auto">
@@ -1632,9 +1633,9 @@
 
           <!-- Optional Gemini API Key Override -->
           <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-1.5">
-            <label class="block text-xs font-semibold text-slate-700 dark:text-slate-200">Optional: Custom Gemini API Key</label>
-            <p class="text-[11px] text-slate-500 dark:text-slate-400">Leave blank to use QuizRadar's built-in timetable AI engine automatically.</p>
-            <input id="onboard-gemini-key" type="password" placeholder="AIzaSy... (Optional — built-in schedule-aware AI is active)" class="w-full mt-1 px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 outline-none focus:border-[#1a73e8]" />
+            <label class="block text-xs font-semibold text-slate-700 dark:text-slate-200">Optional: Your own Gemini API Key</label>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400">Used to read announcement emails with AI and extract schedules from scans. Leave blank — core scanning still works without AI.</p>
+            <input id="onboard-gemini-key" type="password" placeholder="AIzaSy... (optional — leave blank to skip AI features)" class="w-full mt-1 px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 outline-none focus:border-[#1a73e8]" />
           </div>
         </div>
 
@@ -1657,7 +1658,7 @@
                 </div>
                 <div>
                   <div class="text-xs font-bold text-slate-900 dark:text-white">Upload Weekly Timetable (AI Timetable Extraction)</div>
-                  <div class="text-[11px] text-slate-500 dark:text-slate-400">Schedule PDF or image — automatically extracts course rooms, subjects, and times</div>
+                  <div class="text-[11px] text-slate-500 dark:text-slate-400">Schedule PDF or image — needs your Gemini API key; extracts course rooms, subjects, and times</div>
                 </div>
               </div>
               <label class="px-3 py-1.5 rounded-lg bg-[#1a73e8] hover:bg-[#1557b0] active:scale-95 text-white text-xs font-semibold cursor-pointer transition shadow-2xs flex items-center gap-1.5 shrink-0">
@@ -1838,7 +1839,7 @@
             <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300">Fully Standalone</span>
           </div>
           <p class="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
-            QuizRadar executes completely inside your mobile device sandbox. All course timetables, assessment deadlines, study task priorities, and account profiles are stored directly in encrypted on-device storage.
+            QuizRadar runs completely inside your device. Your timetable, deadlines, tasks, and profile are stored locally on this device (protected by your system-managed storage). For live Gmail / Teams / Classroom scanning, pair this device with the QuizRadar desktop app below.
           </p>
           <div class="grid grid-cols-2 gap-2 text-xs pt-1">
             <div class="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-emerald-200/60 dark:border-emerald-900/40">
@@ -1847,9 +1848,30 @@
             </div>
             <div class="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-emerald-200/60 dark:border-emerald-900/40">
               <span class="block text-[10px] font-medium text-slate-400">Laptop Server</span>
-              <span class="font-bold text-slate-700 dark:text-slate-300">Not Needed</span>
+              <span class="font-bold text-slate-700 dark:text-slate-300">Only for Pairing</span>
             </div>
           </div>
+        </div>
+
+        <!-- Pair With Desktop Card -->
+        <div class="p-4 rounded-xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/40 dark:bg-blue-950/20 space-y-2.5">
+          <div class="flex items-center gap-2">
+            <i data-lucide="scissors" class="w-4 h-4 text-blue-600 dark:text-blue-400"></i>
+            <span class="text-xs font-bold text-slate-800 dark:text-slate-200">Pair With Desktop App (Optional)</span>
+          </div>
+          <p class="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+            Run <code class="px-1 rounded bg-slate-200/70 dark:bg-slate-800 px-1.5 py-0.5 text-[10px]">quizradar.exe --lan</code> on your PC (same Wi-Fi) and enter the address it shows, e.g. <span class="font-mono text-[10px]">http://192.168.1.10:5050</span>.
+          </p>
+          <div class="flex flex-wrap items-center gap-2 pt-1">
+            <input id="pair-desktop-url" type="url" inputmode="url" placeholder="http://192.168.1.10:5050" class="flex-1 min-w-[180px] px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 outline-none focus:border-blue-500" />
+            <button onclick="testDesktopPairing()" id="pair-test-btn" class="px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition cursor-pointer">
+              Test
+            </button>
+            <button onclick="importFromDesktop()" id="pair-import-btn" class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-xs font-semibold shadow-xs transition cursor-pointer">
+              Pull Desktop Data
+            </button>
+          </div>
+          <div id="pairing-status" class="hidden text-[11px] rounded-lg px-3 py-2"></div>
         </div>
 
         <!-- Local Backup & Portability Card -->

@@ -1,8 +1,7 @@
 use crate::auth::get_valid_access_token;
 use crate::models::{
-    AppConfig, Assessment, CachedEmail, Course, DailyStudyDayGroup, DailyStudyTask,
-    DiscoveredAcademicData, ExamReadinessCard, PracticeQuestion, PracticeQuizPayload, ScheduleData,
-    ScheduleSlot, StudyTasksPayload,
+    AppConfig, Assessment, CachedEmail, DailyStudyDayGroup, DailyStudyTask,
+    DiscoveredAcademicData, ExamReadinessCard, PracticeQuestion, PracticeQuizPayload, ScheduleData, StudyTasksPayload,
 };
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
@@ -324,40 +323,11 @@ Return ONLY a valid JSON object matching the exact structure above with no markd
         }
     }
 
-    // High quality deterministic fallback schedule extraction:
-    // When a student is signed in with Google or doesn't have an external API key,
-    // seamlessly provide their verified structured academic timetable instead of failing with an error.
-    let mut fallback_sched = extract_fallback_schedule_heuristically();
-    post_process_extracted_schedule(&mut fallback_sched);
-    Ok(fallback_sched)
-}
-
-pub fn extract_fallback_schedule_heuristically() -> ScheduleData {
-    if let Ok(raw) = std::fs::read_to_string("data/schedule.json") {
-        if let Ok(sched) = serde_json::from_str::<ScheduleData>(&raw) {
-            if !sched.courses.is_empty() {
-                return sched;
-            }
-        }
-    }
-
-    ScheduleData {
-        semester: "Fall 2026 Academic Timetable".to_string(),
-        courses: vec![
-            Course { id: "CS 101".to_string(), name: "Introduction to Computer Science".to_string(), color: "#1a73e8".to_string(), bg: "#e8f0fe".to_string(), border: "#1a73e8".to_string() },
-            Course { id: "MATH 101".to_string(), name: "Calculus & Linear Algebra".to_string(), color: "#00897b".to_string(), bg: "#e0f2f1".to_string(), border: "#00897b".to_string() },
-            Course { id: "DATA 201".to_string(), name: "Data Structures & Algorithms".to_string(), color: "#8e24aa".to_string(), bg: "#f3e5f5".to_string(), border: "#8e24aa".to_string() },
-            Course { id: "MGMT 100".to_string(), name: "Principles of Management".to_string(), color: "#ea8600".to_string(), bg: "#fef7e0".to_string(), border: "#ea8600".to_string() },
-            Course { id: "PHYS 101".to_string(), name: "General Physics".to_string(), color: "#e53935".to_string(), bg: "#fce8e6".to_string(), border: "#e53935".to_string() },
-        ],
-        slots: vec![
-            ScheduleSlot { id: "s-1".to_string(), day: "Sunday".to_string(), day_index: 0, course_id: "MATH 101".to_string(), course_name: "Calculus & Linear Algebra".to_string(), room: "Hall B-204".to_string(), slot_type: "Lecture".to_string(), group: "Sec 1".to_string(), start_time: "08:00".to_string(), end_time: "10:00".to_string(), display_time: "8:00 AM – 10:00 AM".to_string(), has_quiz: false, quiz_title: None },
-            ScheduleSlot { id: "s-2".to_string(), day: "Monday".to_string(), day_index: 1, course_id: "CS 101".to_string(), course_name: "Introduction to Computer Science".to_string(), room: "Hall A-101".to_string(), slot_type: "Lecture".to_string(), group: "Sec 1".to_string(), start_time: "10:15".to_string(), end_time: "12:00".to_string(), display_time: "10:15 AM – 12:00 PM".to_string(), has_quiz: false, quiz_title: None },
-            ScheduleSlot { id: "s-3".to_string(), day: "Tuesday".to_string(), day_index: 2, course_id: "DATA 201".to_string(), course_name: "Data Structures & Algorithms".to_string(), room: "Lab C-302".to_string(), slot_type: "Lab".to_string(), group: "Sec 2".to_string(), start_time: "12:15".to_string(), end_time: "14:00".to_string(), display_time: "12:15 PM – 2:00 PM".to_string(), has_quiz: false, quiz_title: None },
-            ScheduleSlot { id: "s-4".to_string(), day: "Wednesday".to_string(), day_index: 3, course_id: "MGMT 100".to_string(), course_name: "Principles of Management".to_string(), room: "Hall B-105".to_string(), slot_type: "Lecture".to_string(), group: "Sec 1".to_string(), start_time: "08:00".to_string(), end_time: "10:00".to_string(), display_time: "8:00 AM – 10:00 AM".to_string(), has_quiz: false, quiz_title: None },
-            ScheduleSlot { id: "s-5".to_string(), day: "Thursday".to_string(), day_index: 4, course_id: "PHYS 101".to_string(), course_name: "General Physics".to_string(), room: "Lab D-101".to_string(), slot_type: "Lab".to_string(), group: "Sec 1".to_string(), start_time: "10:15".to_string(), end_time: "12:30".to_string(), display_time: "10:15 AM – 12:30 PM".to_string(), has_quiz: false, quiz_title: None },
-        ]
-    }
+    Err(
+        "Automatic timetable extraction requires a configured Gemini API key. \
+Add your free Gemini API key in Server Settings (or paste your timetable text with a key configured), or enter your weekly schedule manually."
+            .to_string(),
+    )
 }
 
 fn extract_candidate_schedule_json(v: &Value) -> Option<ScheduleData> {
@@ -1065,20 +1035,20 @@ CRITICAL INSTRUCTIONS:
 
 2. EXTRACT DETAILED ACADEMIC ASSESSMENTS FROM UPLOADED FILES & TABS:
    - Carefully inspect all uploaded course files, assignment PDFs, and classwork tabs discovered in each team!
-   - When assignment PDFs are present (e.g., "Assignment_Brief_1.pdf", "Project_Outline.pdf"), extract them as distinct, high-priority Assignments / Project Milestones with realistic submission deadlines.
+   - When assignment PDFs are present (e.g., "Assignment_Brief_1.pdf", "Project_Outline.pdf"), extract them as distinct, high-priority Assignments / Project Milestones.
    - For each assessment, include:
      * course_id (matching the course code)
      * course_name
      * title (e.g. "Assignment 1: Algorithms & Complexity Analysis", "Class Quiz 1: Numerical Integration")
      * assessment_type ("Class Quiz", "Assignment", "Midterm Exam", "Lab Assessment", "Online Quiz", "Project Milestone")
-     * date_iso ("YYYY-MM-DD", anchored starting from late October 2026 onwards)
+     * date_iso ("YYYY-MM-DD", anchored to TODAY'S DATE given in the context header). Use a real date ONLY when the source data contains explicit date evidence; otherwise omit that assessment entirely. NEVER invent deadlines that have no basis in the source.
      * start_time & end_time ("HH:MM")
      * room (hall/room or "Microsoft Teams Submission")
      * group (section or group)
-     * instructor (faculty names discovered)
-     * topics (3-4 specific syllabus topics)
-     * warnings (2 essential test instructions)
-     * ai_inference_note (explanation of how this was inferred from Teams Drive files or class syllabus)
+     * instructor (faculty names actually discovered; use "Unknown Instructor" when not stated — never invent names)
+     * topics (3-4 specific syllabus topics from the source)
+     * warnings (2 essential test instructions found in the source)
+     * ai_inference_note (explain exactly how this was inferred from the raw source; prefix with "Estimated:" if the date had no explicit evidence)
      * ai_study_plan (actionable 2-sentence study strategy)
      * estimated_study_hours (e.g. 3.0 or 3.5)
      * source ("Microsoft Teams")
@@ -1086,8 +1056,9 @@ CRITICAL INSTRUCTIONS:
      * weightage_percent (e.g. 10.0 or 15.0)
 
 3. WEEKLY RECURRING TIMETABLE SLOTS:
-   - Synthesize weekly recurring class timeslots for these courses (Sunday to Thursday).
-   - Distribute lectures and tutorials across Sunday to Thursday so the student has a complete, realistic timetable.
+   - Build weekly recurring class timeslots ONLY when the source data reveals actual recurring schedules (for example from ical calendars or uploaded timetables). If the source gives no schedule evidence, return an empty "slots" array.
+
+SEMESTER / UNIVERSITY TRUTH RULE: set "semester" and "university_or_institution" to exactly what the source states, or null when unknown. NEVER invent default values like "Fall 2026" or "State University".
 
 Return ONLY valid JSON matching this exact structure:
 {
@@ -1167,10 +1138,14 @@ pub async fn explore_and_extract_academic_universe(
     api_key: Option<&str>,
 ) -> Option<DiscoveredAcademicData> {
     let prompt = format!(
-        "{}\n\n=== RAW SOURCE CONTEXT ({}) ===\n{}",
-        ACADEMIC_DISCOVERY_PROMPT_TEMPLATE,
-        source_name,
-        raw_context
+        "TODAY'S DATE: {}\n\n{}",
+        chrono::Local::now().date_naive().format("%A, %d %B %Y"),
+        format!(
+            "{}\n\n=== RAW SOURCE CONTEXT ({}) ===\n{}",
+            ACADEMIC_DISCOVERY_PROMPT_TEMPLATE,
+            source_name,
+            raw_context
+        )
     );
 
     let payload = json!({

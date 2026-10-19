@@ -154,6 +154,9 @@ pub fn build_google_oauth_url(port: u16, include_calendar: bool) -> String {
     if include_calendar {
         scopes.push("https://www.googleapis.com/auth/calendar.events");
     }
+    // App-data Drive scope: private cloud-sync backup storage. Included in every
+    // OAuth request so fresh sign-ins grant it in one prompt.
+    scopes.push("https://www.googleapis.com/auth/drive.appdata");
     let scope_str = scopes.join(" ");
 
     format!(

@@ -290,7 +290,9 @@ impl Default for AppConfig {
             onboarding_completed: false,
             auto_sync_gcal: true,
             sync_weekly_classes_to_gcal: false,
-            gemini_enabled: true,
+            // Honest default: the optional Gemini AI layer is disabled until the
+            // student actually supplies a key; heuristics still work without it.
+            gemini_enabled: false,
             gemini_api_key: None,
             user_email: None,
             user_name: None,

@@ -300,11 +300,14 @@ async fn push_to_google_calendar(
     };
 
     let encoded_payload = format!("---QUIZRADAR_DATA_START---\n{}\n---QUIZRADAR_DATA_END---", content);
+    // Fallback storage via a private calendar bookmark event. Diff the event to
+    // today so it never accumulates stale remnants in the user's calendar.
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let event_body = json!({
         "summary": CALENDAR_SYNC_TITLE,
         "description": encoded_payload,
-        "start": { "dateTime": "2026-10-18T00:00:00Z" },
-        "end": { "dateTime": "2026-10-18T00:05:00Z" },
+        "start": { "dateTime": format!("{}T00:00:00Z", today) },
+        "end": { "dateTime": format!("{}T00:05:00Z", today) },
         "transparency": "transparent"
     });
 

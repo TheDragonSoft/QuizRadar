@@ -8,7 +8,14 @@ Push-Location $RepoRoot
 
 try {
     Write-Host "==> Building QuizRadar v$Version (Release)..." -ForegroundColor Cyan
+    # cargo writes progress to stderr; keep native stderr non-terminating so
+    # pipeline hosts that redirect stderr don't turn build output into errors.
+    $ErrorActionPreference = "Continue"
     cargo build --release
+    if ($LASTEXITCODE -ne 0) {
+        throw "cargo build --release failed with exit code $LASTEXITCODE"
+    }
+    $ErrorActionPreference = "Stop"
 
     $DistDir = Join-Path $RepoRoot "dist"
     $StageDir = Join-Path $DistDir "QuizRadar-v$Version-win-x64"
@@ -22,10 +29,15 @@ try {
     New-Item -ItemType Directory -Force -Path (Join-Path $StageDir "assets") | Out-Null
 
     Copy-Item "target\release\quizradar.exe" -Destination $StageDir
-    Copy-Item "static\*" -Destination (Join-Path $StageDir "static") -Recurse -Force
+    Get-ChildItem "static" | Where-Object { $_.Name -ne ".vercel" } | ForEach-Object {
+        Copy-Item $_.FullName -Destination (Join-Path $StageDir "static") -Recurse -Force
+    }
     Copy-Item "assets\icon.ico" -Destination (Join-Path $StageDir "assets")
     Copy-Item "assets\icon.png" -Destination (Join-Path $StageDir "assets")
-    Copy-Item "data\schedule.json" -Destination (Join-Path $StageDir "data")
+    # Ship the EMPTY schedule template; the app generates data\schedule.json itself
+    # on first run. Never bundle a developer's personal timetable or user data.
+    Copy-Item "data\schedule.template.json" -Destination (Join-Path $StageDir "data")
+    Copy-Item "data\schedule.template.json" -Destination (Join-Path $StageDir "data\schedule.json")
     if (Test-Path "credentials.json") {
         Copy-Item "credentials.json" -Destination $StageDir
     }

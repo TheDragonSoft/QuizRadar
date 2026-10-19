@@ -50,10 +50,10 @@ Name: "{app}\assets"
 
 [Files]
 Source: "..\target\release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\static\*"; DestDir: "{app}\static"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\static\*"; DestDir: "{app}\static"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: ".vercel"
 Source: "..\assets\icon.ico"; DestDir: "{app}\assets"; Flags: ignoreversion
 Source: "..\assets\icon.png"; DestDir: "{app}\assets"; Flags: ignoreversion
-Source: "..\data\schedule.json"; DestDir: "{app}\data"; Flags: onlyifdoesntexist
+Source: "..\data\schedule.template.json"; DestDir: "{app}\data"; DestName: "schedule.json"; Flags: onlyifdoesntexist
 Source: "..\credentials.json"; DestDir: "{app}"; Flags: skipifsourcedoesntexist
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 

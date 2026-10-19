@@ -8,8 +8,25 @@ use chrono::{Datelike, Duration, Local, NaiveDate, Weekday};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::sync::LazyLock;
 
 const PROCESSED_FILE: &str = "processed_quizzes.json";
+
+// Static precompiled regexes to eliminate runtime Regex::new compilation overhead on every email
+static RE_COURSE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\b([A-Z]{2,4}\s*\d{3}[a-zA-Z]?)\b").unwrap());
+static RE_URL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(https://e-learning\.[a-zA-Z0-9.-]+/[^\s\]]+)").unwrap());
+static RE_SENT_DATE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})").unwrap());
+static RE_DMY: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)\b(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{4})\b",
+    )
+    .unwrap()
+});
+static RE_NUM: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b").unwrap());
 
 pub fn load_schedule() -> ScheduleData {
     if let Ok(raw) = fs::read_to_string("data/schedule.json") {
@@ -195,8 +212,7 @@ fn parse_single_email(
     let lower = subj_and_body.to_lowercase();
 
     // 1. Course ID & Course Name resolution (with LMS cross-listing intelligence)
-    let re_course = Regex::new(r"(?i)\b([A-Z]{2,4}\s*\d{3}[a-zA-Z]?)\b").unwrap();
-    let mut raw_course = re_course
+    let mut raw_course = RE_COURSE
         .captures(&subj_and_body)
         .and_then(|c| c.get(1))
         .map(|m| m.as_str().replace(' ', "").to_uppercase())
@@ -347,8 +363,7 @@ fn parse_single_email(
         format_12h(&end_time)
     );
 
-    let re_url = Regex::new(r"(https://e-learning\.[a-zA-Z0-9.-]+/[^\s\]]+)").unwrap();
-    let elearning_url = re_url
+    let elearning_url = RE_URL
         .captures(&email.body)
         .and_then(|c| c.get(1))
         .map(|m| m.as_str().trim().to_string())
@@ -1087,8 +1102,7 @@ pub fn build_google_calendar_template_url(a: &Assessment) -> String {
 }
 
 fn parse_email_sent_date(date_header: &str) -> Option<NaiveDate> {
-    let re = Regex::new(r"(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})").unwrap();
-    let caps = re.captures(date_header)?;
+    let caps = RE_SENT_DATE.captures(date_header)?;
     let day: u32 = caps.get(1)?.as_str().parse().ok()?;
     let mon = match &caps.get(2)?.as_str().to_lowercase()[..] {
         "jan" => 1,
@@ -1110,19 +1124,14 @@ fn parse_email_sent_date(date_header: &str) -> Option<NaiveDate> {
 }
 
 fn extract_explicit_date(text: &str) -> Option<NaiveDate> {
-    let re_dmy = Regex::new(
-        r"(?i)\b(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{4})\b",
-    )
-    .unwrap();
-    if let Some(caps) = re_dmy.captures(text) {
+    if let Some(caps) = RE_DMY.captures(text) {
         let day: u32 = caps.get(1)?.as_str().parse().ok()?;
         let mon = month_from_name(caps.get(2)?.as_str())?;
         let year: i32 = caps.get(3)?.as_str().parse().ok()?;
         return NaiveDate::from_ymd_opt(year, mon, day);
     }
 
-    let re_num = Regex::new(r"\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b").unwrap();
-    if let Some(caps) = re_num.captures(text) {
+    if let Some(caps) = RE_NUM.captures(text) {
         let day: u32 = caps.get(1)?.as_str().parse().ok()?;
         let mon: u32 = caps.get(2)?.as_str().parse().ok()?;
         let year: i32 = caps.get(3)?.as_str().parse().ok()?;
@@ -1453,6 +1462,28 @@ pub fn build_study_tasks(assessments: &[Assessment], config: &AppConfig) -> Stud
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_email_parsing_performance() {
+        let email = CachedEmail {
+            id: "1a125bc4af1ed819".to_string(),
+            subject: "MATH 101 Class Quiz 1 Notice".to_string(),
+            from: "Prof. Elena Rostova <elena@university.edu>".to_string(),
+            date: "Sat, 10 Oct 2026 09:00:00 +0000".to_string(),
+            snippet: "Class Quiz 1 will be held next week...".to_string(),
+            body: "Class Quiz 1 on Numerical Integration will be held during your scheduled lectures next week (18 October 2026). See https://e-learning.university.edu/mod/quiz/123".to_string(),
+        };
+        let schedule = load_schedule();
+
+        let start = std::time::Instant::now();
+        for _ in 0..1_000 {
+            let res = parse_single_email(&email, &schedule, None, false);
+            assert!(res.is_some());
+        }
+        let elapsed = start.elapsed();
+        println!("1,000 email parsing iterations took: {:?}", elapsed);
+        assert!(elapsed.as_millis() < 500, "1,000 email parses should complete in under 500ms");
+    }
 
     #[test]
     fn test_build_study_tasks() {

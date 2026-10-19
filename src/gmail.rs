@@ -5,8 +5,15 @@ use regex::Regex;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::sync::LazyLock;
 
 const CACHE_FILE: &str = "quiz_emails_cache.json";
+
+// Static precompiled regexes to avoid re-compilation overhead during HTML stripping
+static RE_STYLE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?is)<(script|style)[^>]*>.*?</(script|style)>").unwrap());
+static RE_TAGS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]+>").unwrap());
+static RE_WS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[ \t]+").unwrap());
 
 pub fn load_cached_emails() -> Vec<CachedEmail> {
     if let Ok(raw) = fs::read_to_string(CACHE_FILE) {
@@ -42,10 +49,8 @@ fn decode_base64url(input: &str) -> String {
 }
 
 fn strip_html_tags(html: &str) -> String {
-    let re_style = Regex::new(r"(?is)<(script|style)[^>]*>.*?</(script|style)>").unwrap();
-    let without_scripts = re_style.replace_all(html, " ");
-    let re_tags = Regex::new(r"<[^>]+>").unwrap();
-    let plain = re_tags.replace_all(&without_scripts, " ");
+    let without_scripts = RE_STYLE.replace_all(html, " ");
+    let plain = RE_TAGS.replace_all(&without_scripts, " ");
     let decoded = plain
         .replace("&nbsp;", " ")
         .replace("&amp;", "&")
@@ -53,8 +58,7 @@ fn strip_html_tags(html: &str) -> String {
         .replace("&gt;", ">")
         .replace("&#39;", "'")
         .replace("&quot;", "\"");
-    let re_ws = Regex::new(r"[ \t]+").unwrap();
-    re_ws.replace_all(&decoded, " ").trim().to_string()
+    RE_WS.replace_all(&decoded, " ").trim().to_string()
 }
 
 fn extract_mime_body(payload: &Value) -> String {

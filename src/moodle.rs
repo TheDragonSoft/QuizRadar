@@ -3,6 +3,10 @@ use chrono::{Local, NaiveDate};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::LazyLock;
+
+static RE_VEVENT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?is)BEGIN:VEVENT(.*?)END:VEVENT").unwrap());
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MoodleTestResult {
@@ -43,9 +47,8 @@ pub fn parse_moodle_ics_content(
     portal_url: Option<&str>,
 ) -> Vec<Assessment> {
     let mut assessments = Vec::new();
-    let re_vevent = Regex::new(r"(?is)BEGIN:VEVENT(.*?)END:VEVENT").unwrap();
 
-    for cap in re_vevent.captures_iter(ics_text) {
+    for cap in RE_VEVENT.captures_iter(ics_text) {
         let block = &cap[1];
         let mut summary = String::new();
         let mut description = String::new();

@@ -1513,6 +1513,183 @@ mod tests {
         assert_eq!(payload.readiness_cards[0].readiness_percent, 33);
         assert!(payload.days.len() >= 2);
     }
+
+    #[test]
+    fn test_build_google_calendar_template_url_full() {
+        let assessment = Assessment {
+            id: "gcal-test-1".to_string(),
+            course_id: "CS 101".to_string(),
+            course_name: "Introduction to Computer Science".to_string(),
+            title: "Quiz 1".to_string(),
+            assessment_type: "Online Quiz".to_string(),
+            date_iso: "2026-10-21".to_string(),
+            day_name: "Wednesday".to_string(),
+            start_time: "14:00".to_string(),
+            end_time: "15:30".to_string(),
+            display_time: "Wednesday, 21 October 2026 (2:00 PM – 3:30 PM)".to_string(),
+            room: "Hall A-110".to_string(),
+            group: "Group B".to_string(),
+            instructor: "Dr. Marcus Vance".to_string(),
+            is_upcoming: true,
+            days_until: 5,
+            urgency_level: "medium".to_string(),
+            priority_score: 75,
+            topics: vec!["Recursion".to_string(), "Sorting Algorithms".to_string()],
+            warnings: vec!["⚠️ Strict Navigation".to_string()],
+            ai_inference_note: "".to_string(),
+            ai_study_plan: "Practice coding algorithms.".to_string(),
+            estimated_study_hours: 3.0,
+            elearning_url: "https://e-learning.univ.edu/course/view.php?id=123".to_string(),
+            google_cal_url: "".to_string(),
+            gcal_synced: false,
+            gcal_event_id: None,
+            color: "#4285f4".to_string(),
+            bg: "#dbeafe".to_string(),
+            border: "#1a73e8".to_string(),
+            semester: "Fall 2026".to_string(),
+            email_subject: "CS 101 Quiz".to_string(),
+            email_sent_date: "2026-10-16".to_string(),
+            source: "Gmail".to_string(),
+            source_icon: "mail".to_string(),
+            weightage_percent: None,
+            achieved_score: None,
+            max_score: None,
+            conflict_warning: None,
+        };
+
+        let url = build_google_calendar_template_url(&assessment);
+
+        assert!(url.starts_with("https://calendar.google.com/calendar/render?action=TEMPLATE"));
+        assert!(url.contains("dates=20261021T140000/20261021T153000"));
+        assert!(url.contains("sf=true&output=xml"));
+
+        // Text title: "[CS 101] Quiz 1 (Online Quiz)" encoded
+        let expected_title_encoded = crate::urlencoding::encode("[CS 101] Quiz 1 (Online Quiz)");
+        assert!(url.contains(&format!("text={}", expected_title_encoded)));
+
+        // Location: "University Campus - Room Hall A-110" encoded
+        let expected_loc_encoded = crate::urlencoding::encode("University Campus - Room Hall A-110");
+        assert!(url.contains(&format!("location={}", expected_loc_encoded)));
+
+        // Details should contain topics, warnings, study plan, and e-learning link
+        let unencoded_details = format!(
+            "Course: CS 101 — Introduction to Computer Science\nAssessment Type: Online Quiz\nRoom: Hall A-110 (Group B)\nInstructor: Dr. Marcus Vance\n\nWhat to Study:\n• Recursion\n• Sorting Algorithms\n\nImportant Warnings:\n⚠️ Strict Navigation\n\nAI Study Plan: Practice coding algorithms.\n\nCourse Link: https://e-learning.univ.edu/course/view.php?id=123"
+        );
+        let expected_details_encoded = crate::urlencoding::encode(&unencoded_details);
+        assert!(url.contains(&format!("details={}", expected_details_encoded)));
+    }
+
+    #[test]
+    fn test_build_google_calendar_template_url_minimal() {
+        let assessment = Assessment {
+            id: "gcal-test-2".to_string(),
+            course_id: "MATH 101".to_string(),
+            course_name: "Calculus".to_string(),
+            title: "Midterm".to_string(),
+            assessment_type: "Midterm Exam".to_string(),
+            date_iso: "2026-11-01".to_string(),
+            day_name: "Sunday".to_string(),
+            start_time: "09:00".to_string(),
+            end_time: "11:00".to_string(),
+            display_time: "Sunday, 1 November 2026".to_string(),
+            room: "Room 101".to_string(),
+            group: "All Groups".to_string(),
+            instructor: "Prof. Rostova".to_string(),
+            is_upcoming: true,
+            days_until: 10,
+            urgency_level: "medium".to_string(),
+            priority_score: 80,
+            topics: vec![],
+            warnings: vec![],
+            ai_inference_note: "".to_string(),
+            ai_study_plan: "Solve past exams.".to_string(),
+            estimated_study_hours: 5.0,
+            elearning_url: "".to_string(),
+            google_cal_url: "".to_string(),
+            gcal_synced: false,
+            gcal_event_id: None,
+            color: "#8e24aa".to_string(),
+            bg: "#f3e8ff".to_string(),
+            border: "#7b1fa2".to_string(),
+            semester: "Fall 2026".to_string(),
+            email_subject: "MATH Midterm".to_string(),
+            email_sent_date: "2026-10-20".to_string(),
+            source: "Gmail".to_string(),
+            source_icon: "mail".to_string(),
+            weightage_percent: None,
+            achieved_score: None,
+            max_score: None,
+            conflict_warning: None,
+        };
+
+        let url = build_google_calendar_template_url(&assessment);
+
+        assert!(url.contains("dates=20261101T090000/20261101T110000"));
+
+        let unencoded_details = format!(
+            "Course: MATH 101 — Calculus\nAssessment Type: Midterm Exam\nRoom: Room 101 (All Groups)\nInstructor: Prof. Rostova\n\nAI Study Plan: Solve past exams.\n"
+        );
+        let expected_details_encoded = crate::urlencoding::encode(&unencoded_details);
+        assert!(url.contains(&format!("details={}", expected_details_encoded)));
+
+        // Ensure optional sections are not present
+        assert!(!unencoded_details.contains("What to Study:"));
+        assert!(!unencoded_details.contains("Important Warnings:"));
+        assert!(!unencoded_details.contains("Course Link:"));
+    }
+
+    #[test]
+    fn test_build_google_calendar_template_url_special_characters() {
+        let assessment = Assessment {
+            id: "gcal-test-3".to_string(),
+            course_id: "DATA & CS".to_string(),
+            course_name: "Data Structures & Algorithms".to_string(),
+            title: "Quiz #1: Trees & Graphs".to_string(),
+            assessment_type: "Class Quiz".to_string(),
+            date_iso: "2026-12-05".to_string(),
+            day_name: "Saturday".to_string(),
+            start_time: "08:30".to_string(),
+            end_time: "10:00".to_string(),
+            display_time: "Saturday, 5 December 2026".to_string(),
+            room: "Lab B+C".to_string(),
+            group: "Sec 1/2".to_string(),
+            instructor: "Dr. A&B".to_string(),
+            is_upcoming: true,
+            days_until: 15,
+            urgency_level: "upcoming".to_string(),
+            priority_score: 50,
+            topics: vec!["Binary Search Trees & AVL".to_string()],
+            warnings: vec!["No phones & no smartwatch!".to_string()],
+            ai_inference_note: "".to_string(),
+            ai_study_plan: "Review slides 100%!".to_string(),
+            estimated_study_hours: 2.0,
+            elearning_url: "https://e-learning.univ.edu/course/view.php?id=99&section=2".to_string(),
+            google_cal_url: "".to_string(),
+            gcal_synced: false,
+            gcal_event_id: None,
+            color: "#0f9d58".to_string(),
+            bg: "#dcfce7".to_string(),
+            border: "#15803d".to_string(),
+            semester: "Fall 2026".to_string(),
+            email_subject: "Quiz".to_string(),
+            email_sent_date: "2026-11-20".to_string(),
+            source: "Gmail".to_string(),
+            source_icon: "mail".to_string(),
+            weightage_percent: None,
+            achieved_score: None,
+            max_score: None,
+            conflict_warning: None,
+        };
+
+        let url = build_google_calendar_template_url(&assessment);
+
+        // Check that special characters like '&', '#', '+', '%' are percent encoded in text/location/details
+        let expected_title_encoded = crate::urlencoding::encode("[DATA & CS] Quiz #1: Trees & Graphs (Class Quiz)");
+        assert!(url.contains(&format!("text={}", expected_title_encoded)));
+
+        let expected_location_encoded = crate::urlencoding::encode("University Campus - Room Lab B+C");
+        assert!(url.contains(&format!("location={}", expected_location_encoded)));
+    }
 }
 
 

@@ -220,3 +220,59 @@ pub async fn sync_gmail_messages() -> Result<Vec<CachedEmail>, String> {
     save_cached_emails(&all_emails);
     Ok(all_emails)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decode_base64url_standard() {
+        assert_eq!(decode_base64url("SGVsbG8gV29ybGQ"), "Hello World");
+    }
+
+    #[test]
+    fn test_decode_base64url_with_padding() {
+        assert_eq!(decode_base64url("SGVsbG8="), "Hello");
+        assert_eq!(decode_base64url("SGVsbG8gV29ybGQ="), "Hello World");
+    }
+
+    #[test]
+    fn test_decode_base64url_url_safe_chars() {
+        // "hello?world~" encoded in URL safe base64 without pad: aGVsbG8_d29ybGR-
+        // or chars with - and _
+        // URL_SAFE_NO_PAD: "-" for +, "_" for /
+        let encoded = URL_SAFE_NO_PAD.encode(b"subject?test/check+123");
+        assert_eq!(decode_base64url(&encoded), "subject?test/check+123");
+    }
+
+    #[test]
+    fn test_decode_base64url_whitespace_trimming() {
+        assert_eq!(decode_base64url("  SGVsbG8gV29ybGQ  \n\r"), "Hello World");
+    }
+
+    #[test]
+    fn test_decode_base64url_standard_base64_fallback() {
+        // Standard base64 uses + and / which fall back to standard decode after replacing - and _
+        let encoded = base64::engine::general_purpose::STANDARD.encode(b"hello/world+test");
+        assert_eq!(decode_base64url(&encoded), "hello/world+test");
+    }
+
+    #[test]
+    fn test_decode_base64url_empty_string() {
+        assert_eq!(decode_base64url(""), "");
+        assert_eq!(decode_base64url("   "), "");
+    }
+
+    #[test]
+    fn test_decode_base64url_invalid_input() {
+        assert_eq!(decode_base64url("!!!invalid_base64_chars###"), "");
+    }
+
+    #[test]
+    fn test_decode_base64url_invalid_utf8() {
+        // Encoded non-UTF-8 bytes 0xFF, 0xFE
+        let invalid_utf8_b64 = URL_SAFE_NO_PAD.encode(&[0xFF, 0xFE]);
+        let decoded = decode_base64url(&invalid_utf8_b64);
+        assert!(decoded.contains('\u{FFFD}'));
+    }
+}

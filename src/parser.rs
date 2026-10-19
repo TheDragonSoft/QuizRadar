@@ -1455,6 +1455,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_format_12h() {
+        // Standard 24-hour time string conversions
+        assert_eq!(format_12h("00:00"), "12:00 AM");
+        assert_eq!(format_12h("01:15"), "1:15 AM");
+        assert_eq!(format_12h("09:05"), "9:05 AM");
+        assert_eq!(format_12h("12:00"), "12:00 PM");
+        assert_eq!(format_12h("13:30"), "1:30 PM");
+        assert_eq!(format_12h("23:59"), "11:59 PM");
+
+        // Invalid structure / non-colon strings return original input
+        assert_eq!(format_12h(""), "");
+        assert_eq!(format_12h("1200"), "1200");
+        assert_eq!(format_12h("10:20:30"), "10:20:30");
+
+        // Non-numeric or missing hour defaults to 9 AM logic (unwrap_or(9))
+        assert_eq!(format_12h("abc:30"), "9:30 AM");
+        assert_eq!(format_12h(":15"), "9:15 AM");
+        assert_eq!(format_12h("-5:00"), "9:00 AM");
+
+        // Out-of-range hours (>23)
+        assert_eq!(format_12h("24:00"), "12:00 PM");
+        assert_eq!(format_12h("25:30"), "13:30 PM");
+
+        // Edge cases for minutes
+        assert_eq!(format_12h("10:"), "10: AM");
+        assert_eq!(format_12h("14:abc"), "2:abc PM");
+    }
+
+    #[test]
     fn test_build_study_tasks() {
         let mut config = AppConfig::default();
         let assessment = Assessment {

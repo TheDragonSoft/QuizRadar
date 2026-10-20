@@ -1,8 +1,8 @@
 ; QuizRadar — Inno Setup Installer Script
-; Builds QuizRadar-Setup-v3.3.0-x64.exe with custom QuizRadar icon & wizard branding
+; Builds QuizRadar-Setup-v4.1.0-x64.exe with custom QuizRadar icon & wizard branding
 
 #ifndef MyAppVersion
-  #define MyAppVersion "4.0.0"
+  #define MyAppVersion "4.1.0"
 #endif
 
 #define MyAppName "QuizRadar"

@@ -7,7 +7,7 @@
 const IS_NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 
 // Single source of truth for the UI version (keep in sync with Cargo.toml / package.json)
-const APP_VERSION = "3.3.0";
+const APP_VERSION = "4.1.0";
 
 // ============================================================================
 // QUIZRADAR AUTONOMOUS ON-DEVICE BACKEND ENGINE (100% Isolated, Zero Latency)

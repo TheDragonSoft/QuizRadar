@@ -20,6 +20,7 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
+use crate::updater::is_allowed_update_url;
 use models::{
     AppConfig, Assessment, AssessmentGrade, Course, CustomCalendarEvent, ScheduleData, ScheduleSlot,
 };
@@ -35,7 +36,8 @@ use std::{
     },
 };
 use tokio::sync::RwLock;
-use tower_http::{cors::CorsLayer, services::ServeDir};
+use tower_http::cors::{AllowOrigin, CorsLayer};
+use tower_http::services::ServeDir;
 
 const CONFIG_FILE: &str = "data/app_config.json";
 
@@ -374,7 +376,24 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
         .route("/styles.css", get(serve_styles_css))
         .nest_service("/static", ServeDir::new("static"))
         .fallback_service(ServeDir::new("static"))
-        .layer(CorsLayer::permissive())
+        .layer(if expose_lan {
+            CorsLayer::permissive()
+        } else {
+            let origin_loopback = format!("http://127.0.0.1:{selected_port}");
+            let origin_localhost = format!("http://localhost:{selected_port}");
+            CorsLayer::new()
+                .allow_origin(AllowOrigin::list(vec![
+                    header::HeaderValue::from_str(&origin_loopback).unwrap(),
+                    header::HeaderValue::from_str(&origin_localhost).unwrap(),
+                ]))
+                .allow_methods([
+                    axum::http::Method::GET,
+                    axum::http::Method::POST,
+                    axum::http::Method::DELETE,
+                    axum::http::Method::OPTIONS,
+                ])
+                .allow_headers([header::CONTENT_TYPE])
+        })
         .with_state(state);
 
     axum::serve(listener, app).await.unwrap();
@@ -593,6 +612,7 @@ async fn get_full_state(State(state): State<SharedAppState>) -> Json<Value> {
         "schedule": schedule,
         "assessments": assessments,
         "dashboard": dashboard,
+        "study_tasks_payload": parser::build_study_tasks(&assessments, &cfg),
     }))
 }
 
@@ -933,6 +953,7 @@ async fn add_course_handler(
     }
 
     let mut next_slot_num = sched.slots.len() + 1;
+    sched.slots.retain(|s| s.course_id != course_id);
     for mut slot in payload.slots {
         if slot.id.is_empty() {
             slot.id = format!("slot-{}", next_slot_num);
@@ -1440,6 +1461,9 @@ pub struct InstallUpdatePayload {
 async fn install_updater_handler(Json(payload): Json<InstallUpdatePayload>) -> Json<Value> {
     if payload.download_url.trim().is_empty() {
         return Json(json!({ "success": false, "error": "Download URL is required" }));
+    }
+    if !is_allowed_update_url(&payload.download_url) {
+        return Json(json!({ "success": false, "error": "Update URL is not allowed" }));
     }
 
     match updater::download_and_install_update(&payload.download_url).await {

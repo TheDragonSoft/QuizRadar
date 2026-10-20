@@ -165,15 +165,28 @@ pub async fn download_and_install_update(download_url: &str) -> Result<PathBuf, 
         .await
         .map_err(|e| format!("Failed to create installer file: {}", e))?;
 
-    while let Some(chunk) = resp.chunk().await.map_err(|e| e.to_string())? {
-        if let Err(e) = file.write_all(&chunk).await {
-            let _ = tokio::fs::remove_file(&temp_file).await;
-            return Err(format!("Failed to save installer: {}", e));
+    loop {
+        match resp.chunk().await {
+            Ok(Some(chunk)) => {
+                if let Err(e) = file.write_all(&chunk).await {
+                    drop(file);
+                    let _ = tokio::fs::remove_file(&temp_file).await;
+                    return Err(format!("Failed to save installer: {}", e));
+                }
+            }
+            Ok(None) => break,
+            Err(e) => {
+                drop(file);
+                let _ = tokio::fs::remove_file(&temp_file).await;
+                return Err(e.to_string());
+            }
         }
     }
-    file.flush()
-        .await
-        .map_err(|e| format!("Failed to save installer: {}", e))?;
+    if let Err(e) = file.flush().await {
+        drop(file);
+        let _ = tokio::fs::remove_file(&temp_file).await;
+        return Err(format!("Failed to save installer: {}", e));
+    }
     drop(file);
 
     // Spawn installer
@@ -196,6 +209,16 @@ pub async fn download_and_install_update(download_url: &str) -> Result<PathBuf, 
     });
 
     Ok(temp_file)
+}
+
+pub fn is_allowed_update_url(url: &str) -> bool {
+    let Ok(parsed) = url.parse::<reqwest::Url>() else {
+        return false;
+    };
+    if parsed.host_str() != Some("github.com") {
+        return false;
+    }
+    parsed.path().starts_with("/TheDragonSoft/QuizRadar/releases/download/")
 }
 
 #[cfg(test)]

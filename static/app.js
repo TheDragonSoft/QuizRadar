@@ -216,7 +216,18 @@ class QuizRadarAutonomousEngine {
         // Honest on-device stats: hours from completed topics only (35 min each),
         // no streak counter exists on-device so it stays 0 until real tracking.
         hours_studied: Math.round((Object.values(completed).filter(Boolean).length * 35) / 6) / 10,
-        study_streak_days: 0
+        study_streak_days: 0,
+        grade_stats: (() => {
+          const graded = (state.assessments || []).filter(
+            (x) => typeof x.achieved_score === "number" && typeof x.max_score === "number" && x.max_score > 0
+          );
+          const overall = graded.length > 0 ? graded.reduce((acc, x) => acc + (x.achieved_score / x.max_score) * 100, 0) / graded.length : 0;
+          return {
+            overall_percent: Math.round(overall),
+            graded_count: graded.length,
+            total_assessments: (state.assessments || []).length
+          };
+        })()
       },
       exam_type_counts: typeCounts,
       study_recommendations: recommendations.filter(r => (r.days_until ?? 0) >= 0),
@@ -409,6 +420,7 @@ class QuizRadarAutonomousEngine {
         this.state.schedule.courses = this.state.schedule.courses.filter(c => c.id !== courseId);
       }
       this.state.assessments = (this.state.assessments || []).filter(a => a.course_id !== courseId);
+      this.state.schedule.slots = (this.state.schedule.slots || []).filter(s => s.course_id !== courseId);
       this.recomputeDashboard(this.state);
       this.saveDatabase();
       return { ok: true, status: 200, data: { success: true, schedule: this.state.schedule, assessments: this.state.assessments } };
@@ -1284,6 +1296,7 @@ function openAccountModal() {
       badgeEl.className = "mt-1.5 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white";
       badgeEl.innerHTML = `<i data-lucide="user" class="w-3 h-3"></i><span>Local Student Profile</span>`;
     }
+    refreshIcons(badgeEl);
   }
 
   // Google Account Status
@@ -1322,7 +1335,7 @@ function openAccountModal() {
 
   if (teamsDetailsEl) {
     if (isTeamsAuth) {
-      teamsDetailsEl.innerHTML = `Linked university profile: <strong class="font-bold text-indigo-600 dark:text-indigo-400">${teamsEmail || "University Account"}</strong>. Assignments & exams automatically synced.`;
+      teamsDetailsEl.innerHTML = `Linked university profile: <strong class="font-bold text-indigo-600 dark:text-indigo-400">${escapeHtml(teamsEmail || "University Account")}</strong>. Assignments & exams automatically synced.`;
     } else {
       teamsDetailsEl.textContent = "Connect your university student email (e.g. student@university.edu) to synchronize course teams, assignments, and exam dates without overwriting your primary account.";
     }
@@ -1390,6 +1403,11 @@ function closeMobileSearchModal() {
   triggerHaptic("light");
   const modal = document.getElementById("mobile-search-modal");
   if (!modal) return;
+  if (mobileSearchDebounceTimer) {
+    clearTimeout(mobileSearchDebounceTimer);
+    mobileSearchDebounceTimer = null;
+  }
+  mobileSearchRenderSignature = "";
   modal.classList.remove("is-open");
   document.getElementById("mobile-modal-search-input")?.blur();
   setTimeout(() => {
@@ -1508,9 +1526,12 @@ function renderMobileSearchResults(rawQuery) {
 
   container.innerHTML = items
     .map((item) => {
-      const badgeStyle = `background-color: ${item.color || "#1a73e8"};`;
+      const badgeColor = /^#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?$/.test(item.color ?? "")
+        ? item.color
+        : "#1a73e8";
+      const badgeStyle = `background-color: ${badgeColor};`;
       return `
-        <div onclick="closeMobileSearchModal(); openAssessmentModalById('${item.id}')"
+        <div onclick="closeMobileSearchModal(); openAssessmentModalById('${jsString(item.id)}')"
              class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/80 hover:border-[#1a73e8] active:scale-[0.98] transition cursor-pointer flex items-center justify-between gap-3 shadow-2xs">
           <div class="min-w-0 space-y-1">
             <div class="flex items-center gap-1.5 flex-wrap">
@@ -1664,6 +1685,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initKeyboardShortcuts();
   initSearchBar();
   initAppUpdater();
+  initGlobalDismissHandlers();
   initAndroidNativeBridge();
 
   updateTasksBadgeCount();
@@ -1987,17 +2009,24 @@ function toggleSidebar(forceCollapse) {
 }
 
 function initKeyboardShortcuts() {
+  const palette = document.getElementById("search-dropdown-palette");
+  const schedModal = document.getElementById("schedule-preview-modal");
+  const addCourseModal = document.getElementById("add-course-modal");
+  const detailModal = document.getElementById("event-detail-modal");
+  const createModal = document.getElementById("create-event-modal");
+  const settingsModal = document.getElementById("settings-modal");
+  const onboardModal = document.getElementById("onboarding-modal");
+  const desktopSearch = document.getElementById("global-search-input");
+  const mobileSearch = document.getElementById("mobile-search-input");
+
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
-      const palette = document.getElementById("search-dropdown-palette");
       if (palette?.classList.contains("is-open")) {
         closeSearchPalette();
-        document.getElementById("global-search-input")?.blur();
+        desktopSearch?.blur();
         return;
       }
 
-      const schedModal = document.getElementById("schedule-preview-modal");
-      const addCourseModal = document.getElementById("add-course-modal");
       if (schedModal?.classList.contains("is-open")) {
         closeSchedulePreviewModal();
         return;
@@ -2006,11 +2035,6 @@ function initKeyboardShortcuts() {
         closeAddCourseModal();
         return;
       }
-
-      const detailModal = document.getElementById("event-detail-modal");
-      const createModal = document.getElementById("create-event-modal");
-      const settingsModal = document.getElementById("settings-modal");
-      const onboardModal = document.getElementById("onboarding-modal");
 
       if (detailModal?.classList.contains("is-open")) {
         closeEventDetailModal();
@@ -2039,8 +2063,6 @@ function initKeyboardShortcuts() {
 
     if ((e.key === "/" && !isInput) || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k")) {
       e.preventDefault();
-      const desktopSearch = document.getElementById("global-search-input");
-      const mobileSearch = document.getElementById("mobile-search-input");
       if (desktopSearch && desktopSearch.offsetParent !== null) {
         desktopSearch.focus();
         desktopSearch.select();
@@ -2295,9 +2317,8 @@ async function loadFullState() {
     }
   } catch (err) {
     console.warn("Failed to load live state from backend, falling back to cache:", err);
-    updateTopBarAndUser();
-    renderDashboard();
-    renderWeekCalendar();
+    hydrateAndRenderState(appState);
+    loadStudyTasks();
   }
 }
 
@@ -2627,6 +2648,13 @@ async function loadStudyTasks(forceRefresh = false) {
     const data = await res.json();
     if (data.success && data.tasks_payload) {
       studyTasksState = data.tasks_payload;
+      // Re-apply stored topic-completion state so a refresh never clears toggles
+      const completedMap = appState.config?.completed_topics || {};
+      for (const day of studyTasksState.days || []) {
+        for (const t of day.tasks || []) {
+          if (completedMap[t.key] === true) t.completed = true;
+        }
+      }
       updateTasksBadgeCount();
       if (currentMainView === "tasks") {
         renderTasksView();
@@ -4880,6 +4908,7 @@ function renderOnboardingPreview() {
 function renderAllViews() {
   updateTopBarAndUser();
   renderDashboard();
+  renderTasksView();
   renderWeekCalendar();
   renderPaletteCourseChips();
 }
@@ -5852,15 +5881,16 @@ function initSearchBar() {
 }
 
 function initGlobalDismissHandlers() {
+  const searchContainer = document.getElementById("search-bar-container");
+  const palette = document.getElementById("search-dropdown-palette");
+  const popover = document.getElementById("update-popover");
+  const updateContainer = document.getElementById("update-pill-container");
+
   document.addEventListener("click", (e) => {
-    const searchContainer = document.getElementById("search-bar-container");
-    const palette = document.getElementById("search-dropdown-palette");
-    if (searchContainer && palette && !searchContainer.contains(e.target)) {
+    if (searchContainer && palette && palette.classList.contains("is-open") && !searchContainer.contains(e.target)) {
       closeSearchPalette();
     }
 
-    const popover = document.getElementById("update-popover");
-    const updateContainer = document.getElementById("update-pill-container");
     if (!popover || popover.classList.contains("hidden")) return;
     if (updateContainer && !updateContainer.contains(e.target)) {
       closeUpdatePopover();
@@ -6201,6 +6231,10 @@ function formatCompactTime(hhmm) {
   const ampm = h >= 12 ? "pm" : "am";
   const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
   return mStr === "00" ? `${h12}${ampm}` : `${h12}:${mStr}${ampm}`;
+}
+
+function jsString(s) {
+  return String(s ?? "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
 function escapeHtml(str) {
@@ -7167,7 +7201,14 @@ function closeCloudSyncModal() {
 function exportLocalBackup() {
   triggerHaptic("medium");
   try {
-    const backupData = JSON.stringify(getMobileEngine().state, null, 2);
+    const engineState = getMobileEngine().state;
+    const safeState = JSON.parse(JSON.stringify(engineState));
+    if (safeState.config) {
+      for (const k of ["gemini_api_key", "teams_token", "moodle_token", "moodle_ical_url"]) {
+        delete safeState.config[k];
+      }
+    }
+    const backupData = JSON.stringify(safeState, null, 2);
     const blob = new Blob([backupData], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

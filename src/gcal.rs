@@ -273,6 +273,14 @@ pub fn generate_all_ics(assessments: &[Assessment]) -> String {
     ics
 }
 
+fn ical_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace(';', "\\;")
+        .replace(',', "\\,")
+        .replace('\n', "\\n")
+        .replace('\r', "")
+}
+
 fn format_vevent(a: &Assessment) -> String {
     let date_clean = a.date_iso.replace('-', "");
     let start_clean = a.start_time.replace(':', "") + "00";
@@ -292,22 +300,23 @@ fn format_vevent(a: &Assessment) -> String {
     }
     desc.push_str(&format!("\\n\\nStudy Plan: {}", a.ai_study_plan));
 
+    let summary = ical_escape(&format!("[{}] {} ({})", a.course_id, a.title, a.assessment_type));
+    let location = ical_escape(&format!("University Campus - Room {} ({})", a.room, a.group));
+    let description = ical_escape(&desc);
+    let alarm_soon = ical_escape(&format!("Upcoming {} tomorrow at {}!", a.title, a.start_time));
+    let alarm_later = ical_escape(&format!("{} starts in 2 hours in Room {}!", a.title, a.room));
+
     format!(
-        "BEGIN:VEVENT\r\nUID:quizradar-{}@quizradar.local\r\nDTSTART:{}T{}\r\nDTEND:{}T{}\r\nSUMMARY:[{}] {} ({})\r\nDESCRIPTION:{}\r\nLOCATION:University Campus - Room {} ({})\r\nBEGIN:VALARM\r\nTRIGGER:-P1D\r\nACTION:DISPLAY\r\nDESCRIPTION:Upcoming {} tomorrow at {}!\r\nEND:VALARM\r\nBEGIN:VALARM\r\nTRIGGER:-PT2H\r\nACTION:DISPLAY\r\nDESCRIPTION:{} starts in 2 hours in Room {}!\r\nEND:VALARM\r\nEND:VEVENT\r\n",
+        "BEGIN:VEVENT\r\nUID:quizradar-{}@quizradar.local\r\nDTSTART:{}T{}\r\nDTEND:{}T{}\r\nSUMMARY:{}\r\nDESCRIPTION:{}\r\nLOCATION:{}\r\nBEGIN:VALARM\r\nTRIGGER:-P1D\r\nACTION:DISPLAY\r\nDESCRIPTION:{}\r\nEND:VALARM\r\nBEGIN:VALARM\r\nTRIGGER:-PT2H\r\nACTION:DISPLAY\r\nDESCRIPTION:{}\r\nEND:VALARM\r\nEND:VEVENT\r\n",
         a.id,
         date_clean,
         start_clean,
         date_clean,
         end_clean,
-        a.course_id,
-        a.title,
-        a.assessment_type,
-        desc,
-        a.room,
-        a.group,
-        a.title,
-        a.start_time,
-        a.title,
-        a.room
+        summary,
+        description,
+        location,
+        alarm_soon,
+        alarm_later
     )
 }

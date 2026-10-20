@@ -15,6 +15,7 @@ pub mod updater;
 use axum::{
     body::Bytes,
     extract::{Path, Query, Request, State},
+    extract::connect_info::ConnectInfo,
     http::{header, HeaderMap, HeaderValue, StatusCode},
     middleware::Next,
     response::{Html, IntoResponse, Redirect, Response},
@@ -223,6 +224,32 @@ fn resolve_asset_path(path: &str) -> std::path::PathBuf {
         return static_root().join(rest);
     }
     std::path::PathBuf::from(path)
+}
+
+/// Redacts credential values from a config for responses sent to non-loopback
+/// (LAN pairing) clients: OAuth tokens and API keys must never leave the
+/// machine. A truthy "stored" marker keeps the UI's connected-state checks
+/// working without exposing the secret itself.
+fn redact_secrets_for_remote(cfg: &AppConfig) -> Value {
+    let mut v = serde_json::to_value(cfg).unwrap_or(Value::Null);
+    if let Some(obj) = v.as_object_mut() {
+        for key in ["gemini_api_key", "teams_token", "moodle_token"] {
+            let present = match obj.get(key) {
+                Some(Value::String(s)) => !s.trim().is_empty(),
+                Some(Value::Null) | None => false,
+                Some(_) => true,
+            };
+            obj.insert(
+                key.to_string(),
+                if present {
+                    Value::String("stored".to_string())
+                } else {
+                    Value::Null
+                },
+            );
+        }
+    }
+    v
 }
 
 /// Named mutex so the Inno Setup installer (AppMutex=QuizRadarAppMutex) can
@@ -648,7 +675,12 @@ async fn run_backend_server(port_tx: mpsc::Sender<(u16, String)>) {
         ))
         .with_state(state);
 
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .unwrap();
 }
 
 struct CachedAsset {
@@ -819,7 +851,10 @@ async fn serve_styles_css(headers: HeaderMap) -> Response {
     }
 }
 
-async fn get_full_state(State(state): State<SharedAppState>) -> Json<Value> {
+async fn get_full_state(
+    State(state): State<SharedAppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Json<Value> {
     let cfg = state.config.read().await.clone();
     let profile = auth::get_cached_user_profile(&cfg);
     let schedule = state.schedule.read().await.clone();
@@ -832,6 +867,11 @@ async fn get_full_state(State(state): State<SharedAppState>) -> Json<Value> {
         .cloned()
         .collect();
     let dashboard = parser::build_dashboard_summary(&assessments, &cfg);
+    let cfg_json = if addr.ip().is_loopback() {
+        serde_json::to_value(&cfg).unwrap_or(Value::Null)
+    } else {
+        redact_secrets_for_remote(&cfg)
+    };
 
     // If token exists on disk but user_email wasn't cached yet, refresh profile in background
     if profile.authenticated
@@ -859,7 +899,7 @@ async fn get_full_state(State(state): State<SharedAppState>) -> Json<Value> {
     }
 
     Json(json!({
-        "config": cfg,
+        "config": cfg_json,
         "auth": profile,
         "schedule": schedule,
         "assessments": assessments,
@@ -1351,7 +1391,7 @@ async fn run_sync_pipeline(state: SharedAppState, use_live_gemini: bool) -> Valu
             .filter(|a| a.is_source_enabled(&cfg))
             .cloned()
             .collect();
-        let dashboard = parser::build_dashboard_summary(&assessments, &cfg);
+    let dashboard = parser::build_dashboard_summary(&assessments, &cfg);
         let schedule = state.schedule.read().await.clone();
         return json!({
             "success": true,
@@ -1813,6 +1853,7 @@ pub struct UpdateConfigPayload {
 
 async fn update_config_handler(
     State(state): State<SharedAppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(payload): Json<UpdateConfigPayload>,
 ) -> Json<Value> {
     let (cfg_final, any_source_enabled) = {
@@ -1896,7 +1937,7 @@ async fn update_config_handler(
     Json(json!({
         "success": true,
         "syncing": any_source_enabled,
-        "config": cfg_final,
+        "config": if addr.ip().is_loopback() { serde_json::to_value(&cfg_final).unwrap_or(Value::Null) } else { redact_secrets_for_remote(&cfg_final) },
         "dashboard": dashboard,
         "assessments": visible_assessments
     }))
@@ -2547,5 +2588,33 @@ pub mod urlencoding {
             }
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_redact_secrets_for_remote() {
+        let mut cfg = AppConfig::default();
+        cfg.gemini_api_key = Some("SUPER-SECRET-KEY-123".to_string());
+        cfg.teams_token = Some("ms-token-value".to_string());
+        cfg.moodle_token = Some("   ".to_string()); // whitespace-only -> absent
+
+        let v = redact_secrets_for_remote(&cfg);
+        let obj = v.as_object().expect("config should serialize to object");
+
+        assert_eq!(obj.get("gemini_api_key"), Some(&Value::String("stored".into())));
+        assert_eq!(obj.get("teams_token"), Some(&Value::String("stored".into())));
+        assert_eq!(obj.get("moodle_token"), Some(&Value::Null));
+
+        // Non-secret fields must survive untouched.
+        assert_eq!(obj.get("user_email").and_then(|v| v.as_str()), cfg.user_email.as_deref());
+
+        // The real secret must not appear anywhere in the serialized payload.
+        let dumped = serde_json::to_string(&v).unwrap();
+        assert!(!dumped.contains("SUPER-SECRET-KEY-123"));
+        assert!(!dumped.contains("ms-token-value"));
     }
 }

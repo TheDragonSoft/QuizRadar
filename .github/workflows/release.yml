@@ -9,7 +9,7 @@ on:
       tag:
         description: "Release tag to build & publish (e.g. v3.3.0)"
         required: false
-        default: "v3.3.0"
+        default: "v4.0.0"
 
 permissions:
   contents: write
@@ -37,7 +37,7 @@ jobs:
           } elseif ("${{ github.ref_name }}" -like "v*") {
             $tag = "${{ github.ref_name }}"
           } else {
-            $tag = "v3.3.0"
+            $tag = "v4.0.0"
           }
           $ver = $tag.TrimStart('v')
           "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append

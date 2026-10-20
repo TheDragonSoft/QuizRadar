@@ -1,16 +1,19 @@
-use crate::gemini::{analyze_email_with_gemini, load_gemini_cache, save_gemini_cache};
+use crate::gemini::{analyze_email_with_gemini_prepared, load_gemini_cache, save_gemini_cache};
 use crate::models::{
     AppConfig, Assessment, CachedEmail, ConflictAlert, DailyStudyDayGroup, DailyStudyTask,
     DashboardSummary, ExamReadinessCard, GradeOverallSummary, ScheduleData, StudyRecommendation,
     StudyTasksPayload, TopicCheckItem,
 };
 use chrono::{Datelike, Duration, Local, NaiveDate, Weekday};
+use futures::stream::{self, StreamExt};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::sync::LazyLock;
 
 const PROCESSED_FILE: &str = "processed_quizzes.json";
+const EMAIL_SEPARATOR: &str =
+    "---------------------------------------------------------------------";
 
 // Static precompiled regexes to eliminate runtime Regex::new compilation overhead on every email
 static RE_COURSE: LazyLock<Regex> =
@@ -60,6 +63,33 @@ pub fn current_reference_date() -> NaiveDate {
     Local::now().date_naive()
 }
 
+struct PreparedEmail<'a> {
+    email: &'a CachedEmail,
+    subject_lower: String,
+    body_lower: String,
+    announcement_body: &'a str,
+    announcement_lower: String,
+    is_candidate: bool,
+}
+
+fn extract_announcement_body(body: &str) -> &str {
+    if let Some(start) = body.find(EMAIL_SEPARATOR) {
+        let after = &body[start + EMAIL_SEPARATOR.len()..];
+        if let Some(end) = after.find(EMAIL_SEPARATOR) {
+            return &after[..end];
+        }
+        return after;
+    }
+    body
+}
+
+fn contains_template_notice(subject_lower: &str, body_lower: &str) -> bool {
+    subject_lower.contains("quiz template")
+        || subject_lower.contains("assignment template")
+        || body_lower.contains("quiz template")
+        || body_lower.contains("assignment template")
+}
+
 pub async fn process_all_emails(
     emails: &[CachedEmail],
     schedule: &ScheduleData,
@@ -69,37 +99,91 @@ pub async fn process_all_emails(
     let mut gemini_cache = load_gemini_cache();
     let mut cache_updated = false;
 
-    // Detect if there is a quiz template notification
-    let has_template_notice = emails.iter().any(|e| {
-        let combined = format!("{} {}", e.subject, e.body).to_lowercase();
-        combined.contains("quiz template") || combined.contains("assignment template")
-    });
+    let prepared: Vec<PreparedEmail> = emails
+        .iter()
+        .map(|email| {
+            let subject_lower = email.subject.to_lowercase();
+            let body_lower = email.body.to_lowercase();
+            let announcement_body = extract_announcement_body(&email.body);
+            let announcement_lower = announcement_body.to_lowercase();
+            let is_candidate = is_candidate_assessment_email(
+                &subject_lower,
+                &email.from.to_lowercase(),
+                &body_lower,
+            );
+            PreparedEmail {
+                email,
+                subject_lower,
+                body_lower,
+                announcement_body,
+                announcement_lower,
+                is_candidate,
+            }
+        })
+        .collect();
+
+    let has_template_notice = prepared
+        .iter()
+        .any(|p| contains_template_notice(&p.subject_lower, &p.body_lower));
+
+    let analyses_enabled = use_live_gemini && config.gemini_enabled;
+    let schedule_slots_json = if analyses_enabled {
+        Some(serde_json::to_string(&schedule.slots).unwrap_or_default())
+    } else {
+        None
+    };
+
+    if let Some(schedule_json) = schedule_slots_json.as_deref() {
+        let pending: Vec<usize> = prepared
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| {
+                p.is_candidate
+                    && is_email_recent(&p.email.date, 60)
+                    && !gemini_cache.contains_key(&p.email.id)
+            })
+            .map(|(index, _)| index)
+            .collect();
+
+        let mut analyses: Vec<(usize, crate::gemini::GeminiExtractedAssessment)> =
+            stream::iter(pending)
+                .map(|index| {
+                    let email = prepared[index].email;
+                    let api_key = config.gemini_api_key.as_deref();
+                    async move {
+                        analyze_email_with_gemini_prepared(email, schedule_json, api_key)
+                            .await
+                            .map(|extracted| (index, extracted))
+                    }
+                })
+                .buffer_unordered(3)
+                .filter_map(|result| async move { result })
+                .collect()
+                .await;
+        analyses.sort_by_key(|(index, _)| *index);
+        for (index, extracted) in analyses {
+            gemini_cache.insert(prepared[index].email.id.clone(), extracted);
+            cache_updated = true;
+        }
+    }
 
     let mut assessments = Vec::new();
     let mut seen_keys = HashSet::new();
 
-    for email in emails {
-        if !is_candidate_assessment_email(email) {
+    for p in &prepared {
+        if !p.is_candidate {
             continue;
         }
 
-    // If live Gemini is enabled, analyze recent emails (last 60 days) that aren't cached yet
-    if use_live_gemini
-        && config.gemini_enabled
-        && is_email_recent(&email.date, 60)
-        && !gemini_cache.contains_key(&email.id)
-    {
-            if let Some(extracted) =
-                analyze_email_with_gemini(email, schedule, config.gemini_api_key.as_deref()).await
-            {
-                gemini_cache.insert(email.id.clone(), extracted);
-                cache_updated = true;
-            }
-        }
-
-        if let Some(mut assessment) =
-            parse_single_email(email, schedule, gemini_cache.get(&email.id), has_template_notice)
-        {
+        if let Some(mut assessment) = parse_single_email(
+            p.email,
+            schedule,
+            gemini_cache.get(&p.email.id),
+            has_template_notice,
+            &p.subject_lower,
+            p.announcement_body,
+            &p.announcement_lower,
+        ) {
             let dedup_key = format!(
                 "{}_{}_{}",
                 assessment.course_id, assessment.title, assessment.date_iso
@@ -130,55 +214,56 @@ pub async fn process_all_emails(
     });
 
     if let Ok(json) = serde_json::to_string_pretty(&assessments) {
-        let _ = fs::write(PROCESSED_FILE, json);
+        let unchanged = fs::read_to_string(PROCESSED_FILE)
+            .map(|existing| existing == json)
+            .unwrap_or(false);
+        if !unchanged {
+            let _ = fs::write(PROCESSED_FILE, json);
+        }
     }
 
     assessments
 }
 
-fn is_candidate_assessment_email(email: &CachedEmail) -> bool {
-    let subj = email.subject.to_lowercase();
-    let from = email.from.to_lowercase();
-    let body = email.body.to_lowercase();
-
+fn is_candidate_assessment_email(subject_lower: &str, from_lower: &str, body_lower: &str) -> bool {
     // Filter out student's own outgoing replies
-    if subj.starts_with("re:") {
+    if subject_lower.starts_with("re:") {
         return false;
     }
 
     // Filter out pure grade/result announcements unless they announce a remake/makeup quiz
-    if (subj.contains("result")
-        || subj.contains("grades")
-        || subj.contains("marks")
-        || subj.contains("model answer")
-        || subj.contains("cancellation")
-        || subj.contains("appeal")
-        || subj.contains("upload your course materials")
-        || subj.contains("lecture 1 slides"))
-        && !body.contains("remake will be held")
+    if (subject_lower.contains("result")
+        || subject_lower.contains("grades")
+        || subject_lower.contains("marks")
+        || subject_lower.contains("model answer")
+        || subject_lower.contains("cancellation")
+        || subject_lower.contains("appeal")
+        || subject_lower.contains("upload your course materials")
+        || subject_lower.contains("lecture 1 slides"))
+        && !body_lower.contains("remake will be held")
     {
         return false;
     }
 
     // Filter out pure file upload notification emails (they are merged as context instead)
-    if body.contains("is new in the course") && !body.contains("will be held") {
+    if body_lower.contains("is new in the course") && !body_lower.contains("will be held") {
         return false;
     }
 
     // Filter out bare "REMINDER" 1-word replies that duplicate an earlier thread
-    if body.contains("----") {
-        let parts: Vec<&str> = body.split("---------------------------------------------------------------------").collect();
+    if body_lower.contains("----") {
+        let parts: Vec<&str> = body_lower.split(EMAIL_SEPARATOR).collect();
         if parts.len() > 1 && parts[1].trim() == "reminder" {
             return false;
         }
     }
 
-    subj.contains("quiz")
-        || subj.contains("midterm")
-        || subj.contains("exam")
-        || subj.contains("assignment")
-        || subj.contains("assessment")
-        || (body.contains("quiz") && from.contains("e-learning"))
+    subject_lower.contains("quiz")
+        || subject_lower.contains("midterm")
+        || subject_lower.contains("exam")
+        || subject_lower.contains("assignment")
+        || subject_lower.contains("assessment")
+        || (body_lower.contains("quiz") && from_lower.contains("e-learning"))
 }
 
 fn parse_single_email(
@@ -186,27 +271,15 @@ fn parse_single_email(
     schedule: &ScheduleData,
     gemini_override: Option<&crate::gemini::GeminiExtractedAssessment>,
     has_template_notice: bool,
+    subject_lower: &str,
+    announcement_body: &str,
+    announcement_lower: &str,
 ) -> Option<Assessment> {
     let ref_date = current_reference_date();
     let sent_date = parse_email_sent_date(&email.date).unwrap_or(ref_date);
 
-    // Extract announcement body between LMS separator dashes if present
-    let announcement_body = if email.body.contains("---------------------------------------------------------------------") {
-        let parts: Vec<&str> = email
-            .body
-            .split("---------------------------------------------------------------------")
-            .collect();
-        if parts.len() > 1 {
-            parts[1].to_string()
-        } else {
-            email.body.clone()
-        }
-    } else {
-        email.body.clone()
-    };
-
     let subj_and_body = format!("{} {}", email.subject, announcement_body);
-    let lower = subj_and_body.to_lowercase();
+    let lower = format!("{} {}", subject_lower, announcement_lower);
 
     // 1. Course ID & Course Name resolution (with LMS cross-listing intelligence)
     let mut raw_course = RE_COURSE
@@ -222,7 +295,7 @@ fn parse_single_email(
         "Final Exam".to_string()
     } else if lower.contains("online quiz") || lower.contains("/mod/quiz/") {
         "Online Quiz".to_string()
-    } else if lower.contains("in-class assignment") || email.subject.to_lowercase().contains("assignment") {
+    } else if lower.contains("in-class assignment") || subject_lower.contains("assignment") {
         "Assignment".to_string()
     } else if lower.contains("lab session") || lower.contains("during the lab") {
         "Lab Assessment".to_string()
@@ -242,22 +315,26 @@ fn parse_single_email(
         .to_string();
 
     // 4. Schedule-Aware Date, Time, Room & Inference Reasoning
-    let (mut date_iso, mut start_time, mut end_time, mut room, mut group, mut title, mut ai_inference_note) =
-        infer_schedule_date_and_slot(
-            &raw_course,
-            &email.subject,
-            &announcement_body,
-            sent_date,
-            schedule,
-            &assessment_type,
-        );
+    let (
+        mut date_iso,
+        mut start_time,
+        mut end_time,
+        mut room,
+        mut group,
+        mut title,
+        mut ai_inference_note,
+    ) = infer_schedule_date_and_slot(
+        &raw_course,
+        &email.subject,
+        &lower,
+        sent_date,
+        schedule,
+        &assessment_type,
+    );
 
     // 5. Topics & Warnings extraction
-    let mut topics = extract_topics(&announcement_body, &raw_course);
-    let mut warnings = extract_warnings(
-        &announcement_body,
-        has_template_notice,
-    );
+    let mut topics = extract_topics(announcement_lower, &raw_course);
+    let mut warnings = extract_warnings(announcement_lower, has_template_notice);
     let (mut ai_study_plan, mut estimated_study_hours) =
         generate_ai_study_plan(&raw_course, &assessment_type, &topics, &warnings);
 
@@ -324,9 +401,11 @@ fn parse_single_email(
     let priority_score = compute_priority_score(days_until, &assessment_type, topics.len());
 
     let course_info = schedule.courses.iter().find(|c| c.id == raw_course);
+    // Honest passthrough: for unmatched courses show the raw course string from
+    // the email instead of inventing a plausible-sounding course title.
     let course_name = course_info
         .map(|c| c.name.clone())
-        .unwrap_or_else(|| default_course_name(&raw_course));
+        .unwrap_or_else(|| raw_course.clone());
     let (color, bg, border) = course_info
         .map(|c| (c.color.clone(), c.bg.clone(), c.border.clone()))
         .unwrap_or_else(|| default_course_palette(&raw_course));
@@ -405,13 +484,12 @@ fn parse_single_email(
 fn infer_schedule_date_and_slot(
     course_id: &str,
     subject: &str,
-    body: &str,
+    lower: &str,
     sent_date: NaiveDate,
     schedule: &ScheduleData,
     assessment_type: &str,
 ) -> (String, String, String, String, String, String, String) {
     // Match student's enrolled slot for this course (prefer Lecture unless Tutorial/Lab specified)
-    let lower = format!("{} {}", subject, body).to_lowercase();
     let preferred_slot_type = if lower.contains("tutorial") && !lower.contains("tutorial sheets") {
         "Tutorial"
     } else if lower.contains("lab session") || lower.contains("during the lab") {
@@ -512,8 +590,7 @@ fn infer_schedule_date_and_slot(
     )
 }
 
-fn extract_topics(body: &str, course_id: &str) -> Vec<String> {
-    let lower = body.to_lowercase();
+fn extract_topics(lower: &str, course_id: &str) -> Vec<String> {
     let mut items = Vec::new();
     if lower.contains("bjt") {
         items.push("BJT Transistor Analysis & Biasing".to_string());
@@ -527,13 +604,10 @@ fn extract_topics(body: &str, course_id: &str) -> Vec<String> {
     items
 }
 
-fn extract_warnings(body: &str, has_template_notice: bool) -> Vec<String> {
-    let lower = body.to_lowercase();
+fn extract_warnings(lower: &str, has_template_notice: bool) -> Vec<String> {
     let mut warnings = Vec::new();
 
-    if lower.contains("quiz template")
-        || (has_template_notice && lower.contains("quiz"))
-    {
+    if lower.contains("quiz template") || (has_template_notice && lower.contains("quiz")) {
         warnings.push("⚠️ Bring your printed Quiz Template to the lecture!".to_string());
     }
     if lower.contains("will not be able to go back")
@@ -642,34 +716,45 @@ fn compute_priority_score(days_until: i64, assessment_type: &str, topic_count: u
     (urgency_base + type_bonus + topic_bonus).min(100)
 }
 
-pub fn build_dashboard_summary(
-    assessments: &[Assessment],
-    config: &AppConfig,
-) -> DashboardSummary {
+pub fn build_dashboard_summary(assessments: &[Assessment], config: &AppConfig) -> DashboardSummary {
     let ref_date = current_reference_date();
-    let upcoming: Vec<Assessment> = assessments
+    let upcoming_indices: Vec<usize> = assessments
         .iter()
-        .filter(|a| a.is_upcoming)
-        .cloned()
+        .enumerate()
+        .filter(|(_, a)| a.is_upcoming)
+        .map(|(index, _)| index)
         .collect();
 
-    let next_up = upcoming.first().cloned();
-    let upcoming_this_week: Vec<Assessment> = upcoming
+    let next_up = upcoming_indices
+        .first()
+        .map(|&index| assessments[index].clone());
+    let upcoming_this_week: Vec<Assessment> = upcoming_indices
         .iter()
-        .filter(|a| a.days_until >= 0 && a.days_until <= 7)
-        .cloned()
+        .filter(|&&index| {
+            let a = &assessments[index];
+            a.days_until >= 0 && a.days_until <= 7
+        })
+        .map(|&index| assessments[index].clone())
         .collect();
 
-    let mut exam_type_counts: HashMap<String, usize> = HashMap::new();
-    for a in &upcoming {
-        *exam_type_counts.entry(a.assessment_type.clone()).or_insert(0) += 1;
+    let mut exam_type_counts: HashMap<&str, usize> = HashMap::new();
+    for &index in &upcoming_indices {
+        let a = &assessments[index];
+        *exam_type_counts
+            .entry(a.assessment_type.as_str())
+            .or_insert(0) += 1;
     }
+    let exam_type_counts: HashMap<String, usize> = exam_type_counts
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), value))
+        .collect();
 
     let mut total_topics_count = 0usize;
     let mut completed_topics_count = 0usize;
     let mut study_recommendations = Vec::new();
 
-    for a in &upcoming {
+    for &index in &upcoming_indices {
+        let a = &assessments[index];
         let mut topic_items = Vec::new();
         let mut done_for_this = 0usize;
 
@@ -706,7 +791,11 @@ pub fn build_dashboard_summary(
             format!(
                 "Immediate priority! {} is {} ({}) in Room {} — {} of {} topics still need review.",
                 a.title,
-                if a.days_until == 0 { "today" } else { "tomorrow morning" },
+                if a.days_until == 0 {
+                    "today"
+                } else {
+                    "tomorrow morning"
+                },
                 format_12h(&a.start_time),
                 a.room,
                 remaining_topics,
@@ -724,7 +813,9 @@ pub fn build_dashboard_summary(
         } else {
             format!(
                 "Major milestone in {} days ({}). Start early revision across {} modules.",
-                a.days_until, a.date_iso, a.topics.len()
+                a.days_until,
+                a.date_iso,
+                a.topics.len()
             )
         };
 
@@ -755,59 +846,96 @@ pub fn build_dashboard_summary(
     };
 
     // 1. Conflict and Overload Detection (Assessments within 36 hours of each other)
-    let mut conflict_alerts = Vec::new();
-    for i in 0..upcoming.len() {
-        for j in (i + 1)..upcoming.len() {
-            let a1 = &upcoming[i];
-            let a2 = &upcoming[j];
-            if let (Ok(d1), Ok(d2)) = (
-                NaiveDate::parse_from_str(&a1.date_iso, "%Y-%m-%d"),
-                NaiveDate::parse_from_str(&a2.date_iso, "%Y-%m-%d"),
-            ) {
-                let diff_days = (d2 - d1).num_days();
-                if diff_days >= 0 && diff_days <= 1 {
-                    let is_same_day = diff_days == 0;
-                    let gap_hours = if is_same_day { 4 } else { 26 };
-                    let severity = if is_same_day {
-                        "critical".to_string()
-                    } else {
-                        "warning".to_string()
-                    };
-                    let message = format!(
-                        "Exam schedule cluster: {} ({}) and {} ({}) occur within {} hours! Review early to balance your study load.",
-                        a1.course_id,
-                        a1.title,
-                        a2.course_id,
-                        a2.title,
-                        gap_hours
-                    );
-                    let has_study_block_1 = config.custom_events.iter().any(|e| e.id == format!("study-block-{}", a1.id));
-                    let has_study_block_2 = config.custom_events.iter().any(|e| e.id == format!("study-block-{}", a2.id));
-                    let is_mitigated = has_study_block_1 || has_study_block_2;
+    let study_block_ids: HashSet<&str> = config
+        .custom_events
+        .iter()
+        .filter_map(|event| event.id.strip_prefix("study-block-"))
+        .collect();
 
-                    conflict_alerts.push(ConflictAlert {
-                        assessment_id_a: a1.id.clone(),
-                        assessment_id_b: a2.id.clone(),
-                        course_a: a1.course_id.clone(),
-                        course_b: a2.course_id.clone(),
-                        date_a: a1.date_iso.clone(),
-                        date_b: a2.date_iso.clone(),
-                        gap_hours,
-                        severity,
-                        message,
-                        is_mitigated,
-                    });
-                }
+    let positions: HashMap<usize, usize> = upcoming_indices
+        .iter()
+        .enumerate()
+        .map(|(position, &index)| (index, position))
+        .collect();
+
+    let mut dated: Vec<(NaiveDate, usize)> = upcoming_indices
+        .iter()
+        .filter_map(|&index| {
+            NaiveDate::parse_from_str(&assessments[index].date_iso, "%Y-%m-%d")
+                .ok()
+                .map(|date| (date, index))
+        })
+        .collect();
+    dated.sort_by_key(|(date, _)| *date);
+
+    let mut conflict_pairs = Vec::new();
+    for left in 0..dated.len() {
+        for right in (left + 1)..dated.len() {
+            let diff_days = (dated[right].0 - dated[left].0).num_days();
+            if diff_days > 1 {
+                break;
             }
+
+            let (index_a, index_b) = (dated[left].1, dated[right].1);
+            let (pos_a, pos_b) = (positions[&index_a], positions[&index_b]);
+            let (a1, a2, first_pos, second_pos) = if pos_a <= pos_b {
+                (&assessments[index_a], &assessments[index_b], pos_a, pos_b)
+            } else {
+                (&assessments[index_b], &assessments[index_a], pos_b, pos_a)
+            };
+
+            let is_same_day = diff_days == 0;
+            let gap_hours = if is_same_day { 4 } else { 26 };
+            let severity = if is_same_day {
+                "critical".to_string()
+            } else {
+                "warning".to_string()
+            };
+            let message = format!(
+                "Exam schedule cluster: {} ({}) and {} ({}) occur within {} hours! Review early to balance your study load.",
+                a1.course_id, a1.title, a2.course_id, a2.title, gap_hours
+            );
+            let is_mitigated = study_block_ids.contains(a1.id.as_str())
+                || study_block_ids.contains(a2.id.as_str());
+
+            conflict_pairs.push((
+                first_pos,
+                second_pos,
+                ConflictAlert {
+                    assessment_id_a: a1.id.clone(),
+                    assessment_id_b: a2.id.clone(),
+                    course_a: a1.course_id.clone(),
+                    course_b: a2.course_id.clone(),
+                    date_a: a1.date_iso.clone(),
+                    date_b: a2.date_iso.clone(),
+                    gap_hours,
+                    severity,
+                    message,
+                    is_mitigated,
+                },
+            ));
         }
     }
+    conflict_pairs.sort_by_key(|(first_pos, second_pos, _)| (*first_pos, *second_pos));
+    let conflict_alerts: Vec<ConflictAlert> = conflict_pairs
+        .into_iter()
+        .map(|(_, _, alert)| alert)
+        .collect();
 
     // 2. Multi-Source Ingestion Counts
-    let mut sources_count = HashMap::new();
+    let mut sources_count: HashMap<&str, usize> = HashMap::new();
     for a in assessments {
-        let src = if a.source.is_empty() { "Gmail" } else { &a.source };
-        *sources_count.entry(src.to_string()).or_insert(0) += 1;
+        let src = if a.source.is_empty() {
+            "Gmail"
+        } else {
+            a.source.as_str()
+        };
+        *sources_count.entry(src).or_insert(0) += 1;
     }
+    let sources_count: HashMap<String, usize> = sources_count
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), value))
+        .collect();
 
     // 3. Overall Grade & Academic Standing
     let mut completed_grades_count = 0usize;
@@ -848,7 +976,10 @@ pub fn build_dashboard_summary(
         reference_date: ref_date.format("%Y-%m-%d").to_string(),
         next_up,
         upcoming_this_week,
-        all_upcoming: upcoming,
+        all_upcoming: upcoming_indices
+            .iter()
+            .map(|&index| assessments[index].clone())
+            .collect(),
         exam_type_counts,
         study_recommendations,
         total_topics_count,
@@ -864,7 +995,10 @@ pub fn build_google_calendar_template_url(a: &Assessment) -> String {
     let date_clean = a.date_iso.replace('-', "");
     let start_clean = a.start_time.replace(':', "") + "00";
     let end_clean = a.end_time.replace(':', "") + "00";
-    let dates = format!("{}T{}/{}T{}", date_clean, start_clean, date_clean, end_clean);
+    let dates = format!(
+        "{}T{}/{}T{}",
+        date_clean, start_clean, date_clean, end_clean
+    );
 
     let title = format!("[{}] {} ({})", a.course_id, a.title, a.assessment_type);
     let mut details = format!(
@@ -1010,31 +1144,20 @@ fn month_full_name(m: u32) -> &'static str {
 }
 
 pub fn format_12h(hhmm: &str) -> String {
-    let parts: Vec<&str> = hhmm.split(':').collect();
-    if parts.len() != 2 {
+    let Some((hour, minute)) = hhmm.split_once(':') else {
+        return hhmm.to_string();
+    };
+    if minute.contains(':') {
         return hhmm.to_string();
     }
-    let h: u32 = parts[0].parse().unwrap_or(9);
-    let m = parts[1];
+    let h: u32 = hour.parse().unwrap_or(9);
     let ampm = if h >= 12 { "PM" } else { "AM" };
     let h12 = match h {
         0 => 12,
         1..=12 => h,
         _ => h - 12,
     };
-    format!("{}:{} {}", h12, m, ampm)
-}
-
-fn default_course_name(course_id: &str) -> String {
-    match course_id {
-        "CS 101" | "CS101" => "Introduction to Computer Science".to_string(),
-        "MATH 101" | "MATH101" => "Calculus and Linear Algebra".to_string(),
-        "DATA 201" | "DATA201" => "Data Structures and Algorithms".to_string(),
-        "MGMT 100" | "MGMT100" => "Principles of Management".to_string(),
-        "PHYS 101" | "PHYS101" => "Physics for Engineers".to_string(),
-        "GENERAL" => "University Examinations".to_string(),
-        other => format!("Course {}", other),
-    }
+    format!("{}:{} {}", h12, minute, ampm)
 }
 
 fn default_course_palette(course_id: &str) -> (String, String, String) {
@@ -1072,86 +1195,107 @@ fn default_course_palette(course_id: &str) -> (String, String, String) {
     }
 }
 
+/// Formats a study-plan day label. "Today"/"Tomorrow" carry their real calendar
+/// date so students always see the exact reference day being planned.
+fn study_day_display(offset: i32, date: NaiveDate) -> String {
+    match offset {
+        0 => format!("Today · {}", date.format("%a, %b %-d")),
+        1 => format!("Tomorrow · {}", date.format("%a, %b %-d")),
+        _ => date.format("%a, %b %-d").to_string(),
+    }
+}
+
 pub fn build_study_tasks(assessments: &[Assessment], config: &AppConfig) -> StudyTasksPayload {
     let ref_date = current_reference_date();
-    let mut upcoming: Vec<Assessment> = assessments
+    let mut upcoming_indices: Vec<usize> = assessments
         .iter()
-        .filter(|a| a.is_upcoming || a.days_until >= 0)
-        .cloned()
+        .enumerate()
+        .filter(|(_, a)| (a.is_upcoming || a.days_until >= 0) && a.days_until <= 14)
+        .map(|(index, _)| index)
         .collect();
 
     // Sort upcoming by days_until ascending, then priority_score descending
-    upcoming.sort_by(|a, b| {
-        a.days_until
-            .cmp(&b.days_until)
-            .then_with(|| b.priority_score.cmp(&a.priority_score))
+    upcoming_indices.sort_by(|&left_index, &right_index| {
+        let left = &assessments[left_index];
+        let right = &assessments[right_index];
+        left.days_until
+            .cmp(&right.days_until)
+            .then_with(|| right.priority_score.cmp(&left.priority_score))
     });
+
+    let fallback_topics = [
+        "Core Lecture Concepts & Slides Review",
+        "Practice Problem Sets & Exercises",
+        "Mock Revision & Key Formula Summary",
+    ];
 
     let mut readiness_cards = Vec::new();
     let mut all_tasks = Vec::new();
 
-    for a in &upcoming {
-        let topics_list: Vec<String> = if a.topics.is_empty() {
-            vec![
-                "Core Lecture Concepts & Slides Review".to_string(),
-                "Practice Problem Sets & Exercises".to_string(),
-                "Mock Revision & Key Formula Summary".to_string(),
-            ]
+    for &assessment_index in &upcoming_indices {
+        let a = &assessments[assessment_index];
+        let topics_len = if a.topics.is_empty() {
+            fallback_topics.len()
         } else {
-            a.topics.clone()
+            a.topics.len()
         };
 
         let mut completed_count = 0usize;
-        let mut first_uncompleted: Option<String> = None;
+        let mut first_uncompleted: Option<&str> = None;
 
-        for (idx, topic) in topics_list.iter().enumerate() {
+        let max_prep_days = (a.days_until.max(1) - 1).min(5) as i32;
+        let hours_per_topic = (a.estimated_study_hours / (topics_len as f32).max(1.0))
+            .max(0.5)
+            .min(2.5);
+        let hours_rounded = (hours_per_topic * 10.0).round() / 10.0;
+
+        let urgency = if a.days_until <= 1 {
+            "critical".to_string()
+        } else if a.days_until <= 4 {
+            "high".to_string()
+        } else {
+            "normal".to_string()
+        };
+
+        let ai_reasoning = if a.days_until <= 1 {
+            format!(
+                "Immediate exam deadline in {} — high grade impact.",
+                if a.days_until == 0 {
+                    "a few hours"
+                } else {
+                    "24 hours"
+                }
+            )
+        } else if a.days_until <= 4 {
+            "High-priority preparation. Master foundational problem sets before final review."
+                .to_string()
+        } else {
+            "Structured early revision to build retention and confidence.".to_string()
+        };
+
+        for idx in 0..topics_len {
+            let topic = if a.topics.is_empty() {
+                fallback_topics[idx]
+            } else {
+                a.topics[idx].as_str()
+            };
             let key = format!("{}::{}", a.id, idx);
             let is_completed = *config.completed_topics.get(&key).unwrap_or(&false);
             if is_completed {
                 completed_count += 1;
             } else if first_uncompleted.is_none() {
-                first_uncompleted = Some(topic.clone());
+                first_uncompleted = Some(topic);
             }
 
             // Distribute across days based on days_until and topic index
-            let max_prep_days = (a.days_until.max(1) - 1).min(5) as i32;
-            let day_offset = if a.days_until <= 0 {
-                0
-            } else if max_prep_days <= 0 {
+            let day_offset = if a.days_until <= 0 || max_prep_days <= 0 {
                 0
             } else {
                 (idx as i32) % (max_prep_days + 1)
             };
 
             let task_date = ref_date + Duration::days(day_offset as i64);
-            let display_day = match day_offset {
-                0 => "Today".to_string(),
-                1 => "Tomorrow".to_string(),
-                _ => task_date.format("%A, %b %-d").to_string(),
-            };
-
-            let hours_per_topic = (a.estimated_study_hours / (topics_list.len() as f32).max(1.0))
-                .max(0.5)
-                .min(2.5);
-            let hours_rounded = (hours_per_topic * 10.0).round() / 10.0;
-
-            let urgency = if a.days_until <= 1 {
-                "critical".to_string()
-            } else if a.days_until <= 3 {
-                "high".to_string()
-            } else if a.days_until <= 7 {
-                "medium".to_string()
-            } else {
-                "normal".to_string()
-            };
-
-            let ai_reasoning = if a.days_until <= 1 {
-                format!("Immediate exam deadline in {} — high grade impact.", if a.days_until == 0 { "a few hours" } else { "24 hours" })
-            } else if a.days_until <= 3 {
-                format!("High-priority preparation. Master foundational problem sets before final review.")
-            } else {
-                format!("Structured early revision to build retention and confidence.")
-            };
+            let display_day = study_day_display(day_offset, task_date);
 
             let rank_score = a.priority_score.saturating_sub((day_offset as u32) * 5);
 
@@ -1163,14 +1307,14 @@ pub fn build_study_tasks(assessments: &[Assessment], config: &AppConfig) -> Stud
                 course_name: a.course_name.clone(),
                 assessment_title: a.title.clone(),
                 assessment_type: a.assessment_type.clone(),
-                topic: topic.clone(),
+                topic: topic.to_string(),
                 day_offset,
                 target_date_iso: task_date.format("%Y-%m-%d").to_string(),
                 display_day,
                 priority_rank: rank_score,
-                urgency,
+                urgency: urgency.clone(),
                 estimated_hours: hours_rounded,
-                ai_reasoning,
+                ai_reasoning: ai_reasoning.clone(),
                 completed: is_completed,
                 color: a.color.clone(),
                 days_until_assessment: a.days_until,
@@ -1178,10 +1322,10 @@ pub fn build_study_tasks(assessments: &[Assessment], config: &AppConfig) -> Stud
             });
         }
 
-        let readiness_percent = if topics_list.is_empty() {
+        let readiness_percent = if topics_len == 0 {
             100
         } else {
-            ((completed_count as f32 / topics_list.len() as f32) * 100.0).round() as u32
+            ((completed_count as f32 / topics_len as f32) * 100.0).round() as u32
         };
 
         readiness_cards.push(ExamReadinessCard {
@@ -1195,17 +1339,24 @@ pub fn build_study_tasks(assessments: &[Assessment], config: &AppConfig) -> Stud
             days_until: a.days_until,
             readiness_percent,
             completed_count,
-            total_count: topics_list.len(),
+            total_count: topics_len,
             priority_score: a.priority_score,
             color: a.color.clone(),
-            recommended_focus: first_uncompleted.unwrap_or_else(|| "All topics mastered! Complete mock revision.".to_string()),
+            recommended_focus: first_uncompleted
+                .map(str::to_string)
+                .unwrap_or_else(|| "All topics mastered! Complete mock revision.".to_string()),
         });
     }
 
+    let total_tasks = all_tasks.len();
+    let completed_tasks = all_tasks.iter().filter(|t| t.completed).count();
+    let pending_tasks = total_tasks.saturating_sub(completed_tasks);
+    let total_hours = all_tasks.iter().map(|t| t.estimated_hours).sum::<f32>();
+
     // Group tasks by day_offset
     let mut day_map: HashMap<i32, Vec<DailyStudyTask>> = HashMap::new();
-    for task in all_tasks.iter() {
-        day_map.entry(task.day_offset).or_default().push(task.clone());
+    for task in all_tasks {
+        day_map.entry(task.day_offset).or_default().push(task);
     }
 
     // Collect sorted day offsets (from 0 up to 6)
@@ -1222,11 +1373,7 @@ pub fn build_study_tasks(assessments: &[Assessment], config: &AppConfig) -> Stud
     for offset in day_offsets {
         let date = ref_date + Duration::days(offset as i64);
         let date_iso = date.format("%Y-%m-%d").to_string();
-        let display_day = match offset {
-            0 => format!("Today • {}", date.format("%A, %b %-d")),
-            1 => format!("Tomorrow • {}", date.format("%A, %b %-d")),
-            _ => date.format("%A • %b %-d").to_string(),
-        };
+        let display_day = study_day_display(offset, date);
 
         let mut day_tasks = day_map.remove(&offset).unwrap_or_default();
         // Sort within day: uncompleted first, then by priority_rank descending
@@ -1236,10 +1383,7 @@ pub fn build_study_tasks(assessments: &[Assessment], config: &AppConfig) -> Stud
                 .then_with(|| b.priority_rank.cmp(&a.priority_rank))
         });
 
-        let total_estimated_hours = day_tasks
-            .iter()
-            .map(|t| t.estimated_hours)
-            .sum::<f32>();
+        let total_estimated_hours = day_tasks.iter().map(|t| t.estimated_hours).sum::<f32>();
 
         days.push(DailyStudyDayGroup {
             day_offset: offset,
@@ -1250,11 +1394,6 @@ pub fn build_study_tasks(assessments: &[Assessment], config: &AppConfig) -> Stud
             tasks: day_tasks,
         });
     }
-
-    let total_tasks = all_tasks.len();
-    let completed_tasks = all_tasks.iter().filter(|t| t.completed).count();
-    let pending_tasks = total_tasks.saturating_sub(completed_tasks);
-    let total_hours = all_tasks.iter().map(|t| t.estimated_hours).sum::<f32>();
 
     StudyTasksPayload {
         days,
@@ -1282,15 +1421,29 @@ mod tests {
             body: "Class Quiz 1 on Numerical Integration will be held during your scheduled lectures next week (18 October 2026). See https://e-learning.university.edu/mod/quiz/123".to_string(),
         };
         let schedule = load_schedule();
+        let subject_lower = email.subject.to_lowercase();
+        let announcement_body = extract_announcement_body(&email.body);
+        let announcement_lower = announcement_body.to_lowercase();
 
         let start = std::time::Instant::now();
         for _ in 0..1_000 {
-            let res = parse_single_email(&email, &schedule, None, false);
+            let res = parse_single_email(
+                &email,
+                &schedule,
+                None,
+                false,
+                &subject_lower,
+                announcement_body,
+                &announcement_lower,
+            );
             assert!(res.is_some());
         }
         let elapsed = start.elapsed();
         println!("1,000 email parsing iterations took: {:?}", elapsed);
-        assert!(elapsed.as_millis() < 500, "1,000 email parses should complete in under 500ms");
+        assert!(
+            elapsed.as_millis() < 500,
+            "1,000 email parses should complete in under 500ms"
+        );
     }
 
     #[test]
@@ -1377,7 +1530,9 @@ mod tests {
         };
 
         // Mark topic 0 as completed in config
-        config.completed_topics.insert("assess-test-1::0".to_string(), true);
+        config
+            .completed_topics
+            .insert("assess-test-1::0".to_string(), true);
 
         let payload = build_study_tasks(&[assessment], &config);
         assert_eq!(payload.total_tasks, 3);
@@ -1442,7 +1597,8 @@ mod tests {
         assert!(url.contains(&format!("text={}", expected_title_encoded)));
 
         // Location: "University Campus - Room Hall A-110" encoded
-        let expected_loc_encoded = crate::urlencoding::encode("University Campus - Room Hall A-110");
+        let expected_loc_encoded =
+            crate::urlencoding::encode("University Campus - Room Hall A-110");
         assert!(url.contains(&format!("location={}", expected_loc_encoded)));
 
         // Details should contain topics, warnings, study plan, and e-learning link
@@ -1537,7 +1693,8 @@ mod tests {
             ai_inference_note: "".to_string(),
             ai_study_plan: "Review slides 100%!".to_string(),
             estimated_study_hours: 2.0,
-            elearning_url: "https://e-learning.univ.edu/course/view.php?id=99&section=2".to_string(),
+            elearning_url: "https://e-learning.univ.edu/course/view.php?id=99&section=2"
+                .to_string(),
             google_cal_url: "".to_string(),
             gcal_synced: false,
             gcal_event_id: None,
@@ -1558,12 +1715,12 @@ mod tests {
         let url = build_google_calendar_template_url(&assessment);
 
         // Check that special characters like '&', '#', '+', '%' are percent encoded in text/location/details
-        let expected_title_encoded = crate::urlencoding::encode("[DATA & CS] Quiz #1: Trees & Graphs (Class Quiz)");
+        let expected_title_encoded =
+            crate::urlencoding::encode("[DATA & CS] Quiz #1: Trees & Graphs (Class Quiz)");
         assert!(url.contains(&format!("text={}", expected_title_encoded)));
 
-        let expected_location_encoded = crate::urlencoding::encode("University Campus - Room Lab B+C");
+        let expected_location_encoded =
+            crate::urlencoding::encode("University Campus - Room Lab B+C");
         assert!(url.contains(&format!("location={}", expected_location_encoded)));
     }
 }
-
-

@@ -135,21 +135,29 @@ fn default_source_icon() -> String {
     "mail".to_string()
 }
 
+fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
+    let needle = needle.as_bytes();
+    needle.is_empty()
+        || haystack
+            .as_bytes()
+            .windows(needle.len())
+            .any(|window| window.eq_ignore_ascii_case(needle))
+}
+
 impl Assessment {
     pub fn is_teams(&self) -> bool {
         self.id.starts_with("teams-")
-            || self.source.to_lowercase().contains("teams")
-            || self.source.to_lowercase().contains("microsoft")
+            || contains_ascii_case_insensitive(&self.source, "teams")
+            || contains_ascii_case_insensitive(&self.source, "microsoft")
     }
 
     pub fn is_moodle(&self) -> bool {
-        self.id.starts_with("moodle-")
-            || self.source.to_lowercase().contains("moodle")
+        self.id.starts_with("moodle-") || contains_ascii_case_insensitive(&self.source, "moodle")
     }
 
     pub fn is_classroom(&self) -> bool {
         self.id.starts_with("classroom-")
-            || self.source.to_lowercase().contains("classroom")
+            || contains_ascii_case_insensitive(&self.source, "classroom")
     }
 
     pub fn is_source_enabled(&self, config: &AppConfig) -> bool {
@@ -425,4 +433,3 @@ pub struct StudyTasksPayload {
     pub total_hours: f32,
     pub ai_generated: bool,
 }
-

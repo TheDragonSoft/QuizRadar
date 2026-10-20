@@ -1,13 +1,27 @@
 use crate::auth::get_valid_access_token;
 use crate::models::CachedEmail;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use futures::stream::{self, StreamExt};
 use regex::Regex;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::sync::LazyLock;
+use std::time::Duration;
 
 const CACHE_FILE: &str = "quiz_emails_cache.json";
+const MAX_CACHED_EMAILS: usize = 500;
+const MAX_BODY_CHARS: usize = 4500;
+const MAX_ENCODED_BODY_CHARS: usize = MAX_BODY_CHARS * 4;
+const CACHED_REFRESH_LIMIT: usize = 10;
+
+static GMAIL_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(30))
+        .build()
+        .expect("Failed to build shared Gmail HTTP client")
+});
 
 // Static precompiled regexes to avoid re-compilation overhead during HTML stripping
 static RE_STYLE: LazyLock<Regex> =
@@ -25,7 +39,16 @@ pub fn load_cached_emails() -> Vec<CachedEmail> {
 }
 
 pub fn save_cached_emails(emails: &[CachedEmail]) {
-    if let Ok(json) = serde_json::to_string_pretty(emails) {
+    if emails.len() > MAX_CACHED_EMAILS {
+        let mut newest: Vec<&CachedEmail> = emails.iter().collect();
+        newest.sort_by(|a, b| b.id.cmp(&a.id));
+        newest.truncate(MAX_CACHED_EMAILS);
+        if let Ok(json) = serde_json::to_string(&newest) {
+            let _ = fs::write(CACHE_FILE, json);
+        }
+        return;
+    }
+    if let Ok(json) = serde_json::to_string(emails) {
         let _ = fs::write(CACHE_FILE, json);
     }
 }
@@ -48,6 +71,27 @@ fn decode_base64url(input: &str) -> String {
     String::new()
 }
 
+fn decode_base64url_limited(input: &str, max_encoded_chars: usize) -> String {
+    let trimmed = input.trim();
+    if trimmed.len() <= max_encoded_chars {
+        return decode_base64url(trimmed);
+    }
+    let mut end = max_encoded_chars;
+    while end > 0 && !trimmed.is_char_boundary(end) {
+        end -= 1;
+    }
+    decode_base64url(&trimmed[..end])
+}
+
+fn truncate_trimmed(text: &str, max_chars: usize) -> String {
+    let trimmed = text.trim();
+    let mut out = String::with_capacity(trimmed.len().min(max_chars.saturating_mul(4)));
+    for ch in trimmed.chars().take(max_chars) {
+        out.push(ch);
+    }
+    out
+}
+
 fn strip_html_tags(html: &str) -> String {
     let without_scripts = RE_STYLE.replace_all(html, " ");
     let plain = RE_TAGS.replace_all(&without_scripts, " ");
@@ -62,61 +106,153 @@ fn strip_html_tags(html: &str) -> String {
 }
 
 fn extract_mime_body(payload: &Value) -> String {
-    let mut plain_acc = String::new();
+    fn walk(node: &Value, html_acc: &mut String) -> Option<String> {
+        if let Some(data) = node
+            .get("body")
+            .and_then(|b| b.get("data"))
+            .and_then(|d| d.as_str())
+        {
+            let mime = node.get("mimeType").and_then(|m| m.as_str()).unwrap_or("");
+            let decoded = decode_base64url_limited(data, MAX_ENCODED_BODY_CHARS);
+            if mime == "text/html" {
+                if html_acc.len() < MAX_BODY_CHARS * 4 {
+                    let stripped = strip_html_tags(&decoded);
+                    if !stripped.is_empty() {
+                        if !html_acc.is_empty() {
+                            html_acc.push('\n');
+                        }
+                        html_acc.push_str(&stripped);
+                    }
+                }
+            } else {
+                let text = truncate_trimmed(&decoded, MAX_BODY_CHARS);
+                if !text.is_empty() {
+                    return Some(text);
+                }
+            }
+        }
+
+        if let Some(parts) = node.get("parts").and_then(|p| p.as_array()) {
+            for part in parts {
+                if let Some(text) = walk(part, html_acc) {
+                    return Some(text);
+                }
+            }
+        }
+        None
+    }
+
     let mut html_acc = String::new();
+    if let Some(plain) = walk(payload, &mut html_acc) {
+        return plain;
+    }
+    truncate_trimmed(&html_acc, MAX_BODY_CHARS)
+}
 
-    if let Some(parts) = payload.get("parts").and_then(|p| p.as_array()) {
-        for part in parts {
-            let mime = part.get("mimeType").and_then(|m| m.as_str()).unwrap_or("");
-            if let Some(data) = part
-                .get("body")
-                .and_then(|b| b.get("data"))
-                .and_then(|d| d.as_str())
-            {
-                let decoded = decode_base64url(data);
-                if mime == "text/plain" {
-                    plain_acc.push_str(&decoded);
-                    plain_acc.push('\n');
-                } else if mime == "text/html" {
-                    html_acc.push_str(&strip_html_tags(&decoded));
-                    html_acc.push('\n');
-                }
+fn parse_gmail_message(msg_id: String, msg: &Value) -> CachedEmail {
+    let null_payload = Value::Null;
+    let payload = msg.get("payload").unwrap_or(&null_payload);
+
+    let mut subject = "(No Subject)".to_string();
+    let mut from = "(Unknown Sender)".to_string();
+    let mut date = String::new();
+
+    if let Some(headers) = payload.get("headers").and_then(|h| h.as_array()) {
+        for h in headers {
+            let name = h.get("name").and_then(|n| n.as_str()).unwrap_or("");
+            let val = h.get("value").and_then(|v| v.as_str()).unwrap_or("");
+            if name.eq_ignore_ascii_case("subject") {
+                subject = val.to_string();
+            } else if name.eq_ignore_ascii_case("from") {
+                from = val.to_string();
+            } else if name.eq_ignore_ascii_case("date") {
+                date = val.to_string();
             }
-            if part.get("parts").is_some() {
-                let nested = extract_mime_body(part);
-                if !nested.is_empty() {
-                    plain_acc.push_str(&nested);
-                    plain_acc.push('\n');
-                }
-            }
-        }
-    } else if let Some(data) = payload
-        .get("body")
-        .and_then(|b| b.get("data"))
-        .and_then(|d| d.as_str())
-    {
-        let decoded = decode_base64url(data);
-        let mime = payload
-            .get("mimeType")
-            .and_then(|m| m.as_str())
-            .unwrap_or("");
-        if mime == "text/html" {
-            html_acc.push_str(&strip_html_tags(&decoded));
-        } else {
-            plain_acc.push_str(&decoded);
         }
     }
 
-    if !plain_acc.trim().is_empty() {
-        plain_acc.trim().chars().take(4500).collect()
-    } else {
-        html_acc.trim().chars().take(4500).collect()
+    let snippet = msg
+        .get("snippet")
+        .and_then(|s| s.as_str())
+        .unwrap_or("")
+        .to_string();
+    let body = extract_mime_body(payload);
+
+    CachedEmail {
+        id: msg_id,
+        subject,
+        from,
+        date,
+        snippet,
+        body,
     }
+}
+
+async fn search_message_ids(
+    client: &reqwest::Client,
+    token: &str,
+    query: &str,
+) -> Result<Vec<String>, String> {
+    let url = format!(
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages?q={}&maxResults=35",
+        crate::urlencoding::encode(query)
+    );
+    let resp = client
+        .get(&url)
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(|e| format!("Gmail search failed: {}", e))?;
+    if !resp.status().is_success() {
+        return Err(format!("Gmail search failed (HTTP {})", resp.status()));
+    }
+    let v = resp
+        .json::<Value>()
+        .await
+        .map_err(|e| format!("Gmail search failed: {}", e))?;
+    let mut ids = Vec::new();
+    if let Some(arr) = v.get("messages").and_then(|m| m.as_array()) {
+        for item in arr {
+            if let Some(id) = item.get("id").and_then(|x| x.as_str()) {
+                ids.push(id.to_string());
+            }
+        }
+    }
+    Ok(ids)
+}
+
+async fn fetch_gmail_message(
+    client: &reqwest::Client,
+    token: &str,
+    msg_id: String,
+) -> (String, Option<CachedEmail>) {
+    let url = format!(
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages/{}?format=full",
+        msg_id
+    );
+    let mut parsed = None;
+    if let Ok(resp) = client.get(&url).bearer_auth(token).send().await {
+        if resp.status().is_success() {
+            if let Ok(msg) = resp.json::<Value>().await {
+                parsed = Some(parse_gmail_message(msg_id.clone(), &msg));
+            }
+        }
+    }
+    (msg_id, parsed)
+}
+
+fn cached_email_equals(a: &CachedEmail, b: &CachedEmail) -> bool {
+    a.id == b.id
+        && a.subject == b.subject
+        && a.from == b.from
+        && a.date == b.date
+        && a.snippet == b.snippet
+        && a.body == b.body
 }
 
 pub async fn sync_gmail_messages() -> Result<Vec<CachedEmail>, String> {
     let token = get_valid_access_token().await?;
-    let client = reqwest::Client::new();
+    let client = &*GMAIL_HTTP_CLIENT;
 
     let queries = [
         "quiz",
@@ -126,28 +262,36 @@ pub async fn sync_gmail_messages() -> Result<Vec<CachedEmail>, String> {
         "from:canvas OR from:blackboard OR from:gradescope OR from:classroom.google.com",
     ];
 
+    let query_results = futures::future::join_all(
+        queries
+            .iter()
+            .map(|query| search_message_ids(client, &token.token, query)),
+    )
+    .await;
+
     let mut message_ids = Vec::new();
     let mut seen_ids = HashSet::new();
-
-    for q in queries {
-        let url = format!(
-            "https://gmail.googleapis.com/gmail/v1/users/me/messages?q={}&maxResults=35",
-            crate::urlencoding::encode(q)
-        );
-        if let Ok(resp) = client.get(&url).bearer_auth(&token.token).send().await {
-            if resp.status().is_success() {
-                if let Ok(v) = resp.json::<Value>().await {
-                    if let Some(arr) = v.get("messages").and_then(|m| m.as_array()) {
-                        for item in arr {
-                            if let Some(id) = item.get("id").and_then(|x| x.as_str()) {
-                                if seen_ids.insert(id.to_string()) {
-                                    message_ids.push(id.to_string());
-                                }
-                            }
-                        }
+    let mut first_error: Option<String> = None;
+    for res in query_results {
+        match res {
+            Ok(ids) => {
+                for id in ids {
+                    if seen_ids.insert(id.clone()) {
+                        message_ids.push(id);
                     }
                 }
             }
+            Err(e) => {
+                if first_error.is_none() {
+                    first_error = Some(e);
+                }
+            }
+        }
+    }
+
+    if message_ids.is_empty() {
+        if let Some(err) = first_error {
+            return Err(err);
         }
     }
 
@@ -156,68 +300,43 @@ pub async fn sync_gmail_messages() -> Result<Vec<CachedEmail>, String> {
         existing.into_iter().map(|e| (e.id.clone(), e)).collect();
 
     // Fetch messages not yet cached; refresh at most the 10 newest cached ones
-    let mut fetched_count = 0;
-    for msg_id in message_ids {
-        if by_id.contains_key(&msg_id) && fetched_count >= 10 {
-            continue;
-        }
-        let url = format!(
-            "https://gmail.googleapis.com/gmail/v1/users/me/messages/{}?format=full",
-            msg_id
-        );
-        if let Ok(resp) = client.get(&url).bearer_auth(&token.token).send().await {
-            if resp.status().is_success() {
-                if let Ok(msg) = resp.json::<Value>().await {
-                    let payload = msg.get("payload").cloned().unwrap_or(Value::Null);
-                    let mut subject = "(No Subject)".to_string();
-                    let mut from = "(Unknown Sender)".to_string();
-                    let mut date = String::new();
-
-                    if let Some(headers) = payload.get("headers").and_then(|h| h.as_array()) {
-                        for h in headers {
-                            let name = h
-                                .get("name")
-                                .and_then(|n| n.as_str())
-                                .unwrap_or("")
-                                .to_lowercase();
-                            let val = h.get("value").and_then(|v| v.as_str()).unwrap_or("");
-                            match name.as_str() {
-                                "subject" => subject = val.to_string(),
-                                "from" => from = val.to_string(),
-                                "date" => date = val.to_string(),
-                                _ => {}
-                            }
-                        }
-                    }
-
-                    let snippet = msg
-                        .get("snippet")
-                        .and_then(|s| s.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let body = extract_mime_body(&payload);
-
-                    by_id.insert(
-                        msg_id.clone(),
-                        CachedEmail {
-                            id: msg_id,
-                            subject,
-                            from,
-                            date,
-                            snippet,
-                            body,
-                        },
-                    );
-                    fetched_count += 1;
-                }
+    let mut to_fetch = Vec::new();
+    let mut cached_refresh_count = 0usize;
+    for msg_id in &message_ids {
+        if by_id.contains_key(msg_id) {
+            if cached_refresh_count >= CACHED_REFRESH_LIMIT {
+                continue;
             }
+            cached_refresh_count += 1;
+        }
+        to_fetch.push(msg_id.clone());
+    }
+
+    let mut fetched: Vec<(String, Option<CachedEmail>)> = stream::iter(to_fetch)
+        .map(|msg_id| fetch_gmail_message(client, &token.token, msg_id))
+        .buffer_unordered(8)
+        .collect()
+        .await;
+    fetched.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut cache_changed = false;
+    for (msg_id, parsed) in fetched {
+        if let Some(email) = parsed {
+            match by_id.get(&msg_id) {
+                Some(previous) if cached_email_equals(previous, &email) => {}
+                _ => cache_changed = true,
+            }
+            by_id.insert(msg_id, email);
         }
     }
 
     let mut all_emails: Vec<CachedEmail> = by_id.into_values().collect();
     // Preserve stable ordering (newest first roughly by id hex descending)
     all_emails.sort_by(|a, b| b.id.cmp(&a.id));
-    save_cached_emails(&all_emails);
+
+    if cache_changed || all_emails.len() > MAX_CACHED_EMAILS {
+        save_cached_emails(&all_emails);
+    }
     Ok(all_emails)
 }
 

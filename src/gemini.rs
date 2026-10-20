@@ -1,15 +1,36 @@
 use crate::auth::get_valid_access_token;
 use crate::models::{
-    AppConfig, Assessment, CachedEmail, DailyStudyDayGroup, DailyStudyTask,
-    DiscoveredAcademicData, ExamReadinessCard, PracticeQuestion, PracticeQuizPayload, ScheduleData, StudyTasksPayload,
+    AppConfig, Assessment, CachedEmail, DailyStudyDayGroup, DailyStudyTask, DiscoveredAcademicData,
+    ExamReadinessCard, PracticeQuestion, PracticeQuizPayload, ScheduleData, StudyTasksPayload,
 };
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
+use std::sync::LazyLock;
 
 const GEMINI_CACHE_FILE: &str = "data/gemini_parsed_cache.json";
+
+/// Shared Gemini HTTP client with hard timeouts so a stalled request can never
+/// block the sync pipeline or UI endpoints forever.
+static GEMINI_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .expect("Failed to build shared Gemini HTTP client")
+});
+
+/// Redacts Gemini API key material from any error text before it is logged or
+/// surfaced. The API URL embeds `?key=...`, and plain-text error strings from
+/// reqwest or the Gemini REST API may echo that URL back verbatim.
+fn redact_key_in_error(mut msg: String) -> String {
+    if let Some(pos) = msg.find("key=") {
+        msg.replace_range(pos.., "key=REDACTED");
+    }
+    msg
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeminiExtractedAssessment {
@@ -53,7 +74,14 @@ pub async fn analyze_email_with_gemini(
     api_key: Option<&str>,
 ) -> Option<GeminiExtractedAssessment> {
     let schedule_json = serde_json::to_string(&schedule.slots).unwrap_or_default();
+    analyze_email_with_gemini_prepared(email, &schedule_json, api_key).await
+}
 
+pub(crate) async fn analyze_email_with_gemini_prepared(
+    email: &CachedEmail,
+    schedule_json: &str,
+    api_key: Option<&str>,
+) -> Option<GeminiExtractedAssessment> {
     let prompt = format!(
         r#"You are an intelligent university academic assistant inside QuizRadar.
 Analyze the following university announcement email and determine the exact assessment details by cross-referencing the email's sent date and body with the student's enrolled weekly class schedule.
@@ -91,7 +119,6 @@ Return ONLY a valid JSON object matching this exact structure:
   "ai_study_plan": "Specific, actionable 2-sentence study recommendation for these topics.",
   "estimated_study_hours": 3.5
 }}"#,
-        schedule_json = schedule_json,
         subject = email.subject,
         from = email.from,
         date = email.date,
@@ -108,7 +135,7 @@ Return ONLY a valid JSON object matching this exact structure:
         }
     });
 
-    let client = reqwest::Client::new();
+    let client = GEMINI_HTTP_CLIENT.clone();
 
     // 1. Try explicit Gemini API key if provided by user or environment
     let env_key = std::env::var("GEMINI_API_KEY")
@@ -124,7 +151,13 @@ Return ONLY a valid JSON object matching this exact structure:
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={}",
             crate::urlencoding::encode(&key)
         );
-        if let Ok(resp) = client.post(&url).json(&payload).send().await {
+        if let Ok(resp) = client
+            .post(&url)
+            .timeout(std::time::Duration::from_secs(25))
+            .json(&payload)
+            .send()
+            .await
+        {
             if resp.status().is_success() {
                 if let Ok(v) = resp.json::<Value>().await {
                     if let Some(parsed) = extract_candidate_json(&v) {
@@ -140,6 +173,7 @@ Return ONLY a valid JSON object matching this exact structure:
         let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
         if let Ok(resp) = client
             .post(url)
+            .timeout(std::time::Duration::from_secs(25))
             .bearer_auth(&stored.token)
             .json(&payload)
             .send()
@@ -267,7 +301,7 @@ Return ONLY a valid JSON object matching the exact structure above with no markd
         }
     });
 
-    let client = reqwest::Client::new();
+    let client = GEMINI_HTTP_CLIENT.clone();
 
     let env_key = std::env::var("GEMINI_API_KEY")
         .ok()
@@ -296,10 +330,16 @@ Return ONLY a valid JSON object matching the exact structure above with no markd
                 } else {
                     let status = resp.status();
                     let err_txt = resp.text().await.unwrap_or_default();
-                    eprintln!("Gemini API non-200 ({status}): {err_txt}. Falling back to on-device schedule extractor.");
+                    eprintln!(
+                        "Gemini API non-200 ({status}): {}. Falling back to on-device schedule extractor.",
+                        redact_key_in_error(err_txt)
+                    );
                 }
             }
-            Err(e) => eprintln!("Failed to connect to Gemini API: {e}. Falling back to on-device schedule extractor."),
+            Err(e) => eprintln!(
+                "Failed to connect to Gemini API: {}. Falling back to on-device schedule extractor.",
+                redact_key_in_error(e.to_string())
+            ),
         }
     }
 
@@ -373,7 +413,8 @@ fn post_process_extracted_schedule(sched: &mut ScheduleData) {
             slot.id = format!("slot-{}", idx + 1);
         }
         slot.day_index = normalize_day_index(&slot.day);
-        if slot.display_time.is_empty() && !slot.start_time.is_empty() && !slot.end_time.is_empty() {
+        if slot.display_time.is_empty() && !slot.start_time.is_empty() && !slot.end_time.is_empty()
+        {
             slot.display_time = format!("{} – {}", slot.start_time, slot.end_time);
         }
         if slot.course_name.is_empty() {
@@ -456,10 +497,7 @@ pub async fn rank_and_plan_with_gemini(
     };
 
     let ref_date = crate::parser::current_reference_date();
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(25))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = GEMINI_HTTP_CLIENT.clone();
 
     let prompt = r##"
 You are an elite University Academic Advisor & Cognitive Study Strategist.
@@ -533,10 +571,19 @@ RULES:
         api_key
     );
 
-    let resp = client.post(&url).json(&payload).send().await.map_err(|e| e.to_string())?;
+    let resp = client
+        .post(&url)
+        .timeout(std::time::Duration::from_secs(25))
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| redact_key_in_error(e.to_string()))?;
     if !resp.status().is_success() {
         let err_text = resp.text().await.unwrap_or_default();
-        return Err(format!("Gemini API error: {}", err_text));
+        return Err(redact_key_in_error(format!(
+            "Gemini API error: {}",
+            err_text
+        )));
     }
 
     let json_val: Value = resp.json().await.map_err(|e| e.to_string())?;
@@ -557,13 +604,18 @@ RULES:
         .trim_end_matches("```")
         .trim();
 
-    let raw_plan: GeminiPlanRawResponse = serde_json::from_str(cleaned).map_err(|e| e.to_string())?;
+    let raw_plan: GeminiPlanRawResponse =
+        serde_json::from_str(cleaned).map_err(|e| e.to_string())?;
 
     // Map raw readiness cards and match colors from assessments
     let mut readiness_cards = Vec::new();
     for r in raw_plan.readiness_cards {
-        let matching_a = assessments.iter().find(|a| a.id == r.assessment_id || a.course_id == r.course_id);
-        let color = matching_a.map(|a| a.color.clone()).unwrap_or_else(|| "#1a73e8".to_string());
+        let matching_a = assessments
+            .iter()
+            .find(|a| a.id == r.assessment_id || a.course_id == r.course_id);
+        let color = matching_a
+            .map(|a| a.color.clone())
+            .unwrap_or_else(|| "#1a73e8".to_string());
         let date_iso = if !r.date_iso.is_empty() {
             r.date_iso
         } else {
@@ -572,16 +624,24 @@ RULES:
         let display_date = if !r.display_date.is_empty() {
             r.display_date
         } else {
-            matching_a.map(|a| a.display_time.clone()).unwrap_or_default()
+            matching_a
+                .map(|a| a.display_time.clone())
+                .unwrap_or_default()
         };
         let days_until = matching_a.map(|a| a.days_until).unwrap_or(r.days_until);
         let total_count = matching_a.map(|a| a.topics.len()).unwrap_or(3);
-        let completed_count = matching_a.map(|a| {
-            a.topics.iter().enumerate().filter(|(idx, _)| {
-                let key = format!("{}::{}", a.id, idx);
-                *config.completed_topics.get(&key).unwrap_or(&false)
-            }).count()
-        }).unwrap_or(0);
+        let completed_count = matching_a
+            .map(|a| {
+                a.topics
+                    .iter()
+                    .enumerate()
+                    .filter(|(idx, _)| {
+                        let key = format!("{}::{}", a.id, idx);
+                        *config.completed_topics.get(&key).unwrap_or(&false)
+                    })
+                    .count()
+            })
+            .unwrap_or(0);
 
         let readiness_percent = if total_count > 0 {
             ((completed_count as f32 / total_count as f32) * 100.0).round() as u32
@@ -610,8 +670,12 @@ RULES:
     // Map raw tasks
     let mut all_tasks = Vec::new();
     for (idx, t) in raw_plan.tasks.into_iter().enumerate() {
-        let matching_a = assessments.iter().find(|a| a.id == t.assessment_id || a.course_id == t.course_id);
-        let color = matching_a.map(|a| a.color.clone()).unwrap_or_else(|| "#1a73e8".to_string());
+        let matching_a = assessments
+            .iter()
+            .find(|a| a.id == t.assessment_id || a.course_id == t.course_id);
+        let color = matching_a
+            .map(|a| a.color.clone())
+            .unwrap_or_else(|| "#1a73e8".to_string());
         let days_until = matching_a.map(|a| a.days_until).unwrap_or(3);
         let assessment_date = matching_a.map(|a| a.date_iso.clone()).unwrap_or_default();
 
@@ -623,7 +687,13 @@ RULES:
             _ => task_date.format("%A, %b %-d").to_string(),
         };
 
-        let topic_idx = matching_a.and_then(|a| a.topics.iter().position(|top| top.eq_ignore_ascii_case(&t.topic))).unwrap_or(idx);
+        let topic_idx = matching_a
+            .and_then(|a| {
+                a.topics
+                    .iter()
+                    .position(|top| top.eq_ignore_ascii_case(&t.topic))
+            })
+            .unwrap_or(idx);
         let key = format!("{}::{}", t.assessment_id, topic_idx);
         let completed = *config.completed_topics.get(&key).unwrap_or(&false);
 
@@ -640,7 +710,11 @@ RULES:
             target_date_iso: task_date.format("%Y-%m-%d").to_string(),
             display_day,
             priority_rank: t.priority_rank,
-            urgency: if t.urgency.is_empty() { "normal".to_string() } else { t.urgency },
+            urgency: if t.urgency.is_empty() {
+                "normal".to_string()
+            } else {
+                t.urgency
+            },
             estimated_hours: t.estimated_hours,
             ai_reasoning: t.ai_reasoning,
             completed,
@@ -653,7 +727,10 @@ RULES:
     // Group tasks by day_offset
     let mut day_map: HashMap<i32, Vec<DailyStudyTask>> = HashMap::new();
     for task in all_tasks.iter() {
-        day_map.entry(task.day_offset).or_default().push(task.clone());
+        day_map
+            .entry(task.day_offset)
+            .or_default()
+            .push(task.clone());
     }
 
     let mut day_offsets: Vec<i32> = day_map.keys().cloned().collect();
@@ -752,7 +829,7 @@ Return ONLY a JSON array of 5 objects matching this exact structure:
         }
     });
 
-    let client = reqwest::Client::new();
+    let client = GEMINI_HTTP_CLIENT.clone();
     let env_key = std::env::var("GEMINI_API_KEY")
         .ok()
         .or_else(|| std::env::var("GOOGLE_API_KEY").ok());
@@ -785,7 +862,13 @@ Return ONLY a JSON array of 5 objects matching this exact structure:
 
     if let Ok(stored) = get_valid_access_token().await {
         let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
-        if let Ok(resp) = client.post(url).bearer_auth(&stored.token).json(&payload).send().await {
+        if let Ok(resp) = client
+            .post(url)
+            .bearer_auth(&stored.token)
+            .json(&payload)
+            .send()
+            .await
+        {
             if resp.status().is_success() {
                 if let Ok(v) = resp.json::<Value>().await {
                     if let Some(questions) = parse_practice_questions_json(&v) {
@@ -832,7 +915,9 @@ fn parse_practice_questions_json(val: &Value) -> Option<Vec<PracticeQuestion>> {
     // Try finding JSON array substring
     if let (Some(start), Some(end)) = (candidate_text.find('['), candidate_text.rfind(']')) {
         if start < end {
-            if let Ok(list) = serde_json::from_str::<Vec<PracticeQuestion>>(&candidate_text[start..=end]) {
+            if let Ok(list) =
+                serde_json::from_str::<Vec<PracticeQuestion>>(&candidate_text[start..=end])
+            {
                 if !list.is_empty() {
                     return Some(list);
                 }
@@ -1142,9 +1227,7 @@ pub async fn explore_and_extract_academic_universe(
         chrono::Local::now().date_naive().format("%A, %d %B %Y"),
         format!(
             "{}\n\n=== RAW SOURCE CONTEXT ({}) ===\n{}",
-            ACADEMIC_DISCOVERY_PROMPT_TEMPLATE,
-            source_name,
-            raw_context
+            ACADEMIC_DISCOVERY_PROMPT_TEMPLATE, source_name, raw_context
         )
     );
 
@@ -1158,7 +1241,7 @@ pub async fn explore_and_extract_academic_universe(
         }
     });
 
-    let client = reqwest::Client::new();
+    let client = GEMINI_HTTP_CLIENT.clone();
     let env_key = std::env::var("GEMINI_API_KEY")
         .ok()
         .or_else(|| std::env::var("GOOGLE_API_KEY").ok());
@@ -1188,6 +1271,7 @@ pub async fn explore_and_extract_academic_universe(
             let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
             if let Ok(resp) = client
                 .post(url)
+                .timeout(std::time::Duration::from_secs(25))
                 .bearer_auth(&stored.token)
                 .json(&payload)
                 .send()

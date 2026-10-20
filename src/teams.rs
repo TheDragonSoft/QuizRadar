@@ -1,10 +1,293 @@
-﻿use crate::models::{AppConfig, Assessment, Course, ScheduleData, ScheduleSlot};
+use crate::models::{AppConfig, Assessment, Course, ScheduleData, ScheduleSlot};
+use futures::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
+use std::sync::LazyLock;
 
 pub const DEFAULT_MS_CLIENT_ID: &str = "14d82eec-204b-4c2f-b7e8-296a70dab67e"; // Official Microsoft Graph Command Line Tools
 pub const MS_TOKEN_FILE: &str = "microsoft_token.json";
+pub const GRAPH_MAX_PAGES: usize = 10;
+
+/// Shared Microsoft Graph HTTP client with bounded timeouts so a hung Graph
+/// request can never stall the sync pipeline forever.
+pub static GRAPH_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .expect("Failed to build shared Microsoft Graph HTTP client")
+});
+
+/// Fetch a Graph collection endpoint, transparently following `@odata.nextLink`
+/// (up to GRAPH_MAX_PAGES) and concatenating every `value` array into one list.
+pub async fn graph_get_all_pages(token: &str, first_url: &str) -> Vec<Value> {
+    let mut items = Vec::new();
+    let mut url = first_url.to_string();
+    for _ in 0..GRAPH_MAX_PAGES {
+        let resp = match GRAPH_HTTP_CLIENT.get(&url).bearer_auth(token).send().await {
+            Ok(r) => r,
+            Err(_) => break,
+        };
+        if !resp.status().is_success() {
+            break;
+        }
+        let val = match resp.json::<Value>().await {
+            Ok(v) => v,
+            Err(_) => break,
+        };
+        if let Some(arr) = val.get("value").and_then(|a| a.as_array()) {
+            items.extend(arr.iter().cloned());
+        }
+        match val
+            .get("@odata.nextLink")
+            .and_then(|n| n.as_str())
+            .map(|s| s.to_string())
+        {
+            Some(next) if next != url => url = next,
+            _ => break,
+        }
+    }
+    items
+}
+
+#[derive(Debug, Default)]
+struct TeamBundle {
+    id: String,
+    name: String,
+    desc: String,
+    channels: Vec<String>,
+    tabs: Vec<String>,
+    files: Vec<String>,
+    discoveries: Vec<String>,
+    conversations: Vec<String>,
+}
+
+async fn fetch_team_channels_and_tabs(token: &str, team_id: &str) -> (Vec<String>, Vec<String>) {
+    if team_id.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+
+    let channels_url = format!(
+        "https://graph.microsoft.com/v1.0/teams/{}/channels",
+        team_id
+    );
+    let items = graph_get_all_pages(token, &channels_url).await;
+    let mut channels = Vec::with_capacity(items.len());
+    let mut channel_refs = Vec::with_capacity(items.len());
+    for channel in &items {
+        let channel_id = channel
+            .get("id")
+            .and_then(|i| i.as_str())
+            .unwrap_or_default();
+        let channel_name = channel
+            .get("displayName")
+            .and_then(|n| n.as_str())
+            .unwrap_or_default();
+        let channel_email = channel
+            .get("email")
+            .and_then(|e| e.as_str())
+            .unwrap_or_default();
+        channels.push(format!(
+            "Channel: {} (Email: {})",
+            channel_name, channel_email
+        ));
+        if !channel_id.is_empty() {
+            channel_refs.push((channel_id.to_string(), channel_name.to_string()));
+        }
+    }
+
+    let tab_groups = stream::iter(channel_refs)
+        .map(|(channel_id, channel_name)| async move {
+            let tabs_url = format!(
+                "https://graph.microsoft.com/v1.0/teams/{}/channels/{}/tabs",
+                team_id, channel_id
+            );
+            graph_get_all_pages(token, &tabs_url)
+                .await
+                .iter()
+                .filter_map(|tab| {
+                    tab.get("displayName")
+                        .and_then(|n| n.as_str())
+                        .map(|tab_name| format!("{} (Channel: {})", tab_name, channel_name))
+                })
+                .collect::<Vec<_>>()
+        })
+        .buffered(3)
+        .collect::<Vec<Vec<String>>>()
+        .await;
+
+    (channels, tab_groups.into_iter().flatten().collect())
+}
+
+enum DriveEntry {
+    Direct {
+        file: String,
+        discovery: String,
+    },
+    Folder {
+        id: String,
+        name: String,
+        team_name: String,
+    },
+}
+
+async fn fetch_team_drive(
+    token: &str,
+    team_id: &str,
+    team_name: &str,
+) -> (Vec<String>, Vec<String>) {
+    if team_id.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+
+    let drive_url = format!(
+        "https://graph.microsoft.com/v1.0/groups/{}/drive/root/children",
+        team_id
+    );
+    let items = graph_get_all_pages(token, &drive_url).await;
+    let mut entries = Vec::with_capacity(items.len());
+    for item in &items {
+        let item_id = item.get("id").and_then(|i| i.as_str()).unwrap_or_default();
+        let item_name = item
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or_default();
+        let item_size = item.get("size").and_then(|s| s.as_i64()).unwrap_or(0);
+        let is_folder = item.get("folder").is_some();
+        let modified = item
+            .get("lastModifiedDateTime")
+            .and_then(|m| m.as_str())
+            .unwrap_or_default();
+
+        if is_folder && !item_id.is_empty() {
+            entries.push(DriveEntry::Folder {
+                id: item_id.to_string(),
+                name: item_name.to_string(),
+                team_name: team_name.to_string(),
+            });
+        } else {
+            entries.push(DriveEntry::Direct {
+                file: format!(
+                    "{} (size: {} KB, uploaded: {})",
+                    item_name,
+                    item_size / 1024,
+                    modified
+                ),
+                discovery: format!("{}: {}", team_name, item_name),
+            });
+        }
+    }
+
+    let groups = stream::iter(entries)
+        .map(|entry| async move {
+            match entry {
+                DriveEntry::Direct { file, discovery } => (vec![file], vec![discovery]),
+                DriveEntry::Folder {
+                    id,
+                    name,
+                    team_name,
+                } => {
+                    let sub_url = format!(
+                        "https://graph.microsoft.com/v1.0/groups/{}/drive/items/{}/children",
+                        team_id, id
+                    );
+                    let sub_items = graph_get_all_pages(token, &sub_url).await;
+                    let mut files = Vec::with_capacity(sub_items.len());
+                    let mut discoveries = Vec::with_capacity(sub_items.len());
+                    for sub in &sub_items {
+                        let sub_name = sub.get("name").and_then(|n| n.as_str()).unwrap_or_default();
+                        let sub_size = sub.get("size").and_then(|s| s.as_i64()).unwrap_or(0);
+                        let sub_modified = sub
+                            .get("lastModifiedDateTime")
+                            .and_then(|m| m.as_str())
+                            .unwrap_or_default();
+                        files.push(format!(
+                            "{}/{} (size: {} KB, uploaded: {})",
+                            name,
+                            sub_name,
+                            sub_size / 1024,
+                            sub_modified
+                        ));
+                        discoveries.push(format!("{}: {}", team_name, sub_name));
+                    }
+                    (files, discoveries)
+                }
+            }
+        })
+        .buffered(3)
+        .collect::<Vec<(Vec<String>, Vec<String>)>>()
+        .await;
+
+    let mut files = Vec::new();
+    let mut discoveries = Vec::new();
+    for (group_files, group_discoveries) in groups {
+        files.extend(group_files);
+        discoveries.extend(group_discoveries);
+    }
+    (files, discoveries)
+}
+
+async fn fetch_team_conversations(token: &str, team_id: &str) -> Vec<String> {
+    if team_id.is_empty() {
+        return Vec::new();
+    }
+
+    let conversations_url = format!(
+        "https://graph.microsoft.com/v1.0/groups/{}/conversations",
+        team_id
+    );
+    graph_get_all_pages(token, &conversations_url)
+        .await
+        .iter()
+        .map(|conversation| {
+            let topic = conversation
+                .get("topic")
+                .and_then(|t| t.as_str())
+                .unwrap_or_default();
+            let preview = conversation
+                .get("preview")
+                .and_then(|p| p.as_str())
+                .unwrap_or_default();
+            format!("Topic: {} | Preview: {}", topic, preview)
+        })
+        .collect()
+}
+
+async fn fetch_team_bundle(token: &str, team: &Value) -> TeamBundle {
+    let id = team
+        .get("id")
+        .and_then(|i| i.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let name = team
+        .get("displayName")
+        .and_then(|n| n.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let desc = team
+        .get("description")
+        .and_then(|d| d.as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    let ((channels, tabs), (files, discoveries), conversations) = tokio::join!(
+        fetch_team_channels_and_tabs(token, &id),
+        fetch_team_drive(token, &id, &name),
+        fetch_team_conversations(token, &id),
+    );
+
+    TeamBundle {
+        id,
+        name,
+        desc,
+        channels,
+        tabs,
+        files,
+        discoveries,
+        conversations,
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MicrosoftStoredToken {
@@ -81,7 +364,7 @@ pub async fn exchange_microsoft_code_for_token(
         .filter(|s| !s.is_empty())
         .unwrap_or(DEFAULT_MS_CLIENT_ID);
     let redirect_uri = format!("http://localhost:{}/api/auth/microsoft/callback", port);
-    let client = reqwest::Client::new();
+    let client = GRAPH_HTTP_CLIENT.clone();
 
     let params = [
         ("client_id", cid),
@@ -128,13 +411,15 @@ pub fn clean_team_course_name(name: &str) -> String {
     name.trim().to_string()
 }
 
-pub async fn test_microsoft_connection(token_str: Option<&str>) -> Result<MicrosoftTestResult, String> {
+pub async fn test_microsoft_connection(
+    token_str: Option<&str>,
+) -> Result<MicrosoftTestResult, String> {
     let tok = token_str
         .map(|s| s.to_string())
         .or_else(|| load_stored_microsoft_token().map(|t| t.access_token))
         .ok_or_else(|| "No Microsoft access token provided or found in storage".to_string())?;
 
-    let client = reqwest::Client::new();
+    let client = &*GRAPH_HTTP_CLIENT;
     let resp = client
         .get("https://graph.microsoft.com/v1.0/me")
         .bearer_auth(&tok)
@@ -147,36 +432,52 @@ pub async fn test_microsoft_connection(token_str: Option<&str>) -> Result<Micros
     }
 
     let val: Value = resp.json().await.map_err(|e| e.to_string())?;
-    let display_name = val.get("displayName").and_then(|v| v.as_str()).map(String::from);
-    let user_principal = val.get("userPrincipalName").and_then(|v| v.as_str()).map(String::from);
+    let display_name = val
+        .get("displayName")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let user_principal = val
+        .get("userPrincipalName")
+        .and_then(|v| v.as_str())
+        .map(String::from);
 
-    // Fetch joined teams live
+    // Fetch joined teams live (with @odata.nextLink pagination)
     let mut teams_count = 0;
     let mut courses_found = Vec::new();
     let mut materials_count = 0;
-    if let Ok(t_resp) = client.get("https://graph.microsoft.com/v1.0/me/joinedTeams").bearer_auth(&tok).send().await {
-        if t_resp.status().is_success() {
-            if let Ok(t_val) = t_resp.json::<Value>().await {
-                if let Some(teams) = t_val.get("value").and_then(|v| v.as_array()) {
-                    teams_count = teams.len();
-                    for t in teams {
-                        if let Some(id) = t.get("id").and_then(|i| i.as_str()) {
-                            let dr_url = format!("https://graph.microsoft.com/v1.0/groups/{}/drive/root/children", id);
-                            if let Ok(dr_resp) = client.get(&dr_url).bearer_auth(&tok).send().await {
-                                if let Ok(dr_val) = dr_resp.json::<Value>().await {
-                                    if let Some(arr) = dr_val.get("value").and_then(|a| a.as_array()) {
-                                        materials_count += arr.len();
-                                    }
-                                }
-                            }
-                        }
-                        if let Some(name) = t.get("displayName").and_then(|n| n.as_str()) {
-                            let name_clean = clean_team_course_name(name);
-                            if !name_clean.is_empty() && !courses_found.contains(&name_clean) {
-                                courses_found.push(name_clean);
-                            }
-                        }
+    let teams_items =
+        graph_get_all_pages(&tok, "https://graph.microsoft.com/v1.0/me/joinedTeams").await;
+    if !teams_items.is_empty() {
+        teams_count = teams_items.len();
+
+        let drive_counts = {
+            let tok_for_lists = tok.clone();
+            let group_ids: Vec<String> = teams_items
+                .iter()
+                .filter_map(|t| t.get("id").and_then(|i| i.as_str()).map(String::from))
+                .collect();
+            stream::iter(group_ids)
+                .map(move |id| {
+                    let tok = tok_for_lists.clone();
+                    async move {
+                        let drive_url = format!(
+                            "https://graph.microsoft.com/v1.0/groups/{}/drive/root/children",
+                            id
+                        );
+                        graph_get_all_pages(&tok, &drive_url).await.len()
                     }
+                })
+                .buffered(4)
+                .collect::<Vec<usize>>()
+                .await
+        };
+        materials_count = drive_counts.into_iter().sum();
+
+        for t in &teams_items {
+            if let Some(name) = t.get("displayName").and_then(|n| n.as_str()) {
+                let name_clean = clean_team_course_name(name);
+                if !name_clean.is_empty() && !courses_found.contains(&name_clean) {
+                    courses_found.push(name_clean);
                 }
             }
         }
@@ -213,143 +514,62 @@ pub async fn sync_teams_assessments(
         _ => return Ok(TeamsSyncResult::default()),
     };
 
-    let client = reqwest::Client::new();
+    let client = &*GRAPH_HTTP_CLIENT;
 
     // 1. Fetch user profile
     let mut user_display_name = None;
     let mut user_email = None;
-    if let Ok(resp) = client.get("https://graph.microsoft.com/v1.0/me").bearer_auth(&tok).send().await {
+    if let Ok(resp) = client
+        .get("https://graph.microsoft.com/v1.0/me")
+        .bearer_auth(&tok)
+        .send()
+        .await
+    {
         if resp.status().is_success() {
             if let Ok(v) = resp.json::<Value>().await {
-                user_display_name = v.get("displayName").and_then(|n| n.as_str()).map(String::from);
-                user_email = v.get("userPrincipalName").and_then(|n| n.as_str()).map(String::from);
+                user_display_name = v
+                    .get("displayName")
+                    .and_then(|n| n.as_str())
+                    .map(String::from);
+                user_email = v
+                    .get("userPrincipalName")
+                    .and_then(|n| n.as_str())
+                    .map(String::from);
             }
         }
     }
 
     // 2. Fetch joined teams with channels, tabs, drive files, and group conversations
-    let mut raw_teams_info = Vec::new();
+    //    (every collection is followed through @odata.nextLink pagination)
+    let teams_items =
+        graph_get_all_pages(&tok, "https://graph.microsoft.com/v1.0/me/joinedTeams").await;
     let mut teams_list = Vec::new();
     let mut discovered_files_summary = Vec::new();
+    let mut raw_teams_info = Vec::new();
 
-    if let Ok(resp) = client.get("https://graph.microsoft.com/v1.0/me/joinedTeams").bearer_auth(&tok).send().await {
-        if resp.status().is_success() {
-            if let Ok(v) = resp.json::<Value>().await {
-                if let Some(arr) = v.get("value").and_then(|a| a.as_array()) {
-                    for t in arr {
-                        let id = t.get("id").and_then(|i| i.as_str()).unwrap_or_default().to_string();
-                        let name = t.get("displayName").and_then(|n| n.as_str()).unwrap_or_default().to_string();
-                        let desc = t.get("description").and_then(|d| d.as_str()).unwrap_or_default().to_string();
-                        teams_list.push((id.clone(), name.clone(), desc.clone()));
+    if !teams_items.is_empty() {
+        let tok_bundles = tok.clone();
+        let bundles = stream::iter(teams_items.into_iter())
+            .map(move |team| {
+                let tok = tok_bundles.clone();
+                async move { fetch_team_bundle(&tok, &team).await }
+            })
+            .buffered(4)
+            .collect::<Vec<TeamBundle>>()
+            .await;
 
-                        // A. Fetch channels and channel tabs for this team
-                        let mut channels = Vec::new();
-                        let mut tabs = Vec::new();
-                        let ch_url = format!("https://graph.microsoft.com/v1.0/teams/{}/channels", id);
-                        if let Ok(ch_resp) = client.get(&ch_url).bearer_auth(&tok).send().await {
-                            if ch_resp.status().is_success() {
-                                if let Ok(ch_val) = ch_resp.json::<Value>().await {
-                                    if let Some(ch_arr) = ch_val.get("value").and_then(|a| a.as_array()) {
-                                        for ch in ch_arr {
-                                            let ch_id = ch.get("id").and_then(|i| i.as_str()).unwrap_or_default();
-                                            let ch_name = ch.get("displayName").and_then(|n| n.as_str()).unwrap_or_default();
-                                            let ch_email = ch.get("email").and_then(|e| e.as_str()).unwrap_or_default();
-                                            channels.push(format!("Channel: {} (Email: {})", ch_name, ch_email));
-
-                                            // Fetch channel tabs (Assignments, Classwork, Grades, Files, Forms)
-                                            if !ch_id.is_empty() {
-                                                let tab_url = format!("https://graph.microsoft.com/v1.0/teams/{}/channels/{}/tabs", id, ch_id);
-                                                if let Ok(tb_resp) = client.get(&tab_url).bearer_auth(&tok).send().await {
-                                                    if tb_resp.status().is_success() {
-                                                        if let Ok(tb_val) = tb_resp.json::<Value>().await {
-                                                            if let Some(tb_arr) = tb_val.get("value").and_then(|a| a.as_array()) {
-                                                                for tab in tb_arr {
-                                                                    if let Some(tab_name) = tab.get("displayName").and_then(|n| n.as_str()) {
-                                                                        tabs.push(format!("{} (Channel: {})", tab_name, ch_name));
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // B. Fetch drive files (Course Materials, Uploaded Assignments, Sheets, Forms)
-                        let mut files = Vec::new();
-                        let drive_url = format!("https://graph.microsoft.com/v1.0/groups/{}/drive/root/children", id);
-                        if let Ok(dr_resp) = client.get(&drive_url).bearer_auth(&tok).send().await {
-                            if dr_resp.status().is_success() {
-                                if let Ok(dr_val) = dr_resp.json::<Value>().await {
-                                    if let Some(dr_arr) = dr_val.get("value").and_then(|a| a.as_array()) {
-                                        for item in dr_arr {
-                                            let item_id = item.get("id").and_then(|i| i.as_str()).unwrap_or_default();
-                                            let item_name = item.get("name").and_then(|n| n.as_str()).unwrap_or_default();
-                                            let item_size = item.get("size").and_then(|s| s.as_i64()).unwrap_or(0);
-                                            let is_folder = item.get("folder").is_some();
-                                            let modified = item.get("lastModifiedDateTime").and_then(|m| m.as_str()).unwrap_or_default();
-
-                                            if is_folder && !item_id.is_empty() {
-                                                // Check folder contents (e.g. General, Lectures, Class Materials)
-                                                let sub_url = format!("https://graph.microsoft.com/v1.0/groups/{}/drive/items/{}/children", id, item_id);
-                                                if let Ok(sub_resp) = client.get(&sub_url).bearer_auth(&tok).send().await {
-                                                    if sub_resp.status().is_success() {
-                                                        if let Ok(sub_val) = sub_resp.json::<Value>().await {
-                                                            if let Some(sub_arr) = sub_val.get("value").and_then(|a| a.as_array()) {
-                                                                for sub in sub_arr {
-                                                                    let sub_name = sub.get("name").and_then(|n| n.as_str()).unwrap_or_default();
-                                                                    let sub_size = sub.get("size").and_then(|s| s.as_i64()).unwrap_or(0);
-                                                                    let sub_mod = sub.get("lastModifiedDateTime").and_then(|m| m.as_str()).unwrap_or_default();
-                                                                    files.push(format!("{}/{} (size: {} KB, uploaded: {})", item_name, sub_name, sub_size / 1024, sub_mod));
-                                                                    discovered_files_summary.push(format!("{}: {}", name, sub_name));
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            } else {
-                                                files.push(format!("{} (size: {} KB, uploaded: {})", item_name, item_size / 1024, modified));
-                                                discovered_files_summary.push(format!("{}: {}", name, item_name));
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // C. Fetch conversations for this group
-                        let mut convs = Vec::new();
-                        let conv_url = format!("https://graph.microsoft.com/v1.0/groups/{}/conversations", id);
-                        if let Ok(c_resp) = client.get(&conv_url).bearer_auth(&tok).send().await {
-                            if c_resp.status().is_success() {
-                                if let Ok(c_val) = c_resp.json::<Value>().await {
-                                    if let Some(c_arr) = c_val.get("value").and_then(|a| a.as_array()) {
-                                        for c in c_arr {
-                                            let topic = c.get("topic").and_then(|t| t.as_str()).unwrap_or_default();
-                                            let preview = c.get("preview").and_then(|p| p.as_str()).unwrap_or_default();
-                                            convs.push(format!("Topic: {} | Preview: {}", topic, preview));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        raw_teams_info.push(format!(
-                            "TEAM / CLASS: {}\nDescription: {}\nChannels: {}\nTabs: {}\nUploaded Course Files & Assignments:\n- {}\nConversations: {}\n",
-                            name,
-                            desc,
-                            if channels.is_empty() { "General".to_string() } else { channels.join("; ") },
-                            if tabs.is_empty() { "None".to_string() } else { tabs.join(", ") },
-                            if files.is_empty() { "None discovered".to_string() } else { files.join("\n- ") },
-                            if convs.is_empty() { "None".to_string() } else { convs.join("; ") }
-                        ));
-                    }
-                }
-            }
+        for bundle in bundles {
+            teams_list.push((bundle.id, bundle.name.clone(), bundle.desc.clone()));
+            discovered_files_summary.extend(bundle.discoveries);
+            raw_teams_info.push(format!(
+                "TEAM / CLASS: {}\nDescription: {}\nChannels: {}\nTabs: {}\nUploaded Course Files & Assignments:\n- {}\nConversations: {}\n",
+                bundle.name,
+                bundle.desc,
+                if bundle.channels.is_empty() { "General".to_string() } else { bundle.channels.join("; ") },
+                if bundle.tabs.is_empty() { "None".to_string() } else { bundle.tabs.join(", ") },
+                if bundle.files.is_empty() { "None discovered".to_string() } else { bundle.files.join("\n- ") },
+                if bundle.conversations.is_empty() { "None".to_string() } else { bundle.conversations.join("; ") }
+            ));
         }
     }
 
@@ -366,14 +586,18 @@ pub async fn sync_teams_assessments(
         "Microsoft Teams",
         &raw_context,
         config.gemini_api_key.as_deref(),
-    ).await {
+    )
+    .await
+    {
         if !discovered.courses.is_empty() {
             return Ok(TeamsSyncResult {
                 assessments: discovered.assessments,
                 discovered_courses: discovered.courses,
                 discovered_slots: discovered.slots,
-                semester: discovered.semester.or_else(|| Some("Fall 2026".to_string())),
-                university: discovered.university_or_institution.or_else(|| Some("State University".to_string())),
+                // Real discovery passthrough: never fabricate a semester or university
+                // identity that the source data did not state.
+                semester: discovered.semester,
+                university: discovered.university_or_institution,
                 user_display_name,
                 user_email,
             });
@@ -453,7 +677,10 @@ mod tests {
     fn test_clean_team_course_name_preserves_real_courses() {
         // Real course names must NEVER be remapped to a different fabricated identity
         assert_eq!(clean_team_course_name("Math 101"), "Math 101");
-        assert_eq!(clean_team_course_name("Advanced Calculus"), "Advanced Calculus");
+        assert_eq!(
+            clean_team_course_name("Advanced Calculus"),
+            "Advanced Calculus"
+        );
         assert_eq!(
             clean_team_course_name("Financial Accounting I"),
             "Financial Accounting I"
@@ -467,9 +694,17 @@ mod tests {
     #[test]
     fn test_heuristic_discovery_uses_only_real_teams() {
         let teams = vec![
-            ("1".to_string(), "Financial Accounting I".to_string(), String::new()),
+            (
+                "1".to_string(),
+                "Financial Accounting I".to_string(),
+                String::new(),
+            ),
             ("2".to_string(), "General Chat".to_string(), String::new()),
-            ("3".to_string(), "Academic Advising".to_string(), String::new()),
+            (
+                "3".to_string(),
+                "Academic Advising".to_string(),
+                String::new(),
+            ),
         ];
         let result = explore_teams_heuristically(Some("Ali"), Some("a@uni.edu"), &teams, &[]);
         assert_eq!(result.assessments.len(), 0, "no invented assessments");

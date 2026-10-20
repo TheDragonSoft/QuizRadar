@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::fs;
+use std::{
+    fs,
+    sync::{Mutex, OnceLock},
+    time::{Duration, Instant},
+};
 
 const DEFAULT_TOKEN_URI: &str = "https://oauth2.googleapis.com/token";
 const DEFAULT_AUTH_URI: &str = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -53,6 +57,37 @@ pub struct StoredToken {
     pub client_secret: String,
     #[serde(default)]
     pub scopes: Vec<String>,
+}
+
+const TOKEN_CACHE_TTL: Duration = Duration::from_secs(300);
+
+static TOKEN_CACHE: OnceLock<Mutex<Option<(StoredToken, Instant)>>> = OnceLock::new();
+static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+fn token_cache() -> &'static Mutex<Option<(StoredToken, Instant)>> {
+    TOKEN_CACHE.get_or_init(|| Mutex::new(None))
+}
+
+fn http_client() -> &'static reqwest::Client {
+    HTTP_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    })
+}
+
+fn cache_valid_token(token: &StoredToken) {
+    if let Ok(mut cached) = token_cache().lock() {
+        *cached = Some((token.clone(), Instant::now()));
+    }
+}
+
+pub fn invalidate_token_cache() {
+    if let Ok(mut cached) = token_cache().lock() {
+        *cached = None;
+    }
 }
 
 fn default_token_uri() -> String {
@@ -140,6 +175,7 @@ pub fn save_stored_token(token: &StoredToken) {
     if let Ok(json) = serde_json::to_string_pretty(token) {
         let _ = fs::write("token.json", json);
     }
+    invalidate_token_cache();
 }
 
 pub fn build_google_oauth_url(port: u16, include_calendar: bool) -> String {
@@ -170,7 +206,7 @@ pub fn build_google_oauth_url(port: u16, include_calendar: bool) -> String {
 pub async fn exchange_code_for_token(code: &str, port: u16) -> Result<StoredToken, String> {
     let creds = load_client_credentials();
     let redirect_uri = format!("http://localhost:{}/api/auth/callback", port);
-    let client = reqwest::Client::new();
+    let client = http_client();
 
     let params = [
         ("code", code),
@@ -231,12 +267,22 @@ pub async fn exchange_code_for_token(code: &str, port: u16) -> Result<StoredToke
     };
 
     save_stored_token(&stored);
+    cache_valid_token(&stored);
     Ok(stored)
 }
 
 pub async fn get_valid_access_token() -> Result<StoredToken, String> {
-    let mut stored = load_stored_token().ok_or_else(|| "No stored Google token found".to_string())?;
-    let client = reqwest::Client::new();
+    if let Ok(cached) = token_cache().lock() {
+        if let Some((token, validated_at)) = cached.as_ref() {
+            if validated_at.elapsed() < TOKEN_CACHE_TTL {
+                return Ok(token.clone());
+            }
+        }
+    }
+
+    let mut stored =
+        load_stored_token().ok_or_else(|| "No stored Google token found".to_string())?;
+    let client = http_client();
 
     // Test if current token is valid via tokeninfo or user profile check, or refresh if needed
     let test_resp = client
@@ -247,6 +293,7 @@ pub async fn get_valid_access_token() -> Result<StoredToken, String> {
 
     if let Ok(r) = test_resp {
         if r.status().is_success() {
+            cache_valid_token(&stored);
             return Ok(stored);
         }
     }
@@ -285,9 +332,13 @@ pub async fn get_valid_access_token() -> Result<StoredToken, String> {
     if let Some(new_token) = body.get("access_token").and_then(|v| v.as_str()) {
         stored.token = new_token.to_string();
         if let Some(scope_str) = body.get("scope").and_then(|v| v.as_str()) {
-            stored.scopes = scope_str.split_whitespace().map(|s| s.to_string()).collect();
+            stored.scopes = scope_str
+                .split_whitespace()
+                .map(|s| s.to_string())
+                .collect();
         }
         save_stored_token(&stored);
+        cache_valid_token(&stored);
         Ok(stored)
     } else {
         Err("No access_token in refresh response".to_string())
@@ -319,7 +370,7 @@ pub async fn fetch_user_profile() -> GoogleUserProfile {
         }
     };
 
-    let client = reqwest::Client::new();
+    let client = http_client();
     let mut email = None;
     let mut name = None;
     let mut picture = None;
@@ -351,9 +402,15 @@ pub async fn fetch_user_profile() -> GoogleUserProfile {
         if resp.status().is_success() {
             if let Ok(v) = resp.json::<Value>().await {
                 if email.is_none() {
-                    email = v.get("email").and_then(|x| x.as_str()).map(|s| s.to_string());
+                    email = v
+                        .get("email")
+                        .and_then(|x| x.as_str())
+                        .map(|s| s.to_string());
                 }
-                name = v.get("name").and_then(|x| x.as_str()).map(|s| s.to_string());
+                name = v
+                    .get("name")
+                    .and_then(|x| x.as_str())
+                    .map(|s| s.to_string());
                 picture = v
                     .get("picture")
                     .and_then(|x| x.as_str())
@@ -384,15 +441,8 @@ pub async fn fetch_user_profile() -> GoogleUserProfile {
         }
     }
 
-    let has_gmail_scope = token
-        .scopes
-        .iter()
-        .any(|s| s.contains("gmail"))
-        || email.is_some();
-    let has_calendar_scope = token
-        .scopes
-        .iter()
-        .any(|s| s.contains("calendar"));
+    let has_gmail_scope = token.scopes.iter().any(|s| s.contains("gmail")) || email.is_some();
+    let has_calendar_scope = token.scopes.iter().any(|s| s.contains("calendar"));
 
     GoogleUserProfile {
         authenticated: email.is_some(),
@@ -408,15 +458,9 @@ pub async fn fetch_user_profile() -> GoogleUserProfile {
 /// Avoids blocking `/api/state` or server startup on external Google HTTP calls.
 pub fn get_cached_user_profile(config: &crate::models::AppConfig) -> GoogleUserProfile {
     if let Some(token) = load_stored_token() {
-        let has_gmail_scope = token
-            .scopes
-            .iter()
-            .any(|s| s.contains("gmail"))
-            || config.user_email.is_some();
-        let has_calendar_scope = token
-            .scopes
-            .iter()
-            .any(|s| s.contains("calendar"));
+        let has_gmail_scope =
+            token.scopes.iter().any(|s| s.contains("gmail")) || config.user_email.is_some();
+        let has_calendar_scope = token.scopes.iter().any(|s| s.contains("calendar"));
 
         GoogleUserProfile {
             authenticated: true,

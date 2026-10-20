@@ -1,8 +1,20 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
+use std::sync::LazyLock;
+use std::time::Duration;
+use tokio::io::AsyncWriteExt;
 
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+static UPDATER_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .user_agent(format!("QuizRadar/{}", CURRENT_VERSION))
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(120))
+        .build()
+        .expect("Failed to build shared updater HTTP client")
+});
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateInfo {
@@ -18,14 +30,15 @@ pub struct UpdateInfo {
 }
 
 pub async fn check_for_updates() -> Result<UpdateInfo, String> {
-    let client = reqwest::Client::builder()
-        .user_agent(format!("QuizRadar/{}", CURRENT_VERSION))
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = &*UPDATER_HTTP_CLIENT;
 
     let url = "https://api.github.com/repos/TheDragonSoft/QuizRadar/releases/latest";
-    let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
+    let resp = client
+        .get(url)
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
 
     if !resp.status().is_success() {
         return Err(format!("GitHub API returned status: {}", resp.status()));
@@ -74,7 +87,9 @@ pub async fn check_for_updates() -> Result<UpdateInfo, String> {
                 .and_then(|u| u.as_str())
                 .map(|s| s.to_string());
             if name.ends_with(".exe")
-                && (name.contains("Setup") || name.contains("installer") || name.contains("quizradar"))
+                && (name.contains("Setup")
+                    || name.contains("installer")
+                    || name.contains("quizradar"))
             {
                 download_url = url.clone();
             } else if name.ends_with(".zip") && name.contains("Portable") {
@@ -131,25 +146,35 @@ pub fn is_version_newer(latest: &str, current: &str) -> bool {
 }
 
 pub async fn download_and_install_update(download_url: &str) -> Result<PathBuf, String> {
-    let client = reqwest::Client::builder()
-        .user_agent(format!("QuizRadar-Installer/{}", CURRENT_VERSION))
-        .timeout(std::time::Duration::from_secs(120))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = &*UPDATER_HTTP_CLIENT;
 
-    let resp = client
+    let mut resp = client
         .get(download_url)
         .send()
         .await
         .map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
-        return Err(format!("Download failed with HTTP status: {}", resp.status()));
+        return Err(format!(
+            "Download failed with HTTP status: {}",
+            resp.status()
+        ));
     }
 
-    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
-
     let temp_file = std::env::temp_dir().join("QuizRadar-Setup-Update.exe");
-    std::fs::write(&temp_file, bytes).map_err(|e| format!("Failed to save installer: {}", e))?;
+    let mut file = tokio::fs::File::create(&temp_file)
+        .await
+        .map_err(|e| format!("Failed to create installer file: {}", e))?;
+
+    while let Some(chunk) = resp.chunk().await.map_err(|e| e.to_string())? {
+        if let Err(e) = file.write_all(&chunk).await {
+            let _ = tokio::fs::remove_file(&temp_file).await;
+            return Err(format!("Failed to save installer: {}", e));
+        }
+    }
+    file.flush()
+        .await
+        .map_err(|e| format!("Failed to save installer: {}", e))?;
+    drop(file);
 
     // Spawn installer
     #[cfg(windows)]

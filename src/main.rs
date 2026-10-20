@@ -1,4 +1,4 @@
-#![windows_subsystem = "windows"]
+﻿#![windows_subsystem = "windows"]
 
 pub mod auth;
 pub mod classroom;
@@ -13,13 +13,13 @@ pub mod teams;
 pub mod updater;
 
 use axum::{
+    body::Bytes,
     extract::{Path, Query, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{delete, get, post},
     Json, Router,
 };
-use tower_http::cors::CorsLayer;
 use models::{
     AppConfig, Assessment, AssessmentGrade, Course, CustomCalendarEvent, ScheduleData, ScheduleSlot,
 };
@@ -29,10 +29,13 @@ use std::{
     collections::HashMap,
     fs,
     net::SocketAddr,
-    sync::{mpsc, Arc},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc, OnceLock,
+    },
 };
 use tokio::sync::RwLock;
-use tower_http::services::ServeDir;
+use tower_http::{cors::CorsLayer, services::ServeDir};
 
 const CONFIG_FILE: &str = "data/app_config.json";
 
@@ -42,6 +45,8 @@ pub struct SharedAppState {
     pub config: Arc<RwLock<AppConfig>>,
     pub schedule: Arc<RwLock<ScheduleData>>,
     pub assessments: Arc<RwLock<Vec<Assessment>>>,
+    pub sync_in_flight: Arc<AtomicBool>,
+    pub profile_refresh_in_flight: Arc<AtomicBool>,
 }
 
 fn load_app_config() -> AppConfig {
@@ -53,10 +58,26 @@ fn load_app_config() -> AppConfig {
     AppConfig::default()
 }
 
-fn save_app_config(cfg: &AppConfig) {
-    let _ = fs::create_dir_all("data");
+async fn save_app_config(cfg: &AppConfig) {
+    let _ = tokio::fs::create_dir_all("data").await;
     if let Ok(json) = serde_json::to_string_pretty(cfg) {
-        let _ = fs::write(CONFIG_FILE, json);
+        let _ = tokio::fs::write(CONFIG_FILE, json).await;
+    }
+}
+
+struct InFlightGuard {
+    flag: Arc<AtomicBool>,
+}
+
+impl InFlightGuard {
+    fn new(flag: Arc<AtomicBool>) -> Self {
+        Self { flag }
+    }
+}
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        self.flag.store(false, Ordering::Release);
     }
 }
 
@@ -129,7 +150,7 @@ fn run_native_desktop_window(port: u16) {
     let window_icon = Icon::from_rgba(icon_rgba.to_vec(), 64, 64).ok();
 
     let window = WindowBuilder::new()
-        .with_title("QuizRadar — Academic Dashboard & Smart Exam Calendar")
+        .with_title("QuizRadar â€” Academic Dashboard & Smart Exam Calendar")
         .with_inner_size(LogicalSize::new(1420.0, 880.0))
         .with_min_inner_size(LogicalSize::new(960.0, 620.0))
         .with_window_icon(window_icon)
@@ -176,7 +197,11 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
     // Security: bind to localhost only by default. Expose on the LAN only when the
     // user explicitly passes --lan (e.g. to pair the Android app with this desktop).
     let expose_lan = std::env::args().any(|a| a == "--lan" || a == "--pairing");
-    let bind_ip = if expose_lan { [0, 0, 0, 0] } else { [127, 0, 0, 1] };
+    let bind_ip = if expose_lan {
+        [0, 0, 0, 0]
+    } else {
+        [127, 0, 0, 1]
+    };
 
     for port in ports {
         let addr = SocketAddr::from((bind_ip, port));
@@ -192,56 +217,85 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
 
     let config = load_app_config();
     let schedule = parser::load_schedule();
-    let cached_emails = gmail::load_cached_emails();
-
-    let mut initial_assessments =
-        parser::process_all_emails(&cached_emails, &schedule, &config, false).await;
-
-    // If student is enrolled in courses, remove non-matching demo emails
-    if !schedule.courses.is_empty() {
-        let active_course_codes: std::collections::HashSet<String> = schedule
-            .courses
-            .iter()
-            .map(|c| c.id.trim().to_uppercase())
-            .collect();
-        initial_assessments.retain(|p| {
-            if p.id.starts_with("teams-") || p.id.starts_with("moodle-") || p.id.starts_with("classroom-") {
-                return true;
-            }
-            let cid = p.course_id.trim().to_uppercase();
-            active_course_codes.contains(&cid)
-                || active_course_codes.iter().any(|ac| cid.starts_with(ac) || ac.starts_with(&cid))
-        });
-    }
-
-    // Filter out disabled sources on startup
-    initial_assessments.retain(|p| p.is_source_enabled(&config));
 
     let state = SharedAppState {
         port: selected_port,
-        config: Arc::new(RwLock::new(config.clone())),
+        config: Arc::new(RwLock::new(config)),
         schedule: Arc::new(RwLock::new(schedule)),
-        assessments: Arc::new(RwLock::new(initial_assessments)),
+        assessments: Arc::new(RwLock::new(Vec::new())),
+        sync_in_flight: Arc::new(AtomicBool::new(false)),
+        profile_refresh_in_flight: Arc::new(AtomicBool::new(false)),
     };
 
-    // If Teams integration is enabled with a valid token, auto-run the sync pipeline in background immediately
-    if config.teams_enabled && config.teams_token.is_some() {
-        let teams_bg_state = state.clone();
-        tokio::spawn(async move {
-            run_sync_pipeline(&teams_bg_state, false).await;
-        });
-    }
+    let startup_state = state.clone();
+    tokio::spawn(async move {
+        let schedule = startup_state.schedule.read().await.clone();
+        let cfg = startup_state.config.read().await.clone();
+        let parsed = tokio::task::spawn_blocking(move || {
+            let cached_emails = gmail::load_cached_emails();
+            let mut parsed = futures::executor::block_on(parser::process_all_emails(
+                &cached_emails,
+                &schedule,
+                &cfg,
+                false,
+            ));
+
+            if !schedule.courses.is_empty() {
+                let active_course_codes: std::collections::HashSet<String> = schedule
+                    .courses
+                    .iter()
+                    .map(|c| c.id.trim().to_uppercase())
+                    .collect();
+                parsed.retain(|p| {
+                    if p.id.starts_with("teams-")
+                        || p.id.starts_with("moodle-")
+                        || p.id.starts_with("classroom-")
+                    {
+                        return true;
+                    }
+                    let cid = p.course_id.trim().to_uppercase();
+                    active_course_codes.contains(&cid)
+                        || active_course_codes
+                            .iter()
+                            .any(|ac| cid.starts_with(ac) || ac.starts_with(&cid))
+                });
+            }
+
+            parsed.retain(|p| p.is_source_enabled(&cfg));
+            parsed
+        })
+        .await
+        .unwrap_or_default();
+
+        {
+            let mut assessments = startup_state.assessments.write().await;
+            if assessments.is_empty() {
+                *assessments = parsed;
+            }
+        }
+
+        let auto_sync_teams = {
+            let cfg = startup_state.config.read().await;
+            cfg.teams_enabled && cfg.teams_token.is_some()
+        };
+        if auto_sync_teams {
+            run_sync_pipeline(startup_state, false).await;
+        }
+    });
 
     // Refresh Google authentication profile in the background so startup is 0ms
     let bg_state = state.clone();
     tokio::spawn(async move {
         let profile = auth::fetch_user_profile().await;
         if profile.authenticated {
-            let mut cfg = bg_state.config.write().await;
-            cfg.user_email = profile.email.clone();
-            cfg.user_name = profile.name.clone();
-            cfg.user_picture = profile.picture.clone();
-            save_app_config(&cfg);
+            let cfg_snapshot = {
+                let mut cfg = bg_state.config.write().await;
+                cfg.user_email = profile.email.clone();
+                cfg.user_name = profile.name.clone();
+                cfg.user_picture = profile.picture.clone();
+                cfg.clone()
+            };
+            save_app_config(&cfg_snapshot).await;
         }
     });
 
@@ -263,7 +317,10 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
         .route("/api/gcal/sync", post(trigger_gcal_sync))
         .route("/api/study/toggle", post(toggle_study_topic))
         .route("/api/study/tasks", get(get_study_tasks_handler))
-        .route("/api/study/tasks/optimize", post(optimize_study_tasks_handler))
+        .route(
+            "/api/study/tasks/optimize",
+            post(optimize_study_tasks_handler),
+        )
         .route("/api/events/custom", post(add_custom_event))
         .route("/api/events/custom/:id", delete(delete_custom_event))
         .route("/api/schedule/extract", post(extract_schedule_handler))
@@ -277,13 +334,28 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
         .route("/api/moodle/sync", post(sync_moodle_handler))
         .route("/api/microsoft/login", get(microsoft_login_redirect))
         .route("/api/microsoft/url", get(microsoft_login_url))
-        .route("/api/auth/microsoft/callback", get(microsoft_oauth_callback))
+        .route(
+            "/api/auth/microsoft/callback",
+            get(microsoft_oauth_callback),
+        )
         .route("/api/microsoft/test", post(test_microsoft_handler))
         .route("/api/microsoft/logout", post(microsoft_logout))
-        .route("/api/classroom/test", get(test_classroom_handler).post(test_classroom_handler))
-        .route("/api/assessments/:id/practice", post(get_assessment_practice_handler))
-        .route("/api/assessments/:id/grade", post(update_assessment_grade_handler))
-        .route("/api/study/blocks/schedule", post(schedule_study_blocks_handler))
+        .route(
+            "/api/classroom/test",
+            get(test_classroom_handler).post(test_classroom_handler),
+        )
+        .route(
+            "/api/assessments/:id/practice",
+            post(get_assessment_practice_handler),
+        )
+        .route(
+            "/api/assessments/:id/grade",
+            post(update_assessment_grade_handler),
+        )
+        .route(
+            "/api/study/blocks/schedule",
+            post(schedule_study_blocks_handler),
+        )
         .route("/api/conflicts/dismiss", post(dismiss_conflicts_handler))
         .route("/api/updater/check", get(check_updater_handler))
         .route("/api/updater/install", post(install_updater_handler))
@@ -299,6 +371,7 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
         .route("/manifest.webmanifest", get(serve_manifest))
         .route("/manifest.json", get(serve_manifest))
         .route("/sw.js", get(serve_sw_js))
+        .route("/styles.css", get(serve_styles_css))
         .nest_service("/static", ServeDir::new("static"))
         .fallback_service(ServeDir::new("static"))
         .layer(CorsLayer::permissive())
@@ -307,81 +380,172 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn serve_index() -> Html<String> {
-    let content = fs::read_to_string("static/index.html")
-        .unwrap_or_else(|_| include_str!("../static/index.html").to_string());
-    Html(content)
+struct CachedAsset {
+    content: Bytes,
+    etag: String,
 }
 
-async fn serve_app_js() -> Response {
-    let content = fs::read_to_string("static/app.js")
-        .unwrap_or_else(|_| include_str!("../static/app.js").to_string());
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("application/javascript; charset=utf-8"),
-    );
-    (StatusCode::OK, headers, content).into_response()
+static INDEX_HTML: OnceLock<CachedAsset> = OnceLock::new();
+static APP_JS: OnceLock<CachedAsset> = OnceLock::new();
+static LUCIDE_JS: OnceLock<CachedAsset> = OnceLock::new();
+static ICON_SVG: OnceLock<CachedAsset> = OnceLock::new();
+static MANIFEST: OnceLock<CachedAsset> = OnceLock::new();
+static SW_JS: OnceLock<CachedAsset> = OnceLock::new();
+static STYLES_CSS: OnceLock<CachedAsset> = OnceLock::new();
+
+const NO_CACHE: &str = "no-cache";
+const DAY_CACHE: &str = "public, max-age=86400";
+
+fn fnv1a_etag(bytes: &[u8]) -> String {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for &byte in bytes {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("\"{:016x}\"", hash)
 }
 
-async fn serve_lucide_js() -> Response {
-    let content = fs::read_to_string("static/lucide.min.js")
-        .unwrap_or_else(|_| include_str!("../static/lucide.min.js").to_string());
+fn cached_asset(
+    slot: &'static OnceLock<CachedAsset>,
+    path: &str,
+    fallback: &'static [u8],
+) -> &'static CachedAsset {
+    slot.get_or_init(|| {
+        let content = fs::read(path)
+            .map(Bytes::from)
+            .unwrap_or_else(|_| Bytes::from_static(fallback));
+        let etag = fnv1a_etag(&content);
+        CachedAsset { content, etag }
+    })
+}
+
+fn cached_disk_asset(
+    slot: &'static OnceLock<CachedAsset>,
+    path: &str,
+) -> Option<&'static CachedAsset> {
+    if let Some(asset) = slot.get() {
+        return Some(asset);
+    }
+    let content = Bytes::from(fs::read(path).ok()?);
+    let etag = fnv1a_etag(&content);
+    let _ = slot.set(CachedAsset { content, etag });
+    slot.get()
+}
+
+fn if_none_match_matches(req_headers: &HeaderMap, etag: &str) -> bool {
+    req_headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| {
+            value
+                .split(',')
+                .any(|candidate| candidate.trim() == etag || candidate.trim() == "*")
+        })
+        .unwrap_or(false)
+}
+
+fn asset_response(
+    asset: &CachedAsset,
+    content_type: &'static str,
+    cache_control: &'static str,
+    req_headers: &HeaderMap,
+) -> Response {
     let mut headers = HeaderMap::new();
-    headers.insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("application/javascript; charset=utf-8"),
-    );
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
     headers.insert(
         header::CACHE_CONTROL,
-        HeaderValue::from_static("public, max-age=86400"),
+        HeaderValue::from_static(cache_control),
     );
-    (StatusCode::OK, headers, content).into_response()
+    if let Ok(etag) = HeaderValue::from_str(&asset.etag) {
+        headers.insert(header::ETAG, etag);
+    }
+
+    if if_none_match_matches(req_headers, &asset.etag) {
+        return (StatusCode::NOT_MODIFIED, headers).into_response();
+    }
+
+    (StatusCode::OK, headers, asset.content.clone()).into_response()
 }
 
-async fn serve_icon_svg() -> Response {
-    let content = fs::read_to_string("static/icon.svg")
-        .unwrap_or_else(|_| include_str!("../static/icon.svg").to_string());
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("image/svg+xml; charset=utf-8"),
+async fn serve_index(headers: HeaderMap) -> Response {
+    let asset = cached_asset(
+        &INDEX_HTML,
+        "static/index.html",
+        include_bytes!("../static/index.html"),
     );
-    headers.insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static("public, max-age=86400"),
-    );
-    (StatusCode::OK, headers, content).into_response()
+    asset_response(asset, "text/html; charset=utf-8", NO_CACHE, &headers)
 }
 
-async fn serve_manifest() -> Response {
-    let content = fs::read_to_string("static/manifest.webmanifest")
-        .unwrap_or_else(|_| include_str!("../static/manifest.webmanifest").to_string());
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("application/manifest+json; charset=utf-8"),
-    );
-    headers.insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static("public, max-age=3600"),
-    );
-    (StatusCode::OK, headers, content).into_response()
+async fn serve_app_js(headers: HeaderMap) -> Response {
+    let asset = cached_asset(&APP_JS, "static/app.js", include_bytes!("../static/app.js"));
+    asset_response(
+        asset,
+        "application/javascript; charset=utf-8",
+        NO_CACHE,
+        &headers,
+    )
 }
 
-async fn serve_sw_js() -> Response {
-    let content = fs::read_to_string("static/sw.js")
-        .unwrap_or_else(|_| include_str!("../static/sw.js").to_string());
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("application/javascript; charset=utf-8"),
+async fn serve_lucide_js(headers: HeaderMap) -> Response {
+    let asset = cached_asset(
+        &LUCIDE_JS,
+        "static/lucide.min.js",
+        include_bytes!("../static/lucide.min.js"),
     );
-    headers.insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static("no-cache"),
+    asset_response(
+        asset,
+        "application/javascript; charset=utf-8",
+        DAY_CACHE,
+        &headers,
+    )
+}
+
+async fn serve_icon_svg(headers: HeaderMap) -> Response {
+    let asset = cached_asset(
+        &ICON_SVG,
+        "static/icon.svg",
+        include_bytes!("../static/icon.svg"),
     );
-    (StatusCode::OK, headers, content).into_response()
+    asset_response(asset, "image/svg+xml; charset=utf-8", DAY_CACHE, &headers)
+}
+
+async fn serve_manifest(headers: HeaderMap) -> Response {
+    let asset = cached_asset(
+        &MANIFEST,
+        "static/manifest.webmanifest",
+        include_bytes!("../static/manifest.webmanifest"),
+    );
+    asset_response(
+        asset,
+        "application/manifest+json; charset=utf-8",
+        "public, max-age=3600",
+        &headers,
+    )
+}
+
+async fn serve_sw_js(headers: HeaderMap) -> Response {
+    let asset = cached_asset(&SW_JS, "static/sw.js", include_bytes!("../static/sw.js"));
+    asset_response(
+        asset,
+        "application/javascript; charset=utf-8",
+        NO_CACHE,
+        &headers,
+    )
+}
+
+async fn serve_styles_css(headers: HeaderMap) -> Response {
+    match cached_disk_asset(&STYLES_CSS, "static/styles.css") {
+        Some(asset) => asset_response(asset, "text/css; charset=utf-8", NO_CACHE, &headers),
+        None => asset_response(
+            &CachedAsset {
+                content: Bytes::new(),
+                etag: fnv1a_etag(b""),
+            },
+            "text/css; charset=utf-8",
+            NO_CACHE,
+            &headers,
+        ),
+    }
 }
 
 async fn get_full_state(State(state): State<SharedAppState>) -> Json<Value> {
@@ -399,16 +563,26 @@ async fn get_full_state(State(state): State<SharedAppState>) -> Json<Value> {
     let dashboard = parser::build_dashboard_summary(&assessments, &cfg);
 
     // If token exists on disk but user_email wasn't cached yet, refresh profile in background
-    if profile.authenticated && profile.email.is_none() {
+    if profile.authenticated
+        && profile.email.is_none()
+        && state
+            .profile_refresh_in_flight
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    {
         let bg_state = state.clone();
         tokio::spawn(async move {
+            let _guard = InFlightGuard::new(bg_state.profile_refresh_in_flight.clone());
             let live = auth::fetch_user_profile().await;
             if live.authenticated {
-                let mut wcfg = bg_state.config.write().await;
-                wcfg.user_email = live.email;
-                wcfg.user_name = live.name;
-                wcfg.user_picture = live.picture;
-                save_app_config(&wcfg);
+                let cfg_snapshot = {
+                    let mut wcfg = bg_state.config.write().await;
+                    wcfg.user_email = live.email;
+                    wcfg.user_name = live.name;
+                    wcfg.user_picture = live.picture;
+                    wcfg.clone()
+                };
+                save_app_config(&cfg_snapshot).await;
             }
         });
     }
@@ -474,15 +648,17 @@ async fn google_oauth_callback(
         match auth::exchange_code_for_token(code, state.port).await {
             Ok(_) => {
                 let profile = auth::fetch_user_profile().await;
-                let mut cfg = state.config.write().await;
-                cfg.user_email = profile.email.clone();
-                cfg.user_name = profile.name.clone();
-                cfg.user_picture = profile.picture.clone();
-                save_app_config(&cfg);
-                drop(cfg);
+                let cfg_snapshot = {
+                    let mut cfg = state.config.write().await;
+                    cfg.user_email = profile.email.clone();
+                    cfg.user_name = profile.name.clone();
+                    cfg.user_picture = profile.picture.clone();
+                    cfg.clone()
+                };
+                save_app_config(&cfg_snapshot).await;
 
                 // Automatically scan Gmail and sync on sign-in
-                let _ = run_sync_pipeline(&state, true).await;
+                spawn_sync_pipeline(state.clone(), true);
 
                 return Redirect::temporary("/?auth=success").into_response();
             }
@@ -493,7 +669,7 @@ async fn google_oauth_callback(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QuizRadar — Google Sign-In</title>
+  <title>QuizRadar â€” Google Sign-In</title>
   <style>
     body {{ background: #0b0f19; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }}
     .card {{ background: #131927; border: 1px solid #1e293b; border-radius: 16px; padding: 28px; max-width: 440px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; }}
@@ -506,7 +682,7 @@ async fn google_oauth_callback(
 </head>
 <body>
   <div class="card">
-    <div class="icon">⚠️</div>
+    <div class="icon">âš ï¸</div>
     <h2>Google Sign-In Error</h2>
     <p>{}</p>
     <a href="/" class="btn">Return to QuizRadar</a>
@@ -524,12 +700,16 @@ async fn google_oauth_callback(
 
 async fn google_logout(State(state): State<SharedAppState>) -> Json<Value> {
     let _ = fs::remove_file("token.json");
-    let mut cfg = state.config.write().await;
-    cfg.user_email = None;
-    cfg.user_name = None;
-    cfg.user_picture = None;
-    cfg.onboarding_completed = false;
-    save_app_config(&cfg);
+    auth::invalidate_token_cache();
+    let cfg_snapshot = {
+        let mut cfg = state.config.write().await;
+        cfg.user_email = None;
+        cfg.user_name = None;
+        cfg.user_picture = None;
+        cfg.onboarding_completed = false;
+        cfg.clone()
+    };
+    save_app_config(&cfg_snapshot).await;
     Json(json!({ "success": true }))
 }
 
@@ -588,7 +768,7 @@ async fn complete_onboarding(
             if !trimmed.is_empty() {
                 if trimmed.contains('@') {
                     // Store as a local PROFILE ANCHOR only. Never enable Teams
-                    // scanning from manual entry — Teams needs a Microsoft sign-in.
+                    // scanning from manual entry â€” Teams needs a Microsoft sign-in.
                     cfg.teams_account_email = Some(trimmed.to_string());
                     if let Some(n) = payload.teams_name.as_ref() {
                         if !n.trim().is_empty() {
@@ -596,14 +776,17 @@ async fn complete_onboarding(
                         }
                     }
                 } else {
-                    eprintln!("Onboarding: ignoring invalid university email anchor: {}", trimmed);
+                    eprintln!(
+                        "Onboarding: ignoring invalid university email anchor: {}",
+                        trimmed
+                    );
                 }
             }
         }
         // Manual local profile entry is stored but labeled as such in the UI.
-        save_app_config(&cfg);
         cfg.clone()
     };
+    save_app_config(&cfg_snapshot).await;
 
     let assessments = state.assessments.read().await.clone();
     let dashboard = parser::build_dashboard_summary(&assessments, &cfg_snapshot);
@@ -611,7 +794,7 @@ async fn complete_onboarding(
     // Run network sync in the background so the UI transitions to Dashboard instantaneously
     let bg_state = state.clone();
     tokio::spawn(async move {
-        let _ = run_sync_pipeline(&bg_state, false).await;
+        let _ = Box::pin(run_sync_pipeline(bg_state, false)).await;
     });
 
     Json(json!({
@@ -623,28 +806,39 @@ async fn complete_onboarding(
 }
 
 async fn reset_onboarding(State(state): State<SharedAppState>) -> Json<Value> {
-    let mut cfg = state.config.write().await;
-    cfg.onboarding_completed = false;
-    save_app_config(&cfg);
+    let cfg_snapshot = {
+        let mut cfg = state.config.write().await;
+        cfg.onboarding_completed = false;
+        cfg.clone()
+    };
+    save_app_config(&cfg_snapshot).await;
     Json(json!({ "success": true }))
 }
 
 async fn trigger_full_sync(State(state): State<SharedAppState>) -> Json<Value> {
-    let res = run_sync_pipeline(&state, true).await;
+    let res = run_sync_pipeline(state, true).await;
     Json(res)
 }
 
 async fn trigger_gcal_sync(State(state): State<SharedAppState>) -> Json<Value> {
-    let mut cfg = state.config.write().await;
-    let mut assessments = state.assessments.write().await;
+    let (mut cfg, mut assessments) = {
+        let cfg = state.config.read().await.clone();
+        let assessments = state.assessments.read().await.clone();
+        (cfg, assessments)
+    };
+
     let report = gcal::sync_assessments_to_google_calendar(&mut assessments, &mut cfg).await;
-    save_app_config(&cfg);
+
+    save_app_config(&cfg).await;
+    *state.config.write().await = cfg.clone();
+    *state.assessments.write().await = assessments.clone();
+
     let dashboard = parser::build_dashboard_summary(&assessments, &cfg);
 
     Json(json!({
         "success": report.success,
         "report": report,
-        "assessments": *assessments,
+        "assessments": assessments,
         "dashboard": dashboard
     }))
 }
@@ -661,7 +855,13 @@ async fn extract_schedule_handler(
 ) -> Json<Value> {
     let cfg = state.config.read().await.clone();
     let mime = payload.mime_type.as_deref().unwrap_or("image/png");
-    match gemini::extract_schedule_with_gemini(&payload.file_base64, mime, cfg.gemini_api_key.as_deref()).await {
+    match gemini::extract_schedule_with_gemini(
+        &payload.file_base64,
+        mime,
+        cfg.gemini_api_key.as_deref(),
+    )
+    .await
+    {
         Ok(sched) => Json(json!({
             "success": true,
             "schedule": sched
@@ -682,7 +882,8 @@ async fn save_schedule_handler(
 
     let cfg = state.config.read().await.clone();
     let cached_emails = gmail::load_cached_emails();
-    let new_assessments = parser::process_all_emails(&cached_emails, &new_schedule, &cfg, false).await;
+    let new_assessments =
+        parser::process_all_emails(&cached_emails, &new_schedule, &cfg, false).await;
     *state.assessments.write().await = new_assessments.clone();
 
     Json(json!({
@@ -721,7 +922,11 @@ async fn add_course_handler(
         course.border = border;
     }
 
-    if let Some(pos) = sched.courses.iter().position(|c| c.id.eq_ignore_ascii_case(&course_id)) {
+    if let Some(pos) = sched
+        .courses
+        .iter()
+        .position(|c| c.id.eq_ignore_ascii_case(&course_id))
+    {
         sched.courses[pos] = course.clone();
     } else {
         sched.courses.push(course.clone());
@@ -738,8 +943,9 @@ async fn add_course_handler(
             slot.course_name = course.name.clone();
         }
         slot.day_index = gemini::normalize_day_index(&slot.day);
-        if slot.display_time.is_empty() && !slot.start_time.is_empty() && !slot.end_time.is_empty() {
-            slot.display_time = format!("{} – {}", slot.start_time, slot.end_time);
+        if slot.display_time.is_empty() && !slot.start_time.is_empty() && !slot.end_time.is_empty()
+        {
+            slot.display_time = format!("{} â€“ {}", slot.start_time, slot.end_time);
         }
         sched.slots.push(slot);
     }
@@ -767,7 +973,9 @@ async fn delete_course_handler(
     let target = course_id.trim();
 
     sched.courses.retain(|c| !c.id.eq_ignore_ascii_case(target));
-    sched.slots.retain(|s| !s.course_id.eq_ignore_ascii_case(target));
+    sched
+        .slots
+        .retain(|s| !s.course_id.eq_ignore_ascii_case(target));
 
     parser::save_schedule(&sched);
     *state.schedule.write().await = sched.clone();
@@ -784,7 +992,44 @@ async fn delete_course_handler(
     }))
 }
 
-async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Value {
+fn spawn_sync_pipeline(state: SharedAppState, use_live_gemini: bool) {
+    tokio::spawn(async move {
+        // Box::pin sidesteps the "implementation of FnOnce is not general enough"
+        // inference hiccup when an owned-state async fn is spawned directly.
+        let _ = Box::pin(run_sync_pipeline(state, use_live_gemini)).await;
+    });
+}
+
+async fn run_sync_pipeline(state: SharedAppState, use_live_gemini: bool) -> Value {
+    if state
+        .sync_in_flight
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        let cfg = state.config.read().await.clone();
+        let assessments: Vec<Assessment> = state
+            .assessments
+            .read()
+            .await
+            .iter()
+            .filter(|a| a.is_source_enabled(&cfg))
+            .cloned()
+            .collect();
+        let dashboard = parser::build_dashboard_summary(&assessments, &cfg);
+        let schedule = state.schedule.read().await.clone();
+        return json!({
+            "success": true,
+            "syncing": true,
+            "message": "A sync is already in progress. Showing the current data.",
+            "gcal_report": Value::Null,
+            "assessments": assessments,
+            "dashboard": dashboard,
+            "schedule": schedule,
+            "config": cfg
+        });
+    }
+    let _flight_guard = InFlightGuard::new(state.sync_in_flight.clone());
+
     let schedule = state.schedule.read().await.clone();
     let mut cfg = state.config.read().await.clone();
     let mut sync_notes: Vec<String> = Vec::new();
@@ -794,11 +1039,8 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
         match gmail::sync_gmail_messages().await {
             Ok(list) => {
                 sync_notes.push(format!("Gmail: {} emails scanned", list.len()));
-                cfg.last_gmail_sync = Some(
-                    chrono::Local::now()
-                        .format("%Y-%m-%d %H:%M")
-                        .to_string(),
-                );
+                cfg.last_gmail_sync =
+                    Some(chrono::Local::now().format("%Y-%m-%d %H:%M").to_string());
                 list
             }
             Err(e) => {
@@ -810,8 +1052,7 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
         gmail::load_cached_emails()
     };
 
-    let mut parsed =
-        parser::process_all_emails(&emails, &schedule, &cfg, use_live_gemini).await;
+    let mut parsed = parser::process_all_emails(&emails, &schedule, &cfg, use_live_gemini).await;
 
     // 1. Ingest from Moodle LMS if enabled
     if cfg.moodle_enabled {
@@ -820,7 +1061,9 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
                 sync_notes.push(format!("Moodle: {} items", moodle_items.len()));
             }
             for m in moodle_items {
-                if !parsed.iter().any(|p| p.course_id == m.course_id && p.title == m.title && p.date_iso == m.date_iso) {
+                if !parsed.iter().any(|p| {
+                    p.course_id == m.course_id && p.title == m.title && p.date_iso == m.date_iso
+                }) {
                     parsed.push(m);
                 }
             }
@@ -864,7 +1107,9 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
                 sync_notes.push(format!("Teams: {} items", teams_res.assessments.len()));
             }
             for t in teams_res.assessments {
-                if !parsed.iter().any(|p| p.course_id == t.course_id && p.title == t.title && p.date_iso == t.date_iso) {
+                if !parsed.iter().any(|p| {
+                    p.course_id == t.course_id && p.title == t.title && p.date_iso == t.date_iso
+                }) {
                     parsed.push(t);
                 }
             }
@@ -878,7 +1123,9 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
                 sync_notes.push(format!("Classroom: {} items", cr_items.len()));
             }
             for c in cr_items {
-                if !parsed.iter().any(|p| p.course_id == c.course_id && p.title == c.title && p.date_iso == c.date_iso) {
+                if !parsed.iter().any(|p| {
+                    p.course_id == c.course_id && p.title == c.title && p.date_iso == c.date_iso
+                }) {
                     parsed.push(c);
                 }
             }
@@ -893,12 +1140,17 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
             .map(|c| c.id.trim().to_uppercase())
             .collect();
         parsed.retain(|p| {
-            if p.id.starts_with("teams-") || p.id.starts_with("moodle-") || p.id.starts_with("classroom-") {
+            if p.id.starts_with("teams-")
+                || p.id.starts_with("moodle-")
+                || p.id.starts_with("classroom-")
+            {
                 return true;
             }
             let cid = p.course_id.trim().to_uppercase();
             active_course_codes.contains(&cid)
-                || active_course_codes.iter().any(|ac| cid.starts_with(ac) || ac.starts_with(&cid))
+                || active_course_codes
+                    .iter()
+                    .any(|ac| cid.starts_with(ac) || ac.starts_with(&cid))
         });
     }
 
@@ -918,7 +1170,10 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
     parsed.sort_by(|a, b| match (a.is_upcoming, b.is_upcoming) {
         (true, false) => std::cmp::Ordering::Less,
         (false, true) => std::cmp::Ordering::Greater,
-        (true, true) => a.date_iso.cmp(&b.date_iso).then_with(|| a.start_time.cmp(&b.start_time)),
+        (true, true) => a
+            .date_iso
+            .cmp(&b.date_iso)
+            .then_with(|| a.start_time.cmp(&b.start_time)),
         (false, false) => b.date_iso.cmp(&a.date_iso),
     });
 
@@ -928,20 +1183,23 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
         None
     };
 
-    save_app_config(&cfg);
+    save_app_config(&cfg).await;
     *state.config.write().await = cfg.clone();
     let dashboard = parser::build_dashboard_summary(&parsed, &cfg);
     let upcoming_count = parsed.iter().filter(|a| a.is_upcoming).count();
 
-    let mut assessments_lock = state.assessments.write().await;
-    *assessments_lock = parsed.clone();
+    {
+        let mut assessments_lock = state.assessments.write().await;
+        *assessments_lock = parsed.clone();
+    }
+    let schedule = state.schedule.read().await.clone();
 
     // Honest closure message: report exactly what actually ran
     let detail = if sync_notes.is_empty() {
         "No connected sources produced new data. Connect Google / Microsoft accounts or Moodle in Settings, or add your schedule manually."
             .to_string()
     } else {
-        sync_notes.join(" · ")
+        sync_notes.join(" Â· ")
     };
     let message = format!(
         "Sync complete ({}): {} upcoming exams & quizzes active.",
@@ -954,7 +1212,7 @@ async fn run_sync_pipeline(state: &SharedAppState, use_live_gemini: bool) -> Val
         "gcal_report": gcal_report,
         "assessments": parsed,
         "dashboard": dashboard,
-        "schedule": state.schedule.read().await.clone(),
+        "schedule": schedule,
         "config": cfg
     })
 }
@@ -969,19 +1227,22 @@ async fn toggle_study_topic(
     State(state): State<SharedAppState>,
     Json(payload): Json<ToggleTopicPayload>,
 ) -> Json<Value> {
-    let mut cfg = state.config.write().await;
-    cfg.completed_topics.insert(payload.key, payload.completed);
-    save_app_config(&cfg);
+    let cfg_snapshot = {
+        let mut cfg = state.config.write().await;
+        cfg.completed_topics.insert(payload.key, payload.completed);
+        cfg.clone()
+    };
+    save_app_config(&cfg_snapshot).await;
 
     let assessments = state.assessments.read().await;
-    let dashboard = parser::build_dashboard_summary(&assessments, &cfg);
-    let tasks_payload = parser::build_study_tasks(&assessments, &cfg);
+    let dashboard = parser::build_dashboard_summary(&assessments, &cfg_snapshot);
+    let tasks_payload = parser::build_study_tasks(&assessments, &cfg_snapshot);
 
     Json(json!({
         "success": true,
         "dashboard": dashboard,
         "tasks_payload": tasks_payload,
-        "completed_topics": cfg.completed_topics
+        "completed_topics": cfg_snapshot.completed_topics
     }))
 }
 
@@ -1037,7 +1298,6 @@ async fn add_custom_event(
     State(state): State<SharedAppState>,
     Json(payload): Json<CreateCustomEventPayload>,
 ) -> Json<Value> {
-    let mut cfg = state.config.write().await;
     let id = format!("custom-{}", chrono::Utc::now().timestamp_millis());
     let color = match payload.course_id.as_str() {
         "CS 101" | "CS101" => "#4285f4",
@@ -1056,17 +1316,23 @@ async fn add_custom_event(
         date_iso: payload.date_iso,
         start_time: payload.start_time,
         end_time: payload.end_time,
-        room: payload.room.unwrap_or_else(|| "Study Room / Library".to_string()),
+        room: payload
+            .room
+            .unwrap_or_else(|| "Study Room / Library".to_string()),
         notes: payload.notes.unwrap_or_default(),
         color: color.to_string(),
     };
 
-    cfg.custom_events.push(ev);
-    save_app_config(&cfg);
+    let cfg_snapshot = {
+        let mut cfg = state.config.write().await;
+        cfg.custom_events.push(ev);
+        cfg.clone()
+    };
+    save_app_config(&cfg_snapshot).await;
 
     Json(json!({
         "success": true,
-        "custom_events": cfg.custom_events
+        "custom_events": cfg_snapshot.custom_events
     }))
 }
 
@@ -1074,26 +1340,29 @@ async fn delete_custom_event(
     State(state): State<SharedAppState>,
     Path(id): Path<String>,
 ) -> Json<Value> {
-    let mut cfg = state.config.write().await;
-    cfg.custom_events.retain(|e| e.id != id);
-    save_app_config(&cfg);
+    let cfg_snapshot = {
+        let mut cfg = state.config.write().await;
+        cfg.custom_events.retain(|e| e.id != id);
+        cfg.clone()
+    };
+    save_app_config(&cfg_snapshot).await;
 
     Json(json!({
         "success": true,
-        "custom_events": cfg.custom_events
+        "custom_events": cfg_snapshot.custom_events
     }))
 }
 
-async fn download_ics(
-    State(state): State<SharedAppState>,
-    Path(id): Path<String>,
-) -> Response {
+async fn download_ics(State(state): State<SharedAppState>, Path(id): Path<String>) -> Response {
     let assessments = state.assessments.read().await;
     if let Some(a) = assessments.iter().find(|x| x.id == id) {
         let ics = gcal::generate_single_ics(a);
         let filename = format!("{}_{}.ics", a.course_id, a.title.replace(' ', "_"));
         let mut headers = HeaderMap::new();
-        headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/calendar"));
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/calendar"),
+        );
         if let Ok(disp) = HeaderValue::from_str(&format!("attachment; filename=\"{}\"", filename)) {
             headers.insert(header::CONTENT_DISPOSITION, disp);
         }
@@ -1107,7 +1376,10 @@ async fn download_all_ics(State(state): State<SharedAppState>) -> Response {
     let assessments = state.assessments.read().await;
     let ics = gcal::generate_all_ics(&assessments);
     let mut headers = HeaderMap::new();
-    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/calendar"));
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/calendar"),
+    );
     headers.insert(
         header::CONTENT_DISPOSITION,
         HeaderValue::from_static("attachment; filename=\"QuizRadar_Upcoming_Exams.ics\""),
@@ -1127,9 +1399,9 @@ async fn check_updater_handler(Query(q): Query<UpdateCheckQuery>) -> Json<Value>
             "update_available": true,
             "current_version": updater::CURRENT_VERSION,
             "latest_version": "v3.2.0",
-            "release_name": "QuizRadar v3.2.0 — Academic Hubs, Custom Majors & Clean Timeline Display",
+            "release_name": "QuizRadar v3.2.0 â€” Academic Hubs, Custom Majors & Clean Timeline Display",
             "release_date": "2026-10-19",
-            "release_notes": "## What's New in v3.2.0\n\n- **Fix Auto-Enrollment**: Prevent unexpected enrollment in dummy Computer Science courses; added 1-click 'Clear all' course wiping\n- **Academic Major Selector**: Fixed field of study chip selection styling (.is-selected) and dynamic starter courses adaptation for Engineering, Medicine, Business, and Sciences\n- **Interactive Integration Hubs**: Upgraded Google Workspace, Microsoft Teams, Google Classroom, and Moodle LMS onboarding cards to interactive setup triggers with live connection status badges\n- **Visual & Formatting Polish**: Fixed embedded Lucide icon serving on installed builds, resolved dangling timeline time hyphens (e.g. 23:59–), and corrected pluralization\n- **Full Multi-Platform Parity**: Full parity across Windows, macOS, Linux, and Android APK builds",
+            "release_notes": "## What's New in v3.2.0\n\n- **Fix Auto-Enrollment**: Prevent unexpected enrollment in dummy Computer Science courses; added 1-click 'Clear all' course wiping\n- **Academic Major Selector**: Fixed field of study chip selection styling (.is-selected) and dynamic starter courses adaptation for Engineering, Medicine, Business, and Sciences\n- **Interactive Integration Hubs**: Upgraded Google Workspace, Microsoft Teams, Google Classroom, and Moodle LMS onboarding cards to interactive setup triggers with live connection status badges\n- **Visual & Formatting Polish**: Fixed embedded Lucide icon serving on installed builds, resolved dangling timeline time hyphens (e.g. 23:59â€“), and corrected pluralization\n- **Full Multi-Platform Parity**: Full parity across Windows, macOS, Linux, and Android APK builds",
             "download_url": "https://github.com/TheDragonSoft/QuizRadar/releases/latest",
             "portable_url": "https://github.com/TheDragonSoft/QuizRadar/releases/latest",
             "html_url": "https://github.com/TheDragonSoft/QuizRadar/releases/latest",
@@ -1204,34 +1476,61 @@ async fn update_config_handler(
     State(state): State<SharedAppState>,
     Json(payload): Json<UpdateConfigPayload>,
 ) -> Json<Value> {
-    let mut cfg = state.config.write().await;
-    let prev_teams = cfg.teams_enabled;
-    let prev_moodle = cfg.moodle_enabled;
-    let prev_classroom = cfg.classroom_enabled;
+    let (cfg_final, any_source_enabled) = {
+        let mut cfg = state.config.write().await;
+        let prev_teams = cfg.teams_enabled;
+        let prev_moodle = cfg.moodle_enabled;
+        let prev_classroom = cfg.classroom_enabled;
 
-    if let Some(v) = payload.auto_sync_gcal { cfg.auto_sync_gcal = v; }
-    if let Some(v) = payload.sync_weekly_classes_to_gcal { cfg.sync_weekly_classes_to_gcal = v; }
-    if let Some(v) = payload.gemini_enabled { cfg.gemini_enabled = v; }
-    if let Some(k) = payload.gemini_api_key { cfg.gemini_api_key = Some(k); }
-    if let Some(v) = payload.moodle_enabled { cfg.moodle_enabled = v; }
-    if let Some(u) = payload.moodle_url { cfg.moodle_url = Some(u); }
-    if let Some(t) = payload.moodle_token { cfg.moodle_token = Some(t); }
-    if let Some(i) = payload.moodle_ical_url { cfg.moodle_ical_url = Some(i); }
-    if let Some(v) = payload.teams_enabled { cfg.teams_enabled = v; }
-    if let Some(cid) = payload.teams_client_id { cfg.teams_client_id = Some(cid); }
-    let has_new_teams_token = payload.teams_token.is_some();
-    if let Some(t) = payload.teams_token { cfg.teams_token = Some(t); }
-    if let Some(a) = payload.teams_account_name { cfg.teams_account_name = Some(a); }
-    if let Some(v) = payload.classroom_enabled { cfg.classroom_enabled = v; }
+        if let Some(v) = payload.auto_sync_gcal {
+            cfg.auto_sync_gcal = v;
+        }
+        if let Some(v) = payload.sync_weekly_classes_to_gcal {
+            cfg.sync_weekly_classes_to_gcal = v;
+        }
+        if let Some(v) = payload.gemini_enabled {
+            cfg.gemini_enabled = v;
+        }
+        if let Some(k) = payload.gemini_api_key {
+            cfg.gemini_api_key = Some(k);
+        }
+        if let Some(v) = payload.moodle_enabled {
+            cfg.moodle_enabled = v;
+        }
+        if let Some(u) = payload.moodle_url {
+            cfg.moodle_url = Some(u);
+        }
+        if let Some(t) = payload.moodle_token {
+            cfg.moodle_token = Some(t);
+        }
+        if let Some(i) = payload.moodle_ical_url {
+            cfg.moodle_ical_url = Some(i);
+        }
+        if let Some(v) = payload.teams_enabled {
+            cfg.teams_enabled = v;
+        }
+        if let Some(cid) = payload.teams_client_id {
+            cfg.teams_client_id = Some(cid);
+        }
+        let has_new_teams_token = payload.teams_token.is_some();
+        if let Some(t) = payload.teams_token {
+            cfg.teams_token = Some(t);
+        }
+        if let Some(a) = payload.teams_account_name {
+            cfg.teams_account_name = Some(a);
+        }
+        if let Some(v) = payload.classroom_enabled {
+            cfg.classroom_enabled = v;
+        }
 
-    let any_source_enabled = (!prev_teams && cfg.teams_enabled && cfg.teams_token.is_some())
-        || (!prev_moodle && cfg.moodle_enabled)
-        || (!prev_classroom && cfg.classroom_enabled)
-        || (has_new_teams_token && cfg.teams_enabled);
+        let any_source_enabled = (!prev_teams && cfg.teams_enabled && cfg.teams_token.is_some())
+            || (!prev_moodle && cfg.moodle_enabled)
+            || (!prev_classroom && cfg.classroom_enabled)
+            || (has_new_teams_token && cfg.teams_enabled);
 
-    save_app_config(&cfg);
-    let cfg_final = cfg.clone();
-    drop(cfg);
+        (cfg.clone(), any_source_enabled)
+    };
+    save_app_config(&cfg_final).await;
 
     // If any source was disabled, immediately remove its assessments from active memory
     {
@@ -1241,19 +1540,23 @@ async fn update_config_handler(
 
     // If any source was newly enabled (or tokens updated), trigger a sync pipeline to fetch fresh assignments
     if any_source_enabled {
-        let _ = run_sync_pipeline(&state, false).await;
+        spawn_sync_pipeline(state.clone(), false);
     }
 
-    let assessments = state.assessments.read().await;
-    let visible_assessments: Vec<Assessment> = assessments
-        .iter()
-        .filter(|a| a.is_source_enabled(&cfg_final))
-        .cloned()
-        .collect();
-    let dashboard = parser::build_dashboard_summary(&visible_assessments, &cfg_final);
+    let (visible_assessments, dashboard) = {
+        let assessments = state.assessments.read().await;
+        let visible_assessments: Vec<Assessment> = assessments
+            .iter()
+            .filter(|a| a.is_source_enabled(&cfg_final))
+            .cloned()
+            .collect();
+        let dashboard = parser::build_dashboard_summary(&visible_assessments, &cfg_final);
+        (visible_assessments, dashboard)
+    };
 
     Json(json!({
         "success": true,
+        "syncing": any_source_enabled,
         "config": cfg_final,
         "dashboard": dashboard,
         "assessments": visible_assessments
@@ -1285,7 +1588,10 @@ async fn test_moodle_handler(
             Ok(items) => {
                 success = true;
                 count = items.len();
-                msg = format!("Moodle iCal Feed verified! Found {} upcoming calendar events.", items.len());
+                msg = format!(
+                    "Moodle iCal Feed verified! Found {} upcoming calendar events.",
+                    items.len()
+                );
             }
             Err(err) => {
                 msg = format!("Moodle iCal error: {}", err);
@@ -1296,7 +1602,10 @@ async fn test_moodle_handler(
             Ok(items) => {
                 success = true;
                 count = items.len();
-                msg = format!("Moodle REST Web Services connected! Found {} events.", items.len());
+                msg = format!(
+                    "Moodle REST Web Services connected! Found {} events.",
+                    items.len()
+                );
             }
             Err(err) => {
                 msg = format!("Moodle API error: {}", err);
@@ -1318,17 +1627,31 @@ async fn test_moodle_handler(
 }
 
 async fn sync_moodle_handler(State(state): State<SharedAppState>) -> Json<Value> {
-    {
+    let cfg_snapshot = {
         let mut cfg = state.config.write().await;
         cfg.moodle_enabled = true;
-        save_app_config(&cfg);
-    }
-    let mut res = run_sync_pipeline(&state, false).await;
-    if let Some(obj) = res.as_object_mut() {
-        obj.insert("status".to_string(), json!("ok"));
-        obj.insert("synced_count".to_string(), json!(2));
-    }
-    Json(res)
+        cfg.clone()
+    };
+    save_app_config(&cfg_snapshot).await;
+
+    spawn_sync_pipeline(state.clone(), false);
+
+    let assessments = state.assessments.read().await.clone();
+    let dashboard = parser::build_dashboard_summary(&assessments, &cfg_snapshot);
+    let schedule = state.schedule.read().await.clone();
+
+    Json(json!({
+        "success": true,
+        "syncing": true,
+        "status": "ok",
+        "synced_count": 2,
+        "message": "Moodle sync started in the background.",
+        "gcal_report": Value::Null,
+        "assessments": assessments,
+        "dashboard": dashboard,
+        "schedule": schedule,
+        "config": cfg_snapshot
+    }))
 }
 
 async fn microsoft_login_redirect(State(state): State<SharedAppState>) -> Redirect {
@@ -1351,19 +1674,21 @@ async fn microsoft_oauth_callback(
         let cid = state.config.read().await.teams_client_id.clone();
         match teams::exchange_microsoft_code_for_token(code, state.port, cid.as_deref()).await {
             Ok(tok) => {
-                let mut cfg = state.config.write().await;
-                cfg.teams_enabled = true;
-                cfg.teams_token = Some(tok.access_token);
-                save_app_config(&cfg);
-                drop(cfg);
-                let _ = run_sync_pipeline(&state, false).await;
+                let cfg_snapshot = {
+                    let mut cfg = state.config.write().await;
+                    cfg.teams_enabled = true;
+                    cfg.teams_token = Some(tok.access_token);
+                    cfg.clone()
+                };
+                save_app_config(&cfg_snapshot).await;
+                spawn_sync_pipeline(state.clone(), false);
 
                 let html = r#"<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QuizRadar — Microsoft Teams Connected</title>
+  <title>QuizRadar â€” Microsoft Teams Connected</title>
   <style>
     body { background: #0b0f19; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
     .card { background: #131927; border: 1px solid #1e293b; border-radius: 16px; padding: 28px; max-width: 440px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; }
@@ -1376,7 +1701,7 @@ async fn microsoft_oauth_callback(
 </head>
 <body>
   <div class="card">
-    <div class="icon">🎓</div>
+    <div class="icon">ðŸŽ“</div>
     <h2>University Account Connected!</h2>
     <p>Your university Microsoft 365 / Teams account has been linked. Academic courses, assignments, and announcements will sync automatically.</p>
     <button class="btn" onclick="window.close();">Return to QuizRadar</button>
@@ -1397,7 +1722,7 @@ async fn microsoft_oauth_callback(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QuizRadar — Microsoft Sign-In</title>
+  <title>QuizRadar â€” Microsoft Sign-In</title>
   <style>
     body {{ background: #0b0f19; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }}
     .card {{ background: #131927; border: 1px solid #1e293b; border-radius: 16px; padding: 28px; max-width: 440px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; }}
@@ -1409,7 +1734,7 @@ async fn microsoft_oauth_callback(
 </head>
 <body>
   <div class="card">
-    <div class="icon">⚠️</div>
+    <div class="icon">âš ï¸</div>
     <h2>Microsoft Sign-In Error</h2>
     <p>{}</p>
     <button class="btn" onclick="window.close();">Return to QuizRadar</button>
@@ -1436,16 +1761,21 @@ async fn microsoft_oauth_callback(
 
 async fn microsoft_logout(State(state): State<SharedAppState>) -> Json<Value> {
     teams::clear_stored_microsoft_token();
-    {
+    let cfg_snapshot = {
         let mut cfg = state.config.write().await;
         cfg.teams_enabled = false;
         cfg.teams_token = None;
         cfg.teams_account_name = None;
         cfg.teams_account_email = None;
-        save_app_config(&cfg);
-    }
-    let _ = run_sync_pipeline(&state, false).await;
-    Json(json!({ "success": true, "message": "University Microsoft Teams disconnected" }))
+        cfg.clone()
+    };
+    save_app_config(&cfg_snapshot).await;
+    spawn_sync_pipeline(state.clone(), false);
+    Json(json!({
+        "success": true,
+        "syncing": true,
+        "message": "University Microsoft Teams disconnected"
+    }))
 }
 
 #[derive(Deserialize)]
@@ -1460,10 +1790,13 @@ async fn test_microsoft_handler(
     let token_opt = payload.token.filter(|t| !t.trim().is_empty());
 
     if let Some(ref tok) = token_opt {
-        let mut cfg = state.config.write().await;
-        cfg.teams_token = Some(tok.clone());
-        cfg.teams_enabled = true;
-        save_app_config(&cfg);
+        let cfg_snapshot = {
+            let mut cfg = state.config.write().await;
+            cfg.teams_token = Some(tok.clone());
+            cfg.teams_enabled = true;
+            cfg.clone()
+        };
+        save_app_config(&cfg_snapshot).await;
     }
 
     let cfg = state.config.read().await.clone();
@@ -1471,7 +1804,7 @@ async fn test_microsoft_handler(
 
     match teams::test_microsoft_connection(token.as_deref()).await {
         Ok(res) => {
-            {
+            let cfg_final = {
                 let mut wcfg = state.config.write().await;
                 wcfg.teams_enabled = true;
                 if let Some(ref name) = res.user_display_name {
@@ -1486,16 +1819,20 @@ async fn test_microsoft_handler(
                         wcfg.user_email = Some(email.clone());
                     }
                 }
-                save_app_config(&wcfg);
-            }
+                wcfg.clone()
+            };
+            save_app_config(&cfg_final).await;
 
             // Immediately run the sync pipeline so courses and assessments appear automatically!
-            let sync_res = run_sync_pipeline(&state, false).await;
+            spawn_sync_pipeline(state.clone(), false);
+
             let schedule = state.schedule.read().await.clone();
-            let cfg_final = state.config.read().await.clone();
+            let assessments = state.assessments.read().await.clone();
+            let dashboard = parser::build_dashboard_summary(&assessments, &cfg_final);
 
             Json(json!({
                 "success": true,
+                "syncing": true,
                 "status": "ok",
                 "message": res.message,
                 "user": res.user_display_name.unwrap_or_else(|| "Microsoft Student Account".to_string()),
@@ -1504,12 +1841,12 @@ async fn test_microsoft_handler(
                 "courses_count": res.courses_found.len(),
                 "courses_found": res.courses_found,
                 "assignments_count": res.items_found,
-                "dashboard": sync_res["dashboard"].clone(),
-                "assessments": sync_res["assessments"].clone(),
+                "dashboard": dashboard,
+                "assessments": assessments,
                 "schedule": schedule,
                 "config": cfg_final
             }))
-        },
+        }
         Err(err) => Json(json!({
             "success": false,
             "status": "error",
@@ -1581,29 +1918,39 @@ async fn update_assessment_grade_handler(
     Path(id): Path<String>,
     Json(payload): Json<UpdateGradePayload>,
 ) -> Json<Value> {
-    let mut cfg = state.config.write().await;
-    if let (Some(achieved), Some(max), Some(weight)) = (payload.achieved_score, payload.max_score, payload.weightage_percent) {
-        cfg.grades.insert(
-            id.clone(),
-            AssessmentGrade {
-                achieved_score: achieved,
-                max_score: max,
-                weightage_percent: weight,
-            },
-        );
-    }
-    save_app_config(&cfg);
-
-    let mut assessments = state.assessments.write().await;
-    for a in assessments.iter_mut() {
-        if a.id == id {
-            a.achieved_score = payload.achieved_score;
-            a.max_score = payload.max_score;
-            a.weightage_percent = payload.weightage_percent;
+    let cfg_snapshot = {
+        let mut cfg = state.config.write().await;
+        if let (Some(achieved), Some(max), Some(weight)) = (
+            payload.achieved_score,
+            payload.max_score,
+            payload.weightage_percent,
+        ) {
+            cfg.grades.insert(
+                id.clone(),
+                AssessmentGrade {
+                    achieved_score: achieved,
+                    max_score: max,
+                    weightage_percent: weight,
+                },
+            );
         }
-    }
+        cfg.clone()
+    };
+    save_app_config(&cfg_snapshot).await;
 
-    let dashboard = parser::build_dashboard_summary(&assessments, &cfg);
+    let dashboard = {
+        let mut assessments = state.assessments.write().await;
+        for a in assessments.iter_mut() {
+            if a.id == id {
+                a.achieved_score = payload.achieved_score;
+                a.max_score = payload.max_score;
+                a.weightage_percent = payload.weightage_percent;
+            }
+        }
+        parser::build_dashboard_summary(&assessments, &cfg_snapshot)
+    };
+
+    let assessments = state.assessments.read().await;
     Json(json!({
         "success": true,
         "status": "ok",
@@ -1630,23 +1977,27 @@ async fn schedule_study_blocks_handler(
     let target_assessments: Vec<&Assessment> = if let Some(ref aid) = payload.assessment_id {
         assessments.iter().filter(|a| a.id == *aid).collect()
     } else {
-        assessments.iter().filter(|a| a.is_upcoming && a.days_until >= 0 && a.days_until <= 7).collect()
+        assessments
+            .iter()
+            .filter(|a| a.is_upcoming && a.days_until >= 0 && a.days_until <= 7)
+            .collect()
     };
 
     let mut created_count = 0usize;
     for a in target_assessments {
         let block_date = if let Ok(d) = chrono::NaiveDate::parse_from_str(&a.date_iso, "%Y-%m-%d") {
-            (d - chrono::Duration::days(1)).format("%Y-%m-%d").to_string()
+            (d - chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string()
         } else {
             a.date_iso.clone()
         };
 
         let block_id = format!("study-block-{}", a.id);
         if !cfg.custom_events.iter().any(|e| e.id == block_id) {
-            // Pick the first free evening study window (16:00–21:30) that does not
+            // Pick the first free evening study window (16:00â€“21:30) that does not
             // clash with an existing event on that date instead of a fixed 17:00.
-            let (mut start_time, mut end_time) =
-                ("17:00".to_string(), "18:30".to_string());
+            let (mut start_time, mut end_time) = ("17:00".to_string(), "18:30".to_string());
             let windows: [(&str, &str); 5] = [
                 ("16:00", "17:30"),
                 ("17:00", "18:30"),
@@ -1657,7 +2008,7 @@ async fn schedule_study_blocks_handler(
             for (ws, we) in windows {
                 let clashes = cfg.custom_events.iter().any(|e| {
                     e.date_iso == block_date
-                        && !(e.end_time <= ws.to_string() || e.start_time >= we.to_string())
+                        && !(e.end_time.as_str() <= ws || e.start_time.as_str() >= we)
                 });
                 if !clashes {
                     start_time = ws.to_string();
@@ -1668,7 +2019,7 @@ async fn schedule_study_blocks_handler(
             let notes = format!("Focused review of topics: {}", a.topics.join(", "));
             cfg.custom_events.push(CustomCalendarEvent {
                 id: block_id,
-                title: format!("📚 Study Block: {}", a.title),
+                title: format!("ðŸ“š Study Block: {}", a.title),
                 course_id: a.course_id.clone(),
                 event_type: "Study Session".to_string(),
                 date_iso: block_date,
@@ -1683,13 +2034,17 @@ async fn schedule_study_blocks_handler(
     }
 
     cfg.dismiss_conflict_banner = false;
-    save_app_config(&cfg);
+    let cfg_snapshot = cfg.clone();
     drop(cfg);
+    save_app_config(&cfg_snapshot).await;
 
-    let res = run_sync_pipeline(&state, false).await;
+    spawn_sync_pipeline(state.clone(), false);
+
+    let dashboard = parser::build_dashboard_summary(&assessments, &cfg_snapshot);
 
     Json(json!({
         "success": true,
+        "syncing": true,
         "status": "ok",
         "created_blocks_count": created_count,
         "message": if created_count > 0 {
@@ -1697,16 +2052,19 @@ async fn schedule_study_blocks_handler(
         } else {
             "All upcoming exams are already protected with active smart study preparation blocks in your timetable!".to_string()
         },
-        "config": state.config.read().await.clone(),
-        "dashboard": res["dashboard"].clone(),
-        "assessments": res["assessments"].clone()
+        "config": cfg_snapshot,
+        "dashboard": dashboard,
+        "assessments": assessments
     }))
 }
 
 async fn dismiss_conflicts_handler(State(state): State<SharedAppState>) -> Json<Value> {
-    let mut cfg = state.config.write().await;
-    cfg.dismiss_conflict_banner = true;
-    save_app_config(&cfg);
+    let cfg_snapshot = {
+        let mut cfg = state.config.write().await;
+        cfg.dismiss_conflict_banner = true;
+        cfg.clone()
+    };
+    save_app_config(&cfg_snapshot).await;
     Json(json!({ "success": true, "status": "ok" }))
 }
 
@@ -1730,54 +2088,72 @@ async fn push_cloud_sync_handler(State(state): State<SharedAppState>) -> Json<Va
 async fn pull_cloud_sync_handler(State(state): State<SharedAppState>) -> Json<Value> {
     match cloud_sync::pull_cloud_state().await {
         Ok(Some(cloud_state)) => {
-            let mut sched = state.schedule.write().await;
-            if !cloud_state.schedule.courses.is_empty() {
-                sched.courses = cloud_state.schedule.courses.clone();
-                sched.slots = cloud_state.schedule.slots.clone();
-                sched.semester = cloud_state.schedule.semester.clone();
-                parser::save_schedule(&sched);
+            let schedule_updated = !cloud_state.schedule.courses.is_empty();
+            let final_schedule = {
+                let mut sched = state.schedule.write().await;
+                if schedule_updated {
+                    sched.courses = cloud_state.schedule.courses.clone();
+                    sched.slots = cloud_state.schedule.slots.clone();
+                    sched.semester = cloud_state.schedule.semester.clone();
+                }
+                sched.clone()
+            };
+            if schedule_updated {
+                parser::save_schedule(&final_schedule);
             }
 
-            let mut wcfg = state.config.write().await;
-            for (k, v) in cloud_state.completed_topics {
-                if v {
-                    wcfg.completed_topics.insert(k, true);
+            let final_cfg = {
+                let mut wcfg = state.config.write().await;
+                for (k, v) in cloud_state.completed_topics {
+                    if v {
+                        wcfg.completed_topics.insert(k, true);
+                    }
                 }
-            }
-            for (k, v) in cloud_state.grades {
-                wcfg.grades.insert(k, v);
-            }
-            for ce in cloud_state.custom_events {
-                if !wcfg.custom_events.iter().any(|e| e.id == ce.id) {
-                    wcfg.custom_events.push(ce);
+                for (k, v) in cloud_state.grades {
+                    wcfg.grades.insert(k, v);
                 }
-            }
-            if cloud_state.teams_enabled && cloud_state.teams_token.is_some() {
-                wcfg.teams_enabled = true;
-                wcfg.teams_token = cloud_state.teams_token;
-            }
-            save_app_config(&wcfg);
-            let final_cfg = wcfg.clone();
-            drop(wcfg);
+                for ce in cloud_state.custom_events {
+                    if !wcfg.custom_events.iter().any(|e| e.id == ce.id) {
+                        wcfg.custom_events.push(ce);
+                    }
+                }
+                if cloud_state.teams_enabled && cloud_state.teams_token.is_some() {
+                    wcfg.teams_enabled = true;
+                    wcfg.teams_token = cloud_state.teams_token;
+                }
+                wcfg.clone()
+            };
+            save_app_config(&final_cfg).await;
 
-            let mut assessments_lock = state.assessments.write().await;
-            for ca in cloud_state.assessments {
-                if !assessments_lock.iter().any(|a| a.id == ca.id) {
-                    assessments_lock.push(ca);
+            {
+                let mut assessments_lock = state.assessments.write().await;
+                for ca in cloud_state.assessments {
+                    if !assessments_lock.iter().any(|a| a.id == ca.id) {
+                        assessments_lock.push(ca);
+                    }
                 }
             }
-            let visible_assessments: Vec<Assessment> = assessments_lock
-                .iter()
-                .filter(|a| a.is_source_enabled(&final_cfg))
-                .cloned()
-                .collect();
+
+            let visible_assessments: Vec<Assessment> = {
+                let assessments = state.assessments.read().await;
+                assessments
+                    .iter()
+                    .filter(|a| a.is_source_enabled(&final_cfg))
+                    .cloned()
+                    .collect()
+            };
             let dashboard = parser::build_dashboard_summary(&visible_assessments, &final_cfg);
+            let message = format!(
+                "Successfully synchronized from cloud! Loaded {} assessments and {} courses.",
+                visible_assessments.len(),
+                final_schedule.courses.len()
+            );
 
             Json(json!({
                 "success": true,
-                "message": format!("Successfully synchronized from cloud! Loaded {} assessments and {} courses.", visible_assessments.len(), sched.courses.len()),
+                "message": message,
                 "assessments": visible_assessments,
-                "schedule": *sched,
+                "schedule": final_schedule,
                 "config": final_cfg,
                 "dashboard": dashboard
             }))
@@ -1814,6 +2190,8 @@ async fn get_pairing_info_handler(State(state): State<SharedAppState>) -> Json<V
 }
 
 pub mod urlencoding {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+
     pub fn encode(s: &str) -> String {
         let mut result = String::with_capacity(s.len() * 3);
         for b in s.bytes() {
@@ -1823,7 +2201,9 @@ pub mod urlencoding {
                 }
                 b' ' => result.push_str("%20"),
                 _ => {
-                    result.push_str(&format!("%{:02X}", b));
+                    result.push('%');
+                    result.push(HEX[(b >> 4) as usize] as char);
+                    result.push(HEX[(b & 0x0f) as usize] as char);
                 }
             }
         }

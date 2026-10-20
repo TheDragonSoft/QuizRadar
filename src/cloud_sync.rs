@@ -4,9 +4,38 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::sync::LazyLock;
+use std::time::Duration;
 
 const DRIVE_FILE_NAME: &str = "quizradar_cloud_state.json";
 const CALENDAR_SYNC_TITLE: &str = "[QuizRadar-Device-Sync-State]";
+const CALENDAR_DESCRIPTION_MAX_BYTES: usize = 8000;
+
+static CLOUD_SYNC_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(30))
+        .build()
+        .expect("Failed to build shared cloud sync HTTP client")
+});
+
+#[derive(Serialize)]
+struct CloudStatePayload<'a> {
+    schema_version: u32,
+    client_device_id: &'a str,
+    updated_at: &'a str,
+    user_email: Option<&'a str>,
+    user_name: Option<&'a str>,
+    schedule: &'a ScheduleData,
+    assessments: &'a [Assessment],
+    grades: &'a HashMap<String, AssessmentGrade>,
+    completed_topics: &'a HashMap<String, bool>,
+    custom_events: &'a [CustomCalendarEvent],
+    teams_enabled: bool,
+    teams_token: Option<&'a str>,
+    moodle_enabled: bool,
+    classroom_enabled: bool,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuizRadarCloudState {
@@ -58,70 +87,80 @@ pub async fn push_cloud_state(
     device_id: &str,
 ) -> Result<CloudSyncReport, String> {
     let token = get_valid_access_token().await?;
-    let client = reqwest::Client::new();
+    let client = &*CLOUD_SYNC_HTTP_CLIENT;
     let now_iso = Utc::now().to_rfc3339();
 
-    let cloud_state = QuizRadarCloudState {
+    let payload = CloudStatePayload {
         schema_version: 1,
-        client_device_id: device_id.to_string(),
-        updated_at: now_iso.clone(),
-        user_email: cfg.user_email.clone(),
-        user_name: cfg.user_name.clone(),
-        schedule: schedule.clone(),
-        assessments: assessments.to_vec(),
-        grades: cfg.grades.clone(),
-        completed_topics: cfg.completed_topics.clone(),
-        custom_events: cfg.custom_events.clone(),
+        client_device_id: device_id,
+        updated_at: &now_iso,
+        user_email: cfg.user_email.as_deref(),
+        user_name: cfg.user_name.as_deref(),
+        schedule,
+        assessments,
+        grades: &cfg.grades,
+        completed_topics: &cfg.completed_topics,
+        custom_events: &cfg.custom_events,
         teams_enabled: cfg.teams_enabled,
-        teams_token: cfg.teams_token.clone(),
+        teams_token: cfg.teams_token.as_deref(),
         moodle_enabled: cfg.moodle_enabled,
         classroom_enabled: cfg.classroom_enabled,
     };
 
-    let serialized = serde_json::to_string(&cloud_state)
-        .map_err(|e| format!("Serialization error: {}", e))?;
+    let serialized =
+        serde_json::to_string(&payload).map_err(|e| format!("Serialization error: {}", e))?;
+
+    let assessments_count = assessments.len();
+    let courses_count = schedule.courses.len();
+    let completed_topics_count = cfg.completed_topics.len();
 
     // Attempt 1: Google Drive AppData folder
-    if let Ok(res) = push_to_google_drive(&client, &token.token, &serialized).await {
+    if let Ok(res) = push_to_google_drive(client, &token.token, &serialized).await {
         return Ok(CloudSyncReport {
             success: true,
             channel: "Google Drive AppData".to_string(),
             action: "pushed".to_string(),
             timestamp: now_iso,
-            assessments_count: cloud_state.assessments.len(),
-            courses_count: cloud_state.schedule.courses.len(),
-            completed_topics_count: cloud_state.completed_topics.len(),
-            message: format!("State safely stored in hidden Google Drive AppData ({})", res),
+            assessments_count,
+            courses_count,
+            completed_topics_count,
+            message: format!(
+                "State safely stored in hidden Google Drive AppData ({})",
+                res
+            ),
         });
     }
 
     // Attempt 2: Fallback to Google Calendar Private Sync Record
     // Since Google Calendar scope is already authorized on the user's account
-    let cal_res = push_to_google_calendar(&client, &token.token, &serialized).await?;
+    let cal_res = push_to_google_calendar(client, &token.token, &serialized).await?;
     Ok(CloudSyncReport {
         success: true,
         channel: "Google Calendar Cloud Sync".to_string(),
         action: "pushed".to_string(),
         timestamp: now_iso,
-        assessments_count: cloud_state.assessments.len(),
-        courses_count: cloud_state.schedule.courses.len(),
-        completed_topics_count: cloud_state.completed_topics.len(),
-        message: format!("Synchronized state across devices via Google Account Cloud Store ({})", cal_res),
+        assessments_count,
+        courses_count,
+        completed_topics_count,
+        message: format!(
+            "Synchronized state across devices via Google Account Cloud Store ({})",
+            cal_res
+        ),
     })
 }
 
 /// Pull cloud state from Google Cloud account
 pub async fn pull_cloud_state() -> Result<Option<QuizRadarCloudState>, String> {
     let token = get_valid_access_token().await?;
-    let client = reqwest::Client::new();
+    let client = &*CLOUD_SYNC_HTTP_CLIENT;
 
     // Try Google Drive AppData first
-    if let Ok(Some(state)) = pull_from_google_drive(&client, &token.token).await {
+    if let Ok(Some(state)) = pull_from_google_drive(client, &token.token).await {
         return Ok(Some(state));
     }
 
     // Try Google Calendar Cloud Store fallback
-    pull_from_google_calendar(&client, &token.token).await
+    pull_from_google_calendar(client, &token.token).await
 }
 
 async fn push_to_google_drive(
@@ -142,7 +181,10 @@ async fn push_to_google_drive(
         .map_err(|e| format!("Drive search request failed: {}", e))?;
 
     if !search_resp.status().is_success() {
-        return Err(format!("Drive API search returned {}", search_resp.status()));
+        return Err(format!(
+            "Drive API search returned {}",
+            search_resp.status()
+        ));
     }
 
     let search_json: Value = search_resp
@@ -197,7 +239,10 @@ async fn push_to_google_drive(
     let resp = client
         .post(create_url)
         .bearer_auth(access_token)
-        .header("Content-Type", format!("multipart/related; boundary={}", boundary))
+        .header(
+            "Content-Type",
+            format!("multipart/related; boundary={}", boundary),
+        )
         .body(body_multipart)
         .send()
         .await
@@ -263,6 +308,20 @@ async fn pull_from_google_drive(
     Err(format!("Drive download returned {}", dl_resp.status()))
 }
 
+fn calendar_sync_payload(content: &str) -> String {
+    const START: &str = "---QUIZRADAR_DATA_START---\n";
+    const END: &str = "\n---QUIZRADAR_DATA_END---";
+    if START.len() + content.len() + END.len() <= CALENDAR_DESCRIPTION_MAX_BYTES {
+        return format!("{}{}{}", START, content, END);
+    }
+    let budget = CALENDAR_DESCRIPTION_MAX_BYTES.saturating_sub(START.len());
+    let mut end = budget.min(content.len());
+    while end > 0 && !content.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}{}", START, &content[..end])
+}
+
 async fn push_to_google_calendar(
     client: &reqwest::Client,
     access_token: &str,
@@ -299,7 +358,7 @@ async fn push_to_google_calendar(
         None
     };
 
-    let encoded_payload = format!("---QUIZRADAR_DATA_START---\n{}\n---QUIZRADAR_DATA_END---", content);
+    let encoded_payload = calendar_sync_payload(content);
     // Fallback storage via a private calendar bookmark event. Diff the event to
     // today so it never accumulates stale remnants in the user's calendar.
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
@@ -329,7 +388,10 @@ async fn push_to_google_calendar(
         }
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(format!("Calendar sync update error HTTP {} - {}", status, text));
+        return Err(format!(
+            "Calendar sync update error HTTP {} - {}",
+            status, text
+        ));
     }
 
     let url = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
@@ -347,7 +409,10 @@ async fn push_to_google_calendar(
 
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
-    Err(format!("Calendar sync create error HTTP {} - {}", status, text))
+    Err(format!(
+        "Calendar sync create error HTTP {} - {}",
+        status, text
+    ))
 }
 
 async fn pull_from_google_calendar(
@@ -366,7 +431,10 @@ async fn pull_from_google_calendar(
         .map_err(|e| format!("Calendar search failed: {}", e))?;
 
     if !search_resp.status().is_success() {
-        return Err(format!("Calendar search returned HTTP {}", search_resp.status()));
+        return Err(format!(
+            "Calendar search returned HTTP {}",
+            search_resp.status()
+        ));
     }
 
     let v: Value = search_resp.json().await.map_err(|e| e.to_string())?;

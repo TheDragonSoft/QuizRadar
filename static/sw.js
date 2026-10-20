@@ -3,6 +3,10 @@ const STATIC_ASSETS = [
   './',
   './index.html',
   './app.js',
+  './tailwind.css',
+  './fonts.css',
+  './fonts/inter-var-latin.woff2',
+  './fonts/inter-var-latin-ext.woff2',
   './icon.svg',
   './icon-192.png',
   './icon-512.png',
@@ -11,11 +15,9 @@ const STATIC_ASSETS = [
   './manifest.webmanifest'
 ];
 
-// Cross-origin CDN assets the app depends on for styling & icons. Precaching
-// them makes the PWA fully styled even when the device is offline.
+// Cross-origin CDN asset the app still depends on as an offline icon fallback.
+// Tailwind & Inter are now self-hosted and precached via STATIC_ASSETS.
 const CDN_ASSETS = [
-  'https://cdn.tailwindcss.com',
-  'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap',
   'https://unpkg.com/lucide@latest/dist/umd/lucide.min.js'
 ];
 
@@ -76,7 +78,35 @@ self.addEventListener('fetch', (event) => {
             });
           }
           return networkResponse;
-        }).catch(() => cachedResponse);
+        }).catch(() => {
+          return cachedResponse || new Response(JSON.stringify({ error: 'Offline / Network unavailable' }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        });
+      })
+    );
+    return;
+  }
+
+  // Local font & stylesheet assets: cache-first so styling works offline on first paint
+  if (url.pathname.includes('/fonts/') || url.pathname.endsWith('/fonts.css') || url.pathname.endsWith('/tailwind.css')) {
+    event.respondWith(
+      caches.match(event.request).then((cachedResponse) => {
+        return cachedResponse || fetch(event.request).then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseToCache);
+            });
+          }
+          return networkResponse;
+        }).catch(() => {
+          return cachedResponse || new Response(JSON.stringify({ error: 'Offline / Network unavailable' }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        });
       })
     );
     return;
@@ -95,7 +125,10 @@ self.addEventListener('fetch', (event) => {
           }
           return networkResponse;
         })
-        .catch(() => cachedResponse);
+        .catch(() => cachedResponse || new Response(JSON.stringify({ error: 'Offline / Network unavailable' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' }
+        }));
 
       return cachedResponse || fetchPromise;
     })

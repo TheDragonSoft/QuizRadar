@@ -39,6 +39,123 @@ function getSundayOfWeek(d) {
   return date;
 }
 
+// ============================================================================
+// SHARED PERFORMANCE HELPERS (scoped icon hydration, rAF throttle, debounce)
+// ============================================================================
+
+// Hydrate icons only inside the container that was just written to.
+// Call with no argument for the rare one-off full-document fallback.
+function refreshIcons(root) {
+  if (!window.lucide || typeof window.lucide.createIcons !== "function") return;
+  if (root) {
+    window.lucide.createIcons({ root });
+    return;
+  }
+  if (arguments.length === 0) {
+    window.lucide.createIcons();
+  }
+}
+
+// Coalesce high-frequency events (resize, scroll, touchmove) to one rAF frame.
+function rafThrottle(fn) {
+  let scheduled = false;
+  let lastArgs = null;
+  return function (...args) {
+    lastArgs = args;
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(() => {
+      scheduled = false;
+      const argsToUse = lastArgs;
+      lastArgs = null;
+      fn.apply(this, argsToUse || []);
+    });
+  };
+}
+
+// Trailing-edge debounce with cancel()/flush() for immediate paths.
+function debounce(fn, wait) {
+  let timer = null;
+  let lastArgs = null;
+  const wrapped = function (...args) {
+    lastArgs = args;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      const argsToUse = lastArgs || [];
+      lastArgs = null;
+      fn.apply(this, argsToUse);
+    }, wait);
+  };
+  wrapped.cancel = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    lastArgs = null;
+  };
+  wrapped.flush = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    if (!lastArgs) return;
+    const argsToUse = lastArgs;
+    lastArgs = null;
+    fn.apply(this, argsToUse);
+  };
+  return wrapped;
+}
+
+function isViewActive(viewId) {
+  const el = document.getElementById(viewId);
+  return !!el && !el.classList.contains("hidden");
+}
+
+// View switching: restart the enter animation without a forced synchronous reflow.
+// The class is applied one frame before the view becomes visible so the animation
+// always starts from its first keyframe (no flash).
+function revealViewWithTransition(el) {
+  if (!el) return;
+  el.classList.remove("view-transition");
+  const token = (el._revealToken = (el._revealToken || 0) + 1);
+  requestAnimationFrame(() => {
+    if (el._revealToken !== token) return;
+    el.classList.add("view-transition");
+    requestAnimationFrame(() => {
+      if (el._revealToken !== token) return;
+      el.classList.remove("hidden");
+    });
+  });
+}
+
+function hideView(el) {
+  if (!el) return;
+  el._revealToken = (el._revealToken || 0) + 1;
+  el.classList.add("hidden");
+}
+
+// Modal opening without a forced synchronous reflow: the backdrop is invisible
+// until "is-open" lands, so the two-frame reveal is flicker-free.
+function revealModalWithTransition(el, onRevealed) {
+  if (!el) return;
+  el.classList.remove("hidden");
+  const token = (el._revealToken = (el._revealToken || 0) + 1);
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      if (el._revealToken !== token || el.classList.contains("hidden")) return;
+      el.classList.add("is-open");
+      if (typeof onRevealed === "function") onRevealed();
+    })
+  );
+}
+
+function dismissModalTransition(el) {
+  if (!el) return;
+  el._revealToken = (el._revealToken || 0) + 1;
+  el.classList.remove("is-open");
+}
+
 class QuizRadarAutonomousEngine {
   constructor() {
     this.state = this.loadDatabase();
@@ -50,6 +167,12 @@ class QuizRadarAutonomousEngine {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && parsed.schedule && Array.isArray(parsed.assessments)) {
+          if (!parsed.config) parsed.config = {};
+          // Migrate legacy top-level completed_topics into config (single source of truth,
+          // matching the desktop server which persists it inside the app config).
+          if (parsed.completed_topics && (!parsed.config.completed_topics || Object.keys(parsed.config.completed_topics).length === 0)) {
+            parsed.config.completed_topics = parsed.completed_topics;
+          }
           // Scrub legacy mock assessments and tasks if lingering from previous demo versions
           parsed.assessments = parsed.assessments.filter(a => !["cs101-a1", "math101-q1", "mgmt100-q1", "data201-m1"].includes(a.id));
           if (Array.isArray(parsed.study_tasks)) {
@@ -82,6 +205,7 @@ class QuizRadarAutonomousEngine {
         dark_mode: false,
         onboarding_completed: false, // Fresh install launches onboarding wizard!
         last_gmail_sync: "Never",
+        completed_topics: {},
         custom_events: []
       },
       auth: {
@@ -124,7 +248,8 @@ class QuizRadarAutonomousEngine {
     today.setHours(0, 0, 0, 0);
 
     const assessments = state.assessments || [];
-    const completed = state.completed_topics || {};
+    // completed_topics lives in config (server parity); fall back to legacy top-level map
+    const completed = state.config?.completed_topics || state.completed_topics || {};
     const recommendations = assessments.map((a) => {
       const topics = a.topics || [];
       const compCount = topics.filter((t, i) => !!completed[`${a.id}::${i}`]).length;
@@ -222,93 +347,147 @@ class QuizRadarAutonomousEngine {
   }
 
   buildStudyTasksPayload() {
+    // Shape mirrors the desktop server's parser::build_study_tasks (models.rs):
+    // StudyTasksPayload { days: [DailyStudyDayGroup], readiness_cards, total_tasks,
+    // pending_tasks, completed_tasks, total_hours, ai_generated }
     const assessments = this.state.assessments || [];
-    const completed = this.state.completed_topics || {};
-    if (assessments.length === 0) {
-      return {
-        pending_tasks: 0,
-        completed_tasks: 0,
-        total_hours: 0,
-        readiness_cards: [],
-        days: []
-      };
-    }
+    const completed = this.state.config?.completed_topics || this.state.completed_topics || {};
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isoToDate = (iso) => {
+      if (!iso) return null;
+      const p = String(iso).split("-").map(Number);
+      if (p.length !== 3 || p.some(Number.isNaN)) return null;
+      return new Date(p[0], p[1] - 1, p[2]);
+    };
+    const todayIso = toIsoDate(today);
+    const parseHours = (topic, fallback) => {
+      const m = /^\[(\d+(?:\.\d+)?)\s*h\]/i.exec(String(topic).trim());
+      const v = m ? parseFloat(m[1]) : fallback;
+      return Math.max(0.25, Math.min(8, v || fallback));
+    };
+
+    const readiness = [];
+    const tasksByDay = {}; // day_offset -> DailyStudyTask[]
     let totalPending = 0;
     let totalCompleted = 0;
-    let totalMinutes = 0;
-    const cards = [];
-    const allTaskItems = [];
+    let totalHours = 0;
+    let rank = 0;
+
+    const dayLabel = (date) => {
+      const dow = date.toLocaleDateString(undefined, { weekday: "short" });
+      const mon = date.toLocaleDateString(undefined, { month: "short" });
+      return `${dow}, ${mon} ${date.getDate()}`;
+    };
 
     assessments.forEach((a) => {
       const topics = a.topics || [];
-      const compCount = topics.filter((t, i) => !!completed[`${a.id}::${i}`]).length;
-      const totalCount = Math.max(topics.length, 1);
-      const readiness = Math.round((compCount / totalCount) * 100);
-      const daysUntil = a.days_until ?? 3;
-      const priorityScore = Math.max(10, 100 - (daysUntil * 7) + (100 - readiness) * 0.3);
+      const compCount = topics.filter((_t, i) => !!completed[`${a.id}::${i}`]).length;
+      const totalCount = topics.length;
+      const readinessPercent = totalCount === 0
+        ? 100
+        : Math.round((compCount / Math.max(totalCount, 1)) * 100);
+      const targetDate = isoToDate(a.date_iso);
+      const daysUntil = targetDate
+        ? Math.round((targetDate.getTime() - today.getTime()) / 86400000)
+        : (a.days_until ?? 30);
+      a.days_until = daysUntil;
+      a.is_upcoming = daysUntil >= 0;
+      totalCompleted += compCount;
 
-      const tasks = topics.map((t, i) => {
-        const key = `${a.id}::${i}`;
-        const isDone = !!completed[key];
-        const est = 45;
-        if (isDone) totalCompleted++;
-        else totalPending++;
-        totalMinutes += est;
+      const priorityScore = Math.max(10, 100 - Math.max(daysUntil, 0) * 7 + (100 - readinessPercent) * 0.3);
 
-        const taskItem = {
-          key,
+      if (daysUntil >= 0) {
+        readiness.push({
           assessment_id: a.id,
           course_id: a.course_id,
           course_name: a.course_name,
           title: a.title,
-          topic: typeof t === "string" ? t : t.topic,
-          est_minutes: est,
-          completed: isDone,
+          assessment_type: a.assessment_type || "Assessment",
+          date_iso: a.date_iso,
+          display_date: daysUntil === 0 ? "Today" : daysUntil === 1 ? "Tomorrow" : `In ${daysUntil} days`,
           days_until: daysUntil,
-          date_iso: a.date_iso
-        };
-        allTaskItems.push(taskItem);
-        return taskItem;
-      });
-
-      cards.push({
-        assessment_id: a.id,
-        course_id: a.course_id,
-        course_name: a.course_name,
-        title: a.title,
-        assessment_type: a.assessment_type || "Assessment",
-        date_iso: a.date_iso,
-        display_date: daysUntil === 0 ? "Today" : daysUntil === 1 ? "Tomorrow" : `In ${daysUntil} days`,
-        days_until: daysUntil,
-        color: a.color || "#1a73e8",
-        readiness_percent: readiness,
-        completed_count: compCount,
-        total_count: totalCount,
-        priority_score: Math.round(priorityScore),
-        recommended_focus: a.ai_study_plan || "Review key concepts and lecture notes",
-        tasks
-      });
-    });
-
-    const daysMap = {};
-    allTaskItems.forEach((item) => {
-      const dayKey = item.date_iso || "2026-10-19";
-      if (!daysMap[dayKey]) {
-        daysMap[dayKey] = {
-          date_iso: dayKey,
-          label: item.days_until === 0 ? "Today" : item.days_until === 1 ? "Tomorrow" : `In ${item.days_until} days`,
-          tasks: []
-        };
+          readiness_percent: readinessPercent,
+          completed_count: compCount,
+          total_count: totalCount,
+          priority_score: Math.round(priorityScore),
+          color: a.color || "#1a73e8",
+          recommended_focus: a.ai_study_plan || (topics.length > 0
+            ? (topics.find((t, i) => !completed[`${a.id}::${i}`]) || topics[0]).toString()
+            : "Review all course materials")
+        });
       }
-      daysMap[dayKey].tasks.push(item);
+
+      // Schedule unfinished topics across the study horizon (up to the day before the exam)
+      const uncompleted = topics
+        .map((t, i) => ({ i, text: typeof t === "string" ? t : t.topic }))
+        .filter((x) => !completed[`${a.id}::${x.i}`]);
+      if (daysUntil < 0 || uncompleted.length === 0) return;
+
+      const horizon = Math.min(Math.max(daysUntil, 0) + 1, 14); // include exam day if tomorrow-close
+      uncompleted.forEach((item, idx) => {
+        const dayOffset = Math.min(horizon - 1, Math.floor((idx / Math.max(1, Math.ceil(uncompleted.length / horizon)))));
+        const dayDate = new Date(today);
+        dayDate.setDate(today.getDate() + dayOffset);
+        const iso = toIsoDate(dayDate);
+        const hours = parseHours(item.text, 1.5);
+        const key = `${a.id}::${item.i}`;
+        totalPending += 1;
+        totalHours += hours;
+        rank += 1;
+        const urgency = daysUntil <= 1 ? "critical" : daysUntil <= 4 ? "high" : "normal";
+        if (!tasksByDay[dayOffset]) tasksByDay[dayOffset] = [];
+        tasksByDay[dayOffset].push({
+          id: `task-${a.id}-${item.i}-${dayOffset}`,
+          key,
+          assessment_id: a.id,
+          course_id: a.course_id,
+          course_name: a.course_name,
+          assessment_title: a.title,
+          assessment_type: a.assessment_type || "Assessment",
+          topic: item.text.replace(/^\[\d+(?:\.\d+)?\s*h\]\s*/i, "").trim() || "Review materials",
+          day_offset: dayOffset,
+          target_date_iso: iso,
+          display_day: dayLabel(dayDate),
+          priority_rank: rank,
+          urgency,
+          estimated_hours: hours,
+          ai_reasoning: `Scheduled ${dayOffset === 0 ? "today" : `in ${dayOffset} day${dayOffset > 1 ? "s" : ""}`} to stay ahead of ${a.course_id} on ${a.date_iso || a.title}.`,
+          completed: false,
+          color: a.color || "#1a73e8",
+          days_until_assessment: daysUntil,
+          assessment_date: a.date_iso
+        });
+      });
     });
+
+    readiness.sort((a, b) => a.days_until - b.days_until || b.priority_score - a.priority_score);
+    const totalTasks = totalPending + totalCompleted;
+
+    const days = Object.entries(tasksByDay)
+      .map(([offset, tasks]) => {
+        const groupDate = new Date(today);
+        groupDate.setDate(today.getDate() + Number(offset));
+        return {
+          day_offset: Number(offset),
+          date_iso: toIsoDate(groupDate),
+          display_day: Number(offset) === 0 ? `Today · ${dayLabel(groupDate)}` : dayLabel(groupDate),
+          is_today: Number(offset) === 0,
+          total_estimated_hours: Math.round(tasks.reduce((acc, t) => acc + t.estimated_hours, 0) * 10) / 10,
+          tasks
+        };
+      })
+      .sort((a, b) => a.day_offset - b.day_offset);
 
     return {
+      days,
+      readiness_cards: readiness,
+      total_tasks: totalTasks,
       pending_tasks: totalPending,
       completed_tasks: totalCompleted,
-      total_hours: Math.round((totalMinutes / 60) * 10) / 10,
-      readiness_cards: cards,
-      days: Object.values(daysMap)
+      total_hours: Math.round(totalHours * 10) / 10,
+      ai_generated: false
     };
   }
 
@@ -330,33 +509,50 @@ class QuizRadarAutonomousEngine {
     if (path === "/api/state") {
       this.recomputeDashboard(this.state);
       this.saveDatabase();
+      // Deep-copy so engine mutations never alias the snapshot handed to the app.
       return { ok: true, status: 200, data: JSON.parse(JSON.stringify(this.state)) };
     }
 
     // 2. POST /api/config/update
     if (path === "/api/config/update") {
+      // Whitelist the fields real config updates carry. A manually typed email is
+      // only a local profile anchor — it must never flip auth into a signed-in state.
       Object.assign(this.state.config, body);
       if (body.user_name) this.state.auth.name = body.user_name;
       if (body.user_email !== undefined) {
-        this.state.auth.email = body.user_email;
-        this.state.auth.authenticated = !!body.user_email;
+        const trimmed = String(body.user_email || "").trim();
+        if (!trimmed || !trimmed.includes("@")) {
+          this.state.auth.email = null;
+        } else if (!this.state.auth.authenticated) {
+          this.state.auth.email = trimmed;
+        }
       }
       this.recomputeDashboard(this.state);
       this.saveDatabase();
       return { ok: true, status: 200, data: { success: true, config: this.state.config, assessments: this.state.assessments, dashboard: this.state.dashboard, schedule: this.state.schedule } };
     }
 
-    // 3. POST /api/onboarding/complete
+    // 3. POST /api/onboarding/complete (mirrors server OnboardingPayload field names)
     if (path === "/api/onboarding/complete") {
       this.state.config.onboarding_completed = true;
       if (body.user_name) {
         this.state.config.user_name = body.user_name;
         this.state.auth.name = body.user_name;
       }
-      if (body.user_email) {
+      if (body.auto_sync_gcal !== undefined) {
+        this.state.config.auto_sync_gcal = !!body.auto_sync_gcal;
+      }
+      if (body.sync_weekly_classes_to_gcal !== undefined) {
+        this.state.config.sync_weekly_classes_to_gcal = !!body.sync_weekly_classes_to_gcal;
+      }
+      if (body.gemini_enabled !== undefined) {
+        this.state.config.gemini_enabled = !!body.gemini_enabled;
+      }
+      if (body.user_email !== undefined) {
         this.state.config.user_email = body.user_email;
-        this.state.auth.email = body.user_email;
-        this.state.auth.authenticated = true;
+        // Typed email is a profile anchor only; real auth comes from OAuth.
+        const trimmed = String(body.user_email || "").trim();
+        this.state.auth.email = trimmed.includes("@") && !this.state.auth.authenticated ? trimmed : this.state.auth.email;
       }
       if (body.teams_email) {
         this.state.config.teams_enabled = true;
@@ -365,9 +561,10 @@ class QuizRadarAutonomousEngine {
       if (body.teams_name) {
         this.state.config.teams_account_name = body.teams_name;
       }
-      if (body.gemini_key) {
-        this.state.config.gemini_api_key = body.gemini_key;
-        this.state.config.gemini_enabled = true;
+      const geminiKey = body.gemini_api_key || body.gemini_key;
+      if (geminiKey && String(geminiKey).trim()) {
+        this.state.config.gemini_api_key = String(geminiKey).trim();
+        if (body.gemini_enabled !== undefined) this.state.config.gemini_enabled = body.gemini_enabled;
       }
       this.recomputeDashboard(this.state);
       this.saveDatabase();
@@ -375,21 +572,53 @@ class QuizRadarAutonomousEngine {
     }
 
     // 4. POST /api/schedule/courses (Add course)
+    // Accepts both shapes: {course:{id,name,color,bg,border}, slots:[...]} (client)
+    // and the legacy flat body (course_id/course_name).
     if (path === "/api/schedule/courses" && method === "POST") {
       const courses = this.state.schedule.courses || [];
+      const rawCourse = body.course || {};
+      const fixedId = (rawCourse.id || body.course_id || body.id || "CS 101").toString().trim();
+      const fixedName = (rawCourse.name || body.course_name || body.name || fixedId).toString().trim();
+      if (!fixedId) {
+        return { ok: true, status: 200, data: { success: false, error: "Course code is required." } };
+      }
       const newCourse = {
-        id: body.course_id || body.id || `CRS-${Date.now()}`,
-        name: body.course_name || body.name || body.course_id,
-        color: body.color || "#1a73e8",
+        id: fixedId,
+        name: fixedName,
+        color: rawCourse.color || body.color || "#1a73e8",
+        bg: rawCourse.bg || `${rawCourse.color || body.color || "#1a73e8"}18`,
+        border: rawCourse.border || `${rawCourse.color || body.color || "#1a73e8"}55`,
         icon: body.icon || "book-open",
-        instructor: body.instructor || "Instructor"
+        instructor: rawCourse.instructor || null
       };
-      if (!courses.some(c => c.id === newCourse.id)) {
+      if (!courses.some((c) => c.id.toLowerCase() === newCourse.id.toLowerCase())) {
         courses.push(newCourse);
+      }
+      if (Array.isArray(body.slots) && body.slots.length > 0) {
+        const existing = this.state.schedule.slots || [];
+        body.slots.forEach((s) => {
+          if (!existing.some((x) => x.id === s.id)) existing.push({ ...s, course_id: s.course_id || newCourse.id, course_name: s.course_name || newCourse.name });
+        });
+        this.state.schedule.slots = existing;
       }
       this.recomputeDashboard(this.state);
       this.saveDatabase();
-      return { ok: true, status: 200, data: { success: true, schedule: this.state.schedule, assessments: this.state.assessments } };
+      const slotIndex = (this.state.schedule.slots || []).filter((s) => (s.course_id || "").toLowerCase() === newCourse.id.toLowerCase());
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          success: true,
+          course_id: newCourse.id,
+          assessment_index: null,
+          assessments: this.state.assessments,
+          dashboard: this.state.dashboard,
+          schedule: this.state.schedule,
+          message: `Course ${newCourse.id} saved. Add class times to fill your weekly calendar.`,
+          slots_found: slotIndex.length,
+          classes_found: 0
+        }
+      };
     }
 
     // 4b. DELETE /api/schedule/courses/:id
@@ -417,53 +646,66 @@ class QuizRadarAutonomousEngine {
       return { ok: true, status: 200, data: { success: true, schedule: this.state.schedule, assessments: this.state.assessments } };
     }
 
-    // 5. POST /api/events/custom (Add custom quiz/assessment)
+    // 5. POST /api/events/custom (Add custom calendar event)
+    // Mirrors the desktop server: events live ONLY in config.custom_events with the
+    // CustomCalendarEvent shape (event_type/date_iso/start_time/end_time) — they are
+    // never promoted into assessments, and no fake topics/weights are invented.
     if (path === "/api/events/custom" && method === "POST") {
-      const newAssessment = {
-        id: `custom-${Date.now()}`,
-        title: body.title || "Custom Quiz",
-        assessment_type: body.assessment_type || "Class Quiz",
-        course_id: body.course_id || "CS 101",
-        course_name: body.course_name || "General Course",
-        date_iso: body.date_iso || new Date().toISOString().split("T")[0],
-        time: body.start_time || "09:00",
-        room: body.room || "Campus Hall",
-        weight_percent: Number(body.weight_percent) || 10,
-        color: body.color || "#1a73e8",
-        days_until: 3,
-        topics: body.topics || ["Key Concept 1", "Practice Problem Set"]
-      };
-      this.state.assessments.push(newAssessment);
       if (!this.state.config.custom_events) this.state.config.custom_events = [];
-      this.state.config.custom_events.push(newAssessment);
-      this.recomputeDashboard(this.state);
+      const newEvent = {
+        id: `custom-${Date.now()}`,
+        title: (body.title || "Untitled Event").toString().trim(),
+        course_id: body.course_id || "Personal",
+        event_type: body.event_type || "Study Block",
+        date_iso: body.date_iso || toIsoDate(getTodayDate()),
+        start_time: body.start_time || "09:00",
+        end_time: body.end_time || "10:00",
+        room: body.room || "Study Room / Library",
+        notes: body.notes || "",
+        color: body.color || "#ec4899"
+      };
+      if (!newEvent.title) {
+        return { ok: true, status: 200, data: { success: false, error: "Event title is required." } };
+      }
+      this.state.config.custom_events.push(newEvent);
       this.saveDatabase();
-      return { ok: true, status: 200, data: { success: true, custom_events: this.state.config.custom_events, assessments: this.state.assessments } };
+      return { ok: true, status: 200, data: { success: true, custom_events: this.state.config.custom_events } };
     }
 
     // 5b. DELETE /api/events/custom/:id
     if (path.startsWith("/api/events/custom/") && method === "DELETE") {
       const eventId = path.replace("/api/events/custom/", "");
-      this.state.assessments = (this.state.assessments || []).filter(a => a.id !== eventId);
       if (this.state.config.custom_events) {
-        this.state.config.custom_events = this.state.config.custom_events.filter(e => e.id !== eventId);
+        this.state.config.custom_events = this.state.config.custom_events.filter((e) => e.id !== eventId);
       }
-      this.recomputeDashboard(this.state);
       this.saveDatabase();
-      return { ok: true, status: 200, data: { success: true, assessments: this.state.assessments } };
+      return { ok: true, status: 200, data: { success: true, custom_events: this.state.config.custom_events } };
     }
 
     // 6. POST /api/study/toggle (Toggle topic completion)
+    // Server contract: ToggleTopicPayload { key: "assessmentId::topicIdx", completed: bool }
+    // stored in config.completed_topics; response carries refresh payloads.
     if (path === "/api/study/toggle") {
       const key = body.key;
       if (key) {
-        if (!this.state.completed_topics) this.state.completed_topics = {};
-        this.state.completed_topics[key] = !this.state.completed_topics[key];
+        if (!this.state.config.completed_topics) this.state.config.completed_topics = {};
+        const completed = body.completed !== undefined ? !!body.completed : !this.state.config.completed_topics[key];
+        this.state.config.completed_topics[key] = completed;
         this.recomputeDashboard(this.state);
         this.saveDatabase();
-        return { ok: true, status: 200, data: { success: true, completed: this.state.completed_topics[key], dashboard: this.state.dashboard } };
+        return {
+          ok: true,
+          status: 200,
+          data: {
+            success: true,
+            completed,
+            dashboard: this.state.dashboard,
+            tasks_payload: this.buildStudyTasksPayload(),
+            completed_topics: this.state.config.completed_topics
+          }
+        };
       }
-      return { ok: true, status: 200, data: { success: true } };
+      return { ok: true, status: 200, data: { success: false, error: "Missing topic key." } };
     }
 
     // 7. POST /api/auth/logout
@@ -508,26 +750,56 @@ class QuizRadarAutonomousEngine {
       return { ok: true, status: 200, data: { success: true, tasks_payload: this.buildStudyTasksPayload() } };
     }
     if (path === "/api/study/tasks/optimize") {
-      return { ok: true, status: 200, data: { success: true, ai_optimized: true, tasks_payload: this.buildStudyTasksPayload() } };
+      this.recomputeDashboard(this.state);
+      this.saveDatabase();
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          success: true,
+          ai_optimized: false,
+          ai_generated: false,
+          message: "Study plan re-sorted by urgency and remaining effort. Link a Gemini API key to unlock AI-tuned planning.",
+          tasks_payload: this.buildStudyTasksPayload()
+        }
+      };
     }
 
-    // 12. Assessment Practice Quiz Formulation (Offline AI Generation)
+    // 12. Assessment Practice Quiz Formulation (Offline Generation)
     if (path.includes("/practice")) {
       const assessmentId = path.split("/")[3];
       const a = (this.state.assessments || []).find(x => x.id === assessmentId);
-      const topics = a && a.topics && a.topics.length > 0 ? a.topics : ["Core Principles", "Applied Problems", "Error Analysis"];
-      const questions = topics.slice(0, 4).map((t, idx) => {
-        const topTitle = typeof t === "string" ? t : t.title || "Core Subject Topic";
+      const topics = a && a.topics && a.topics.length > 0 ? a.topics : [];
+      if (topics.length === 0) {
         return {
-          question: `In the study of ${topTitle}, what is the foundational principle or method?`,
-          options: [
-            `Systematic application of standard formulas and boundary conditions in ${topTitle}.`,
-            `Disregarding initial assumptions when calculating matrix eigenvalues.`,
-            `Applying arbitrary approximations without verifying error margins.`,
-            `Restricting analysis strictly to single-variable linear models.`
-          ],
-          correct_index: 0,
-          explanation: `In ${topTitle}, exact problem formulation, standard definitions, and boundary condition verification form the solid foundation.`
+          ok: true,
+          status: 200,
+          data: {
+            success: false,
+            generated_by_ai: false,
+            error: "No synced topics for this assessment yet. Add topics from the assessment modal to practice them."
+          }
+        };
+      }
+      // Rotate the answer position so it is not always option 1; all questions are
+      // locally derived from synced topics (no fabricated exam content).
+      const questions = topics.slice(0, 4).map((t, idx) => {
+        const topTitle = (typeof t === "string" ? t : t.topic || t.title) || "Core Subject Topic";
+        const correctIndex = idx % 4;
+        const options = [
+          `Systematic application of standard ${topTitle} definitions and verified methods.`,
+          `Disregarding core assumptions of ${topTitle} when solving problems.`,
+          `Skipping verification steps for ${topTitle} results.`,
+          `Restricting analysis of ${topTitle} to only one special case.`
+        ];
+        const correct = options[0];
+        options[0] = options[correctIndex];
+        options[correctIndex] = correct;
+        return {
+          question: `Which approach best reflects a rigorous treatment of ${topTitle}?`,
+          options,
+          correct_index: correctIndex,
+          explanation: `Solid ${topTitle} work starts from exact definitions, standard methods, and verified edge cases${a ? ` (from ${a.course_id}).` : "."}`
         };
       });
       return {
@@ -536,21 +808,65 @@ class QuizRadarAutonomousEngine {
         data: {
           success: true,
           generated_by_ai: false,
-          questions: questions
+          local_note: "Practice questions are generated on-device from your synced topics. Add a Gemini API key for AI-authored quizzes.",
+          questions
         }
       };
     }
 
-    // 13. Assessment Grading / Recording
+    // 13. Assessment Grading / Recording (mirrors server: per-field partial update)
     if (path.includes("/grade")) {
       const assessmentId = path.split("/")[3];
       const a = (this.state.assessments || []).find(x => x.id === assessmentId);
-      if (a) {
-        a.grade = body.grade || body.score || 95;
+      if (!a) {
+        return { ok: true, status: 200, data: { success: false, status: "error", message: "Assessment not found.", error: "Assessment not found." } };
       }
+      const achieved = Number(body.achieved_score);
+      const maxScore = Number(body.max_score);
+      const weight = Number(body.weightage_percent);
+      let invalid = null;
+      if (body.achieved_score !== undefined && (!Number.isFinite(achieved) || achieved < 0)) invalid = "achieved_score must be a non-negative number";
+      if (!invalid && body.max_score !== undefined && (!Number.isFinite(maxScore) || maxScore <= 0)) invalid = "max_score must be greater than zero";
+      if (!invalid && body.weightage_percent !== undefined && (!Number.isFinite(weight) || weight < 0)) invalid = "weightage_percent must be a non-negative number";
+      if (invalid) {
+        return { ok: true, status: 200, data: { success: false, status: "error", message: invalid, error: invalid } };
+      }
+      if (body.weightage_percent !== undefined) a.weightage_percent = weight;
+      if (body.achieved_score !== undefined) a.achieved_score = achieved;
+      if (body.max_score !== undefined) a.max_score = maxScore;
+      if (!this.state.grades) this.state.grades = {};
+      this.state.grades[a.id] = {
+        achieved_score: a.achieved_score ?? 0,
+        max_score: a.max_score ?? 0,
+        weightage_percent: a.weightage_percent ?? 0
+      };
       this.recomputeDashboard(this.state);
       this.saveDatabase();
-      return { ok: true, status: 200, data: { success: true, assessment: a, dashboard: this.state.dashboard } };
+      // Minimal honest rollup that mirrors the server's grade summary section.
+      const gradeAssignments = (this.state.assessments || []).filter(
+        (x) => typeof x.achieved_score === "number" && typeof x.max_score === "number" && x.max_score > 0
+      );
+      const overall = gradeAssignments.length > 0
+        ? gradeAssignments.reduce((acc, x) => acc + (x.achieved_score / x.max_score) * 100, 0) / gradeAssignments.length
+        : 0;
+      const gradeStats = {
+        overall_percent: Math.round(overall),
+        graded_count: gradeAssignments.length,
+        total_assessments: (this.state.assessments || []).length
+      };
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          success: true,
+          status: "ok",
+          assessment: a,
+          assessments: this.state.assessments,
+          dashboard: this.state.dashboard,
+          summary: gradeStats,
+          grade_stats: gradeStats
+        }
+      };
     }
 
     // 14. Timetable Extraction (On-Device OCR & Optional Gemini Vision AI)
@@ -623,7 +939,9 @@ Extract enrolled courses and weekly class slots from this schedule. Return ONLY 
 
     // 15. Conflict Dismissal & Study Blocks
     if (path === "/api/conflicts/dismiss") {
-      return { ok: true, status: 200, data: { success: true, dismissed: true } };
+      this.state.config.dismiss_conflict_banner = true;
+      this.saveDatabase();
+      return { ok: true, status: 200, data: { success: true, dismissed: true, config: this.state.config } };
     }
     if (path === "/api/study/blocks/schedule") {
       return { ok: true, status: 200, data: { success: true, scheduled: true, message: "Study blocks scheduled into your academic planner." } };
@@ -684,6 +1002,11 @@ Extract enrolled courses and weekly class slots from this schedule. Return ONLY 
     };
   }
 
+  todayIsoFallback() {
+    const t = new Date();
+    return toIsoDate(t);
+  }
+
   generateIcs() {
     let lines = [
       "BEGIN:VCALENDAR",
@@ -693,7 +1016,7 @@ Extract enrolled courses and weekly class slots from this schedule. Return ONLY 
       "METHOD:PUBLISH"
     ];
     (this.state.assessments || []).forEach((a) => {
-      const dt = (a.date_iso || "2026-10-20").replace(/-/g, "");
+      const dt = (a.date_iso || this.todayIsoFallback()).replace(/-/g, "");
       lines.push(
         "BEGIN:VEVENT",
         `UID:${a.id}@quizradar.app`,
@@ -711,7 +1034,30 @@ Extract enrolled courses and weekly class slots from this schedule. Return ONLY 
   }
 }
 
-const mobileEngine = new QuizRadarAutonomousEngine();
+// PERF: The on-device engine parses its DB and recomputes the dashboard, which is
+// expensive to do before first paint. It is now created lazily on first access;
+// the Proxy keeps every existing `mobileEngine.*` call site working unchanged.
+let _mobileEngineInstance = null;
+function ensureMobileEngine() {
+  if (!_mobileEngineInstance) {
+    _mobileEngineInstance = new QuizRadarAutonomousEngine();
+  }
+  return _mobileEngineInstance;
+}
+const mobileEngine = new Proxy(
+  {},
+  {
+    get(_target, prop) {
+      const instance = ensureMobileEngine();
+      const value = instance[prop];
+      return typeof value === "function" ? value.bind(instance) : value;
+    },
+    set(_target, prop, value) {
+      ensureMobileEngine()[prop] = value;
+      return true;
+    },
+  }
+);
 
 // ============================================================================
 // API ROUTING POLICY (CRITICAL, DO NOT CHANGE LIGHTLY)
@@ -952,8 +1298,11 @@ async function saveGoogleAccountProfile() {
 
   if (appState.auth) {
     appState.auth.name = name;
-    appState.auth.email = email;
-    appState.auth.authenticated = true;
+    // Typed email is a local profile anchor only. Real OAuth state can only come
+    // from /api/auth — never flip `authenticated` from a form field.
+    if (!appState.auth.authenticated) {
+      appState.auth.email = email;
+    }
   }
   if (appState.config) {
     appState.config.user_name = name;
@@ -1357,25 +1706,25 @@ function openMobileSearchPalette() {
   triggerHaptic("selection");
   const modal = document.getElementById("mobile-search-modal");
   if (!modal) return;
-  modal.classList.remove("hidden");
-  void modal.offsetHeight;
-  requestAnimationFrame(() => {
-    modal.classList.add("is-open");
+  revealModalWithTransition(modal, () => {
     const input = document.getElementById("mobile-modal-search-input");
     if (input) {
       input.value = "";
       setTimeout(() => input.focus(), 120);
     }
   });
+  scheduleMobileSearchResults.cancel();
   handleMobileModalSearch("");
-  if (window.lucide) lucide.createIcons({ root: modal });
+  scheduleMobileSearchResults.flush();
+  refreshIcons(modal);
 }
 
 function closeMobileSearchModal() {
   triggerHaptic("light");
   const modal = document.getElementById("mobile-search-modal");
   if (!modal) return;
-  modal.classList.remove("is-open");
+  dismissModalTransition(modal);
+  scheduleMobileSearchResults.cancel();
   document.getElementById("mobile-modal-search-input")?.blur();
   setTimeout(() => {
     if (!modal.classList.contains("is-open")) {
@@ -1403,6 +1752,7 @@ function setMobileSearchFilter(filterType) {
   });
   const input = document.getElementById("mobile-modal-search-input");
   handleMobileModalSearch(input ? input.value : "");
+  scheduleMobileSearchResults.flush();
 }
 
 function clearMobileModalSearch() {
@@ -1412,14 +1762,23 @@ function clearMobileModalSearch() {
     input.focus();
   }
   document.getElementById("mobile-modal-search-clear")?.classList.add("hidden");
+  scheduleMobileSearchResults.cancel();
   handleMobileModalSearch("");
+  scheduleMobileSearchResults.flush();
 }
 
 function handleMobileModalSearch(rawQuery) {
   const query = (rawQuery || "").trim().toLowerCase();
   const clearBtn = document.getElementById("mobile-modal-search-clear");
   if (clearBtn) clearBtn.classList.toggle("hidden", query.length === 0);
+  scheduleMobileSearchResults(rawQuery);
+}
 
+// Trailing-edge debounce: typing stays cheap, the results list renders once idle.
+const scheduleMobileSearchResults = debounce((rawQuery) => renderMobileSearchResults(rawQuery), 140);
+
+function renderMobileSearchResults(rawQuery) {
+  const query = (rawQuery || "").trim().toLowerCase();
   const container = document.getElementById("mobile-search-results-list");
   if (!container) return;
 
@@ -1457,7 +1816,7 @@ function handleMobileModalSearch(rawQuery) {
         <p class="text-[11px] text-slate-400 dark:text-slate-500">Try searching by course code (e.g. CS 101, MATH 101) or topic name.</p>
       </div>
     `;
-    if (window.lucide) lucide.createIcons({ root: container });
+    if (window.lucide) refreshIcons(container);
     return;
   }
 
@@ -1482,7 +1841,7 @@ function handleMobileModalSearch(rawQuery) {
     })
     .join("");
 
-  if (window.lucide) lucide.createIcons({ root: container });
+  refreshIcons(container);
 }
 
 const STATE_CACHE_KEY = "quizradar_state_cache_v3";
@@ -1618,9 +1977,10 @@ document.addEventListener("DOMContentLoaded", () => {
   initAppUpdater();
   initAndroidNativeBridge();
 
-  // 1. INSTANT 0ms SYNCHRONOUS HYDRATION FROM CACHE OR SEED DUMMY DATA
-  const bootstrap = getBootstrapState();
-  studyTasksState = getBootstrapTasks();
+  // 1. INSTANT 0ms SYNCHRONOUS HYDRATION FROM THE ALREADY-PARSED CACHE (first paint)
+  // appState/studyTasksState were parsed once at script evaluation; reuse them
+  // instead of re-reading and re-parsing localStorage here.
+  const bootstrap = appState;
   hydrateAndRenderState(bootstrap);
   updateTasksBadgeCount();
 
@@ -1659,6 +2019,11 @@ function initPullToRefresh() {
   if (!indicator) return;
   if (window.lucide) lucide.createIcons({ root: indicator });
 
+  // Cached per-gesture so touchmove never queries the DOM; style writes are batched in one rAF.
+  let pullContainer = null;
+  let pullModalOpenAtStart = false;
+  let pullRafPending = false;
+
   function getActiveScrollableContainer() {
     const views = [
       document.getElementById("view-dashboard"),
@@ -1675,13 +2040,15 @@ function initPullToRefresh() {
   window.addEventListener(
     "touchstart",
     (e) => {
-      if (isPullRefreshing || isModalOpen()) return;
+      pullModalOpenAtStart = isModalOpen();
+      if (isPullRefreshing || pullModalOpenAtStart) return;
       if (e.touches.length !== 1) return;
 
       const container = getActiveScrollableContainer();
       const scrollTop = container.scrollTop !== undefined ? container.scrollTop : window.scrollY;
       if (scrollTop > 5) return;
 
+      pullContainer = container;
       pullStartY = e.touches[0].clientY;
       pullStartX = e.touches[0].clientX;
       isPullActive = true;
@@ -1696,10 +2063,10 @@ function initPullToRefresh() {
   window.addEventListener(
     "touchmove",
     (e) => {
-      if (!isPullActive || isPullRefreshing || isModalOpen()) return;
+      if (!isPullActive || isPullRefreshing || pullModalOpenAtStart) return;
       if (e.touches.length !== 1) return;
 
-      const container = getActiveScrollableContainer();
+      const container = pullContainer || document.documentElement;
       const scrollTop = container.scrollTop !== undefined ? container.scrollTop : window.scrollY;
       if (scrollTop > 5) {
         isPullActive = false;
@@ -1726,8 +2093,16 @@ function initPullToRefresh() {
       const pull = Math.min(maxPull, deltaY * 0.48);
       currentPullY = pull;
 
-      indicator.style.opacity = Math.min(1, pull / 32);
-      indicator.style.transform = `translate(-50%, ${pull}px)`;
+      // Batch indicator style writes into a single rAF frame
+      if (!pullRafPending) {
+        pullRafPending = true;
+        requestAnimationFrame(() => {
+          pullRafPending = false;
+          if (!isPullActive) return;
+          indicator.style.opacity = Math.min(1, currentPullY / 32);
+          indicator.style.transform = `translate(-50%, ${currentPullY}px)`;
+        });
+      }
 
       const threshold = 66;
       if (pull >= threshold && !pullThresholdReached) {
@@ -1817,7 +2192,9 @@ async function refreshAppOnDemand() {
   try {
     const res = await fetch("/api/sync", { method: "POST" });
     const data = await res.json();
-    if (data) {
+    // Render straight from the sync payload when it carries state — avoids a
+    // second /api/state round-trip plus a duplicate cache parse + full render.
+    if (data && (data.assessments || data.dashboard || data.schedule)) {
       if (data.assessments) appState.assessments = data.assessments;
       if (data.dashboard) appState.dashboard = data.dashboard;
       if (data.schedule) {
@@ -1828,7 +2205,13 @@ async function refreshAppOnDemand() {
       if (typeof recalculateAssessmentDeadlines === "function") {
         recalculateAssessmentDeadlines(appState);
       }
+      if (typeof filterStateByEnabledSources === "function") {
+        filterStateByEnabledSources();
+      }
       saveStateCache();
+      renderAllViews();
+      loadStudyTasks();
+      return;
     }
   } catch (e) {
     console.warn("[refreshAppOnDemand] error:", e);
@@ -1842,10 +2225,18 @@ async function refreshAppOnDemand() {
 
 function initDarkMode() {
   const saved = localStorage.getItem("quizradar_theme");
-  const isDark = saved === "dark";
+  // Honor the OS preference on first launch; stored choice always wins afterwards.
+  const systemPrefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const isDark = saved ? saved === "dark" : systemPrefersDark;
   document.documentElement.classList.toggle("dark", isDark);
   updateDarkModeIcon(isDark);
   updateNativeStatusBar(isDark);
+  // Persist so the toggle starts from a deterministic point mid-session.
+  if (!saved) {
+    try {
+      localStorage.setItem("quizradar_theme", isDark ? "dark" : "light");
+    } catch (e) {}
+  }
 }
 
 function applySmoothThemeSwitch(isDark) {
@@ -1879,21 +2270,29 @@ function initSidebarResponsive() {
   const backdrop = document.getElementById("sidebar-backdrop");
   if (!sb) return;
 
+  const applyState = (collapsed) => {
+    sb.classList.toggle("sidebar-collapsed", collapsed);
+    sb.setAttribute("aria-expanded", String(!collapsed));
+  };
+
   if (window.innerWidth < 1024) {
-    sb.classList.add("sidebar-collapsed");
+    applyState(true);
     if (backdrop) backdrop.classList.add("hidden");
   } else {
-    sb.classList.remove("sidebar-collapsed");
+    applyState(false);
   }
 
-  window.addEventListener("resize", () => {
-    if (window.innerWidth >= 1024) {
-      if (backdrop) backdrop.classList.add("hidden");
-      sb.classList.remove("sidebar-collapsed");
-    } else {
-      sb.classList.add("sidebar-collapsed");
-    }
-  });
+  window.addEventListener(
+    "resize",
+    rafThrottle(() => {
+      if (window.innerWidth >= 1024) {
+        if (backdrop) backdrop.classList.add("hidden");
+        applyState(false);
+      } else {
+        applyState(true);
+      }
+    })
+  );
 }
 
 function toggleSidebar(forceCollapse) {
@@ -1907,6 +2306,7 @@ function toggleSidebar(forceCollapse) {
       : !sb.classList.contains("sidebar-collapsed");
 
   sb.classList.toggle("sidebar-collapsed", shouldCollapse);
+  sb.setAttribute("aria-expanded", String(!shouldCollapse));
 
   if (backdrop) {
     if (!shouldCollapse && window.innerWidth < 1024) {
@@ -1957,6 +2357,38 @@ function initKeyboardShortcuts() {
       }
       if (onboardModal?.classList.contains("is-open")) {
         closeOnboardingModal();
+        return;
+      }
+
+      const cloudSyncModal = document.getElementById("cloud-sync-modal");
+      const accountModal = document.getElementById("account-profile-modal");
+      const mobileSearchModal = document.getElementById("mobile-search-modal");
+      const practiceQuizModal = document.getElementById("practice-quiz-modal");
+      const pomodoroModal = document.getElementById("pomodoro-modal");
+      const updatePopover = document.getElementById("update-popover");
+
+      if (cloudSyncModal?.classList.contains("is-open")) {
+        closeCloudSyncModal();
+        return;
+      }
+      if (accountModal?.classList.contains("is-open")) {
+        closeAccountProfileModal();
+        return;
+      }
+      if (mobileSearchModal?.classList.contains("is-open")) {
+        closeMobileSearchModal();
+        return;
+      }
+      if (practiceQuizModal?.classList.contains("is-open")) {
+        closePracticeQuizModal();
+        return;
+      }
+      if (pomodoroModal?.classList.contains("is-open")) {
+        closePomodoroModal();
+        return;
+      }
+      if (updatePopover && !updatePopover.classList.contains("hidden")) {
+        closeUpdatePopover();
         return;
       }
       if (window.innerWidth < 1024) {
@@ -2158,12 +2590,17 @@ async function loadFullState() {
   // 2. Fetch fresh state from fast in-memory backend (<1ms)
   try {
     const res = await fetch("/api/state");
+    if (!res.ok) throw new Error(`State request failed (${res.status})`);
     const data = await res.json();
+    if (!data || !Array.isArray(data.assessments) || !data.config || !data.schedule) {
+      throw new Error("Malformed state payload from backend");
+    }
     appState = data;
     recalculateAssessmentDeadlines(appState);
     syncActiveCourseFilters();
 
     if (demo) {
+      window.__DEMO_MODE__ = true; // Demo stays 100% in-memory: never touch caches
       applyDemoDummyData();
     } else {
       saveStateCache();
@@ -2314,6 +2751,23 @@ function updateTopBarAndUser() {
   const syncTsEl = document.getElementById("last-sync-timestamp");
   if (syncTsEl) {
     syncTsEl.textContent = lastSync && lastSync !== "Never" ? `Last scanned: ${lastSync}` : "Not yet scanned";
+  }
+
+  // Sync footer must reflect REAL state — never a static "Active" claim.
+  const syncDot = document.getElementById("sync-dot");
+  const syncLabel = document.getElementById("sync-status-label");
+  if (syncLabel) {
+    const autoSync = !!appState.config?.auto_sync_gcal;
+    if (isAuth && autoSync) {
+      syncLabel.textContent = "Google Sync Active";
+      if (syncDot) syncDot.className = "w-2 h-2 rounded-full bg-emerald-500";
+    } else if (isAuth) {
+      syncLabel.textContent = "Google Connected · Auto-sync off";
+      if (syncDot) syncDot.className = "w-2 h-2 rounded-full bg-blue-500";
+    } else {
+      syncLabel.textContent = "Google Not Connected";
+      if (syncDot) syncDot.className = "w-2 h-2 rounded-full bg-slate-400";
+    }
   }
 
   const badgeText = appState.auth?.authenticated ? "Connected" : "Sign-In Recommended";
@@ -2741,20 +3195,30 @@ function renderTasksView() {
     subEl.textContent = `${pending} pending topics across ${examsCount} upcoming exams • Est. ${hours} hrs total`;
   }
 
-  // 2. Populate Course Filter Dropdown if not already populated
+  // 2. Rebuild the Course Filter Dropdown whenever course list changes (preserves selection)
   const courseFilter = document.getElementById("tasks-course-filter");
-  if (courseFilter && courseFilter.options.length <= 1) {
+  if (courseFilter) {
     const courses = appState.schedule?.courses || [];
-    const seen = new Set();
-    courses.forEach((c) => {
-      if (!seen.has(c.id)) {
+    const coursesSignature = courses.map((c) => c.id).join(",");
+    if (courseFilter.dataset.signature !== coursesSignature) {
+      const selected = courseFilter.value || "all";
+      courseFilter.innerHTML = "";
+      courseFilter.dataset.signature = coursesSignature;
+      const allOpt = document.createElement("option");
+      allOpt.value = "all";
+      allOpt.textContent = "All Courses";
+      courseFilter.appendChild(allOpt);
+      const seen = new Set();
+      courses.forEach((c) => {
+        if (!c.id || seen.has(c.id)) return;
         seen.add(c.id);
         const opt = document.createElement("option");
         opt.value = c.id;
         opt.textContent = `${c.id} — ${c.name}`;
         courseFilter.appendChild(opt);
-      }
-    });
+      });
+      courseFilter.value = [...courseFilter.options].some((o) => o.value === selected) ? selected : "all";
+    }
   }
 
   // 3. Render Exam Readiness Cards
@@ -3561,6 +4025,14 @@ function updateReadinessKpiDom() {
 function filterDashboardByType(examType) {
   const select = document.getElementById("dashboard-type-filter");
   if (select) {
+    // Pills can target types the static <select> doesn't define (server-driven types);
+    // add a dynamic option so the dropdown never silently mismatches the active filter.
+    if (examType && [...select.options].every((o) => o.value !== examType)) {
+      const opt = document.createElement("option");
+      opt.value = examType;
+      opt.textContent = examType;
+      select.appendChild(opt);
+    }
     select.value = examType;
     renderDashboard();
   }
@@ -4119,9 +4591,10 @@ function selectDateInMiniCal(year, month, day) {
 
 function jumpToAssessmentOnCalendar(assessmentId) {
   const target = (appState.assessments || []).find((a) => a.id === assessmentId);
-  if (!target) return;
-  const [y, m, d] = target.date_iso.split("-").map(Number);
-  selectDateInMiniCal(y, m - 1, d);
+  if (!target || !target.date_iso) return;
+  const parts = target.date_iso.split("-").map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) return;
+  selectDateInMiniCal(parts[0], parts[1] - 1, parts[2]);
 }
 
 function jumpFromModalToCalendar() {
@@ -4131,8 +4604,10 @@ function jumpFromModalToCalendar() {
   if (targetId) {
     jumpToAssessmentOnCalendar(targetId);
   } else if (targetDateIso) {
-    const [y, m, d] = targetDateIso.split("-").map(Number);
-    selectDateInMiniCal(y, m - 1, d);
+    const parts = targetDateIso.split("-").map(Number);
+    if (parts.length === 3 && !parts.some(Number.isNaN)) {
+      selectDateInMiniCal(parts[0], parts[1] - 1, parts[2]);
+    }
   }
 }
 
@@ -4610,7 +5085,7 @@ function renderOnboardingPreview() {
   }
 
   if (upcoming.length === 0) {
-    container.innerHTML = `<div class="text-xs text-slate-500 dark:text-slate-400">Click "Scan Inbox Now" to detect quizzes and exams.</div>`;
+    container.innerHTML = `<div class="text-xs text-slate-500 dark:text-slate-400">Run "Sync Gmail" from the top bar to detect quizzes and exams from your inbox.</div>`;
     return;
   }
 
@@ -5886,16 +6361,59 @@ function matchesGlobalSearch(...fields) {
   return fields.some((f) => (f || "").toLowerCase().includes(q));
 }
 
-function showToast(msg) {
+const TOAST_ICON_CLASSES = {
+  success: "w-4 h-4 text-emerald-400 shrink-0",
+  loading: "w-4 h-4 text-blue-400 shrink-0",
+  info: "w-4 h-4 text-blue-400 shrink-0",
+  default: "w-4 h-4 text-blue-400 shrink-0",
+  warning: "w-4 h-4 text-amber-400 shrink-0",
+  error: "w-4 h-4 text-rose-400 shrink-0"
+};
+const TOAST_ICONS = {
+  success: "check-circle",
+  loading: "loader-2",
+  info: "info",
+  default: "info",
+  warning: "alert-triangle",
+  error: "alert-triangle"
+};
+
+function showToast(msg, typeOrDuration, maybeDuration) {
   const toast = document.getElementById("toast-notification");
   const msgEl = document.getElementById("toast-message");
   if (!toast || !msgEl) return;
+
+  // Legacy call sites pass booleans (isError) or numbers (duration) as the 2nd arg.
+  let type = "success";
+  let duration = 4200;
+  if (typeof typeOrDuration === "number") {
+    duration = typeOrDuration;
+  } else if (typeof typeOrDuration === "boolean") {
+    type = typeOrDuration ? "error" : "success";
+  } else if (typeof typeOrDuration === "string") {
+    type = typeOrDuration;
+  }
+  if (typeof maybeDuration === "number") duration = maybeDuration;
+  if (!TOAST_ICONS[type]) type = "default";
+  if (type === "loading") duration = Math.max(duration, 6000);
+
   msgEl.textContent = msg;
+  toast.dataset.toastType = type;
+
+  const iconEl = toast.querySelector("[data-lucide]");
+  if (iconEl) {
+    iconEl.className = TOAST_ICON_CLASSES[type] || TOAST_ICON_CLASSES.default;
+    iconEl.setAttribute("data-lucide", TOAST_ICONS[type]);
+    // Note: after lucide.createIcons the node is an <svg>; toggling data-lucide and
+    // data attributes still re-hydrates only this toast node.
+    refreshIcons(toast);
+  }
+
   toast.classList.add("toast-visible");
   if (toastHideTimeout) clearTimeout(toastHideTimeout);
   toastHideTimeout = setTimeout(() => {
     toast.classList.remove("toast-visible");
-  }, 4200);
+  }, duration);
 }
 
 // ============================================================================
@@ -5949,7 +6467,9 @@ function escapeHtml(str) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/\\/g, "&#92;");
 }
 
 // ============================================================================
@@ -6126,6 +6646,21 @@ async function startUpdateDownload() {
         }
         if (updateCountdown <= 0) {
           clearInterval(countdownInterval);
+          // If this code is still running, the app did not restart. Recover the
+          // popover to a usable, honest state instead of leaving it frozen.
+          setTimeout(async () => {
+            try {
+              await _originalFetch("/api/state");
+              updatePhase = "idle";
+              if (actions) actions.classList.remove("hidden");
+              if (progressContainer) progressContainer.classList.add("hidden");
+              if (progressStatus) {
+                progressStatus.textContent = "Installer launched. If QuizRadar didn't close automatically, run the downloaded setup file.";
+              }
+            } catch {
+              // App is shutting down / offline — nothing to recover.
+            }
+          }, 1500);
         }
       }, 1000);
     } else {
@@ -6168,7 +6703,7 @@ async function checkUpdatesFromSettings() {
         if (statusEl) {
           statusEl.className = "text-xs p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 flex items-center justify-between";
           statusEl.innerHTML = `
-            <span><strong>${data.latest_version}</strong> is available! (Current: ${data.current_version})</span>
+            <span><strong>${escapeHtml(data.latest_version)}</strong> is available! (Current: ${escapeHtml(data.current_version)})</span>
             <button onclick="closeSettingsModal(); openUpdatePopover();" class="px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-bold text-[11px] cursor-pointer hover:bg-emerald-700 transition">View Update</button>
           `;
         }
@@ -6426,7 +6961,12 @@ async function testMicrosoftFromSettings() {
     if (statusEl) {
       if (data.status === "ok") {
         statusEl.className = "text-[11px] p-2 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border border-emerald-300 font-medium";
-        statusEl.textContent = `✓ Microsoft Connected: ${data.user || "Student"} (${data.teams_count} Teams, ${data.courses_count || 6} Courses, ${data.assignments_count || 6} Assessments).`;
+        const teamsSummary = [
+          `${data.teams_count ?? 0} team${(data.teams_count ?? 0) === 1 ? "" : "s"}`,
+          `${data.courses_count ?? 0} course${(data.courses_count ?? 0) === 1 ? "" : "s"}`,
+          `${data.assignments_count ?? 0} assessment${(data.assignments_count ?? 0) === 1 ? "" : "s"}`
+        ].join(", ");
+        statusEl.textContent = `✓ Microsoft Connected: ${data.user || "your Microsoft account"} (${teamsSummary}).`;
 
         // Automatically update the app state with discovered courses and assessments
         if (data.assessments) appState.assessments = data.assessments;
@@ -6440,7 +6980,7 @@ async function testMicrosoftFromSettings() {
         saveStateCache();
 
         renderAllViews();
-        showToast(`Microsoft Teams connected! Discovered ${data.courses_count || 6} enrolled courses & assessments.`);
+        showToast(`Microsoft Teams connected! Discovered ${data.courses_count ?? 0} enrolled courses & assessments.`);
       } else {
         statusEl.className = "text-[11px] p-2 rounded-lg bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border border-rose-300 font-medium";
         statusEl.textContent = `✗ Microsoft Graph Error: ${data.message}`;
@@ -6893,7 +7433,7 @@ function exportLocalBackup() {
     const blob = new Blob([backupData], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    const dateStr = new Date().toISOString().split("T")[0];
+    const dateStr = toIsoDate(getTodayDate()); // local date, not UTC-shifted
     a.href = url;
     a.download = `quizradar_backup_${dateStr}.json`;
     document.body.appendChild(a);
@@ -6921,21 +7461,34 @@ function handleBackupFileSelected(event) {
   reader.onload = (e) => {
     try {
       const data = JSON.parse(e.target.result);
-      if (data && (data.assessments || data.config || data.schedule)) {
-        mobileEngine.state = data;
-        mobileEngine.saveDatabase();
-        appState = data;
-        saveStateCache();
-        hydrateAndRenderState(appState);
-        triggerHaptic("success");
-        showToast("Academic radar restored successfully from backup!", "success");
-        closeCloudSyncModal();
-      } else {
-        showToast("Invalid backup JSON format.");
+      // Guard against JSON files that merely LOOK backup-ish: require the engine's
+      // real schema (assessments array + schedule.courses array) and an explicit
+      // confirmation, since a restore replaces the entire local database.
+      const looksValid =
+        data &&
+        Array.isArray(data.assessments) &&
+        data.schedule &&
+        Array.isArray(data.schedule.courses);
+      if (!looksValid) {
+        showToast("This file is not a QuizRadar backup (missing assessments or schedule).", "error");
+        return;
       }
+      const proceed = confirm(
+        "Restore will REPLACE your current local academic data with this backup file. Continue?"
+      );
+      if (!proceed) return;
+
+      mobileEngine.state = data;
+      mobileEngine.saveDatabase();
+      appState = data;
+      saveStateCache();
+      hydrateAndRenderState(appState);
+      triggerHaptic("success");
+      showToast("Academic radar restored successfully from backup!", "success");
+      closeCloudSyncModal();
     } catch (err) {
       console.error("Restore error:", err);
-      showToast("Failed to parse backup JSON.");
+      showToast("Failed to parse backup JSON.", "error");
     }
   };
   reader.readAsText(file);
@@ -7042,9 +7595,12 @@ async function importFromDesktop() {
     const st = mobileEngine.state;
     st.schedule = data.schedule || st.schedule;
     st.assessments = data.assessments || st.assessments;
-    st.completed_topics = data.config?.completed_topics || st.completed_topics;
-    st.study_tasks = data.study_tasks_payload?.days || st.study_tasks;
     st.config = { ...st.config, user_name: data.config?.user_name || st.config.user_name };
+    // Single source of truth for progress (server parity): config.completed_topics.
+    if (data.config?.completed_topics) st.config.completed_topics = data.config.completed_topics;
+    else if (st.completed_topics && !st.config.completed_topics) st.config.completed_topics = st.completed_topics;
+    delete st.completed_topics;
+    st.study_tasks = data.study_tasks_payload?.days || st.study_tasks;
     st.dashboard = null;
     mobileEngine.state = mobileEngine.recomputeDashboard(st);
     mobileEngine.saveDatabase();

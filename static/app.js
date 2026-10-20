@@ -2915,7 +2915,7 @@ function renderDailyRoadmap() {
               isCompleted ? "opacity-55" : ""
             }">
               <!-- Accessible Checkbox Button -->
-              <button onclick="toggleDailyTask('${escapeHtml(t.key)}', event)" class="mt-0.5 w-5 h-5 rounded-md flex items-center justify-center shrink-0 border transition-all cursor-pointer ${
+              <button onclick="toggleDailyTask('${escapeHtml(t.key)}', event)" aria-label="${isCompleted ? "Mark task incomplete" : "Mark task completed"}" class="mt-0.5 w-5 h-5 rounded-md flex items-center justify-center shrink-0 border transition-all cursor-pointer ${
                 isCompleted
                   ? "bg-emerald-600 border-emerald-600 text-white"
                   : "border-slate-300 dark:border-slate-600 hover:border-[#1a73e8] dark:hover:border-blue-400 bg-white dark:bg-slate-800"
@@ -3083,7 +3083,7 @@ function renderDashboard() {
               <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
               <span>View Blocks on Week Calendar</span>
             </button>
-            <button onclick="dismissConflictBanner()" class="p-1.5 rounded-lg hover:bg-emerald-200 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 cursor-pointer" title="Dismiss banner">
+            <button onclick="dismissConflictBanner()" aria-label="Dismiss schedule conflict banner" class="p-1.5 rounded-lg hover:bg-emerald-200 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 cursor-pointer" title="Dismiss banner">
               <i data-lucide="x" class="w-4 h-4"></i>
             </button>
           </div>
@@ -3109,7 +3109,7 @@ function renderDashboard() {
               <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
               <span>Auto-Schedule Study Blocks</span>
             </button>
-            <button onclick="dismissConflictBanner()" class="p-1 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 cursor-pointer" title="Dismiss banner">
+            <button onclick="dismissConflictBanner()" aria-label="Dismiss schedule conflict banner" class="p-1 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 cursor-pointer" title="Dismiss banner">
               <i data-lucide="x" class="w-4 h-4"></i>
             </button>
           </div>
@@ -3182,7 +3182,7 @@ function renderDashboard() {
             <i data-lucide="book-open" class="w-3.5 h-3.5"></i>
             <span>Study Plan</span>
           </button>
-          <button onclick="jumpToAssessmentOnCalendar('${nextUp.id}')" class="px-2.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 active:scale-95 text-white text-xs font-semibold transition flex items-center justify-center gap-1 cursor-pointer" title="View on Calendar">
+          <button onclick="jumpToAssessmentOnCalendar('${nextUp.id}')" aria-label="View on Calendar" class="px-2.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 active:scale-95 text-white text-xs font-semibold transition flex items-center justify-center gap-1 cursor-pointer" title="View on Calendar">
             <i data-lucide="calendar-days" class="w-3.5 h-3.5"></i>
             <span class="hidden sm:inline">Calendar</span>
           </button>
@@ -4011,7 +4011,7 @@ function renderWeekCalendar() {
                style="top: ${topPx}px; height: ${heightPx}px; ${horizStyle} --card-bg-light: ${bgLight}; --card-bg-dark: ${bgDark}; border-color: ${borderHex};">
             <div class="flex items-center justify-between">
               <span class="text-[11px] font-bold truncate text-slate-900 dark:text-slate-50">${escapeHtml(ev.title)}</span>
-              <button onclick="deleteCustomEvent('${ev.id}')" class="text-[10px] hover:underline cursor-pointer">✕</button>
+              <button onclick="deleteCustomEvent('${ev.id}')" aria-label="Delete custom event ${escapeHtml(ev.title)}" title="Delete event" class="text-[10px] hover:underline cursor-pointer">✕</button>
             </div>
             <div class="text-[10px] truncate text-slate-700 dark:text-slate-300">${escapeHtml(ev.event_type)} · ${escapeHtml(ev.room)}</div>
             <div class="text-[10px] tabular-nums text-slate-600 dark:text-slate-400">${formatCompactTime(ev.start_time)} – ${formatCompactTime(ev.end_time)}</div>
@@ -4256,7 +4256,7 @@ function openAssessmentModalById(id) {
             <input type="checkbox" data-topic-key="${escapeHtml(key)}" ${done ? "checked" : ""} onchange="toggleTopicCheckbox('${escapeHtml(key)}', this.checked)" class="mt-0.5 w-4 h-4 accent-[#1a73e8] rounded shrink-0 cursor-pointer" />
             <span data-topic-label="${escapeHtml(key)}" class="text-xs transition-colors ${done ? "line-through text-slate-400 dark:text-slate-500" : "text-slate-900 dark:text-slate-100 font-medium"}">${escapeHtml(topicName)}</span>
           </label>
-          <button type="button" title="Start Focus Pomodoro for this topic" onclick="event.stopPropagation(); triggerHaptic('selection'); openPomodoroForTask('${escapeHtml(a.course_id)} • ${escapeHtml(a.title)}', '${escapeHtml(topicName)}', '${escapeHtml(key)}')" class="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950/60 text-rose-500 transition cursor-pointer shrink-0">
+          <button type="button" aria-label="Start Focus Pomodoro for topic ${escapeHtml(topicName)}" title="Start Focus Pomodoro for this topic" onclick="event.stopPropagation(); triggerHaptic('selection'); openPomodoroForTask('${escapeHtml(a.course_id)} • ${escapeHtml(a.title)}', '${escapeHtml(topicName)}', '${escapeHtml(key)}')" class="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950/60 text-rose-500 transition cursor-pointer shrink-0">
             <i data-lucide="timer" class="w-3.5 h-3.5"></i>
           </button>
         </div>
@@ -5026,7 +5026,7 @@ function renderCourseColorPicker() {
   if (!container) return;
   container.innerHTML = COURSE_PRESET_COLORS.map(
     (hex) => `
-    <button type="button" onclick="selectCourseModalColor('${hex}')" class="w-6 h-6 rounded-full transition transform hover:scale-110 active:scale-95 cursor-pointer shadow-xs ${
+    <button type="button" onclick="selectCourseModalColor('${hex}')" aria-label="Select theme color ${hex}" title="Select theme color ${hex}" class="w-6 h-6 rounded-full transition transform hover:scale-110 active:scale-95 cursor-pointer shadow-xs ${
       selectedAddCourseColor === hex ? "ring-2 ring-offset-2 ring-[#1a73e8] dark:ring-offset-slate-900 scale-110" : ""
     }" style="background-color: ${hex}"></button>
   `
@@ -5066,7 +5066,7 @@ function addCourseSlotRow() {
       <option value="Lab">Lab</option>
       <option value="Tutorial">Tutorial</option>
     </select>
-    <button type="button" onclick="this.closest('.course-slot-row').remove()" class="p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer" title="Remove slot">
+    <button type="button" onclick="this.closest('.course-slot-row').remove()" aria-label="Remove class time slot" class="p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer" title="Remove slot">
       <i data-lucide="x" class="w-3.5 h-3.5"></i>
     </button>
   `;
@@ -5690,7 +5690,7 @@ function renderRecentSearchesList() {
         ${
           !isDefault
             ? `
-          <button type="button" onclick="removeRecentSearch('${escapeHtml(term)}', event)" class="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer" title="Remove">
+          <button type="button" onclick="removeRecentSearch('${escapeHtml(term)}', event)" aria-label="Remove recent search ${escapeHtml(term)}" class="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer" title="Remove">
             <i data-lucide="x" class="w-3 h-3"></i>
           </button>
         `

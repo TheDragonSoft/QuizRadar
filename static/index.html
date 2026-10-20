@@ -22,16 +22,9 @@
   <link rel="preload" href="fonts/inter-var-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="fonts.css">
 
-  <!-- Lucide Icons (Vendored locally for offline mobile resilience with resilient fallback) -->
+  <!-- Lucide Icons (Vendored locally for offline resilience; no CDN fallback —
+       a remote fallback would let a compromised CDN execute code inside the app) -->
   <script src="lucide.min.js"></script>
-  <script>
-    if (typeof lucide === 'undefined') {
-      var _ls = document.createElement('script');
-      _ls.src = 'https://unpkg.com/lucide@latest/dist/umd/lucide.min.js';
-      _ls.onload = function() { if (window.lucide && typeof lucide.createIcons === 'function') { lucide.createIcons(); } };
-      document.head.appendChild(_ls);
-    }
-  </script>
 
   <style>
     :root {

@@ -215,6 +215,11 @@ pub fn is_allowed_update_url(url: &str) -> bool {
     let Ok(parsed) = url.parse::<reqwest::Url>() else {
         return false;
     };
+    // HTTPS only: an http:// download would let a man-in-the-middle swap the
+    // installer binary even though the host/path match.
+    if parsed.scheme() != "https" {
+        return false;
+    }
     if parsed.host_str() != Some("github.com") {
         return false;
     }
@@ -233,5 +238,24 @@ mod tests {
         assert!(!is_version_newer("2.1.0", "2.1.0"));
         assert!(!is_version_newer("2.0.9", "2.1.0"));
         assert!(!is_version_newer("1.9.9", "2.0.0"));
+    }
+
+    #[test]
+    fn test_is_allowed_update_url() {
+        assert!(is_allowed_update_url(
+            "https://github.com/TheDragonSoft/QuizRadar/releases/download/v4.0.1/QuizRadar-Setup-v4.0.1-x64.exe"
+        ));
+        // Plain HTTP must be rejected (MITM could swap the installer).
+        assert!(!is_allowed_update_url(
+            "http://github.com/TheDragonSoft/QuizRadar/releases/download/v4.0.1/setup.exe"
+        ));
+        // Look-alike hosts/paths must be rejected.
+        assert!(!is_allowed_update_url(
+            "https://github.com.evil.com/TheDragonSoft/QuizRadar/releases/download/v1/x.exe"
+        ));
+        assert!(!is_allowed_update_url(
+            "https://github.com/TheDragonSoft/QuizRadarEvil/releases/download/v1/x.exe"
+        ));
+        assert!(!is_allowed_update_url("https://evil.com/x.exe"));
     }
 }

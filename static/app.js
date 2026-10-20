@@ -2180,7 +2180,7 @@ function renderMobileSearchResults(rawQuery) {
         : "#1a73e8";
       const badgeStyle = `background-color: ${badgeColor};`;
       return `
-        <div onclick="closeMobileSearchModal(); openAssessmentModalById('${jsString(item.id)}')"
+        <div onclick="closeMobileSearchModal(); openAssessmentModalById('${jsAttr(item.id)}')"
              class="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/80 hover:border-[#1a73e8] active:scale-[0.98] transition cursor-pointer flex items-center justify-between gap-3 shadow-2xs">
           <div class="min-w-0 space-y-1">
             <div class="flex items-center gap-1.5 flex-wrap">
@@ -3773,7 +3773,7 @@ function renderDailyRoadmap() {
               isCompleted ? "opacity-55" : ""
             }">
               <!-- Accessible Checkbox Button -->
-              <button onclick="toggleDailyTask('${escapeHtml(t.key)}', event)" class="mt-0.5 w-5 h-5 rounded-md flex items-center justify-center shrink-0 border transition-all cursor-pointer ${
+              <button onclick="toggleDailyTask('${jsAttr(t.key)}', event)" class="mt-0.5 w-5 h-5 rounded-md flex items-center justify-center shrink-0 border transition-all cursor-pointer ${
                 isCompleted
                   ? "bg-emerald-600 border-emerald-600 text-white"
                   : "border-slate-300 dark:border-slate-600 hover:border-[#1a73e8] dark:hover:border-blue-400 bg-white dark:bg-slate-800"
@@ -4036,7 +4036,7 @@ function renderDashboard() {
 
         <!-- Action Buttons: Horizontal on mobile, neatly grouped on desktop -->
         <div class="flex items-center gap-2 shrink-0 pt-1 md:pt-0">
-          <button onclick="openAssessmentModalById('${nextUp.id}')" class="flex-1 md:flex-initial px-3.5 py-2 rounded-xl bg-white text-[#1a73e8] hover:bg-blue-50 active:scale-[0.98] text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs">
+          <button onclick="openAssessmentModalById('${jsAttr(nextUp.id)}')" class="flex-1 md:flex-initial px-3.5 py-2 rounded-xl bg-white text-[#1a73e8] hover:bg-blue-50 active:scale-[0.98] text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs">
             <i data-lucide="book-open" class="w-3.5 h-3.5"></i>
             <span>Study Plan</span>
           </button>
@@ -4111,7 +4111,7 @@ function renderDashboard() {
         .map(([t, count]) => {
           const isActive = currentFilterVal === t;
           return `
-            <button onclick="filterDashboardByType('${escapeHtml(t)}')" class="px-2.5 py-1 rounded-lg text-xs font-semibold border transition flex items-center gap-1.5 cursor-pointer ${
+            <button onclick="filterDashboardByType('${jsAttr(t)}')" class="px-2.5 py-1 rounded-lg text-xs font-semibold border transition flex items-center gap-1.5 cursor-pointer ${
               isActive
                 ? "bg-[#e8f0fe] dark:bg-blue-950/80 text-[#1a73e8] dark:text-blue-300 border-[#1a73e8]/40 dark:border-blue-500/50"
                 : "bg-slate-100 dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-950/50 text-slate-800 dark:text-slate-200 hover:text-[#1a73e8] dark:hover:text-blue-400 border-slate-200 dark:border-slate-700"
@@ -4215,7 +4215,7 @@ function renderDashboard() {
         const displaySchedule = formatCompactCardSchedule(rec.display_time, roomLabel);
 
         return `
-          <div onclick="triggerHaptic('light'); openAssessmentModalById('${rec.assessment_id}')"
+          <div onclick="triggerHaptic('light'); openAssessmentModalById('${jsAttr(rec.assessment_id)}')"
                class="interactive-card group relative bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 p-3.5 sm:p-4 hover:border-[#1a73e8]/70 dark:hover:border-blue-500/70 transition-all duration-200 cursor-pointer active:scale-[0.985] shadow-xs hover:shadow-md overflow-hidden">
             
             <!-- Left Course Color Accent Bar -->
@@ -4360,13 +4360,13 @@ function renderDashboard() {
         const dateTimeDisplay = [dateText, timeText].filter(Boolean).join(" · ");
 
         return `
-          <div onclick="openAssessmentModalById('${a.id}')" class="interactive-card p-2.5 sm:p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-[#1a73e8] dark:hover:border-blue-500 bg-slate-50/60 dark:bg-slate-800/40 hover:bg-white dark:hover:bg-slate-800 cursor-pointer transition space-y-1.5">
+          <div onclick="openAssessmentModalById('${jsAttr(a.id)}')" class="interactive-card p-2.5 sm:p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-[#1a73e8] dark:hover:border-blue-500 bg-slate-50/60 dark:bg-slate-800/40 hover:bg-white dark:hover:bg-slate-800 cursor-pointer transition space-y-1.5">
             <div class="flex items-center justify-between gap-1.5">
               <div class="flex items-center gap-1 flex-wrap min-w-0">
                 <span class="px-1.5 py-0.5 rounded-md text-[10px] font-bold text-white shrink-0" style="background-color: ${a.color}">${escapeHtml(a.course_id)}</span>
                 <span class="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-200 shrink-0">${escapeHtml(a.assessment_type)}</span>
                 <span class="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-900 flex items-center gap-1 shrink-0">
-                  <i data-lucide="${a.source_icon || 'mail'}" class="w-2.5 h-2.5"></i>
+                  <i data-lucide="${escapeHtml(a.source_icon || 'mail')}" class="w-2.5 h-2.5"></i>
                   <span>${escapeHtml(a.source || 'Gmail')}</span>
                 </span>
                 ${a.conflict_warning ? `<span class="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-200 border border-amber-300 flex items-center gap-0.5 shrink-0" title="Overload conflict detected (<36h)"><i data-lucide="alert-triangle" class="w-2.5 h-2.5"></i><span>Conflict</span></span>` : ""}
@@ -4581,7 +4581,7 @@ function renderSidebar() {
             const dayStr = ex.day_name ? ex.day_name.slice(0, 3) : (ex.date_iso ? new Date(ex.date_iso + "T00:00:00").toLocaleDateString(undefined, { weekday: "short" }) : "");
             const timeStr = ex.time || ex.start_time || "";
             return `
-            <div onclick="openAssessmentModalById('${ex.id}')" class="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-[#1a73e8] dark:hover:border-blue-400 cursor-pointer transition text-[11px]">
+            <div onclick="openAssessmentModalById('${jsAttr(ex.id)}')" class="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-[#1a73e8] dark:hover:border-blue-400 cursor-pointer transition text-[11px]">
               <div class="flex items-center justify-between font-bold text-slate-900 dark:text-slate-100">
                 <span class="flex items-center gap-1.5">
                   <span class="w-2 h-2 rounded-full" style="background-color: ${ex.color || '#1a73e8'}"></span>
@@ -4621,7 +4621,7 @@ function renderSidebar() {
     const checked = activeCourseFilters.has(c.id);
     calHtml += `
       <label class="flex items-center space-x-2.5 py-1 px-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer">
-        <input type="checkbox" ${checked ? "checked" : ""} onchange="toggleCourseFilter('${c.id}', this.checked)" class="w-4 h-4 rounded" style="accent-color: ${c.color}" />
+        <input type="checkbox" ${checked ? "checked" : ""} onchange="toggleCourseFilter('${jsAttr(c.id)}', this.checked)" class="w-4 h-4 rounded" style="accent-color: ${c.color}" />
         <span class="w-2.5 h-2.5 rounded-xs shrink-0" style="background-color: ${c.color}"></span>
         <span class="truncate text-slate-700 dark:text-slate-300" title="${escapeHtml(c.name)}">${escapeHtml(c.id)} · ${escapeHtml(c.name)}</span>
       </label>
@@ -4675,7 +4675,7 @@ function renderWeekCalendar() {
                 ${dayExams
                   .map(
                     (ex) => `
-                  <div onclick="event.stopPropagation(); openAssessmentModalById('${ex.id}')" class="text-[10px] font-bold px-1.5 py-0.5 rounded-md truncate text-white hover:opacity-90 transition" style="background-color: ${ex.color}">
+                  <div onclick="event.stopPropagation(); openAssessmentModalById('${jsAttr(ex.id)}')" class="text-[10px] font-bold px-1.5 py-0.5 rounded-md truncate text-white hover:opacity-90 transition" style="background-color: ${ex.color}">
                     ${escapeHtml(ex.course_id)}: ${escapeHtml(ex.title)}
                   </div>`
                   )
@@ -4810,7 +4810,7 @@ function renderWeekCalendar() {
       if (item.kind === "merged_exam") {
         const { slot, exam } = item;
         blocksHtml += `
-          <div onclick="openAssessmentModalById('${exam.id}')"
+          <div onclick="openAssessmentModalById('${jsAttr(exam.id)}')"
                class="gcal-card has-exam-glow"
                style="top: ${topPx}px; height: ${heightPx}px; ${horizStyle} --card-bg-light: ${bgLight}; --card-bg-dark: ${bgDark}; border-color: ${borderHex};">
             <div class="flex items-center justify-between gap-1">
@@ -4834,7 +4834,7 @@ function renderWeekCalendar() {
       } else if (item.kind === "slot") {
         const { slot } = item;
         blocksHtml += `
-          <div onclick="openSlotPopover('${slot.id}', '${colIso}')"
+          <div onclick="openSlotPopover('${jsAttr(slot.id)}', '${jsAttr(colIso)}')"
                class="gcal-card"
                style="top: ${topPx}px; height: ${heightPx}px; ${horizStyle} --card-bg-light: ${bgLight}; --card-bg-dark: ${bgDark}; border-color: ${borderHex};">
             <div class="text-[11px] font-bold truncate flex items-center gap-1.5 text-slate-900 dark:text-slate-50">
@@ -4852,7 +4852,7 @@ function renderWeekCalendar() {
       } else if (item.kind === "standalone_exam") {
         const { exam } = item;
         blocksHtml += `
-          <div onclick="openAssessmentModalById('${exam.id}')"
+          <div onclick="openAssessmentModalById('${jsAttr(exam.id)}')"
                class="gcal-card has-exam-glow"
                style="top: ${topPx}px; height: ${heightPx}px; ${horizStyle} --card-bg-light: ${bgLight}; --card-bg-dark: ${bgDark}; border-color: ${borderHex};">
             <div class="flex items-center justify-between gap-1">
@@ -4877,7 +4877,7 @@ function renderWeekCalendar() {
                style="top: ${topPx}px; height: ${heightPx}px; ${horizStyle} --card-bg-light: ${bgLight}; --card-bg-dark: ${bgDark}; border-color: ${borderHex};">
             <div class="flex items-center justify-between">
               <span class="text-[11px] font-bold truncate text-slate-900 dark:text-slate-50">${escapeHtml(ev.title)}</span>
-              <button onclick="deleteCustomEvent('${ev.id}')" class="text-[10px] hover:underline cursor-pointer">✕</button>
+              <button onclick="deleteCustomEvent('${jsAttr(ev.id)}')" class="text-[10px] hover:underline cursor-pointer">✕</button>
             </div>
             <div class="text-[10px] truncate text-slate-700 dark:text-slate-300">${escapeHtml(ev.event_type)} · ${escapeHtml(ev.room)}</div>
             <div class="text-[10px] tabular-nums text-slate-600 dark:text-slate-400">${formatCompactTime(ev.start_time)} – ${formatCompactTime(ev.end_time)}</div>
@@ -5048,7 +5048,7 @@ function openAssessmentModalById(id) {
 
   const srcBadge = document.getElementById("modal-source-badge");
   if (srcBadge) {
-    srcBadge.innerHTML = `<i data-lucide="${a.source_icon || 'mail'}" class="w-3.5 h-3.5"></i><span>${escapeHtml(a.source || 'Gmail Ingestion')}</span>`;
+    srcBadge.innerHTML = `<i data-lucide="${escapeHtml(a.source_icon || 'mail')}" class="w-3.5 h-3.5"></i><span>${escapeHtml(a.source || 'Gmail Ingestion')}</span>`;
   }
 
   // Grade & Course Weightage
@@ -5122,10 +5122,10 @@ function openAssessmentModalById(id) {
       return `
         <div class="flex items-center justify-between p-2 sm:p-2.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition gap-2">
           <label class="flex items-start gap-2.5 cursor-pointer flex-1 min-w-0 select-none">
-            <input type="checkbox" data-topic-key="${escapeHtml(key)}" ${done ? "checked" : ""} onchange="toggleTopicCheckbox('${escapeHtml(key)}', this.checked)" class="mt-0.5 w-4 h-4 accent-[#1a73e8] rounded shrink-0 cursor-pointer" />
+            <input type="checkbox" data-topic-key="${escapeHtml(key)}" ${done ? "checked" : ""} onchange="toggleTopicCheckbox('${jsAttr(key)}', this.checked)" class="mt-0.5 w-4 h-4 accent-[#1a73e8] rounded shrink-0 cursor-pointer" />
             <span data-topic-label="${escapeHtml(key)}" class="text-xs transition-colors ${done ? "line-through text-slate-400 dark:text-slate-500" : "text-slate-900 dark:text-slate-100 font-medium"}">${escapeHtml(topicName)}</span>
           </label>
-          <button type="button" title="Start Focus Pomodoro for this topic" onclick="event.stopPropagation(); triggerHaptic('selection'); openPomodoroForTask('${escapeHtml(a.course_id)} • ${escapeHtml(a.title)}', '${escapeHtml(topicName)}', '${escapeHtml(key)}')" class="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950/60 text-rose-500 transition cursor-pointer shrink-0">
+          <button type="button" title="Start Focus Pomodoro for this topic" onclick="event.stopPropagation(); triggerHaptic('selection'); openPomodoroForTask('${jsAttr(a.course_id)} • ${jsAttr(a.title)}', '${jsAttr(topicName)}', '${jsAttr(key)}')" class="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950/60 text-rose-500 transition cursor-pointer shrink-0">
             <i data-lucide="timer" class="w-3.5 h-3.5"></i>
           </button>
         </div>
@@ -5241,7 +5241,7 @@ function openSlotPopover(slotId, dateIso) {
         const done = !!(appState.config?.completed_topics && appState.config.completed_topics[key]);
         return `
           <label class="flex items-start gap-2.5 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer text-xs transition">
-            <input type="checkbox" data-topic-key="${escapeHtml(key)}" ${done ? "checked" : ""} onchange="toggleTopicCheckbox('${escapeHtml(key)}', this.checked)" class="mt-0.5 w-4 h-4 accent-[#1a73e8] rounded shrink-0 cursor-pointer" />
+            <input type="checkbox" data-topic-key="${escapeHtml(key)}" ${done ? "checked" : ""} onchange="toggleTopicCheckbox('${jsAttr(key)}', this.checked)" class="mt-0.5 w-4 h-4 accent-[#1a73e8] rounded shrink-0 cursor-pointer" />
             <span data-topic-label="${escapeHtml(key)}" class="transition-colors ${done ? "line-through text-slate-400 dark:text-slate-500" : "text-slate-900 dark:text-slate-100 font-medium"}">${escapeHtml(t)}</span>
           </label>
         `;
@@ -5666,13 +5666,13 @@ function renderOnboardingCourses() {
       return `
         <div class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/70 hover:border-[#1a73e8] dark:hover:border-blue-500 transition text-xs">
           <label class="flex items-center gap-2.5 min-w-0 cursor-pointer flex-1">
-            <input type="checkbox" ${checked ? "checked" : ""} onchange="toggleCourseFilter('${c.id}', this.checked)" class="w-4 h-4 rounded shrink-0 cursor-pointer" style="accent-color: ${c.color}" />
+            <input type="checkbox" ${checked ? "checked" : ""} onchange="toggleCourseFilter('${jsAttr(c.id)}', this.checked)" class="w-4 h-4 rounded shrink-0 cursor-pointer" style="accent-color: ${c.color}" />
             <span class="px-2 py-0.5 rounded-md text-[10px] font-bold text-white shrink-0" style="background-color: ${c.color}">${escapeHtml(c.id)}</span>
             <span class="font-medium text-slate-800 dark:text-slate-200 truncate" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</span>
           </label>
           <div class="flex items-center gap-2 shrink-0 pl-1.5">
             <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 tabular-nums">${slotCount} ${slotCount === 1 ? "slot" : "slots"}</span>
-            <button type="button" onclick="confirmDeleteCourse('${c.id}', '${escapeHtml(c.name)}', event)" aria-label="Remove course ${escapeHtml(c.id)}" class="p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer flex items-center justify-center" title="Remove course">
+            <button type="button" onclick="confirmDeleteCourse('${jsAttr(c.id)}', '${jsAttr(c.name)}', event)" aria-label="Remove course ${escapeHtml(c.id)}" class="p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer flex items-center justify-center" title="Remove course">
               <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" x2="10" y1="11" y2="17"></line><line x1="14" x2="14" y1="11" y2="17"></line>
               </svg>
@@ -5738,13 +5738,13 @@ function renderSettingsCourses() {
       return `
         <div class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/70 hover:border-[#1a73e8] dark:hover:border-blue-500 transition text-xs">
           <label class="flex items-center gap-2.5 min-w-0 cursor-pointer flex-1">
-            <input type="checkbox" ${checked ? "checked" : ""} onchange="toggleCourseFilter('${c.id}', this.checked)" class="w-4 h-4 rounded shrink-0 cursor-pointer" style="accent-color: ${c.color}" />
+            <input type="checkbox" ${checked ? "checked" : ""} onchange="toggleCourseFilter('${jsAttr(c.id)}', this.checked)" class="w-4 h-4 rounded shrink-0 cursor-pointer" style="accent-color: ${c.color}" />
             <span class="px-2 py-0.5 rounded-md text-[10px] font-bold text-white shrink-0" style="background-color: ${c.color}">${escapeHtml(c.id)}</span>
             <span class="font-medium text-slate-800 dark:text-slate-200 truncate" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</span>
           </label>
           <div class="flex items-center gap-2 shrink-0 pl-1.5">
             <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 tabular-nums">${slotCount} ${slotCount === 1 ? "slot" : "slots"}</span>
-            <button type="button" onclick="confirmDeleteCourse('${c.id}', '${escapeHtml(c.name)}', event)" aria-label="Remove course ${escapeHtml(c.id)}" class="p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer flex items-center justify-center" title="Remove course">
+            <button type="button" onclick="confirmDeleteCourse('${jsAttr(c.id)}', '${jsAttr(c.name)}', event)" aria-label="Remove course ${escapeHtml(c.id)}" class="p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer flex items-center justify-center" title="Remove course">
               <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" x2="10" y1="11" y2="17"></line><line x1="14" x2="14" y1="11" y2="17"></line>
               </svg>
@@ -6615,7 +6615,7 @@ function renderRecentSearchesList() {
   listEl.innerHTML = items
     .map(
       (term) => `
-      <div onclick="applySearchSuggestion('${escapeHtml(term)}')" class="group flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-100/80 dark:hover:bg-slate-800/80 cursor-pointer text-xs font-medium text-slate-700 dark:text-slate-200 transition">
+      <div onclick="applySearchSuggestion('${jsAttr(term)}')" class="group flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-100/80 dark:hover:bg-slate-800/80 cursor-pointer text-xs font-medium text-slate-700 dark:text-slate-200 transition">
         <div class="flex items-center gap-2.5 min-w-0">
           <i data-lucide="${isDefault ? "sparkles" : "clock"}" class="w-3.5 h-3.5 text-slate-400 group-hover:text-[#1a73e8] dark:group-hover:text-blue-400 shrink-0 transition"></i>
           <span class="truncate">${escapeHtml(term)}</span>
@@ -6623,7 +6623,7 @@ function renderRecentSearchesList() {
         ${
           !isDefault
             ? `
-          <button type="button" onclick="removeRecentSearch('${escapeHtml(term)}', event)" class="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer" title="Remove">
+          <button type="button" onclick="removeRecentSearch('${jsAttr(term)}', event)" class="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer" title="Remove">
             <i data-lucide="x" class="w-3 h-3"></i>
           </button>
         `
@@ -6650,7 +6650,7 @@ function renderPaletteCourseChips() {
   chipsEl.innerHTML = courses
     .map(
       (c) => `
-    <button type="button" onclick="applySearchSuggestion('${escapeHtml(c.id)}')" class="px-2 py-0.5 rounded-lg text-[10px] font-bold transition hover:scale-105 active:scale-95 text-white shadow-2xs cursor-pointer" style="background-color: ${c.color}">
+    <button type="button" onclick="applySearchSuggestion('${jsAttr(c.id)}')" class="px-2 py-0.5 rounded-lg text-[10px] font-bold transition hover:scale-105 active:scale-95 text-white shadow-2xs cursor-pointer" style="background-color: ${c.color}">
       ${escapeHtml(c.id)}
     </button>
   `
@@ -6693,7 +6693,7 @@ function updatePaletteMatches() {
   listEl.innerHTML = matches
     .map((a) => {
       return `
-      <div onclick="selectPaletteAssessment('${a.id}')" class="flex items-center justify-between p-2 rounded-xl hover:bg-slate-100/80 dark:hover:bg-slate-800/80 cursor-pointer transition text-xs">
+      <div onclick="selectPaletteAssessment('${jsAttr(a.id)}')" class="flex items-center justify-between p-2 rounded-xl hover:bg-slate-100/80 dark:hover:bg-slate-800/80 cursor-pointer transition text-xs">
         <div class="flex items-center gap-2.5 min-w-0">
           <span class="px-2 py-0.5 rounded-md text-[10px] font-bold text-white shrink-0" style="background-color: ${a.color}">${escapeHtml(a.course_id)}</span>
           <div class="min-w-0">
@@ -6918,6 +6918,15 @@ function formatCompactTime(hhmm) {
   const ampm = h >= 12 ? "pm" : "am";
   const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
   return mStr === "00" ? `${h12}${ampm}` : `${h12}:${mStr}${ampm}`;
+}
+
+// Escape a value interpolated into a JS string literal inside an HTML
+// event-handler attribute (onclick="fn('${...}')"). HTML entity-decoding runs
+// BEFORE the JS engine parses the handler, so escapeHtml alone is not enough:
+// its &#39; reverts to a raw quote and breaks the string. JS-escape first,
+// then HTML-encode.
+function jsAttr(s) {
+  return escapeHtml(jsString(s));
 }
 
 function jsString(s) {

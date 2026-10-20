@@ -62,7 +62,7 @@ fn decode_base64url(input: &str) -> String {
     }
     // Fallback standard padding
     let mut padded = cleaned;
-    while padded.len() % 4 != 0 {
+    while !padded.len().is_multiple_of(4) {
         padded.push('=');
     }
     if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&padded) {

@@ -239,7 +239,7 @@ pub fn parse_moodle_ics_content(
                     && l.len() > 3
                 {
                     topics.push(
-                        l.trim_start_matches(|c| c == '•' || c == '-' || c == '*' || c == ' ')
+                        l.trim_start_matches(['•', '-', '*', ' '])
                             .to_string(),
                     );
                 }
@@ -262,7 +262,7 @@ pub fn parse_moodle_ics_content(
         };
 
         let id = if !uid.is_empty() {
-            format!("moodle-{}", uid.replace('@', "_").replace('/', "_"))
+            format!("moodle-{}", uid.replace(['@', '/'], "_"))
         } else {
             format!("moodle-{}-{}", matched_course_id, date_iso.replace('-', ""))
         };
@@ -401,7 +401,7 @@ pub async fn fetch_moodle_api_events(
             // Moodle timestamps are UTC epoch seconds; project them onto the
             // student's local timezone so dates match the wall-clock experience.
             let dt_utc = chrono::DateTime::from_timestamp(timestart, 0)
-                .unwrap_or_else(|| chrono::Utc::now());
+                .unwrap_or_else(chrono::Utc::now);
             let dt = dt_utc.with_timezone(&Local);
             let date_iso = dt.format("%Y-%m-%d").to_string();
             let start_time = dt.format("%H:%M").to_string();

@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "3.0.0"
+    [string]$Version = "3.3.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,9 +38,6 @@ try {
     # on first run. Never bundle a developer's personal timetable or user data.
     Copy-Item "data\schedule.template.json" -Destination (Join-Path $StageDir "data")
     Copy-Item "data\schedule.template.json" -Destination (Join-Path $StageDir "data\schedule.json")
-    if (Test-Path "credentials.json") {
-        Copy-Item "credentials.json" -Destination $StageDir
-    }
     Copy-Item "README.md" -Destination $StageDir
 
     $ZipPath = Join-Path $DistDir "QuizRadar-Portable-v$Version-win-x64.zip"

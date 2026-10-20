@@ -679,7 +679,7 @@ RULES:
         let days_until = matching_a.map(|a| a.days_until).unwrap_or(3);
         let assessment_date = matching_a.map(|a| a.date_iso.clone()).unwrap_or_default();
 
-        let day_offset = t.day_offset.max(0).min(6);
+        let day_offset = t.day_offset.clamp(0, 6);
         let task_date = ref_date + Duration::days(day_offset as i64);
         let display_day = match day_offset {
             0 => "Today".to_string(),
@@ -1223,12 +1223,11 @@ pub async fn explore_and_extract_academic_universe(
     api_key: Option<&str>,
 ) -> Option<DiscoveredAcademicData> {
     let prompt = format!(
-        "TODAY'S DATE: {}\n\n{}",
+        "TODAY'S DATE: {}\n\n{}\n\n=== RAW SOURCE CONTEXT ({}) ===\n{}",
         chrono::Local::now().date_naive().format("%A, %d %B %Y"),
-        format!(
-            "{}\n\n=== RAW SOURCE CONTEXT ({}) ===\n{}",
-            ACADEMIC_DISCOVERY_PROMPT_TEMPLATE, source_name, raw_context
-        )
+        ACADEMIC_DISCOVERY_PROMPT_TEMPLATE,
+        source_name,
+        raw_context
     );
 
     let payload = json!({

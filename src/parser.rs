@@ -504,7 +504,7 @@ fn infer_schedule_date_and_slot(
         .find(|s| s.course_id == course_id && s.slot_type.eq_ignore_ascii_case(preferred_slot_type))
         .or_else(|| schedule.slots.iter().find(|s| s.course_id == course_id));
 
-    let date_was_relative = extract_explicit_date(&lower).is_none();
+    let date_was_relative = extract_explicit_date(lower).is_none();
     let default_start = matched_slot
         .map(|s| s.start_time.clone())
         .unwrap_or_else(|| "09:00".to_string());
@@ -519,7 +519,7 @@ fn infer_schedule_date_and_slot(
         .unwrap_or_else(|| "All Groups".to_string());
 
     // General Date & Slot resolution
-    let mut target_date = extract_explicit_date(&lower).unwrap_or_else(|| {
+    let mut target_date = extract_explicit_date(lower).unwrap_or_else(|| {
         if lower.contains("next week (not this week)") {
             sent_date + Duration::days(8)
         } else if lower.contains("next week") {
@@ -1245,8 +1245,7 @@ pub fn build_study_tasks(assessments: &[Assessment], config: &AppConfig) -> Stud
 
         let max_prep_days = (a.days_until.max(1) - 1).min(5) as i32;
         let hours_per_topic = (a.estimated_study_hours / (topics_len as f32).max(1.0))
-            .max(0.5)
-            .min(2.5);
+            .clamp(0.5, 2.5);
         let hours_rounded = (hours_per_topic * 10.0).round() / 10.0;
 
         let urgency = if a.days_until <= 1 {
@@ -1273,9 +1272,9 @@ pub fn build_study_tasks(assessments: &[Assessment], config: &AppConfig) -> Stud
             "Structured early revision to build retention and confidence.".to_string()
         };
 
-        for idx in 0..topics_len {
+        for (idx, &fallback) in fallback_topics.iter().enumerate().take(topics_len) {
             let topic = if a.topics.is_empty() {
-                fallback_topics[idx]
+                fallback
             } else {
                 a.topics[idx].as_str()
             };

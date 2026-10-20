@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VER="${1:-3.2.0}"
+VER="${1:-3.3.0}"
 ARCH="${2:-amd64}"
 STAGE_DIR="dist/deb-staging"
 OUTPUT_DEB="dist/QuizRadar-v${VER}-linux-${ARCH}.deb"

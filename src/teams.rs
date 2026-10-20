@@ -549,7 +549,7 @@ pub async fn sync_teams_assessments(
 
     if !teams_items.is_empty() {
         let tok_bundles = tok.clone();
-        let bundles = stream::iter(teams_items.into_iter())
+        let bundles = stream::iter(teams_items)
             .map(move |team| {
                 let tok = tok_bundles.clone();
                 async move { fetch_team_bundle(&tok, &team).await }

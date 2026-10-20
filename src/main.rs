@@ -152,7 +152,7 @@ fn run_native_desktop_window(port: u16) {
     let window_icon = Icon::from_rgba(icon_rgba.to_vec(), 64, 64).ok();
 
     let window = WindowBuilder::new()
-        .with_title("QuizRadar â€” Academic Dashboard & Smart Exam Calendar")
+        .with_title("QuizRadar — Academic Dashboard & Smart Exam Calendar")
         .with_inner_size(LogicalSize::new(1420.0, 880.0))
         .with_min_inner_size(LogicalSize::new(960.0, 620.0))
         .with_window_icon(window_icon)
@@ -689,7 +689,7 @@ async fn google_oauth_callback(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QuizRadar â€” Google Sign-In</title>
+  <title>QuizRadar — Google Sign-In</title>
   <style>
     body {{ background: #0b0f19; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }}
     .card {{ background: #131927; border: 1px solid #1e293b; border-radius: 16px; padding: 28px; max-width: 440px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; }}
@@ -702,7 +702,7 @@ async fn google_oauth_callback(
 </head>
 <body>
   <div class="card">
-    <div class="icon">âš ï¸</div>
+    <div class="icon">⚠️</div>
     <h2>Google Sign-In Error</h2>
     <p>{}</p>
     <a href="/" class="btn">Return to QuizRadar</a>
@@ -788,7 +788,7 @@ async fn complete_onboarding(
             if !trimmed.is_empty() {
                 if trimmed.contains('@') {
                     // Store as a local PROFILE ANCHOR only. Never enable Teams
-                    // scanning from manual entry â€” Teams needs a Microsoft sign-in.
+                    // scanning from manual entry — Teams needs a Microsoft sign-in.
                     cfg.teams_account_email = Some(trimmed.to_string());
                     if let Some(n) = payload.teams_name.as_ref() {
                         if !n.trim().is_empty() {
@@ -966,7 +966,7 @@ async fn add_course_handler(
         slot.day_index = gemini::normalize_day_index(&slot.day);
         if slot.display_time.is_empty() && !slot.start_time.is_empty() && !slot.end_time.is_empty()
         {
-            slot.display_time = format!("{} â€“ {}", slot.start_time, slot.end_time);
+            slot.display_time = format!("{} – {}", slot.start_time, slot.end_time);
         }
         sched.slots.push(slot);
     }
@@ -1220,7 +1220,7 @@ async fn run_sync_pipeline(state: SharedAppState, use_live_gemini: bool) -> Valu
         "No connected sources produced new data. Connect Google / Microsoft accounts or Moodle in Settings, or add your schedule manually."
             .to_string()
     } else {
-        sync_notes.join(" Â· ")
+        sync_notes.join(" · ")
     };
     let message = format!(
         "Sync complete ({}): {} upcoming exams & quizzes active.",
@@ -1419,10 +1419,10 @@ async fn check_updater_handler(Query(q): Query<UpdateCheckQuery>) -> Json<Value>
             "success": true,
             "update_available": true,
             "current_version": updater::CURRENT_VERSION,
-            "latest_version": "v3.2.0",
-            "release_name": "QuizRadar v3.2.0 â€” Academic Hubs, Custom Majors & Clean Timeline Display",
-            "release_date": "2026-10-19",
-            "release_notes": "## What's New in v3.2.0\n\n- **Fix Auto-Enrollment**: Prevent unexpected enrollment in dummy Computer Science courses; added 1-click 'Clear all' course wiping\n- **Academic Major Selector**: Fixed field of study chip selection styling (.is-selected) and dynamic starter courses adaptation for Engineering, Medicine, Business, and Sciences\n- **Interactive Integration Hubs**: Upgraded Google Workspace, Microsoft Teams, Google Classroom, and Moodle LMS onboarding cards to interactive setup triggers with live connection status badges\n- **Visual & Formatting Polish**: Fixed embedded Lucide icon serving on installed builds, resolved dangling timeline time hyphens (e.g. 23:59â€“), and corrected pluralization\n- **Full Multi-Platform Parity**: Full parity across Windows, macOS, Linux, and Android APK builds",
+            "latest_version": "v3.3.0",
+            "release_name": "QuizRadar v3.3.0 — Offline-Ready Assets, Security Hardening & Impeccable Mobile Experience",
+            "release_date": "2026-10-20",
+            "release_notes": "## What's New in v3.2.0\n\n- **Fix Auto-Enrollment**: Prevent unexpected enrollment in dummy Computer Science courses; added 1-click 'Clear all' course wiping\n- **Academic Major Selector**: Fixed field of study chip selection styling (.is-selected) and dynamic starter courses adaptation for Engineering, Medicine, Business, and Sciences\n- **Interactive Integration Hubs**: Upgraded Google Workspace, Microsoft Teams, Google Classroom, and Moodle LMS onboarding cards to interactive setup triggers with live connection status badges\n- **Visual & Formatting Polish**: Fixed embedded Lucide icon serving on installed builds, resolved dangling timeline time hyphens (e.g. 23:59–), and corrected pluralization\n- **Full Multi-Platform Parity**: Full parity across Windows, macOS, Linux, and Android APK builds",
             "download_url": "https://github.com/TheDragonSoft/QuizRadar/releases/latest",
             "portable_url": "https://github.com/TheDragonSoft/QuizRadar/releases/latest",
             "html_url": "https://github.com/TheDragonSoft/QuizRadar/releases/latest",
@@ -1712,7 +1712,7 @@ async fn microsoft_oauth_callback(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QuizRadar â€” Microsoft Teams Connected</title>
+  <title>QuizRadar — Microsoft Teams Connected</title>
   <style>
     body { background: #0b0f19; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
     .card { background: #131927; border: 1px solid #1e293b; border-radius: 16px; padding: 28px; max-width: 440px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; }
@@ -1725,7 +1725,7 @@ async fn microsoft_oauth_callback(
 </head>
 <body>
   <div class="card">
-    <div class="icon">ðŸŽ“</div>
+    <div class="icon">🎓</div>
     <h2>University Account Connected!</h2>
     <p>Your university Microsoft 365 / Teams account has been linked. Academic courses, assignments, and announcements will sync automatically.</p>
     <button class="btn" onclick="window.close();">Return to QuizRadar</button>
@@ -1746,7 +1746,7 @@ async fn microsoft_oauth_callback(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QuizRadar â€” Microsoft Sign-In</title>
+  <title>QuizRadar — Microsoft Sign-In</title>
   <style>
     body {{ background: #0b0f19; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }}
     .card {{ background: #131927; border: 1px solid #1e293b; border-radius: 16px; padding: 28px; max-width: 440px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; }}
@@ -1758,7 +1758,7 @@ async fn microsoft_oauth_callback(
 </head>
 <body>
   <div class="card">
-    <div class="icon">âš ï¸</div>
+    <div class="icon">⚠️</div>
     <h2>Microsoft Sign-In Error</h2>
     <p>{}</p>
     <button class="btn" onclick="window.close();">Return to QuizRadar</button>
@@ -2019,7 +2019,7 @@ async fn schedule_study_blocks_handler(
 
         let block_id = format!("study-block-{}", a.id);
         if !cfg.custom_events.iter().any(|e| e.id == block_id) {
-            // Pick the first free evening study window (16:00â€“21:30) that does not
+            // Pick the first free evening study window (16:00–21:30) that does not
             // clash with an existing event on that date instead of a fixed 17:00.
             let (mut start_time, mut end_time) = ("17:00".to_string(), "18:30".to_string());
             let windows: [(&str, &str); 5] = [

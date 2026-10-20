@@ -1,8 +1,8 @@
 ; QuizRadar — Inno Setup Installer Script
-; Builds QuizRadar-Setup-v2.2.0-x64.exe with custom QuizRadar icon & wizard branding
+; Builds QuizRadar-Setup-v3.3.0-x64.exe with custom QuizRadar icon & wizard branding
 
 #ifndef MyAppVersion
-  #define MyAppVersion "3.0.0"
+  #define MyAppVersion "3.3.0"
 #endif
 
 #define MyAppName "QuizRadar"
@@ -54,7 +54,6 @@ Source: "..\static\*"; DestDir: "{app}\static"; Flags: ignoreversion recursesubd
 Source: "..\assets\icon.ico"; DestDir: "{app}\assets"; Flags: ignoreversion
 Source: "..\assets\icon.png"; DestDir: "{app}\assets"; Flags: ignoreversion
 Source: "..\data\schedule.template.json"; DestDir: "{app}\data"; DestName: "schedule.json"; Flags: onlyifdoesntexist
-Source: "..\credentials.json"; DestDir: "{app}"; Flags: skipifsourcedoesntexist
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

@@ -1,5 +1,5 @@
 // ============================================================================
-// QuizRadar â€” Standalone Frontend Controller (Impeccable Polish, Animate & Adapt)
+// QuizRadar — Standalone Frontend Controller (Impeccable Polish, Animate & Adapt)
 // Views: 1) First-Time Onboarding Wizard  2) Smart Dashboard  3) Week Calendar
 // ============================================================================
 
@@ -39,14 +39,121 @@ function getSundayOfWeek(d) {
   return date;
 }
 
+// ============================================================================
+// SHARED PERFORMANCE HELPERS (scoped icon hydration, rAF throttle, debounce)
+// ============================================================================
+
+// Hydrate icons only inside the container that was just written to.
+// Call with no argument for the rare one-off full-document fallback.
 function refreshIcons(root) {
   if (!window.lucide || typeof window.lucide.createIcons !== "function") return;
-  if (!root) {
-    window.lucide.createIcons();
+  if (root) {
+    window.lucide.createIcons({ root });
     return;
   }
-  if (root.nodeType !== 1 && root.nodeType !== 9) return;
-  window.lucide.createIcons({ root });
+  if (arguments.length === 0) {
+    window.lucide.createIcons();
+  }
+}
+
+// Coalesce high-frequency events (resize, scroll, touchmove) to one rAF frame.
+function rafThrottle(fn) {
+  let scheduled = false;
+  let lastArgs = null;
+  return function (...args) {
+    lastArgs = args;
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(() => {
+      scheduled = false;
+      const argsToUse = lastArgs;
+      lastArgs = null;
+      fn.apply(this, argsToUse || []);
+    });
+  };
+}
+
+// Trailing-edge debounce with cancel()/flush() for immediate paths.
+function debounce(fn, wait) {
+  let timer = null;
+  let lastArgs = null;
+  const wrapped = function (...args) {
+    lastArgs = args;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      const argsToUse = lastArgs || [];
+      lastArgs = null;
+      fn.apply(this, argsToUse);
+    }, wait);
+  };
+  wrapped.cancel = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    lastArgs = null;
+  };
+  wrapped.flush = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    if (!lastArgs) return;
+    const argsToUse = lastArgs;
+    lastArgs = null;
+    fn.apply(this, argsToUse);
+  };
+  return wrapped;
+}
+
+function isViewActive(viewId) {
+  const el = document.getElementById(viewId);
+  return !!el && !el.classList.contains("hidden");
+}
+
+// View switching: restart the enter animation without a forced synchronous reflow.
+// The class is applied one frame before the view becomes visible so the animation
+// always starts from its first keyframe (no flash).
+function revealViewWithTransition(el) {
+  if (!el) return;
+  el.classList.remove("view-transition");
+  const token = (el._revealToken = (el._revealToken || 0) + 1);
+  requestAnimationFrame(() => {
+    if (el._revealToken !== token) return;
+    el.classList.add("view-transition");
+    requestAnimationFrame(() => {
+      if (el._revealToken !== token) return;
+      el.classList.remove("hidden");
+    });
+  });
+}
+
+function hideView(el) {
+  if (!el) return;
+  el._revealToken = (el._revealToken || 0) + 1;
+  el.classList.add("hidden");
+}
+
+// Modal opening without a forced synchronous reflow: the backdrop is invisible
+// until "is-open" lands, so the two-frame reveal is flicker-free.
+function revealModalWithTransition(el, onRevealed) {
+  if (!el) return;
+  el.classList.remove("hidden");
+  const token = (el._revealToken = (el._revealToken || 0) + 1);
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      if (el._revealToken !== token || el.classList.contains("hidden")) return;
+      el.classList.add("is-open");
+      if (typeof onRevealed === "function") onRevealed();
+    })
+  );
+}
+
+function dismissModalTransition(el) {
+  if (!el) return;
+  el._revealToken = (el._revealToken || 0) + 1;
+  el.classList.remove("is-open");
 }
 
 class QuizRadarAutonomousEngine {
@@ -60,6 +167,12 @@ class QuizRadarAutonomousEngine {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && parsed.schedule && Array.isArray(parsed.assessments)) {
+          if (!parsed.config) parsed.config = {};
+          // Migrate legacy top-level completed_topics into config (single source of truth,
+          // matching the desktop server which persists it inside the app config).
+          if (parsed.completed_topics && (!parsed.config.completed_topics || Object.keys(parsed.config.completed_topics).length === 0)) {
+            parsed.config.completed_topics = parsed.completed_topics;
+          }
           // Scrub legacy mock assessments and tasks if lingering from previous demo versions
           parsed.assessments = parsed.assessments.filter(a => !["cs101-a1", "math101-q1", "mgmt100-q1", "data201-m1"].includes(a.id));
           if (Array.isArray(parsed.study_tasks)) {
@@ -92,6 +205,7 @@ class QuizRadarAutonomousEngine {
         dark_mode: false,
         onboarding_completed: false, // Fresh install launches onboarding wizard!
         last_gmail_sync: "Never",
+        completed_topics: {},
         custom_events: []
       },
       auth: {
@@ -134,7 +248,8 @@ class QuizRadarAutonomousEngine {
     today.setHours(0, 0, 0, 0);
 
     const assessments = state.assessments || [];
-    const completed = state.completed_topics || {};
+    // completed_topics lives in config (server parity); fall back to legacy top-level map
+    const completed = state.config?.completed_topics || state.completed_topics || {};
     const recommendations = assessments.map((a) => {
       const topics = a.topics || [];
       const compCount = topics.filter((t, i) => !!completed[`${a.id}::${i}`]).length;
@@ -243,93 +358,147 @@ class QuizRadarAutonomousEngine {
   }
 
   buildStudyTasksPayload() {
+    // Shape mirrors the desktop server's parser::build_study_tasks (models.rs):
+    // StudyTasksPayload { days: [DailyStudyDayGroup], readiness_cards, total_tasks,
+    // pending_tasks, completed_tasks, total_hours, ai_generated }
     const assessments = this.state.assessments || [];
-    const completed = this.state.completed_topics || {};
-    if (assessments.length === 0) {
-      return {
-        pending_tasks: 0,
-        completed_tasks: 0,
-        total_hours: 0,
-        readiness_cards: [],
-        days: []
-      };
-    }
+    const completed = this.state.config?.completed_topics || this.state.completed_topics || {};
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isoToDate = (iso) => {
+      if (!iso) return null;
+      const p = String(iso).split("-").map(Number);
+      if (p.length !== 3 || p.some(Number.isNaN)) return null;
+      return new Date(p[0], p[1] - 1, p[2]);
+    };
+    const todayIso = toIsoDate(today);
+    const parseHours = (topic, fallback) => {
+      const m = /^\[(\d+(?:\.\d+)?)\s*h\]/i.exec(String(topic).trim());
+      const v = m ? parseFloat(m[1]) : fallback;
+      return Math.max(0.25, Math.min(8, v || fallback));
+    };
+
+    const readiness = [];
+    const tasksByDay = {}; // day_offset -> DailyStudyTask[]
     let totalPending = 0;
     let totalCompleted = 0;
-    let totalMinutes = 0;
-    const cards = [];
-    const allTaskItems = [];
+    let totalHours = 0;
+    let rank = 0;
+
+    const dayLabel = (date) => {
+      const dow = date.toLocaleDateString(undefined, { weekday: "short" });
+      const mon = date.toLocaleDateString(undefined, { month: "short" });
+      return `${dow}, ${mon} ${date.getDate()}`;
+    };
 
     assessments.forEach((a) => {
       const topics = a.topics || [];
-      const compCount = topics.filter((t, i) => !!completed[`${a.id}::${i}`]).length;
-      const totalCount = Math.max(topics.length, 1);
-      const readiness = Math.round((compCount / totalCount) * 100);
-      const daysUntil = a.days_until ?? 3;
-      const priorityScore = Math.max(10, 100 - (daysUntil * 7) + (100 - readiness) * 0.3);
+      const compCount = topics.filter((_t, i) => !!completed[`${a.id}::${i}`]).length;
+      const totalCount = topics.length;
+      const readinessPercent = totalCount === 0
+        ? 100
+        : Math.round((compCount / Math.max(totalCount, 1)) * 100);
+      const targetDate = isoToDate(a.date_iso);
+      const daysUntil = targetDate
+        ? Math.round((targetDate.getTime() - today.getTime()) / 86400000)
+        : (a.days_until ?? 30);
+      a.days_until = daysUntil;
+      a.is_upcoming = daysUntil >= 0;
+      totalCompleted += compCount;
 
-      const tasks = topics.map((t, i) => {
-        const key = `${a.id}::${i}`;
-        const isDone = !!completed[key];
-        const est = 45;
-        if (isDone) totalCompleted++;
-        else totalPending++;
-        totalMinutes += est;
+      const priorityScore = Math.max(10, 100 - Math.max(daysUntil, 0) * 7 + (100 - readinessPercent) * 0.3);
 
-        const taskItem = {
-          key,
+      if (daysUntil >= 0) {
+        readiness.push({
           assessment_id: a.id,
           course_id: a.course_id,
           course_name: a.course_name,
           title: a.title,
-          topic: typeof t === "string" ? t : t.topic,
-          est_minutes: est,
-          completed: isDone,
+          assessment_type: a.assessment_type || "Assessment",
+          date_iso: a.date_iso,
+          display_date: daysUntil === 0 ? "Today" : daysUntil === 1 ? "Tomorrow" : `In ${daysUntil} days`,
           days_until: daysUntil,
-          date_iso: a.date_iso
-        };
-        allTaskItems.push(taskItem);
-        return taskItem;
-      });
-
-      cards.push({
-        assessment_id: a.id,
-        course_id: a.course_id,
-        course_name: a.course_name,
-        title: a.title,
-        assessment_type: a.assessment_type || "Assessment",
-        date_iso: a.date_iso,
-        display_date: daysUntil === 0 ? "Today" : daysUntil === 1 ? "Tomorrow" : `In ${daysUntil} days`,
-        days_until: daysUntil,
-        color: a.color || "#1a73e8",
-        readiness_percent: readiness,
-        completed_count: compCount,
-        total_count: totalCount,
-        priority_score: Math.round(priorityScore),
-        recommended_focus: a.ai_study_plan || "Review key concepts and lecture notes",
-        tasks
-      });
-    });
-
-    const daysMap = {};
-    allTaskItems.forEach((item) => {
-      const dayKey = item.date_iso || "2026-10-19";
-      if (!daysMap[dayKey]) {
-        daysMap[dayKey] = {
-          date_iso: dayKey,
-          label: item.days_until === 0 ? "Today" : item.days_until === 1 ? "Tomorrow" : `In ${item.days_until} days`,
-          tasks: []
-        };
+          readiness_percent: readinessPercent,
+          completed_count: compCount,
+          total_count: totalCount,
+          priority_score: Math.round(priorityScore),
+          color: a.color || "#1a73e8",
+          recommended_focus: a.ai_study_plan || (topics.length > 0
+            ? (topics.find((t, i) => !completed[`${a.id}::${i}`]) || topics[0]).toString()
+            : "Review all course materials")
+        });
       }
-      daysMap[dayKey].tasks.push(item);
+
+      // Schedule unfinished topics across the study horizon (up to the day before the exam)
+      const uncompleted = topics
+        .map((t, i) => ({ i, text: typeof t === "string" ? t : t.topic }))
+        .filter((x) => !completed[`${a.id}::${x.i}`]);
+      if (daysUntil < 0 || uncompleted.length === 0) return;
+
+      const horizon = Math.min(Math.max(daysUntil, 0) + 1, 14); // include exam day if tomorrow-close
+      uncompleted.forEach((item, idx) => {
+        const dayOffset = Math.min(horizon - 1, Math.floor((idx / Math.max(1, Math.ceil(uncompleted.length / horizon)))));
+        const dayDate = new Date(today);
+        dayDate.setDate(today.getDate() + dayOffset);
+        const iso = toIsoDate(dayDate);
+        const hours = parseHours(item.text, 1.5);
+        const key = `${a.id}::${item.i}`;
+        totalPending += 1;
+        totalHours += hours;
+        rank += 1;
+        const urgency = daysUntil <= 1 ? "critical" : daysUntil <= 4 ? "high" : "normal";
+        if (!tasksByDay[dayOffset]) tasksByDay[dayOffset] = [];
+        tasksByDay[dayOffset].push({
+          id: `task-${a.id}-${item.i}-${dayOffset}`,
+          key,
+          assessment_id: a.id,
+          course_id: a.course_id,
+          course_name: a.course_name,
+          assessment_title: a.title,
+          assessment_type: a.assessment_type || "Assessment",
+          topic: item.text.replace(/^\[\d+(?:\.\d+)?\s*h\]\s*/i, "").trim() || "Review materials",
+          day_offset: dayOffset,
+          target_date_iso: iso,
+          display_day: dayLabel(dayDate),
+          priority_rank: rank,
+          urgency,
+          estimated_hours: hours,
+          ai_reasoning: `Scheduled ${dayOffset === 0 ? "today" : `in ${dayOffset} day${dayOffset > 1 ? "s" : ""}`} to stay ahead of ${a.course_id} on ${a.date_iso || a.title}.`,
+          completed: false,
+          color: a.color || "#1a73e8",
+          days_until_assessment: daysUntil,
+          assessment_date: a.date_iso
+        });
+      });
     });
+
+    readiness.sort((a, b) => a.days_until - b.days_until || b.priority_score - a.priority_score);
+    const totalTasks = totalPending + totalCompleted;
+
+    const days = Object.entries(tasksByDay)
+      .map(([offset, tasks]) => {
+        const groupDate = new Date(today);
+        groupDate.setDate(today.getDate() + Number(offset));
+        return {
+          day_offset: Number(offset),
+          date_iso: toIsoDate(groupDate),
+          display_day: Number(offset) === 0 ? `Today · ${dayLabel(groupDate)}` : dayLabel(groupDate),
+          is_today: Number(offset) === 0,
+          total_estimated_hours: Math.round(tasks.reduce((acc, t) => acc + t.estimated_hours, 0) * 10) / 10,
+          tasks
+        };
+      })
+      .sort((a, b) => a.day_offset - b.day_offset);
 
     return {
+      days,
+      readiness_cards: readiness,
+      total_tasks: totalTasks,
       pending_tasks: totalPending,
       completed_tasks: totalCompleted,
-      total_hours: Math.round((totalMinutes / 60) * 10) / 10,
-      readiness_cards: cards,
-      days: Object.values(daysMap)
+      total_hours: Math.round(totalHours * 10) / 10,
+      ai_generated: false
     };
   }
 
@@ -351,33 +520,50 @@ class QuizRadarAutonomousEngine {
     if (path === "/api/state") {
       this.recomputeDashboard(this.state);
       this.saveDatabase();
+      // Deep-copy so engine mutations never alias the snapshot handed to the app.
       return { ok: true, status: 200, data: JSON.parse(JSON.stringify(this.state)) };
     }
 
     // 2. POST /api/config/update
     if (path === "/api/config/update") {
+      // Whitelist the fields real config updates carry. A manually typed email is
+      // only a local profile anchor — it must never flip auth into a signed-in state.
       Object.assign(this.state.config, body);
       if (body.user_name) this.state.auth.name = body.user_name;
       if (body.user_email !== undefined) {
-        this.state.auth.email = body.user_email;
-        this.state.auth.authenticated = !!body.user_email;
+        const trimmed = String(body.user_email || "").trim();
+        if (!trimmed || !trimmed.includes("@")) {
+          this.state.auth.email = null;
+        } else if (!this.state.auth.authenticated) {
+          this.state.auth.email = trimmed;
+        }
       }
       this.recomputeDashboard(this.state);
       this.saveDatabase();
       return { ok: true, status: 200, data: { success: true, config: this.state.config, assessments: this.state.assessments, dashboard: this.state.dashboard, schedule: this.state.schedule } };
     }
 
-    // 3. POST /api/onboarding/complete
+    // 3. POST /api/onboarding/complete (mirrors server OnboardingPayload field names)
     if (path === "/api/onboarding/complete") {
       this.state.config.onboarding_completed = true;
       if (body.user_name) {
         this.state.config.user_name = body.user_name;
         this.state.auth.name = body.user_name;
       }
-      if (body.user_email) {
+      if (body.auto_sync_gcal !== undefined) {
+        this.state.config.auto_sync_gcal = !!body.auto_sync_gcal;
+      }
+      if (body.sync_weekly_classes_to_gcal !== undefined) {
+        this.state.config.sync_weekly_classes_to_gcal = !!body.sync_weekly_classes_to_gcal;
+      }
+      if (body.gemini_enabled !== undefined) {
+        this.state.config.gemini_enabled = !!body.gemini_enabled;
+      }
+      if (body.user_email !== undefined) {
         this.state.config.user_email = body.user_email;
-        this.state.auth.email = body.user_email;
-        this.state.auth.authenticated = true;
+        // Typed email is a profile anchor only; real auth comes from OAuth.
+        const trimmed = String(body.user_email || "").trim();
+        this.state.auth.email = trimmed.includes("@") && !this.state.auth.authenticated ? trimmed : this.state.auth.email;
       }
       if (body.teams_email) {
         this.state.config.teams_enabled = true;
@@ -386,9 +572,10 @@ class QuizRadarAutonomousEngine {
       if (body.teams_name) {
         this.state.config.teams_account_name = body.teams_name;
       }
-      if (body.gemini_key) {
-        this.state.config.gemini_api_key = body.gemini_key;
-        this.state.config.gemini_enabled = true;
+      const geminiKey = body.gemini_api_key || body.gemini_key;
+      if (geminiKey && String(geminiKey).trim()) {
+        this.state.config.gemini_api_key = String(geminiKey).trim();
+        if (body.gemini_enabled !== undefined) this.state.config.gemini_enabled = body.gemini_enabled;
       }
       this.recomputeDashboard(this.state);
       this.saveDatabase();
@@ -396,21 +583,53 @@ class QuizRadarAutonomousEngine {
     }
 
     // 4. POST /api/schedule/courses (Add course)
+    // Accepts both shapes: {course:{id,name,color,bg,border}, slots:[...]} (client)
+    // and the legacy flat body (course_id/course_name).
     if (path === "/api/schedule/courses" && method === "POST") {
       const courses = this.state.schedule.courses || [];
+      const rawCourse = body.course || {};
+      const fixedId = (rawCourse.id || body.course_id || body.id || "CS 101").toString().trim();
+      const fixedName = (rawCourse.name || body.course_name || body.name || fixedId).toString().trim();
+      if (!fixedId) {
+        return { ok: true, status: 200, data: { success: false, error: "Course code is required." } };
+      }
       const newCourse = {
-        id: body.course_id || body.id || `CRS-${Date.now()}`,
-        name: body.course_name || body.name || body.course_id,
-        color: body.color || "#1a73e8",
+        id: fixedId,
+        name: fixedName,
+        color: rawCourse.color || body.color || "#1a73e8",
+        bg: rawCourse.bg || `${rawCourse.color || body.color || "#1a73e8"}18`,
+        border: rawCourse.border || `${rawCourse.color || body.color || "#1a73e8"}55`,
         icon: body.icon || "book-open",
-        instructor: body.instructor || "Instructor"
+        instructor: rawCourse.instructor || null
       };
-      if (!courses.some(c => c.id === newCourse.id)) {
+      if (!courses.some((c) => c.id.toLowerCase() === newCourse.id.toLowerCase())) {
         courses.push(newCourse);
+      }
+      if (Array.isArray(body.slots) && body.slots.length > 0) {
+        const existing = this.state.schedule.slots || [];
+        body.slots.forEach((s) => {
+          if (!existing.some((x) => x.id === s.id)) existing.push({ ...s, course_id: s.course_id || newCourse.id, course_name: s.course_name || newCourse.name });
+        });
+        this.state.schedule.slots = existing;
       }
       this.recomputeDashboard(this.state);
       this.saveDatabase();
-      return { ok: true, status: 200, data: { success: true, schedule: this.state.schedule, assessments: this.state.assessments } };
+      const slotIndex = (this.state.schedule.slots || []).filter((s) => (s.course_id || "").toLowerCase() === newCourse.id.toLowerCase());
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          success: true,
+          course_id: newCourse.id,
+          assessment_index: null,
+          assessments: this.state.assessments,
+          dashboard: this.state.dashboard,
+          schedule: this.state.schedule,
+          message: `Course ${newCourse.id} saved. Add class times to fill your weekly calendar.`,
+          slots_found: slotIndex.length,
+          classes_found: 0
+        }
+      };
     }
 
     // 4b. DELETE /api/schedule/courses/:id
@@ -439,53 +658,66 @@ class QuizRadarAutonomousEngine {
       return { ok: true, status: 200, data: { success: true, schedule: this.state.schedule, assessments: this.state.assessments } };
     }
 
-    // 5. POST /api/events/custom (Add custom quiz/assessment)
+    // 5. POST /api/events/custom (Add custom calendar event)
+    // Mirrors the desktop server: events live ONLY in config.custom_events with the
+    // CustomCalendarEvent shape (event_type/date_iso/start_time/end_time) — they are
+    // never promoted into assessments, and no fake topics/weights are invented.
     if (path === "/api/events/custom" && method === "POST") {
-      const newAssessment = {
-        id: `custom-${Date.now()}`,
-        title: body.title || "Custom Quiz",
-        assessment_type: body.assessment_type || "Class Quiz",
-        course_id: body.course_id || "CS 101",
-        course_name: body.course_name || "General Course",
-        date_iso: body.date_iso || new Date().toISOString().split("T")[0],
-        time: body.start_time || "09:00",
-        room: body.room || "Campus Hall",
-        weight_percent: Number(body.weight_percent) || 10,
-        color: body.color || "#1a73e8",
-        days_until: 3,
-        topics: body.topics || ["Key Concept 1", "Practice Problem Set"]
-      };
-      this.state.assessments.push(newAssessment);
       if (!this.state.config.custom_events) this.state.config.custom_events = [];
-      this.state.config.custom_events.push(newAssessment);
-      this.recomputeDashboard(this.state);
+      const newEvent = {
+        id: `custom-${Date.now()}`,
+        title: (body.title || "Untitled Event").toString().trim(),
+        course_id: body.course_id || "Personal",
+        event_type: body.event_type || "Study Block",
+        date_iso: body.date_iso || toIsoDate(getTodayDate()),
+        start_time: body.start_time || "09:00",
+        end_time: body.end_time || "10:00",
+        room: body.room || "Study Room / Library",
+        notes: body.notes || "",
+        color: body.color || "#ec4899"
+      };
+      if (!newEvent.title) {
+        return { ok: true, status: 200, data: { success: false, error: "Event title is required." } };
+      }
+      this.state.config.custom_events.push(newEvent);
       this.saveDatabase();
-      return { ok: true, status: 200, data: { success: true, custom_events: this.state.config.custom_events, assessments: this.state.assessments } };
+      return { ok: true, status: 200, data: { success: true, custom_events: this.state.config.custom_events } };
     }
 
     // 5b. DELETE /api/events/custom/:id
     if (path.startsWith("/api/events/custom/") && method === "DELETE") {
       const eventId = path.replace("/api/events/custom/", "");
-      this.state.assessments = (this.state.assessments || []).filter(a => a.id !== eventId);
       if (this.state.config.custom_events) {
-        this.state.config.custom_events = this.state.config.custom_events.filter(e => e.id !== eventId);
+        this.state.config.custom_events = this.state.config.custom_events.filter((e) => e.id !== eventId);
       }
-      this.recomputeDashboard(this.state);
       this.saveDatabase();
-      return { ok: true, status: 200, data: { success: true, assessments: this.state.assessments } };
+      return { ok: true, status: 200, data: { success: true, custom_events: this.state.config.custom_events } };
     }
 
     // 6. POST /api/study/toggle (Toggle topic completion)
+    // Server contract: ToggleTopicPayload { key: "assessmentId::topicIdx", completed: bool }
+    // stored in config.completed_topics; response carries refresh payloads.
     if (path === "/api/study/toggle") {
       const key = body.key;
       if (key) {
-        if (!this.state.completed_topics) this.state.completed_topics = {};
-        this.state.completed_topics[key] = !this.state.completed_topics[key];
+        if (!this.state.config.completed_topics) this.state.config.completed_topics = {};
+        const completed = body.completed !== undefined ? !!body.completed : !this.state.config.completed_topics[key];
+        this.state.config.completed_topics[key] = completed;
         this.recomputeDashboard(this.state);
         this.saveDatabase();
-        return { ok: true, status: 200, data: { success: true, completed: this.state.completed_topics[key], dashboard: this.state.dashboard } };
+        return {
+          ok: true,
+          status: 200,
+          data: {
+            success: true,
+            completed,
+            dashboard: this.state.dashboard,
+            tasks_payload: this.buildStudyTasksPayload(),
+            completed_topics: this.state.config.completed_topics
+          }
+        };
       }
-      return { ok: true, status: 200, data: { success: true } };
+      return { ok: true, status: 200, data: { success: false, error: "Missing topic key." } };
     }
 
     // 7. POST /api/auth/logout
@@ -530,26 +762,56 @@ class QuizRadarAutonomousEngine {
       return { ok: true, status: 200, data: { success: true, tasks_payload: this.buildStudyTasksPayload() } };
     }
     if (path === "/api/study/tasks/optimize") {
-      return { ok: true, status: 200, data: { success: true, ai_optimized: true, tasks_payload: this.buildStudyTasksPayload() } };
+      this.recomputeDashboard(this.state);
+      this.saveDatabase();
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          success: true,
+          ai_optimized: false,
+          ai_generated: false,
+          message: "Study plan re-sorted by urgency and remaining effort. Link a Gemini API key to unlock AI-tuned planning.",
+          tasks_payload: this.buildStudyTasksPayload()
+        }
+      };
     }
 
-    // 12. Assessment Practice Quiz Formulation (Offline AI Generation)
+    // 12. Assessment Practice Quiz Formulation (Offline Generation)
     if (path.includes("/practice")) {
       const assessmentId = path.split("/")[3];
       const a = (this.state.assessments || []).find(x => x.id === assessmentId);
-      const topics = a && a.topics && a.topics.length > 0 ? a.topics : ["Core Principles", "Applied Problems", "Error Analysis"];
-      const questions = topics.slice(0, 4).map((t, idx) => {
-        const topTitle = typeof t === "string" ? t : t.title || "Core Subject Topic";
+      const topics = a && a.topics && a.topics.length > 0 ? a.topics : [];
+      if (topics.length === 0) {
         return {
-          question: `In the study of ${topTitle}, what is the foundational principle or method?`,
-          options: [
-            `Systematic application of standard formulas and boundary conditions in ${topTitle}.`,
-            `Disregarding initial assumptions when calculating matrix eigenvalues.`,
-            `Applying arbitrary approximations without verifying error margins.`,
-            `Restricting analysis strictly to single-variable linear models.`
-          ],
-          correct_index: 0,
-          explanation: `In ${topTitle}, exact problem formulation, standard definitions, and boundary condition verification form the solid foundation.`
+          ok: true,
+          status: 200,
+          data: {
+            success: false,
+            generated_by_ai: false,
+            error: "No synced topics for this assessment yet. Add topics from the assessment modal to practice them."
+          }
+        };
+      }
+      // Rotate the answer position so it is not always option 1; all questions are
+      // locally derived from synced topics (no fabricated exam content).
+      const questions = topics.slice(0, 4).map((t, idx) => {
+        const topTitle = (typeof t === "string" ? t : t.topic || t.title) || "Core Subject Topic";
+        const correctIndex = idx % 4;
+        const options = [
+          `Systematic application of standard ${topTitle} definitions and verified methods.`,
+          `Disregarding core assumptions of ${topTitle} when solving problems.`,
+          `Skipping verification steps for ${topTitle} results.`,
+          `Restricting analysis of ${topTitle} to only one special case.`
+        ];
+        const correct = options[0];
+        options[0] = options[correctIndex];
+        options[correctIndex] = correct;
+        return {
+          question: `Which approach best reflects a rigorous treatment of ${topTitle}?`,
+          options,
+          correct_index: correctIndex,
+          explanation: `Solid ${topTitle} work starts from exact definitions, standard methods, and verified edge cases${a ? ` (from ${a.course_id}).` : "."}`
         };
       });
       return {
@@ -558,21 +820,65 @@ class QuizRadarAutonomousEngine {
         data: {
           success: true,
           generated_by_ai: false,
-          questions: questions
+          local_note: "Practice questions are generated on-device from your synced topics. Add a Gemini API key for AI-authored quizzes.",
+          questions
         }
       };
     }
 
-    // 13. Assessment Grading / Recording
+    // 13. Assessment Grading / Recording (mirrors server: per-field partial update)
     if (path.includes("/grade")) {
       const assessmentId = path.split("/")[3];
       const a = (this.state.assessments || []).find(x => x.id === assessmentId);
-      if (a) {
-        a.grade = body.grade || body.score || 95;
+      if (!a) {
+        return { ok: true, status: 200, data: { success: false, status: "error", message: "Assessment not found.", error: "Assessment not found." } };
       }
+      const achieved = Number(body.achieved_score);
+      const maxScore = Number(body.max_score);
+      const weight = Number(body.weightage_percent);
+      let invalid = null;
+      if (body.achieved_score !== undefined && (!Number.isFinite(achieved) || achieved < 0)) invalid = "achieved_score must be a non-negative number";
+      if (!invalid && body.max_score !== undefined && (!Number.isFinite(maxScore) || maxScore <= 0)) invalid = "max_score must be greater than zero";
+      if (!invalid && body.weightage_percent !== undefined && (!Number.isFinite(weight) || weight < 0)) invalid = "weightage_percent must be a non-negative number";
+      if (invalid) {
+        return { ok: true, status: 200, data: { success: false, status: "error", message: invalid, error: invalid } };
+      }
+      if (body.weightage_percent !== undefined) a.weightage_percent = weight;
+      if (body.achieved_score !== undefined) a.achieved_score = achieved;
+      if (body.max_score !== undefined) a.max_score = maxScore;
+      if (!this.state.grades) this.state.grades = {};
+      this.state.grades[a.id] = {
+        achieved_score: a.achieved_score ?? 0,
+        max_score: a.max_score ?? 0,
+        weightage_percent: a.weightage_percent ?? 0
+      };
       this.recomputeDashboard(this.state);
       this.saveDatabase();
-      return { ok: true, status: 200, data: { success: true, assessment: a, dashboard: this.state.dashboard } };
+      // Minimal honest rollup that mirrors the server's grade summary section.
+      const gradeAssignments = (this.state.assessments || []).filter(
+        (x) => typeof x.achieved_score === "number" && typeof x.max_score === "number" && x.max_score > 0
+      );
+      const overall = gradeAssignments.length > 0
+        ? gradeAssignments.reduce((acc, x) => acc + (x.achieved_score / x.max_score) * 100, 0) / gradeAssignments.length
+        : 0;
+      const gradeStats = {
+        overall_percent: Math.round(overall),
+        graded_count: gradeAssignments.length,
+        total_assessments: (this.state.assessments || []).length
+      };
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          success: true,
+          status: "ok",
+          assessment: a,
+          assessments: this.state.assessments,
+          dashboard: this.state.dashboard,
+          summary: gradeStats,
+          grade_stats: gradeStats
+        }
+      };
     }
 
     // 14. Timetable Extraction (On-Device OCR & Optional Gemini Vision AI)
@@ -645,7 +951,9 @@ Extract enrolled courses and weekly class slots from this schedule. Return ONLY 
 
     // 15. Conflict Dismissal & Study Blocks
     if (path === "/api/conflicts/dismiss") {
-      return { ok: true, status: 200, data: { success: true, dismissed: true } };
+      this.state.config.dismiss_conflict_banner = true;
+      this.saveDatabase();
+      return { ok: true, status: 200, data: { success: true, dismissed: true, config: this.state.config } };
     }
     if (path === "/api/study/blocks/schedule") {
       return { ok: true, status: 200, data: { success: true, scheduled: true, message: "Study blocks scheduled into your academic planner." } };
@@ -706,6 +1014,11 @@ Extract enrolled courses and weekly class slots from this schedule. Return ONLY 
     };
   }
 
+  todayIsoFallback() {
+    const t = new Date();
+    return toIsoDate(t);
+  }
+
   generateIcs() {
     let lines = [
       "BEGIN:VCALENDAR",
@@ -715,7 +1028,7 @@ Extract enrolled courses and weekly class slots from this schedule. Return ONLY 
       "METHOD:PUBLISH"
     ];
     (this.state.assessments || []).forEach((a) => {
-      const dt = (a.date_iso || "2026-10-20").replace(/-/g, "");
+      const dt = (a.date_iso || this.todayIsoFallback()).replace(/-/g, "");
       lines.push(
         "BEGIN:VEVENT",
         `UID:${a.id}@quizradar.app`,
@@ -733,12 +1046,30 @@ Extract enrolled courses and weekly class slots from this schedule. Return ONLY 
   }
 }
 
-let mobileEngine = null;
-
-function getMobileEngine() {
-  if (!mobileEngine) mobileEngine = new QuizRadarAutonomousEngine();
-  return mobileEngine;
+// PERF: The on-device engine parses its DB and recomputes the dashboard, which is
+// expensive to do before first paint. It is now created lazily on first access;
+// the Proxy keeps every existing `mobileEngine.*` call site working unchanged.
+let _mobileEngineInstance = null;
+function ensureMobileEngine() {
+  if (!_mobileEngineInstance) {
+    _mobileEngineInstance = new QuizRadarAutonomousEngine();
+  }
+  return _mobileEngineInstance;
 }
+const mobileEngine = new Proxy(
+  {},
+  {
+    get(_target, prop) {
+      const instance = ensureMobileEngine();
+      const value = instance[prop];
+      return typeof value === "function" ? value.bind(instance) : value;
+    },
+    set(_target, prop, value) {
+      ensureMobileEngine()[prop] = value;
+      return true;
+    },
+  }
+);
 
 // ============================================================================
 // API ROUTING POLICY (CRITICAL, DO NOT CHANGE LIGHTLY)
@@ -754,12 +1085,12 @@ if (IS_NATIVE) {
     const url = typeof resource === "string" ? resource : resource?.url || "";
     const isRelative = /^\/[^/]/.test(url) || url.startsWith("./");
     if (!isRelative) {
-      // Cross-origin (e.g. http://192.168.x.x:5050 desktop pairing) â†’ real network
+      // Cross-origin (e.g. http://192.168.x.x:5050 desktop pairing) → real network
       return _originalFetch(resource, init);
     }
     if (url.startsWith("/api/")) {
       try {
-        const result = await getMobileEngine().handleApi(url, init);
+        const result = await mobileEngine.handleApi(url, init);
         if (result) {
           if (result.text !== undefined) {
             return new Response(result.text, {
@@ -979,8 +1310,11 @@ async function saveGoogleAccountProfile() {
 
   if (appState.auth) {
     appState.auth.name = name;
-    appState.auth.email = email;
-    appState.auth.authenticated = true;
+    // Typed email is a local profile anchor only. Real OAuth state can only come
+    // from /api/auth — never flip `authenticated` from a form field.
+    if (!appState.auth.authenticated) {
+      appState.auth.email = email;
+    }
   }
   if (appState.config) {
     appState.config.user_name = name;
@@ -1354,10 +1688,11 @@ function openAccountModal() {
   }
 
   modal.classList.remove("hidden");
+  void modal.offsetHeight;
   requestAnimationFrame(() => {
     modal.classList.add("is-open");
   });
-  refreshIcons(modal);
+  if (window.lucide) lucide.createIcons({ root: modal });
 }
 
 function closeAccountModal() {
@@ -1379,23 +1714,21 @@ function closeAccountModal() {
 // ============================================================================
 
 let currentMobileSearchFilter = "ALL";
-let mobileSearchDebounceTimer = null;
-let mobileSearchRenderSignature = "";
 
 function openMobileSearchPalette() {
   triggerHaptic("selection");
   const modal = document.getElementById("mobile-search-modal");
   if (!modal) return;
-  modal.classList.remove("hidden");
-  requestAnimationFrame(() => {
-    modal.classList.add("is-open");
+  revealModalWithTransition(modal, () => {
     const input = document.getElementById("mobile-modal-search-input");
     if (input) {
       input.value = "";
       setTimeout(() => input.focus(), 120);
     }
   });
+  scheduleMobileSearchResults.cancel();
   handleMobileModalSearch("");
+  scheduleMobileSearchResults.flush();
   refreshIcons(modal);
 }
 
@@ -1403,12 +1736,8 @@ function closeMobileSearchModal() {
   triggerHaptic("light");
   const modal = document.getElementById("mobile-search-modal");
   if (!modal) return;
-  if (mobileSearchDebounceTimer) {
-    clearTimeout(mobileSearchDebounceTimer);
-    mobileSearchDebounceTimer = null;
-  }
-  mobileSearchRenderSignature = "";
-  modal.classList.remove("is-open");
+  dismissModalTransition(modal);
+  scheduleMobileSearchResults.cancel();
   document.getElementById("mobile-modal-search-input")?.blur();
   setTimeout(() => {
     if (!modal.classList.contains("is-open")) {
@@ -1435,7 +1764,8 @@ function setMobileSearchFilter(filterType) {
     }
   });
   const input = document.getElementById("mobile-modal-search-input");
-  handleMobileModalSearch(input ? input.value : "", true);
+  handleMobileModalSearch(input ? input.value : "");
+  scheduleMobileSearchResults.flush();
 }
 
 function clearMobileModalSearch() {
@@ -1445,44 +1775,23 @@ function clearMobileModalSearch() {
     input.focus();
   }
   document.getElementById("mobile-modal-search-clear")?.classList.add("hidden");
+  scheduleMobileSearchResults.cancel();
   handleMobileModalSearch("");
+  scheduleMobileSearchResults.flush();
 }
 
-function handleMobileModalSearch(rawQuery, immediate = false) {
+function handleMobileModalSearch(rawQuery) {
   const query = (rawQuery || "").trim().toLowerCase();
   const clearBtn = document.getElementById("mobile-modal-search-clear");
   if (clearBtn) clearBtn.classList.toggle("hidden", query.length === 0);
-
-  const modal = document.getElementById("mobile-search-modal");
-  if (!modal || modal.classList.contains("hidden")) return;
-
-  const signature = `${currentMobileSearchFilter}\u0000${query}`;
-  if (signature === mobileSearchRenderSignature) {
-    if (mobileSearchDebounceTimer) {
-      clearTimeout(mobileSearchDebounceTimer);
-      mobileSearchDebounceTimer = null;
-    }
-    return;
-  }
-
-  if (mobileSearchDebounceTimer) clearTimeout(mobileSearchDebounceTimer);
-  const run = () => {
-    mobileSearchDebounceTimer = null;
-    if (!modal.classList.contains("hidden")) {
-      mobileSearchRenderSignature = signature;
-      renderMobileSearchResults(rawQuery);
-    }
-  };
-  if (immediate || !query) {
-    run();
-  } else {
-    mobileSearchDebounceTimer = setTimeout(run, 120);
-  }
+  scheduleMobileSearchResults(rawQuery);
 }
+
+// Trailing-edge debounce: typing stays cheap, the results list renders once idle.
+const scheduleMobileSearchResults = debounce((rawQuery) => renderMobileSearchResults(rawQuery), 140);
 
 function renderMobileSearchResults(rawQuery) {
   const query = (rawQuery || "").trim().toLowerCase();
-
   const container = document.getElementById("mobile-search-results-list");
   if (!container) return;
 
@@ -1520,7 +1829,7 @@ function renderMobileSearchResults(rawQuery) {
         <p class="text-[11px] text-slate-400 dark:text-slate-500">Try searching by course code (e.g. CS 101, MATH 101) or topic name.</p>
       </div>
     `;
-    refreshIcons(container);
+    if (window.lucide) refreshIcons(container);
     return;
   }
 
@@ -1540,7 +1849,7 @@ function renderMobileSearchResults(rawQuery) {
               <span class="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">${escapeHtml(item.display_time || item.date_iso)}</span>
             </div>
             <div class="text-xs font-bold text-slate-900 dark:text-white truncate">${escapeHtml(item.title)}</div>
-            <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate">Room: ${escapeHtml(item.room || "TBA")} Â· ${escapeHtml(item.course_name || "")}</div>
+            <div class="text-[11px] text-slate-500 dark:text-slate-400 truncate">Room: ${escapeHtml(item.room || "TBA")} · ${escapeHtml(item.course_name || "")}</div>
           </div>
           <i data-lucide="chevron-right" class="w-4 h-4 text-slate-400 shrink-0"></i>
         </div>
@@ -1647,7 +1956,6 @@ let activeCourseFilters = new Set();
 let showWeeklyClasses = true;
 let showExamOverlays = true;
 let globalSearchQuery = "";
-let globalSearchDebounceTimer = null;
 let activeModalAssessmentId = null;
 let activeModalDateIso = null;
 let toastHideTimeout = null;
@@ -1658,11 +1966,9 @@ let practiceQuizCurrentIndex = 0;
 let practiceQuizScore = 0;
 let activePracticeAssessmentId = null;
 let pomodoroTimerInterval = null;
-let pomodoroEndTimestamp = 0;
 let pomodoroSecondsRemaining = 25 * 60;
 let pomodoroTotalSeconds = 25 * 60;
 let pomodoroIsRunning = false;
-let pomodoroAudioContext = null;
 let pomodoroCurrentMode = "work";
 let pomodoroCurrentTaskKey = null;
 let pomodoroCurrentCourse = "";
@@ -1685,13 +1991,20 @@ document.addEventListener("DOMContentLoaded", () => {
   initKeyboardShortcuts();
   initSearchBar();
   initAppUpdater();
-  initGlobalDismissHandlers();
   initAndroidNativeBridge();
 
+  // 1. INSTANT 0ms SYNCHRONOUS HYDRATION FROM THE ALREADY-PARSED CACHE (first paint)
+  // appState/studyTasksState were parsed once at script evaluation; reuse them
+  // instead of re-reading and re-parsing localStorage here.
+  const bootstrap = appState;
+  hydrateAndRenderState(bootstrap);
   updateTasksBadgeCount();
-  refreshIcons();
-  if (IS_NATIVE) getMobileEngine();
 
+  if (window.lucide) {
+    lucide.createIcons();
+  }
+
+  // 2. Load app state directly via autonomous on-device engine
   loadFullState();
   initPullToRefresh();
 });
@@ -1710,8 +2023,6 @@ let pullStartX = 0;
 let currentPullY = 0;
 let isPullActive = false;
 let pullThresholdReached = false;
-let pullActiveContainer = null;
-let pullIndicatorFrame = 0;
 
 function initPullToRefresh() {
   const indicator = document.getElementById("pull-refresh-indicator");
@@ -1722,23 +2033,12 @@ function initPullToRefresh() {
   const iconBox = document.getElementById("pull-refresh-icon-box");
 
   if (!indicator) return;
-  refreshIcons(indicator);
+  if (window.lucide) lucide.createIcons({ root: indicator });
 
-  function schedulePullIndicatorWrite() {
-    if (pullIndicatorFrame) return;
-    pullIndicatorFrame = requestAnimationFrame(() => {
-      pullIndicatorFrame = 0;
-      indicator.style.opacity = String(Math.min(1, currentPullY / 32));
-      indicator.style.transform = `translate(-50%, ${currentPullY}px)`;
-    });
-  }
-
-  function cancelPullIndicatorWrite() {
-    if (pullIndicatorFrame) {
-      cancelAnimationFrame(pullIndicatorFrame);
-      pullIndicatorFrame = 0;
-    }
-  }
+  // Cached per-gesture so touchmove never queries the DOM; style writes are batched in one rAF.
+  let pullContainer = null;
+  let pullModalOpenAtStart = false;
+  let pullRafPending = false;
 
   function getActiveScrollableContainer() {
     const views = [
@@ -1756,19 +2056,20 @@ function initPullToRefresh() {
   window.addEventListener(
     "touchstart",
     (e) => {
-      if (isPullRefreshing || isModalOpen()) return;
+      pullModalOpenAtStart = isModalOpen();
+      if (isPullRefreshing || pullModalOpenAtStart) return;
       if (e.touches.length !== 1) return;
 
-      pullActiveContainer = getActiveScrollableContainer();
-      const scrollTop = pullActiveContainer.scrollTop !== undefined ? pullActiveContainer.scrollTop : window.scrollY;
+      const container = getActiveScrollableContainer();
+      const scrollTop = container.scrollTop !== undefined ? container.scrollTop : window.scrollY;
       if (scrollTop > 5) return;
 
+      pullContainer = container;
       pullStartY = e.touches[0].clientY;
       pullStartX = e.touches[0].clientX;
       isPullActive = true;
       pullThresholdReached = false;
       currentPullY = 0;
-      cancelPullIndicatorWrite();
 
       indicator.style.transition = "none";
     },
@@ -1778,10 +2079,10 @@ function initPullToRefresh() {
   window.addEventListener(
     "touchmove",
     (e) => {
-      if (!isPullActive || isPullRefreshing) return;
+      if (!isPullActive || isPullRefreshing || pullModalOpenAtStart) return;
       if (e.touches.length !== 1) return;
 
-      const container = pullActiveContainer || getActiveScrollableContainer();
+      const container = pullContainer || document.documentElement;
       const scrollTop = container.scrollTop !== undefined ? container.scrollTop : window.scrollY;
       if (scrollTop > 5) {
         isPullActive = false;
@@ -1806,9 +2107,17 @@ function initPullToRefresh() {
 
       const maxPull = 125;
       const pull = Math.min(maxPull, deltaY * 0.48);
-      if (Math.abs(pull - currentPullY) >= 0.5) {
-        currentPullY = pull;
-        schedulePullIndicatorWrite();
+      currentPullY = pull;
+
+      // Batch indicator style writes into a single rAF frame
+      if (!pullRafPending) {
+        pullRafPending = true;
+        requestAnimationFrame(() => {
+          pullRafPending = false;
+          if (!isPullActive) return;
+          indicator.style.opacity = Math.min(1, currentPullY / 32);
+          indicator.style.transform = `translate(-50%, ${currentPullY}px)`;
+        });
       }
 
       const threshold = 66;
@@ -1829,8 +2138,6 @@ function initPullToRefresh() {
   async function handleTouchEnd() {
     if (!isPullActive) return;
     isPullActive = false;
-    pullActiveContainer = null;
-    cancelPullIndicatorWrite();
 
     if (pullThresholdReached && !isPullRefreshing) {
       isPullRefreshing = true;
@@ -1882,7 +2189,6 @@ function initPullToRefresh() {
   window.addEventListener("touchcancel", handleTouchEnd, { passive: true });
 
   function resetPullIndicator() {
-    cancelPullIndicatorWrite();
     indicator.style.transition = "transform 240ms ease, opacity 200ms ease";
     indicator.style.transform = "translate(-50%, -48px)";
     indicator.style.opacity = "0";
@@ -1902,15 +2208,25 @@ async function refreshAppOnDemand() {
   try {
     const res = await fetch("/api/sync", { method: "POST" });
     const data = await res.json();
-    if (data && Array.isArray(data.assessments) && data.dashboard) {
-      appState.assessments = data.assessments;
-      appState.dashboard = data.dashboard;
-      if (data.schedule) appState.schedule = data.schedule;
+    // Render straight from the sync payload when it carries state — avoids a
+    // second /api/state round-trip plus a duplicate cache parse + full render.
+    if (data && (data.assessments || data.dashboard || data.schedule)) {
+      if (data.assessments) appState.assessments = data.assessments;
+      if (data.dashboard) appState.dashboard = data.dashboard;
+      if (data.schedule) {
+        appState.schedule = data.schedule;
+        syncActiveCourseFilters();
+      }
       if (data.config) appState.config = data.config;
-      hydrateAndRenderState(appState);
+      if (typeof recalculateAssessmentDeadlines === "function") {
+        recalculateAssessmentDeadlines(appState);
+      }
+      if (typeof filterStateByEnabledSources === "function") {
+        filterStateByEnabledSources();
+      }
       saveStateCache();
-      await loadStudyTasks();
-      updateTasksBadgeCount();
+      renderAllViews();
+      loadStudyTasks();
       return;
     }
   } catch (e) {
@@ -1925,10 +2241,18 @@ async function refreshAppOnDemand() {
 
 function initDarkMode() {
   const saved = localStorage.getItem("quizradar_theme");
-  const isDark = saved === "dark";
+  // Honor the OS preference on first launch; stored choice always wins afterwards.
+  const systemPrefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const isDark = saved ? saved === "dark" : systemPrefersDark;
   document.documentElement.classList.toggle("dark", isDark);
   updateDarkModeIcon(isDark);
   updateNativeStatusBar(isDark);
+  // Persist so the toggle starts from a deterministic point mid-session.
+  if (!saved) {
+    try {
+      localStorage.setItem("quizradar_theme", isDark ? "dark" : "light");
+    } catch (e) {}
+  }
 }
 
 function applySmoothThemeSwitch(isDark) {
@@ -1957,34 +2281,34 @@ function updateDarkModeIcon(isDark) {
   btn.setAttribute("aria-pressed", String(isDark));
 }
 
-let responsiveResizeFrame = 0;
-
-function applySidebarResponsiveState() {
+function initSidebarResponsive() {
   const sb = document.getElementById("left-sidebar");
   const backdrop = document.getElementById("sidebar-backdrop");
   if (!sb) return;
 
-  if (window.innerWidth >= 1024) {
+  const applyState = (collapsed) => {
+    sb.classList.toggle("sidebar-collapsed", collapsed);
+    sb.setAttribute("aria-expanded", String(!collapsed));
+  };
+
+  if (window.innerWidth < 1024) {
+    applyState(true);
     if (backdrop) backdrop.classList.add("hidden");
-    sb.classList.remove("sidebar-collapsed");
   } else {
-    if (backdrop) backdrop.classList.add("hidden");
-    sb.classList.add("sidebar-collapsed");
+    applyState(false);
   }
-}
 
-function scheduleResponsiveResize() {
-  if (responsiveResizeFrame) return;
-  responsiveResizeFrame = requestAnimationFrame(() => {
-    responsiveResizeFrame = 0;
-    applySidebarResponsiveState();
-    switchDashboardTab(currentDashboardTab);
-  });
-}
-
-function initSidebarResponsive() {
-  applySidebarResponsiveState();
-  window.addEventListener("resize", scheduleResponsiveResize);
+  window.addEventListener(
+    "resize",
+    rafThrottle(() => {
+      if (window.innerWidth >= 1024) {
+        if (backdrop) backdrop.classList.add("hidden");
+        applyState(false);
+      } else {
+        applyState(true);
+      }
+    })
+  );
 }
 
 function toggleSidebar(forceCollapse) {
@@ -1998,6 +2322,7 @@ function toggleSidebar(forceCollapse) {
       : !sb.classList.contains("sidebar-collapsed");
 
   sb.classList.toggle("sidebar-collapsed", shouldCollapse);
+  sb.setAttribute("aria-expanded", String(!shouldCollapse));
 
   if (backdrop) {
     if (!shouldCollapse && window.innerWidth < 1024) {
@@ -2009,24 +2334,17 @@ function toggleSidebar(forceCollapse) {
 }
 
 function initKeyboardShortcuts() {
-  const palette = document.getElementById("search-dropdown-palette");
-  const schedModal = document.getElementById("schedule-preview-modal");
-  const addCourseModal = document.getElementById("add-course-modal");
-  const detailModal = document.getElementById("event-detail-modal");
-  const createModal = document.getElementById("create-event-modal");
-  const settingsModal = document.getElementById("settings-modal");
-  const onboardModal = document.getElementById("onboarding-modal");
-  const desktopSearch = document.getElementById("global-search-input");
-  const mobileSearch = document.getElementById("mobile-search-input");
-
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
+      const palette = document.getElementById("search-dropdown-palette");
       if (palette?.classList.contains("is-open")) {
         closeSearchPalette();
-        desktopSearch?.blur();
+        document.getElementById("global-search-input")?.blur();
         return;
       }
 
+      const schedModal = document.getElementById("schedule-preview-modal");
+      const addCourseModal = document.getElementById("add-course-modal");
       if (schedModal?.classList.contains("is-open")) {
         closeSchedulePreviewModal();
         return;
@@ -2035,6 +2353,11 @@ function initKeyboardShortcuts() {
         closeAddCourseModal();
         return;
       }
+
+      const detailModal = document.getElementById("event-detail-modal");
+      const createModal = document.getElementById("create-event-modal");
+      const settingsModal = document.getElementById("settings-modal");
+      const onboardModal = document.getElementById("onboarding-modal");
 
       if (detailModal?.classList.contains("is-open")) {
         closeEventDetailModal();
@@ -2052,6 +2375,38 @@ function initKeyboardShortcuts() {
         closeOnboardingModal();
         return;
       }
+
+      const cloudSyncModal = document.getElementById("cloud-sync-modal");
+      const accountModal = document.getElementById("account-profile-modal");
+      const mobileSearchModal = document.getElementById("mobile-search-modal");
+      const practiceQuizModal = document.getElementById("practice-quiz-modal");
+      const pomodoroModal = document.getElementById("pomodoro-modal");
+      const updatePopover = document.getElementById("update-popover");
+
+      if (cloudSyncModal?.classList.contains("is-open")) {
+        closeCloudSyncModal();
+        return;
+      }
+      if (accountModal?.classList.contains("is-open")) {
+        closeAccountProfileModal();
+        return;
+      }
+      if (mobileSearchModal?.classList.contains("is-open")) {
+        closeMobileSearchModal();
+        return;
+      }
+      if (practiceQuizModal?.classList.contains("is-open")) {
+        closePracticeQuizModal();
+        return;
+      }
+      if (pomodoroModal?.classList.contains("is-open")) {
+        closePomodoroModal();
+        return;
+      }
+      if (updatePopover && !updatePopover.classList.contains("hidden")) {
+        closeUpdatePopover();
+        return;
+      }
       if (window.innerWidth < 1024) {
         toggleSidebar(true);
       }
@@ -2063,6 +2418,8 @@ function initKeyboardShortcuts() {
 
     if ((e.key === "/" && !isInput) || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k")) {
       e.preventDefault();
+      const desktopSearch = document.getElementById("global-search-input");
+      const mobileSearch = document.getElementById("mobile-search-input");
       if (desktopSearch && desktopSearch.offsetParent !== null) {
         desktopSearch.focus();
         desktopSearch.select();
@@ -2078,16 +2435,7 @@ function initKeyboardShortcuts() {
 // STATE LOADING & TOP BAR
 // ============================================================================
 
-let stateCacheWriteTimer = null;
-let stateCacheDirty = false;
-
-function flushStateCacheNow() {
-  if (stateCacheWriteTimer) {
-    clearTimeout(stateCacheWriteTimer);
-    stateCacheWriteTimer = null;
-  }
-  if (!stateCacheDirty) return;
-  stateCacheDirty = false;
+function saveStateCache() {
   const params = new URLSearchParams(window.location.search);
   if (params.get("demo")) return;
   try {
@@ -2096,22 +2444,6 @@ function flushStateCacheNow() {
     // Ignore storage quota errors
   }
 }
-
-function saveStateCache() {
-  const params = new URLSearchParams(window.location.search);
-  if (params.get("demo")) return;
-  stateCacheDirty = true;
-  if (stateCacheWriteTimer) return;
-  stateCacheWriteTimer = setTimeout(() => {
-    stateCacheWriteTimer = null;
-    flushStateCacheNow();
-  }, 250);
-}
-
-window.addEventListener("pagehide", flushStateCacheNow);
-document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "hidden") flushStateCacheNow();
-});
 
 function syncActiveCourseFilters() {
   const currentCourses = appState.schedule?.courses || [];
@@ -2157,7 +2489,6 @@ function filterStateByEnabledSources() {
   if (Array.isArray(appState.assessments)) {
     appState.assessments = appState.assessments.filter(isEnabled);
   }
-  const enabledAssessmentIds = new Set((appState.assessments || []).map((a) => a.id));
 
   if (appState.dashboard) {
     if (appState.dashboard.next_up && !isEnabled(appState.dashboard.next_up)) {
@@ -2171,7 +2502,7 @@ function filterStateByEnabledSources() {
     }
     if (Array.isArray(appState.dashboard.study_recommendations)) {
       appState.dashboard.study_recommendations = appState.dashboard.study_recommendations.filter((rec) => {
-        return enabledAssessmentIds.has(rec.assessment_id);
+        return (appState.assessments || []).some((a) => a.id === rec.assessment_id);
       });
     }
     if (!appState.dashboard.next_up && appState.dashboard.all_upcoming && appState.dashboard.all_upcoming.length > 0) {
@@ -2201,7 +2532,6 @@ function filterStateByEnabledSources() {
 function recalculateAssessmentDeadlines(state) {
   if (!state || !Array.isArray(state.assessments)) return;
   const today = getTodayDate();
-  const assessmentById = new Map();
   state.assessments.forEach((a) => {
     if (a.date_iso) {
       const parts = a.date_iso.split("-").map(Number);
@@ -2214,7 +2544,6 @@ function recalculateAssessmentDeadlines(state) {
         a.urgency_badge = diff === 0 ? "TODAY" : diff === 1 ? "TOMORROW" : diff < 0 ? "PAST" : `IN ${diff} DAYS`;
       }
     }
-    assessmentById.set(a.id, a);
   });
   if (state.dashboard) {
     state.dashboard.reference_date = toIsoDate(today);
@@ -2229,7 +2558,7 @@ function recalculateAssessmentDeadlines(state) {
     // so they never advertise a stale "IN X DAYS" after a date has rolled past.
     if (Array.isArray(state.dashboard.study_recommendations)) {
       state.dashboard.study_recommendations = state.dashboard.study_recommendations.filter((r) => {
-        const match = (r.assessment_id && assessmentById.get(r.assessment_id)) || (r.id && assessmentById.get(r.id));
+        const match = state.assessments.find((a) => a.id === r.assessment_id || a.id === r.id);
         if (!match) return false;
         r.days_until = match.days_until;
         r.is_upcoming = match.is_upcoming;
@@ -2250,7 +2579,9 @@ function hydrateAndRenderState(stateData) {
   syncActiveCourseFilters();
   filterStateByEnabledSources();
   updateTopBarAndUser();
+  renderSidebar();
   renderDashboard();
+  renderTasksView();
   renderWeekCalendar();
 }
 
@@ -2258,20 +2589,42 @@ async function loadFullState() {
   const params = new URLSearchParams(window.location.search);
   const demo = params.get("demo");
 
+  // 1. Instant 0ms render from localStorage cache (Stale-While-Revalidate)
+  if (!demo) {
+    try {
+      const cachedRaw = localStorage.getItem(STATE_CACHE_KEY);
+      if (cachedRaw) {
+        const cachedData = JSON.parse(cachedRaw);
+        if (cachedData && cachedData.assessments && cachedData.dashboard) {
+          hydrateAndRenderState(cachedData);
+        }
+      }
+    } catch (e) {
+      // Ignore corrupt cache
+    }
+  }
+
+  // 2. Fetch fresh state from fast in-memory backend (<1ms)
   try {
     const res = await fetch("/api/state");
+    if (!res.ok) throw new Error(`State request failed (${res.status})`);
     const data = await res.json();
+    if (!data || !Array.isArray(data.assessments) || !data.config || !data.schedule) {
+      throw new Error("Malformed state payload from backend");
+    }
     appState = data;
     recalculateAssessmentDeadlines(appState);
     syncActiveCourseFilters();
 
     if (demo) {
+      window.__DEMO_MODE__ = true; // Demo stays 100% in-memory: never touch caches
       applyDemoDummyData();
     } else {
       saveStateCache();
     }
 
     updateTopBarAndUser();
+    renderSidebar();
     renderDashboard();
     renderWeekCalendar();
     loadStudyTasks();
@@ -2415,6 +2768,23 @@ function updateTopBarAndUser() {
     syncTsEl.textContent = lastSync && lastSync !== "Never" ? `Last scanned: ${lastSync}` : "Not yet scanned";
   }
 
+  // Sync footer must reflect REAL state — never a static "Active" claim.
+  const syncDot = document.getElementById("sync-dot");
+  const syncLabel = document.getElementById("sync-status-label");
+  if (syncLabel) {
+    const autoSync = !!appState.config?.auto_sync_gcal;
+    if (isAuth && autoSync) {
+      syncLabel.textContent = "Google Sync Active";
+      if (syncDot) syncDot.className = "w-2 h-2 rounded-full bg-emerald-500";
+    } else if (isAuth) {
+      syncLabel.textContent = "Google Connected · Auto-sync off";
+      if (syncDot) syncDot.className = "w-2 h-2 rounded-full bg-blue-500";
+    } else {
+      syncLabel.textContent = "Google Not Connected";
+      if (syncDot) syncDot.className = "w-2 h-2 rounded-full bg-slate-400";
+    }
+  }
+
   const badgeText = appState.auth?.authenticated ? "Connected" : "Sign-In Recommended";
   const badgeClass = appState.auth?.authenticated
     ? "text-xs font-semibold px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300"
@@ -2442,7 +2812,7 @@ function updateTopBarAndUser() {
   if (obScope) {
     obScope.textContent = appState.auth?.has_calendar_scope
       ? "Gmail Read & Google Calendar Direct Sync Active"
-      : "Gmail Connected Â· Sign in to grant direct Google Calendar write scope";
+      : "Gmail Connected · Sign in to grant direct Google Calendar write scope";
   }
 
   // Populate Settings Modal
@@ -2543,14 +2913,7 @@ function updateTopBarAndUser() {
   updateOnboardingThemeButtons();
 }
 
-function restartViewTransition(el) {
-  if (!el) return;
-  el.classList.remove("view-transition");
-  requestAnimationFrame(() => el.classList.add("view-transition"));
-}
-
 function switchMainView(view) {
-  if (currentMainView === view) return;
   currentMainView = view;
   const dashEl = document.getElementById("view-dashboard");
   const tasksEl = document.getElementById("view-tasks");
@@ -2568,7 +2931,9 @@ function switchMainView(view) {
   if (view === "dashboard") {
     if (dashEl) {
       dashEl.classList.remove("hidden");
-      restartViewTransition(dashEl);
+      dashEl.classList.remove("view-transition");
+      void dashEl.offsetWidth;
+      dashEl.classList.add("view-transition");
     }
     if (tasksEl) tasksEl.classList.add("hidden");
     if (calEl) calEl.classList.add("hidden");
@@ -2586,7 +2951,9 @@ function switchMainView(view) {
     if (dashEl) dashEl.classList.add("hidden");
     if (tasksEl) {
       tasksEl.classList.remove("hidden");
-      restartViewTransition(tasksEl);
+      tasksEl.classList.remove("view-transition");
+      void tasksEl.offsetWidth;
+      tasksEl.classList.add("view-transition");
     }
     if (calEl) calEl.classList.add("hidden");
 
@@ -2604,7 +2971,9 @@ function switchMainView(view) {
     if (tasksEl) tasksEl.classList.add("hidden");
     if (calEl) {
       calEl.classList.remove("hidden");
-      restartViewTransition(calEl);
+      calEl.classList.remove("view-transition");
+      void calEl.offsetWidth;
+      calEl.classList.add("view-transition");
     }
 
     if (btnDash) btnDash.className = inactiveClass;
@@ -2636,6 +3005,8 @@ function switchMainView(view) {
         : "text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-0.5 tracking-tight transition-colors";
     }
   });
+
+  if (window.lucide) lucide.createIcons();
 }
 
 // ============================================================================
@@ -2731,111 +3102,6 @@ async function optimizeStudyTasks() {
   }
 }
 
-function updateReadinessCardDom(card) {
-  if (!card) return;
-  const cardEl = document.querySelector(`[data-readiness-card="${CSS.escape(card.assessment_id)}"]`);
-  if (!cardEl) return;
-  const percent = card.readiness_percent || 0;
-  const isComplete = percent >= 100;
-  const barColor = isComplete ? "bg-emerald-500" : percent >= 60 ? "bg-blue-600 dark:bg-blue-500" : "bg-amber-500";
-  const pctEl = cardEl.querySelector("[data-readiness-pct]");
-  const pctValueEl = cardEl.querySelector("[data-readiness-pct-value]");
-  const countEl = cardEl.querySelector("[data-readiness-count]");
-  const barEl = cardEl.querySelector("[data-readiness-bar]");
-  const labelEl = cardEl.querySelector("[data-readiness-label]");
-
-  if (pctValueEl) pctValueEl.textContent = `${percent}%`;
-  if (countEl) countEl.textContent = `(${card.completed_count}/${card.total_count})`;
-  if (pctEl) {
-    pctEl.className = isComplete
-      ? "text-emerald-600 dark:text-emerald-400 font-bold"
-      : "text-slate-900 dark:text-white";
-  }
-  if (barEl) {
-    barEl.className = `h-full rounded-full ${barColor} transition-all duration-500`;
-    barEl.style.width = `${percent}%`;
-  }
-  if (labelEl) {
-    const hasIcon = !!labelEl.querySelector("svg");
-    if (isComplete && !hasIcon) {
-      labelEl.innerHTML = '<i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-emerald-500"></i> Exam Ready';
-      refreshIcons(labelEl);
-    } else if (!isComplete && hasIcon) {
-      labelEl.textContent = "Readiness";
-    }
-  }
-  updateReadinessAverageDom();
-}
-
-function updateReadinessAverageDom() {
-  const avgBadge = document.getElementById("readiness-avg-badge");
-  if (!avgBadge) return;
-  let cards = studyTasksState?.readiness_cards || [];
-  if (currentTasksCourseFilter !== "all") {
-    cards = cards.filter((c) => c.course_id.toLowerCase() === currentTasksCourseFilter.toLowerCase());
-  }
-  avgBadge.textContent = cards.length
-    ? `Average Readiness: ${Math.round(cards.reduce((acc, c) => acc + (c.readiness_percent || 0), 0) / cards.length)}%`
-    : "";
-}
-
-function updateTasksSummaryDom() {
-  const subEl = document.getElementById("tasks-summary-subtitle");
-  if (!subEl || !studyTasksState) return;
-  const pending = studyTasksState.pending_tasks || 0;
-  const examsCount = studyTasksState.readiness_cards?.length || 0;
-  const hours = Math.round((studyTasksState.total_hours || 0) * 10) / 10;
-  subEl.textContent = `${pending} pending topics across ${examsCount} upcoming exams â€¢ Est. ${hours} hrs total`;
-}
-
-function updateDailyTaskMatchingCountDom() {
-  const countBadge = document.getElementById("tasks-overall-count");
-  if (!countBadge || !studyTasksState) return;
-  let matching = 0;
-  for (const day of studyTasksState.days || []) {
-    for (const t of day.tasks || []) {
-      if (currentTasksCourseFilter !== "all" && t.course_id.toLowerCase() !== currentTasksCourseFilter.toLowerCase()) continue;
-      if (currentTasksStatusFilter === "pending" && t.completed) continue;
-      if (currentTasksStatusFilter === "completed" && !t.completed) continue;
-      matching += 1;
-    }
-  }
-  countBadge.textContent = `${matching} matching tasks`;
-}
-
-function updateDailyTaskDom(key, completed) {
-  const row = document.querySelector(`[data-daily-task-row="${CSS.escape(key)}"]`);
-  if (!row) return false;
-  row.classList.toggle("opacity-55", completed);
-  const title = row.querySelector("[data-daily-task-title]");
-  if (title) {
-    title.classList.toggle("line-through", completed);
-    title.classList.toggle("text-slate-400", completed);
-    title.classList.toggle("dark:text-slate-500", completed);
-  }
-  const btn = row.querySelector("[data-daily-task-key]");
-  if (btn) {
-    btn.className =
-      "mt-0.5 w-5 h-5 rounded-md flex items-center justify-center shrink-0 border transition-all cursor-pointer " +
-      (completed
-        ? "bg-emerald-600 border-emerald-600 text-white"
-        : "border-slate-300 dark:border-slate-600 hover:border-[#1a73e8] dark:hover:border-blue-400 bg-white dark:bg-slate-800");
-    btn.title = completed ? "Mark incomplete" : "Mark completed";
-    btn.innerHTML = completed ? '<i data-lucide="check" class="w-3.5 h-3.5 stroke-[2.5]"></i>' : "";
-    if (completed) refreshIcons(btn);
-  }
-  return true;
-}
-
-function findStudyTaskByKey(payload, key) {
-  for (const day of payload?.days || []) {
-    for (const task of day.tasks || []) {
-      if (task.key === key) return task;
-    }
-  }
-  return null;
-}
-
 async function toggleDailyTask(key, ev) {
   if (ev) ev.stopPropagation();
   triggerHaptic("light");
@@ -2870,33 +3136,20 @@ async function toggleDailyTask(key, ev) {
   studyTasksState.pending_tasks = totalCount - completedCount;
 
   // Update corresponding readiness card
-  let readinessCard = null;
   if (studyTasksState.readiness_cards) {
-    readinessCard = studyTasksState.readiness_cards.find((c) => c.assessment_id === targetTask.assessment_id);
-    if (readinessCard) {
+    const card = studyTasksState.readiness_cards.find((c) => c.assessment_id === targetTask.assessment_id);
+    if (card) {
       if (newCompleted) {
-        readinessCard.completed_count = Math.min(readinessCard.total_count, readinessCard.completed_count + 1);
+        card.completed_count = Math.min(card.total_count, card.completed_count + 1);
       } else {
-        readinessCard.completed_count = Math.max(0, readinessCard.completed_count - 1);
+        card.completed_count = Math.max(0, card.completed_count - 1);
       }
-      readinessCard.readiness_percent = readinessCard.total_count > 0
-        ? Math.round((readinessCard.completed_count / readinessCard.total_count) * 100)
-        : 0;
+      card.readiness_percent = card.total_count > 0 ? Math.round((card.completed_count / card.total_count) * 100) : 0;
     }
   }
 
   updateTasksBadgeCount();
-  const hiddenByCurrentFilter =
-    (currentTasksStatusFilter === "pending" && newCompleted) ||
-    (currentTasksStatusFilter === "completed" && !newCompleted);
-  if (hiddenByCurrentFilter) {
-    renderDailyRoadmap();
-  } else {
-    updateDailyTaskDom(key, newCompleted);
-  }
-  updateReadinessCardDom(readinessCard);
-  updateTasksSummaryDom();
-  updateDailyTaskMatchingCountDom();
+  renderTasksView();
 
   try {
     const res = await fetch("/api/study/toggle", {
@@ -2911,17 +3164,9 @@ async function toggleDailyTask(key, ev) {
         appState.config.completed_topics = data.completed_topics;
       }
       if (data.tasks_payload) {
-        const serverTask = findStudyTaskByKey(data.tasks_payload, key);
-        const optimisticMatches =
-          !!serverTask &&
-          serverTask.completed === newCompleted &&
-          data.tasks_payload.completed_tasks === studyTasksState.completed_tasks &&
-          data.tasks_payload.pending_tasks === studyTasksState.pending_tasks;
-        if (!optimisticMatches) {
-          studyTasksState = data.tasks_payload;
-          updateTasksBadgeCount();
-          renderTasksView();
-        }
+        studyTasksState = data.tasks_payload;
+        updateTasksBadgeCount();
+        renderTasksView();
       }
       renderDashboard();
     }
@@ -2958,7 +3203,6 @@ function setTasksStatusFilter(status) {
 }
 
 function renderTasksView() {
-  if (currentMainView !== "tasks") return;
   if (!studyTasksState) {
     loadStudyTasks();
     return;
@@ -2970,23 +3214,33 @@ function renderTasksView() {
     const pending = studyTasksState.pending_tasks || 0;
     const examsCount = studyTasksState.readiness_cards?.length || 0;
     const hours = Math.round((studyTasksState.total_hours || 0) * 10) / 10;
-    subEl.textContent = `${pending} pending topics across ${examsCount} upcoming exams â€¢ Est. ${hours} hrs total`;
+    subEl.textContent = `${pending} pending topics across ${examsCount} upcoming exams • Est. ${hours} hrs total`;
   }
 
-  // 2. Populate Course Filter Dropdown if not already populated
+  // 2. Rebuild the Course Filter Dropdown whenever course list changes (preserves selection)
   const courseFilter = document.getElementById("tasks-course-filter");
-  if (courseFilter && courseFilter.options.length <= 1) {
+  if (courseFilter) {
     const courses = appState.schedule?.courses || [];
-    const seen = new Set();
-    courses.forEach((c) => {
-      if (!seen.has(c.id)) {
+    const coursesSignature = courses.map((c) => c.id).join(",");
+    if (courseFilter.dataset.signature !== coursesSignature) {
+      const selected = courseFilter.value || "all";
+      courseFilter.innerHTML = "";
+      courseFilter.dataset.signature = coursesSignature;
+      const allOpt = document.createElement("option");
+      allOpt.value = "all";
+      allOpt.textContent = "All Courses";
+      courseFilter.appendChild(allOpt);
+      const seen = new Set();
+      courses.forEach((c) => {
+        if (!c.id || seen.has(c.id)) return;
         seen.add(c.id);
         const opt = document.createElement("option");
         opt.value = c.id;
-        opt.textContent = `${c.id} â€” ${c.name}`;
+        opt.textContent = `${c.id} — ${c.name}`;
         courseFilter.appendChild(opt);
-      }
-    });
+      });
+      courseFilter.value = [...courseFilter.options].some((o) => o.value === selected) ? selected : "all";
+    }
   }
 
   // 3. Render Exam Readiness Cards
@@ -2995,7 +3249,7 @@ function renderTasksView() {
   // 4. Render Daily Study Roadmap
   renderDailyRoadmap();
 
-  refreshIcons(document.getElementById("view-tasks"));
+  if (window.lucide) lucide.createIcons();
 }
 
 function renderReadinessCards() {
@@ -3032,7 +3286,7 @@ function renderReadinessCards() {
       const barColor = isComplete ? "bg-emerald-500" : percent >= 60 ? "bg-blue-600 dark:bg-blue-500" : "bg-amber-500";
 
       return `
-        <div data-readiness-card="${escapeHtml(c.assessment_id)}" class="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/90 dark:border-slate-800 shadow-2xs transition-all hover:border-slate-300 dark:hover:border-slate-700 flex flex-col justify-between">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/90 dark:border-slate-800 shadow-2xs transition-all hover:border-slate-300 dark:hover:border-slate-700 flex flex-col justify-between">
           <div>
             <div class="flex items-center justify-between gap-2 mb-2">
               <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-bold" style="background-color: ${c.color}15; color: ${c.color}; border: 1px solid ${c.color}35">
@@ -3052,22 +3306,22 @@ function renderReadinessCards() {
               ${escapeHtml(c.title)}
             </h3>
             <p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mb-3">
-              ${escapeHtml(c.assessment_type)} â€¢ ${escapeHtml(c.course_name)}
+              ${escapeHtml(c.assessment_type)} • ${escapeHtml(c.course_name)}
             </p>
           </div>
 
           <div>
             <div class="flex items-center justify-between text-xs font-semibold mb-1.5">
-              <span data-readiness-label class="text-slate-700 dark:text-slate-300 flex items-center gap-1">
+              <span class="text-slate-700 dark:text-slate-300 flex items-center gap-1">
                 ${isComplete ? '<i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-emerald-500"></i> Exam Ready' : "Readiness"}
               </span>
-              <span data-readiness-pct class="${isComplete ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-slate-900 dark:text-white"}">
-                <span data-readiness-pct-value>${percent}%</span> <span data-readiness-count class="text-[11px] font-normal text-slate-400">(${c.completed_count}/${c.total_count})</span>
+              <span class="${isComplete ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-slate-900 dark:text-white"}">
+                ${percent}% <span class="text-[11px] font-normal text-slate-400">(${c.completed_count}/${c.total_count})</span>
               </span>
             </div>
 
             <div class="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden mb-2.5">
-              <div data-readiness-bar class="h-full rounded-full ${barColor} transition-all duration-500" style="width: ${percent}%"></div>
+              <div class="h-full rounded-full ${barColor} transition-all duration-500" style="width: ${percent}%"></div>
             </div>
 
             <div class="text-[11px] bg-slate-50 dark:bg-slate-800/60 p-2 rounded-xl border border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400 line-clamp-1">
@@ -3143,11 +3397,11 @@ function renderDailyRoadmap() {
               : '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300">Normal</span>';
 
           return `
-            <div data-daily-task-row="${escapeHtml(t.key)}" class="group flex items-start gap-3.5 py-3.5 first:pt-1 last:pb-1 transition-colors ${
+            <div class="group flex items-start gap-3.5 py-3.5 first:pt-1 last:pb-1 transition-colors ${
               isCompleted ? "opacity-55" : ""
             }">
               <!-- Accessible Checkbox Button -->
-              <button data-daily-task-key="${escapeHtml(t.key)}" onclick="toggleDailyTask('${escapeHtml(t.key)}', event)" class="mt-0.5 w-5 h-5 rounded-md flex items-center justify-center shrink-0 border transition-all cursor-pointer ${
+              <button onclick="toggleDailyTask('${escapeHtml(t.key)}', event)" class="mt-0.5 w-5 h-5 rounded-md flex items-center justify-center shrink-0 border transition-all cursor-pointer ${
                 isCompleted
                   ? "bg-emerald-600 border-emerald-600 text-white"
                   : "border-slate-300 dark:border-slate-600 hover:border-[#1a73e8] dark:hover:border-blue-400 bg-white dark:bg-slate-800"
@@ -3171,7 +3425,7 @@ function renderDailyRoadmap() {
                   </span>
                 </div>
 
-                <h4 data-daily-task-title="${escapeHtml(t.key)}" class="text-sm font-semibold text-slate-900 dark:text-white ${isCompleted ? "line-through text-slate-400 dark:text-slate-500" : ""}">
+                <h4 class="text-sm font-semibold text-slate-900 dark:text-white ${isCompleted ? "line-through text-slate-400 dark:text-slate-500" : ""}">
                   ${escapeHtml(t.topic)}
                 </h4>
 
@@ -3207,7 +3461,7 @@ function renderDailyRoadmap() {
             </div>
             <div class="flex items-center gap-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
               <span>${d.tasks.length} ${d.tasks.length === 1 ? "task" : "tasks"}</span>
-              <span>â€¢</span>
+              <span>•</span>
               <span>${totalHours} hrs total</span>
             </div>
           </div>
@@ -3266,14 +3520,17 @@ function switchDashboardTab(tab) {
     }
   }
 
+  if (window.lucide) lucide.createIcons();
 }
 
+window.addEventListener("resize", () => {
+  switchDashboardTab(currentDashboardTab);
+});
+
 function renderDashboard() {
-  if (currentMainView !== "dashboard") return;
   const dash = appState.dashboard || {};
   const enrolledCourses = appState.schedule?.courses || [];
   const enrolledCourseIds = new Set(enrolledCourses.map(c => c.id));
-  const assessmentById = new Map((appState.assessments || []).map((a) => [a.id, a]));
   const nextUp = (dash.next_up && enrolledCourseIds.has(dash.next_up.course_id)) ? dash.next_up : null;
 
   // 0. Exam Overload & Conflict Detection Banner
@@ -3329,7 +3586,7 @@ function renderDashboard() {
             <div class="space-y-1">
               <div class="text-xs font-bold text-amber-900 dark:text-amber-200">Exam Overload & Schedule Conflict Detected (${alerts.length} conflict${alerts.length > 1 ? "s" : ""})</div>
               <div class="text-xs text-amber-800 dark:text-amber-300 space-y-1">
-                ${alerts.map(a => `<div>â€¢ <strong>${escapeHtml(a.course_a || a.course_1)}</strong> and <strong>${escapeHtml(a.course_b || a.course_2)}</strong>: ${escapeHtml(a.message)}</div>`).join("")}
+                ${alerts.map(a => `<div>• <strong>${escapeHtml(a.course_a || a.course_1)}</strong> and <strong>${escapeHtml(a.course_b || a.course_2)}</strong>: ${escapeHtml(a.message)}</div>`).join("")}
               </div>
             </div>
           </div>
@@ -3365,10 +3622,10 @@ function renderDashboard() {
           <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
             <span class="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[11px] sm:text-xs font-bold tabular-nums flex items-center gap-1 shadow-2xs">
               <i data-lucide="zap" class="w-3 h-3"></i>
-              <span>Up next Â· ${countdownLabel}</span>
+              <span>Up next · ${countdownLabel}</span>
             </span>
             <span class="px-2 py-0.5 rounded-full bg-white/20 text-white text-[11px] sm:text-xs font-semibold">
-              ${escapeHtml(nextUp.course_id)} Â· ${escapeHtml(nextUp.assessment_type)}
+              ${escapeHtml(nextUp.course_id)} · ${escapeHtml(nextUp.assessment_type)}
             </span>
             <span class="hidden sm:inline-flex px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-100 border border-emerald-300/30 text-xs font-medium items-center gap-1">
               <i data-lucide="map-pin" class="w-3 h-3"></i>
@@ -3457,7 +3714,7 @@ function renderDashboard() {
   const endStr = nextWeekEnd.toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
   document.getElementById("kpi-week-subtext").textContent =
     weekCount > 0
-      ? `${startStr} â€“ ${endStr}`
+      ? `${startStr} – ${endStr}`
       : "No quizzes in the next 7 days";
 
   // Exam Types Breakdown Pills (with active highlight state synced to filter dropdown)
@@ -3525,7 +3782,7 @@ function renderDashboard() {
     });
     if (room && !cleaned.toLowerCase().includes(room.toLowerCase())) {
       const shortRoom = room.replace(/^(Room\s*|Microsoft\s*)/i, "");
-      cleaned += ` Â· ${shortRoom}`;
+      cleaned += ` · ${shortRoom}`;
     }
     return cleaned;
   }
@@ -3567,7 +3824,7 @@ function renderDashboard() {
           </button>
         </div>
       `;
-      refreshIcons(recsEl);
+      if (window.lucide) lucide.createIcons({ root: recsEl });
     }
   } else {
     recsEl.innerHTML = recs
@@ -3579,7 +3836,7 @@ function renderDashboard() {
             ? "bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800/60"
             : "bg-blue-100 dark:bg-blue-950/70 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-800/60";
 
-        const matchingAssessment = assessmentById.get(rec.assessment_id);
+        const matchingAssessment = (appState.assessments || []).find((a) => a.id === rec.assessment_id);
         const roomLabel = rec.room || matchingAssessment?.room || "";
         const topicsCount = (rec.topics || []).length;
         const uniqueWarnings = [...new Set(rec.warnings || [])];
@@ -3708,7 +3965,7 @@ function renderDashboard() {
 
         let timeText = "";
         if (a.start_time && a.end_time) {
-          timeText = `${a.start_time} â€“ ${a.end_time}`;
+          timeText = `${a.start_time} – ${a.end_time}`;
         } else if (a.start_time || a.time) {
           timeText = a.start_time || a.time;
         } else if (a.end_time) {
@@ -3728,7 +3985,7 @@ function renderDashboard() {
           }
         } catch (_) {}
 
-        const dateTimeDisplay = [dateText, timeText].filter(Boolean).join(" Â· ");
+        const dateTimeDisplay = [dateText, timeText].filter(Boolean).join(" · ");
 
         return `
           <div onclick="openAssessmentModalById('${a.id}')" class="interactive-card p-2.5 sm:p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-[#1a73e8] dark:hover:border-blue-500 bg-slate-50/60 dark:bg-slate-800/40 hover:bg-white dark:hover:bg-slate-800 cursor-pointer transition space-y-1.5">
@@ -3770,7 +4027,7 @@ function renderDashboard() {
       .join("");
   }
 
-  refreshIcons(document.getElementById("view-dashboard"));
+  if (window.lucide) lucide.createIcons();
 }
 
 function updateReadinessKpiDom() {
@@ -3790,6 +4047,14 @@ function updateReadinessKpiDom() {
 function filterDashboardByType(examType) {
   const select = document.getElementById("dashboard-type-filter");
   if (select) {
+    // Pills can target types the static <select> doesn't define (server-driven types);
+    // add a dynamic option so the dropdown never silently mismatches the active filter.
+    if (examType && [...select.options].every((o) => o.value !== examType)) {
+      const opt = document.createElement("option");
+      opt.value = examType;
+      opt.textContent = examType;
+      select.appendChild(opt);
+    }
     select.value = examType;
     renderDashboard();
   }
@@ -3886,8 +4151,6 @@ function renderSidebar() {
   const firstDayOfMonth = new Date(year, month, 1);
   const startOffset = firstDayOfMonth.getDay();
   const gridStart = new Date(year, month, 1 - startOffset);
-  const assessments = appState.assessments || [];
-  const assessmentDates = new Set(assessments.map((a) => a.date_iso).filter(Boolean));
 
   const miniGrid = document.getElementById("mini-cal-days-grid");
   let rowsHtml = "";
@@ -3907,7 +4170,7 @@ function renderSidebar() {
       const inMonth = cellDate.getMonth() === month;
       const isSelectedDay = sameDate(cellDate, selectedCalendarDate);
       const isToday = sameDate(cellDate, getTodayDate());
-      const hasExamOnDay = assessmentDates.has(iso);
+      const hasExamOnDay = (appState.assessments || []).some((a) => a.date_iso === iso);
 
       let btnClass = "w-6 h-6 mx-auto rounded-full flex items-center justify-center text-[11px] tabular-nums transition relative cursor-pointer ";
       if (isSelectedDay) {
@@ -3932,8 +4195,8 @@ function renderSidebar() {
   if (miniGrid) miniGrid.innerHTML = rowsHtml;
 
   // 2. Exams in Selected Week summary box
-  const weekDaysIso = new Set(getWeekDaysIso(currentWeekStart));
-  const weekExams = assessments.filter((a) => weekDaysIso.has(a.date_iso));
+  const weekDaysIso = getWeekDaysIso(currentWeekStart);
+  const weekExams = (appState.assessments || []).filter((a) => weekDaysIso.includes(a.date_iso));
   const weekExamCountEl = document.getElementById("sidebar-week-exam-count");
   if (weekExamCountEl) weekExamCountEl.textContent = weekExams.length;
   const weekExamsEl = document.getElementById("sidebar-week-exams-list");
@@ -3988,7 +4251,7 @@ function renderSidebar() {
       <label class="flex items-center space-x-2.5 py-1 px-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer">
         <input type="checkbox" ${checked ? "checked" : ""} onchange="toggleCourseFilter('${c.id}', this.checked)" class="w-4 h-4 rounded" style="accent-color: ${c.color}" />
         <span class="w-2.5 h-2.5 rounded-xs shrink-0" style="background-color: ${c.color}"></span>
-        <span class="truncate text-slate-700 dark:text-slate-300" title="${escapeHtml(c.name)}">${escapeHtml(c.id)} Â· ${escapeHtml(c.name)}</span>
+        <span class="truncate text-slate-700 dark:text-slate-300" title="${escapeHtml(c.name)}">${escapeHtml(c.id)} · ${escapeHtml(c.name)}</span>
       </label>
     `;
   });
@@ -3998,52 +4261,13 @@ function renderSidebar() {
 
 function renderWeekCalendar() {
   renderSidebar();
-  if (currentMainView !== "calendar") return;
 
   const headerDaysEl = document.getElementById("week-header-days");
   const timeGutterEl = document.getElementById("week-time-gutter");
   const colsContainerEl = document.getElementById("week-columns-container");
   if (!headerDaysEl || !timeGutterEl || !colsContainerEl) return;
 
-  const todayIso = toIsoDate(getTodayDate());
-
-  const assessmentsByDate = new Map();
-  (appState.assessments || []).forEach((a) => {
-    if (!a.date_iso || !activeCourseFilters.has(a.course_id)) return;
-    let bucket = assessmentsByDate.get(a.date_iso);
-    if (!bucket) {
-      bucket = [];
-      assessmentsByDate.set(a.date_iso, bucket);
-    }
-    bucket.push(a);
-  });
-
-  const slotsByDay = new Map();
-  (appState.schedule?.slots || []).forEach((s) => {
-    if (
-      !activeCourseFilters.has(s.course_id) ||
-      !matchesGlobalSearch(s.course_id, s.course_name, s.slot_type)
-    ) {
-      return;
-    }
-    let bucket = slotsByDay.get(s.day_index);
-    if (!bucket) {
-      bucket = [];
-      slotsByDay.set(s.day_index, bucket);
-    }
-    bucket.push(s);
-  });
-
-  const customEventsByDate = new Map();
-  (appState.config?.custom_events || []).forEach((e) => {
-    if (!e.date_iso) return;
-    let bucket = customEventsByDate.get(e.date_iso);
-    if (!bucket) {
-      bucket = [];
-      customEventsByDate.set(e.date_iso, bucket);
-    }
-    bucket.push(e);
-  });
+  const isDark = document.documentElement.classList.contains("dark");
 
   // 1. Render 7 Day Headers (Sun 18 .. Sat 24)
   let headerHtml = "";
@@ -4054,8 +4278,10 @@ function renderWeekCalendar() {
     weekDates.push(d);
     const iso = toIsoDate(d);
     const isHighlighted = sameDate(d, selectedCalendarDate);
-    const isToday = iso === todayIso;
-    const dayExams = assessmentsByDate.get(iso) || [];
+    const isToday = sameDate(d, getTodayDate());
+    const dayExams = (appState.assessments || []).filter(
+      (a) => a.date_iso === iso && activeCourseFilters.has(a.course_id)
+    );
 
     headerHtml += `
       <div onclick="selectDateInMiniCal(${d.getFullYear()}, ${d.getMonth()}, ${d.getDate()})" class="border-r border-slate-200 dark:border-slate-800 py-2.5 px-2 text-center cursor-pointer hover:bg-slate-50/70 dark:hover:bg-slate-800/50 transition">
@@ -4119,19 +4345,22 @@ function renderWeekCalendar() {
     }
 
     const dayAssessments = showExamOverlays
-      ? (assessmentsByDate.get(colIso) || []).filter((a) =>
-          matchesGlobalSearch(a.course_id, a.course_name, a.title)
+      ? (appState.assessments || []).filter(
+          (a) =>
+            a.date_iso === colIso &&
+            activeCourseFilters.has(a.course_id) &&
+            matchesGlobalSearch(a.course_id, a.course_name, a.title)
         )
       : [];
 
-    const daySlots = showWeeklyClasses ? slotsByDay.get(dayIdx) || [] : [];
-
-    const dayExamsBySlot = new Map();
-    dayAssessments.forEach((a) => {
-      const examKey = `${a.course_id}\u0000${a.start_time}`;
-      if (!dayExamsBySlot.has(examKey)) dayExamsBySlot.set(examKey, a);
-    });
-    const daySlotKeys = new Set(daySlots.map((s) => `${s.course_id}\u0000${s.start_time}`));
+    const daySlots = showWeeklyClasses
+      ? (appState.schedule?.slots || []).filter(
+          (s) =>
+            s.day_index === dayIdx &&
+            activeCourseFilters.has(s.course_id) &&
+            matchesGlobalSearch(s.course_id, s.course_name, s.slot_type)
+        )
+      : [];
 
     // Collect unified visual items for this column so we can compute side-by-side overlap columns
     const columnItems = [];
@@ -4142,7 +4371,9 @@ function renderWeekCalendar() {
         bg: "#e8f0fe",
         border: "#1a73e8",
       };
-      const matchingExam = dayExamsBySlot.get(`${slot.course_id}\u0000${slot.start_time}`);
+      const matchingExam = dayAssessments.find(
+        (a) => a.course_id === slot.course_id && a.start_time === slot.start_time
+      );
       const pos = computeBlockPosition(slot.start_time, slot.end_time);
 
       columnItems.push({
@@ -4156,7 +4387,8 @@ function renderWeekCalendar() {
 
     dayAssessments.forEach((exam) => {
       const alreadyMerged =
-        showWeeklyClasses && daySlotKeys.has(`${exam.course_id}\u0000${exam.start_time}`);
+        showWeeklyClasses &&
+        daySlots.some((s) => s.course_id === exam.course_id && s.start_time === exam.start_time);
       if (alreadyMerged) return;
 
       const pos = computeBlockPosition(exam.start_time, exam.end_time);
@@ -4172,7 +4404,7 @@ function renderWeekCalendar() {
       });
     });
 
-    const customEvs = customEventsByDate.get(colIso) || [];
+    const customEvs = (appState.config?.custom_events || []).filter((e) => e.date_iso === colIso);
     customEvs.forEach((ev) => {
       const pos = computeBlockPosition(ev.start_time, ev.end_time);
       columnItems.push({
@@ -4212,7 +4444,7 @@ function renderWeekCalendar() {
             <div class="flex items-center justify-between gap-1">
               <span class="text-[11px] font-bold truncate flex items-center gap-1 text-slate-900 dark:text-slate-50">
                 <span class="w-2 h-2 rounded-full shrink-0" style="background-color: ${borderHex}"></span>
-                <span>${escapeHtml(slot.course_id)} Â· ${escapeHtml(slot.course_name)}</span>
+                <span>${escapeHtml(slot.course_id)} · ${escapeHtml(slot.course_name)}</span>
               </span>
               <span class="px-1.5 py-0.2 rounded bg-red-600 text-white text-[9px] font-bold shrink-0">${escapeHtml(exam.assessment_type)}</span>
             </div>
@@ -4220,10 +4452,10 @@ function renderWeekCalendar() {
               ${escapeHtml(exam.title)}
             </div>
             <div class="text-[10px] truncate text-slate-700 dark:text-slate-300">
-              Room ${escapeHtml(slot.room)} Â· Group ${escapeHtml(slot.group)}
+              Room ${escapeHtml(slot.room)} · Group ${escapeHtml(slot.group)}
             </div>
             <div class="text-[10px] tabular-nums text-slate-600 dark:text-slate-400">
-              ${formatCompactTime(slot.start_time)} â€“ ${formatCompactTime(slot.end_time)}
+              ${formatCompactTime(slot.start_time)} – ${formatCompactTime(slot.end_time)}
             </div>
           </div>
         `;
@@ -4235,13 +4467,13 @@ function renderWeekCalendar() {
                style="top: ${topPx}px; height: ${heightPx}px; ${horizStyle} --card-bg-light: ${bgLight}; --card-bg-dark: ${bgDark}; border-color: ${borderHex};">
             <div class="text-[11px] font-bold truncate flex items-center gap-1.5 text-slate-900 dark:text-slate-50">
               <span class="w-2 h-2 rounded-full shrink-0" style="background-color: ${borderHex}"></span>
-              <span class="truncate">${escapeHtml(slot.course_id)} Â· ${escapeHtml(slot.course_name)}</span>
+              <span class="truncate">${escapeHtml(slot.course_id)} · ${escapeHtml(slot.course_name)}</span>
             </div>
             <div class="text-[10px] truncate text-slate-700 dark:text-slate-300">
-              ${escapeHtml(slot.slot_type)} (Grp ${escapeHtml(slot.group)}) Â· Room ${escapeHtml(slot.room)}
+              ${escapeHtml(slot.slot_type)} (Grp ${escapeHtml(slot.group)}) · Room ${escapeHtml(slot.room)}
             </div>
             <div class="text-[10px] tabular-nums text-slate-600 dark:text-slate-400">
-              ${formatCompactTime(slot.start_time)} â€“ ${formatCompactTime(slot.end_time)}
+              ${formatCompactTime(slot.start_time)} – ${formatCompactTime(slot.end_time)}
             </div>
           </div>
         `;
@@ -4254,15 +4486,15 @@ function renderWeekCalendar() {
             <div class="flex items-center justify-between gap-1">
               <span class="text-[11px] font-bold truncate flex items-center gap-1 text-slate-900 dark:text-slate-50">
                 <span class="w-2 h-2 rounded-full shrink-0" style="background-color: ${borderHex}"></span>
-                <span class="truncate">${escapeHtml(exam.course_id)} Â· ${escapeHtml(exam.title)}</span>
+                <span class="truncate">${escapeHtml(exam.course_id)} · ${escapeHtml(exam.title)}</span>
               </span>
               <span class="px-1.5 py-0.2 rounded bg-red-600 text-white text-[9px] font-bold shrink-0">${escapeHtml(exam.assessment_type)}</span>
             </div>
             <div class="text-[10px] truncate text-slate-700 dark:text-slate-300">
-              Room ${escapeHtml(exam.room)} Â· ${escapeHtml(exam.instructor)}
+              Room ${escapeHtml(exam.room)} · ${escapeHtml(exam.instructor)}
             </div>
             <div class="text-[10px] tabular-nums text-slate-600 dark:text-slate-400">
-              ${formatCompactTime(exam.start_time)} â€“ ${formatCompactTime(exam.end_time)}
+              ${formatCompactTime(exam.start_time)} – ${formatCompactTime(exam.end_time)}
             </div>
           </div>
         `;
@@ -4273,10 +4505,10 @@ function renderWeekCalendar() {
                style="top: ${topPx}px; height: ${heightPx}px; ${horizStyle} --card-bg-light: ${bgLight}; --card-bg-dark: ${bgDark}; border-color: ${borderHex};">
             <div class="flex items-center justify-between">
               <span class="text-[11px] font-bold truncate text-slate-900 dark:text-slate-50">${escapeHtml(ev.title)}</span>
-              <button onclick="deleteCustomEvent('${ev.id}')" class="text-[10px] hover:underline cursor-pointer">âœ•</button>
+              <button onclick="deleteCustomEvent('${ev.id}')" class="text-[10px] hover:underline cursor-pointer">✕</button>
             </div>
-            <div class="text-[10px] truncate text-slate-700 dark:text-slate-300">${escapeHtml(ev.event_type)} Â· ${escapeHtml(ev.room)}</div>
-            <div class="text-[10px] tabular-nums text-slate-600 dark:text-slate-400">${formatCompactTime(ev.start_time)} â€“ ${formatCompactTime(ev.end_time)}</div>
+            <div class="text-[10px] truncate text-slate-700 dark:text-slate-300">${escapeHtml(ev.event_type)} · ${escapeHtml(ev.room)}</div>
+            <div class="text-[10px] tabular-nums text-slate-600 dark:text-slate-400">${formatCompactTime(ev.start_time)} – ${formatCompactTime(ev.end_time)}</div>
           </div>
         `;
       }
@@ -4286,7 +4518,6 @@ function renderWeekCalendar() {
   }
 
   colsContainerEl.innerHTML = colsHtml;
-  refreshIcons(document.getElementById("view-calendar"));
 }
 
 function assignOverlapLanes(items) {
@@ -4382,9 +4613,10 @@ function selectDateInMiniCal(year, month, day) {
 
 function jumpToAssessmentOnCalendar(assessmentId) {
   const target = (appState.assessments || []).find((a) => a.id === assessmentId);
-  if (!target) return;
-  const [y, m, d] = target.date_iso.split("-").map(Number);
-  selectDateInMiniCal(y, m - 1, d);
+  if (!target || !target.date_iso) return;
+  const parts = target.date_iso.split("-").map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) return;
+  selectDateInMiniCal(parts[0], parts[1] - 1, parts[2]);
 }
 
 function jumpFromModalToCalendar() {
@@ -4394,8 +4626,10 @@ function jumpFromModalToCalendar() {
   if (targetId) {
     jumpToAssessmentOnCalendar(targetId);
   } else if (targetDateIso) {
-    const [y, m, d] = targetDateIso.split("-").map(Number);
-    selectDateInMiniCal(y, m - 1, d);
+    const parts = targetDateIso.split("-").map(Number);
+    if (parts.length === 3 && !parts.some(Number.isNaN)) {
+      selectDateInMiniCal(parts[0], parts[1] - 1, parts[2]);
+    }
   }
 }
 
@@ -4519,7 +4753,7 @@ function openAssessmentModalById(id) {
             <input type="checkbox" data-topic-key="${escapeHtml(key)}" ${done ? "checked" : ""} onchange="toggleTopicCheckbox('${escapeHtml(key)}', this.checked)" class="mt-0.5 w-4 h-4 accent-[#1a73e8] rounded shrink-0 cursor-pointer" />
             <span data-topic-label="${escapeHtml(key)}" class="text-xs transition-colors ${done ? "line-through text-slate-400 dark:text-slate-500" : "text-slate-900 dark:text-slate-100 font-medium"}">${escapeHtml(topicName)}</span>
           </label>
-          <button type="button" title="Start Focus Pomodoro for this topic" onclick="event.stopPropagation(); triggerHaptic('selection'); openPomodoroForTask('${escapeHtml(a.course_id)} â€¢ ${escapeHtml(a.title)}', '${escapeHtml(topicName)}', '${escapeHtml(key)}')" class="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950/60 text-rose-500 transition cursor-pointer shrink-0">
+          <button type="button" title="Start Focus Pomodoro for this topic" onclick="event.stopPropagation(); triggerHaptic('selection'); openPomodoroForTask('${escapeHtml(a.course_id)} • ${escapeHtml(a.title)}', '${escapeHtml(topicName)}', '${escapeHtml(key)}')" class="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950/60 text-rose-500 transition cursor-pointer shrink-0">
             <i data-lucide="timer" class="w-3.5 h-3.5"></i>
           </button>
         </div>
@@ -4533,7 +4767,7 @@ function openAssessmentModalById(id) {
   const warnList = document.getElementById("modal-warnings-list");
   let uniqueWarnings = [...new Set(a.warnings || [])];
   if (a.conflict_warning) {
-    uniqueWarnings = ["âš ï¸ EXAM OVERLOAD: Another assessment is scheduled within 36 hours of this exam!", ...uniqueWarnings];
+    uniqueWarnings = ["⚠️ EXAM OVERLOAD: Another assessment is scheduled within 36 hours of this exam!", ...uniqueWarnings];
   }
   if (uniqueWarnings.length > 0) {
     warnSec.classList.remove("hidden");
@@ -4562,7 +4796,7 @@ function openAssessmentModalById(id) {
   }
 
   document.getElementById("event-detail-modal").classList.add("is-open");
-  refreshIcons(document.getElementById("event-detail-modal"));
+  if (window.lucide) lucide.createIcons();
 }
 
 function updateModalTopicProgress(assessmentId) {
@@ -4617,13 +4851,13 @@ function openSlotPopover(slotId, dateIso) {
 
   document.getElementById("modal-course-fullname").textContent = slot.course_name;
   document.getElementById("modal-title").textContent = `${slot.course_name} (${slot.slot_type})`;
-  document.getElementById("modal-time").textContent = `${slot.day} (${dateIso}) Â· ${slot.display_time}`;
+  document.getElementById("modal-time").textContent = `${slot.day} (${dateIso}) · ${slot.display_time}`;
   document.getElementById("modal-room").textContent = `Room ${slot.room} (Group ${slot.group})`;
   document.getElementById("modal-instructor").textContent =
     courseQuiz?.instructor || "University Faculty";
   document.getElementById("modal-ai-inference").textContent = courseQuiz
     ? `Upcoming Assessment for ${slot.course_id}: ${courseQuiz.title} on ${courseQuiz.display_time}.`
-    : `Regular weekly ${slot.slot_type} session for ${slot.course_id} â€” no quiz announced for this specific session.`;
+    : `Regular weekly ${slot.slot_type} session for ${slot.course_id} — no quiz announced for this specific session.`;
   document.getElementById("modal-ai-study-plan").textContent = courseQuiz
     ? `Study Plan: ${courseQuiz.ai_study_plan}`
     : "Keep up with weekly lecture slides and tutorial sheets.";
@@ -4653,7 +4887,7 @@ function openSlotPopover(slotId, dateIso) {
   document.getElementById("modal-warnings-section").classList.add("hidden");
   document.getElementById("modal-course-link").classList.add("hidden");
   document.getElementById("event-detail-modal").classList.add("is-open");
-  refreshIcons(document.getElementById("event-detail-modal"));
+  if (window.lucide) lucide.createIcons();
 }
 
 function closeEventDetailModal() {
@@ -4745,7 +4979,7 @@ function selectOnboardingRhythm(rhythm) {
     if (indicator) {
       if (isSelected) {
         indicator.className = "w-4 h-4 rounded-full border-2 border-[#1a73e8] bg-[#1a73e8] flex items-center justify-center text-white text-[9px]";
-        indicator.textContent = "âœ“";
+        indicator.textContent = "✓";
       } else {
         indicator.className = "w-4 h-4 rounded-full border border-slate-300 dark:border-slate-600 flex items-center justify-center";
         indicator.textContent = "";
@@ -4757,7 +4991,7 @@ function selectOnboardingRhythm(rhythm) {
 function openOnboardingModal(initialStep = 1) {
   triggerHaptic("light");
   renderOnboardingPreview();
-  renderOnboardingCourses(true);
+  renderOnboardingCourses();
   updateOnboardingThemeButtons();
 
   const savedTrack = localStorage.getItem("quizradar_academic_track") || "cs";
@@ -4781,10 +5015,11 @@ function openOnboardingModal(initialStep = 1) {
   const modal = document.getElementById("onboarding-modal");
   if (modal) {
     modal.classList.remove("hidden");
+    void modal.offsetHeight;
     requestAnimationFrame(() => {
       modal.classList.add("is-open");
     });
-    refreshIcons(modal);
+    if (window.lucide) lucide.createIcons({ root: modal });
   }
 }
 
@@ -4840,10 +5075,10 @@ function setOnboardingStep(step) {
     } else if (currentOnboardingStep === 2) {
       nextLabel.textContent = "Continue to Schedule & Launch";
     } else {
-      nextLabel.textContent = "ðŸš€ Launch My Radar";
+      nextLabel.textContent = "🚀 Launch My Radar";
     }
   }
-  refreshIcons(document.getElementById("onboarding-modal"));
+  if (window.lucide) lucide.createIcons();
 }
 
 function nextOnboardingStep() {
@@ -4872,7 +5107,7 @@ function renderOnboardingPreview() {
   }
 
   if (upcoming.length === 0) {
-    container.innerHTML = `<div class="text-xs text-slate-500 dark:text-slate-400">Click "Scan Inbox Now" to detect quizzes and exams.</div>`;
+    container.innerHTML = `<div class="text-xs text-slate-500 dark:text-slate-400">Run "Sync Gmail" from the top bar to detect quizzes and exams from your inbox.</div>`;
     return;
   }
 
@@ -4888,7 +5123,7 @@ function renderOnboardingPreview() {
               <span class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 shrink-0">${escapeHtml(a.assessment_type)}</span>
             </div>
             <div class="text-[11px] font-semibold tabular-nums text-[#1a73e8] dark:text-blue-400 shrink-0">
-              ${escapeHtml([a.date_iso, a.start_time || a.time].filter(Boolean).join(" Â· "))}${a.room ? ` (Room ${escapeHtml(a.room)})` : ""}
+              ${escapeHtml([a.date_iso, a.start_time || a.time].filter(Boolean).join(" · "))}${a.room ? ` (Room ${escapeHtml(a.room)})` : ""}
             </div>
           </div>
           ${
@@ -4907,10 +5142,13 @@ function renderOnboardingPreview() {
 
 function renderAllViews() {
   updateTopBarAndUser();
+  renderSidebar();
   renderDashboard();
-  renderTasksView();
   renderWeekCalendar();
+  renderSettingsCourses();
+  renderOnboardingCourses();
   renderPaletteCourseChips();
+  if (window.lucide) lucide.createIcons();
 }
 
 function clearAllEnrolledCourses() {
@@ -4921,10 +5159,11 @@ function clearAllEnrolledCourses() {
   appState.schedule.slots = [];
   activeCourseFilters.clear();
   saveStateCache();
-  const engine = getMobileEngine();
-  engine.state.schedule = appState.schedule;
-  engine.recomputeDashboard(engine.state);
-  engine.saveDatabase();
+  if (typeof mobileEngine !== "undefined" && mobileEngine) {
+    mobileEngine.state.schedule = appState.schedule;
+    mobileEngine.recomputeDashboard(mobileEngine.state);
+    mobileEngine.saveDatabase();
+  }
   fetch("/api/schedule/save", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -4977,9 +5216,7 @@ function handleOnboardMoodleCardClick() {
   showToast("Configure Moodle LMS iCal or token in Settings.", "info");
 }
 
-function renderOnboardingCourses(force = false) {
-  const modal = document.getElementById("onboarding-modal");
-  if (!force && !(modal && modal.classList.contains("is-open"))) return;
+function renderOnboardingCourses() {
   const grid = document.getElementById("onboard-courses-grid");
   const headerLabel = document.getElementById("onboard-courses-header-label");
   if (!grid) return;
@@ -5014,6 +5251,8 @@ function renderOnboardingCourses(force = false) {
       `;
     })
     .join("");
+
+  if (window.lucide) lucide.createIcons({ root: grid });
 }
 
 function setThemeFromOnboarding(isDark) {
@@ -5049,9 +5288,7 @@ function updateOnboardingThemeButtons() {
   }
 }
 
-function renderSettingsCourses(force = false) {
-  const modal = document.getElementById("settings-modal");
-  if (!force && !(modal && modal.classList.contains("is-open"))) return;
+function renderSettingsCourses() {
   const grid = document.getElementById("settings-courses-grid");
   const headerLabel = document.getElementById("settings-courses-header-label");
   if (!grid) return;
@@ -5086,6 +5323,8 @@ function renderSettingsCourses(force = false) {
       `;
     })
     .join("");
+
+  if (window.lucide) lucide.createIcons();
 }
 
 // ============================================================================
@@ -5175,12 +5414,12 @@ function openSchedulePreviewModal(sched) {
       <div class="flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-xs">
         <div class="flex items-center gap-2 min-w-0">
           <span class="font-bold text-slate-700 dark:text-slate-200 shrink-0">${escapeHtml(s.day || s.day_name || "Weekly")}</span>
-          <span class="text-slate-400 text-[11px]">â€¢</span>
+          <span class="text-slate-400 text-[11px]">•</span>
           <span class="font-semibold text-slate-900 dark:text-white truncate">${escapeHtml(s.course_id || s.course_name || "Course")}</span>
           <span class="text-slate-400 text-[10px] truncate">(${escapeHtml(s.slot_type || s.type || "Class")})</span>
         </div>
         <div class="text-[11px] tabular-nums font-medium text-slate-600 dark:text-slate-300 shrink-0">
-          ${escapeHtml(s.display_time || `${s.start_time || "09:00"} - ${s.end_time || "10:30"}`)} ${s.room ? `â€¢ Room ${escapeHtml(s.room)}` : ""}
+          ${escapeHtml(s.display_time || `${s.start_time || "09:00"} - ${s.end_time || "10:30"}`)} ${s.room ? `• Room ${escapeHtml(s.room)}` : ""}
         </div>
       </div>
     `
@@ -5189,10 +5428,11 @@ function openSchedulePreviewModal(sched) {
   }
 
   modal.classList.remove("hidden");
+  void modal.offsetHeight;
   requestAnimationFrame(() => {
     modal.classList.add("is-open");
   });
-  refreshIcons(modal);
+  if (window.lucide) lucide.createIcons();
 }
 
 function closeSchedulePreviewModal() {
@@ -5271,7 +5511,7 @@ function openAddCourseModal() {
 
   modal.classList.add("is-open");
   if (idInput) idInput.focus();
-  refreshIcons(modal);
+  if (window.lucide) lucide.createIcons();
 }
 
 function closeAddCourseModal() {
@@ -5328,7 +5568,7 @@ function addCourseSlotRow() {
     </button>
   `;
   container.appendChild(row);
-  refreshIcons(row);
+  if (window.lucide) lucide.createIcons();
 }
 
 function getDayIndex(day) {
@@ -5381,7 +5621,7 @@ async function submitAddCourse() {
       group: "",
       start_time: start,
       end_time: end,
-      display_time: `${start} â€“ ${end}`,
+      display_time: `${start} – ${end}`,
       has_quiz: false,
       quiz_title: null,
     });
@@ -5466,6 +5706,7 @@ function openSettingsModal() {
   const modal = document.getElementById("settings-modal");
   if (!modal) return;
   modal.classList.remove("hidden");
+  void modal.offsetHeight;
   requestAnimationFrame(() => {
     modal.classList.add("is-open");
   });
@@ -5506,8 +5747,8 @@ function openSettingsModal() {
   if (classroomToggle) classroomToggle.checked = appState.config?.classroom_enabled ?? false;
 
   updateOnboardingThemeButtons();
-  renderSettingsCourses(true);
-  refreshIcons(modal);
+  renderSettingsCourses();
+  if (window.lucide) lucide.createIcons({ root: modal });
 }
 
 function closeSettingsModal() {
@@ -5615,7 +5856,7 @@ async function runOnboardingScan() {
   if (btn) {
     btn.disabled = true;
     btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>Scanning Inbox...</span>`;
-    refreshIcons(btn);
+    if (window.lucide) lucide.createIcons();
   }
 
   const updateStage = (pct, msg) => {
@@ -5631,14 +5872,14 @@ async function runOnboardingScan() {
 
   const upcomingCount = (appState.assessments || []).filter((a) => a.is_upcoming).length;
   const totalCount = (appState.assessments || []).length;
-  updateStage(100, `Scan complete â€” ${upcomingCount} upcoming & ${totalCount} total records in your radar.`);
+  updateStage(100, `Scan complete — ${upcomingCount} upcoming & ${totalCount} total records in your radar.`);
 
   if (btn) {
     btn.disabled = false;
     btn.innerHTML = `<i data-lucide="check" class="w-4 h-4"></i><span>Scan Complete</span>`;
   }
   renderOnboardingPreview();
-  refreshIcons(document.getElementById("onboarding-modal"));
+  if (window.lucide) lucide.createIcons();
 }
 
 // Instant response on "Save & Open My Dashboard": closes modal immediately in 0ms without blocking on network
@@ -5664,7 +5905,7 @@ async function finishOnboarding() {
   if (studentEmail) {
     appState.config.user_email = studentEmail;
     if (appState.auth) {
-      // Manual entry is a LOCAL profile anchor â€” never claim real authentication.
+      // Manual entry is a LOCAL profile anchor — never claim real authentication.
       appState.auth.email = studentEmail;
     }
   }
@@ -5749,7 +5990,7 @@ async function triggerFullSync() {
       showToast(data.message || "Sync finished.", "success", 3000);
     }
   } catch (err) {
-    showToast("Sync failed â€” could not reach the backend.", "warning");
+    showToast("Sync failed — could not reach the backend.", "warning");
   } finally {
     if (txt) txt.textContent = "Sync Gmail & Calendar";
     if (btn) btn.disabled = false;
@@ -5769,7 +6010,7 @@ async function syncGoogleCalendarOnly() {
     renderWeekCalendar();
     const rep = data.report;
     if (rep && rep.success === false) {
-      showToast(rep.message || "Google Calendar sync failed â€” connect your Google account first.", "warning", 4000);
+      showToast(rep.message || "Google Calendar sync failed — connect your Google account first.", "warning", 4000);
     } else {
       showToast(rep?.message || "Synced upcoming exams to Google Calendar!", "success");
     }
@@ -5875,31 +6116,16 @@ function initSearchBar() {
     navigator.userAgent.toUpperCase().indexOf("MAC") >= 0;
   const cmdSpan = document.getElementById("search-kbd-cmd");
   if (cmdSpan) {
-    cmdSpan.textContent = isMac ? "âŒ˜" : "Ctrl";
+    cmdSpan.textContent = isMac ? "⌘" : "Ctrl";
   }
 
-}
-
-function initGlobalDismissHandlers() {
-  const searchContainer = document.getElementById("search-bar-container");
-  const palette = document.getElementById("search-dropdown-palette");
-  const popover = document.getElementById("update-popover");
-  const updateContainer = document.getElementById("update-pill-container");
-
+  // Click outside to close palette
   document.addEventListener("click", (e) => {
-    if (searchContainer && palette && palette.classList.contains("is-open") && !searchContainer.contains(e.target)) {
+    const container = document.getElementById("search-bar-container");
+    const palette = document.getElementById("search-dropdown-palette");
+    if (!container || !palette) return;
+    if (!container.contains(e.target)) {
       closeSearchPalette();
-    }
-
-    if (!popover || popover.classList.contains("hidden")) return;
-    if (updateContainer && !updateContainer.contains(e.target)) {
-      closeUpdatePopover();
-    }
-  });
-
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      closeUpdatePopover();
     }
   });
 }
@@ -5974,7 +6200,7 @@ function renderRecentSearchesList() {
     )
     .join("");
 
-  refreshIcons(listEl);
+  if (window.lucide) lucide.createIcons();
 }
 
 function renderPaletteCourseChips() {
@@ -6036,7 +6262,7 @@ function updatePaletteMatches() {
           <span class="px-2 py-0.5 rounded-md text-[10px] font-bold text-white shrink-0" style="background-color: ${a.color}">${escapeHtml(a.course_id)}</span>
           <div class="min-w-0">
             <div class="font-medium text-slate-800 dark:text-slate-100 truncate">${escapeHtml(a.title)}</div>
-            <div class="text-[10px] text-slate-400 dark:text-slate-500 truncate">${escapeHtml(a.display_date || a.date_iso)} â€¢ ${escapeHtml(a.display_time)}</div>
+            <div class="text-[10px] text-slate-400 dark:text-slate-500 truncate">${escapeHtml(a.display_date || a.date_iso)} • ${escapeHtml(a.display_time)}</div>
           </div>
         </div>
         <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">${escapeHtml(a.assessment_type)}</span>
@@ -6045,7 +6271,7 @@ function updatePaletteMatches() {
     })
     .join("");
 
-  refreshIcons(listEl);
+  if (window.lucide) lucide.createIcons();
 }
 
 function selectPaletteAssessment(assessmentId) {
@@ -6063,7 +6289,7 @@ function openSearchPalette() {
   renderPaletteCourseChips();
   updatePaletteMatches();
   palette.classList.add("is-open");
-  refreshIcons(palette);
+  if (window.lucide) lucide.createIcons();
 }
 
 function closeSearchPalette() {
@@ -6074,14 +6300,11 @@ function closeSearchPalette() {
 }
 
 function handleGlobalSearch(val) {
-  const nextQuery = (val || "").trim();
+  globalSearchQuery = (val || "").trim();
   const desktopInput = document.getElementById("global-search-input");
   const mobileInput = document.getElementById("mobile-search-input");
   if (desktopInput && desktopInput.value !== val) desktopInput.value = val;
   if (mobileInput && mobileInput.value !== val) mobileInput.value = val;
-
-  if (nextQuery === globalSearchQuery) return;
-  globalSearchQuery = nextQuery;
 
   const clearBtn = document.getElementById("search-clear-btn");
   const kbdBadge = document.getElementById("search-kbd-badge");
@@ -6108,27 +6331,12 @@ function handleGlobalSearch(val) {
   }
 
   updatePaletteMatches();
-
-  if (globalSearchDebounceTimer) clearTimeout(globalSearchDebounceTimer);
-  const renderActiveView = () => {
-    if (currentMainView === "dashboard") {
-      renderDashboard();
-    } else if (currentMainView === "calendar") {
-      renderWeekCalendar();
-    }
-  };
-  if (!nextQuery) {
-    globalSearchDebounceTimer = null;
-    renderActiveView();
-    return;
-  }
-  globalSearchDebounceTimer = setTimeout(() => {
-    globalSearchDebounceTimer = null;
-    renderActiveView();
-  }, 120);
+  renderDashboard();
+  renderWeekCalendar();
 }
 
 function clearGlobalSearch() {
+  globalSearchQuery = "";
   const desktopInput = document.getElementById("global-search-input");
   const mobileInput = document.getElementById("mobile-search-input");
   if (desktopInput) {
@@ -6175,16 +6383,59 @@ function matchesGlobalSearch(...fields) {
   return fields.some((f) => (f || "").toLowerCase().includes(q));
 }
 
-function showToast(msg) {
+const TOAST_ICON_CLASSES = {
+  success: "w-4 h-4 text-emerald-400 shrink-0",
+  loading: "w-4 h-4 text-blue-400 shrink-0",
+  info: "w-4 h-4 text-blue-400 shrink-0",
+  default: "w-4 h-4 text-blue-400 shrink-0",
+  warning: "w-4 h-4 text-amber-400 shrink-0",
+  error: "w-4 h-4 text-rose-400 shrink-0"
+};
+const TOAST_ICONS = {
+  success: "check-circle",
+  loading: "loader-2",
+  info: "info",
+  default: "info",
+  warning: "alert-triangle",
+  error: "alert-triangle"
+};
+
+function showToast(msg, typeOrDuration, maybeDuration) {
   const toast = document.getElementById("toast-notification");
   const msgEl = document.getElementById("toast-message");
   if (!toast || !msgEl) return;
+
+  // Legacy call sites pass booleans (isError) or numbers (duration) as the 2nd arg.
+  let type = "success";
+  let duration = 4200;
+  if (typeof typeOrDuration === "number") {
+    duration = typeOrDuration;
+  } else if (typeof typeOrDuration === "boolean") {
+    type = typeOrDuration ? "error" : "success";
+  } else if (typeof typeOrDuration === "string") {
+    type = typeOrDuration;
+  }
+  if (typeof maybeDuration === "number") duration = maybeDuration;
+  if (!TOAST_ICONS[type]) type = "default";
+  if (type === "loading") duration = Math.max(duration, 6000);
+
   msgEl.textContent = msg;
+  toast.dataset.toastType = type;
+
+  const iconEl = toast.querySelector("[data-lucide]");
+  if (iconEl) {
+    iconEl.className = TOAST_ICON_CLASSES[type] || TOAST_ICON_CLASSES.default;
+    iconEl.setAttribute("data-lucide", TOAST_ICONS[type]);
+    // Note: after lucide.createIcons the node is an <svg>; toggling data-lucide and
+    // data attributes still re-hydrates only this toast node.
+    refreshIcons(toast);
+  }
+
   toast.classList.add("toast-visible");
   if (toastHideTimeout) clearTimeout(toastHideTimeout);
   toastHideTimeout = setTimeout(() => {
     toast.classList.remove("toast-visible");
-  }, 4200);
+  }, duration);
 }
 
 // ============================================================================
@@ -6242,7 +6493,9 @@ function escapeHtml(str) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/\\/g, "&#92;");
 }
 
 // ============================================================================
@@ -6259,6 +6512,22 @@ function initAppUpdater() {
   setTimeout(() => {
     checkForAppUpdates(false);
   }, 2500);
+
+  // Close popover when clicking outside or pressing Escape
+  document.addEventListener("click", (e) => {
+    const popover = document.getElementById("update-popover");
+    const container = document.getElementById("update-pill-container");
+    if (!popover || popover.classList.contains("hidden")) return;
+    if (container && !container.contains(e.target)) {
+      closeUpdatePopover();
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closeUpdatePopover();
+    }
+  });
 }
 
 async function checkForAppUpdates(force = false) {
@@ -6313,7 +6582,7 @@ function renderUpdatePill(data) {
     body.innerHTML = formatMarkdownNotes(data.release_notes || "No release notes were published for this version.");
   }
 
-  refreshIcons(document.getElementById("update-popover"));
+  if (window.lucide) lucide.createIcons();
 }
 
 function toggleUpdatePopover() {
@@ -6331,7 +6600,7 @@ function openUpdatePopover() {
   if (!popover) return;
   popover.classList.remove("hidden");
   isUpdatePopoverOpen = true;
-  refreshIcons(popover);
+  if (window.lucide) lucide.createIcons();
 }
 
 function closeUpdatePopover() {
@@ -6372,13 +6641,13 @@ async function startUpdateDownload() {
   // Animate progress smoothly
   let pct = 10;
   if (progressBar) progressBar.style.width = "10%";
-  if (progressStatus) progressStatus.textContent = "Connecting to GitHub release serverâ€¦";
+  if (progressStatus) progressStatus.textContent = "Connecting to GitHub release server…";
 
   const progressInterval = setInterval(() => {
     if (pct < 85) {
       pct += Math.floor(Math.random() * 8) + 4;
       if (progressBar) progressBar.style.width = `${pct}%`;
-      if (progressStatus) progressStatus.textContent = `Downloading installer packageâ€¦ ${pct}%`;
+      if (progressStatus) progressStatus.textContent = `Downloading installer package… ${pct}%`;
     }
   }, 180);
 
@@ -6399,10 +6668,25 @@ async function startUpdateDownload() {
       const countdownInterval = setInterval(() => {
         updateCountdown -= 1;
         if (progressStatus) {
-          progressStatus.innerHTML = `<span class="text-emerald-600 dark:text-emerald-400 font-bold">Download complete!</span> Launching installer and restarting in ${updateCountdown}â€¦`;
+          progressStatus.innerHTML = `<span class="text-emerald-600 dark:text-emerald-400 font-bold">Download complete!</span> Launching installer and restarting in ${updateCountdown}…`;
         }
         if (updateCountdown <= 0) {
           clearInterval(countdownInterval);
+          // If this code is still running, the app did not restart. Recover the
+          // popover to a usable, honest state instead of leaving it frozen.
+          setTimeout(async () => {
+            try {
+              await _originalFetch("/api/state");
+              updatePhase = "idle";
+              if (actions) actions.classList.remove("hidden");
+              if (progressContainer) progressContainer.classList.add("hidden");
+              if (progressStatus) {
+                progressStatus.textContent = "Installer launched. If QuizRadar didn't close automatically, run the downloaded setup file.";
+              }
+            } catch {
+              // App is shutting down / offline — nothing to recover.
+            }
+          }, 1500);
         }
       }, 1000);
     } else {
@@ -6445,7 +6729,7 @@ async function checkUpdatesFromSettings() {
         if (statusEl) {
           statusEl.className = "text-xs p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 flex items-center justify-between";
           statusEl.innerHTML = `
-            <span><strong>${data.latest_version}</strong> is available! (Current: ${data.current_version})</span>
+            <span><strong>${escapeHtml(data.latest_version)}</strong> is available! (Current: ${escapeHtml(data.current_version)})</span>
             <button onclick="closeSettingsModal(); openUpdatePopover();" class="px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-bold text-[11px] cursor-pointer hover:bg-emerald-700 transition">View Update</button>
           `;
         }
@@ -6491,7 +6775,7 @@ function formatMarkdownNotes(raw) {
           .map((line) => {
             let content = escapeHtml(line.trim().slice(2));
             content = content.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-            return `<li class="flex items-start gap-1.5"><span class="text-blue-500">â€¢</span><span>${content}</span></li>`;
+            return `<li class="flex items-start gap-1.5"><span class="text-blue-500">•</span><span>${content}</span></li>`;
           })
           .join("");
         return `<ul class="space-y-1 my-1 pl-1">${items}</ul>`;
@@ -6607,6 +6891,7 @@ async function scheduleSmartStudyBlocks() {
       saveStateCache();
       renderDashboard();
       renderWeekCalendar();
+      if (window.lucide) lucide.createIcons();
     } else {
       showToast(data.message || "Could not schedule study blocks.");
     }
@@ -6644,16 +6929,16 @@ async function testMoodleFromSettings() {
     if (statusEl) {
       if (data.status === "ok") {
         statusEl.className = "text-[11px] p-2 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border border-emerald-300 font-medium";
-        statusEl.textContent = `âœ“ Moodle Connected: Found ${data.events_count} upcoming academic calendar events.`;
+        statusEl.textContent = `✓ Moodle Connected: Found ${data.events_count} upcoming academic calendar events.`;
       } else {
         statusEl.className = "text-[11px] p-2 rounded-lg bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border border-rose-300 font-medium";
-        statusEl.textContent = `âœ— Moodle Error: ${data.message}`;
+        statusEl.textContent = `✗ Moodle Error: ${data.message}`;
       }
     }
   } catch (e) {
     if (statusEl) {
       statusEl.className = "text-[11px] p-2 rounded-lg bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border border-rose-300 font-medium";
-      statusEl.textContent = "âœ— Network error connecting to Moodle.";
+      statusEl.textContent = "✗ Network error connecting to Moodle.";
     }
   }
 }
@@ -6702,7 +6987,12 @@ async function testMicrosoftFromSettings() {
     if (statusEl) {
       if (data.status === "ok") {
         statusEl.className = "text-[11px] p-2 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border border-emerald-300 font-medium";
-        statusEl.textContent = `âœ“ Microsoft Connected: ${data.user || "Student"} (${data.teams_count} Teams, ${data.courses_count || 6} Courses, ${data.assignments_count || 6} Assessments).`;
+        const teamsSummary = [
+          `${data.teams_count ?? 0} team${(data.teams_count ?? 0) === 1 ? "" : "s"}`,
+          `${data.courses_count ?? 0} course${(data.courses_count ?? 0) === 1 ? "" : "s"}`,
+          `${data.assignments_count ?? 0} assessment${(data.assignments_count ?? 0) === 1 ? "" : "s"}`
+        ].join(", ");
+        statusEl.textContent = `✓ Microsoft Connected: ${data.user || "your Microsoft account"} (${teamsSummary}).`;
 
         // Automatically update the app state with discovered courses and assessments
         if (data.assessments) appState.assessments = data.assessments;
@@ -6716,16 +7006,16 @@ async function testMicrosoftFromSettings() {
         saveStateCache();
 
         renderAllViews();
-        showToast(`Microsoft Teams connected! Discovered ${data.courses_count || 6} enrolled courses & assessments.`);
+        showToast(`Microsoft Teams connected! Discovered ${data.courses_count ?? 0} enrolled courses & assessments.`);
       } else {
         statusEl.className = "text-[11px] p-2 rounded-lg bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border border-rose-300 font-medium";
-        statusEl.textContent = `âœ— Microsoft Graph Error: ${data.message}`;
+        statusEl.textContent = `✗ Microsoft Graph Error: ${data.message}`;
       }
     }
   } catch (e) {
     if (statusEl) {
       statusEl.className = "text-[11px] p-2 rounded-lg bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border border-rose-300 font-medium";
-      statusEl.textContent = "âœ— Network error connecting to Microsoft.";
+      statusEl.textContent = "✗ Network error connecting to Microsoft.";
     }
   }
 }
@@ -6746,16 +7036,16 @@ async function testClassroomFromSettings() {
     if (statusEl) {
       if (data.status === "ok") {
         statusEl.className = "text-[11px] p-2 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border border-emerald-300 font-medium";
-        statusEl.textContent = `âœ“ Google Classroom Connected: ${data.courses_count} courses, ${data.coursework_count} coursework assignments.`;
+        statusEl.textContent = `✓ Google Classroom Connected: ${data.courses_count} courses, ${data.coursework_count} coursework assignments.`;
       } else {
         statusEl.className = "text-[11px] p-2 rounded-lg bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border border-rose-300 font-medium";
-        statusEl.textContent = `âœ— Google Classroom Error: ${data.message}`;
+        statusEl.textContent = `✗ Google Classroom Error: ${data.message}`;
       }
     }
   } catch (e) {
     if (statusEl) {
       statusEl.className = "text-[11px] p-2 rounded-lg bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border border-rose-300 font-medium";
-      statusEl.textContent = "âœ— Network error connecting to Classroom.";
+      statusEl.textContent = "✗ Network error connecting to Classroom.";
     }
   }
 }
@@ -6798,7 +7088,7 @@ async function openPracticeModalForCurrentAssessment() {
   }
 
   modal.classList.add("is-open");
-  refreshIcons(modal);
+  if (window.lucide) lucide.createIcons();
 
   try {
     const res = await fetch(`/api/assessments/${encodeURIComponent(a.id)}/practice`, {
@@ -6882,7 +7172,7 @@ function renderCurrentPracticeQuestion() {
       .join("");
   }
 
-  refreshIcons(document.getElementById("practice-quiz-modal"));
+  if (window.lucide) lucide.createIcons();
 }
 
 function selectPracticeOption(selectedIdx) {
@@ -6931,7 +7221,7 @@ function selectPracticeOption(selectedIdx) {
 
   const nextBtn = document.getElementById("practice-next-btn");
   if (nextBtn) nextBtn.disabled = false;
-  refreshIcons(document.getElementById("practice-quiz-modal"));
+  if (window.lucide) lucide.createIcons();
 }
 
 function nextPracticeQuestion() {
@@ -6956,7 +7246,7 @@ function nextPracticeQuestion() {
     }
     const scoreCounter = document.getElementById("practice-score-counter");
     if (scoreCounter) scoreCounter.textContent = `Final: ${practiceQuizScore} / ${total}`;
-    refreshIcons(document.getElementById("practice-quiz-modal"));
+    if (window.lucide) lucide.createIcons();
   }
 }
 
@@ -6997,36 +7287,20 @@ function openPomodoroForTask(course, topic, taskKey) {
   if (!pomodoroIsRunning) {
     setPomodoroMode("work");
   }
-  refreshIcons(modal);
+  if (window.lucide) lucide.createIcons();
 }
 
 function closePomodoroModal() {
-  stopPomodoroTicker();
-  pomodoroIsRunning = false;
-  pomodoroEndTimestamp = 0;
   const modal = document.getElementById("pomodoro-modal");
   if (modal) modal.classList.remove("is-open");
 }
 
-function stopPomodoroTicker() {
-  if (pomodoroTimerInterval) {
-    clearInterval(pomodoroTimerInterval);
-    pomodoroTimerInterval = null;
-  }
-}
-
-function syncPomodoroRemaining() {
-  if (pomodoroIsRunning && pomodoroEndTimestamp) {
-    pomodoroSecondsRemaining = Math.max(0, Math.ceil((pomodoroEndTimestamp - Date.now()) / 1000));
-  }
-  return pomodoroSecondsRemaining;
-}
-
 function setPomodoroMode(mode) {
   pomodoroCurrentMode = mode;
-  stopPomodoroTicker();
-  pomodoroIsRunning = false;
-  pomodoroEndTimestamp = 0;
+  if (pomodoroIsRunning) {
+    clearInterval(pomodoroTimerInterval);
+    pomodoroIsRunning = false;
+  }
 
   const workBtn = document.getElementById("pomo-mode-work");
   const shortBtn = document.getElementById("pomo-mode-short");
@@ -7058,49 +7332,35 @@ function setPomodoroMode(mode) {
   updatePomodoroControls();
 }
 
-function tickPomodoro() {
-  const remaining = Math.max(0, Math.ceil((pomodoroEndTimestamp - Date.now()) / 1000));
-  if (remaining === pomodoroSecondsRemaining) return;
-  pomodoroSecondsRemaining = remaining;
-  if (!document.hidden) updatePomodoroDisplay();
-  if (remaining <= 0) {
-    stopPomodoroTicker();
-    pomodoroIsRunning = false;
-    pomodoroEndTimestamp = 0;
-    playPomodoroChime();
-    triggerHaptic("success");
-    showToast("Pomodoro session complete! Great work!");
-    updatePomodoroDisplay();
-    updatePomodoroControls();
-  }
-}
-
 function togglePomodoroTimer() {
   triggerHaptic("medium");
   if (pomodoroIsRunning) {
-    syncPomodoroRemaining();
-    stopPomodoroTicker();
+    clearInterval(pomodoroTimerInterval);
     pomodoroIsRunning = false;
-    pomodoroEndTimestamp = 0;
-    updatePomodoroDisplay();
     updatePomodoroControls();
   } else {
-    if (pomodoroSecondsRemaining <= 0) {
-      pomodoroSecondsRemaining = pomodoroTotalSeconds;
-    }
-    stopPomodoroTicker();
-    pomodoroEndTimestamp = Date.now() + pomodoroSecondsRemaining * 1000;
     pomodoroIsRunning = true;
     updatePomodoroControls();
-    pomodoroTimerInterval = setInterval(tickPomodoro, 250);
-    tickPomodoro();
+    pomodoroTimerInterval = setInterval(() => {
+      pomodoroSecondsRemaining -= 1;
+      updatePomodoroDisplay();
+      if (pomodoroSecondsRemaining <= 0) {
+        clearInterval(pomodoroTimerInterval);
+        pomodoroIsRunning = false;
+        playPomodoroChime();
+        triggerHaptic("success");
+        showToast("Pomodoro session complete! Great work!");
+        updatePomodoroControls();
+      }
+    }, 1000);
   }
 }
 
 function resetPomodoroTimer() {
-  stopPomodoroTicker();
-  pomodoroIsRunning = false;
-  pomodoroEndTimestamp = 0;
+  if (pomodoroIsRunning) {
+    clearInterval(pomodoroTimerInterval);
+    pomodoroIsRunning = false;
+  }
   pomodoroSecondsRemaining = pomodoroTotalSeconds;
   updatePomodoroDisplay();
   updatePomodoroControls();
@@ -7121,27 +7381,21 @@ function updatePomodoroControls() {
   const toggleIcon = document.getElementById("pomodoro-toggle-icon");
   if (!toggleBtn) return;
 
-  const iconName = pomodoroIsRunning ? "pause" : "play";
   if (pomodoroIsRunning) {
     toggleBtn.className = "px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs transition cursor-pointer active:scale-95 flex items-center gap-2";
     if (toggleLabel) toggleLabel.textContent = "Pause";
+    if (toggleIcon) toggleIcon.setAttribute("data-lucide", "pause");
   } else {
     toggleBtn.className = "px-6 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs transition cursor-pointer active:scale-95 flex items-center gap-2";
     if (toggleLabel) toggleLabel.textContent = "Start Focus";
+    if (toggleIcon) toggleIcon.setAttribute("data-lucide", "play");
   }
-  if (toggleIcon && (toggleIcon.tagName.toLowerCase() !== "i" || toggleIcon.getAttribute("data-lucide") !== iconName)) {
-    toggleIcon.outerHTML = `<i id="pomodoro-toggle-icon" data-lucide="${iconName}" class="w-4 h-4"></i>`;
-    refreshIcons(toggleBtn);
-  }
+  if (window.lucide) lucide.createIcons();
 }
 
 function playPomodoroChime() {
   try {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
-    if (!pomodoroAudioContext) pomodoroAudioContext = new AudioCtx();
-    const ctx = pomodoroAudioContext;
-    if (ctx.state === "suspended") ctx.resume().catch(() => {});
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = "sine";
@@ -7190,7 +7444,7 @@ async function openCloudSyncModal() {
     pairInput.value = localStorage.getItem(DESKTOP_PAIRING_URL_KEY) || "";
   }
   modal.classList.add("is-open");
-  refreshIcons(modal);
+  if (window.lucide) lucide.createIcons({ root: modal });
 }
 
 function closeCloudSyncModal() {
@@ -7201,7 +7455,7 @@ function closeCloudSyncModal() {
 function exportLocalBackup() {
   triggerHaptic("medium");
   try {
-    const engineState = getMobileEngine().state;
+    const engineState = mobileEngine.state;
     const safeState = JSON.parse(JSON.stringify(engineState));
     if (safeState.config) {
       for (const k of ["gemini_api_key", "teams_token", "moodle_token", "moodle_ical_url"]) {
@@ -7212,7 +7466,7 @@ function exportLocalBackup() {
     const blob = new Blob([backupData], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    const dateStr = new Date().toISOString().split("T")[0];
+    const dateStr = toIsoDate(getTodayDate()); // local date, not UTC-shifted
     a.href = url;
     a.download = `quizradar_backup_${dateStr}.json`;
     document.body.appendChild(a);
@@ -7240,22 +7494,34 @@ function handleBackupFileSelected(event) {
   reader.onload = (e) => {
     try {
       const data = JSON.parse(e.target.result);
-      if (data && (data.assessments || data.config || data.schedule)) {
-        const engine = getMobileEngine();
-        engine.state = data;
-        engine.saveDatabase();
-        appState = data;
-        saveStateCache();
-        hydrateAndRenderState(appState);
-        triggerHaptic("success");
-        showToast("Academic radar restored successfully from backup!", "success");
-        closeCloudSyncModal();
-      } else {
-        showToast("Invalid backup JSON format.");
+      // Guard against JSON files that merely LOOK backup-ish: require the engine's
+      // real schema (assessments array + schedule.courses array) and an explicit
+      // confirmation, since a restore replaces the entire local database.
+      const looksValid =
+        data &&
+        Array.isArray(data.assessments) &&
+        data.schedule &&
+        Array.isArray(data.schedule.courses);
+      if (!looksValid) {
+        showToast("This file is not a QuizRadar backup (missing assessments or schedule).", "error");
+        return;
       }
+      const proceed = confirm(
+        "Restore will REPLACE your current local academic data with this backup file. Continue?"
+      );
+      if (!proceed) return;
+
+      mobileEngine.state = data;
+      mobileEngine.saveDatabase();
+      appState = data;
+      saveStateCache();
+      hydrateAndRenderState(appState);
+      triggerHaptic("success");
+      showToast("Academic radar restored successfully from backup!", "success");
+      closeCloudSyncModal();
     } catch (err) {
       console.error("Restore error:", err);
-      showToast("Failed to parse backup JSON.");
+      showToast("Failed to parse backup JSON.", "error");
     }
   };
   reader.readAsText(file);
@@ -7266,10 +7532,9 @@ function resetLocalDatabase() {
     localStorage.removeItem(STANDALONE_STORAGE_KEY);
     localStorage.removeItem(STATE_CACHE_KEY);
     localStorage.removeItem(TASKS_CACHE_KEY);
-    const engine = getMobileEngine();
-    engine.state = engine.createInitialDatabase();
-    engine.saveDatabase();
-    appState = engine.state;
+    mobileEngine.state = mobileEngine.createInitialDatabase();
+    mobileEngine.saveDatabase();
+    appState = mobileEngine.state;
     saveStateCache();
     hydrateAndRenderState(appState);
     triggerHaptic("medium");
@@ -7279,7 +7544,7 @@ function resetLocalDatabase() {
 }
 
 // ============================================================================
-// DESKTOP PAIRING (mobile engine â†’ real QuizRadar desktop instance on the LAN)
+// DESKTOP PAIRING (mobile engine → real QuizRadar desktop instance on the LAN)
 // ============================================================================
 
 const DESKTOP_PAIRING_URL_KEY = "quizradar_desktop_pairing_url";
@@ -7291,7 +7556,7 @@ function normalizeDesktopUrl(raw) {
   try {
     const parsed = new URL(u);
     if (parsed.pathname && parsed.pathname !== "/") {
-      // Accept both http://ip:port and http://ip:port/ â€” strip any extra path
+      // Accept both http://ip:port and http://ip:port/ — strip any extra path
       return `${parsed.protocol}//${parsed.host}`;
     }
     return `${parsed.protocol}//${parsed.host}`;
@@ -7342,7 +7607,7 @@ async function testDesktopPairing() {
     showPairingStatus(`Could not connect: ${err.message}. Check that the PC runs QuizRadar with --lan and both devices share the Wi-Fi.`, true);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = "Test"; }
-    refreshIcons(document.getElementById("cloud-sync-modal"));
+    if (window.lucide) lucide.createIcons();
   }
 }
 
@@ -7360,18 +7625,20 @@ async function importFromDesktop() {
     const data = await res.json();
 
     // Pull ONLY your own data. Authentication tokens NEVER cross the network.
-    const engine = getMobileEngine();
-    const st = engine.state;
+    const st = mobileEngine.state;
     st.schedule = data.schedule || st.schedule;
     st.assessments = data.assessments || st.assessments;
-    st.completed_topics = data.config?.completed_topics || st.completed_topics;
-    st.study_tasks = data.study_tasks_payload?.days || st.study_tasks;
     st.config = { ...st.config, user_name: data.config?.user_name || st.config.user_name };
+    // Single source of truth for progress (server parity): config.completed_topics.
+    if (data.config?.completed_topics) st.config.completed_topics = data.config.completed_topics;
+    else if (st.completed_topics && !st.config.completed_topics) st.config.completed_topics = st.completed_topics;
+    delete st.completed_topics;
+    st.study_tasks = data.study_tasks_payload?.days || st.study_tasks;
     st.dashboard = null;
-    engine.state = engine.recomputeDashboard(st);
-    engine.saveDatabase();
+    mobileEngine.state = mobileEngine.recomputeDashboard(st);
+    mobileEngine.saveDatabase();
 
-    appState = engine.state;
+    appState = mobileEngine.state;
     saveStateCache();
     hydrateAndRenderState(appState);
     triggerHaptic("success");
@@ -7380,7 +7647,7 @@ async function importFromDesktop() {
     showToast(`Import failed: ${err.message}. Run "Test" first to verify the address.`, "warning");
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = "Pull Desktop Data"; }
-    refreshIcons(document.getElementById("cloud-sync-modal"));
+    if (window.lucide) lucide.createIcons();
   }
 }
 

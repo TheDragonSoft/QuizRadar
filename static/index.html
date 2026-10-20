@@ -1021,7 +1021,7 @@
             <div class="flex items-center gap-1.5 pt-2.5 pb-1 overflow-x-auto text-[11px] font-semibold border-b border-slate-100 dark:border-slate-800/80 shrink-0">
               <button type="button" onclick="setDashboardSourceFilter('ALL')" id="source-filter-all" class="px-2.5 py-1 rounded-lg bg-[#1a73e8] text-white shadow-2xs transition cursor-pointer">All Sources</button>
               <button type="button" onclick="setDashboardSourceFilter('Gmail')" id="source-filter-gmail" class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer flex items-center gap-1"><i data-lucide="mail" class="w-3 h-3 text-blue-500"></i><span>Gmail</span></button>
-              <button type="button" onclick="setDashboardSourceFilter('Moodle')" id="source-filter-moodle" class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer flex items-center gap-1"><i data-lucide="graduation-cap" class="w-3 h-3 text-orange-500"></i><span>Moodle</span></button>
+              <button type="button" onclick="setDashboardSourceFilter('Moodle')" id="source-filter-moodle" class="hidden px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer flex items-center gap-1"><i data-lucide="graduation-cap" class="w-3 h-3 text-orange-500"></i><span>Moodle</span></button>
               <button type="button" onclick="setDashboardSourceFilter('Microsoft Teams')" id="source-filter-teams" class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer flex items-center gap-1"><i data-lucide="users" class="w-3 h-3 text-indigo-500"></i><span>Teams</span></button>
               <button type="button" onclick="setDashboardSourceFilter('Google Classroom')" id="source-filter-classroom" class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer flex items-center gap-1"><i data-lucide="book-open" class="w-3 h-3 text-emerald-500"></i><span>Classroom</span></button>
             </div>
@@ -1287,12 +1287,11 @@
 
   <!-- ================= MODAL 2: INTERACTIVE 3-STEP STANDALONE ONBOARDING WIZARD ================= -->
   <div id="onboarding-modal" onclick="if(event.target === this) closeOnboardingModal()" class="modal-backdrop fixed inset-0 bg-slate-950/70 z-50 flex items-center justify-center p-0 md:p-4 backdrop-blur-sm">
-    <div role="dialog" aria-modal="true" aria-labelledby="onboarding-modal-title" class="modal-panel bg-white dark:bg-slate-900 rounded-t-[28px] md:rounded-3xl max-w-3xl w-full shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh] md:max-h-[88vh]">
-      <!-- M3 Bottom Sheet Drag Handle (Mobile only) -->
-      <div class="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto my-3 md:hidden shrink-0"></div>
-
+    <div role="dialog" aria-modal="true" aria-labelledby="onboarding-modal-title" class="modal-panel bg-white dark:bg-slate-900 rounded-t-[28px] md:rounded-3xl max-w-3xl w-full shadow-2xl border border-blue-600/20 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh] md:max-h-[88vh]">
       <!-- Top Gradient Header + Interactive 3-Step Stepper -->
-      <div class="relative bg-gradient-to-r from-blue-700 via-indigo-700 to-sky-700 p-5 sm:p-6 text-white shrink-0 overflow-hidden">
+      <div class="relative bg-gradient-to-r from-blue-700 via-indigo-700 to-sky-700 p-5 sm:p-6 text-white shrink-0 overflow-hidden rounded-t-[28px] md:rounded-t-3xl">
+        <!-- M3 Bottom Sheet Drag Handle (Mobile only, translucent pill inside header) -->
+        <div class="w-12 h-1 bg-white/40 rounded-full mx-auto mb-3 md:hidden shrink-0"></div>
         <!-- Subtle decorative glow element -->
         <div class="absolute -right-12 -bottom-12 w-48 h-48 rounded-full bg-white/10 blur-xl pointer-events-none"></div>
 
@@ -1362,9 +1361,35 @@
               <label class="block text-xs font-bold text-slate-800 dark:text-slate-200">Your Name</label>
               <input id="onboard-student-name" type="text" placeholder="e.g. Student Name" class="w-full h-9 px-3 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-[#1a73e8]" />
             </div>
-            <div class="space-y-1">
-              <label class="block text-xs font-bold text-slate-800 dark:text-slate-200">Personal Google / Gmail Account</label>
-              <input id="onboard-student-email" type="email" placeholder="e.g. student@gmail.com" class="w-full h-9 px-3 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-[#1a73e8]" />
+
+            <!-- Sign in with Google (Personal Gmail & Gemini token) -->
+            <div>
+              <div id="onboard-step1-google-unauth" class="space-y-1">
+                <label class="block text-xs font-bold text-slate-800 dark:text-slate-200">Personal Google Account</label>
+                <button type="button" onclick="startGoogleAuth()" class="w-full h-9 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-white text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer shadow-xs active:scale-[0.99]">
+                  <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                  </svg>
+                  <span>Sign in with Google</span>
+                </button>
+              </div>
+
+              <div id="onboard-step1-google-auth" class="hidden space-y-1">
+                <div class="flex items-center justify-between">
+                  <label class="block text-xs font-bold text-slate-800 dark:text-slate-200">Personal Google Account</label>
+                  <span class="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/70 px-1.5 py-0.2 rounded-full">Connected ✓</span>
+                </div>
+                <div class="h-9 px-3 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between">
+                  <span id="onboard-step1-user-email" class="text-xs font-medium text-emerald-950 dark:text-emerald-200 truncate">user@gmail.com</span>
+                  <button type="button" onclick="startGoogleAuth()" class="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 hover:underline shrink-0">Switch</button>
+                </div>
+              </div>
+
+              <!-- Hidden backwards compatibility input -->
+              <input id="onboard-student-email" type="hidden" />
             </div>
           </div>
 
@@ -1466,15 +1491,15 @@
           </div>
         </div>
 
-        <!-- ================= STEP 2: CONNECT HUBS & GEMINI SCAN ================= -->
+        <!-- ================= STEP 2: CONNECT HUBS & REAL OAUTH SCAN ================= -->
         <div id="onboard-step-2" class="hidden space-y-5 onboard-step-panel">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <span>Connect Your University Hubs</span>
+                <span>Connect Your Academic Accounts</span>
                 <span class="text-xs font-normal text-slate-500 dark:text-slate-400">· Step 2 of 3</span>
               </h3>
-              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">QuizRadar scans announcements and schedules across your active academic sources.</p>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Sign in to your personal and university accounts for live course sync and automated exam scanning.</p>
             </div>
             <button onclick="runOnboardingScan()" id="onboard-scan-btn" class="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white text-xs font-bold transition cursor-pointer shadow-xs">
               <i data-lucide="sparkles" class="w-4 h-4"></i>
@@ -1482,124 +1507,149 @@
             </button>
           </div>
 
-          <!-- Academic Feeds & University Setup -->
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-900/60">
-            <div class="space-y-1">
-              <label class="block text-xs font-bold text-slate-800 dark:text-slate-200">University Email (Microsoft Teams / 365)</label>
-              <input id="onboard-university-email" type="email" placeholder="e.g. student@university.edu" class="w-full h-9 px-3 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-indigo-500" />
-              <p class="text-[10px] text-slate-400">Saved as your profile info. For live Teams scanning, connect Microsoft in Settings on the desktop app.</p>
-            </div>
-            <div class="space-y-1">
-              <label class="block text-xs font-bold text-slate-800 dark:text-slate-200">Institution / University Name</label>
-              <input id="onboard-university-name" type="text" placeholder="e.g. State University / College" class="w-full h-9 px-3 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-indigo-500" />
-            </div>
-            <div class="space-y-1 sm:col-span-2">
-              <label class="block text-xs font-bold text-slate-800 dark:text-slate-200">Google Gemini API Key <span class="font-normal text-slate-400 dark:text-slate-500">(Optional — enables AI-guided email analysis & schedule scans. Leave blank — core scanning still works without AI.)</span></label>
-              <input id="onboard-gemini-key" type="password" placeholder="AIzaSy... (optional — core features work without AI)" class="w-full h-9 px-3 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-blue-500" />
-            </div>
-          </div>
+          <!-- Two Major Account Hub Sections: Personal (Google) & University (MS/Google) -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-          <!-- Connected Hubs Grid (Interactive Clickable Hub Cards) -->
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <!-- Hub 1: Google Account / Workspace -->
-            <div onclick="handleOnboardGoogleCardClick()" class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/70 space-y-2 flex flex-col justify-between hover:border-[#1a73e8] dark:hover:border-blue-500 hover:shadow-md cursor-pointer transition active:scale-[0.99] group">
-              <div>
-                <div class="flex items-center justify-between gap-2">
-                  <div class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950 text-[#1a73e8] dark:text-blue-400 flex items-center justify-center font-bold group-hover:scale-105 transition-transform">
-                    <i data-lucide="mail-search" class="w-4 h-4"></i>
+            <!-- 1. Personal Google Account (Calendar & Gemini AI) -->
+            <div class="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 space-y-3 flex flex-col justify-between">
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-xl bg-blue-100 dark:bg-blue-950/80 flex items-center justify-center">
+                      <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <div class="text-xs font-bold text-slate-900 dark:text-white">Personal Google Account</div>
+                      <div class="text-[10px] text-slate-400">Google Calendar & Gemini AI</div>
+                    </div>
                   </div>
-                  <span id="onboard-auth-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300">Connect</span>
+                  <span id="onboard-auth-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300">Not Connected</span>
                 </div>
-                <div class="mt-2">
-                  <div class="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                    <span>Google Workspace</span>
-                    <i data-lucide="external-link" class="w-3 h-3 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity"></i>
+
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Link personal Gmail for automated assessment detection from course emails and two-way Google Calendar synchronization.
+                </p>
+
+                <!-- When NOT connected: Clean Button -->
+                <div id="onboard-google-unauth" class="pt-1">
+                  <button type="button" onclick="startGoogleAuth()" class="w-full flex items-center justify-center gap-2.5 py-2.5 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-800 dark:text-white text-xs font-bold transition shadow-xs cursor-pointer active:scale-[0.99]">
+                    <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                    </svg>
+                    <span>Sign in with Google</span>
+                  </button>
+                </div>
+
+                <!-- When CONNECTED: Profile Info & Switch Button -->
+                <div id="onboard-google-auth" class="hidden p-2.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 space-y-2">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="min-w-0">
+                      <div id="onboard-user-name" class="text-xs font-bold text-emerald-950 dark:text-emerald-200 truncate">Student Profile</div>
+                      <div id="onboard-user-email" class="text-[11px] text-emerald-800/80 dark:text-emerald-300/80 truncate">user@gmail.com</div>
+                    </div>
+                    <button type="button" onclick="startGoogleAuth()" class="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 hover:underline shrink-0">Switch Account</button>
                   </div>
-                  <div id="onboard-user-name" class="text-[11px] font-medium text-slate-600 dark:text-slate-300">Student Profile</div>
-                  <div id="onboard-user-email" class="text-[10px] text-slate-400 truncate">Configured in Step 1</div>
+                </div>
+
+                <!-- Subtle Optional Gemini Key Input -->
+                <div class="pt-1.5">
+                  <label class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">Optional Gemini API Key (Custom Studio Quota)</label>
+                  <input id="onboard-gemini-key" type="password" placeholder="AIzaSy... (optional — core features work without AI)" class="w-full h-8 px-2.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-blue-500" />
                 </div>
               </div>
-              <div class="border-t border-slate-100 dark:border-slate-700/60 pt-2 flex items-center justify-between">
-                <span id="onboard-scope-note" class="text-[10px] text-slate-500 dark:text-slate-400">Personal study radar</span>
-                <span class="text-[10px] font-semibold text-[#1a73e8] dark:text-blue-400 group-hover:underline">Configure →</span>
+
+              <div class="border-t border-slate-100 dark:border-slate-700/60 pt-2 text-[10px] text-slate-400" id="onboard-scope-note">
+                Personal study radar & Google Calendar
               </div>
             </div>
 
-            <!-- Hub 2: Microsoft Teams -->
-            <div onclick="handleOnboardTeamsCardClick()" class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/70 space-y-2 flex flex-col justify-between hover:border-indigo-500 dark:hover:border-indigo-400 hover:shadow-md cursor-pointer transition active:scale-[0.99] group">
-              <div>
-                <div class="flex items-center justify-between gap-2">
-                  <div class="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold group-hover:scale-105 transition-transform">
-                    <i data-lucide="message-square" class="w-4 h-4"></i>
+            <!-- 2. University Hubs (Microsoft 365 / Teams / Google Education) -->
+            <div class="p-4 rounded-2xl border border-indigo-200/80 dark:border-indigo-900/60 bg-indigo-50/30 dark:bg-indigo-950/20 space-y-3 flex flex-col justify-between">
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-xl bg-indigo-100 dark:bg-indigo-950/80 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                      <i data-lucide="building-2" class="w-4 h-4"></i>
+                    </div>
+                    <div>
+                      <div class="text-xs font-bold text-slate-900 dark:text-white">University Student Account</div>
+                      <div class="text-[10px] text-slate-400">Teams, Outlook & Campus Feeds</div>
+                    </div>
                   </div>
                   <span id="onboard-teams-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300">Not Connected</span>
                 </div>
-                <div class="mt-2">
-                  <div class="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                    <span>Microsoft Teams</span>
-                    <i data-lucide="external-link" class="w-3 h-3 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity"></i>
+
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Sign in with your university account to extract exam announcements, class assignments, and course updates:
+                </p>
+
+                <!-- When NOT connected: Stack of Provider Sign-Ins -->
+                <div id="onboard-teams-unauth" class="space-y-2 pt-1">
+                  <!-- Microsoft 365 / Teams -->
+                  <button type="button" onclick="startMicrosoftAuth()" class="w-full flex items-center justify-center gap-2.5 py-2.5 px-3 rounded-xl bg-[#1e293b] hover:bg-[#0f172a] text-white text-xs font-bold transition shadow-xs cursor-pointer active:scale-[0.99]">
+                    <svg class="w-4 h-4 shrink-0" viewBox="0 0 21 21">
+                      <rect x="1" y="1" width="9" height="9" fill="#F25022"/>
+                      <rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
+                      <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/>
+                      <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
+                    </svg>
+                    <span>Sign in with Microsoft (Teams & 365)</span>
+                  </button>
+
+                  <!-- Google Workspace Education -->
+                  <button type="button" onclick="startGoogleAuth()" class="w-full flex items-center justify-center gap-2.5 py-2.5 px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-800 dark:text-white text-xs font-bold transition shadow-xs cursor-pointer active:scale-[0.99]">
+                    <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                    </svg>
+                    <span>Sign in with Google Workspace (@university.edu)</span>
+                  </button>
+                </div>
+
+                <!-- When CONNECTED: University Info & Switch Button -->
+                <div id="onboard-teams-auth" class="hidden p-2.5 rounded-xl bg-indigo-100/70 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800/60 space-y-2">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="min-w-0">
+                      <div id="onboard-teams-name" class="text-xs font-bold text-indigo-950 dark:text-indigo-200 truncate">University Account</div>
+                      <div id="onboard-teams-subtext" class="text-[11px] text-indigo-800/80 dark:text-indigo-300/80 truncate">student@university.edu</div>
+                    </div>
+                    <button type="button" onclick="startMicrosoftAuth()" class="text-[10px] font-semibold text-indigo-700 dark:text-indigo-300 hover:underline shrink-0">Switch Account</button>
                   </div>
-                  <div id="onboard-teams-name" class="text-[11px] font-medium text-slate-600 dark:text-slate-300">Classes, Channels & Calendar</div>
-                  <div id="onboard-teams-subtext" class="text-[10px] text-slate-400 truncate">University 365 Feed</div>
+                </div>
+
+                <!-- Optional Institution Name Input -->
+                <div class="pt-1.5">
+                  <label class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">Institution / University Name (Optional)</label>
+                  <input id="onboard-university-name" type="text" placeholder="e.g. State University / College" class="w-full h-8 px-2.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-indigo-500" />
                 </div>
               </div>
-              <div class="border-t border-slate-100 dark:border-slate-700/60 pt-2 flex items-center justify-between">
-                <span class="text-[10px] text-slate-500 dark:text-slate-400">Assignments & posts</span>
-                <span class="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 group-hover:underline">Connect →</span>
+
+              <!-- Hidden backwards compatibility fields -->
+              <input id="onboard-university-email" type="hidden" />
+              <div id="onboard-user-avatar" class="hidden">A</div>
+
+              <div class="border-t border-slate-100 dark:border-slate-700/60 pt-2 flex items-center justify-between text-[10px] text-slate-400">
+                <span>Assignments, channels & calendar</span>
+                <!-- Google Classroom Quick Toggle -->
+                <div onclick="handleOnboardClassroomCardClick()" class="cursor-pointer hover:text-emerald-600 dark:hover:text-emerald-400 flex items-center gap-1 font-semibold transition">
+                  <i data-lucide="book-open" class="w-3 h-3 text-emerald-500"></i>
+                  <span>Classroom:</span>
+                  <span id="onboard-classroom-badge" class="font-bold underline">Connect</span>
+                </div>
               </div>
             </div>
 
-            <!-- Hub 3: Google Classroom -->
-            <div onclick="handleOnboardClassroomCardClick()" class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/70 space-y-2 flex flex-col justify-between hover:border-emerald-500 dark:hover:border-emerald-400 hover:shadow-md cursor-pointer transition active:scale-[0.99] group">
-              <div>
-                <div class="flex items-center justify-between gap-2">
-                  <div class="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold group-hover:scale-105 transition-transform">
-                    <i data-lucide="book-open" class="w-4 h-4"></i>
-                  </div>
-                  <span id="onboard-classroom-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300">Optional</span>
-                </div>
-                <div class="mt-2">
-                  <div class="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                    <span>Google Classroom</span>
-                    <i data-lucide="external-link" class="w-3 h-3 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity"></i>
-                  </div>
-                  <div class="text-[11px] font-medium text-slate-600 dark:text-slate-300">CourseWork & Streams</div>
-                  <div class="text-[10px] text-slate-400">Synced submissions</div>
-                </div>
-              </div>
-              <div class="border-t border-slate-100 dark:border-slate-700/60 pt-2 flex items-center justify-between">
-                <span class="text-[10px] text-slate-500 dark:text-slate-400">Auto quiz discovery</span>
-                <span class="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 group-hover:underline">Connect →</span>
-              </div>
-            </div>
-
-            <!-- Hub 4: Moodle LMS -->
-            <div onclick="handleOnboardMoodleCardClick()" class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/70 space-y-2 flex flex-col justify-between hover:border-amber-500 dark:hover:border-amber-400 hover:shadow-md cursor-pointer transition active:scale-[0.99] group">
-              <div>
-                <div class="flex items-center justify-between gap-2">
-                  <div class="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold group-hover:scale-105 transition-transform">
-                    <i data-lucide="graduation-cap" class="w-4 h-4"></i>
-                  </div>
-                  <span id="onboard-moodle-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300">Optional</span>
-                </div>
-                <div class="mt-2">
-                  <div class="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                    <span>Moodle LMS</span>
-                    <i data-lucide="external-link" class="w-3 h-3 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity"></i>
-                  </div>
-                  <div class="text-[11px] font-medium text-slate-600 dark:text-slate-300">Syllabi & iCal Feed</div>
-                  <div class="text-[10px] text-slate-400">Deadlines & Quizzes</div>
-                </div>
-              </div>
-              <div class="border-t border-slate-100 dark:border-slate-700/60 pt-2 flex items-center justify-between">
-                <span class="text-[10px] text-slate-500 dark:text-slate-400">iCal calendar sync</span>
-                <span class="text-[10px] font-semibold text-amber-600 dark:text-amber-400 group-hover:underline">Configure →</span>
-              </div>
-            </div>
           </div>
-
-          <!-- Hidden avatar anchor for JS backwards-compatibility -->
-          <div id="onboard-user-avatar" class="hidden">A</div>
 
           <!-- Live Animated Scan Progress Bar -->
           <div id="onboard-scan-progress-wrap" class="p-3.5 rounded-xl bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200/70 dark:border-blue-800/60 space-y-2">
@@ -1940,97 +1990,147 @@
           </div>
         </div>
 
-        <!-- Google Connection Section -->
-        <div class="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 space-y-2.5">
-          <div class="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between">
-            <span class="flex items-center gap-1.5">
-              <i data-lucide="sparkles" class="w-4 h-4 text-[#1a73e8] dark:text-blue-400"></i>
-              <span>Google Account & Gemini AI Insights</span>
+        <!-- Google Account (Personal Gmail / Gemini AI) Section -->
+        <div class="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+              <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+              </svg>
+              <span>Personal Google Account</span>
             </span>
             <span id="account-google-status" class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">Not Connected</span>
           </div>
-          <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-            Link your personal Google account to power personalized Gemini AI insights, priority study roadmaps, automated timetable parsing, and Google Calendar sync.
-          </p>
 
-          <!-- Inline Edit Form (Hidden by default) -->
-          <div id="account-google-edit-box" class="hidden p-3 rounded-xl bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-900/60 space-y-2.5">
-            <div class="space-y-1">
-              <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300">Your Full Name</label>
-              <input id="account-input-name" type="text" placeholder="e.g. Student Name" class="w-full h-8 px-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-[#1a73e8]" />
+          <!-- When NOT connected: Clean Official Sign-in Button -->
+          <div id="account-google-unauth" class="space-y-2">
+            <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              Sign in with your personal Google account to synchronize your Google Calendar, detect exams from Gmail, and enable Gemini AI analysis.
+            </p>
+            <button type="button" onclick="startGoogleAuth()" class="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-800 dark:text-white text-xs font-bold transition shadow-xs cursor-pointer active:scale-[0.99]">
+              <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+              </svg>
+              <span>Sign in with Google</span>
+            </button>
+          </div>
+
+          <!-- When CONNECTED: Profile & Actions -->
+          <div id="account-google-auth" class="hidden space-y-2.5">
+            <div class="p-2.5 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between">
+              <div class="min-w-0">
+                <div id="account-google-profile-name" class="text-xs font-bold text-emerald-950 dark:text-emerald-200 truncate">Student Name</div>
+                <div id="account-google-profile-email" class="text-[11px] text-emerald-800/80 dark:text-emerald-300/80 truncate">user@gmail.com</div>
+              </div>
+              <span class="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/60 px-2 py-0.5 rounded-full shrink-0">OAuth Token Active</span>
             </div>
-            <div class="space-y-1">
-              <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300">Google / Gmail Address</label>
-              <input id="account-input-email" type="email" placeholder="e.g. student@gmail.com" class="w-full h-8 px-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-[#1a73e8]" />
-            </div>
-            <div class="space-y-1">
-              <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300">Google Gemini API Key <span class="font-normal text-slate-400">(Optional for personal AI Studio quota)</span></label>
-              <input id="account-input-gemini" type="password" placeholder="AIzaSy... (optional)" class="w-full h-8 px-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-[#1a73e8]" />
-            </div>
-            <div class="flex items-center justify-end gap-2 pt-1">
-              <button type="button" onclick="toggleGoogleEditBox(false)" class="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer">Cancel</button>
-              <button type="button" onclick="saveGoogleAccountProfile()" class="px-3.5 py-1.5 rounded-lg bg-[#1a73e8] hover:bg-[#1557b0] text-white text-xs font-bold transition shadow-xs cursor-pointer">Save Account</button>
+            <div class="flex items-center gap-2">
+              <button type="button" onclick="startGoogleAuth()" class="flex-1 py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                <span>Switch Google Account</span>
+              </button>
+              <button type="button" onclick="disconnectGoogleAccount()" class="py-2 px-3 rounded-xl border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer">
+                <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+                <span>Disconnect</span>
+              </button>
             </div>
           </div>
 
-          <div class="flex flex-wrap items-center gap-2 pt-1">
-            <button type="button" onclick="toggleGoogleEditBox(true)" id="account-auth-btn" class="flex-1 min-w-[130px] py-2 px-3 rounded-xl bg-[#1a73e8] hover:bg-[#1557b0] text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer">
-              <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
-              <span id="account-auth-action-label">Set Up Google Account</span>
-            </button>
-            <button type="button" onclick="disconnectGoogleAccount()" id="account-disconnect-btn" class="hidden py-2 px-3 rounded-xl border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer">
-              <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
-              <span>Disconnect</span>
-            </button>
-            <button type="button" onclick="triggerFullSync()" class="py-2 px-3 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer">
-              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
-              <span>Sync Radar</span>
-            </button>
+          <!-- Optional Gemini API Key Collapsible / Field -->
+          <div class="pt-1">
+            <div class="flex items-center justify-between text-[11px]">
+              <span class="font-semibold text-slate-600 dark:text-slate-300">Custom Gemini API Key (Optional)</span>
+              <button type="button" onclick="document.getElementById('account-gemini-wrap').classList.toggle('hidden')" class="text-[#1a73e8] dark:text-blue-400 font-semibold hover:underline">Edit key</button>
+            </div>
+            <div id="account-gemini-wrap" class="hidden mt-1.5 space-y-1.5">
+              <input id="account-input-gemini" type="password" placeholder="AIzaSy... (optional for custom AI Studio quota)" class="w-full h-8 px-2.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-[#1a73e8]" />
+              <button type="button" onclick="saveCustomGeminiKey()" class="px-3 py-1 rounded-lg bg-[#1a73e8] text-white text-[11px] font-bold hover:bg-[#1557b0] transition cursor-pointer">Save Key</button>
+            </div>
+          </div>
+
+          <!-- Legacy hidden elements for backwards compatibility -->
+          <div id="account-google-edit-box" class="hidden">
+            <input id="account-input-name" type="hidden" />
+            <input id="account-input-email" type="hidden" />
+            <button id="account-auth-btn" class="hidden"><span id="account-auth-action-label"></span></button>
+            <button id="account-disconnect-btn" class="hidden"></button>
           </div>
         </div>
 
-        <!-- University Account (Microsoft Teams & 365) Section -->
-        <div class="p-4 rounded-xl border border-indigo-200/80 dark:border-indigo-900/60 bg-indigo-50/40 dark:bg-indigo-950/20 space-y-2.5">
-          <div class="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between">
-            <span class="flex items-center gap-1.5">
+        <!-- University Account (Microsoft 365 / Teams / Google Education) Section -->
+        <div class="p-4 rounded-xl border border-indigo-200/80 dark:border-indigo-900/60 bg-indigo-50/40 dark:bg-indigo-950/20 space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
               <i data-lucide="building-2" class="w-4 h-4 text-indigo-600 dark:text-indigo-400"></i>
-              <span>University Account (Microsoft 365 / Teams)</span>
+              <span>University Student Account</span>
             </span>
             <span id="account-teams-status" class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">Not Connected</span>
           </div>
-          <div id="account-teams-details" class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-            Connect your university student email (e.g. student@university.edu) to synchronize course teams, assignments, and exam dates without overwriting your primary account.
+
+          <!-- When NOT connected: Stack of Sign In With Microsoft & Sign In with Google -->
+          <div id="account-teams-unauth" class="space-y-2">
+            <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              Connect your institutional student account to sync class Teams, channels, syllabus files, and assignments:
+            </p>
+            <div class="space-y-2">
+              <!-- Microsoft 365 / Teams -->
+              <button type="button" onclick="startMicrosoftAuth()" class="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl bg-[#1e293b] hover:bg-[#0f172a] text-white text-xs font-bold transition shadow-xs cursor-pointer active:scale-[0.99]">
+                <svg class="w-4 h-4 shrink-0" viewBox="0 0 21 21">
+                  <rect x="1" y="1" width="9" height="9" fill="#F25022"/>
+                  <rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
+                  <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/>
+                  <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
+                </svg>
+                <span>Sign in with Microsoft (Teams & Outlook)</span>
+              </button>
+
+              <!-- University Google Workspace -->
+              <button type="button" onclick="startGoogleAuth()" class="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-800 dark:text-white text-xs font-bold transition shadow-xs cursor-pointer active:scale-[0.99]">
+                <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                </svg>
+                <span>Sign in with Google Workspace (@university.edu)</span>
+              </button>
+            </div>
           </div>
 
-          <!-- Inline Edit Form (Hidden by default) -->
-          <div id="account-teams-edit-box" class="hidden p-3 rounded-xl bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-900/60 space-y-2.5">
-            <div class="space-y-1">
-              <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300">University Student Email</label>
-              <input id="account-input-teams-email" type="email" placeholder="e.g. student@university.edu" class="w-full h-8 px-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-indigo-500" />
+          <!-- When CONNECTED: Profile & Actions -->
+          <div id="account-teams-auth" class="hidden space-y-2.5">
+            <div class="p-2.5 rounded-lg bg-indigo-100/70 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800/60 flex items-center justify-between">
+              <div class="min-w-0">
+                <div id="account-teams-profile-name" class="text-xs font-bold text-indigo-950 dark:text-indigo-200 truncate">University Account</div>
+                <div id="account-teams-profile-email" class="text-[11px] text-indigo-800/80 dark:text-indigo-300/80 truncate">student@university.edu</div>
+              </div>
+              <span class="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-200/60 dark:bg-indigo-900/60 px-2 py-0.5 rounded-full shrink-0">Live Sync</span>
             </div>
-            <div class="space-y-1">
-              <label class="block text-[11px] font-bold text-slate-700 dark:text-slate-300">Institution / University Name</label>
-              <input id="account-input-teams-name" type="text" placeholder="e.g. State University / College" class="w-full h-8 px-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-indigo-500" />
-            </div>
-            <div class="flex items-center justify-end gap-2 pt-1">
-              <button type="button" onclick="toggleTeamsEditBox(false)" class="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer">Cancel</button>
-              <button type="button" onclick="saveTeamsAccountProfile()" class="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition shadow-xs cursor-pointer">Save University</button>
+            <div class="flex items-center gap-2">
+              <button type="button" onclick="startMicrosoftAuth()" class="flex-1 py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                <span>Switch University Account</span>
+              </button>
+              <button type="button" onclick="disconnectMicrosoftAccount()" class="py-2 px-3 rounded-xl border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer">
+                <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+                <span>Disconnect</span>
+              </button>
             </div>
           </div>
 
-          <div class="flex flex-wrap items-center gap-2 pt-1">
-            <button type="button" onclick="toggleTeamsEditBox(true)" id="account-teams-auth-btn" class="flex-1 min-w-[130px] py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer">
-              <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
-              <span id="account-teams-auth-action-label">Set Up University Account</span>
-            </button>
-            <button type="button" onclick="disconnectMicrosoftAccount()" id="account-teams-disconnect-btn" class="hidden py-2 px-3 rounded-xl border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer">
-              <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
-              <span>Disconnect</span>
-            </button>
-            <button type="button" onclick="triggerFullSync()" class="py-2 px-3 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer">
-              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
-              <span>Sync Teams</span>
-            </button>
+          <!-- Legacy hidden elements for backwards compatibility -->
+          <div id="account-teams-edit-box" class="hidden">
+            <input id="account-input-teams-email" type="hidden" />
+            <input id="account-input-teams-name" type="hidden" />
+            <button id="account-teams-auth-btn" class="hidden"><span id="account-teams-auth-action-label"></span></button>
+            <button id="account-teams-disconnect-btn" class="hidden"></button>
+            <div id="account-teams-details" class="hidden"></div>
           </div>
         </div>
 
@@ -2107,7 +2207,7 @@
 
   <!-- ================= MODAL 4: SETTINGS & PREFERENCES ================= -->
   <div id="settings-modal" onclick="if(event.target === this) closeSettingsModal()" class="modal-backdrop fixed inset-0 bg-slate-950/60 z-50 flex items-center justify-center p-0 md:p-4 md:backdrop-blur-xs">
-    <div role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" class="modal-panel bg-white dark:bg-slate-900 rounded-t-[28px] md:rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh] md:max-h-[85vh]">
+    <div role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" class="modal-panel bg-white dark:bg-slate-900 rounded-t-[28px] md:rounded-2xl max-w-2xl w-full mx-auto shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh] md:max-h-[85vh]">
       <!-- M3 Bottom Sheet Drag Handle (Mobile only) -->
       <div class="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto my-3 md:hidden shrink-0"></div>
       <!-- Top Header -->
@@ -2247,8 +2347,8 @@
             <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Multi-Channel Radar</span>
           </div>
 
-          <!-- Moodle LMS Ingestion Card -->
-          <div class="p-3.5 rounded-xl border border-orange-200/80 dark:border-orange-900/60 bg-orange-50/40 dark:bg-orange-950/20 space-y-2.5">
+          <!-- Moodle LMS Ingestion Card (Disabled) -->
+          <div id="settings-moodle-card" class="hidden p-3.5 rounded-xl border border-orange-200/80 dark:border-orange-900/60 bg-orange-50/40 dark:bg-orange-950/20 space-y-2.5">
             <div class="flex items-center justify-between">
               <label class="flex items-center gap-2 text-xs font-bold text-orange-950 dark:text-orange-200 cursor-pointer">
                 <input id="settings-moodle-toggle" type="checkbox" class="w-4 h-4 accent-orange-600 rounded cursor-pointer" />
@@ -2627,6 +2727,27 @@
         <button id="pomodoro-mark-done-btn" onclick="markCurrentPomodoroTaskDone()" class="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer flex items-center gap-1">
           <i data-lucide="check-circle" class="w-3.5 h-3.5"></i>
           <span>Mark Topic Complete</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL: IN-APP CONFIRMATION DIALOG ================= -->
+  <div id="app-confirm-modal" onclick="if(event.target === this) closeAppConfirm(false)" class="modal-backdrop fixed inset-0 bg-slate-950/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs hidden">
+    <div role="dialog" aria-modal="true" aria-labelledby="app-confirm-title" class="modal-panel bg-white dark:bg-slate-900 rounded-2xl max-w-sm w-full mx-auto shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden p-5 space-y-4 text-center">
+      <div id="app-confirm-icon-box" class="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto">
+        <i id="app-confirm-icon" data-lucide="alert-triangle" class="w-6 h-6"></i>
+      </div>
+      <div class="space-y-1.5">
+        <h3 id="app-confirm-title" class="text-base font-bold text-slate-900 dark:text-white">Confirm Action</h3>
+        <p id="app-confirm-message" class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">Are you sure you want to proceed?</p>
+      </div>
+      <div class="flex items-center gap-2.5 pt-1">
+        <button type="button" id="app-confirm-cancel-btn" onclick="closeAppConfirm(false)" class="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 transition cursor-pointer">
+          Cancel
+        </button>
+        <button type="button" id="app-confirm-action-btn" onclick="closeAppConfirm(true)" class="flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-bold transition cursor-pointer shadow-xs">
+          Disconnect
         </button>
       </div>
     </div>

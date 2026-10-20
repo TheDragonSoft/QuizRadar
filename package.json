@@ -1,6 +1,6 @@
 {
   "name": "quizradar-mobile",
-  "version": "3.3.0",
+  "version": "4.0.0",
   "description": "QuizRadar Native Mobile App with Cross-Device Cloud Sync",
   "scripts": {
     "cap:sync": "cap sync",

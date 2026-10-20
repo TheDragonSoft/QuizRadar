@@ -524,6 +524,38 @@ class QuizRadarAutonomousEngine {
       return { ok: true, status: 200, data: JSON.parse(JSON.stringify(this.state)) };
     }
 
+    // 1b. GET /api/auth/google/url
+    if (path === "/api/auth/google/url") {
+      const redirectUri = "http://localhost:3000/api/auth/callback";
+      const clientId = "341760934836-60toi8rjgkid0gmc69tmt598teghbgv4.apps.googleusercontent.com";
+      const scopes = [
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/userinfo.profile",
+        "https://www.googleapis.com/auth/calendar.events",
+        "https://www.googleapis.com/auth/drive.appdata"
+      ].join(" ");
+      const googleAuthUrl = "https://accounts.google.com/o/oauth2/v2/auth?client_id=" + encodeURIComponent(clientId) +
+        "&redirect_uri=" + encodeURIComponent(redirectUri) +
+        "&response_type=code" +
+        "&scope=" + encodeURIComponent(scopes) +
+        "&access_type=offline&prompt=consent&include_granted_scopes=true";
+      return { ok: true, status: 200, data: { url: googleAuthUrl } };
+    }
+
+    // 1c. GET /api/microsoft/url
+    if (path === "/api/microsoft/url") {
+      const redirectUri = "http://localhost:3000/api/auth/microsoft/callback";
+      const clientId = "14d82eec-204b-4c2f-b7e8-296a70dab67e";
+      const scopes = "offline_access User.Read Mail.Read Calendars.Read";
+      const msAuthUrl = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=" + encodeURIComponent(clientId) +
+        "&response_type=code" +
+        "&redirect_uri=" + encodeURIComponent(redirectUri) +
+        "&response_mode=query" +
+        "&scope=" + encodeURIComponent(scopes);
+      return { ok: true, status: 200, data: { url: msAuthUrl } };
+    }
+
     // 2. POST /api/config/update
     if (path === "/api/config/update") {
       // Whitelist the fields real config updates carry. A manually typed email is
@@ -1342,18 +1374,274 @@ async function saveGoogleAccountProfile() {
   );
 }
 
-function startGoogleAuth() {
+// ============================================================================
+// OAUTH BROWSER LAUNCHER & LIVE AUTH POLLING
+// ============================================================================
+
+function openExternalBrowser(url) {
+  if (IS_NATIVE && window.Capacitor?.Plugins?.Browser?.open) {
+    window.Capacitor.Plugins.Browser.open({ url });
+  } else {
+    // In desktop Wry (WebView2 on Windows):
+    // window.open(url, "_blank") triggers with_new_window_req_handler in main.rs:
+    // which delegates to open::that(&url) to launch the default system browser (Chrome/Edge).
+    const win = window.open(url, "_blank");
+    if (win && win.focus) win.focus();
+  }
+}
+
+let authPollInterval = null;
+let authPollTimeout = null;
+
+function startAuthPolling(provider = "any") {
+  if (authPollInterval) clearInterval(authPollInterval);
+  if (authPollTimeout) clearTimeout(authPollTimeout);
+
+  let attempts = 0;
+  const maxAttempts = 120; // 120 * 1.5s = 3 minutes
+
+  authPollInterval = setInterval(async () => {
+    attempts++;
+    if (attempts > maxAttempts) {
+      clearInterval(authPollInterval);
+      authPollInterval = null;
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/state");
+      if (!res.ok) return;
+      const state = await res.json();
+
+      const googleSuccess =
+        (provider === "google" || provider === "any") &&
+        state.auth?.authenticated &&
+        (!appState.auth?.authenticated || appState.auth?.email !== state.auth?.email);
+
+      const msSuccess =
+        (provider === "microsoft" || provider === "any") &&
+        (state.teams_connected || (state.config?.teams_enabled && state.config?.teams_token)) &&
+        !appState.teams_connected;
+
+      if (googleSuccess || msSuccess) {
+        clearInterval(authPollInterval);
+        authPollInterval = null;
+
+        Object.assign(appState, state);
+        saveStateCache();
+        updateTopBarAndUser();
+        renderAllViews();
+        renderOnboardingStep2State();
+        if (document.getElementById("account-profile-modal")?.classList.contains("is-open")) {
+          openAccountModal();
+        }
+
+        triggerHaptic("success");
+        const accountDesc = googleSuccess
+          ? (state.auth?.email || "Google Account")
+          : (state.teams_email || state.config?.teams_account_email || "University Microsoft Account");
+        showToast(`Signed in successfully: ${accountDesc}!`, "success", 4000);
+
+        if (IS_NATIVE && window.Capacitor?.Plugins?.Browser?.close) {
+          try { window.Capacitor.Plugins.Browser.close(); } catch (e) {}
+        }
+      }
+    } catch (e) {
+      // Ignore background poll errors
+    }
+  }, 1500);
+
+  authPollTimeout = setTimeout(() => {
+    if (authPollInterval) {
+      clearInterval(authPollInterval);
+      authPollInterval = null;
+    }
+  }, 180000);
+}
+
+// Native Android / OAuth callback bridge triggered by LocalOAuthServer
+window.handleOAuthResult = function(provider, tokenData, profileData) {
+  console.log("[QuizRadar] handleOAuthResult:", provider, profileData);
+  if (IS_NATIVE && window.Capacitor?.Plugins?.Browser?.close) {
+    try { window.Capacitor.Plugins.Browser.close(); } catch (_) {}
+  }
+  if (authPollInterval) {
+    clearInterval(authPollInterval);
+    authPollInterval = null;
+  }
+  if (authPollTimeout) {
+    clearTimeout(authPollTimeout);
+    authPollTimeout = null;
+  }
+
+  if (provider === "google") {
+    if (!appState.auth) appState.auth = {};
+    appState.auth.authenticated = true;
+    appState.auth.email = profileData.email || tokenData.email || "Google Account";
+    appState.auth.name = profileData.name || "Student";
+    appState.auth.picture = profileData.picture || null;
+    appState.auth.access_token = tokenData.access_token;
+    if (tokenData.refresh_token) {
+      appState.auth.refresh_token = tokenData.refresh_token;
+    }
+    if (!appState.config) appState.config = {};
+    appState.config.user_email = appState.auth.email;
+    appState.config.user_name = appState.auth.name;
+    if (appState.auth.picture) {
+      appState.config.user_picture = appState.auth.picture;
+    }
+
+    if (typeof mobileEngine !== "undefined" && mobileEngine && mobileEngine.state) {
+      mobileEngine.state.auth = { ...appState.auth };
+      mobileEngine.state.config = { ...appState.config };
+      mobileEngine.saveDatabase();
+    }
+    saveStateCache();
+    updateTopBarAndUser();
+    renderAllViews();
+    renderOnboardingStep2State();
+    if (document.getElementById("account-profile-modal")?.classList.contains("is-open")) {
+      openAccountModal();
+    }
+    triggerHaptic("success");
+    showToast(`Signed in as ${appState.auth.email}! Google Calendar & Gemini active.`, "success", 4000);
+  } else if (provider === "microsoft") {
+    if (!appState.config) appState.config = {};
+    const msEmail = profileData.mail || profileData.userPrincipalName || tokenData.email || "University Account";
+    const msName = profileData.displayName || "University Student";
+    appState.config.teams_enabled = true;
+    appState.config.teams_token = tokenData.access_token;
+    if (tokenData.refresh_token) {
+      appState.config.teams_refresh_token = tokenData.refresh_token;
+    }
+    appState.config.teams_account_email = msEmail;
+    appState.config.teams_account_name = msName;
+    appState.teams_connected = true;
+    appState.teams_email = msEmail;
+
+    if (typeof mobileEngine !== "undefined" && mobileEngine && mobileEngine.state) {
+      mobileEngine.state.config = { ...appState.config };
+      mobileEngine.state.teams_connected = true;
+      mobileEngine.state.teams_email = msEmail;
+      mobileEngine.saveDatabase();
+    }
+    saveStateCache();
+    updateTopBarAndUser();
+    renderAllViews();
+    renderOnboardingStep2State();
+    if (document.getElementById("account-profile-modal")?.classList.contains("is-open")) {
+      openAccountModal();
+    }
+    triggerHaptic("success");
+    showToast(`University account connected: ${msEmail}`, "success", 4000);
+  }
+};
+
+async function startGoogleAuth() {
   triggerHaptic("selection");
-  if (!IS_NATIVE) {
-    // Desktop / browser PWA: run the REAL Google OAuth flow against the Rust backend.
-    window.location.href = "/api/auth/google";
+  showToast("Opening Google Sign-In in your browser...", "info", 3000);
+  try {
+    const res = await fetch("/api/auth/google/url");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data.url) throw new Error("No authorization URL returned");
+
+    openExternalBrowser(data.url);
+    startAuthPolling("google");
+  } catch (err) {
+    console.warn("Falling back to direct /api/auth/google:", err);
+    if (!IS_NATIVE) {
+      openExternalBrowser("/api/auth/google");
+      startAuthPolling("google");
+    } else {
+      showToast("Could not start Google Sign-In: " + err.message, "error");
+    }
+  }
+}
+
+async function startMicrosoftAuth() {
+  triggerHaptic("selection");
+  showToast("Opening Microsoft Sign-In in your browser...", "info", 3000);
+  try {
+    const res = await fetch("/api/microsoft/url");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data.url) throw new Error("No authorization URL returned");
+
+    openExternalBrowser(data.url);
+    startAuthPolling("microsoft");
+  } catch (err) {
+    console.warn("Falling back to direct /api/microsoft/login:", err);
+    if (!IS_NATIVE) {
+      openExternalBrowser("/api/microsoft/login");
+      startAuthPolling("microsoft");
+    } else {
+      showToast("Could not start Microsoft Sign-In: " + err.message, "error");
+    }
+  }
+}
+
+// ============================================================================
+// CUSTOM IN-APP CONFIRMATION MODAL (Replaces browser confirm() dialogs)
+// ============================================================================
+
+let currentConfirmCallback = null;
+
+function showAppConfirm({ title, message, icon = "alert-triangle", confirmText = "Confirm", cancelText = "Cancel", isDanger = true, onConfirm }) {
+  triggerHaptic("warning");
+  const modal = document.getElementById("app-confirm-modal");
+  if (!modal) {
+    if (window.confirm(message)) {
+      onConfirm?.();
+    }
     return;
   }
-  const modal = document.getElementById("account-profile-modal");
-  if (!modal || !modal.classList.contains("is-open")) {
-    openAccountModal();
+  const titleEl = document.getElementById("app-confirm-title");
+  const msgEl = document.getElementById("app-confirm-message");
+  const iconEl = document.getElementById("app-confirm-icon");
+  const iconBox = document.getElementById("app-confirm-icon-box");
+  const actBtn = document.getElementById("app-confirm-action-btn");
+  const cancelBtn = document.getElementById("app-confirm-cancel-btn");
+
+  if (titleEl) titleEl.textContent = title;
+  if (msgEl) msgEl.textContent = message;
+  if (cancelBtn) cancelBtn.textContent = cancelText;
+  if (actBtn) {
+    actBtn.textContent = confirmText;
+    actBtn.className = isDanger
+      ? "flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-bold transition cursor-pointer shadow-xs"
+      : "flex-1 py-2.5 px-4 rounded-xl bg-[#1a73e8] hover:bg-[#1557b0] active:scale-95 text-white text-xs font-bold transition cursor-pointer shadow-xs";
   }
-  toggleGoogleEditBox(true);
+  if (iconBox) {
+    iconBox.className = isDanger
+      ? "w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto"
+      : "w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-[#1a73e8] dark:text-blue-400 flex items-center justify-center mx-auto";
+  }
+  if (iconEl) {
+    iconEl.setAttribute("data-lucide", icon);
+    if (window.lucide) lucide.createIcons({ root: iconBox });
+  }
+
+  currentConfirmCallback = onConfirm;
+  modal.classList.remove("hidden");
+  modal.classList.add("flex");
+  void modal.offsetHeight;
+  requestAnimationFrame(() => modal.classList.add("is-open"));
+}
+
+function closeAppConfirm(confirmed = false) {
+  const modal = document.getElementById("app-confirm-modal");
+  if (!modal) return;
+  modal.classList.remove("is-open");
+  setTimeout(() => {
+    modal.classList.remove("flex");
+    modal.classList.add("hidden");
+  }, 200);
+
+  if (confirmed && typeof currentConfirmCallback === "function") {
+    currentConfirmCallback();
+  }
+  currentConfirmCallback = null;
 }
 
 function toggleTeamsEditBox(show) {
@@ -1414,95 +1702,109 @@ async function saveTeamsAccountProfile() {
     openAccountModal();
   }
   triggerHaptic("success");
-  showToast(
-    IS_NATIVE
-      ? `University profile saved locally: ${email}. Real Teams sync needs the desktop app.`
-      : `University profile saved locally: ${email}. Use Add University (Microsoft) to connect for real Teams scanning.`,
-    "success",
-    4000
-  );
-}
-
-function startMicrosoftAuth() {
-  triggerHaptic("selection");
-  if (!IS_NATIVE) {
-    // Desktop / browser PWA: run the REAL Microsoft OAuth flow against the Rust backend.
-    window.location.href = "/api/microsoft/login";
-    return;
-  }
-  const modal = document.getElementById("account-profile-modal");
-  if (!modal || !modal.classList.contains("is-open")) {
-    openAccountModal();
-  }
-  toggleTeamsEditBox(true);
+  showToast(`University profile saved locally: ${email}.`, "success", 3000);
 }
 
 async function disconnectMicrosoftAccount() {
-  triggerHaptic("medium");
-  const confirmed = confirm("Are you sure you want to disconnect your University Microsoft Teams account from QuizRadar?");
-  if (!confirmed) return;
+  showAppConfirm({
+    title: "Disconnect University Account?",
+    message: "This will unlink your Microsoft Teams and Outlook sync. Previously detected courses will remain in your schedule, but live Teams scanning will stop.",
+    icon: "log-out",
+    confirmText: "Disconnect",
+    isDanger: true,
+    onConfirm: async () => {
+      try {
+        showToast("Disconnecting Microsoft Teams account...", "info", 2000);
+        const res = await fetch("/api/microsoft/logout", { method: "POST" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
 
-  try {
-    showToast("Disconnecting Microsoft Teams account...", "info", 2000);
-    const res = await fetch("/api/microsoft/logout", { method: "POST" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+        if (appState.config) {
+          appState.config.teams_enabled = false;
+          appState.config.teams_token = null;
+          appState.config.teams_account_email = null;
+          appState.config.teams_account_name = null;
+        }
+        appState.teams_connected = false;
+        appState.teams_email = null;
+        if (data.assessments) appState.assessments = data.assessments;
+        if (data.dashboard) appState.dashboard = data.dashboard;
+        if (data.schedule) appState.schedule = data.schedule;
 
-    if (appState.config) {
-      appState.config.teams_enabled = false;
-      appState.config.teams_token = null;
-      appState.config.teams_account_email = null;
-      appState.config.teams_account_name = null;
+        saveStateCache();
+        renderAllViews();
+        renderOnboardingStep2State();
+        if (document.getElementById("account-profile-modal")?.classList.contains("is-open")) {
+          openAccountModal();
+        }
+        triggerHaptic("success");
+        showToast("University Microsoft account disconnected successfully", "success", 3000);
+      } catch (err) {
+        console.error("Teams disconnect failed:", err);
+        showToast("Failed to disconnect Teams: " + err.message, "error");
+        triggerHaptic("warning");
+      }
     }
-    if (data.assessments) appState.assessments = data.assessments;
-    if (data.dashboard) appState.dashboard = data.dashboard;
-    if (data.schedule) appState.schedule = data.schedule;
-
-    saveStateCache();
-    renderAllViews();
-    if (document.getElementById("account-profile-modal")?.classList.contains("is-open")) {
-      openAccountModal();
-    }
-    triggerHaptic("success");
-    showToast("University Microsoft account disconnected successfully", "success", 3000);
-  } catch (err) {
-    console.error("Teams disconnect failed:", err);
-    showToast("Failed to disconnect Teams: " + err.message, "error");
-    triggerHaptic("warning");
-  }
+  });
 }
 
 async function disconnectGoogleAccount() {
-  triggerHaptic("medium");
-  const confirmed = confirm("Are you sure you want to disconnect your Google Account & Gemini AI Insights from QuizRadar?");
-  if (!confirmed) return;
+  showAppConfirm({
+    title: "Disconnect Google Account?",
+    message: "This will unlink your personal Google account. Gemini AI insights, automated timetable parsing, and Google Calendar sync will be paused until you sign in again.",
+    icon: "log-out",
+    confirmText: "Disconnect",
+    isDanger: true,
+    onConfirm: async () => {
+      try {
+        showToast("Disconnecting Google Account...", "info", 1500);
+        await fetch("/api/auth/logout", { method: "POST" });
+        if (appState.auth) {
+          appState.auth.authenticated = false;
+          appState.auth.email = null;
+          appState.auth.name = "Student";
+          appState.auth.picture = null;
+        }
+        if (appState.config) {
+          appState.config.user_email = null;
+          appState.config.user_name = "Student";
+        }
+        saveStateCache();
+        updateTopBarAndUser();
+        renderAllViews();
+        renderOnboardingStep2State();
+        if (document.getElementById("account-profile-modal")?.classList.contains("is-open")) {
+          openAccountModal();
+        }
+        triggerHaptic("success");
+        showToast("Google account disconnected successfully", "success", 2500);
+      } catch (err) {
+        console.error("Google disconnect error:", err);
+        showToast("Failed to disconnect Google account", "error");
+      }
+    }
+  });
+}
 
-  try {
-    showToast("Disconnecting Google Account...", "info", 1500);
-    await fetch("/api/auth/logout", { method: "POST" });
-    if (appState.auth) {
-      appState.auth.authenticated = false;
-      appState.auth.email = null;
-      appState.auth.name = "Student";
-      appState.auth.picture = null;
-    }
-    if (appState.config) {
-      appState.config.user_email = null;
-      appState.config.user_name = "Student";
-      appState.config.gemini_api_key = null;
-    }
-    saveStateCache();
-    updateTopBarAndUser();
-    renderAllViews();
-    if (document.getElementById("account-profile-modal")?.classList.contains("is-open")) {
-      openAccountModal();
-    }
-    triggerHaptic("success");
-    showToast("Google Account disconnected", "success", 2500);
-  } catch (err) {
-    console.error("Google disconnect error:", err);
-    showToast("Failed to disconnect Google account", "error");
+async function saveCustomGeminiKey() {
+  triggerHaptic("medium");
+  const input = document.getElementById("account-input-gemini");
+  const key = (input?.value || "").trim();
+  if (appState.config) {
+    appState.config.gemini_api_key = key || null;
+    appState.config.gemini_enabled = !!key;
   }
+  await fetch("/api/config/update", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      gemini_api_key: key || null,
+      gemini_enabled: !!key
+    })
+  }).catch(() => {});
+  saveStateCache();
+  showToast(key ? "Gemini API key saved." : "Custom Gemini API key cleared.", "success", 2500);
+  document.getElementById("account-gemini-wrap")?.classList.add("hidden");
 }
 
 async function exportCalendarIcs(assessmentId = null) {
@@ -1654,6 +1956,27 @@ function openAccountModal() {
     }
   }
 
+  // Personal Google Account View
+  const googleUnauth = document.getElementById("account-google-unauth");
+  const googleAuth = document.getElementById("account-google-auth");
+  const googleProfName = document.getElementById("account-google-profile-name");
+  const googleProfEmail = document.getElementById("account-google-profile-email");
+  const geminiInput = document.getElementById("account-input-gemini");
+
+  if (geminiInput && appState.config?.gemini_api_key) {
+    geminiInput.value = appState.config.gemini_api_key;
+  }
+
+  if (isGoogleAuth) {
+    if (googleUnauth) googleUnauth.classList.add("hidden");
+    if (googleAuth) googleAuth.classList.remove("hidden");
+    if (googleProfName) googleProfName.textContent = appState.auth?.name || "Google Account";
+    if (googleProfEmail) googleProfEmail.textContent = appState.auth?.email || "Connected";
+  } else {
+    if (googleUnauth) googleUnauth.classList.remove("hidden");
+    if (googleAuth) googleAuth.classList.add("hidden");
+  }
+
   // University (Microsoft Teams) Account Status
   const teamsStatusEl = document.getElementById("account-teams-status");
   const teamsDetailsEl = document.getElementById("account-teams-details");
@@ -1685,6 +2008,22 @@ function openAccountModal() {
     } else {
       teamsDisconnectBtn.classList.add("hidden");
     }
+  }
+
+  // University Student Account View
+  const teamsUnauth = document.getElementById("account-teams-unauth");
+  const teamsAuth = document.getElementById("account-teams-auth");
+  const teamsProfName = document.getElementById("account-teams-profile-name");
+  const teamsProfEmail = document.getElementById("account-teams-profile-email");
+
+  if (isTeamsAuth) {
+    if (teamsUnauth) teamsUnauth.classList.add("hidden");
+    if (teamsAuth) teamsAuth.classList.remove("hidden");
+    if (teamsProfName) teamsProfName.textContent = appState.config?.teams_account_name || "University Account";
+    if (teamsProfEmail) teamsProfEmail.textContent = teamsEmail || "Connected";
+  } else {
+    if (teamsUnauth) teamsUnauth.classList.remove("hidden");
+    if (teamsAuth) teamsAuth.classList.add("hidden");
   }
 
   modal.classList.remove("hidden");
@@ -2336,6 +2675,12 @@ function toggleSidebar(forceCollapse) {
 function initKeyboardShortcuts() {
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
+      const confirmModal = document.getElementById("app-confirm-modal");
+      if (confirmModal?.classList.contains("is-open")) {
+        closeAppConfirm(false);
+        return;
+      }
+
       const palette = document.getElementById("search-dropdown-palette");
       if (palette?.classList.contains("is-open")) {
         closeSearchPalette();
@@ -2629,6 +2974,14 @@ async function loadFullState() {
     renderWeekCalendar();
     loadStudyTasks();
 
+    if (params.get("auth") === "success") {
+      showToast("Signed in and connected successfully!", "success", 4000);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (params.get("auth") === "cancelled") {
+      showToast("Sign-in was cancelled.", "info", 3000);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
     if (demo) {
       closeOnboardingModal();
       if (demo === "onboarding") {
@@ -2789,6 +3142,24 @@ function updateTopBarAndUser() {
   const badgeClass = appState.auth?.authenticated
     ? "text-xs font-semibold px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300"
     : "text-xs font-semibold px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300";
+
+  // Populate First-Time Onboarding Wizard (Step 1 Google Sign-In)
+  const step1Unauth = document.getElementById("onboard-step1-google-unauth");
+  const step1Auth = document.getElementById("onboard-step1-google-auth");
+  const step1Email = document.getElementById("onboard-step1-user-email");
+  const step1NameInput = document.getElementById("onboard-student-name");
+
+  if (isAuth) {
+    if (step1Unauth) step1Unauth.classList.add("hidden");
+    if (step1Auth) step1Auth.classList.remove("hidden");
+    if (step1Email) step1Email.textContent = email;
+    if (step1NameInput && (!step1NameInput.value || step1NameInput.value === "Student")) {
+      step1NameInput.value = name;
+    }
+  } else {
+    if (step1Unauth) step1Unauth.classList.remove("hidden");
+    if (step1Auth) step1Auth.classList.add("hidden");
+  }
 
   // Populate First-Time Onboarding Wizard
   const obName = document.getElementById("onboard-user-name");
@@ -5078,6 +5449,9 @@ function setOnboardingStep(step) {
       nextLabel.textContent = "🚀 Launch My Radar";
     }
   }
+  if (currentOnboardingStep === 2) {
+    renderOnboardingStep2State();
+  }
   if (window.lucide) lucide.createIcons();
 }
 
@@ -5152,49 +5526,106 @@ function renderAllViews() {
 }
 
 function clearAllEnrolledCourses() {
-  if (!confirm("Are you sure you want to remove all enrolled courses from your schedule?")) return;
-  triggerHaptic("medium");
-  if (!appState.schedule) appState.schedule = { courses: [], slots: [], semester: "Fall 2026" };
-  appState.schedule.courses = [];
-  appState.schedule.slots = [];
-  activeCourseFilters.clear();
-  saveStateCache();
-  if (typeof mobileEngine !== "undefined" && mobileEngine) {
-    mobileEngine.state.schedule = appState.schedule;
-    mobileEngine.recomputeDashboard(mobileEngine.state);
-    mobileEngine.saveDatabase();
+  showAppConfirm({
+    title: "Clear Enrolled Courses?",
+    message: "Are you sure you want to remove all enrolled courses and class times from your weekly schedule?",
+    icon: "trash-2",
+    confirmText: "Clear All",
+    isDanger: true,
+    onConfirm: () => {
+      triggerHaptic("medium");
+      if (!appState.schedule) appState.schedule = { courses: [], slots: [], semester: "Fall 2026" };
+      appState.schedule.courses = [];
+      appState.schedule.slots = [];
+      activeCourseFilters.clear();
+      saveStateCache();
+      if (typeof mobileEngine !== "undefined" && mobileEngine) {
+        mobileEngine.state.schedule = appState.schedule;
+        mobileEngine.recomputeDashboard(mobileEngine.state);
+        mobileEngine.saveDatabase();
+      }
+      fetch("/api/schedule/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(appState.schedule)
+      }).catch(() => {});
+      renderAllViews();
+      showToast("All enrolled courses cleared.", "info");
+    }
+  });
+}
+
+function renderOnboardingStep2State() {
+  const isGoogleAuth = !!appState.auth?.authenticated;
+  const isTeamsConnected = !!(appState.teams_connected || (appState.config?.teams_enabled && (appState.config?.teams_token || appState.config?.teams_account_email)));
+  const googleEmail = appState.auth?.email;
+  const teamsEmail = appState.teams_email || appState.config?.teams_account_email || appState.config?.teams_account_name;
+
+  // 1. Google
+  const gUnauth = document.getElementById("onboard-google-unauth");
+  const gAuth = document.getElementById("onboard-google-auth");
+  const gBadge = document.getElementById("onboard-auth-badge");
+  const gName = document.getElementById("onboard-user-name");
+  const gEmail = document.getElementById("onboard-user-email");
+
+  if (isGoogleAuth) {
+    if (gUnauth) gUnauth.classList.add("hidden");
+    if (gAuth) gAuth.classList.remove("hidden");
+    if (gBadge) {
+      gBadge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300";
+      gBadge.textContent = "Connected";
+    }
+    if (gName) gName.textContent = appState.auth?.name || "Google Account";
+    if (gEmail) gEmail.textContent = googleEmail || "Connected";
+  } else {
+    if (gUnauth) gUnauth.classList.remove("hidden");
+    if (gAuth) gAuth.classList.add("hidden");
+    if (gBadge) {
+      gBadge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300";
+      gBadge.textContent = "Not Connected";
+    }
   }
-  fetch("/api/schedule/save", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(appState.schedule)
-  }).catch(() => {});
-  renderAllViews();
-  showToast("All enrolled courses cleared.", "info");
+
+  // 2. University
+  const tUnauth = document.getElementById("onboard-teams-unauth");
+  const tAuth = document.getElementById("onboard-teams-auth");
+  const tBadge = document.getElementById("onboard-teams-badge");
+  const tName = document.getElementById("onboard-teams-name");
+  const tSubtext = document.getElementById("onboard-teams-subtext");
+
+  if (isTeamsConnected) {
+    if (tUnauth) tUnauth.classList.add("hidden");
+    if (tAuth) tAuth.classList.remove("hidden");
+    if (tBadge) {
+      tBadge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300";
+      tBadge.textContent = "Connected";
+    }
+    if (tName) tName.textContent = appState.config?.teams_account_name || "University Account";
+    if (tSubtext) tSubtext.textContent = teamsEmail || "Connected";
+  } else {
+    if (tUnauth) tUnauth.classList.remove("hidden");
+    if (tAuth) tAuth.classList.add("hidden");
+    if (tBadge) {
+      tBadge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300";
+      tBadge.textContent = "Not Connected";
+    }
+  }
+
+  // 3. Classroom
+  const cBadge = document.getElementById("onboard-classroom-badge");
+  if (cBadge) {
+    const isClassroomActive = !!appState.config?.classroom_enabled;
+    cBadge.textContent = isClassroomActive ? "Connected ✓" : "Connect";
+    cBadge.className = isClassroomActive ? "font-bold text-emerald-600 dark:text-emerald-400" : "font-bold underline";
+  }
 }
 
 function handleOnboardGoogleCardClick() {
-  triggerHaptic("light");
-  const emailInput = document.getElementById("onboard-student-email");
-  if (emailInput) {
-    emailInput.scrollIntoView({ behavior: "smooth", block: "center" });
-    emailInput.focus();
-    emailInput.classList.add("ring-2", "ring-[#1a73e8]");
-    setTimeout(() => emailInput.classList.remove("ring-2", "ring-[#1a73e8]"), 1200);
-  }
-  showToast("Enter or confirm your personal Google / Gmail address above.", "info");
+  startGoogleAuth();
 }
 
 function handleOnboardTeamsCardClick() {
-  triggerHaptic("light");
-  const uniInput = document.getElementById("onboard-university-email");
-  if (uniInput) {
-    uniInput.scrollIntoView({ behavior: "smooth", block: "center" });
-    uniInput.focus();
-    uniInput.classList.add("ring-2", "ring-indigo-500");
-    setTimeout(() => uniInput.classList.remove("ring-2", "ring-indigo-500"), 1200);
-  }
-  showToast("Enter or confirm your university student email (Microsoft Teams) above.", "info");
+  startMicrosoftAuth();
 }
 
 async function handleOnboardClassroomCardClick() {
@@ -5208,12 +5639,11 @@ async function handleOnboardClassroomCardClick() {
   }
   saveStateCache();
   updateTopBarAndUser();
+  renderOnboardingStep2State();
 }
 
 function handleOnboardMoodleCardClick() {
-  triggerHaptic("light");
-  openSettingsModal();
-  showToast("Configure Moodle LMS iCal or token in Settings.", "info");
+  showToast("Moodle integration is currently disabled.", "info");
 }
 
 function renderOnboardingCourses() {
@@ -5667,29 +6097,34 @@ async function confirmDeleteCourse(courseId, courseName, event) {
     event.stopPropagation();
     event.preventDefault();
   }
-  if (!confirm(`Are you sure you want to remove ${courseId} (${courseName}) and all its weekly classes?`)) {
-    return;
-  }
-
-  try {
-    const res = await fetch(`/api/schedule/courses/${encodeURIComponent(courseId)}`, {
-      method: "DELETE",
-    });
-    const data = await res.json();
-    if (data.success) {
-      appState.schedule = data.schedule;
-      if (data.assessments) appState.assessments = data.assessments;
-      activeCourseFilters.delete(courseId);
-      saveStateCache();
-      renderAllViews();
-      showToast(`Course ${courseId} removed.`);
-    } else {
-      showToast(data.error || "Failed to remove course.");
+  showAppConfirm({
+    title: `Remove ${courseId}?`,
+    message: `Are you sure you want to remove ${courseId} (${courseName}) and all its weekly classes from your schedule?`,
+    icon: "trash-2",
+    confirmText: "Remove Course",
+    isDanger: true,
+    onConfirm: async () => {
+      try {
+        const res = await fetch(`/api/schedule/courses/${encodeURIComponent(courseId)}`, {
+          method: "DELETE",
+        });
+        const data = await res.json();
+        if (data.success) {
+          appState.schedule = data.schedule;
+          if (data.assessments) appState.assessments = data.assessments;
+          activeCourseFilters.delete(courseId);
+          saveStateCache();
+          renderAllViews();
+          showToast(`Course ${courseId} removed.`);
+        } else {
+          showToast(data.error || "Failed to remove course.");
+        }
+      } catch (err) {
+        console.error(err);
+        showToast("Network error while removing course.");
+      }
     }
-  } catch (err) {
-    console.error(err);
-    showToast("Network error while removing course.");
-  }
+  });
 }
 
 function openSettingsModal() {
@@ -5706,6 +6141,7 @@ function openSettingsModal() {
   const modal = document.getElementById("settings-modal");
   if (!modal) return;
   modal.classList.remove("hidden");
+  modal.classList.add("flex");
   void modal.offsetHeight;
   requestAnimationFrame(() => {
     modal.classList.add("is-open");
@@ -5757,7 +6193,6 @@ function closeSettingsModal() {
   modal.classList.remove("is-open");
   setTimeout(() => {
     if (!modal.classList.contains("is-open")) {
-      modal.classList.remove("flex");
       modal.classList.add("hidden");
     }
   }, 250);

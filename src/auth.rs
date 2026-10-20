@@ -195,8 +195,12 @@ pub fn build_google_oauth_url(port: u16, include_calendar: bool) -> String {
     scopes.push("https://www.googleapis.com/auth/drive.appdata");
     let scope_str = scopes.join(" ");
 
+    // `select_account` forces Google to show the account chooser every time,
+    // so the user explicitly picks the right account (e.g. the university
+    // Workspace account) instead of Google silently reusing the last-used
+    // (personal) account.
     format!(
-        "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&scope={}&access_type=offline&prompt=consent&include_granted_scopes=true",
+        "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&scope={}&access_type=offline&prompt=consent%20select_account&include_granted_scopes=true",
         crate::urlencoding::encode(&creds.client_id),
         crate::urlencoding::encode(&redirect_uri),
         crate::urlencoding::encode(&scope_str)

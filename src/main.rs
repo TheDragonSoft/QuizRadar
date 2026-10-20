@@ -14,8 +14,9 @@ pub mod updater;
 
 use axum::{
     body::Bytes,
-    extract::{Path, Query, State},
+    extract::{Path, Query, Request, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
+    middleware::Next,
     response::{Html, IntoResponse, Redirect, Response},
     routing::{delete, get, post},
     Json, Router,
@@ -83,11 +84,175 @@ impl Drop for InFlightGuard {
     }
 }
 
+/// Per-launch random session token. The desktop webview loads the UI with this
+/// token (as a query param, then persisted as a cookie); every other client —
+/// e.g. someone typing `http://localhost:5050/` into a browser — gets a
+/// "private interface" page instead of the app UI. Entropy comes from the OS
+/// (RandomState seeds) mixed with process id + startup time.
+fn generate_session_token() -> String {
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hash, Hasher};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+
+    let mut h1 = RandomState::new().build_hasher();
+    nanos.hash(&mut h1);
+    std::process::id().hash(&mut h1);
+    let seed = h1.finish();
+
+    let mut h2 = RandomState::new().build_hasher();
+    seed.hash(&mut h2);
+    nanos.hash(&mut h2);
+    std::process::id().hash(&mut h2);
+
+    format!("kr{:016x}{:016x}", seed, h2.finish())
+}
+
+const SESSION_COOKIE: &str = "kr_session";
+const SESSION_QUERY_KEY: &str = "kr_session";
+
+/// Paths consumed by the *external system browser* during OAuth sign-in (no
+/// app session token available). They only redirect to Google/Microsoft or
+/// exchange the authorization code — they never serve app UI or app data.
+const TOKENLESS_OAUTH_PATHS: [&str; 5] = [
+    "/api/auth/callback",
+    "/api/auth/microsoft/callback",
+    "/api/auth/google",
+    "/api/auth/google/login",
+    "/api/microsoft/login",
+];
+
+fn extract_session_token(req: &Request) -> Option<String> {
+    if let Some(query) = req.uri().query() {
+        for pair in query.split('&') {
+            if let Some(val) = pair.strip_prefix(SESSION_QUERY_KEY) {
+                let val = val.strip_prefix('=').unwrap_or(val);
+                if !val.is_empty() {
+                    return Some(val.to_string());
+                }
+            }
+        }
+    }
+    let cookies = req
+        .headers()
+        .get(header::COOKIE)?
+        .to_str()
+        .ok()?
+        .to_string();
+    for part in cookies.split(';') {
+        let part = part.trim();
+        if let Some(val) = part.strip_prefix(SESSION_COOKIE) {
+            let val = val.strip_prefix('=').unwrap_or(val);
+            if !val.is_empty() {
+                return Some(val.to_string());
+            }
+        }
+    }
+    None
+}
+
+const UI_BLOCK_PAGE: &str = r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QuizRadar — Private Desktop Interface</title>
+  <style>
+    body { background: #0b0f19; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+    .card { background: #131927; border: 1px solid #1e293b; border-radius: 16px; padding: 28px; max-width: 440px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; }
+    .icon { width: 52px; height: 52px; border-radius: 14px; background: rgba(26,115,232,0.15); color: #60a5fa; display: inline-flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 16px; }
+    h2 { font-size: 19px; margin: 0 0 8px 0; color: #ffffff; font-weight: 700; }
+    p { font-size: 13px; color: #94a3b8; line-height: 1.5; margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">🔒</div>
+    <h2>Private Desktop Interface</h2>
+    <p>This address hosts the internal interface of the QuizRadar desktop app and is not accessible from a browser. Please launch the QuizRadar desktop application instead.</p>
+  </div>
+</body>
+</html>"#;
+
+/// Writable per-user application data directory (%LOCALAPPDATA%\QuizRadar).
+/// Used when the install directory (e.g. "Program Files" for all-users
+/// installs) is read-only for the current user.
+fn per_user_data_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os("LOCALAPPDATA")
+        .map(std::path::PathBuf::from)
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(|p| p.join("QuizRadar"))
+}
+
+fn is_dir_writable(dir: &std::path::Path) -> bool {
+    let probe = dir.join(".qr_write_test");
+    match fs::write(&probe, b"ok") {
+        Ok(_) => {
+            let _ = fs::remove_file(&probe);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+/// Directory containing the bundled static assets. Prefers the current
+/// directory (dev workspace / per-user installs); falls back to the directory
+/// next to the executable (all-users installs where the working directory was
+/// redirected to %LOCALAPPDATA%).
+fn static_root() -> std::path::PathBuf {
+    if std::path::Path::new("static/index.html").exists() {
+        return std::path::PathBuf::from("static");
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let exe_static = dir.join("static");
+            if exe_static.join("index.html").exists() {
+                return exe_static;
+            }
+        }
+    }
+    std::path::PathBuf::from("static")
+}
+
+fn resolve_asset_path(path: &str) -> std::path::PathBuf {
+    if let Some(rest) = path.strip_prefix("static/") {
+        return static_root().join(rest);
+    }
+    std::path::PathBuf::from(path)
+}
+
+/// Named mutex so the Inno Setup installer (AppMutex=QuizRadarAppMutex) can
+/// detect a running instance and ask the user to close it before
+/// installing/upgrading/uninstalling — otherwise uninstall cannot remove
+/// locked files. The handle is intentionally held for the process lifetime.
+#[cfg(windows)]
+fn create_app_mutex() {
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn CreateMutexW(
+            lp_mutex_attributes: *mut core::ffi::c_void,
+            b_initial_owner: i32,
+            lp_name: *const u16,
+        ) -> *mut core::ffi::c_void;
+    }
+    let name: Vec<u16> = "QuizRadarAppMutex\0".encode_utf16().collect();
+    unsafe {
+        CreateMutexW(std::ptr::null_mut(), 1, name.as_ptr());
+    }
+}
+
 fn main() {
     std::panic::set_hook(Box::new(|info| {
         let msg = format!("PANIC: {}\n", info);
         let _ = std::fs::write("panic.log", msg);
     }));
+
+    #[cfg(windows)]
+    create_app_mutex();
 
     if !std::path::Path::new("Cargo.toml").exists() {
         if let Ok(exe_path) = std::env::current_exe() {
@@ -106,8 +271,21 @@ fn main() {
     }
     let _ = fs::create_dir_all("data");
 
+    // All-users installs land in "Program Files", where the install directory
+    // is read-only for standard users. Redirect the working directory to a
+    // writable per-user location so runtime data (data/, token.json, caches)
+    // can persist. Static assets keep resolving via static_root().
+    if !is_dir_writable(std::path::Path::new(".")) {
+        if let Some(data_dir) = per_user_data_dir() {
+            if fs::create_dir_all(&data_dir).is_ok() {
+                let _ = std::env::set_current_dir(&data_dir);
+                let _ = fs::create_dir_all("data");
+            }
+        }
+    }
+
     let headless = std::env::args().any(|a| a == "--headless" || a == "--server");
-    let (port_tx, port_rx) = mpsc::channel::<u16>();
+    let (port_tx, port_rx) = mpsc::channel::<(u16, String)>();
 
     let server_handle = std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_multi_thread()
@@ -117,27 +295,37 @@ fn main() {
         rt.block_on(run_backend_server(port_tx));
     });
 
-    let selected_port = port_rx.recv().unwrap_or(5000);
+    let (selected_port, session_token) = port_rx
+        .recv()
+        .unwrap_or_else(|_| (5000, generate_session_token()));
 
     if headless {
+        eprintln!(
+            "QuizRadar server running (headless): http://127.0.0.1:{}/?{}={}",
+            selected_port, SESSION_QUERY_KEY, session_token
+        );
+        eprintln!("This tokened URL is required to access the app interface from HTTP clients.");
         let _ = server_handle.join();
         return;
     }
 
     #[cfg(any(windows, target_os = "macos"))]
     {
-        run_native_desktop_window(selected_port);
+        run_native_desktop_window(selected_port, &session_token);
     }
 
     #[cfg(not(any(windows, target_os = "macos")))]
     {
-        let _ = open::that(format!("http://127.0.0.1:{}", selected_port));
+        let _ = open::that(format!(
+            "http://127.0.0.1:{}/?{}={}",
+            selected_port, SESSION_QUERY_KEY, session_token
+        ));
         let _ = server_handle.join();
     }
 }
 
 #[cfg(any(windows, target_os = "macos"))]
-fn run_native_desktop_window(port: u16) {
+fn run_native_desktop_window(port: u16, session_token: &str) {
     use tao::{
         dpi::LogicalSize,
         event::{Event, WindowEvent},
@@ -162,9 +350,23 @@ fn run_native_desktop_window(port: u16) {
     window.set_visible(true);
     window.set_focus();
 
-    let app_url = format!("http://127.0.0.1:{}", port);
+    let app_url = format!(
+        "http://127.0.0.1:{}/?{}={}",
+        port, SESSION_QUERY_KEY, session_token
+    );
 
-    let webview = WebViewBuilder::new()
+    // WebView2's default user-data folder is created next to the executable —
+    // which fails under "Program Files" (all-users installs) and crashes at
+    // startup. Pin it to a writable per-user directory instead.
+    let webview_data_dir = per_user_data_dir()
+        .map(|p| p.join("WebView2"))
+        .unwrap_or_else(|| {
+            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+        });
+    let _ = fs::create_dir_all(&webview_data_dir);
+    let mut web_context = wry::WebContext::new(Some(webview_data_dir));
+
+    let webview = WebViewBuilder::with_web_context(&mut web_context)
         .with_url(&app_url)
         .with_user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         .with_new_window_req_handler(|url| {
@@ -191,7 +393,7 @@ fn run_native_desktop_window(port: u16) {
     });
 }
 
-async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
+async fn run_backend_server(port_tx: mpsc::Sender<(u16, String)>) {
     let ports = [5050, 5000, 3000, 8080, 5150, 5250, 0];
     let mut selected_port = 5050;
     let mut listener = None;
@@ -215,7 +417,8 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
     }
 
     let listener = listener.expect("Could not bind local server socket");
-    let _ = port_tx.send(selected_port);
+    let session_token = generate_session_token();
+    let _ = port_tx.send((selected_port, session_token.clone()));
 
     let config = load_app_config();
     let schedule = parser::load_schedule();
@@ -374,8 +577,8 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
         .route("/manifest.json", get(serve_manifest))
         .route("/sw.js", get(serve_sw_js))
         .route("/styles.css", get(serve_styles_css))
-        .nest_service("/static", ServeDir::new("static"))
-        .fallback_service(ServeDir::new("static"))
+        .nest_service("/static", ServeDir::new(static_root()))
+        .fallback_service(ServeDir::new(static_root()))
         .layer(if expose_lan {
             CorsLayer::permissive()
         } else {
@@ -394,6 +597,55 @@ async fn run_backend_server(port_tx: mpsc::Sender<u16>) {
                 ])
                 .allow_headers([header::CONTENT_TYPE])
         })
+        .layer(axum::middleware::from_fn(
+            move |req: Request, next: Next| {
+                let token = session_token.clone();
+                async move {
+                    // LAN pairing mode is an explicit opt-in for the Android
+                    // companion app; keep it fully open as before.
+                    if expose_lan {
+                        return next.run(req).await;
+                    }
+
+                    let via_query = req
+                        .uri()
+                        .query()
+                        .map(|q| {
+                            q.split('&')
+                                .any(|kv| kv == format!("{}={}", SESSION_QUERY_KEY, token))
+                        })
+                        .unwrap_or(false);
+
+                    match extract_session_token(&req) {
+                        Some(provided) if provided == token => {
+                            let mut res = next.run(req).await;
+                            if via_query {
+                                // Persist the token so every subsequent
+                                // same-origin fetch/script request carries it.
+                                if let Ok(val) = HeaderValue::from_str(&format!(
+                                    "{}={}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400",
+                                    SESSION_COOKIE, token
+                                )) {
+                                    res.headers_mut().append(header::SET_COOKIE, val);
+                                }
+                            }
+                            res
+                        }
+                        // OAuth entry/callback endpoints are consumed by the
+                        // external system browser and serve no app UI/data.
+                        _ if TOKENLESS_OAUTH_PATHS.contains(&req.uri().path()) => {
+                            next.run(req).await
+                        }
+                        _ => (
+                            StatusCode::FORBIDDEN,
+                            [("Cache-Control", "no-store")],
+                            Html(UI_BLOCK_PAGE),
+                        )
+                            .into_response(),
+                    }
+                }
+            },
+        ))
         .with_state(state);
 
     axum::serve(listener, app).await.unwrap();
@@ -430,7 +682,7 @@ fn cached_asset(
     fallback: &'static [u8],
 ) -> &'static CachedAsset {
     slot.get_or_init(|| {
-        let content = fs::read(path)
+        let content = fs::read(resolve_asset_path(path))
             .map(Bytes::from)
             .unwrap_or_else(|_| Bytes::from_static(fallback));
         let etag = fnv1a_etag(&content);
@@ -445,7 +697,7 @@ fn cached_disk_asset(
     if let Some(asset) = slot.get() {
         return Some(asset);
     }
-    let content = Bytes::from(fs::read(path).ok()?);
+    let content = Bytes::from(fs::read(resolve_asset_path(path)).ok()?);
     let etag = fnv1a_etag(&content);
     let _ = slot.set(CachedAsset { content, etag });
     slot.get()
@@ -680,7 +932,40 @@ async fn google_oauth_callback(
                 // Automatically scan Gmail and sync on sign-in
                 spawn_sync_pipeline(state.clone(), true);
 
-                return Redirect::temporary("/?auth=success").into_response();
+                // Never redirect the external browser into the app UI. Show a
+                // standalone confirmation card instead; the desktop app detects
+                // the sign-in via /api/state polling.
+                let html = r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QuizRadar — Google Sign-In Successful</title>
+  <style>
+    body { background: #0b0f19; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+    .card { background: #131927; border: 1px solid #1e293b; border-radius: 16px; padding: 28px; max-width: 440px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; }
+    .icon { width: 52px; height: 52px; border-radius: 14px; background: rgba(16,185,129,0.15); color: #34d399; display: inline-flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 16px; }
+    h2 { font-size: 19px; margin: 0 0 8px 0; color: #ffffff; font-weight: 700; }
+    p { font-size: 13px; color: #94a3b8; line-height: 1.5; margin: 0 0 20px 0; word-break: break-word; }
+    .btn { display: inline-block; background: #1a73e8; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 600; padding: 11px 22px; border-radius: 10px; cursor: pointer; border: none; transition: background 0.2s; }
+    .btn:hover { background: #1557b0; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">✅</div>
+    <h2>Google Account Connected!</h2>
+    <p>You are signed in. You can close this tab and return to the QuizRadar app — your account, email, and calendar will sync automatically.</p>
+    <button class="btn" onclick="window.close();">Return to QuizRadar</button>
+  </div>
+  <script>
+    setTimeout(function() {
+      try { window.close(); } catch(e) {}
+    }, 1500);
+  </script>
+</body>
+</html>"#;
+                return Html(html).into_response();
             }
             Err(err) => {
                 let html = format!(
@@ -696,7 +981,7 @@ async fn google_oauth_callback(
     .icon {{ width: 48px; height: 48px; border-radius: 12px; background: rgba(239,68,68,0.15); color: #ef4444; display: inline-flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 16px; }}
     h2 {{ font-size: 18px; margin: 0 0 8px 0; color: #ffffff; }}
     p {{ font-size: 13px; color: #94a3b8; line-height: 1.5; margin: 0 0 20px 0; word-break: break-word; }}
-    .btn {{ display: inline-block; background: #1a73e8; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 600; padding: 10px 20px; border-radius: 10px; transition: background 0.2s; }}
+    .btn {{ display: inline-block; background: #1a73e8; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 600; padding: 10px 20px; border-radius: 10px; transition: background 0.2s; cursor: pointer; border: none; }}
     .btn:hover {{ background: #1557b0; }}
   </style>
 </head>
@@ -705,7 +990,7 @@ async fn google_oauth_callback(
     <div class="icon">⚠️</div>
     <h2>Google Sign-In Error</h2>
     <p>{}</p>
-    <a href="/" class="btn">Return to QuizRadar</a>
+    <button class="btn" onclick="window.close();">Return to QuizRadar</button>
   </div>
 </body>
 </html>"#,
@@ -715,7 +1000,37 @@ async fn google_oauth_callback(
             }
         }
     }
-    Redirect::temporary("/?auth=cancelled").into_response()
+    let cancelled_html = r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QuizRadar — Google Sign-In Cancelled</title>
+  <style>
+    body { background: #0b0f19; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+    .card { background: #131927; border: 1px solid #1e293b; border-radius: 16px; padding: 28px; max-width: 440px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; }
+    .icon { width: 48px; height: 48px; border-radius: 12px; background: rgba(148,163,184,0.15); color: #94a3b8; display: inline-flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 16px; }
+    h2 { font-size: 18px; margin: 0 0 8px 0; color: #ffffff; }
+    p { font-size: 13px; color: #94a3b8; line-height: 1.5; margin: 0 0 20px 0; }
+    .btn { display: inline-block; background: #1a73e8; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 600; padding: 10px 20px; border-radius: 10px; transition: background 0.2s; cursor: pointer; border: none; }
+    .btn:hover { background: #1557b0; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">⏹️</div>
+    <h2>Sign-In Cancelled</h2>
+    <p>No account was connected. You can close this tab and try again from the QuizRadar app.</p>
+    <button class="btn" onclick="window.close();">Return to QuizRadar</button>
+  </div>
+  <script>
+    setTimeout(function() {
+      try { window.close(); } catch(e) {}
+    }, 2500);
+  </script>
+</body>
+</html>"#;
+    Html(cancelled_html).into_response()
 }
 
 async fn google_logout(State(state): State<SharedAppState>) -> Json<Value> {

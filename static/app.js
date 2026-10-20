@@ -539,7 +539,7 @@ class QuizRadarAutonomousEngine {
         "&redirect_uri=" + encodeURIComponent(redirectUri) +
         "&response_type=code" +
         "&scope=" + encodeURIComponent(scopes) +
-        "&access_type=offline&prompt=consent&include_granted_scopes=true";
+        "&access_type=offline&prompt=consent%20select_account&include_granted_scopes=true";
       return { ok: true, status: 200, data: { url: googleAuthUrl } };
     }
 
@@ -552,7 +552,8 @@ class QuizRadarAutonomousEngine {
         "&response_type=code" +
         "&redirect_uri=" + encodeURIComponent(redirectUri) +
         "&response_mode=query" +
-        "&scope=" + encodeURIComponent(scopes);
+        "&scope=" + encodeURIComponent(scopes) +
+        "&prompt=select_account";
       return { ok: true, status: 200, data: { url: msAuthUrl } };
     }
 

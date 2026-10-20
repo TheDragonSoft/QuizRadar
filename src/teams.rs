@@ -346,8 +346,11 @@ pub fn build_microsoft_oauth_url(port: u16, client_id: Option<&str>) -> String {
     let redirect_uri = format!("http://localhost:{}/api/auth/microsoft/callback", port);
     let scopes = "offline_access User.Read Mail.Read Calendars.Read";
 
+    // `prompt=select_account` forces the Microsoft account picker so the user
+    // explicitly chooses the university account (MS identity platform accepts
+    // a single prompt value, unlike Google's space-separated list).
     format!(
-        "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id={}&response_type=code&redirect_uri={}&response_mode=query&scope={}",
+        "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id={}&response_type=code&redirect_uri={}&response_mode=query&scope={}&prompt=select_account",
         crate::urlencoding::encode(cid),
         crate::urlencoding::encode(&redirect_uri),
         crate::urlencoding::encode(scopes)

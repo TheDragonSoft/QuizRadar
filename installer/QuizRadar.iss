@@ -24,6 +24,9 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
+; Detect a running QuizRadar instance (named mutex created by the app) and ask
+; the user to close it — otherwise uninstall cannot remove locked files.
+AppMutex=QuizRadarAppMutex
 OutputDir=..\dist
 OutputBaseFilename=QuizRadar-Setup-v{#MyAppVersion}-x64
 SetupIconFile=..\assets\icon.ico
@@ -36,6 +39,14 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName}
+
+; Remove runtime-generated files too (user data, tokens, logs, caches):
+; the app writes these next to the exe (per-user installs) or into
+; %LOCALAPPDATA%\QuizRadar (all-users installs). Without this, uninstall
+; leaves data behind in AppData\Local\Programs.
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}"
+Type: filesandordirs; Name: "{localappdata}\QuizRadar"
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

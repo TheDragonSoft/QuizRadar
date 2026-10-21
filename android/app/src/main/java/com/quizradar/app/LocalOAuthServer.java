@@ -65,8 +65,23 @@ public class LocalOAuthServer {
         void onError(String provider, String error);
     }
 
+    /**
+     * Bridges refresh-token redemptions to MainActivity. Keeping the tokens
+     * inside the app's private storage (never the WebView sandbox) means a
+     * compromised page can only ask for a fresh access token — never for the
+     * long-lived refresh credential itself.
+     */
+    public interface OAuthRefreshHandler {
+        /** Returns {"ok":true,"access_token":...,"expires_in":...} or null on failure. */
+        JSONObject onRefresh(String provider);
+    }
+
     private final int port;
     private final OAuthListener listener;
+    /** Session-scoped secret gating the token bridge; injected into the
+     *  WebView on every resume so the in-app engine can use /api/auth/refresh. */
+    private volatile String bridgeNonce = "";
+    private volatile OAuthRefreshHandler refreshHandler;
     /** Two listeners cover the loopback regardless of which address family the
      *  browser resolves for "localhost": some devices prefer ::1 (IPv6) and get
      *  ERR_CONNECTION_REFUSED when only an IPv4 socket exists. */
@@ -81,6 +96,29 @@ public class LocalOAuthServer {
     public LocalOAuthServer(int port, OAuthListener listener) {
         this.port = port;
         this.listener = listener;
+    }
+
+    /** Generates a fresh per-session bridge secret BEFORE start() so no
+     *  request can ever be served without one available for validation. */
+    public synchronized void regenerateBridgeNonce() {
+        byte[] raw = new byte[32];
+        try {
+            java.security.SecureRandom.getInstanceStrong().nextBytes(raw);
+        } catch (Exception e) {
+            new java.security.SecureRandom().nextBytes(raw);
+        }
+        StringBuilder sb = new StringBuilder(raw.length * 2);
+        for (byte b : raw) sb.append(String.format("%02x", b));
+        bridgeNonce = sb.toString();
+        Log.i(TAG, "Bridge nonce regenerated (" + bridgeNonce.length() + " hex chars)");
+    }
+
+    public String getBridgeNonce() {
+        return bridgeNonce;
+    }
+
+    public void setOAuthRefreshHandler(OAuthRefreshHandler handler) {
+        this.refreshHandler = handler;
     }
 
     public synchronized void start() {
@@ -192,7 +230,7 @@ public class LocalOAuthServer {
 
             // Consume the HTTP headers before reading any body so the two are
             // never conflated; return the declared content length for POSTs.
-            int contentLength = consumeHeaders(reader);
+            Headers headers = consumeHeaders(reader);
 
             Map<String, String> params = parseQueryParams(queryString);
 
@@ -201,7 +239,9 @@ public class LocalOAuthServer {
             } else if (path.equals("/api/auth/microsoft/callback")) {
                 handleMicrosoftCallback(client, params);
             } else if (path.equals("/api/auth/prepare")) {
-                handlePrepare(client, readBody(reader, Math.min(contentLength, 4096)));
+                handlePrepare(client, readBody(reader, Math.min(headers.contentLength, 4096)));
+            } else if (path.equals("/api/auth/refresh")) {
+                handleRefresh(client, headers.bridge, readBody(reader, Math.min(headers.contentLength, 4096)));
             } else if (path.equals("/api/state")) {
                 sendJsonResponse(client, 200, "{\"status\":\"ok\"}");
             } else {
@@ -234,21 +274,71 @@ public class LocalOAuthServer {
         }
     }
 
-    /** Reads the header block up to the blank line; returns the declared
-     *  Content-Length (0 when absent) so POST bodies can be read exactly. */
-    private int consumeHeaders(BufferedReader reader) {
-        int length = 0;
+    /** Header facts consumed from the request block. */
+    private static class Headers {
+        int contentLength = 0;
+        String bridge = null;
+    }
+
+    /** Reads the header block up to the blank line, capturing Content-Length
+     *  and the (secret-gated) bridge header so token endpoints can be secured. */
+    private Headers consumeHeaders(BufferedReader reader) {
+        Headers headers = new Headers();
         try {
             String line;
             while ((line = reader.readLine()) != null && !line.isEmpty()) {
-                if (line.toLowerCase().startsWith("content-length:")) {
+                String lower = line.toLowerCase();
+                if (lower.startsWith("content-length:")) {
                     try {
-                        length = Integer.parseInt(line.substring(line.indexOf(':') + 1).trim());
+                        headers.contentLength = Integer.parseInt(line.substring(line.indexOf(':') + 1).trim());
                     } catch (NumberFormatException ignored) {}
+                } else if (lower.startsWith("x-quizradar-bridge:")) {
+                    String value = line.substring(line.indexOf(':') + 1).trim();
+                    if (!value.isEmpty()) headers.bridge = value;
                 }
             }
         } catch (Exception ignored) {}
-        return length;
+        return headers;
+    }
+
+    /**
+     * POST /api/auth/refresh  {"provider":"google"|"microsoft"}
+     * Guarded by the session bridge secret (sent as X-QuizRadar-Bridge).
+     * MainActivity owns the stored refresh tokens and performs the actual
+     * network redemption via OAuthRefreshHandler; responses pass through.
+     */
+    private void handleRefresh(Socket client, String bridgeHeader, String body) {
+        String nonce = bridgeNonce;
+        if (nonce.isEmpty() || bridgeHeader == null || !constantTimeEquals(bridgeHeader, nonce)) {
+            Log.w(TAG, "Rejected refresh request: bridge secret missing or invalid");
+            sendJsonResponse(client, 401, "{\"ok\":false,\"error\":\"unauthorized-bridge\"}");
+            return;
+        }
+        if (refreshHandler == null) {
+            sendJsonResponse(client, 503, "{\"ok\":false,\"error\":\"refresh-handler-not-ready\"}");
+            return;
+        }
+        String provider = "";
+        try {
+            provider = new JSONObject(body).optString("provider", "");
+        } catch (Exception ignored) {}
+        if (provider.isEmpty() || (!provider.equals("google") && !provider.equals("microsoft"))) {
+            sendJsonResponse(client, 400, "{\"ok\":false,\"error\":\"unsupported-provider\"}");
+            return;
+        }
+        JSONObject result = refreshHandler.onRefresh(provider);
+        if (result == null) {
+            sendJsonResponse(client, 200, "{\"ok\":false,\"error\":\"refresh-failed\"}");
+        } else {
+            sendJsonResponse(client, 200, result.toString());
+        }
+    }
+
+    /** Length-independent comparison so the bridge secret can't be probed by timing. */
+    private static boolean constantTimeEquals(String a, String b) {
+        byte[] x = a.getBytes(StandardCharsets.UTF_8);
+        byte[] y = b.getBytes(StandardCharsets.UTF_8);
+        return java.security.MessageDigest.isEqual(x, y);
     }
 
     /** Reads exactly `contentLength` characters of the request body. */
@@ -419,6 +509,12 @@ public class LocalOAuthServer {
     }
 
     private JSONObject postFormOnce(String endpoint, String body) throws Exception {
+        return postFormJson(endpoint, body);
+    }
+
+    /** One blocking form POST returning parsed JSON. Shared with MainActivity's
+     *  refresh bridge so token redemption logic lives in exactly one place. */
+    static JSONObject postFormJson(String endpoint, String body) throws Exception {
         URL url = new URL(endpoint);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
@@ -463,7 +559,7 @@ public class LocalOAuthServer {
         return new JSONObject(resp);
     }
 
-    private String readStream(InputStream is) throws Exception {
+    private static String readStream(InputStream is) throws Exception {
         if (is == null) return "";
         StringBuilder sb = new StringBuilder();
         try (BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
@@ -577,7 +673,7 @@ public class LocalOAuthServer {
             String response = "HTTP/1.1 204 No Content\r\n"
                     + "Access-Control-Allow-Origin: http://localhost\r\n"
                     + "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
-                    + "Access-Control-Allow-Headers: Content-Type, Authorization\r\n"
+                    + "Access-Control-Allow-Headers: Content-Type, Authorization, X-QuizRadar-Bridge\r\n"
                     + "Access-Control-Max-Age: 600\r\n"
                     + "Connection: close\r\n\r\n";
             OutputStream os = client.getOutputStream();

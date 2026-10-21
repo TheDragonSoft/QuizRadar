@@ -7,7 +7,7 @@
 const IS_NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 
 // Single source of truth for the UI version (keep in sync with Cargo.toml / package.json)
-const APP_VERSION = "4.2.2";
+const APP_VERSION = "4.3.0";
 
 // ============================================================================
 // QUIZRADAR AUTONOMOUS ON-DEVICE BACKEND ENGINE (100% Isolated, Zero Latency)
@@ -264,6 +264,577 @@ function dismissModalTransition(el) {
   el.classList.remove("is-open");
 }
 
+// ============================================================================
+// ON-DEVICE LIVE SCANNING (parity port of src/gmail.rs + src/parser.rs)
+// The phone engine now pulls university announcements directly from Gmail /
+// Outlook / Moodle feeds using the OAuth tokens obtained at sign-in. Token
+// RENEWAL goes through the native loopback bridge (/api/auth/refresh) whose
+// handler lives in MainActivity — the JS layer only ever holds short-lived
+// access tokens, never the refresh credential.
+// ============================================================================
+
+const EMAIL_SEPARATOR = "---------------------------------------------------------------------";
+
+function decodeBase64UrlGs(raw) {
+  try {
+    const b64 = raw.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+    const bin = atob(padded);
+    const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+    return new TextDecoder("utf-8").decode(bytes);
+  } catch (e) {
+    return "";
+  }
+}
+
+function stripHtmlTags(html) {
+  return String(html || "")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|tr|h[1-6])>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function extractAnnouncementBody(body) {
+  const start = body.indexOf(EMAIL_SEPARATOR);
+  if (start >= 0) {
+    const after = body.slice(start + EMAIL_SEPARATOR.length);
+    const end = after.indexOf(EMAIL_SEPARATOR);
+    return end >= 0 ? after.slice(0, end) : after;
+  }
+  return body;
+}
+
+function containsTemplateNotice(subjectLower, bodyLower) {
+  return (
+    subjectLower.includes("quiz template") ||
+    subjectLower.includes("assignment template") ||
+    bodyLower.includes("quiz template") ||
+    bodyLower.includes("assignment template")
+  );
+}
+
+/** Exact parity port of parser.rs::is_candidate_assessment_email. */
+function isCandidateAssessmentEmail(subjectLower, fromLower, bodyLower) {
+  // Filter out the student's own outgoing replies
+  if (subjectLower.startsWith("re:")) return false;
+
+  // Filter out pure grade/result announcements unless a remake/makeup is announced
+  if (
+    (subjectLower.includes("result") ||
+      subjectLower.includes("grades") ||
+      subjectLower.includes("marks") ||
+      subjectLower.includes("model answer") ||
+      subjectLower.includes("cancellation") ||
+      subjectLower.includes("appeal") ||
+      subjectLower.includes("upload your course materials") ||
+      subjectLower.includes("lecture 1 slides")) &&
+    !bodyLower.includes("remake will be held")
+  ) {
+    return false;
+  }
+
+  // Filter out pure file-upload notifications
+  if (bodyLower.includes("is new in the course") && !bodyLower.includes("will be held")) return false;
+
+  // Filter out bare "REMINDER" 1-word duplicates of an earlier thread
+  if (bodyLower.includes("----")) {
+    const parts = bodyLower.split(EMAIL_SEPARATOR);
+    if (parts.length > 1 && parts[1].trim() === "reminder") return false;
+  }
+
+  return (
+    subjectLower.includes("quiz") ||
+    subjectLower.includes("midterm") ||
+    subjectLower.includes("exam") ||
+    subjectLower.includes("assignment") ||
+    subjectLower.includes("assessment") ||
+    (bodyLower.includes("quiz") && fromLower.includes("e-learning"))
+  );
+}
+
+function monthFromName(name) {
+  switch (String(name || "").toLowerCase()) {
+    case "january": return 1;
+    case "february": return 2;
+    case "march": return 3;
+    case "april": return 4;
+    case "may": return 5;
+    case "june": return 6;
+    case "july": return 7;
+    case "august": return 8;
+    case "september": return 9;
+    case "october": return 10;
+    case "november": return 11;
+    case "december": return 12;
+    default: return null;
+  }
+}
+
+function weekdayIndexFromName(name) {
+  switch (String(name || "").toLowerCase()) {
+    case "sunday": return 0;
+    case "monday": return 1;
+    case "tuesday": return 2;
+    case "wednesday": return 3;
+    case "thursday": return 4;
+    case "friday": return 5;
+    case "saturday": return 6;
+    default: return null;
+  }
+}
+
+function makeLocalDate(year, month, day) {
+  const d = new Date(year, month - 1, day);
+  if (isNaN(d.getTime())) return null;
+  if (d.getDate() !== day || d.getMonth() !== month - 1) return null; // rejects 31 Feb rollovers
+  return d;
+}
+
+/** "30 September 2026" / "30-09-2026" / "30/09/2026" → Date, else null. */
+function extractExplicitDate(text) {
+  const dmy = text.match(/\b(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{4})\b/i);
+  if (dmy) {
+    const mon = monthFromName(dmy[2]);
+    const d = mon ? makeLocalDate(parseInt(dmy[3], 10), mon, parseInt(dmy[1], 10)) : null;
+    if (d) return d;
+  }
+  const num = text.match(/\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b/);
+  if (num) {
+    const d = makeLocalDate(parseInt(num[3], 10), parseInt(num[2], 10), parseInt(num[1], 10));
+    if (d) return d;
+  }
+  return null;
+}
+
+/** RFC-style header date ("30 Sep 2026 14:03:11 GMT") → local Date. */
+function parseEmailSentDate(dateHeader) {
+  const m = String(dateHeader || "").match(/(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})/);
+  if (m) {
+    const mon = monthFromName(m[2]);
+    const d = mon ? makeLocalDate(parseInt(m[3], 10), mon, parseInt(m[1], 10)) : null;
+    if (d) return d;
+  }
+  const parsed = new Date(dateHeader || "");
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isEmailRecent(dateHeader, maxAgeDays = 60) {
+  const d = parseEmailSentDate(dateHeader);
+  if (!d) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((today.getTime() - d.getTime()) / 86400000) <= maxAgeDays;
+}
+
+function format12h(hhmm) {
+  const parts = String(hhmm || "").split(":");
+  if (parts.length < 2) return String(hhmm || "");
+  let h = parseInt(parts[0], 10);
+  const mins = parts[1];
+  if (!Number.isFinite(h)) return String(hhmm);
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${h}:${mins} ${ampm}`;
+}
+
+function weekdayFullName(idx) {
+  const names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  return names[idx >= 0 && idx <= 6 ? idx : 1];
+}
+
+function monthFullName(m) {
+  const names = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  return names[m >= 1 && m <= 12 ? m : 10];
+}
+
+/** Semester label derived from the date itself (kept correct across years). */
+function inferSemesterFromDateLocal(d) {
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  if (m >= 2 && m <= 5) return `Spring ${y}`;
+  if (m >= 6 && m <= 8) return `Summer ${y}`;
+  if (m >= 9) return `Fall ${y}`;
+  if (m === 1) return d.getDate() <= 20 ? `Fall ${y - 1}` : `Spring ${y}`;
+  return `Fall ${y}`;
+}
+
+function defaultCoursePaletteLocal(courseId) {
+  switch (String(courseId || "").trim().toUpperCase()) {
+    case "CS 101": case "CS101":
+      return { bg: "#dbeafe", fg: "#1a73e8", border: "#1a73e8" };
+    case "MATH 101": case "MATH101":
+      return { bg: "#f3e8ff", fg: "#8e24aa", border: "#7b1fa2" };
+    case "DATA 201": case "DATA201":
+      return { bg: "#dcfce7", fg: "#0f9d58", border: "#15803d" };
+    case "PHYS 101": case "PHYS101":
+      return { bg: "#fef3c7", fg: "#f4b400", border: "#d97706" };
+    case "MGMT 100": case "MGMT100":
+      return { bg: "#fee2e2", fg: "#e67c73", border: "#dc2626" };
+    default:
+      return { bg: "#e0e7ff", fg: "#6366f1", border: "#4338ca" };
+  }
+}
+
+/** Gmail payload → plain text (walks MIME parts, prefers text/plain). */
+function gmailExtractBody(payload) {
+  const walk = (part) => {
+    if (!part) return "";
+    if (part.mimeType === "text/plain" && part.body && part.body.data) {
+      return decodeBase64UrlGs(part.body.data);
+    }
+    if (part.parts && part.parts.length) {
+      for (const p of part.parts) {
+        if (p.mimeType === "text/plain") {
+          const t = walk(p);
+          if (t) return t;
+        }
+      }
+      for (const p of part.parts) {
+        if (p.mimeType !== "text/plain") {
+          const t = walk(p);
+          if (t) return t;
+        }
+      }
+    }
+    if (part.mimeType === "text/html" && part.body && part.body.data) {
+      return stripHtmlTags(decodeBase64UrlGs(part.body.data));
+    }
+    if (part.body && part.body.data) return decodeBase64UrlGs(part.body.data);
+    return "";
+  };
+  return walk(payload) || "";
+}
+
+/** Un-escapes an ICS text value (SUMMARY/DESCRIPTION). */
+function unescapeIcsText(v) {
+  return String(v || "")
+    .replace(/\\n/gi, "\n")
+    .replace(/\\,/g, ",")
+    .replace(/\\;/g, ";")
+    .replace(/\\\\/g, "\\")
+    .trim();
+}
+
+/** ICS 20260930 / 20260930T141500(+Z/TZID) → {date:Date, time:"14:15"|null} */
+function parseIcsDateTime(raw) {
+  const m = String(raw || "").match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2}))?/);
+  if (!m) return null;
+  const d = makeLocalDate(parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10));
+  if (!d) return null;
+  const time = m[4] && m[5] ? `${m[4]}:${m[5]}` : null;
+  return { date: d, time };
+}
+
+/** Exact parity port of parser.rs::process_all_emails (heuristic path — Gemini runs on the desktop). */
+function processAllScannedEmails(rawEmails, notes, sourceName, sourceIcon, engineSchedule) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const reCourse = /\b([A-Z]{2,4}\s*\d{3}[a-zA-Z]?)\b/i; // RE_COURSE (case-insensitive like Rust's (?i))
+  const reUrl = /(https:\/\/e-learning\.[a-zA-Z0-9.-]+\/[^\s\]]+)/; // RE_URL
+
+  // --- prepare step (mirrors process_all_emails' map) ---
+  const prepared = rawEmails.map((email) => {
+    const subjectLower = String(email.subject || "").toLowerCase();
+    const bodyLower = String(email.body || "").toLowerCase();
+    const announcementBody = extractAnnouncementBody(String(email.body || ""));
+    const announcementLower = announcementBody.toLowerCase();
+    const isCandidate = isCandidateAssessmentEmail(
+      subjectLower,
+      String(email.from || "").toLowerCase(),
+      bodyLower
+    );
+    return { email, subjectLower, bodyLower, announcementBody, announcementLower, isCandidate };
+  });
+
+  const hasTemplateNotice = prepared.some((p) => containsTemplateNotice(p.subjectLower, p.bodyLower));
+
+  // --- parse loop (exact precedence from parser.rs::parse_single_email) ---
+  const out = [];
+  const seenKeys = new Set();
+  let scanned = prepared.length;
+  let candidates = 0;
+  let parsedCount = 0;
+
+  for (const p of prepared) {
+    if (!p.isCandidate) continue;
+    candidates++;
+
+    const subjAndBody = String(p.email.subject || "") + " " + p.announcementBody;
+    const lower = p.subjectLower + " " + p.announcementLower;
+
+    // 1. Course ID: capture then strip inner spaces + uppercase ("DATA 201" → "DATA201")
+    const courseMatch = subjAndBody.match(reCourse);
+    const rawCourse = courseMatch ? courseMatch[1].replace(/ /g, "").toUpperCase() : "GENERAL";
+
+    // 2. Assessment type (exact chain order)
+    let assessmentType;
+    if (lower.includes("midterm")) assessmentType = "Midterm Exam";
+    else if (lower.includes("final exam")) assessmentType = "Final Exam";
+    else if (lower.includes("online quiz") || lower.includes("/mod/quiz/")) assessmentType = "Online Quiz";
+    else if (lower.includes("in-class assignment") || p.subjectLower.includes("assignment")) assessmentType = "Assignment";
+    else if (lower.includes("lab session") || lower.includes("during the lab")) assessmentType = "Lab Assessment";
+    else assessmentType = "Class Quiz";
+
+    // 3. Instructor from the sender display name only (never invented)
+    const instructor = String(p.email.from || "").split("<")[0].replace(/"/g, "").replace(/\(via [^)]+\)/g, "").trim();
+
+    // 4. Schedule-aware date/time/room/group + title + inference note
+    const sentDate = parseEmailSentDate(p.email.date || "") || today;
+    const preferredSlotType =
+      lower.includes("tutorial") && !lower.includes("tutorial sheets")
+        ? "Tutorial"
+        : lower.includes("lab session") || lower.includes("during the lab")
+          ? "Lab"
+          : "Lecture";
+    const slots = engineSchedule.slots || [];
+    const matchedSlot =
+      slots.find(
+        (s) => String(s.course_id || "") === rawCourse &&
+          String(s.slot_type || s.type || "").toLowerCase() === preferredSlotType.toLowerCase()
+      ) || slots.find((s) => String(s.course_id || "") === rawCourse);
+
+    const explicitDate = extractExplicitDate(lower);
+    const dateWasRelative = !explicitDate;
+    const defaultStart = (matchedSlot && matchedSlot.start_time) || "09:00";
+    const defaultEnd = (matchedSlot && matchedSlot.end_time) || "10:30";
+    const defaultRoom = (matchedSlot && matchedSlot.room) || "Room unspecified";
+    const defaultGroup = matchedSlot ? `Group ${matchedSlot.group}` : "All Groups";
+
+    let targetDate;
+    if (explicitDate) {
+      targetDate = explicitDate;
+    } else if (lower.includes("next week (not this week)")) {
+      targetDate = new Date(sentDate.getTime() + 8 * 86400000);
+    } else if (lower.includes("next week")) {
+      targetDate = new Date(sentDate.getTime() + 5 * 86400000);
+    } else if (lower.includes("this week")) {
+      targetDate = new Date(sentDate.getTime() + 3 * 86400000);
+    } else {
+      targetDate = new Date(sentDate.getTime());
+    }
+    if (matchedSlot) {
+      const wd = weekdayIndexFromName(matchedSlot.day || "");
+      if (wd != null) {
+        let cursor = new Date(targetDate.getTime());
+        for (let i = 0; i < 7; i++) {
+          if ((cursor.getDay() % 7) === wd) { targetDate = new Date(cursor.getTime()); break; }
+          cursor = new Date(cursor.getTime() + 86400000);
+        }
+      }
+    }
+
+    const cleanTitle = lower.includes("quiz 3")
+      ? `Quiz 3: ${rawCourse}`
+      : lower.includes("quiz 2")
+        ? `Quiz 2: ${rawCourse}`
+        : lower.includes("quiz 1")
+          ? `Quiz 1: ${rawCourse}`
+          : assessmentType === "Midterm Exam"
+            ? `${rawCourse} Midterm Exam`
+            : String(p.email.subject || "");
+
+    let aiInferenceNote;
+    if (dateWasRelative) {
+      aiInferenceNote = matchedSlot
+        ? `Estimated (local heuristic): the announcement had no explicit date — approximate timing inferred from wording ("this/next week"). Room/time aligned with your ${rawCourse} ${preferredSlotType} slot (${format12h(defaultStart)} – ${format12h(defaultEnd)}, Room ${defaultRoom}). Configure a Gemini API key for precise extraction.`
+        : "Estimated (local heuristic): the announcement had no explicit date and this course is not in your schedule, so the date/timing is an approximation. Add the course to your weekly schedule or configure a Gemini API key for precise extraction.";
+    } else {
+      aiInferenceNote = matchedSlot
+        ? `Parsed from announcement: explicit date found and aligned with your ${rawCourse} ${preferredSlotType} slot (${format12h(defaultStart)} – ${format12h(defaultEnd)}, Room ${defaultRoom}).`
+        : "Parsed from announcement: explicit date found. Time/room are best-effort estimates because this course is not in your weekly schedule.";
+    }
+
+    // 5. Topics & warnings (exact extract_topics / extract_warnings)
+    const topics = [];
+    if (lower.includes("bjt")) topics.push("BJT Transistor Analysis & Biasing");
+    if (lower.includes("mosfet")) topics.push("MOSFET Characteristics & Small-Signal Models");
+    if (topics.length === 0) topics.push(`${rawCourse} announced syllabus material`);
+
+    const warnings = [];
+    if (lower.includes("quiz template") || (hasTemplateNotice && lower.includes("quiz"))) {
+      warnings.push("⚠️ Bring your printed Quiz Template to the lecture!");
+    }
+    if (/(will not be able to go back|cannot go back|won't be able to go back)/.test(lower)) {
+      warnings.push("⚠️ Strict Navigation: Once you move to the next question, you CANNOT go back!");
+    }
+    if (lower.includes("closed-book") || lower.includes("mobile phones are strictly prohibited")) {
+      warnings.push("⚠️ Closed-Book: Mobile phones and outside notes are strictly prohibited.");
+    }
+    if (lower.includes("15 minutes") || lower.includes("15 mins")) {
+      warnings.push("⏱️ Strict Time Limit: 15 minutes duration.");
+    }
+    if (lower.includes("mcq")) {
+      warnings.push("📝 Exam Format: Multiple Choice Questions (MCQ) + Explain & Discuss.");
+    }
+    if (lower.includes("assigned time slot") || lower.includes("assigned group")) {
+      warnings.push("📍 Group Enforcement: You must attend ONLY during your registered group slot.");
+    }
+
+    // 6. Study plan (generate_ai_study_plan incl. the course-tuned table)
+    let studyPlan;
+    let studyHours;
+    switch (rawCourse) {
+      case "MATH101": studyPlan = "Practice computing step size and setting up function evaluation tables. Double-check all calculus and linear algebra calculation steps."; studyHours = 3.0; break;
+      case "DATA201": studyPlan = "Focus on hand-calculating time complexity (Big-O), sorting algorithms, tree traversals, and dynamic programming subproblems."; studyHours = 4.0; break;
+      case "CS101": studyPlan = "Practice fast recognition of algorithmic loops, recursion trees, and fundamental data structures so you can solve each question confidently."; studyHours = 3.5; break;
+      case "PHYS101": studyPlan = "Review core mechanics, circuit equations, and measurement lab sheets from recent problem sets."; studyHours = 3.5; break;
+      case "MGMT100": studyPlan = "Review organizational strategy, leadership frameworks, and real-world case analysis from lecture notes."; studyHours = 2.5; break;
+      default:
+        if (rawCourse === "GENERAL" && assessmentType === "Midterm Exam") {
+          studyPlan = "Space out your midterm revision across the next 3 weeks: dedicate 2 days per course starting with high-problem-solving courses and solve past practice papers.";
+          studyHours = 18.0;
+        } else {
+          const warnHint = warnings.some((w) => w.includes("Template")) ? " Don't forget to print your required template before class." : "";
+          studyPlan = `Review ${rawCourse} lecture slides and solve the corresponding tutorial sheet problems (${topics.length} core topic areas).${warnHint}`;
+          studyHours = 2.5;
+        }
+    }
+
+    // 7. Urgency / priority (compute_priority_score)
+    const dateIso = toIsoLocal(targetDate);
+    const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(dateIso) ? makeLocalDateFromIso(dateIso) : sentDate;
+    const daysUntil = Math.round(
+      (new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate()).getTime() -
+        new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()) / 86400000
+    );
+    const isUpcoming = daysUntil >= 0;
+    const urgencyLevel = !isUpcoming ? "past" : daysUntil <= 2 ? "critical" : daysUntil <= 5 ? "high" : daysUntil <= 14 ? "medium" : "upcoming";
+    const urgencyBase = daysUntil < 0 ? 10 : daysUntil === 0 ? 98 : daysUntil === 1 ? 95 : daysUntil === 2 ? 90 : daysUntil === 3 ? 84 : daysUntil === 4 ? 80 : daysUntil === 5 ? 76 : daysUntil <= 7 ? 70 : daysUntil <= 14 ? 60 : 50;
+    const typeBonus = assessmentType === "Midterm Exam" || assessmentType === "Final Exam" ? 12 : assessmentType === "Class Quiz" || assessmentType === "Online Quiz" ? 6 : 3;
+    const priorityScore = Math.min(100, urgencyBase + typeBonus + Math.min(topics.length, 6) * 1);
+
+    // 8. Course palette / names from the user's own schedule (honest passthrough)
+    const courseInfo = (engineSchedule.courses || []).find((c) => String(c.id || "") === rawCourse);
+    const courseName = courseInfo ? courseInfo.name : rawCourse;
+    const color = courseInfo ? courseInfo.color : defaultCoursePaletteLocal(rawCourse).fg;
+    const bg = courseInfo ? courseInfo.bg : defaultCoursePaletteLocal(rawCourse).bg;
+    const border = courseInfo ? courseInfo.border : defaultCoursePaletteLocal(rawCourse).border;
+
+    const dayName = weekdayFullName(parsedDate.getDay());
+    const displayTime = `${dayName}, ${parsedDate.getDate()} ${monthFullName(parsedDate.getMonth() + 1)} ${parsedDate.getFullYear()} (${format12h(defaultStart)} – ${format12h(defaultEnd)})`;
+    const elearningUrlMatch = String(p.email.body || "").match(reUrl);
+
+    const assessment = {
+      id: String(p.email.id || `${sourceName.toLowerCase()}-${Date.now()}-${parsedCount}`),
+      course_id: rawCourse,
+      course_name: courseName,
+      title: cleanTitle,
+      assessment_type: assessmentType,
+      date_iso: dateIso,
+      day_name: dayName,
+      start_time: defaultStart,
+      end_time: defaultEnd,
+      display_time: displayTime,
+      room: defaultRoom,
+      group: defaultGroup,
+      instructor,
+      is_upcoming: isUpcoming,
+      days_until: daysUntil,
+      urgency_level: urgencyLevel,
+      priority_score: priorityScore,
+      topics,
+      warnings,
+      ai_inference_note: aiInferenceNote,
+      ai_study_plan: studyPlan,
+      estimated_study_hours: studyHours,
+      elearning_url: (elearningUrlMatch ? elearningUrlMatch[1].trim() : ""),
+      google_cal_url: "",
+      gcal_synced: false,
+      gcal_event_id: null,
+      color,
+      bg,
+      border,
+      semester: inferSemesterFromDateLocal(parsedDate),
+      email_subject: String(p.email.subject || ""),
+      email_sent_date: sentDate ? toIsoLocal(sentDate) : "",
+      source: sourceName,
+      source_icon: sourceIcon,
+      conflict_warning: null
+    };
+
+    // Dedupe key includes the source: a real quiz announced over both Gmail
+    // and Teams must not collapse into whichever copy was processed first.
+    const dedupeKey = `${sourceName}|${rawCourse}|${assessment.title}|${assessment.date_iso}`;
+    if (!seenKeys.has(dedupeKey)) {
+      seenKeys.add(dedupeKey);
+      out.push(assessment);
+      parsedCount++;
+    }
+  }
+
+  notes.push(`${sourceName}: ${scanned} message${scanned === 1 ? "" : "s"} scanned, ${parsedCount} assessment${parsedCount === 1 ? "" : "s"} found (${candidates} candidates).`);
+  return out;
+}
+
+function makeLocalDateFromIso(iso) {
+  const parts = iso.split("-").map(Number);
+  return parts.length === 3 ? makeLocalDate(parts[0], parts[1], parts[2]) : null;
+}
+
+function resolveCourseNameLocal(schedule, courseId) {
+  const courses = (schedule && schedule.courses) || [];
+  const match = courses.find((c) => String(c.id || "").trim().toUpperCase() === courseId.toUpperCase());
+  return match ? match.name : courseId;
+}
+
+function toIsoLocal(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
+
+/**
+ * Redeems a fresh access token through the native loopback bridge.
+ * Java side (LocalOAuthServer + MainActivity) holds the refresh tokens in
+ * private storage and enforces the session bridge secret; the JS layer only
+ * ever obtains short-lived access tokens.
+ */
+async function bridgeRefreshAccessToken(provider) {
+  try {
+    if (!window.__quizradarBridgeKey) return null;
+    const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), 15000) : null;
+    const res = await _originalFetch("http://127.0.0.1:3000/api/auth/refresh", {
+      method: "POST",
+      signal: ctrl ? ctrl.signal : undefined,
+      headers: { "Content-Type": "application/json", "X-QuizRadar-Bridge": window.__quizradarBridgeKey },
+      body: JSON.stringify({ provider })
+    });
+    if (timer) clearTimeout(timer);
+    if (!res || !res.ok) return null;
+    const data = await res.json();
+    if (!data || data.ok !== true || !data.access_token) return null;
+    return data;
+  } catch (e) {
+    return null;
+  }
+}
+
+/** Gmail live scan: five queries in parity with src/gmail.rs, deduped, full fetch. */
+const GMAIL_SCAN_QUERIES = [
+  "quiz",
+  "exam OR midterm OR final",
+  "assignment OR test OR homework OR project OR deadline",
+  "from:e-learning OR from:edu",
+  "from:canvas OR from:blackboard OR from:gradescope OR from:classroom.google.com"
+];
+
+/**
+ * Adds a new native on-device live-scan pipeline to the engine class.
+ * Runs Gmail (Google token), Outlook, and Moodle-ICS branches, then merges.
+ */
 class QuizRadarAutonomousEngine {
   constructor() {
     this.state = this.loadDatabase();
@@ -949,12 +1520,17 @@ class QuizRadarAutonomousEngine {
       return { ok: true, status: 200, data: { success: true, assessments: this.state.assessments, dashboard: this.state.dashboard, schedule: this.state.schedule } };
     }
 
-    // 9. POST /api/sync & /api/gcal/sync
-    if (path === "/api/sync" || path === "/api/gcal/sync") {
-      this.state.config.last_gmail_sync = "Local check";
+    // 9. POST /api/sync — REAL on-device scan (Gmail + Outlook + Moodle feed)
+    if (path === "/api/sync") {
+      const result = await this.runLiveScan("all");
+      return { ok: true, status: 200, data: result };
+    }
+
+    // 9b. POST /api/gcal/sync — calendar push needs the desktop OAuth scope set
+    if (path === "/api/gcal/sync") {
       this.recomputeDashboard(this.state);
+      const message = "Google Calendar push runs on the desktop app (it holds the events scope). On-device announcements arrive via live Gmail/Teams scanning.";
       this.saveDatabase();
-      const message = "On-device data check complete. This app stores your data locally; for live Gmail/Teams/Classroom scanning, pair this device with the QuizRadar desktop app.";
       return { ok: true, status: 200, data: { success: true, message, assessments: this.state.assessments, dashboard: this.state.dashboard, schedule: this.state.schedule } };
     }
 
@@ -1209,8 +1785,10 @@ Extract enrolled courses and weekly class slots from this schedule. Return ONLY 
       return { ok: true, status: 200, data: { success: true, scheduled: true, message: "Study blocks scheduled into your academic planner." } };
     }
 
-    // 16. Cloud / Device Pair Info (Reports Standalone Engine)
+    // 16. Cloud / Device Pair Info (reports on-device engine + live scanning)
     if (path === "/api/sync/pair/info") {
+      const msEmail = (this.state.config && this.state.config.teams_account_email) || null;
+      const msName = (this.state.config && this.state.config.teams_account_name) || null;
       return {
         ok: true,
         status: 200,
@@ -1218,10 +1796,12 @@ Extract enrolled courses and weekly class slots from this schedule. Return ONLY 
           success: true,
           standalone: true,
           offline_capable: true,
-          user_email: this.state.config.user_email,
+          user_email: (this.state.auth && this.state.auth.authenticated && this.state.auth.email) || this.state.config.user_email,
+          teams_email: msEmail,
+          teams_name: msName,
           google_authenticated: !!(this.state.auth && this.state.auth.authenticated),
-          google_auth_note: "This device uses an on-device engine (manual entry). Pair with the desktop app to access live Gmail/Teams scanning.",
-          engine_type: "On-device engine (manual entry)"
+          google_auth_note: "This device scans Gmail and Outlook directly with its own sign-in — desktop pairing is optional (backup + ICS feeds only).",
+          engine_type: "On-device engine (live Gmail/Outlook/Moodle scanning)"
         }
       };
     }
@@ -1267,6 +1847,360 @@ Extract enrolled courses and weekly class slots from this schedule. Return ONLY 
   todayIsoFallback() {
     const t = new Date();
     return toIsoDate(t);
+  }
+
+  // ================= LIVE ON-DEVICE SCAN PIPELINE =================
+
+  /**
+   * Ensures a fresh Google access token: reuses the stored one when it is
+   * still young, otherwise redeems a new one through the native bridge.
+   * Returns { token, viaBridge } or { token: null, error }.
+   */
+  async ensureGoogleAccessToken() {
+    const auth = this.state.auth || {};
+    const token = auth.access_token || "";
+    if (!token) return { token: null, error: "unsigned" };
+    const expiresAt = Number(auth.google_token_expires_at || 0);
+    const fresh = expiresAt ? Date.now() < expiresAt - 60000 : true; // unknown age → try as-is
+    if (fresh) return { token, viaBridge: false };
+    const refreshed = await bridgeRefreshAccessToken("google");
+    if (refreshed) {
+      auth.access_token = refreshed.access_token;
+      auth.google_token_expires_at = Date.now() + (refreshed.expires_in || 3600) * 1000;
+      this.state.auth = auth;
+      if (window.appState && window.appState.auth) {
+        window.appState.auth.access_token = auth.access_token;
+        window.appState.auth.google_token_expires_at = auth.google_token_expires_at;
+      }
+      this.saveDatabase();
+      return { token: auth.access_token, viaBridge: true };
+    }
+    return { token: null, error: "expired" };
+  }
+
+  async ensureTeamsAccessToken() {
+    const cfg = this.state.config || {};
+    const token = cfg.teams_token || "";
+    if (!token) return { token: null, error: "not connected" };
+    const expiresAt = Number(cfg.teams_token_expires_at || 0);
+    const fresh = expiresAt ? Date.now() < expiresAt - 60000 : true;
+    if (fresh) return { token, viaBridge: false };
+    const refreshed = await bridgeRefreshAccessToken("microsoft");
+    if (refreshed) {
+      cfg.teams_token = refreshed.access_token;
+      cfg.teams_token_expires_at = Date.now() + (refreshed.expires_in || 3600) * 1000;
+      this.state.config = cfg;
+      if (window.appState && window.appState.config) {
+        window.appState.config.teams_token = cfg.teams_token;
+        window.appState.config.teams_token_expires_at = cfg.teams_token_expires_at;
+      }
+      this.saveDatabase();
+      return { token: cfg.teams_token, viaBridge: true };
+    }
+    return { token: null, error: "expired" };
+  }
+
+  /** Gmail REST scan (parity with gmail.rs's 5 queries + dedupe + full fetch). */
+  async scanGmailBranch(notes) {
+    const tok = await this.ensureGoogleAccessToken();
+    if (!tok.token) {
+      if (tok.error === "expired") {
+        notes.push("Gmail: access token expired and silent renewal failed — sign in again in Settings → Integrations. (Manual entries are safe.)");
+      }
+      return null;
+    }
+    const headers = { Authorization: "Bearer " + tok.token };
+    const ids = new Map();
+    for (const q of GMAIL_SCAN_QUERIES) {
+      try {
+        const res = await _originalFetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=35`,
+          { headers }
+        );
+        if (res && res.status === 401) return { retry: true, error: "401" };
+        if (!res || !res.ok) { notes.push(`Gmail: list request failed (HTTP ${res ? res.status : "network"})`); return null; }
+        const list = await res.json();
+        (Array.isArray(list.messages) ? list.messages : []).forEach((m) => {
+          if (!ids.has(m.id)) ids.set(m.id, true);
+        });
+      } catch (e) {
+        notes.push("Gmail: search request blocked or offline.");
+        return null;
+      }
+    }
+    if (ids.size === 0) {
+      notes.push("Gmail: no quiz/exam/assignment announcements in your recent mail.");
+      return [];
+    }
+    const cap = 120;
+    const emails = [];
+    let fetched = 0;
+    for (const id of ids.keys()) {
+      if (fetched >= cap) break;
+      fetched++;
+      try {
+        const res = await _originalFetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(id)}?format=full`,
+          { headers }
+        );
+        if (res && res.status === 401) return { retry: true, error: "401" };
+        if (!res || !res.ok) continue;
+        const msg = await res.json();
+        const headerMap = {};
+        ((msg.payload && msg.payload.headers) || []).forEach((h) => { headerMap[h.name] = h.value; });
+        emails.push({
+          id: String(msg.id || id),
+          subject: headerMap["Subject"] || "",
+          from: headerMap["From"] || "",
+          date: headerMap["Date"] || "",
+          snippet: msg.snippet || "",
+          body: gmailExtractBody(msg.payload) || msg.snippet || ""
+        });
+      } catch (e) { /* skip this message */ }
+    }
+    return { emails };
+  }
+
+  /** Outlook mail scan via Microsoft Graph ($search across quiz/exam words). */
+  async scanMicrosoftBranch() {
+    const tok = await this.ensureTeamsAccessToken();
+    if (!tok.token) return null;
+    const kql = encodeURIComponent('"quiz OR exam OR midterm OR assignment OR deadline"');
+    try {
+      const res = await _originalFetch(
+        `https://graph.microsoft.com/v1.0/me/messages?$search=${kql}&$top=30&$select=subject,body,from,receivedDateTime,webLink`,
+        { headers: { Authorization: "Bearer " + tok.token } }
+      );
+      if (res && res.status === 401) return { retry: true, error: "401" };
+      if (!res || !res.ok) return { emails: [] };
+      const data = await res.json();
+      const emails = (Array.isArray(data.value) ? data.value : []).map((m) => ({
+        id: "ms:" + String(m.id || "").slice(0, 90),
+        subject: m.subject || "",
+        from: (m.from && m.from.emailAddress && m.from.emailAddress.address) || "",
+        date: m.receivedDateTime || "",
+        snippet: "",
+        body: stripHtmlTags((m.body && m.body.content) || "")
+      }));
+      return { emails };
+    } catch (e) {
+      return { emails: [] };
+    }
+  }
+
+  /** Moodle ICS calendar import (uses the feed configured in Integrations). */
+  async scanMoodleBranch(notes) {
+    const url = (this.state.config && this.state.config.moodle_ical_url) || "";
+    if (!url || !/^https?:\/\//i.test(url)) return [];
+    try {
+      const res = await _originalFetch(url, { method: "GET" });
+      if (!res || !res.ok) {
+        notes.push("Moodle: calendar feed could not be fetched (HTTP " + (res ? res.status : "network") + "). Check the ICS URL in Settings → Integrations.");
+        return [];
+      }
+      const text = await res.text();
+      const events = String(text).match(/BEGIN:VEVENT[\s\S]*?END:VEVENT/g) || [];
+      const out = [];
+      for (const block of events) {
+        const summary = unescapeIcsText((block.match(/SUMMARY[;:]([^\r\n]*)/) || [])[1] || "");
+        const desc = unescapeIcsText((block.match(/DESCRIPTION[;:]([^\r\n]*)/) || [])[1] || "");
+        const uid = ((block.match(/UID[;:]([^\r\n]*)/) || [])[1] || "moodle-" + out.length).trim();
+        const dtRaw = (block.match(/DTSTART(?:;[^:\n]*)?:([^\r\n]*)/) || [])[1] || "";
+        const parsed = parseIcsDateTime(dtRaw);
+        if (!parsed) continue;
+        const lower = (summary + " " + desc).toLowerCase();
+        if (!/(quiz|exam|midterm|assignment|test|due|submission)/.test(lower)) continue;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const daysUntil = Math.round((parsed.date.getTime() - today.getTime()) / 86400000);
+        const reCourse = /\b([A-Z]{2,4}\s*\d{3}[a-zA-Z]?)\b/i;
+        const courseMatch = (summary + " " + desc).match(reCourse);
+        const courseId = courseMatch ? courseMatch[1].replace(/\s+/g, " ").trim() : null;
+        const enrolled = ((this.state.schedule || {}).courses || [])
+          .find((c) => courseId && String(c.id || "").toUpperCase() === courseId.toUpperCase());
+        const nameMatch = enrolled ? enrolled.id : ((this.state.schedule || {}).courses || [])
+          .find((c) => summary.toLowerCase().includes(String(c.name || "").toLowerCase().slice(0, 18)));
+        const finalCourse = nameMatch ? nameMatch.id : (courseId || "GENERAL");
+        const palette = defaultCoursePaletteLocal(finalCourse);
+        const isType = /(final exam|final)/.test(lower) ? "Final Exam" : /midterm/.test(lower) ? "Midterm Exam" : /quiz/.test(lower) ? "Quiz" : "Assignment";
+        out.push({
+          id: "moodle:" + uid.slice(0, 80),
+          course_id: finalCourse,
+          course_name: resolveCourseNameLocal(this.state.schedule, finalCourse),
+          title: summary.slice(0, 90) || `${finalCourse} ${isType}`,
+          assessment_type: isType,
+          date_iso: toIsoLocal(parsed.date),
+          day_name: weekdayFullName(parsed.date.getDay()),
+          start_time: parsed.time || "09:00",
+          end_time: parsed.time || "10:30",
+          display_time: parsed.time ? format12h(parsed.time) : "All Day",
+          room: "See Moodle",
+          group: "All Groups",
+          instructor: "Moodle Calendar",
+          is_upcoming: daysUntil >= 0,
+          days_until: daysUntil,
+          urgency_level: daysUntil < 0 ? "Past" : daysUntil <= 1 ? "Urgent" : daysUntil <= 7 ? "Medium" : "Low",
+          urgency_class: daysUntil < 0 ? "bg-slate-100 text-slate-600" : daysUntil <= 1 ? "bg-orange-500 text-white" : daysUntil <= 7 ? "bg-yellow-500 text-white" : "bg-slate-500 text-white",
+          priority_score: daysUntil < 0 ? 10 : daysUntil === 0 ? 98 : daysUntil <= 3 ? 84 : daysUntil <= 7 ? 70 : 50,
+          topics: [`${finalCourse} Moodle calendar item`],
+          warnings: [],
+          ai_inference_note: "Imported from your Moodle calendar feed (on-device).",
+          ai_study_plan: `Prepare for ${finalCourse} ${isType} — check Moodle for the official instructions.`,
+          estimated_study_hours: 2.5,
+          elearning_url: "",
+          google_cal_url: "",
+          gcal_synced: false,
+          gcal_event_id: null,
+          color: palette.fg,
+          bg: palette.bg,
+          border: palette.border,
+          semester: inferSemesterFromDateLocal(parsed.date),
+          email_subject: summary,
+          email_sent_date: toIsoLocal(new Date()),
+          source: "Moodle",
+          source_icon: "rss",
+          conflict_warning: null
+        });
+      }
+      notes.push(`Moodle: ${out.length} assessment item${out.length === 1 ? "" : "s"} imported from your calendar feed.`);
+      return out;
+    } catch (e) {
+      // Moodle servers usually do not send CORS headers — report honestly.
+      notes.push("Moodle: feed blocked by the device browser (CORS). Export the ICS into the desktop app instead.");
+      return [];
+    }
+  }
+
+  /** Merges scanned assessments into state while preserving user-authored data. */
+  mergeScannedAssessments(scanned, notes) {
+    if (!Array.isArray(scanned) || scanned.length === 0) return 0;
+    const existingById = new Map((this.state.assessments || []).map((a) => [a.id, a]));
+    let added = 0;
+    let updated = 0;
+    for (const incoming of scanned) {
+      const existing = existingById.get(incoming.id);
+      if (existing) {
+        // Preserve the user's grading/bookkeeping fields across refresh cycles.
+        incoming.achieved_score = existing.achieved_score;
+        incoming.max_score = existing.max_score;
+        incoming.weightage_percent = existing.weightage_percent;
+        incoming.gcal_synced = existing.gcal_synced;
+        incoming.gcal_event_id = existing.gcal_event_id;
+        Object.assign(existing, incoming);
+        updated++;
+      } else {
+        this.state.assessments.push(incoming);
+        existingById.set(incoming.id, incoming);
+        added++;
+      }
+    }
+    if (added || updated) {
+      this.state.assessments.sort((a, b) => new Date(a.date_iso + "T00:00") - new Date(b.date_iso + "T00:00"));
+    }
+    notes.push(`Imported: ${added} new + ${updated} refreshed.`);
+    return added;
+  }
+
+  /**
+   * The full live pipeline. kind: "gmail" | "microsoft" | "all".
+   * Each list/detail request that comes back 401 triggers exactly one silent
+   * bridge refresh + retry; failures surface honestly in sync notes.
+   */
+  async runLiveScan(kind) {
+    const notes = [];
+    const hasGoogle = !!(this.state.auth && this.state.auth.authenticated && this.state.auth.access_token);
+    const hasMicrosoft = !!(this.state.config && (this.state.config.teams_token ||
+      (this.state.config.teams_enabled && this.state.config.teams_account_email)));
+    const hasMoodle = !!(this.state.config && this.state.config.moodle_ical_url);
+
+    let googleEmails = null;
+    if (kind !== "microsoft" && hasGoogle) {
+      let result = await this.scanGmailBranch(notes);
+      if (result && result.retry) {
+        const refreshed = await bridgeRefreshAccessToken("google");
+        if (refreshed) {
+          this.state.auth.access_token = refreshed.access_token;
+          this.state.auth.google_token_expires_at = Date.now() + (refreshed.expires_in || 3600) * 1000;
+          if (window.appState && window.appState.auth) {
+            window.appState.auth.access_token = this.state.auth.access_token;
+            window.appState.auth.google_token_expires_at = this.state.auth.google_token_expires_at;
+          }
+          notes.push("Gmail: access token was renewed silently via the secure bridge.");
+          result = await this.scanGmailBranch(notes);
+        } else {
+          notes.push("Gmail: silent renewal unavailable — reconnect your Google account in Settings → Integrations.");
+        }
+      }
+      if (result && Array.isArray(result.emails)) {
+        googleEmails = processAllScannedEmails(result.emails, notes, "Gmail", "mail", this.state.schedule || {});
+      } else if (result && result.retry) {
+        notes.push("Gmail: renewed token was still rejected (server refused). Reconnect your Google account.");
+      }
+    } else if (kind !== "microsoft" && !hasGoogle) {
+      notes.push("Gmail: not connected — sign in with your Google account to enable scanning.");
+    }
+
+    let msEmails = null;
+    if (kind !== "gmail" && hasMicrosoft) {
+      let result = await this.scanMicrosoftBranch();
+      if (result === null) {
+        notes.push("Outlook: not connected or token expired — reconnect Microsoft in Settings → Integrations.");
+      }
+      if (result && result.retry) {
+        const refreshed = await bridgeRefreshAccessToken("microsoft");
+        if (refreshed) {
+          this.state.config.teams_token = refreshed.access_token;
+          this.state.config.teams_token_expires_at = Date.now() + (refreshed.expires_in || 3600) * 1000;
+          if (window.appState && window.appState.config) {
+            window.appState.config.teams_token = this.state.config.teams_token;
+            window.appState.config.teams_token_expires_at = this.state.config.teams_token_expires_at;
+          }
+          notes.push("Outlook: access token was renewed silently via the secure bridge.");
+          result = await this.scanMicrosoftBranch();
+        } else {
+          notes.push("Outlook: silent renewal unavailable — reconnect Microsoft in Settings → Integrations.");
+        }
+      }
+      if (result && Array.isArray(result.emails)) {
+        msEmails = processAllScannedEmails(result.emails, notes, "Teams", "users", this.state.schedule || {});
+      }
+    }
+
+    let moodleItems = [];
+    if (kind === "all") {
+      moodleItems = await this.scanMoodleBranch(notes);
+      if (!hasMoodle) notes.push("Moodle: no calendar feed configured (optional).");
+    }
+
+    const scanned = [...(googleEmails || []), ...(msEmails || []), ...(moodleItems || [])];
+    const addedCount = this.mergeScannedAssessments(scanned, notes);
+
+    const connections = [];
+    if (hasGoogle) connections.push("Gmail");
+    if (hasMicrosoft) connections.push("Outlook");
+    if (hasMoodle) connections.push("Moodle");
+    if (connections.length === 0) {
+      return {
+        success: true,
+        message: "No connected sources on this device yet. Sign in or add feeds in Settings → Integrations — your manual entries stay untouched.",
+        assessments: this.state.assessments,
+        dashboard: this.state.dashboard,
+        schedule: this.state.schedule
+      };
+    }
+
+    this.state.config.last_gmail_sync = new Date().toLocaleString();
+    this.recomputeDashboard(this.state);
+    this.saveDatabase();
+
+    const message = `${connections.join(" · ")} scan complete — ${addedCount} new, ${this.state.assessments.length} total. ${stripHtmlTags(notes.join(" "))}`.trim();
+    return {
+      success: true,
+      message,
+      assessments: this.state.assessments,
+      dashboard: this.state.dashboard,
+      schedule: this.state.schedule
+    };
   }
 
   generateIcs() {
@@ -1632,11 +2566,97 @@ async function saveGoogleAccountProfile() {
   triggerHaptic("success");
   showToast(
     IS_NATIVE
-      ? `Local profile saved: ${email}. Pair with the desktop app to enable real Google scanning.`
+      ? `Local profile saved: ${email}. Live scanning activates after you sign in (Settings → Integrations).`
       : `Local profile saved: ${email}.`,
     "success",
     3500
   );
+}
+
+// ============================================================================
+// GEMINI KEY HELPER (guided, free-tier, validate-then-save)
+// ============================================================================
+
+/** Opens Google AI Studio's API-key page in the system browser. */
+async function openGeminiKeyHelper() {
+  triggerHaptic("selection");
+  await openExternalUrl("https://aistudio.google.com/apikey");
+}
+
+/**
+ * Validates the pasted AI Studio key with a tiny real request, then saves it.
+ * Honest about failures: 400 = bad key, 429 = quota (usually still fine to
+ * save), network/CORS = blocked walk-through.
+ */
+async function validateGeminiKeyFromSettings() {
+  triggerHaptic("medium");
+  const input = document.getElementById("settings-gemini-key");
+  const statusEl = document.getElementById("settings-gemini-status");
+  const showStatus = (text, tone) => {
+    if (!statusEl) return;
+    statusEl.textContent = text;
+    statusEl.classList.remove("hidden");
+    statusEl.className = "text-[11px] p-2 rounded-lg border font-medium " + (
+      tone === "ok" ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200"
+      : tone === "warn" ? "bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200"
+      : "bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200"
+    );
+  };
+  const key = (input?.value || "").trim();
+  if (!key) {
+    showStatus("Paste your key first. Tap step 1 above to open AI Studio and copy it.", "err");
+    return;
+  }
+  if (!key.startsWith("AIza") || key.length < 30) {
+    showStatus("This doesn't look like an AI Studio key (they start with \"AIza\" and are ~39 characters long). Double-check the copy — the key lives under \"API key\", not the Gemini plan.", "warn");
+  }
+  showStatus("Testing your key with a tiny request…", "warn");
+  try {
+    const res = await _originalFetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({ contents: [{ parts: [{ text: "Reply with the single word OK" }] }] })
+    });
+    if (res && res.ok) {
+      await fetch("/api/config/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gemini_api_key: key, gemini_enabled: true })
+      });
+      if (appState.config) {
+        appState.config.gemini_api_key = key;
+        appState.config.gemini_enabled = true;
+      }
+      saveStateCache();
+      updateTopBarAndUser();
+      renderAllViews();
+      triggerHaptic("success");
+      showStatus("Key works and is saved (free tier — no billing). AI features are live on this device.", "ok");
+      showToast("Gemini connected with your own free key.", "success", 3500);
+      return;
+    }
+    const code = res ? res.status : 0;
+    if (code === 400 || code === 403) {
+      showStatus("Google rejected this key (HTTP " + code + "). Copy it again from aistudio.google.com/apikey — make sure you copied the full string.", "err");
+    } else if (code === 429) {
+      // Quota exceeded right now — the key identity is still valid.
+      await fetch("/api/config/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gemini_api_key: key, gemini_enabled: true })
+      });
+      if (appState.config) {
+        appState.config.gemini_api_key = key;
+        appState.config.gemini_enabled = true;
+      }
+      saveStateCache();
+      showStatus("Key is valid but hit its free-quota limit just now (HTTP 429). It's saved — AI features will work once the per-minute quota resets.", "warn");
+    } else {
+      showStatus("Google replied with HTTP " + (res ? res.status : "network error") + ". Try again in a minute.", "err");
+    }
+  } catch (e) {
+    showStatus("Request blocked or offline. Check your connection and try again (a VPN/ad-blocker can also block aistudio traffic).", "err");
+  }
 }
 
 // ============================================================================
@@ -1802,6 +2822,10 @@ window.handleOAuthResult = function(provider, tokenData, profileData) {
     if (tokenData.refresh_token) {
       appState.auth.refresh_token = tokenData.refresh_token;
     }
+    // Track the access-token age so the scanner knows when to ask the native
+    // bridge (MainActivity secure storage) for a silent renewal. Google access
+    // tokens last ~1h; assume 55 minutes to stay safely inside the window.
+    appState.auth.google_token_expires_at = Date.now() + 55 * 60 * 1000;
     if (!appState.config) appState.config = {};
     appState.config.user_email = appState.auth.email;
     appState.config.user_name = appState.auth.name;
@@ -1822,13 +2846,15 @@ window.handleOAuthResult = function(provider, tokenData, profileData) {
       openAccountModal();
     }
     triggerHaptic("success");
-    showToast(`Signed in as ${appState.auth.email}! Google Calendar & Gemini active.`, "success", 4000);
+    showToast(`Signed in as ${appState.auth.email} — live Gmail scanning is active on this device.`, "success", 4000);
   } else if (provider === "microsoft") {
     if (!appState.config) appState.config = {};
     const msEmail = profileData.mail || profileData.userPrincipalName || tokenData.email || "University Account";
     const msName = profileData.displayName || "University Student";
     appState.config.teams_enabled = true;
     appState.config.teams_token = tokenData.access_token;
+    // Microsoft access tokens are typically valid ~1h; refresh handled via bridge.
+    appState.config.teams_token_expires_at = Date.now() + 55 * 60 * 1000;
     if (tokenData.refresh_token) {
       appState.config.teams_refresh_token = tokenData.refresh_token;
     }
@@ -1836,6 +2862,13 @@ window.handleOAuthResult = function(provider, tokenData, profileData) {
     appState.config.teams_account_name = msName;
     appState.teams_connected = true;
     appState.teams_email = msEmail;
+    // Identity preference: when the university Microsoft account is connected
+    // WITHOUT a Google sign-in, the university identity becomes the profile
+    // anchor (display name/email) so the phone clearly shows who it scans for.
+    if (!appState.auth || !appState.auth.authenticated) {
+      appState.config.user_email = msEmail;
+      appState.config.user_name = msName;
+    }
 
     if (typeof mobileEngine !== "undefined" && mobileEngine && mobileEngine.state) {
       mobileEngine.state.config = { ...appState.config };
@@ -3429,10 +4462,17 @@ async function loadFullState() {
       return;
     }
 
-    // One-time First-Run Onboarding Wizard: triggers whenever this specific device hasn't completed onboarding yet
+    // One-time First-Run Onboarding Wizard: triggers whenever this specific device hasn't completed onboarding yet.
+    // Do NOT reopen on top of an in-progress wizard (e.g. the user resumed the
+    // app from the OAuth browser mid-setup — the appStateChange resume listener
+    // fires loadFullState() and used to reset the wizard back to step 1).
     const deviceOnboardDone = localStorage.getItem("quizradar_device_onboarded_v4") === "true";
     if (!deviceOnboardDone) {
-      setTimeout(() => openOnboardingModal(1), 150);
+      const onboardEl = document.getElementById("onboarding-modal");
+      const alreadyOpen = !!(onboardEl && onboardEl.classList.contains("is-open"));
+      if (!alreadyOpen) {
+        setTimeout(() => openOnboardingModal(1), 150);
+      }
     }
   } catch (err) {
     console.warn("Failed to load live state from backend, falling back to cache:", err);

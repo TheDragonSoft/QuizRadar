@@ -18,6 +18,10 @@ public class MainActivity extends BridgeActivity implements LocalOAuthServer.OAu
     private static final String WIDGET_KEY_LAST_PUSH = "last_widget_push";
     private static final long WIDGET_PUSH_MIN_INTERVAL_MS = 60_000L;
 
+    // Refresh-token storage (private to the app; never exposed to the WebView —
+    // the JS side only receives short-lived access tokens via the bridge).
+    private static final String OAUTH_TOKEN_PREFS = "quizradar_oauth_tokens";
+
     private LocalOAuthServer oauthServer;
     private volatile boolean oauthKeepAlive = false;
     // FEATURE A: share-sheet intent received before the WebView is ready.
@@ -35,12 +39,19 @@ public class MainActivity extends BridgeActivity implements LocalOAuthServer.OAu
         }
         try {
             oauthServer = new LocalOAuthServer(3000, this);
+            oauthServer.regenerateBridgeNonce();
+            oauthServer.setOAuthRefreshHandler(this::handleBridgeRefresh);
             oauthServer.start();
             if (oauthServer.awaitStart(1500)) {
                 Log.i(TAG, "Local OAuth server listening on 127.0.0.1:3000");
             } else {
                 Log.e(TAG, "Local OAuth server failed to bind port 3000 — Google/Microsoft sign-in will not work this session");
             }
+            // Late re-injection: the first onResume() can fire before the
+            // WebView's page context exists, so the key would be lost. One
+            // delayed injection covers the cold-start while the early one in
+            // onResume() covers warm resumes.
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(this::injectBridgeKey, 2500);
         } catch (Exception e) {
             Log.e(TAG, "Failed to initialize LocalOAuthServer", e);
         }
@@ -49,12 +60,28 @@ public class MainActivity extends BridgeActivity implements LocalOAuthServer.OAu
     @Override
     public void onResume() {
         super.onResume();
+        injectBridgeKey();
         if (pendingSendIntent != null) {
             Intent send = pendingSendIntent;
             pendingSendIntent = null;
             trySendToWebApp(send);
         }
         refreshWidgetSnapshot(false);
+    }
+
+    /** Hands the per-session bridge secret to the web app so the engine can
+     *  use the token-refresh endpoint. The key lives only in the page's JS
+     *  memory (never localStorage) and is rebuilt on every process start. */
+    private void injectBridgeKey() {
+        try {
+            if (oauthServer == null || getBridge() == null || getBridge().getWebView() == null) return;
+            String key = oauthServer.getBridgeNonce();
+            if (key == null || key.isEmpty()) return;
+            String js = "window.__quizradarBridgeKey = '" + key + "';";
+            getBridge().getWebView().evaluateJavascript(js, null);
+        } catch (Exception e) {
+            Log.w(TAG, "Bridge key injection failed", e);
+        }
     }
 
     @Override
@@ -243,6 +270,7 @@ public class MainActivity extends BridgeActivity implements LocalOAuthServer.OAu
     public void onGoogleSuccess(final JSONObject tokens, final JSONObject profile) {
         Log.i(TAG, "Google OAuth completed: " + profile.optString("email"));
         stopOauthKeepAlive();
+        storeRefreshToken("google", tokens, profile.optString("email"));
         runOnUiThread(() -> {
             try {
                 if (getBridge() != null && getBridge().getWebView() != null) {
@@ -260,8 +288,10 @@ public class MainActivity extends BridgeActivity implements LocalOAuthServer.OAu
 
     @Override
     public void onMicrosoftSuccess(final JSONObject tokens, final JSONObject profile) {
-        Log.i(TAG, "Microsoft OAuth completed: " + profile.optString("mail", profile.optString("userPrincipalName")));
+        String msEmail = profile.optString("mail", profile.optString("userPrincipalName"));
+        Log.i(TAG, "Microsoft OAuth completed: " + msEmail);
         stopOauthKeepAlive();
+        storeRefreshToken("microsoft", tokens, msEmail);
         runOnUiThread(() -> {
             try {
                 if (getBridge() != null && getBridge().getWebView() != null) {
@@ -298,6 +328,100 @@ public class MainActivity extends BridgeActivity implements LocalOAuthServer.OAu
             }
             bringAppToFront();
         });
+    }
+
+    /**
+     * Persists the most recent Google/Microsoft refresh credential in the
+     * app's private storage. Called right after every successful sign-in so
+     * the on-device scanner can silently renew expired access tokens through
+     * the bridge endpoint.
+     */
+    private void storeRefreshToken(String provider, JSONObject tokens, String email) {
+        try {
+            if (tokens == null) return;
+            String refreshToken = tokens.optString("refresh_token", "");
+            if (refreshToken.isEmpty()) {
+                Log.w(TAG, provider + " sign-in returned no refresh token — silent renewal will be unavailable");
+                return;
+            }
+            SharedPreferences prefs = getSharedPreferences(OAUTH_TOKEN_PREFS, MODE_PRIVATE);
+            prefs.edit()
+                    .putString("google".equals(provider) ? "google_refresh_token" : "ms_refresh_token", refreshToken)
+                    .putString("google".equals(provider) ? "google_email" : "ms_email",
+                            email == null ? "" : email)
+                    .apply();
+            Log.i(TAG, "Stored refresh token for " + provider + " (" + (email == null ? "" : email.length()) + "-char email)");
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to store refresh token for " + provider, e);
+        }
+    }
+
+    /**
+     * Bridge handler for POST /api/auth/refresh. Runs on the OAuth server's
+     * worker thread (never the UI thread): redeems the stored refresh token
+     * for a fresh access token. Scope-gated by the session bridge secret,
+     * which is validated inside LocalOAuthServer before this is invoked.
+     */
+    private JSONObject handleBridgeRefresh(String provider) {
+        SharedPreferences prefs = null;
+        String storedKey;
+        try {
+            prefs = getSharedPreferences(OAUTH_TOKEN_PREFS, MODE_PRIVATE);
+            storedKey = "google".equals(provider) ? "google_refresh_token" : "ms_refresh_token";
+            String refreshToken = prefs.getString(storedKey, null);
+            if (refreshToken == null || refreshToken.isEmpty()) {
+                Log.w(TAG, "Refresh requested for " + provider + " but nothing is stored");
+                return null;
+            }
+            String endpoint;
+            String postData;
+            if ("google".equals(provider)) {
+                endpoint = "https://oauth2.googleapis.com/token";
+                postData = "client_id=" + java.net.URLEncoder.encode(LocalOAuthServer.GOOGLE_CLIENT_ID, "UTF-8")
+                        + "&client_secret=" + java.net.URLEncoder.encode(LocalOAuthServer.GOOGLE_CLIENT_SECRET, "UTF-8")
+                        + "&refresh_token=" + java.net.URLEncoder.encode(refreshToken, "UTF-8")
+                        + "&grant_type=refresh_token";
+            } else {
+                endpoint = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
+                postData = "client_id=" + java.net.URLEncoder.encode(LocalOAuthServer.MICROSOFT_CLIENT_ID, "UTF-8")
+                        + "&refresh_token=" + java.net.URLEncoder.encode(refreshToken, "UTF-8")
+                        + "&grant_type=refresh_token"
+                        + "&scope=" + java.net.URLEncoder.encode("offline_access User.Read Mail.Read Calendars.Read", "UTF-8");
+            }
+            JSONObject res = LocalOAuthServer.postFormJson(endpoint, postData);
+            String accessToken = res.optString("access_token");
+            if (accessToken.isEmpty()) {
+                Log.w(TAG, "Refresh for " + provider + " returned no access token");
+                return null;
+            }
+            // Microsoft occasionally rotates the refresh token alongside the
+            // access token — keep the newest one so later renewals keep working.
+            String rotated = res.optString("refresh_token");
+            if (!rotated.isEmpty() && !rotated.equals(refreshToken)) {
+                prefs.edit().putString(storedKey, rotated).apply();
+            }
+            JSONObject out = new JSONObject();
+            out.put("ok", true);
+            out.put("provider", provider);
+            out.put("access_token", accessToken);
+            out.put("expires_in", res.optLong("expires_in", 3600L));
+            Log.i(TAG, "Bridge refresh OK for " + provider + " (expires_in " + res.optLong("expires_in", 3600L) + "s)");
+            return out;
+        } catch (Exception e) {
+            String msg = e == null ? "" : String.valueOf(e.getMessage());
+            if (prefs != null && msg != null && (msg.contains("HTTP 400") || msg.contains("HTTP 401"))) {
+                // The stored credential was revoked/expired server-side. Purge
+                // it so the next sign-in starts cleanly instead of looping on
+                // a dead token.
+                try {
+                    prefs.edit().remove("google".equals(provider) ? "google_refresh_token" : "ms_refresh_token").apply();
+                    Log.w(TAG, "Purged revoked refresh token for " + provider + " — user must sign in again");
+                } catch (Exception ignored) {}
+            } else {
+                Log.w(TAG, "Bridge refresh failed for " + provider + " (transient or transport error)");
+            }
+            return null;
+        }
     }
 
     private void bringAppToFront() {

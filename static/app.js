@@ -2734,7 +2734,7 @@ function initKeyboardShortcuts() {
         return;
       }
       if (accountModal?.classList.contains("is-open")) {
-        closeAccountProfileModal();
+        closeAccountModal();
         return;
       }
       if (mobileSearchModal?.classList.contains("is-open")) {

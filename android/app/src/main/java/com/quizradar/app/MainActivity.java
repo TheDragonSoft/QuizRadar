@@ -19,6 +19,7 @@ public class MainActivity extends BridgeActivity implements LocalOAuthServer.OAu
     private static final long WIDGET_PUSH_MIN_INTERVAL_MS = 60_000L;
 
     private LocalOAuthServer oauthServer;
+    private volatile boolean oauthKeepAlive = false;
     // FEATURE A: share-sheet intent received before the WebView is ready.
     private Intent pendingSendIntent;
 
@@ -58,6 +59,7 @@ public class MainActivity extends BridgeActivity implements LocalOAuthServer.OAu
 
     @Override
     public void onDestroy() {
+        stopOauthKeepAlive();
         if (oauthServer != null) {
             oauthServer.stop();
             oauthServer = null;
@@ -212,8 +214,35 @@ public class MainActivity extends BridgeActivity implements LocalOAuthServer.OAu
     }
 
     @Override
+    public void onPrepare(final String provider) {
+        Log.i(TAG, "Sign-in prepare for " + provider + " — starting keep-alive foreground service");
+        try {
+            Intent svc = new Intent(this, OAuthSigninService.class);
+            svc.putExtra("provider", provider);
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                startForegroundService(svc);
+            } else {
+                startService(svc);
+            }
+            oauthKeepAlive = true;
+        } catch (Exception e) {
+            Log.w(TAG, "Could not start OAuth keep-alive service", e);
+        }
+    }
+
+    /** Stops the temporary foreground keep-alive once sign-in resolves. */
+    private void stopOauthKeepAlive() {
+        if (!oauthKeepAlive) return;
+        oauthKeepAlive = false;
+        try {
+            stopService(new Intent(this, OAuthSigninService.class));
+        } catch (Exception ignored) {}
+    }
+
+    @Override
     public void onGoogleSuccess(final JSONObject tokens, final JSONObject profile) {
         Log.i(TAG, "Google OAuth completed: " + profile.optString("email"));
+        stopOauthKeepAlive();
         runOnUiThread(() -> {
             try {
                 if (getBridge() != null && getBridge().getWebView() != null) {
@@ -232,6 +261,7 @@ public class MainActivity extends BridgeActivity implements LocalOAuthServer.OAu
     @Override
     public void onMicrosoftSuccess(final JSONObject tokens, final JSONObject profile) {
         Log.i(TAG, "Microsoft OAuth completed: " + profile.optString("mail", profile.optString("userPrincipalName")));
+        stopOauthKeepAlive();
         runOnUiThread(() -> {
             try {
                 if (getBridge() != null && getBridge().getWebView() != null) {
@@ -250,6 +280,7 @@ public class MainActivity extends BridgeActivity implements LocalOAuthServer.OAu
     @Override
     public void onError(final String provider, final String error) {
         Log.e(TAG, "OAuth error for " + provider);
+        stopOauthKeepAlive();
         runOnUiThread(() -> {
             try {
                 if (getBridge() != null && getBridge().getWebView() != null) {

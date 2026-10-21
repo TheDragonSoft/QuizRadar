@@ -61,9 +61,22 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/quizradar_widget_info" />
         </receiver>
+
+        <!-- OAuth sign-in: temporary foreground keep-alive so the loopback
+             callback server survives while the browser handles consent. -->
+        <service
+            android:name=".OAuthSigninService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Loopback OAuth callback listener must stay reachable while the user completes sign-in in an external browser." />
+        </service>
     </application>
 
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 </manifest>

@@ -7,7 +7,7 @@
 const IS_NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 
 // Single source of truth for the UI version (keep in sync with Cargo.toml / package.json)
-const APP_VERSION = "4.2.0";
+const APP_VERSION = "4.2.1";
 
 // ============================================================================
 // QUIZRADAR AUTONOMOUS ON-DEVICE BACKEND ENGINE (100% Isolated, Zero Latency)
@@ -655,13 +655,21 @@ class QuizRadarAutonomousEngine {
       try { challenge = await pkceChallengeS256(verifier); } catch (e) { challenge = ""; }
       pendingNativeOAuth.google = { state, verifier };
       if (IS_NATIVE) {
-        try {
-          await _originalFetch("http://127.0.0.1:3000/api/auth/prepare", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ provider: "google", state, verifier })
-          });
-        } catch (e) { /* server records the expectation when reachable */ }
+        // The in/out sign-in contract: if the local listener that will receive
+        // the http://localhost:3000 redirect is NOT reachable right now (app
+        // freshly updated, port busy), opening the browser is guaranteed to
+        // strand the user on a dead localhost page ("site can't be reached").
+        // Fail fast and honestly instead.
+        const prepared = await nativeOauthPrepare("google", state, verifier);
+        if (!prepared) {
+          return {
+            ok: true, status: 200,
+            data: {
+              url: null,
+        error: "Sign-in listener not reachable. Fully close & reopen QuizRadar, then tap Sign In again. (Its callback port 3000 may be busy.)"
+            }
+          };
+        }
       }
       let googleAuthUrl = "https://accounts.google.com/o/oauth2/v2/auth?client_id=" + encodeURIComponent(clientId) +
         "&redirect_uri=" + encodeURIComponent(redirectUri) +
@@ -686,13 +694,17 @@ class QuizRadarAutonomousEngine {
       try { challenge = await pkceChallengeS256(verifier); } catch (e) { challenge = ""; }
       pendingNativeOAuth.microsoft = { state, verifier };
       if (IS_NATIVE) {
-        try {
-          await _originalFetch("http://127.0.0.1:3000/api/auth/prepare", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ provider: "microsoft", state, verifier })
-          });
-        } catch (e) { /* server records the expectation when reachable */ }
+        // Same fail-fast contract as the Google flow above.
+        const prepared = await nativeOauthPrepare("microsoft", state, verifier);
+        if (!prepared) {
+          return {
+            ok: true, status: 200,
+            data: {
+              url: null,
+              error: "Sign-in listener not reachable. Fully close & reopen QuizRadar, then tap Connect University again. (Its callback port 3000 may be busy.)"
+            }
+          };
+        }
       }
       let msAuthUrl = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=" + encodeURIComponent(clientId) +
         "&response_type=code" +
@@ -1673,6 +1685,26 @@ function openExternalBrowser(url) {
 let authPollInterval = null;
 let authPollTimeout = null;
 
+/** Posts a pending sign-in expectation to the native loopback listener.
+ *  Returns true only when the listener acknowledged it (HTTP ok) within 4s.
+ *  Used to fail fast BEFORE opening the external browser. */
+async function nativeOauthPrepare(provider, state, verifier) {
+  try {
+    const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), 4000) : null;
+    const res = await _originalFetch("http://127.0.0.1:3000/api/auth/prepare", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: ctrl ? ctrl.signal : undefined,
+      body: JSON.stringify({ provider, state, verifier })
+    });
+    if (timer) clearTimeout(timer);
+    return !!(res && res.ok);
+  } catch (e) {
+    return false;
+  }
+}
+
 function startAuthPolling(provider = "any") {
   if (authPollInterval) clearInterval(authPollInterval);
   if (authPollTimeout) clearTimeout(authPollTimeout);
@@ -1827,7 +1859,7 @@ async function startGoogleAuth() {
     const res = await fetch("/api/auth/google/url");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    if (!data.url) throw new Error("No authorization URL returned");
+    if (!data.url) throw new Error(data.error || "No authorization URL returned");
 
     openExternalBrowser(data.url);
     startAuthPolling("google");
@@ -1849,7 +1881,7 @@ async function startMicrosoftAuth() {
     const res = await fetch("/api/microsoft/url");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    if (!data.url) throw new Error("No authorization URL returned");
+    if (!data.url) throw new Error(data.error || "No authorization URL returned");
 
     openExternalBrowser(data.url);
     startAuthPolling("microsoft");

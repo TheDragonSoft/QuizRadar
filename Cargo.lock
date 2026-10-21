@@ -2211,7 +2211,7 @@ dependencies = [
 
 [[package]]
 name = "quizradar"
-version = "4.2.0"
+version = "4.2.1"
 dependencies = [
  "axum",
  "base64 0.22.1",

@@ -8,6 +8,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -52,6 +53,13 @@ public class LocalOAuthServer {
         /** Called as soon as an auth code arrives, so the app can return to the foreground
          *  (Android blocks network access for background apps). */
         void onCodeReceived(String provider);
+        /**
+         * Called when the web app records a pending sign-in expectation right before
+         * the external browser is opened — lets MainActivity hold a foreground
+         * keep-alive service so Android won't freeze/kill this process (and with it
+         * the loopback listener) while Chrome handles the consent flow.
+         */
+        default void onPrepare(String provider) {}
         void onGoogleSuccess(JSONObject tokens, JSONObject profile);
         void onMicrosoftSuccess(JSONObject tokens, JSONObject profile);
         void onError(String provider, String error);
@@ -59,10 +67,14 @@ public class LocalOAuthServer {
 
     private final int port;
     private final OAuthListener listener;
-    private ServerSocket serverSocket;
+    /** Two listeners cover the loopback regardless of which address family the
+     *  browser resolves for "localhost": some devices prefer ::1 (IPv6) and get
+     *  ERR_CONNECTION_REFUSED when only an IPv4 socket exists. */
+    private volatile ServerSocket serverSocket4;
+    private volatile ServerSocket serverSocket6;
     private volatile boolean isRunning = false;
     private volatile boolean bindSucceeded = false;
-    private final CountDownLatch bindLatch = new CountDownLatch(1);
+    private final CountDownLatch bindLatch = new CountDownLatch(2);
     private final ExecutorService threadPool = Executors.newCachedThreadPool();
     private final ConcurrentHashMap<String, PendingAuth> pendingAuths = new ConcurrentHashMap<>();
 
@@ -74,32 +86,42 @@ public class LocalOAuthServer {
     public synchronized void start() {
         if (isRunning) return;
         isRunning = true;
-        threadPool.execute(() -> {
-            try {
-                serverSocket = new ServerSocket();
-                serverSocket.setReuseAddress(true);
-                serverSocket.bind(new InetSocketAddress("127.0.0.1", port));
-                bindSucceeded = true;
-                Log.i(TAG, "LocalOAuthServer listening on 127.0.0.1:" + port);
-
-                while (isRunning && !serverSocket.isClosed()) {
-                    try {
-                        Socket client = serverSocket.accept();
-                        threadPool.execute(() -> handleClient(client));
-                    } catch (Exception e) {
-                        if (!isRunning) break;
-                        Log.w(TAG, "Error accepting connection: " + e.getMessage());
-                    }
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to bind server socket on port " + port, e);
-            } finally {
-                bindLatch.countDown();
-            }
-        });
+        threadPool.execute(() -> bindLoop(true));
+        threadPool.execute(() -> bindLoop(false));
     }
 
-    /** Blocks briefly until the bind attempt settles so callers can report
+    /** Binds one loopback family and serves it until stop(); IPv6 is
+     *  best-effort (IPv4 failure alone still leaves sign-in working). */
+    private void bindLoop(boolean ipv4) {
+        ServerSocket ss = null;
+        try {
+            ss = new ServerSocket();
+            ss.setReuseAddress(true);
+            ss.bind(new InetSocketAddress(InetAddress.getByName(ipv4 ? "127.0.0.1" : "::1"), port));
+            if (ipv4) serverSocket4 = ss; else serverSocket6 = ss;
+            bindSucceeded = true;
+            Log.i(TAG, "LocalOAuthServer listening on " + (ipv4 ? "127.0.0.1" : "[::1]") + ":" + port);
+
+            while (isRunning && !ss.isClosed()) {
+                try {
+                    Socket client = ss.accept();
+                    threadPool.execute(() -> handleClient(client));
+                } catch (Exception e) {
+                    if (!isRunning) break;
+                    Log.w(TAG, "Error accepting connection: " + e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            if (ipv4 || !bindSucceeded) {
+                Log.e(TAG, "Failed to bind server socket on "
+                        + (ipv4 ? "127.0.0.1" : "[::1]") + ":" + port, e);
+            }
+        } finally {
+            bindLatch.countDown();
+        }
+    }
+
+    /** Blocks until both bind attempts settle so callers can report
      *  real success/failure instead of a fire-and-forget "initialized" log. */
     public boolean awaitStart(long timeoutMillis) {
         try {
@@ -110,13 +132,21 @@ public class LocalOAuthServer {
         return bindSucceeded;
     }
 
+    public boolean isBindSucceeded() {
+        return bindSucceeded;
+    }
+
     public synchronized void stop() {
         isRunning = false;
-        if (serverSocket != null) {
-            try {
-                serverSocket.close();
-            } catch (Exception ignored) {}
+        ServerSocket a = serverSocket4, b = serverSocket6;
+        if (a != null) {
+            try { a.close(); } catch (Exception ignored) {}
         }
+        if (b != null) {
+            try { b.close(); } catch (Exception ignored) {}
+        }
+        serverSocket4 = null;
+        serverSocket6 = null;
         threadPool.shutdownNow();
     }
 
@@ -184,6 +214,7 @@ public class LocalOAuthServer {
             }
             pendingAuths.put(provider, new PendingAuth(state, verifier));
             sendJsonResponse(client, 200, "{\"ok\":true}");
+            if (listener != null) listener.onPrepare(provider);
         } catch (Exception e) {
             sendJsonResponse(client, 400, "{\"ok\":false}");
         }

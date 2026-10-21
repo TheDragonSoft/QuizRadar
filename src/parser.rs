@@ -55,7 +55,12 @@ pub fn load_schedule() -> ScheduleData {
 pub fn save_schedule(schedule: &ScheduleData) {
     let _ = fs::create_dir_all("data");
     if let Ok(json) = serde_json::to_string_pretty(schedule) {
-        let _ = fs::write("data/schedule.json", json);
+        // Atomic write: a crash mid-write must never truncate the user's
+        // timetable file.
+        let tmp = "data/schedule.json.tmp";
+        if fs::write(tmp, json).is_ok() {
+            let _ = fs::rename(tmp, "data/schedule.json");
+        }
     }
 }
 
@@ -184,9 +189,12 @@ pub async fn process_all_emails(
             p.announcement_body,
             &p.announcement_lower,
         ) {
+            // Include the source in the dedupe key: the same real quiz announced
+            // via both Gmail and Teams/Moodle must not collapse into whichever
+            // copy happened to be processed first.
             let dedup_key = format!(
-                "{}_{}_{}",
-                assessment.course_id, assessment.title, assessment.date_iso
+                "{}|{}|{}|{}",
+                assessment.source, assessment.course_id, assessment.title, assessment.date_iso
             );
             if seen_keys.insert(dedup_key) {
                 if let Some(event_id) = config.synced_gcal_map.get(&assessment.id) {
@@ -199,7 +207,9 @@ pub async fn process_all_emails(
     }
 
     if cache_updated {
-        save_gemini_cache(&gemini_cache);
+        let live_ids: std::collections::HashSet<String> =
+            emails.iter().map(|e| e.id.clone()).collect();
+        save_gemini_cache(&gemini_cache, Some(&live_ids));
     }
 
     // Sort: upcoming first (ordered by earliest date/time), then past (ordered by most recent)
@@ -426,15 +436,9 @@ fn parse_single_email(
         .map(|m| m.as_str().trim().to_string())
         .unwrap_or_default();
 
-    let semester = if parsed_date.year() == 2026 && parsed_date.month() >= 9 {
-        "Fall 2026".to_string()
-    } else if parsed_date.year() == 2026 && (parsed_date.month() == 7 || parsed_date.month() == 8) {
-        "Summer 2026".to_string()
-    } else if parsed_date.year() == 2026 && parsed_date.month() >= 2 {
-        "Spring 2026".to_string()
-    } else {
-        "Fall 2025".to_string()
-    };
+    // Derive the semester label from the announcement's own date instead of a
+    // hardcoded year, so the parser keeps working in 2027 and beyond.
+    let semester = infer_semester_from_date(parsed_date);
 
     let mut assessment = Assessment {
         id: email.id.clone(),
@@ -1058,10 +1062,12 @@ fn parse_email_sent_date(date_header: &str) -> Option<NaiveDate> {
 
 // True when the email was sent within the last `max_age_days` days (used to gate
 // live Gemini analysis so very old announcements are never re-billed).
+// Unparseable dates return false: unknown-age emails must not be silently
+// treated as fresh (avoids re-billing for arbitrarily old mail).
 fn is_email_recent(date_header: &str, max_age_days: i64) -> bool {
     match parse_email_sent_date(date_header) {
         Some(d) => (Local::now().date_naive() - d).num_days() <= max_age_days,
-        None => true,
+        None => false,
     }
 }
 
@@ -1140,6 +1146,22 @@ fn month_full_name(m: u32) -> &'static str {
         11 => "November",
         12 => "December",
         _ => "October",
+    }
+}
+
+/// Labels a date with the academic semester it falls into (e.g. "Fall 2026").
+/// Derived from the date itself so the parser stays correct across years.
+pub fn infer_semester_from_date(date: chrono::NaiveDate) -> String {
+    match date.month() {
+        2..=5 => format!("Spring {}", date.year()),
+        6..=8 => format!("Summer {}", date.year()),
+        9..=12 => format!("Fall {}", date.year()),
+        // January is ambiguous: early January usually belongs to the fall
+        // term that started the previous September; late January can already
+        // be the spring term.
+        1 if date.day() <= 20 => format!("Fall {}", date.year() - 1),
+        1 => format!("Spring {}", date.year()),
+        _ => format!("Fall {}", date.year()),
     }
 }
 
@@ -1244,8 +1266,8 @@ pub fn build_study_tasks(assessments: &[Assessment], config: &AppConfig) -> Stud
         let mut first_uncompleted: Option<&str> = None;
 
         let max_prep_days = (a.days_until.max(1) - 1).min(5) as i32;
-        let hours_per_topic = (a.estimated_study_hours / (topics_len as f32).max(1.0))
-            .clamp(0.5, 2.5);
+        let hours_per_topic =
+            (a.estimated_study_hours / (topics_len as f32).max(1.0)).clamp(0.5, 2.5);
         let hours_rounded = (hours_per_topic * 10.0).round() / 10.0;
 
         let urgency = if a.days_until <= 1 {
@@ -1601,8 +1623,8 @@ mod tests {
         assert!(url.contains(&format!("location={}", expected_loc_encoded)));
 
         // Details should contain topics, warnings, study plan, and e-learning link
-        let unencoded_details = format!(
-            "Course: CS 101 — Introduction to Computer Science\nAssessment Type: Online Quiz\nRoom: Hall A-110 (Group B)\nInstructor: Dr. Marcus Vance\n\nWhat to Study:\n• Recursion\n• Sorting Algorithms\n\nImportant Warnings:\n⚠️ Strict Navigation\n\nAI Study Plan: Practice coding algorithms.\n\nCourse Link: https://e-learning.univ.edu/course/view.php?id=123"
+        let unencoded_details = String::from(
+            "Course: CS 101 — Introduction to Computer Science\nAssessment Type: Online Quiz\nRoom: Hall A-110 (Group B)\nInstructor: Dr. Marcus Vance\n\nWhat to Study:\n• Recursion\n• Sorting Algorithms\n\nImportant Warnings:\n⚠️ Strict Navigation\n\nAI Study Plan: Practice coding algorithms.\n\nCourse Link: https://e-learning.univ.edu/course/view.php?id=123",
         );
         let expected_details_encoded = crate::urlencoding::encode(&unencoded_details);
         assert!(url.contains(&format!("details={}", expected_details_encoded)));
@@ -1655,8 +1677,8 @@ mod tests {
 
         assert!(url.contains("dates=20261101T090000/20261101T110000"));
 
-        let unencoded_details = format!(
-            "Course: MATH 101 — Calculus\nAssessment Type: Midterm Exam\nRoom: Room 101 (All Groups)\nInstructor: Prof. Rostova\n\nAI Study Plan: Solve past exams.\n"
+        let unencoded_details = String::from(
+            "Course: MATH 101 — Calculus\nAssessment Type: Midterm Exam\nRoom: Room 101 (All Groups)\nInstructor: Prof. Rostova\n\nAI Study Plan: Solve past exams.\n",
         );
         let expected_details_encoded = crate::urlencoding::encode(&unencoded_details);
         assert!(url.contains(&format!("details={}", expected_details_encoded)));

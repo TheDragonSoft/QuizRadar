@@ -23,11 +23,19 @@ static GEMINI_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
 });
 
 /// Redacts Gemini API key material from any error text before it is logged or
-/// surfaced. The API URL embeds `?key=...`, and plain-text error strings from
-/// reqwest or the Gemini REST API may echo that URL back verbatim.
+/// surfaced. The API URL may embed `?key=...` (and older call sites still do),
+/// and plain-text error strings from reqwest or the Gemini REST API may echo
+/// that URL back verbatim.
 fn redact_key_in_error(mut msg: String) -> String {
-    if let Some(pos) = msg.find("key=") {
-        msg.replace_range(pos.., "key=REDACTED");
+    while let Some(pos) = msg.find("key=") {
+        // Replace through the end of the token: keys are URL-safe base64-ish
+        // runs with no whitespace or ampersand.
+        let rest = &msg[pos + 4..];
+        let end = rest
+            .find(|c: char| c.is_whitespace() || c == '&' || c == '"' || c == '\'')
+            .unwrap_or(rest.len());
+        let end = pos + 4 + end;
+        msg.replace_range(pos..end, "key=REDACTED");
     }
     msg
 }
@@ -61,10 +69,26 @@ pub fn load_gemini_cache() -> HashMap<String, GeminiExtractedAssessment> {
     HashMap::new()
 }
 
-pub fn save_gemini_cache(cache: &HashMap<String, GeminiExtractedAssessment>) {
+pub fn save_gemini_cache(
+    cache: &HashMap<String, GeminiExtractedAssessment>,
+    live_email_ids: Option<&std::collections::HashSet<String>>,
+) {
+    // Prune entries for emails no longer tracked, so the cache file cannot grow
+    // unboundedly beyond the live email set.
+    let pruned: HashMap<String, GeminiExtractedAssessment> = match live_email_ids {
+        Some(ids) => cache
+            .iter()
+            .filter(|(k, _)| ids.contains(*k))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect(),
+        None => cache.clone(),
+    };
     let _ = fs::create_dir_all("data");
-    if let Ok(json) = serde_json::to_string_pretty(cache) {
-        let _ = fs::write(GEMINI_CACHE_FILE, json);
+    if let Ok(json) = serde_json::to_string_pretty(&pruned) {
+        let tmp = format!("{}.tmp", GEMINI_CACHE_FILE);
+        if fs::write(&tmp, json).is_ok() {
+            let _ = fs::rename(&tmp, GEMINI_CACHE_FILE);
+        }
     }
 }
 
@@ -147,13 +171,11 @@ Return ONLY a valid JSON object matching this exact structure:
         .or(env_key);
 
     if let Some(key) = effective_key {
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={}",
-            crate::urlencoding::encode(&key)
-        );
+        let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
         if let Ok(resp) = client
-            .post(&url)
+            .post(url)
             .timeout(std::time::Duration::from_secs(25))
+            .header("x-goog-api-key", key.trim())
             .json(&payload)
             .send()
             .await
@@ -312,34 +334,60 @@ Return ONLY a valid JSON object matching the exact structure above with no markd
         .or(env_key);
 
     if let Some(key) = effective_key {
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={}",
-            crate::urlencoding::encode(&key)
-        );
-        match client.post(&url).json(&payload).send().await {
+        let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+        // Authenticate via header so the key never lands in URLs (which can be
+        // logged by proxies or echoed back inside provider error messages).
+        let result = client
+            .post(url)
+            .header("x-goog-api-key", key.trim())
+            .json(&payload)
+            .send()
+            .await;
+        match result {
             Ok(resp) => {
-                if resp.status().is_success() {
-                    if let Ok(v) = resp.json::<Value>().await {
-                        if let Some(mut sched) = extract_candidate_schedule_json(&v) {
-                            post_process_extracted_schedule(&mut sched);
-                            return Ok(sched);
-                        } else {
-                            return Err("Gemini responded, but could not parse structured timetable JSON.".to_string());
+                let status = resp.status();
+                if status.is_success() {
+                    match resp.json::<Value>().await {
+                        Ok(v) => {
+                            if let Some(mut sched) = extract_candidate_schedule_json(&v) {
+                                post_process_extracted_schedule(&mut sched);
+                                return Ok(sched);
+                            }
+                            return Err(
+                                "Gemini read the image but couldn't find a timetable in it. Try a clearer, full-page screenshot of your schedule."
+                                    .to_string(),
+                            );
+                        }
+                        Err(e) => {
+                            return Err(format!(
+                                "Gemini returned an unreadable response: {}. Try again or enter your schedule manually.",
+                                e
+                            ));
                         }
                     }
-                } else {
-                    let status = resp.status();
-                    let err_txt = resp.text().await.unwrap_or_default();
-                    eprintln!(
-                        "Gemini API non-200 ({status}): {}. Falling back to on-device schedule extractor.",
-                        redact_key_in_error(err_txt)
-                    );
                 }
+                // Real API failure: surface the reason (quota, invalid key,
+                // blocked image...) instead of pretending the key is missing.
+                let err_txt = resp.text().await.unwrap_or_default();
+                let detail = redact_key_in_error(err_txt);
+                let friendly = if status.as_u16() == 400 && detail.contains("API key not valid") {
+                    "your Gemini API key is not valid — re-copy it from Google AI Studio into Settings".to_string()
+                } else if status.as_u16() == 429 {
+                    "the Gemini free-tier quota for your key is exhausted — wait a minute and try again".to_string()
+                } else {
+                    format!("Gemini API error (HTTP {}): {}", status.as_u16(), detail)
+                };
+                return Err(format!(
+                    "Couldn't scan the timetable because {}. You can still enter your courses manually.",
+                    friendly
+                ));
             }
-            Err(e) => eprintln!(
-                "Failed to connect to Gemini API: {}. Falling back to on-device schedule extractor.",
-                redact_key_in_error(e.to_string())
-            ),
+            Err(e) => {
+                return Err(format!(
+                    "Couldn't reach the Gemini API ({}). Check your internet connection and try again, or enter your schedule manually.",
+                    redact_key_in_error(e.to_string())
+                ));
+            }
         }
     }
 
@@ -364,8 +412,7 @@ Return ONLY a valid JSON object matching the exact structure above with no markd
     }
 
     Err(
-        "Automatic timetable extraction requires a configured Gemini API key. \
-Add your free Gemini API key in Server Settings (or paste your timetable text with a key configured), or enter your weekly schedule manually."
+        "Automatic timetable extraction needs a Gemini API key. Add your free key in Settings (it stays on this device), or enter your weekly schedule manually."
             .to_string(),
     )
 }
@@ -566,14 +613,13 @@ RULES:
         }
     });
 
-    let url = format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={}",
-        api_key
-    );
+    let url =
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
     let resp = client
-        .post(&url)
+        .post(url)
         .timeout(std::time::Duration::from_secs(25))
+        .header("x-goog-api-key", api_key.trim())
         .json(&payload)
         .send()
         .await
@@ -839,11 +885,14 @@ Return ONLY a JSON array of 5 objects matching this exact structure:
         .or(env_key);
 
     if let Some(key) = effective_key {
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={}",
-            crate::urlencoding::encode(&key)
-        );
-        if let Ok(resp) = client.post(&url).json(&payload).send().await {
+        let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+        if let Ok(resp) = client
+            .post(url)
+            .header("x-goog-api-key", key.trim())
+            .json(&payload)
+            .send()
+            .await
+        {
             if resp.status().is_success() {
                 if let Ok(v) = resp.json::<Value>().await {
                     if let Some(questions) = parse_practice_questions_json(&v) {
@@ -1252,11 +1301,14 @@ pub async fn explore_and_extract_academic_universe(
     let mut result_json: Option<Value> = None;
 
     if let Some(key) = effective_key {
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={}",
-            crate::urlencoding::encode(&key)
-        );
-        if let Ok(resp) = client.post(&url).json(&payload).send().await {
+        let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+        if let Ok(resp) = client
+            .post(url)
+            .header("x-goog-api-key", key.trim())
+            .json(&payload)
+            .send()
+            .await
+        {
             if resp.status().is_success() {
                 if let Ok(v) = resp.json::<Value>().await {
                     result_json = Some(v);

@@ -1,8 +1,9 @@
-const CACHE_NAME = 'quizradar-pwa-v4.1.0';
+const CACHE_NAME = 'quizradar-pwa-v4.2.0';
 const STATIC_ASSETS = [
   './',
   './index.html',
   './app.js',
+  './qrcode.js',
   './tailwind.css',
   './fonts.css',
   './fonts/inter-var-latin.woff2',
@@ -15,27 +16,13 @@ const STATIC_ASSETS = [
   './manifest.webmanifest'
 ];
 
-// Cross-origin CDN asset the app still depends on as an offline icon fallback.
-// Tailwind & Inter are now self-hosted and precached via STATIC_ASSETS.
-const CDN_ASSETS = [
-  'https://unpkg.com/lucide@latest/dist/umd/lucide.min.js'
-];
+// NOTE: the old unpkg CDN precache was removed — lucide is vendored locally
+// and every remote script fetch at install time was dead weight (and a
+// mutable `@latest` supply-chain smell).
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    Promise.allSettled([
-      caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS)),
-      caches.open(CACHE_NAME).then((cache) =>
-        Promise.allSettled(
-          CDN_ASSETS.map((a) =>
-            // no-cors opaque responses are safe to cache for offline use
-            fetch(a, { mode: 'no-cors', cache: 'no-cache' })
-              .then((resp) => (resp && !resp.bodyUsed ? cache.put(a, resp) : resp))
-              .catch(() => undefined)
-          )
-        )
-      )
-    ]).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS)).then(() => self.skipWaiting())
   );
 });
 

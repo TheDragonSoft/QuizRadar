@@ -161,6 +161,13 @@ impl Assessment {
     }
 
     pub fn is_source_enabled(&self, config: &AppConfig) -> bool {
+        // Subscribed .ics feeds are gated by their own `enabled` flag at fetch
+        // time, so they must not be silently dropped by the LMS-specific
+        // toggles below (a feed may legitimately be named e.g. "Moodle
+        // Timetable", which would otherwise trip the Moodle check).
+        if self.id.starts_with("feed-") {
+            return true;
+        }
         if self.is_teams() && !config.teams_enabled {
             return false;
         }
@@ -236,6 +243,22 @@ pub struct PracticeQuizPayload {
     pub generated_by_ai: bool,
 }
 
+/// A generic university timetable/calendar subscription (.ics URL). Many
+/// universities expose these directly; URLs often embed a personal access
+/// token, which is why they are only ever served to loopback callers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeedConfig {
+    pub id: String,   // stable id, e.g. "feed-<unix millis>"
+    pub name: String, // user label e.g. "University Timetable"
+    pub url: String,  // https://... .ics URL
+    #[serde(default = "default_feed_enabled")]
+    pub enabled: bool,
+}
+
+fn default_feed_enabled() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub onboarding_completed: bool,
@@ -260,6 +283,16 @@ pub struct AppConfig {
     pub synced_gcal_map: HashMap<String, String>, // quiz_id -> google_calendar_event_id
     #[serde(default)]
     pub custom_events: Vec<CustomCalendarEvent>,
+
+    // Generic .ics calendar feed subscriptions
+    #[serde(default)]
+    pub feeds: Vec<FeedConfig>,
+
+    // Optional shared PIN required from non-loopback (LAN pairing) callers.
+    // Stored as plain 4-8 digits; the desktop UI generates/displays it, the
+    // server only ever matches it. Redacted from remote config responses.
+    #[serde(default)]
+    pub pairing_pin: Option<String>,
 
     // Academic Multi-Source Integrations
     #[serde(default)]
@@ -310,6 +343,8 @@ impl Default for AppConfig {
             completed_topics: HashMap::new(),
             synced_gcal_map: HashMap::new(),
             custom_events: Vec::new(),
+            feeds: Vec::new(),
+            pairing_pin: None,
             moodle_enabled: false,
             moodle_url: None,
             moodle_token: None,

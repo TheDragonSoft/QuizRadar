@@ -10,10 +10,6 @@
     "allowMixedContent": true
   },
   "plugins": {
-    "LocalNotifications": {
-      "smallIcon": "ic_stat_icon",
-      "iconColor": "#1a73e8"
-    },
     "StatusBar": {
       "style": "DARK",
       "backgroundColor": "#0b0f19"

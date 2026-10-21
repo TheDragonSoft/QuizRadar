@@ -104,6 +104,7 @@ async fn sync_one_event(
             "https://www.googleapis.com/calendar/v3/calendars/primary/events/{}",
             existing_event_id
         );
+        let mut not_found = false;
         for _ in 0..2 {
             if let Ok(resp) = client
                 .put(&put_url)
@@ -112,14 +113,36 @@ async fn sync_one_event(
                 .send()
                 .await
             {
-                if resp.status().is_success() {
+                let status = resp.status();
+                if status.is_success() {
                     return (index, GcalOutcome::Updated(existing_event_id));
                 }
+                if status.as_u16() == 404 {
+                    // The remote event was deleted by the user: forget the
+                    // stale mapping and create a fresh event instead of
+                    // blocking this assessment from ever syncing again.
+                    not_found = true;
+                    break;
+                }
             }
+        }
+        if not_found {
+            // The remote event was deleted: create a fresh one (extracted into
+            // a non-recursive helper so the async fn stays boxable).
+            return create_event(client, token, index, event_body).await;
         }
         return (index, GcalOutcome::Blocked);
     }
 
+    create_event(client, token, index, event_body).await
+}
+
+async fn create_event(
+    client: &reqwest::Client,
+    token: &str,
+    index: usize,
+    event_body: Value,
+) -> (usize, GcalOutcome) {
     let post_url = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
     match client
         .post(post_url)
@@ -229,8 +252,10 @@ pub async fn sync_assessments_to_google_calendar(
             ),
         }
     } else if !has_cal_scope || scope_or_api_blocked {
+        // An auth/scope/API failure is NOT success: callers that only check
+        // the flag must not report a full failure as a clean sync.
         GCalSyncReport {
-            success: true,
+            success: upcoming_count == 0,
             synced_count: 0,
             total_upcoming: upcoming_count,
             needs_calendar_scope: !has_cal_scope,
@@ -255,7 +280,7 @@ pub async fn sync_assessments_to_google_calendar(
 
 pub fn generate_single_ics(a: &Assessment) -> String {
     let mut ics = String::from(
-        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//QuizRadar v3.3.0//Standalone Rust//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\n",
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//QuizRadar v4.2.0//Standalone Rust//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\n",
     );
     ics.push_str(&format_vevent(a));
     ics.push_str("END:VCALENDAR\r\n");
@@ -264,7 +289,7 @@ pub fn generate_single_ics(a: &Assessment) -> String {
 
 pub fn generate_all_ics(assessments: &[Assessment]) -> String {
     let mut ics = String::from(
-        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//QuizRadar v3.3.0//Standalone Rust//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nX-WR-CALNAME:QuizRadar - Academic Exams & Quizzes\r\n",
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//QuizRadar v4.2.0//Standalone Rust//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nX-WR-CALNAME:QuizRadar - Academic Exams & Quizzes\r\n",
     );
     for a in assessments.iter().filter(|x| x.is_upcoming) {
         ics.push_str(&format_vevent(a));
@@ -300,11 +325,23 @@ fn format_vevent(a: &Assessment) -> String {
     }
     desc.push_str(&format!("\\n\\nStudy Plan: {}", a.ai_study_plan));
 
-    let summary = ical_escape(&format!("[{}] {} ({})", a.course_id, a.title, a.assessment_type));
-    let location = ical_escape(&format!("University Campus - Room {} ({})", a.room, a.group));
+    let summary = ical_escape(&format!(
+        "[{}] {} ({})",
+        a.course_id, a.title, a.assessment_type
+    ));
+    let location = ical_escape(&format!(
+        "University Campus - Room {} ({})",
+        a.room, a.group
+    ));
     let description = ical_escape(&desc);
-    let alarm_soon = ical_escape(&format!("Upcoming {} tomorrow at {}!", a.title, a.start_time));
-    let alarm_later = ical_escape(&format!("{} starts in 2 hours in Room {}!", a.title, a.room));
+    let alarm_soon = ical_escape(&format!(
+        "Upcoming {} tomorrow at {}!",
+        a.title, a.start_time
+    ));
+    let alarm_later = ical_escape(&format!(
+        "{} starts in 2 hours in Room {}!",
+        a.title, a.room
+    ));
 
     format!(
         "BEGIN:VEVENT\r\nUID:quizradar-{}@quizradar.local\r\nDTSTART:{}T{}\r\nDTEND:{}T{}\r\nSUMMARY:{}\r\nDESCRIPTION:{}\r\nLOCATION:{}\r\nBEGIN:VALARM\r\nTRIGGER:-P1D\r\nACTION:DISPLAY\r\nDESCRIPTION:{}\r\nEND:VALARM\r\nBEGIN:VALARM\r\nTRIGGER:-PT2H\r\nACTION:DISPLAY\r\nDESCRIPTION:{}\r\nEND:VALARM\r\nEND:VEVENT\r\n",

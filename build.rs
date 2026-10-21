@@ -5,7 +5,10 @@ fn main() {
         let mut res = winresource::WindowsResource::new();
         res.set_icon("assets/icon.ico");
         res.set("ProductName", "QuizRadar");
-        res.set("FileDescription", "QuizRadar — Academic Dashboard & Smart Exam Calendar");
+        res.set(
+            "FileDescription",
+            "QuizRadar — Academic Dashboard & Smart Exam Calendar",
+        );
         res.set("CompanyName", "TheDragonSoft");
         let _ = res.compile();
     }

@@ -17,8 +17,11 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class LocalOAuthServer {
     private static final String TAG = "LocalOAuthServer";
@@ -26,6 +29,24 @@ public class LocalOAuthServer {
     public static final String GOOGLE_CLIENT_ID = "341760934836-60toi8rjgkid0gmc69tmt598teghbgv4.apps.googleusercontent.com";
     public static final String GOOGLE_CLIENT_SECRET = "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";
     public static final String MICROSOFT_CLIENT_ID = "14d82eec-204b-4c2f-b7e8-296a70dab67e";
+
+    /** Pending sign-in expectations recorded via /api/auth/prepare before the
+     *  external browser is opened. The callback MUST echo the exact state and
+     *  present a code that satisfies the PKCE challenge — this blocks
+     *  authorization-code injection / login CSRF against the local listener. */
+    private static class PendingAuth {
+        final String state;
+        final String verifier;
+        final long createdAtMs;
+        PendingAuth(String state, String verifier) {
+            this.state = state;
+            this.verifier = verifier;
+            this.createdAtMs = System.currentTimeMillis();
+        }
+        boolean isFresh() {
+            return System.currentTimeMillis() - createdAtMs < 15 * 60 * 1000L;
+        }
+    }
 
     public interface OAuthListener {
         /** Called as soon as an auth code arrives, so the app can return to the foreground
@@ -39,8 +60,11 @@ public class LocalOAuthServer {
     private final int port;
     private final OAuthListener listener;
     private ServerSocket serverSocket;
-    private boolean isRunning = false;
+    private volatile boolean isRunning = false;
+    private volatile boolean bindSucceeded = false;
+    private final CountDownLatch bindLatch = new CountDownLatch(1);
     private final ExecutorService threadPool = Executors.newCachedThreadPool();
+    private final ConcurrentHashMap<String, PendingAuth> pendingAuths = new ConcurrentHashMap<>();
 
     public LocalOAuthServer(int port, OAuthListener listener) {
         this.port = port;
@@ -55,6 +79,7 @@ public class LocalOAuthServer {
                 serverSocket = new ServerSocket();
                 serverSocket.setReuseAddress(true);
                 serverSocket.bind(new InetSocketAddress("127.0.0.1", port));
+                bindSucceeded = true;
                 Log.i(TAG, "LocalOAuthServer listening on 127.0.0.1:" + port);
 
                 while (isRunning && !serverSocket.isClosed()) {
@@ -68,8 +93,21 @@ public class LocalOAuthServer {
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Failed to bind server socket on port " + port, e);
+            } finally {
+                bindLatch.countDown();
             }
         });
+    }
+
+    /** Blocks briefly until the bind attempt settles so callers can report
+     *  real success/failure instead of a fire-and-forget "initialized" log. */
+    public boolean awaitStart(long timeoutMillis) {
+        try {
+            bindLatch.await(timeoutMillis, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+        }
+        return bindSucceeded;
     }
 
     public synchronized void stop() {
@@ -94,7 +132,6 @@ public class LocalOAuthServer {
                 return;
             }
 
-            Log.i(TAG, "Incoming HTTP request: " + requestLine);
             String[] parts = requestLine.split(" ");
             if (parts.length < 2) {
                 client.close();
@@ -110,12 +147,17 @@ public class LocalOAuthServer {
                 queryString = fullUri.substring(qIndex + 1);
             }
 
+            // Redact query strings (they can carry authorization codes) from logs.
+            Log.i(TAG, "Incoming HTTP request: " + path);
+
             Map<String, String> params = parseQueryParams(queryString);
 
             if (path.equals("/api/auth/callback")) {
                 handleGoogleCallback(client, params);
             } else if (path.equals("/api/auth/microsoft/callback")) {
                 handleMicrosoftCallback(client, params);
+            } else if (path.equals("/api/auth/prepare")) {
+                handlePrepare(client, readBody(reader));
             } else if (path.equals("/api/state")) {
                 sendJsonResponse(client, 200, "{\"status\":\"ok\"}");
             } else {
@@ -130,9 +172,57 @@ public class LocalOAuthServer {
         }
     }
 
+    private void handlePrepare(Socket client, String body) {
+        try {
+            JSONObject json = new JSONObject(body);
+            String provider = json.optString("provider", "");
+            String state = json.optString("state", "");
+            String verifier = json.optString("verifier", "");
+            if (provider.isEmpty() || state.isEmpty()) {
+                sendJsonResponse(client, 400, "{\"ok\":false}");
+                return;
+            }
+            pendingAuths.put(provider, new PendingAuth(state, verifier));
+            sendJsonResponse(client, 200, "{\"ok\":true}");
+        } catch (Exception e) {
+            sendJsonResponse(client, 400, "{\"ok\":false}");
+        }
+    }
+
+    private String readBody(BufferedReader reader) {
+        try {
+            StringBuilder sb = new StringBuilder();
+            while (reader.ready()) {
+                sb.append((char) reader.read());
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /** Returns the pending auth for this provider only when the callback's
+     *  state parameter matches exactly (single use, 15-minute validity). */
+    private PendingAuth consumePendingAuth(String provider, String stateParam) {
+        PendingAuth pending = pendingAuths.get(provider);
+        if (pending == null || !pending.isFresh() || !pending.state.equals(stateParam)) {
+            return null;
+        }
+        pendingAuths.remove(provider);
+        return pending;
+    }
+
     private void handleGoogleCallback(Socket client, Map<String, String> params) {
         String code = params.get("code");
         String error = params.get("error");
+        PendingAuth pending = consumePendingAuth("google", params.get("state"));
+
+        if (pending == null) {
+            sendHtmlResponse(client, 400, "Sign-In Session Expired",
+                    "This sign-in link is invalid or has expired. Please start the sign-in again from the QuizRadar app.", false);
+            if (listener != null) listener.onError("google", "state mismatch");
+            return;
+        }
 
         if (error != null) {
             String errorDesc = params.get("error_description");
@@ -147,28 +237,30 @@ public class LocalOAuthServer {
             return;
         }
 
-        // Return pleasant success page immediately to browser
+        // Hand control back to the app immediately (neutral page — the token
+        // exchange still has to succeed before we claim victory).
         if (listener != null) listener.onCodeReceived("google");
-        sendHtmlResponse(client, 200, "Google Sign-In Successful!", "Your Google account is now connected to QuizRadar. Returning to the app...", true);
+        sendHtmlResponse(client, 200, "Completing Sign-In", "Returning to QuizRadar to finish signing you in...", true);
 
-        // Exchange code asynchronously
+        // Exchange code asynchronously (with PKCE verifier + client secret)
         threadPool.execute(() -> {
             try {
                 Log.i(TAG, "Exchanging Google authorization code for tokens...");
                 String postData = "client_id=" + URLEncoder.encode(GOOGLE_CLIENT_ID, "UTF-8")
                         + "&client_secret=" + URLEncoder.encode(GOOGLE_CLIENT_SECRET, "UTF-8")
                         + "&code=" + URLEncoder.encode(code, "UTF-8")
+                        + "&code_verifier=" + URLEncoder.encode(pending.verifier, "UTF-8")
                         + "&redirect_uri=" + URLEncoder.encode("http://localhost:3000/api/auth/callback", "UTF-8")
                         + "&grant_type=authorization_code";
 
                 JSONObject tokenJson = postForm("https://oauth2.googleapis.com/token", postData);
                 String accessToken = tokenJson.optString("access_token");
                 if (accessToken.isEmpty()) {
-                    throw new Exception("No access token in Google response: " + tokenJson);
+                    throw new Exception("No access token in Google response (HTTP body withheld)");
                 }
 
                 JSONObject profileJson = getJson("https://www.googleapis.com/oauth2/v2/userinfo", accessToken);
-                Log.i(TAG, "Google profile loaded: " + profileJson.optString("email"));
+                Log.i(TAG, "Google profile loaded");
 
                 if (listener != null) {
                     listener.onGoogleSuccess(tokenJson, profileJson);
@@ -185,6 +277,14 @@ public class LocalOAuthServer {
     private void handleMicrosoftCallback(Socket client, Map<String, String> params) {
         String code = params.get("code");
         String error = params.get("error");
+        PendingAuth pending = consumePendingAuth("microsoft", params.get("state"));
+
+        if (pending == null) {
+            sendHtmlResponse(client, 400, "Sign-In Session Expired",
+                    "This sign-in link is invalid or has expired. Please start the sign-in again from the QuizRadar app.", false);
+            if (listener != null) listener.onError("microsoft", "state mismatch");
+            return;
+        }
 
         if (error != null) {
             String errorDesc = params.get("error_description");
@@ -199,16 +299,18 @@ public class LocalOAuthServer {
             return;
         }
 
-        // Return pleasant success page immediately to browser
+        // Hand control back to the app immediately (neutral page — the token
+        // exchange still has to succeed before we claim victory).
         if (listener != null) listener.onCodeReceived("microsoft");
-        sendHtmlResponse(client, 200, "University Sign-In Successful!", "Your university account is now linked to QuizRadar. Returning to the app...", true);
+        sendHtmlResponse(client, 200, "Completing Sign-In", "Returning to QuizRadar to finish signing you in...", true);
 
-        // Exchange code asynchronously
+        // Exchange code asynchronously (public client + PKCE)
         threadPool.execute(() -> {
             try {
                 Log.i(TAG, "Exchanging Microsoft authorization code for tokens...");
                 String postData = "client_id=" + URLEncoder.encode(MICROSOFT_CLIENT_ID, "UTF-8")
                         + "&code=" + URLEncoder.encode(code, "UTF-8")
+                        + "&code_verifier=" + URLEncoder.encode(pending.verifier, "UTF-8")
                         + "&redirect_uri=" + URLEncoder.encode("http://localhost:3000/api/auth/microsoft/callback", "UTF-8")
                         + "&grant_type=authorization_code"
                         + "&scope=" + URLEncoder.encode("offline_access User.Read Mail.Read Calendars.Read", "UTF-8");
@@ -216,11 +318,11 @@ public class LocalOAuthServer {
                 JSONObject tokenJson = postForm("https://login.microsoftonline.com/common/oauth2/v2.0/token", postData);
                 String accessToken = tokenJson.optString("access_token");
                 if (accessToken.isEmpty()) {
-                    throw new Exception("No access token in Microsoft response: " + tokenJson);
+                    throw new Exception("No access token in Microsoft response (HTTP body withheld)");
                 }
 
                 JSONObject profileJson = getJson("https://graph.microsoft.com/v1.0/me", accessToken);
-                Log.i(TAG, "Microsoft profile loaded: " + profileJson.optString("mail", profileJson.optString("userPrincipalName")));
+                Log.i(TAG, "Microsoft profile loaded");
 
                 if (listener != null) {
                     listener.onMicrosoftSuccess(tokenJson, profileJson);
@@ -242,7 +344,7 @@ public class LocalOAuthServer {
                 return postFormOnce(endpoint, body);
             } catch (java.io.IOException e) {
                 last = e;
-                Log.w(TAG, "Network not ready (attempt " + (attempt + 1) + "): " + e.getMessage());
+                Log.w(TAG, "Network not ready (attempt " + (attempt + 1) + ")");
                 Thread.sleep(1000);
             }
         }
@@ -269,7 +371,9 @@ public class LocalOAuthServer {
         InputStream is = (code >= 200 && code < 400) ? conn.getInputStream() : conn.getErrorStream();
         String resp = readStream(is);
         if (code >= 400) {
-            throw new Exception("HTTP " + code + ": " + resp);
+            // Never embed raw token-endpoint bodies in exceptions: they can
+            // carry PII and end up in logcat.
+            throw new Exception("Token endpoint returned HTTP " + code);
         }
         return new JSONObject(resp);
     }
@@ -287,7 +391,7 @@ public class LocalOAuthServer {
         InputStream is = (code >= 200 && code < 400) ? conn.getInputStream() : conn.getErrorStream();
         String resp = readStream(is);
         if (code >= 400) {
-            throw new Exception("HTTP " + code + ": " + resp);
+            throw new Exception("Profile endpoint returned HTTP " + code);
         }
         return new JSONObject(resp);
     }
@@ -308,8 +412,14 @@ public class LocalOAuthServer {
         try {
             String statusText = (statusCode == 200) ? "OK" : "Bad Request";
             String accentColor = isSuccess ? "#10b981" : "#ef4444";
-            String icon = isSuccess ? "✓" : "✕";
+            String icon = isSuccess ? "&#10003;" : "&#10005;";
 
+            // Return-to-app strategy (most -> least reliable):
+            // 1. intent:// URI with explicit package — Chrome always resolves it
+            //    to our app (a bare custom scheme via JS is frequently blocked
+            //    with ERR_UNKNOWN_URL_SCHEME, which stranded users on this page).
+            // 2. Visible anchor with the same intent:// for a manual tap.
+            // 3. window.close() — in Custom Tabs this dismisses back to the app.
             String html = "<!DOCTYPE html>\n"
                     + "<html>\n"
                     + "<head>\n"
@@ -332,12 +442,20 @@ public class LocalOAuthServer {
                     + "    <div class=\"icon\">" + icon + "</div>\n"
                     + "    <h1>" + title + "</h1>\n"
                     + "    <p>" + message + "</p>\n"
-                    + "    <a class=\"btn\" href=\"com.quizradar.app://oauth-done\">Tap to Return to QuizRadar</a>\n"
+                    + "    <a id=\"return-link\" class=\"btn\" href=\"intent://oauth-done#Intent;scheme=com.quizradar.app;package=com.quizradar.app;end\">Tap to Return to QuizRadar</a>\n"
                     + "  </div>\n"
                     + "  <script>\n"
-                    + "    // Auto-return if opened inside browser/custom tab\n"
-                    + "    window.location.href = 'com.quizradar.app://oauth-done';\n"
-                    + "    setTimeout(function() { window.close(); }, 1500);\n"
+                    + "    (function() {\n"
+                    + "      var returned = false;\n"
+                    + "      function goBack() {\n"
+                    + "        if (returned) return;\n"
+                    + "        returned = true;\n"
+                    + "        var link = document.getElementById('return-link');\n"
+                    + "        if (link) { link.click(); }\n"
+                    + "        setTimeout(function() { try { window.close(); } catch (e) {} }, 1200);\n"
+                    + "      }\n"
+                    + "      setTimeout(goBack, 250);\n"
+                    + "    })();\n"
                     + "  </script>\n"
                     + "</body>\n"
                     + "</html>\n";
@@ -360,10 +478,10 @@ public class LocalOAuthServer {
     private void sendJsonResponse(Socket client, int statusCode, String json) {
         try {
             byte[] body = json.getBytes(StandardCharsets.UTF_8);
-            String response = "HTTP/1.1 " + statusCode + " OK\r\n"
+            String response = "HTTP/1.1 " + statusCode + " " + statusReason(statusCode) + "\r\n"
                     + "Content-Type: application/json; charset=utf-8\r\n"
                     + "Content-Length: " + body.length + "\r\n"
-                    + "Access-Control-Allow-Origin: *\r\n"
+                    + "Access-Control-Allow-Origin: http://localhost\r\n"
                     + "Connection: close\r\n\r\n";
             OutputStream os = client.getOutputStream();
             os.write(response.getBytes(StandardCharsets.UTF_8));
@@ -375,7 +493,7 @@ public class LocalOAuthServer {
     private void sendTextResponse(Socket client, int statusCode, String text) {
         try {
             byte[] body = text.getBytes(StandardCharsets.UTF_8);
-            String response = "HTTP/1.1 " + statusCode + " OK\r\n"
+            String response = "HTTP/1.1 " + statusCode + " " + statusReason(statusCode) + "\r\n"
                     + "Content-Type: text/plain; charset=utf-8\r\n"
                     + "Content-Length: " + body.length + "\r\n"
                     + "Connection: close\r\n\r\n";
@@ -384,6 +502,15 @@ public class LocalOAuthServer {
             os.write(body);
             os.flush();
         } catch (Exception ignored) {}
+    }
+
+    private static String statusReason(int statusCode) {
+        switch (statusCode) {
+            case 200: return "OK";
+            case 400: return "Bad Request";
+            case 404: return "Not Found";
+            default: return "Error";
+        }
     }
 
     private static Map<String, String> parseQueryParams(String query) {

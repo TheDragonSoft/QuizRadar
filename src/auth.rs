@@ -63,6 +63,65 @@ const TOKEN_CACHE_TTL: Duration = Duration::from_secs(300);
 
 static TOKEN_CACHE: OnceLock<Mutex<Option<(StoredToken, Instant)>>> = OnceLock::new();
 static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+static PENDING_OAUTH_STATE: OnceLock<Mutex<Option<(String, Instant)>>> = OnceLock::new();
+static STATE_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn pending_oauth_state() -> &'static Mutex<Option<(String, Instant)>> {
+    PENDING_OAUTH_STATE.get_or_init(|| Mutex::new(None))
+}
+
+/// Generates an unpredictable single-use `state` value and remembers it for the
+/// OAuth callback. Prevents authorization-code injection / login CSRF: the
+/// callback must echo the exact `state` we issued for this sign-in session.
+pub fn generate_and_store_oauth_state() -> String {
+    use std::sync::atomic::Ordering;
+    let mut seed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0x9E3779B97F4A7C15)
+        ^ (STATE_COUNTER
+            .fetch_add(1, Ordering::Relaxed)
+            .wrapping_mul(0xD1B54A32D192ED03))
+        ^ (std::process::id() as u64).rotate_left(32);
+    let mut bytes = [0u8; 16];
+    for chunk in bytes.chunks_mut(8) {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        for (i, b) in chunk.iter_mut().enumerate() {
+            *b = (seed >> (i * 8)) as u8;
+        }
+    }
+    let state: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+    if let Ok(mut pending) = pending_oauth_state().lock() {
+        *pending = Some((state.clone(), Instant::now()));
+    }
+    state
+}
+
+/// Verifies and consumes the pending state (single use, 15-minute validity).
+pub fn verify_and_consume_oauth_state(provided: Option<&str>) -> bool {
+    let Some(provided) = provided else {
+        return false;
+    };
+    if let Ok(mut pending) = pending_oauth_state().lock() {
+        match pending.take() {
+            Some((expected, issued_at))
+                if expected == provided && issued_at.elapsed() < Duration::from_secs(900) =>
+            {
+                true
+            }
+            // Mismatch: restore so a later legitimate callback can still verify
+            // (e.g. two sign-in attempts racing in the same browser session).
+            other => {
+                *pending = other;
+                false
+            }
+        }
+    } else {
+        false
+    }
+}
 
 fn token_cache() -> &'static Mutex<Option<(StoredToken, Instant)>> {
     TOKEN_CACHE.get_or_init(|| Mutex::new(None))
@@ -173,7 +232,11 @@ pub fn load_stored_token() -> Option<StoredToken> {
 
 pub fn save_stored_token(token: &StoredToken) {
     if let Ok(json) = serde_json::to_string_pretty(token) {
-        let _ = fs::write("token.json", json);
+        // Atomic write so a crash can never truncate token.json.
+        let tmp = "token.json.tmp";
+        if fs::write(tmp, json).is_ok() {
+            let _ = fs::rename(tmp, "token.json");
+        }
     }
     invalidate_token_cache();
 }
@@ -199,11 +262,13 @@ pub fn build_google_oauth_url(port: u16, include_calendar: bool) -> String {
     // so the user explicitly picks the right account (e.g. the university
     // Workspace account) instead of Google silently reusing the last-used
     // (personal) account.
+    let state = generate_and_store_oauth_state();
     format!(
-        "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&scope={}&access_type=offline&prompt=consent%20select_account&include_granted_scopes=true",
+        "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&scope={}&state={}&access_type=offline&prompt=consent%20select_account&include_granted_scopes=true",
         crate::urlencoding::encode(&creds.client_id),
         crate::urlencoding::encode(&redirect_uri),
-        crate::urlencoding::encode(&scope_str)
+        crate::urlencoding::encode(&scope_str),
+        crate::urlencoding::encode(&state)
     )
 }
 

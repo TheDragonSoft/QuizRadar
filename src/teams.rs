@@ -317,6 +317,10 @@ pub struct TeamsSyncResult {
     pub university: Option<String>,
     pub user_display_name: Option<String>,
     pub user_email: Option<String>,
+    /// Set when the sync silently refreshed an expired Microsoft access token;
+    /// the caller must persist it so subsequent syncs start warm.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refreshed_access_token: Option<String>,
 }
 
 pub fn load_stored_microsoft_token() -> Option<MicrosoftStoredToken> {
@@ -330,7 +334,11 @@ pub fn load_stored_microsoft_token() -> Option<MicrosoftStoredToken> {
 
 pub fn save_stored_microsoft_token(token: &MicrosoftStoredToken) {
     if let Ok(json) = serde_json::to_string_pretty(token) {
-        let _ = fs::write(MS_TOKEN_FILE, json);
+        // Atomic write: a crash mid-write must never corrupt the token file.
+        let tmp = format!("{}.tmp", MS_TOKEN_FILE);
+        if fs::write(&tmp, json).is_ok() {
+            let _ = fs::rename(&tmp, MS_TOKEN_FILE);
+        }
     }
 }
 
@@ -349,11 +357,13 @@ pub fn build_microsoft_oauth_url(port: u16, client_id: Option<&str>) -> String {
     // `prompt=select_account` forces the Microsoft account picker so the user
     // explicitly chooses the university account (MS identity platform accepts
     // a single prompt value, unlike Google's space-separated list).
+    let state = crate::auth::generate_and_store_oauth_state();
     format!(
-        "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id={}&response_type=code&redirect_uri={}&response_mode=query&scope={}&prompt=select_account",
+        "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id={}&response_type=code&redirect_uri={}&response_mode=query&scope={}&state={}&prompt=select_account",
         crate::urlencoding::encode(cid),
         crate::urlencoding::encode(&redirect_uri),
-        crate::urlencoding::encode(scopes)
+        crate::urlencoding::encode(scopes),
+        crate::urlencoding::encode(&state)
     )
 }
 
@@ -512,22 +522,67 @@ pub async fn sync_teams_assessments(
         .clone()
         .or_else(|| load_stored_microsoft_token().map(|t| t.access_token));
 
-    let tok = match token {
+    let mut tok = match token {
         Some(t) if !t.trim().is_empty() => t,
         _ => return Ok(TeamsSyncResult::default()),
     };
 
+    let mut refreshed_access_token: Option<String> = None;
+
     let client = &*GRAPH_HTTP_CLIENT;
 
-    // 1. Fetch user profile
+    // 1. Fetch user profile — and if the access token has expired (401),
+    //    silently refresh it and retry once. Microsoft access tokens live
+    //    ~60-90 minutes; without this, Teams sync silently stops producing
+    //    data an hour after sign-in until the user logs in again.
     let mut user_display_name = None;
     let mut user_email = None;
-    if let Ok(resp) = client
+    let mut profile_resp = client
         .get("https://graph.microsoft.com/v1.0/me")
         .bearer_auth(&tok)
         .send()
-        .await
-    {
+        .await;
+    if matches!(&profile_resp, Ok(r) if r.status().as_u16() == 401) {
+        if let Some(stored) = load_stored_microsoft_token() {
+            if let Some(ref rt) = stored.refresh_token {
+                let cid = config
+                    .teams_client_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(DEFAULT_MS_CLIENT_ID);
+                let params = [
+                    ("client_id", cid),
+                    ("refresh_token", rt.as_str()),
+                    ("grant_type", "refresh_token"),
+                    ("scope", "offline_access User.Read Mail.Read Calendars.Read"),
+                ];
+                if let Ok(resp) = client
+                    .post("https://login.microsoftonline.com/common/oauth2/v2.0/token")
+                    .form(&params)
+                    .send()
+                    .await
+                {
+                    if resp.status().is_success() {
+                        if let Ok(new_tok) = resp.json::<MicrosoftStoredToken>().await {
+                            if !new_tok.access_token.is_empty() {
+                                tok = new_tok.access_token.clone();
+                                refreshed_access_token = Some(tok.clone());
+                                save_stored_microsoft_token(&new_tok);
+                                eprintln!("Microsoft access token silently refreshed.");
+                                profile_resp = client
+                                    .get("https://graph.microsoft.com/v1.0/me")
+                                    .bearer_auth(&tok)
+                                    .send()
+                                    .await;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if let Ok(resp) = profile_resp {
         if resp.status().is_success() {
             if let Ok(v) = resp.json::<Value>().await {
                 user_display_name = v
@@ -603,6 +658,7 @@ pub async fn sync_teams_assessments(
                 university: discovered.university_or_institution,
                 user_display_name,
                 user_email,
+                refreshed_access_token,
             });
         }
     }
@@ -661,6 +717,7 @@ pub fn explore_teams_heuristically(
         university: None,
         user_display_name: user_display_name.map(String::from),
         user_email: user_email.map(String::from),
+        refreshed_access_token: None,
     }
 }
 

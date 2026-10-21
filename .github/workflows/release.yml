@@ -9,7 +9,7 @@ on:
       tag:
         description: "Release tag to build & publish (e.g. v3.3.0)"
         required: false
-        default: "v4.1.0"
+        default: "v4.2.0"
 
 permissions:
   contents: write
@@ -37,7 +37,7 @@ jobs:
           } elseif ("${{ github.ref_name }}" -like "v*") {
             $tag = "${{ github.ref_name }}"
           } else {
-            $tag = "v4.1.0"
+            $tag = "v4.2.0"
           }
           $ver = $tag.TrimStart('v')
           "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
@@ -86,7 +86,7 @@ jobs:
           elif [[ "${{ github.ref_name }}" == v* ]]; then
             TAG="${{ github.ref_name }}"
           else
-            TAG="v4.1.0"
+            TAG="v4.2.0"
           fi
           VER="${TAG#v}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
@@ -154,6 +154,13 @@ jobs:
           npm ci
           npx cap sync android
 
+      - name: Verify synced web assets are current
+        run: |
+          cmp -s static/app.js android/app/src/main/assets/public/app.js || { echo "::error::app.js out of sync with static/ — run 'npx cap sync android' before building"; exit 1; }
+          cmp -s static/sw.js android/app/src/main/assets/public/sw.js || { echo "::error::sw.js out of sync with static/"; exit 1; }
+          if grep -rq "unpkg.com" android/app/src/main/assets/public --include=*.html --include=*.js; then echo "::error::remote CDN fallback found in synced assets (supply-chain risk)"; exit 1; fi
+          echo "Web assets in sync with static/"
+
       - name: Build Android Debug APK
         run: |
           cd android
@@ -169,7 +176,7 @@ jobs:
           elif [[ "${{ github.ref_name }}" == v* ]]; then
             TAG="${{ github.ref_name }}"
           else
-            TAG="v4.1.0"
+            TAG="v4.2.0"
           fi
           VER="${TAG#v}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
@@ -204,7 +211,7 @@ jobs:
           elif [[ "${{ github.ref_name }}" == v* ]]; then
             TAG="${{ github.ref_name }}"
           else
-            TAG="v4.1.0"
+            TAG="v4.2.0"
           fi
           VER="${TAG#v}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"

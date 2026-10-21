@@ -194,7 +194,7 @@ async fn fetch_course_assessments(
             color,
             bg,
             border,
-            semester: "Fall 2026".to_string(),
+            semester: crate::parser::infer_semester_from_date(parsed_date),
             email_subject: "Google Classroom Post".to_string(),
             email_sent_date: Local::now().format("%Y-%m-%d").to_string(),
             source: "Google Classroom".to_string(),

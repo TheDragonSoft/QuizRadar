@@ -1,8 +1,9 @@
-﻿#![windows_subsystem = "windows"]
+#![windows_subsystem = "windows"]
 
 pub mod auth;
 pub mod classroom;
 pub mod cloud_sync;
+pub mod feeds;
 pub mod gcal;
 pub mod gemini;
 pub mod gmail;
@@ -12,19 +13,20 @@ pub mod parser;
 pub mod teams;
 pub mod updater;
 
+use crate::updater::is_allowed_update_url;
 use axum::{
     body::Bytes,
-    extract::{Path, Query, Request, State},
     extract::connect_info::ConnectInfo,
+    extract::{Path, Query, Request, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     middleware::Next,
     response::{Html, IntoResponse, Redirect, Response},
     routing::{delete, get, post},
     Json, Router,
 };
-use crate::updater::is_allowed_update_url;
 use models::{
-    AppConfig, Assessment, AssessmentGrade, Course, CustomCalendarEvent, ScheduleData, ScheduleSlot,
+    AppConfig, Assessment, AssessmentGrade, Course, CustomCalendarEvent, FeedConfig, ScheduleData,
+    ScheduleSlot,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -65,7 +67,12 @@ fn load_app_config() -> AppConfig {
 async fn save_app_config(cfg: &AppConfig) {
     let _ = tokio::fs::create_dir_all("data").await;
     if let Ok(json) = serde_json::to_string_pretty(cfg) {
-        let _ = tokio::fs::write(CONFIG_FILE, json).await;
+        // Atomic write (tmp + rename): a crash or hard exit mid-write must
+        // never leave the user's config file truncated.
+        let tmp = format!("{}.tmp", CONFIG_FILE);
+        if tokio::fs::write(&tmp, json).await.is_ok() {
+            let _ = tokio::fs::rename(&tmp, CONFIG_FILE).await;
+        }
     }
 }
 
@@ -233,7 +240,12 @@ fn resolve_asset_path(path: &str) -> std::path::PathBuf {
 fn redact_secrets_for_remote(cfg: &AppConfig) -> Value {
     let mut v = serde_json::to_value(cfg).unwrap_or(Value::Null);
     if let Some(obj) = v.as_object_mut() {
-        for key in ["gemini_api_key", "teams_token", "moodle_token"] {
+        for key in [
+            "gemini_api_key",
+            "teams_token",
+            "moodle_token",
+            "pairing_pin",
+        ] {
             let present = match obj.get(key) {
                 Some(Value::String(s)) => !s.trim().is_empty(),
                 Some(Value::Null) | None => false,
@@ -265,10 +277,17 @@ fn create_app_mutex() {
             b_initial_owner: i32,
             lp_name: *const u16,
         ) -> *mut core::ffi::c_void;
+        fn GetLastError() -> u32;
     }
+    const ERROR_ALREADY_EXISTS: u32 = 183;
     let name: Vec<u16> = "QuizRadarAppMutex\0".encode_utf16().collect();
     unsafe {
         CreateMutexW(std::ptr::null_mut(), 1, name.as_ptr());
+        if GetLastError() == ERROR_ALREADY_EXISTS {
+            // A second instance would race the first on data/*.json and tokens.
+            eprintln!("QuizRadar is already running. Close the existing window first.");
+            std::process::exit(0);
+        }
     }
 }
 
@@ -531,6 +550,10 @@ async fn run_backend_server(port_tx: mpsc::Sender<(u16, String)>) {
         }
     });
 
+    // The auth middleware below needs to consult the (optional) pairing PIN
+    // on every LAN request; clone the cheap Arc instead of the whole state.
+    let lan_config_lock = state.config.clone();
+
     let app = Router::new()
         .route("/", get(serve_index))
         .route("/api/state", get(get_full_state))
@@ -564,6 +587,10 @@ async fn run_backend_server(port_tx: mpsc::Sender<(u16, String)>) {
         .route("/api/config/update", post(update_config_handler))
         .route("/api/moodle/test", post(test_moodle_handler))
         .route("/api/moodle/sync", post(sync_moodle_handler))
+        .route("/api/feeds", get(list_feeds_handler))
+        .route("/api/feeds/test", post(test_feed_handler))
+        .route("/api/feeds/save", post(save_feeds_handler))
+        .route("/api/feeds/delete", post(delete_feed_handler))
         .route("/api/microsoft/login", get(microsoft_login_redirect))
         .route("/api/microsoft/url", get(microsoft_login_url))
         .route(
@@ -594,6 +621,7 @@ async fn run_backend_server(port_tx: mpsc::Sender<(u16, String)>) {
         .route("/api/sync/cloud/push", post(push_cloud_sync_handler))
         .route("/api/sync/cloud/pull", post(pull_cloud_sync_handler))
         .route("/api/sync/pair/info", get(get_pairing_info_handler))
+        .route("/api/pairing/pin", post(set_pairing_pin_handler))
         .route("/static/app.js", get(serve_app_js))
         .route("/app.js", get(serve_app_js))
         .route("/static/lucide.min.js", get(serve_lucide_js))
@@ -627,10 +655,42 @@ async fn run_backend_server(port_tx: mpsc::Sender<(u16, String)>) {
         .layer(axum::middleware::from_fn(
             move |req: Request, next: Next| {
                 let token = session_token.clone();
+                let cfg_lock = lan_config_lock.clone();
                 async move {
                     // LAN pairing mode is an explicit opt-in for the Android
-                    // companion app; keep it fully open as before.
+                    // companion app. With a pairing PIN configured, requests
+                    // from outside this machine must present it in the
+                    // `x-quizradar-pin` header; loopback callers are exempt.
                     if expose_lan {
+                        let is_loopback = req
+                            .extensions()
+                            .get::<ConnectInfo<SocketAddr>>()
+                            .map(|info| info.0.ip().is_loopback())
+                            .unwrap_or(false);
+                        if !is_loopback {
+                            // try_read() keeps the hot path lock-free; fall
+                            // back to a normal read under contention.
+                            let required_pin = match cfg_lock.try_read() {
+                                Ok(cfg) => cfg.pairing_pin.clone(),
+                                Err(_) => cfg_lock.read().await.pairing_pin.clone(),
+                            };
+                            if let Some(expected) = required_pin {
+                                let provided = req
+                                    .headers()
+                                    .get("x-quizradar-pin")
+                                    .and_then(|v| v.to_str().ok());
+                                if provided != Some(expected.as_str()) {
+                                    return (
+                                        StatusCode::UNAUTHORIZED,
+                                        [("Cache-Control", "no-store")],
+                                        Json(json!({
+                                            "error": "Pairing PIN required. Enter the PIN shown in the desktop app."
+                                        })),
+                                    )
+                                        .into_response();
+                                }
+                            }
+                        }
                         return next.run(req).await;
                     }
 
@@ -952,10 +1012,56 @@ async fn google_login_url(State(state): State<SharedAppState>) -> Json<Value> {
     Json(json!({ "url": url }))
 }
 
+fn oauth_error_page(title: &str, message: &str) -> String {
+    // Escape via unicode escapes so the entities survive any processing of
+    // this source file (literal "&" etc. would be meaningless here).
+    let safe_message = message
+        .replace('\u{26}', "\u{26}amp;")
+        .replace('<', "\u{26}lt;")
+        .replace('>', "\u{26}gt;");
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QuizRadar — {title}</title>
+  <style>
+    body {{ background: #0b0f19; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }}
+    .card {{ background: #131927; border: 1px solid #1e293b; border-radius: 16px; padding: 28px; max-width: 440px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; }}
+    .icon {{ width: 48px; height: 48px; border-radius: 12px; background: rgba(239,68,68,0.15); color: #ef4444; display: inline-flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 16px; }}
+    h2 {{ font-size: 18px; margin: 0 0 8px 0; color: #ffffff; }}
+    p {{ font-size: 13px; color: #94a3b8; line-height: 1.5; margin: 0 0 20px 0; word-break: break-word; }}
+    .btn {{ display: inline-block; background: #1a73e8; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 600; padding: 10px 20px; border-radius: 10px; transition: background 0.2s; cursor: pointer; border: none; }}
+    .btn:hover {{ background: #1557b0; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">&#9888;&#65039;</div>
+    <h2>{title}</h2>
+    <p>{safe_message}</p>
+    <button class="btn" onclick="window.close();">Return to QuizRadar</button>
+  </div>
+  <script>
+    setTimeout(function() {{ try {{ window.close(); }} catch(e) {{}} }}, 2500);
+  </script>
+</body>
+</html>"#
+    )
+}
+
 async fn google_oauth_callback(
     State(state): State<SharedAppState>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Response {
+    if !auth::verify_and_consume_oauth_state(params.get("state").map(|s| s.as_str())) {
+        return Html(oauth_error_page(
+            "Google Sign-In",
+            "This sign-in link is invalid or has expired (state mismatch). Please start the sign-in again from the QuizRadar app.",
+        ))
+        .into_response();
+    }
     if let Some(code) = params.get("code") {
         match auth::exchange_code_for_token(code, state.port).await {
             Ok(_) => {
@@ -1008,35 +1114,7 @@ async fn google_oauth_callback(
                 return Html(html).into_response();
             }
             Err(err) => {
-                let html = format!(
-                    r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QuizRadar — Google Sign-In</title>
-  <style>
-    body {{ background: #0b0f19; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }}
-    .card {{ background: #131927; border: 1px solid #1e293b; border-radius: 16px; padding: 28px; max-width: 440px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; }}
-    .icon {{ width: 48px; height: 48px; border-radius: 12px; background: rgba(239,68,68,0.15); color: #ef4444; display: inline-flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 16px; }}
-    h2 {{ font-size: 18px; margin: 0 0 8px 0; color: #ffffff; }}
-    p {{ font-size: 13px; color: #94a3b8; line-height: 1.5; margin: 0 0 20px 0; word-break: break-word; }}
-    .btn {{ display: inline-block; background: #1a73e8; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 600; padding: 10px 20px; border-radius: 10px; transition: background 0.2s; cursor: pointer; border: none; }}
-    .btn:hover {{ background: #1557b0; }}
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="icon">⚠️</div>
-    <h2>Google Sign-In Error</h2>
-    <p>{}</p>
-    <button class="btn" onclick="window.close();">Return to QuizRadar</button>
-  </div>
-</body>
-</html>"#,
-                    err
-                );
-                return Html(html).into_response();
+                return Html(oauth_error_page("Google Sign-In Error", &err)).into_response();
             }
         }
     }
@@ -1102,6 +1180,7 @@ pub struct OnboardingPayload {
 
 async fn complete_onboarding(
     State(state): State<SharedAppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(payload): Json<OnboardingPayload>,
 ) -> Json<Value> {
     let cfg_snapshot = {
@@ -1176,7 +1255,11 @@ async fn complete_onboarding(
         "success": true,
         "assessments": assessments,
         "dashboard": dashboard,
-        "config": cfg_snapshot
+        "config": if addr.ip().is_loopback() {
+            serde_json::to_value(&cfg_snapshot).unwrap_or(Value::Null)
+        } else {
+            redact_secrets_for_remote(&cfg_snapshot)
+        }
     }))
 }
 
@@ -1391,7 +1474,7 @@ async fn run_sync_pipeline(state: SharedAppState, use_live_gemini: bool) -> Valu
             .filter(|a| a.is_source_enabled(&cfg))
             .cloned()
             .collect();
-    let dashboard = parser::build_dashboard_summary(&assessments, &cfg);
+        let dashboard = parser::build_dashboard_summary(&assessments, &cfg);
         let schedule = state.schedule.read().await.clone();
         return json!({
             "success": true,
@@ -1432,79 +1515,125 @@ async fn run_sync_pipeline(state: SharedAppState, use_live_gemini: bool) -> Valu
 
     // 1. Ingest from Moodle LMS if enabled
     if cfg.moodle_enabled {
-        if let Ok(moodle_items) = moodle::sync_moodle_assessments(&cfg, &schedule).await {
-            if !moodle_items.is_empty() {
-                sync_notes.push(format!("Moodle: {} items", moodle_items.len()));
-            }
-            for m in moodle_items {
-                if !parsed.iter().any(|p| {
-                    p.course_id == m.course_id && p.title == m.title && p.date_iso == m.date_iso
-                }) {
-                    parsed.push(m);
+        match moodle::sync_moodle_assessments(&cfg, &schedule).await {
+            Ok(moodle_items) => {
+                if !moodle_items.is_empty() {
+                    sync_notes.push(format!("Moodle: {} items", moodle_items.len()));
+                }
+                for m in moodle_items {
+                    if !parsed.iter().any(|p| {
+                        p.source == m.source
+                            && p.course_id == m.course_id
+                            && p.title == m.title
+                            && p.date_iso == m.date_iso
+                    }) {
+                        parsed.push(m);
+                    }
                 }
             }
+            Err(e) => sync_notes.push(format!("Moodle sync failed: {}", e)),
         }
     }
 
     // 2. Ingest from Microsoft Teams / Outlook if enabled
     if cfg.teams_enabled {
-        if let Ok(teams_res) = teams::sync_teams_assessments(&cfg, &schedule).await {
-            // Only ADOPT discovered courses/slots when the user has no schedule yet
-            // (or nothing was saved): never clobber a timetable the user set up.
-            let current_course_count = state.schedule.read().await.courses.len();
-            let adopt = teams_res.semester.is_some()
-                || (!teams_res.discovered_courses.is_empty() && current_course_count == 0);
-            if adopt && !teams_res.discovered_courses.is_empty() {
-                let mut sched = state.schedule.write().await;
-                sched.courses = teams_res.discovered_courses.clone();
-                sched.slots = teams_res.discovered_slots.clone();
-                if let Some(ref sem) = teams_res.semester {
-                    sched.semester = sem.clone();
+        match teams::sync_teams_assessments(&cfg, &schedule).await {
+            Ok(teams_res) => {
+                // Persist the silently-rotated Microsoft access token so the
+                // next sync starts warm instead of re-refreshing every time.
+                if let Some(ref new_tok) = teams_res.refreshed_access_token {
+                    cfg.teams_token = Some(new_tok.clone());
                 }
-                parser::save_schedule(&sched);
-            } else if !teams_res.discovered_courses.is_empty() {
-                sync_notes
-                    .push("Teams discovered course list (kept your existing schedule)".to_string());
-            }
+                // Only ADOPT discovered courses/slots when the user has no schedule yet
+                // (or nothing was saved): never clobber a timetable the user set up.
+                let current_course_count = state.schedule.read().await.courses.len();
+                let adopt = teams_res.semester.is_some()
+                    || (!teams_res.discovered_courses.is_empty() && current_course_count == 0);
+                if adopt && !teams_res.discovered_courses.is_empty() {
+                    let mut sched = state.schedule.write().await;
+                    sched.courses = teams_res.discovered_courses.clone();
+                    sched.slots = teams_res.discovered_slots.clone();
+                    if let Some(ref sem) = teams_res.semester {
+                        sched.semester = sem.clone();
+                    }
+                    parser::save_schedule(&sched);
+                } else if !teams_res.discovered_courses.is_empty() {
+                    sync_notes.push(
+                        "Teams discovered course list (kept your existing schedule)".to_string(),
+                    );
+                }
 
-            if let Some(ref uname) = teams_res.user_display_name {
-                cfg.teams_account_name = Some(uname.clone());
-                if cfg.user_name.is_none() {
-                    cfg.user_name = Some(uname.clone());
+                if let Some(ref uname) = teams_res.user_display_name {
+                    cfg.teams_account_name = Some(uname.clone());
+                    if cfg.user_name.is_none() {
+                        cfg.user_name = Some(uname.clone());
+                    }
+                }
+                if let Some(ref uemail) = teams_res.user_email {
+                    cfg.teams_account_email = Some(uemail.clone());
+                    if cfg.user_email.is_none() {
+                        cfg.user_email = Some(uemail.clone());
+                    }
+                }
+                if !teams_res.assessments.is_empty() {
+                    sync_notes.push(format!("Teams: {} items", teams_res.assessments.len()));
+                }
+                for t in teams_res.assessments {
+                    if !parsed.iter().any(|p| {
+                        p.source == t.source
+                            && p.course_id == t.course_id
+                            && p.title == t.title
+                            && p.date_iso == t.date_iso
+                    }) {
+                        parsed.push(t);
+                    }
                 }
             }
-            if let Some(ref uemail) = teams_res.user_email {
-                cfg.teams_account_email = Some(uemail.clone());
-                if cfg.user_email.is_none() {
-                    cfg.user_email = Some(uemail.clone());
-                }
-            }
-            if !teams_res.assessments.is_empty() {
-                sync_notes.push(format!("Teams: {} items", teams_res.assessments.len()));
-            }
-            for t in teams_res.assessments {
-                if !parsed.iter().any(|p| {
-                    p.course_id == t.course_id && p.title == t.title && p.date_iso == t.date_iso
-                }) {
-                    parsed.push(t);
-                }
-            }
+            Err(e) => sync_notes.push(format!("Teams sync failed: {}", e)),
         }
     }
 
     // 3. Ingest from Google Classroom if enabled
     if cfg.classroom_enabled {
-        if let Ok(cr_items) = classroom::sync_classroom_assessments(&cfg, &schedule).await {
-            if !cr_items.is_empty() {
-                sync_notes.push(format!("Classroom: {} items", cr_items.len()));
-            }
-            for c in cr_items {
-                if !parsed.iter().any(|p| {
-                    p.course_id == c.course_id && p.title == c.title && p.date_iso == c.date_iso
-                }) {
-                    parsed.push(c);
+        match classroom::sync_classroom_assessments(&cfg, &schedule).await {
+            Ok(cr_items) => {
+                if !cr_items.is_empty() {
+                    sync_notes.push(format!("Classroom: {} items", cr_items.len()));
+                }
+                for c in cr_items {
+                    if !parsed.iter().any(|p| {
+                        p.source == c.source
+                            && p.course_id == c.course_id
+                            && p.title == c.title
+                            && p.date_iso == c.date_iso
+                    }) {
+                        parsed.push(c);
+                    }
                 }
             }
+            Err(e) => sync_notes.push(format!("Classroom sync failed: {}", e)),
+        }
+    }
+
+    // 3b. Ingest from generic .ics subscription feeds (university timetables).
+    // Feeds are read-only config: nothing here mutates cfg, so the config-merge
+    // at the end of the pipeline needs no extra fields.
+    for feed in cfg.feeds.iter().filter(|f| f.enabled) {
+        match feeds::fetch_feed(&feed.url, &feed.name, &schedule).await {
+            Ok(items) => {
+                sync_notes.push(format!("Feed '{}': {} items", feed.name, items.len()));
+                for f in items {
+                    if !parsed.iter().any(|p| {
+                        p.source == f.source
+                            && p.course_id == f.course_id
+                            && p.title == f.title
+                            && p.date_iso == f.date_iso
+                    }) {
+                        parsed.push(f);
+                    }
+                }
+            }
+            Err(e) => sync_notes.push(format!("Feed '{}' sync failed: {}", feed.name, e)),
         }
     }
 
@@ -1519,6 +1648,7 @@ async fn run_sync_pipeline(state: SharedAppState, use_live_gemini: bool) -> Valu
             if p.id.starts_with("teams-")
                 || p.id.starts_with("moodle-")
                 || p.id.starts_with("classroom-")
+                || p.id.starts_with("feed-")
             {
                 return true;
             }
@@ -1559,9 +1689,31 @@ async fn run_sync_pipeline(state: SharedAppState, use_live_gemini: bool) -> Valu
         None
     };
 
-    save_app_config(&cfg).await;
-    *state.config.write().await = cfg.clone();
-    let dashboard = parser::build_dashboard_summary(&parsed, &cfg);
+    // Merge only the fields this pipeline actually mutated into the LIVE config,
+    // instead of overwriting the whole struct: a config change made while the
+    // sync was running (e.g. toggling a topic or saving an API key) must survive.
+    let cfg_snapshot;
+    {
+        let mut live = state.config.write().await;
+        live.last_gmail_sync = cfg.last_gmail_sync.clone();
+        live.synced_gcal_map = cfg.synced_gcal_map.clone();
+        if cfg.teams_account_name.is_some() {
+            live.teams_account_name = cfg.teams_account_name.clone();
+        }
+        if cfg.teams_account_email.is_some() {
+            live.teams_account_email = cfg.teams_account_email.clone();
+        }
+        live.teams_token = cfg.teams_token.clone();
+        if cfg.user_name.is_some() && live.user_name.is_none() {
+            live.user_name = cfg.user_name.clone();
+        }
+        if cfg.user_email.is_some() && live.user_email.is_none() {
+            live.user_email = cfg.user_email.clone();
+        }
+        cfg_snapshot = live.clone();
+    }
+    save_app_config(&cfg_snapshot).await;
+    let dashboard = parser::build_dashboard_summary(&parsed, &cfg_snapshot);
     let upcoming_count = parsed.iter().filter(|a| a.is_upcoming).count();
 
     {
@@ -1589,7 +1741,7 @@ async fn run_sync_pipeline(state: SharedAppState, use_live_gemini: bool) -> Valu
         "assessments": parsed,
         "dashboard": dashboard,
         "schedule": schedule,
-        "config": cfg
+        "config": cfg_snapshot
     })
 }
 
@@ -1633,9 +1785,15 @@ async fn get_study_tasks_handler(State(state): State<SharedAppState>) -> Json<Va
 }
 
 async fn optimize_study_tasks_handler(State(state): State<SharedAppState>) -> Json<Value> {
-    let assessments = state.assessments.read().await;
-    let schedule = state.schedule.read().await;
-    let cfg = state.config.read().await;
+    // Clone the inputs and release all locks BEFORE the long AI round-trip:
+    // holding read guards across a 25s Gemini call would stall every config
+    // writer for the full duration of the request.
+    let (assessments, schedule, cfg) = {
+        let assessments = state.assessments.read().await.clone();
+        let schedule = state.schedule.read().await.clone();
+        let cfg = state.config.read().await.clone();
+        (assessments, schedule, cfg)
+    };
 
     let api_key = cfg.gemini_api_key.as_deref();
     let res = gemini::rank_and_plan_with_gemini(&assessments, &schedule, &cfg, api_key).await;
@@ -1668,13 +1826,24 @@ pub struct CreateCustomEventPayload {
     pub end_time: String,
     pub room: Option<String>,
     pub notes: Option<String>,
+    /// Optional: when set and already present in custom_events, that event is
+    /// replaced in place (edit). When absent, a fresh id is generated (append).
+    #[serde(default)]
+    pub id: Option<String>,
 }
 
 async fn add_custom_event(
     State(state): State<SharedAppState>,
     Json(payload): Json<CreateCustomEventPayload>,
 ) -> Json<Value> {
-    let id = format!("custom-{}", chrono::Utc::now().timestamp_millis());
+    // Upsert: the UI reuses this endpoint to edit an existing calendar event.
+    let id = payload
+        .id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .unwrap_or_else(|| format!("custom-{}", chrono::Utc::now().timestamp_millis()));
     let color = match payload.course_id.as_str() {
         "CS 101" | "CS101" => "#4285f4",
         "MATH 101" | "MATH101" => "#8e24aa",
@@ -1685,7 +1854,7 @@ async fn add_custom_event(
     };
 
     let ev = CustomCalendarEvent {
-        id,
+        id: id.clone(),
         title: payload.title,
         course_id: payload.course_id,
         event_type: payload.event_type,
@@ -1701,7 +1870,11 @@ async fn add_custom_event(
 
     let cfg_snapshot = {
         let mut cfg = state.config.write().await;
-        cfg.custom_events.push(ev);
+        if let Some(existing) = cfg.custom_events.iter_mut().find(|e| e.id == id) {
+            *existing = ev;
+        } else {
+            cfg.custom_events.push(ev);
+        }
         cfg.clone()
     };
     save_app_config(&cfg_snapshot).await;
@@ -1733,13 +1906,25 @@ async fn download_ics(State(state): State<SharedAppState>, Path(id): Path<String
     let assessments = state.assessments.read().await;
     if let Some(a) = assessments.iter().find(|x| x.id == id) {
         let ics = gcal::generate_single_ics(a);
-        let filename = format!("{}_{}.ics", a.course_id, a.title.replace(' ', "_"));
+        // Sanitize the filename: the title can contain quotes or control
+        // characters from email content, which would corrupt the header.
+        let safe_name: String = format!("{}_{}.ics", a.course_id, a.title.replace(' ', "_"))
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || "._-".contains(c) {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
         let mut headers = HeaderMap::new();
         headers.insert(
             header::CONTENT_TYPE,
             HeaderValue::from_static("text/calendar"),
         );
-        if let Ok(disp) = HeaderValue::from_str(&format!("attachment; filename=\"{}\"", filename)) {
+        if let Ok(disp) = HeaderValue::from_str(&format!("attachment; filename=\"{}\"", safe_name))
+        {
             headers.insert(header::CONTENT_DISPOSITION, disp);
         }
         (StatusCode::OK, headers, ics).into_response()
@@ -1769,21 +1954,9 @@ pub struct UpdateCheckQuery {
 }
 
 async fn check_updater_handler(Query(q): Query<UpdateCheckQuery>) -> Json<Value> {
-    if q.preview.unwrap_or(false) {
-        return Json(json!({
-            "success": true,
-            "update_available": true,
-            "current_version": updater::CURRENT_VERSION,
-            "latest_version": "v3.3.0",
-            "release_name": "QuizRadar v3.3.0 — Offline-Ready Assets, Security Hardening & Impeccable Mobile Experience",
-            "release_date": "2026-10-20",
-            "release_notes": "## What's New in v3.2.0\n\n- **Fix Auto-Enrollment**: Prevent unexpected enrollment in dummy Computer Science courses; added 1-click 'Clear all' course wiping\n- **Academic Major Selector**: Fixed field of study chip selection styling (.is-selected) and dynamic starter courses adaptation for Engineering, Medicine, Business, and Sciences\n- **Interactive Integration Hubs**: Upgraded Google Workspace, Microsoft Teams, Google Classroom, and Moodle LMS onboarding cards to interactive setup triggers with live connection status badges\n- **Visual & Formatting Polish**: Fixed embedded Lucide icon serving on installed builds, resolved dangling timeline time hyphens (e.g. 23:59–), and corrected pluralization\n- **Full Multi-Platform Parity**: Full parity across Windows, macOS, Linux, and Android APK builds",
-            "download_url": "https://github.com/TheDragonSoft/QuizRadar/releases/latest",
-            "portable_url": "https://github.com/TheDragonSoft/QuizRadar/releases/latest",
-            "html_url": "https://github.com/TheDragonSoft/QuizRadar/releases/latest",
-            "is_preview": true
-        }));
-    }
+    // NOTE: the old `?preview=true` fabricated release data (dev leftover) —
+    // removed so the updater can never surface a fake version.
+    let _ = q;
 
     match updater::check_for_updates().await {
         Ok(info) => Json(json!({
@@ -2034,6 +2207,142 @@ async fn sync_moodle_handler(State(state): State<SharedAppState>) -> Json<Value>
     }))
 }
 
+#[derive(Deserialize)]
+pub struct TestFeedPayload {
+    pub url: String,
+    pub name: String,
+}
+
+async fn test_feed_handler(
+    State(state): State<SharedAppState>,
+    Json(payload): Json<TestFeedPayload>,
+) -> Json<Value> {
+    let schedule = state.schedule.read().await.clone();
+    match feeds::fetch_feed(&payload.url, &payload.name, &schedule).await {
+        Ok(items) => {
+            let sample: Vec<String> = items.iter().take(3).map(|a| a.title.clone()).collect();
+            Json(json!({
+                "success": true,
+                "items_found": items.len(),
+                "sample": sample,
+            }))
+        }
+        Err(e) => Json(json!({
+            "success": false,
+            "items_found": 0,
+            "sample": [],
+            "error": e,
+        })),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct SaveFeedsPayload {
+    pub feeds: Vec<FeedConfig>,
+}
+
+async fn save_feeds_handler(
+    State(state): State<SharedAppState>,
+    Json(payload): Json<SaveFeedsPayload>,
+) -> Json<Value> {
+    if payload.feeds.len() > feeds::MAX_FEEDS {
+        return Json(json!({
+            "success": false,
+            "error": format!(
+                "Too many feeds ({}). A maximum of {} subscriptions is supported.",
+                payload.feeds.len(),
+                feeds::MAX_FEEDS
+            ),
+        }));
+    }
+
+    let mut cleaned: Vec<FeedConfig> = Vec::with_capacity(payload.feeds.len());
+    for f in payload.feeds {
+        if f.name.trim().is_empty() {
+            return Json(json!({ "success": false, "error": "Each feed needs a name." }));
+        }
+        if let Err(e) = feeds::validate_feed_url(&f.url) {
+            return Json(json!({
+                "success": false,
+                "error": format!("Feed '{}': {}", f.name.trim(), e),
+            }));
+        }
+        let mut f = f;
+        f.name = f.name.trim().to_string();
+        f.url = f.url.trim().to_string();
+        // The id is normally generated by the client; fill one in when the UI
+        // omits it so every stored feed is addressable for edit/delete.
+        let id_trimmed = f.id.trim().to_string();
+        f.id = if id_trimmed.is_empty() {
+            format!("feed-{}", chrono::Utc::now().timestamp_millis())
+        } else {
+            id_trimmed
+        };
+        cleaned.push(f);
+    }
+
+    // Duplicate ids would silently shadow each other on delete/edit.
+    {
+        let mut seen = std::collections::HashSet::new();
+        if let Some(dup) = cleaned
+            .iter()
+            .map(|f| f.id.clone())
+            .find(|id| !seen.insert(id.clone()))
+        {
+            return Json(json!({
+                "success": false,
+                "error": format!("Duplicate feed id '{}'. Reload Settings and try again.", dup),
+            }));
+        }
+    }
+
+    let cfg_snapshot = {
+        let mut cfg = state.config.write().await;
+        cfg.feeds = cleaned;
+        cfg.clone()
+    };
+    save_app_config(&cfg_snapshot).await;
+    Json(json!({ "success": true, "feeds": cfg_snapshot.feeds }))
+}
+
+#[derive(Deserialize)]
+pub struct DeleteFeedPayload {
+    pub id: String,
+}
+
+async fn delete_feed_handler(
+    State(state): State<SharedAppState>,
+    Json(payload): Json<DeleteFeedPayload>,
+) -> Json<Value> {
+    let cfg_snapshot = {
+        let mut cfg = state.config.write().await;
+        cfg.feeds.retain(|f| f.id != payload.id);
+        cfg.clone()
+    };
+    save_app_config(&cfg_snapshot).await;
+    Json(json!({ "success": true, "feeds": cfg_snapshot.feeds }))
+}
+
+async fn list_feeds_handler(
+    State(state): State<SharedAppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Response {
+    // Feed URLs commonly embed personal access tokens, so — like OAuth tokens
+    // and API keys — they are only ever served to the desktop app itself.
+    if !addr.ip().is_loopback() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "success": false,
+                "error": "Feed URLs can embed access tokens; they are only available on the desktop app."
+            })),
+        )
+            .into_response();
+    }
+    let cfg = state.config.read().await;
+    Json(json!({ "success": true, "feeds": cfg.feeds })).into_response()
+}
+
 async fn microsoft_login_redirect(State(state): State<SharedAppState>) -> Redirect {
     let cfg = state.config.read().await;
     let url = teams::build_microsoft_oauth_url(state.port, cfg.teams_client_id.as_deref());
@@ -2050,6 +2359,13 @@ async fn microsoft_oauth_callback(
     State(state): State<SharedAppState>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Response {
+    if !auth::verify_and_consume_oauth_state(params.get("state").map(|s| s.as_str())) {
+        return Html(oauth_error_page(
+            "Microsoft Sign-In Error",
+            "This sign-in link is invalid or has expired (state mismatch). Please start the sign-in again from the QuizRadar app.",
+        ))
+        .into_response();
+    }
     if let Some(code) = params.get("code") {
         let cid = state.config.read().await.teams_client_id.clone();
         match teams::exchange_microsoft_code_for_token(code, state.port, cid.as_deref()).await {
@@ -2096,34 +2412,7 @@ async fn microsoft_oauth_callback(
                 return Html(html).into_response();
             }
             Err(err) => {
-                let html = format!(
-                    r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QuizRadar — Microsoft Sign-In</title>
-  <style>
-    body {{ background: #0b0f19; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }}
-    .card {{ background: #131927; border: 1px solid #1e293b; border-radius: 16px; padding: 28px; max-width: 440px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; }}
-    .icon {{ width: 48px; height: 48px; border-radius: 12px; background: rgba(239,68,68,0.15); color: #ef4444; display: inline-flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 16px; }}
-    h2 {{ font-size: 18px; margin: 0 0 8px 0; color: #ffffff; }}
-    p {{ font-size: 13px; color: #94a3b8; line-height: 1.5; margin: 0 0 20px 0; word-break: break-word; }}
-    .btn {{ display: inline-block; background: #1a73e8; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 600; padding: 10px 20px; border-radius: 10px; cursor: pointer; border: none; }}
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="icon">⚠️</div>
-    <h2>Microsoft Sign-In Error</h2>
-    <p>{}</p>
-    <button class="btn" onclick="window.close();">Return to QuizRadar</button>
-  </div>
-</body>
-</html>"#,
-                    err
-                );
-                return Html(html).into_response();
+                return Html(oauth_error_page("Microsoft Sign-In Error", &err)).into_response();
             }
         }
     }
@@ -2259,10 +2548,19 @@ async fn get_assessment_practice_handler(
     State(state): State<SharedAppState>,
     Path(id): Path<String>,
 ) -> Json<Value> {
-    let assessments = state.assessments.read().await;
-    let cfg = state.config.read().await;
-    if let Some(a) = assessments.iter().find(|x| x.id == id) {
-        match gemini::generate_practice_quiz(a, cfg.gemini_api_key.as_deref()).await {
+    // Clone the assessment + key and drop both guards BEFORE the AI call:
+    // generate_practice_quiz can block for up to 60s and would otherwise pin
+    // the config read lock across every writer.
+    let found = {
+        let assessments = state.assessments.read().await;
+        let cfg = state.config.read().await;
+        assessments
+            .iter()
+            .find(|x| x.id == id)
+            .map(|a| (a.clone(), cfg.gemini_api_key.clone()))
+    };
+    if let Some((a, api_key)) = found {
+        match gemini::generate_practice_quiz(&a, api_key.as_deref()).await {
             Ok(payload) => Json(json!({
                 "success": true,
                 "status": "ok",
@@ -2346,12 +2644,43 @@ pub struct ScheduleStudyBlocksPayload {
     pub assessment_id: Option<String>,
 }
 
+/// Candidate study windows, every 90 minutes from 08:00 to 21:30 (start times
+/// 08:00, 09:30, ... 20:00, each ending +90min), ordered by preference:
+/// evening slots (16:00–21:30) first, then the slots closest to the evening
+/// (late afternoon, then morning). Within the evening band itself, earlier is
+/// preferred so the student still gets a reasonable bedtime before an exam.
+fn study_window_candidates() -> Vec<(String, String)> {
+    let midnight = chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap();
+    let mut all: Vec<(chrono::NaiveTime, chrono::NaiveTime)> = Vec::new();
+    let mut t = chrono::NaiveTime::from_hms_opt(8, 0, 0).unwrap();
+    let last_start = chrono::NaiveTime::from_hms_opt(20, 0, 0).unwrap();
+    while t <= last_start {
+        all.push((t, t + chrono::Duration::minutes(90)));
+        t += chrono::Duration::minutes(90);
+    }
+    all.sort_by_key(|&(start, _)| {
+        let mins = (start - midnight).num_minutes() as u32;
+        if mins >= 16 * 60 {
+            (0u8, mins) // evening band: earliest first
+        } else if mins >= 12 * 60 {
+            (1u8, 24 * 60 - mins) // afternoon: nearest the evening first
+        } else {
+            (2u8, 24 * 60 - mins) // morning: nearest midday first
+        }
+    });
+    all.into_iter()
+        .map(|(s, e)| (s.format("%H:%M").to_string(), e.format("%H:%M").to_string()))
+        .collect()
+}
+
 async fn schedule_study_blocks_handler(
     State(state): State<SharedAppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     payload: Option<Json<ScheduleStudyBlocksPayload>>,
 ) -> Json<Value> {
     let payload = payload.map(|p| p.0).unwrap_or_default();
     let assessments = state.assessments.read().await.clone();
+    let schedule = state.schedule.read().await.clone();
     let mut cfg = state.config.write().await;
 
     let target_assessments: Vec<&Assessment> = if let Some(ref aid) = payload.assessment_id {
@@ -2375,41 +2704,59 @@ async fn schedule_study_blocks_handler(
 
         let block_id = format!("study-block-{}", a.id);
         if !cfg.custom_events.iter().any(|e| e.id == block_id) {
-            // Pick the first free evening study window (16:00–21:30) that does not
-            // clash with an existing event on that date instead of a fixed 17:00.
-            let (mut start_time, mut end_time) = ("17:00".to_string(), "18:30".to_string());
-            let windows: [(&str, &str); 5] = [
-                ("16:00", "17:30"),
-                ("17:00", "18:30"),
-                ("18:00", "19:30"),
-                ("19:00", "20:30"),
-                ("20:00", "21:30"),
-            ];
-            for (ws, we) in windows {
-                let clashes = cfg.custom_events.iter().any(|e| {
+            // Pick the first free full-day study window (08:00–21:30, evening
+            // preferred) that does not clash with an existing event on that
+            // date instead of booking a fixed slot.
+            let (mut start_time, mut end_time) = (String::new(), String::new());
+            let windows = study_window_candidates();
+            use chrono::Datelike;
+            let weekday_name = chrono::NaiveDate::parse_from_str(&block_date, "%Y-%m-%d")
+                .map(|d| match d.weekday() {
+                    chrono::Weekday::Mon => "Monday",
+                    chrono::Weekday::Tue => "Tuesday",
+                    chrono::Weekday::Wed => "Wednesday",
+                    chrono::Weekday::Thu => "Thursday",
+                    chrono::Weekday::Fri => "Friday",
+                    chrono::Weekday::Sat => "Saturday",
+                    chrono::Weekday::Sun => "Sunday",
+                })
+                .unwrap_or("")
+                .to_string();
+            let chosen = windows.iter().find(|(ws, we)| {
+                let clashes_custom = cfg.custom_events.iter().any(|e| {
                     e.date_iso == block_date
-                        && !(e.end_time.as_str() <= ws || e.start_time.as_str() >= we)
+                        && !(e.end_time.as_str() <= ws.as_str()
+                            || e.start_time.as_str() >= we.as_str())
                 });
-                if !clashes {
-                    start_time = ws.to_string();
-                    end_time = we.to_string();
-                    break;
-                }
-            }
-            let notes = format!("Focused review of topics: {}", a.topics.join(", "));
-            cfg.custom_events.push(CustomCalendarEvent {
-                id: block_id,
-                title: format!("ðŸ“š Study Block: {}", a.title),
-                course_id: a.course_id.clone(),
-                event_type: "Study Session".to_string(),
-                date_iso: block_date,
-                start_time,
-                end_time,
-                room: "Study Desk / Library".to_string(),
-                notes,
-                color: a.color.clone(),
+                // Also respect the weekly timetable: never book a study block
+                // over a timetabled class on the same weekday.
+                let clashes_lecture = schedule.slots.iter().any(|s| {
+                    s.day.eq_ignore_ascii_case(&weekday_name)
+                        && !(s.end_time.as_str() <= ws.as_str()
+                            || s.start_time.as_str() >= we.as_str())
+                });
+                !clashes_custom && !clashes_lecture
             });
-            created_count += 1;
+            if let Some((ws, we)) = chosen {
+                start_time = ws.to_string();
+                end_time = we.to_string();
+            }
+            if !start_time.is_empty() {
+                let notes = format!("Focused review of topics: {}", a.topics.join(", "));
+                cfg.custom_events.push(CustomCalendarEvent {
+                    id: block_id,
+                    title: format!("Study Block: {}", a.title),
+                    course_id: a.course_id.clone(),
+                    event_type: "Study Session".to_string(),
+                    date_iso: block_date,
+                    start_time,
+                    end_time,
+                    room: "Study Desk / Library".to_string(),
+                    notes,
+                    color: a.color.clone(),
+                });
+                created_count += 1;
+            }
         }
     }
 
@@ -2432,7 +2779,11 @@ async fn schedule_study_blocks_handler(
         } else {
             "All upcoming exams are already protected with active smart study preparation blocks in your timetable!".to_string()
         },
-        "config": cfg_snapshot,
+        "config": if addr.ip().is_loopback() {
+            serde_json::to_value(&cfg_snapshot).unwrap_or(Value::Null)
+        } else {
+            redact_secrets_for_remote(&cfg_snapshot)
+        },
         "dashboard": dashboard,
         "assessments": assessments
     }))
@@ -2556,17 +2907,98 @@ async fn get_pairing_info_handler(State(state): State<SharedAppState>) -> Json<V
     let connect_url = format!("http://{}:{}/", local_ip, port);
     let emulator_url = format!("http://10.0.2.2:{}/", port);
 
+    let pin_required = cfg.pairing_pin.is_some();
+    // The QR payload only signals that a PIN is required — the PIN itself
+    // never leaves the desktop app; the user types it on the phone.
+    let pairing_qr_data = if pin_required {
+        format!("{}#pin-required", connect_url)
+    } else {
+        connect_url.clone()
+    };
+
     Json(json!({
         "success": true,
         "local_ip": local_ip,
         "port": port,
         "connect_url": connect_url,
         "emulator_url": emulator_url,
+        "pairing_qr_data": pairing_qr_data,
+        "pin_required": pin_required,
+        "pairing_note": if pin_required {
+            "A pairing PIN is active. Enter the PIN shown in the desktop app on your phone when connecting."
+        } else {
+            "No pairing PIN is set. Enable one in Settings for extra security on shared Wi-Fi."
+        },
         "user_email": cfg.user_email,
         "user_name": cfg.user_name,
         "google_authenticated": cfg.user_email.is_some(),
         "teams_configured": cfg.teams_enabled && cfg.teams_token.is_some()
     }))
+}
+
+#[derive(Deserialize)]
+pub struct PairingPinPayload {
+    pub pin: Option<String>,
+}
+
+/// Validates a pairing PIN: either absent (clears it) or 4-8 plain digits.
+/// An empty string is treated the same as `null` ("clear the PIN") since UIs
+/// commonly send `""` from a cleared input field.
+fn validate_pairing_pin(pin: Option<&str>) -> Result<Option<String>, String> {
+    match pin {
+        None => Ok(None),
+        Some(p) => {
+            let trimmed = p.trim();
+            if trimmed.is_empty() {
+                return Ok(None);
+            }
+            if (4..=8).contains(&trimmed.len()) && trimmed.chars().all(|c| c.is_ascii_digit()) {
+                Ok(Some(trimmed.to_string()))
+            } else {
+                Err("Pairing PIN must be 4-8 digits.".to_string())
+            }
+        }
+    }
+}
+
+async fn set_pairing_pin_handler(
+    State(state): State<SharedAppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(payload): Json<PairingPinPayload>,
+) -> Response {
+    // The PIN gates LAN access, so only the desktop app itself may set or
+    // clear it — a compromised phone must not be able to disable its own gate.
+    if !addr.ip().is_loopback() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "success": false,
+                "error": "The pairing PIN can only be set or cleared from the desktop app itself."
+            })),
+        )
+            .into_response();
+    }
+    let new_pin = match validate_pairing_pin(payload.pin.as_deref()) {
+        Ok(p) => p,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "success": false, "error": e })),
+            )
+                .into_response();
+        }
+    };
+    let cfg_snapshot = {
+        let mut cfg = state.config.write().await;
+        cfg.pairing_pin = new_pin;
+        cfg.clone()
+    };
+    save_app_config(&cfg_snapshot).await;
+    Json(json!({
+        "success": true,
+        "pin_required": cfg_snapshot.pairing_pin.is_some()
+    }))
+    .into_response()
 }
 
 pub mod urlencoding {
@@ -2597,24 +3029,90 @@ mod tests {
 
     #[test]
     fn test_redact_secrets_for_remote() {
-        let mut cfg = AppConfig::default();
-        cfg.gemini_api_key = Some("SUPER-SECRET-KEY-123".to_string());
-        cfg.teams_token = Some("ms-token-value".to_string());
-        cfg.moodle_token = Some("   ".to_string()); // whitespace-only -> absent
+        let cfg = AppConfig {
+            gemini_api_key: Some("SUPER-SECRET-KEY-123".to_string()),
+            teams_token: Some("ms-token-value".to_string()),
+            moodle_token: Some("   ".to_string()), // whitespace-only -> absent
+            pairing_pin: Some("4321".to_string()),
+            ..AppConfig::default()
+        };
 
         let v = redact_secrets_for_remote(&cfg);
         let obj = v.as_object().expect("config should serialize to object");
 
-        assert_eq!(obj.get("gemini_api_key"), Some(&Value::String("stored".into())));
-        assert_eq!(obj.get("teams_token"), Some(&Value::String("stored".into())));
+        assert_eq!(
+            obj.get("gemini_api_key"),
+            Some(&Value::String("stored".into()))
+        );
+        assert_eq!(
+            obj.get("teams_token"),
+            Some(&Value::String("stored".into()))
+        );
         assert_eq!(obj.get("moodle_token"), Some(&Value::Null));
+        assert_eq!(
+            obj.get("pairing_pin"),
+            Some(&Value::String("stored".into()))
+        );
 
         // Non-secret fields must survive untouched.
-        assert_eq!(obj.get("user_email").and_then(|v| v.as_str()), cfg.user_email.as_deref());
+        assert_eq!(
+            obj.get("user_email").and_then(|v| v.as_str()),
+            cfg.user_email.as_deref()
+        );
 
         // The real secret must not appear anywhere in the serialized payload.
         let dumped = serde_json::to_string(&v).unwrap();
         assert!(!dumped.contains("SUPER-SECRET-KEY-123"));
         assert!(!dumped.contains("ms-token-value"));
+        assert!(!dumped.contains("\"4321\""));
+    }
+
+    #[test]
+    fn test_validate_pairing_pin() {
+        // Absent / empty clears the PIN.
+        assert_eq!(validate_pairing_pin(None).unwrap(), None);
+        assert_eq!(validate_pairing_pin(Some("")).unwrap(), None);
+        assert_eq!(validate_pairing_pin(Some("   ")).unwrap(), None);
+
+        // Valid 4-8 digit PINs are trimmed and stored.
+        assert_eq!(
+            validate_pairing_pin(Some("1234")).unwrap(),
+            Some("1234".to_string())
+        );
+        assert_eq!(
+            validate_pairing_pin(Some(" 12345678 ")).unwrap(),
+            Some("12345678".to_string())
+        );
+
+        // Invalid: wrong length or non-digits.
+        assert!(validate_pairing_pin(Some("123")).is_err());
+        assert!(validate_pairing_pin(Some("123456789")).is_err());
+        assert!(validate_pairing_pin(Some("12a4")).is_err());
+        assert!(validate_pairing_pin(Some("12 4")).is_err());
+        assert!(validate_pairing_pin(Some("١٢٣٤")).is_err()); // non-ASCII digits
+    }
+
+    #[test]
+    fn test_study_window_candidates_order_and_bounds() {
+        let windows = study_window_candidates();
+        // 9 candidates: 08:00..20:00 every 90 minutes, each 90 minutes long.
+        assert_eq!(windows.len(), 9);
+        assert_eq!(windows[0], ("17:00".to_string(), "18:30".to_string()));
+        // Evening band first (earliest within the band), then afternoon from
+        // the evening side, then morning from the midday side.
+        let starts: Vec<&str> = windows.iter().map(|(s, _)| s.as_str()).collect();
+        assert_eq!(
+            starts,
+            vec![
+                "17:00", "18:30", "20:00", // evening
+                "15:30", "14:00", "12:30", // afternoon, nearest evening first
+                "11:00", "09:30", "08:00", // morning, nearest midday first
+            ]
+        );
+        // Every window ends at most at 21:30 and after its start.
+        for (s, e) in &windows {
+            assert!(s < e, "window {} must end after it starts", s);
+            assert!(e.as_str() <= "21:30", "window must not end past 21:30");
+        }
     }
 }

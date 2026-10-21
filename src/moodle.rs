@@ -35,6 +35,15 @@ fn parse_ical_datetime(val: &str) -> Option<(String, String, String)> {
     if cleaned.len() >= 15 && cleaned.contains('T') {
         let parts: Vec<&str> = cleaned.split('T').collect();
         if parts[0].len() == 8 && parts[1].len() >= 4 {
+            // Guard char boundaries: non-ASCII inside an ICS field must not
+            // panic the parser via byte slicing.
+            if !parts[0].is_char_boundary(4)
+                || !parts[0].is_char_boundary(6)
+                || !parts[1].is_char_boundary(2)
+                || !parts[1].is_char_boundary(4)
+            {
+                return None;
+            }
             let y: i32 = parts[0][0..4].parse().ok()?;
             let m: u32 = parts[0][4..6].parse().ok()?;
             let d: u32 = parts[0][6..8].parse().ok()?;
@@ -238,10 +247,7 @@ pub fn parse_moodle_ics_content(
                     || l_lower.contains("chapter"))
                     && l.len() > 3
                 {
-                    topics.push(
-                        l.trim_start_matches(['•', '-', '*', ' '])
-                            .to_string(),
-                    );
+                    topics.push(l.trim_start_matches(['•', '-', '*', ' ']).to_string());
                 }
             }
         }
@@ -302,7 +308,7 @@ pub fn parse_moodle_ics_content(
             color: course_color,
             bg,
             border,
-            semester: "Fall 2026".to_string(),
+            semester: crate::parser::infer_semester_from_date(parsed_date),
             email_subject: "Moodle Calendar Event".to_string(),
             email_sent_date: Local::now().format("%Y-%m-%d").to_string(),
             source: "Moodle".to_string(),
@@ -325,6 +331,14 @@ pub async fn fetch_moodle_ical_events(
     schedule: &ScheduleData,
 ) -> Result<Vec<Assessment>, String> {
     let client = &*MOODLE_HTTP_CLIENT;
+
+    // The feed URL typically embeds an access token: never send it over plaintext HTTP.
+    if ical_url.trim().to_lowercase().starts_with("http://") {
+        return Err(
+            "Moodle calendar feed must use HTTPS (http:// would send your access token in the clear). Re-copy the feed link starting with https:// from Moodle."
+                .to_string(),
+        );
+    }
 
     let resp = client
         .get(ical_url)
@@ -350,6 +364,12 @@ pub async fn fetch_moodle_api_events(
     let client = &*MOODLE_HTTP_CLIENT;
 
     let clean_url = base_url.trim_end_matches('/');
+    if clean_url.to_lowercase().starts_with("http://") {
+        return Err(
+            "Moodle site must use HTTPS (http:// would send your web-service token in the clear). Use your portal's https:// address."
+                .to_string(),
+        );
+    }
     let endpoint = format!("{}/webservice/rest/server.php", clean_url);
 
     // POST the credentials in the request body: a Web Services token must never
@@ -400,8 +420,11 @@ pub async fn fetch_moodle_api_events(
 
             // Moodle timestamps are UTC epoch seconds; project them onto the
             // student's local timezone so dates match the wall-clock experience.
-            let dt_utc = chrono::DateTime::from_timestamp(timestart, 0)
-                .unwrap_or_else(chrono::Utc::now);
+            // Unparseable timestamps are skipped honestly rather than silently
+            // re-anchored to "now".
+            let Some(dt_utc) = chrono::DateTime::from_timestamp(timestart, 0) else {
+                continue;
+            };
             let dt = dt_utc.with_timezone(&Local);
             let date_iso = dt.format("%Y-%m-%d").to_string();
             let start_time = dt.format("%H:%M").to_string();
@@ -470,7 +493,7 @@ pub async fn fetch_moodle_api_events(
                 color,
                 bg,
                 border,
-                semester: "Fall 2026".to_string(),
+                semester: crate::parser::infer_semester_from_date(parsed_date),
                 email_subject: "Moodle API Sync".to_string(),
                 email_sent_date: Local::now().format("%Y-%m-%d").to_string(),
                 source: "Moodle".to_string(),

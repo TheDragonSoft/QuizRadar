@@ -31,6 +31,13 @@
                 <data android:scheme="com.quizradar.app" />
             </intent-filter>
 
+            <!-- Share-sheet ingest: accept text/URL shares from other apps -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+
         </activity>
 
         <provider
@@ -42,6 +49,18 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+
+        <!-- Home-screen widget: next assessment countdown -->
+        <receiver
+            android:name=".QuizRadarWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/quizradar_widget_info" />
+        </receiver>
     </application>
 
     <!-- Permissions -->

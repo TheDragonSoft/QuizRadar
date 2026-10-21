@@ -131,9 +131,19 @@ pub async fn push_cloud_state(
         });
     }
 
-    // Attempt 2: Fallback to Google Calendar Private Sync Record
-    // Since Google Calendar scope is already authorized on the user's account
-    let cal_res = push_to_google_calendar(client, &token.token, &serialized).await?;
+    // Attempt 2: Fallback to Google Calendar Private Sync Record.
+    // SECURITY: the Calendar channel writes into a visible event on the
+    // user's PRIMARY calendar — it must never carry credentials. Strip the
+    // Microsoft token before serializing; the receiving device re-authenticates
+    // Teams with its own sign-in instead.
+    let mut cal_payload: Value =
+        serde_json::to_value(&payload).map_err(|e| format!("Serialization error: {}", e))?;
+    if let Some(obj) = cal_payload.as_object_mut() {
+        obj.insert("teams_token".to_string(), Value::Null);
+    }
+    let cal_serialized =
+        serde_json::to_string(&cal_payload).map_err(|e| format!("Serialization error: {}", e))?;
+    let cal_res = push_to_google_calendar(client, &token.token, &cal_serialized).await?;
     Ok(CloudSyncReport {
         success: true,
         channel: "Google Calendar Cloud Sync".to_string(),
@@ -308,18 +318,17 @@ async fn pull_from_google_drive(
     Err(format!("Drive download returned {}", dl_resp.status()))
 }
 
-fn calendar_sync_payload(content: &str) -> String {
+fn calendar_sync_payload(content: &str) -> Option<String> {
     const START: &str = "---QUIZRADAR_DATA_START---\n";
     const END: &str = "\n---QUIZRADAR_DATA_END---";
     if START.len() + content.len() + END.len() <= CALENDAR_DESCRIPTION_MAX_BYTES {
-        return format!("{}{}{}", START, content, END);
+        return Some(format!("{}{}{}", START, content, END));
     }
-    let budget = CALENDAR_DESCRIPTION_MAX_BYTES.saturating_sub(START.len());
-    let mut end = budget.min(content.len());
-    while end > 0 && !content.is_char_boundary(end) {
-        end -= 1;
-    }
-    format!("{}{}", START, &content[..end])
+    // REFUSE to truncate: the pull parser requires the END marker, so a
+    // truncated push would report success while the data could never be
+    // pulled back (silent data loss). The caller surfaces an honest error
+    // telling the user to re-authenticate the Drive channel instead.
+    None
 }
 
 async fn push_to_google_calendar(
@@ -358,7 +367,10 @@ async fn push_to_google_calendar(
         None
     };
 
-    let encoded_payload = calendar_sync_payload(content);
+    let encoded_payload = calendar_sync_payload(content).ok_or_else(|| {
+        "State is too large for the Calendar fallback storage channel. Sign in again to restore the private Google Drive backup channel (Calendar fallback refuses partial writes)."
+            .to_string()
+    })?;
     // Fallback storage via a private calendar bookmark event. Diff the event to
     // today so it never accumulates stale remnants in the user's calendar.
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();

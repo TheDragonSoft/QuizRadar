@@ -223,7 +223,9 @@ pub fn is_allowed_update_url(url: &str) -> bool {
     if parsed.host_str() != Some("github.com") {
         return false;
     }
-    parsed.path().starts_with("/TheDragonSoft/QuizRadar/releases/download/")
+    parsed
+        .path()
+        .starts_with("/TheDragonSoft/QuizRadar/releases/download/")
 }
 
 #[cfg(test)]

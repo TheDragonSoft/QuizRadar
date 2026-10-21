@@ -7,7 +7,7 @@
 const IS_NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 
 // Single source of truth for the UI version (keep in sync with Cargo.toml / package.json)
-const APP_VERSION = "4.1.0";
+const APP_VERSION = "4.2.0";
 
 // ============================================================================
 // QUIZRADAR AUTONOMOUS ON-DEVICE BACKEND ENGINE (100% Isolated, Zero Latency)
@@ -71,6 +71,114 @@ function rafThrottle(fn) {
       fn.apply(this, argsToUse || []);
     });
   };
+}
+
+// Disables a button for the duration of an async submit: double-taps must
+// never fire duplicate POSTs (duplicate courses/events on the desktop server).
+async function withButtonLock(btn, fn) {
+  if (!btn) return fn();
+  if (btn.dataset.busy === "1") return;
+  btn.dataset.busy = "1";
+  const prevDisabled = btn.disabled;
+  btn.disabled = true;
+  btn.classList.add("opacity-60", "pointer-events-none");
+  try {
+    return await fn();
+  } finally {
+    btn.dataset.busy = "";
+    btn.disabled = prevDisabled;
+    btn.classList.remove("opacity-60", "pointer-events-none");
+  }
+}
+
+// ============================================================================
+// MODAL ACCESSIBILITY (focus trap + focus restore)
+// The Escape-to-close priority chain already lives in initKeyboardShortcuts();
+// this handles Tab trapping and returning keyboard focus to the trigger.
+// ============================================================================
+
+let _a11yModalOpenCount = 0;
+let _a11yFocusRestoreTarget = null;
+
+function initModalA11y() {
+  // Tab: cycle focus strictly inside the topmost open modal panel.
+  document.addEventListener(
+    "keydown",
+    (e) => {
+      if (e.key !== "Tab") return;
+      const open = Array.from(document.querySelectorAll(".modal-backdrop.is-open"));
+      if (open.length === 0) return;
+      const top = open[open.length - 1];
+      const panel = top.querySelector(".modal-panel");
+      if (!panel) return;
+      const focusables = Array.from(
+        panel.querySelectorAll(
+          'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((el) => el.offsetParent !== null);
+      if (focusables.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (!panel.contains(active)) {
+        e.preventDefault();
+        first.focus();
+        return;
+      }
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    },
+    true
+  );
+
+  // Observe open/close transitions: stash the trigger to restore later and move
+  // focus into freshly opened panels (only when the app didn't already focus
+  // something above us, like the input-focus calls most openers perform).
+  const observer = new MutationObserver(() => {
+    const openCount = document.querySelectorAll(".modal-backdrop.is-open").length;
+    if (openCount > _a11yModalOpenCount) {
+      const active = document.activeElement;
+      if (active && active !== document.body && active !== document.documentElement) {
+        _a11yFocusRestoreTarget = active;
+      }
+      const top = Array.from(document.querySelectorAll(".modal-backdrop.is-open")).pop();
+      const panel = top?.querySelector(".modal-panel");
+      if (panel) {
+        setTimeout(() => {
+          if (!panel || !panel.isConnected) return;
+          if (!document.querySelector(".modal-backdrop.is-open")) return;
+          const activeNow = document.activeElement;
+          if (activeNow && activeNow !== document.body && panel.contains(activeNow)) return;
+          const firstFocusable = Array.from(
+            panel.querySelectorAll('button, input, select, textarea, [tabindex="-1"], a[href]')
+          ).find((el) => el.offsetParent !== null);
+          if (firstFocusable) firstFocusable.focus();
+          else {
+            panel.setAttribute("tabindex", "-1");
+            panel.focus();
+          }
+        }, 60);
+      }
+    } else if (openCount === 0 && _a11yModalOpenCount > 0) {
+      const target = _a11yFocusRestoreTarget;
+      _a11yFocusRestoreTarget = null;
+      if (target && target.isConnected && typeof target.focus === "function") {
+        try {
+          target.focus();
+        } catch (err) { /* element too stale to refocus */ }
+      }
+    }
+    _a11yModalOpenCount = openCount;
+  });
+  observer.observe(document.body, { attributes: true, subtree: true, attributeFilter: ["class"] });
 }
 
 // Trailing-edge debounce with cancel()/flush() for immediate paths.
@@ -216,7 +324,7 @@ class QuizRadarAutonomousEngine {
         picture: null
       },
       schedule: {
-        semester: "Fall 2026",
+        semester: "Current Semester",
         courses: [],
         slots: []
       },
@@ -231,7 +339,7 @@ class QuizRadarAutonomousEngine {
   populateAcademicData() {
     // Kept clean to guarantee no mock or foreign assessments leak into fresh installs
     if (!this.state.schedule) {
-      this.state.schedule = { semester: "Fall 2026", courses: [], slots: [] };
+      this.state.schedule = { semester: "Current Semester", courses: [], slots: [] };
     }
   }
 
@@ -519,7 +627,10 @@ class QuizRadarAutonomousEngine {
     // 1. GET /api/state
     if (path === "/api/state") {
       this.recomputeDashboard(this.state);
-      this.saveDatabase();
+      // NOTE: no saveDatabase() here — this endpoint is polled (including by
+      // the sign-in poller every 1.5s). Persisting the entire database on
+      // every GET caused ~120 full JSON stringifications per sign-in window.
+      // Mutating routes persist their own changes.
       // Deep-copy so engine mutations never alias the snapshot handed to the app.
       return { ok: true, status: 200, data: JSON.parse(JSON.stringify(this.state)) };
     }
@@ -535,11 +646,32 @@ class QuizRadarAutonomousEngine {
         "https://www.googleapis.com/auth/calendar.events",
         "https://www.googleapis.com/auth/drive.appdata"
       ].join(" ");
-      const googleAuthUrl = "https://accounts.google.com/o/oauth2/v2/auth?client_id=" + encodeURIComponent(clientId) +
+      // Anti-CSRF state + PKCE: the local callback server verifies the state
+      // before exchanging any code, so a malicious page cannot inject a
+      // foreign authorization code into the sign-in flow.
+      const state = randomB64UrlSafe(16);
+      const verifier = randomB64UrlSafe(32);
+      let challenge = "";
+      try { challenge = await pkceChallengeS256(verifier); } catch (e) { challenge = ""; }
+      pendingNativeOAuth.google = { state, verifier };
+      if (IS_NATIVE) {
+        try {
+          await _originalFetch("http://127.0.0.1:3000/api/auth/prepare", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider: "google", state, verifier })
+          });
+        } catch (e) { /* server records the expectation when reachable */ }
+      }
+      let googleAuthUrl = "https://accounts.google.com/o/oauth2/v2/auth?client_id=" + encodeURIComponent(clientId) +
         "&redirect_uri=" + encodeURIComponent(redirectUri) +
         "&response_type=code" +
         "&scope=" + encodeURIComponent(scopes) +
+        "&state=" + encodeURIComponent(state) +
         "&access_type=offline&prompt=consent%20select_account&include_granted_scopes=true";
+      if (challenge) {
+        googleAuthUrl += "&code_challenge=" + encodeURIComponent(challenge) + "&code_challenge_method=S256";
+      }
       return { ok: true, status: 200, data: { url: googleAuthUrl } };
     }
 
@@ -548,20 +680,49 @@ class QuizRadarAutonomousEngine {
       const redirectUri = "http://localhost:3000/api/auth/microsoft/callback";
       const clientId = "14d82eec-204b-4c2f-b7e8-296a70dab67e";
       const scopes = "offline_access User.Read Mail.Read Calendars.Read";
-      const msAuthUrl = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=" + encodeURIComponent(clientId) +
+      const state = randomB64UrlSafe(16);
+      const verifier = randomB64UrlSafe(32);
+      let challenge = "";
+      try { challenge = await pkceChallengeS256(verifier); } catch (e) { challenge = ""; }
+      pendingNativeOAuth.microsoft = { state, verifier };
+      if (IS_NATIVE) {
+        try {
+          await _originalFetch("http://127.0.0.1:3000/api/auth/prepare", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider: "microsoft", state, verifier })
+          });
+        } catch (e) { /* server records the expectation when reachable */ }
+      }
+      let msAuthUrl = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=" + encodeURIComponent(clientId) +
         "&response_type=code" +
         "&redirect_uri=" + encodeURIComponent(redirectUri) +
         "&response_mode=query" +
         "&scope=" + encodeURIComponent(scopes) +
+        "&state=" + encodeURIComponent(state) +
         "&prompt=select_account";
+      if (challenge) {
+        msAuthUrl += "&code_challenge=" + encodeURIComponent(challenge) + "&code_challenge_method=S256";
+      }
       return { ok: true, status: 200, data: { url: msAuthUrl } };
     }
 
     // 2. POST /api/config/update
     if (path === "/api/config/update") {
-      // Whitelist the fields real config updates carry. A manually typed email is
-      // only a local profile anchor — it must never flip auth into a signed-in state.
-      Object.assign(this.state.config, body);
+      // Whitelist the fields real config updates carry — never Object.assign
+      // the whole body, or stale/junk keys accumulate in the persisted schema.
+      const CONFIG_FIELDS = [
+        "user_name", "user_email", "user_picture", "auto_sync_gcal",
+        "sync_weekly_classes_to_gcal", "gemini_enabled", "gemini_api_key",
+        "teams_enabled", "teams_account_email", "teams_account_name",
+        "teams_client_id", "teams_token", "teams_refresh_token",
+        "moodle_enabled", "moodle_ical_url", "moodle_token", "moodle_base_url",
+        "classroom_enabled", "last_gmail_sync", "dismiss_conflict_banner",
+        "onboarding_completed", "theme", "accent"
+      ];
+      for (const field of CONFIG_FIELDS) {
+        if (body[field] !== undefined) this.state.config[field] = body[field];
+      }
       if (body.user_name) this.state.auth.name = body.user_name;
       if (body.user_email !== undefined) {
         const trimmed = String(body.user_email || "").trim();
@@ -599,7 +760,8 @@ class QuizRadarAutonomousEngine {
         this.state.auth.email = trimmed.includes("@") && !this.state.auth.authenticated ? trimmed : this.state.auth.email;
       }
       if (body.teams_email) {
-        this.state.config.teams_enabled = true;
+        // Profile anchor only — real Teams scanning needs a Microsoft sign-in
+        // (a typed email must never flip Teams into a "connected" state).
         this.state.config.teams_account_email = body.teams_email;
       }
       if (body.teams_name) {
@@ -866,25 +1028,37 @@ class QuizRadarAutonomousEngine {
       if (!a) {
         return { ok: true, status: 200, data: { success: false, status: "error", message: "Assessment not found.", error: "Assessment not found." } };
       }
-      const achieved = Number(body.achieved_score);
-      const maxScore = Number(body.max_score);
-      const weight = Number(body.weightage_percent);
+      // Explicit null means "clear this field" (ungraded) — never coerce it
+      // into a 0 score, which would silently record a failing grade.
+      const hasAchieved = body.achieved_score !== undefined && body.achieved_score !== null;
+      const hasMax = body.max_score !== undefined && body.max_score !== null;
+      const hasWeight = body.weightage_percent !== undefined && body.weightage_percent !== null;
+      const achieved = hasAchieved ? Number(body.achieved_score) : null;
+      const maxScore = hasMax ? Number(body.max_score) : null;
+      const weight = hasWeight ? Number(body.weightage_percent) : null;
       let invalid = null;
-      if (body.achieved_score !== undefined && (!Number.isFinite(achieved) || achieved < 0)) invalid = "achieved_score must be a non-negative number";
-      if (!invalid && body.max_score !== undefined && (!Number.isFinite(maxScore) || maxScore <= 0)) invalid = "max_score must be greater than zero";
-      if (!invalid && body.weightage_percent !== undefined && (!Number.isFinite(weight) || weight < 0)) invalid = "weightage_percent must be a non-negative number";
+      if (hasAchieved && (!Number.isFinite(achieved) || achieved < 0)) invalid = "achieved_score must be a non-negative number";
+      if (!invalid && hasMax && (!Number.isFinite(maxScore) || maxScore <= 0)) invalid = "max_score must be greater than zero";
+      if (!invalid && hasWeight && (!Number.isFinite(weight) || weight < 0)) invalid = "weightage_percent must be a non-negative number";
       if (invalid) {
         return { ok: true, status: 200, data: { success: false, status: "error", message: invalid, error: invalid } };
       }
-      if (body.weightage_percent !== undefined) a.weightage_percent = weight;
-      if (body.achieved_score !== undefined) a.achieved_score = achieved;
-      if (body.max_score !== undefined) a.max_score = maxScore;
-      if (!this.state.grades) this.state.grades = {};
-      this.state.grades[a.id] = {
-        achieved_score: a.achieved_score ?? 0,
-        max_score: a.max_score ?? 0,
-        weightage_percent: a.weightage_percent ?? 0
-      };
+      if (hasWeight) a.weightage_percent = weight;
+      if (hasAchieved) a.achieved_score = achieved;
+      if (hasMax) a.max_score = maxScore;
+      if (body.achieved_score === null) delete a.achieved_score;
+      if (body.max_score === null) delete a.max_score;
+      if (body.weightage_percent === null) delete a.weightage_percent;
+      if (a.achieved_score !== undefined || a.max_score !== undefined) {
+        if (!this.state.grades) this.state.grades = {};
+        this.state.grades[a.id] = {
+          achieved_score: a.achieved_score ?? 0,
+          max_score: a.max_score ?? 0,
+          weightage_percent: a.weightage_percent ?? 0
+        };
+      } else {
+        if (this.state.grades) delete this.state.grades[a.id];
+      }
       this.recomputeDashboard(this.state);
       this.saveDatabase();
       // Minimal honest rollup that mirrors the server's grade summary section.
@@ -914,9 +1088,10 @@ class QuizRadarAutonomousEngine {
       };
     }
 
-    // 14. Timetable Extraction (On-Device OCR & Optional Gemini Vision AI)
+    // 14. Timetable Extraction (Gemini Vision AI via the user's own API key)
     if (path === "/api/schedule/extract") {
       let extracted = null;
+      let geminiFailure = null;
       const apiKey = (this.state.config && this.state.config.gemini_api_key) ||
                      (window.appState && window.appState.config && window.appState.config.gemini_api_key);
 
@@ -930,9 +1105,11 @@ Extract enrolled courses and weekly class slots from this schedule. Return ONLY 
   "courses": [{"id": "CODE", "name": "Course Title", "color": "#1a73e8"}],
   "slots": [{"id": "s1", "course_id": "CODE", "course_name": "Course Title", "day": "Monday", "day_index": 1, "start_time": "10:15", "end_time": "12:00", "display_time": "10:15 AM - 12:00 PM", "room": "Hall 1", "type": "Lecture", "group": "Sec 1"}]
 }`;
-          const gResp = await _originalFetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey.trim())}`, {
+          // Header-based auth: the key must never ride in a URL that can be
+          // logged or echoed back in provider error messages.
+          const gResp = await _originalFetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey.trim() },
             body: JSON.stringify({
               contents: [{
                 parts: [
@@ -948,25 +1125,53 @@ Extract enrolled courses and weekly class slots from this schedule. Return ONLY 
             const text = gJson?.candidates?.[0]?.content?.parts?.[0]?.text;
             if (text) {
               const cleaned = text.trim().replace(/^```json/i, "").replace(/^```/, "").replace(/```$/, "").trim();
-              const parsed = JSON.parse(cleaned);
-              if (parsed && (parsed.courses || parsed.slots)) {
-                extracted = parsed;
+              try {
+                const parsed = JSON.parse(cleaned);
+                if (parsed && ((parsed.courses && parsed.courses.length) || (parsed.slots && parsed.slots.length))) {
+                  extracted = parsed;
+                } else {
+                  geminiFailure = "Gemini read the image but couldn't find a timetable in it. Try a clearer, full-page screenshot of your schedule.";
+                }
+              } catch (parseErr) {
+                geminiFailure = "Gemini returned an unreadable response. Try again or enter your courses manually.";
               }
+            } else {
+              geminiFailure = "Gemini returned an empty response. Try again with a clearer image.";
+            }
+          } else {
+            let detail = "";
+            try {
+              const errJson = await gResp.json();
+              detail = errJson?.error?.message || "";
+            } catch (e) { detail = ""; }
+            const status = gResp.status;
+            if (status === 400 && /api key not valid/i.test(detail)) {
+              geminiFailure = "Your Gemini API key is not valid. Re-copy it from Google AI Studio into Settings and try again.";
+            } else if (status === 429) {
+              geminiFailure = "The free-tier Gemini quota for your key is exhausted. Wait a minute and scan again.";
+            } else if (status === 403) {
+              geminiFailure = "Gemini rejected the request (403). Check that your API key has access to the Generative Language API.";
+            } else {
+              geminiFailure = "Gemini API error (HTTP " + status + (detail ? ": " + detail : "") + "). Check your key/quota in Settings or enter courses manually.";
             }
           }
         } catch (e) {
-          console.warn("Direct Gemini Vision API call failed, continuing with on-device extractor:", e);
+          geminiFailure = "Couldn't reach the Gemini API (" + (e && e.message ? e.message : "network error") + "). Check your internet connection and try again.";
         }
       }
 
-      // Honest failure: no API key means no extraction. Never invent a schedule.
+      // Honest failure. Distinguish "no key configured" from "configured but
+      // the call failed" — telling a user with a key to "add a key" is why
+      // scans felt broken.
       if (!extracted) {
+        const error = geminiFailure ||
+          "Automatic schedule extraction needs a Gemini API key. Add your free key in Settings (it stays on this device), or enter your courses and classes manually.";
         return {
           ok: true,
           status: 200,
           data: {
             success: false,
-            error: "Automatic schedule extraction needs a Gemini API key. Add your free key in Server Settings, or enter your courses and classes manually."
+            error: error
           }
         };
       }
@@ -1002,7 +1207,7 @@ Extract enrolled courses and weekly class slots from this schedule. Return ONLY 
           standalone: true,
           offline_capable: true,
           user_email: this.state.config.user_email,
-          google_authenticated: false,
+          google_authenticated: !!(this.state.auth && this.state.auth.authenticated),
           google_auth_note: "This device uses an on-device engine (manual entry). Pair with the desktop app to access live Gmail/Teams scanning.",
           engine_type: "On-device engine (manual entry)"
         }
@@ -1266,6 +1471,53 @@ function initAndroidNativeBridge() {
         loadFullState();
       }
     });
+
+    // OAuth return deep link: the local callback server's success page
+    // navigates to com.quizradar.app://oauth-done (intent:// fallback), which
+    // re-activates this task. Tokens themselves arrive via
+    // window.handleOAuthResult injection — here we just clean up pending
+    // sign-in state and make sure any Custom Tab is dismissed.
+    if (App.addListener && window.Capacitor?.Plugins?.Browser) {
+      try {
+        App.addListener("appUrlOpen", (data) => {
+          const url = (data && data.url) || "";
+          if (url.startsWith("com.quizradar.app://")) {
+            pendingNativeOAuth = {};
+            try { window.Capacitor.Plugins.Browser.close(); } catch (e) {}
+          }
+          // QR pairing deep link: com.quizradar.app://pair?url=<encoded desktop url>
+          // (scanned from the QR card shown in the desktop app's Settings).
+          if (url.includes("com.quizradar.app://pair")) {
+            try {
+              const queryStart = url.indexOf("?url=");
+              if (queryStart !== -1) {
+                const desktopUrl = decodeURIComponent(url.slice(queryStart + 5).split("&")[0]);
+                const normalized = normalizeDesktopUrl(desktopUrl);
+                if (normalized) {
+                  localStorage.setItem(DESKTOP_PAIRING_URL_KEY, normalized);
+                  const input = document.getElementById("pair-desktop-url");
+                  if (input) input.value = normalized;
+                  const pinHint = url.includes("#pin-required") || url.includes("pin-required");
+                  triggerHaptic("success");
+                  openCloudSyncModal();
+                  setTimeout(() => {
+                    showPairingStatus(
+                      pinHint
+                        ? "Desktop captured! It requires its pairing PIN — type the digits shown on the PC, then Test."
+                        : "Desktop address captured! Tap Test, then Pull Desktop Data.",
+                      false
+                    );
+                    if (!pinHint) testDesktopPairing();
+                  }, 350);
+                }
+              }
+            } catch (err) {
+              console.warn("Pair deep link failed:", err);
+            }
+          }
+        });
+      } catch (e) { /* listener unavailable on this platform */ }
+    }
   }
 
   const isDark = document.documentElement.classList.contains("dark");
@@ -1379,6 +1631,33 @@ async function saveGoogleAccountProfile() {
 // OAUTH BROWSER LAUNCHER & LIVE AUTH POLLING
 // ============================================================================
 
+// --- OAuth anti-CSRF state + PKCE helpers (native sign-in flow) ---
+// The local OAuth callback server (LocalOAuthServer.java) receives the state
+// and PKCE verifier via /api/auth/prepare BEFORE the browser is opened, then
+// validates the callback against them. Single sign-in session per attempt.
+let pendingNativeOAuth = {};
+
+function randomB64UrlSafe(byteLen) {
+  const arr = new Uint8Array(byteLen);
+  if (window.crypto && crypto.getRandomValues) {
+    crypto.getRandomValues(arr);
+  } else {
+    for (let i = 0; i < byteLen; i++) arr[i] = Math.floor(Math.random() * 256);
+  }
+  let bin = "";
+  for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function pkceChallengeS256(verifier) {
+  if (!window.crypto || !crypto.subtle || !crypto.subtle.digest) return "";
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+  const bytes = new Uint8Array(digest);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
 function openExternalBrowser(url) {
   if (IS_NATIVE && window.Capacitor?.Plugins?.Browser?.open) {
     window.Capacitor.Plugins.Browser.open({ url });
@@ -1403,6 +1682,8 @@ function startAuthPolling(provider = "any") {
 
   authPollInterval = setInterval(async () => {
     attempts++;
+    // Don't burn cycles or re-persist the DB while the app is backgrounded.
+    if (document.visibilityState === "hidden") return;
     if (attempts > maxAttempts) {
       clearInterval(authPollInterval);
       authPollInterval = null;
@@ -1463,6 +1744,7 @@ function startAuthPolling(provider = "any") {
 // Native Android / OAuth callback bridge triggered by LocalOAuthServer
 window.handleOAuthResult = function(provider, tokenData, profileData) {
   console.log("[QuizRadar] handleOAuthResult:", provider, profileData);
+  pendingNativeOAuth = {};
   if (IS_NATIVE && window.Capacitor?.Plugins?.Browser?.close) {
     try { window.Capacitor.Plugins.Browser.close(); } catch (_) {}
   }
@@ -1910,7 +2192,9 @@ function openAccountModal() {
   const examsCountEl = document.getElementById("account-exams-count");
 
   const isGoogleAuth = !!appState.auth?.authenticated;
-  const isTeamsAuth = !!(appState.config?.teams_enabled && (appState.config?.teams_token || appState.config?.teams_account_email));
+  // Honest badge: a typed/anchor email is NOT a Teams connection — only a
+  // real OAuth token (or server-reported teams_connected) counts.
+  const isTeamsAuth = !!(appState.teams_connected || (appState.config?.teams_enabled && appState.config?.teams_token));
   const teamsEmail = appState.config?.teams_account_email || appState.config?.teams_account_name;
 
   if (avatarEl) avatarEl.textContent = initial;
@@ -2166,7 +2450,7 @@ function renderMobileSearchResults(rawQuery) {
           <i data-lucide="search-x" class="w-5 h-5"></i>
         </div>
         <p class="text-xs font-semibold text-slate-700 dark:text-slate-300">No matching assessments found</p>
-        <p class="text-[11px] text-slate-400 dark:text-slate-500">Try searching by course code (e.g. CS 101, MATH 101) or topic name.</p>
+        <p class="text-[11px] text-slate-400 dark:text-slate-400">Try searching by course code (e.g. CS 101, MATH 101) or topic name.</p>
       </div>
     `;
     if (window.lucide) refreshIcons(container);
@@ -2223,7 +2507,7 @@ const SEED_INITIAL_STATE = {
     has_calendar_scope: false,
   },
   schedule: {
-    semester: "Fall 2026",
+    semester: "Current Semester",
     courses: [],
     slots: [],
   },
@@ -2332,6 +2616,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initSearchBar();
   initAppUpdater();
   initAndroidNativeBridge();
+  initModalA11y();
 
   // 1. INSTANT 0ms SYNCHRONOUS HYDRATION FROM THE ALREADY-PARSED CACHE (first paint)
   // appState/studyTasksState were parsed once at script evaluation; reuse them
@@ -2544,9 +2829,61 @@ function initPullToRefresh() {
   }
 }
 
+// ============================================================================
+// MULTI-SOURCE SCAN PROGRESS (elapsed ticker + cancel for /api/sync runs)
+// ============================================================================
+
+let _activeScanAbort = null;
+let _scanStartedAt = 0;
+let _scanElapsedTimer = null;
+
+function setScanProgressText(label) {
+  const el = document.getElementById("scan-progress-text");
+  if (el) el.textContent = label;
+}
+
+function beginScanProgress(label) {
+  const overlay = document.getElementById("scan-progress-overlay");
+  if (!overlay) return;
+  _activeScanAbort = new AbortController();
+  _scanStartedAt = Date.now();
+  setScanProgressText(label || "Scanning your sources…");
+  const elapsedEl = document.getElementById("scan-progress-elapsed");
+  if (elapsedEl) elapsedEl.textContent = "0s elapsed";
+  overlay.classList.remove("hidden");
+  refreshIcons(overlay);
+  if (_scanElapsedTimer) clearInterval(_scanElapsedTimer);
+  _scanElapsedTimer = setInterval(() => {
+    const secs = Math.floor((Date.now() - _scanStartedAt) / 1000);
+    if (elapsedEl) elapsedEl.textContent = secs >= 60 ? `${Math.floor(secs / 60)}m ${secs % 60}s elapsed` : `${secs}s elapsed`;
+  }, 1000);
+}
+
+function endScanProgress() {
+  if (_scanElapsedTimer) {
+    clearInterval(_scanElapsedTimer);
+    _scanElapsedTimer = null;
+  }
+  _activeScanAbort = null;
+  document.getElementById("scan-progress-overlay")?.classList.add("hidden");
+}
+
+function cancelActiveScan() {
+  triggerHaptic("warning");
+  if (_activeScanAbort) {
+    try { _activeScanAbort.abort(); } catch (err) { /* signal already settled */ }
+  }
+  endScanProgress();
+  showToast("Scan canceled — your data was left untouched.", "info", 2600);
+}
+
 async function refreshAppOnDemand() {
+  beginScanProgress("Checking accounts for new announcements…");
   try {
-    const res = await fetch("/api/sync", { method: "POST" });
+    const res = await fetch("/api/sync", {
+      method: "POST",
+      signal: _activeScanAbort ? _activeScanAbort.signal : undefined
+    });
     const data = await res.json();
     // Render straight from the sync payload when it carries state — avoids a
     // second /api/state round-trip plus a duplicate cache parse + full render.
@@ -2567,10 +2904,17 @@ async function refreshAppOnDemand() {
       saveStateCache();
       renderAllViews();
       loadStudyTasks();
+      if (data.message && data.message.indexOf("(No connected sources") === -1) {
+        showToast(String(data.message), "info", 4000);
+      }
+      queueNotificationRefresh(true);
       return;
     }
   } catch (e) {
+    if (e && (e.name === "AbortError" || e.code === 20)) return; // user canceled
     console.warn("[refreshAppOnDemand] error:", e);
+  } finally {
+    endScanProgress();
   }
   await loadFullState();
 }
@@ -2929,7 +3273,40 @@ function hydrateAndRenderState(stateData) {
   renderDashboard();
   renderTasksView();
   renderWeekCalendar();
+  queueNotificationRefresh(false);
+  pushWidgetSnapshotNow();
 }
+
+// Widget freshness contract: MainActivity pulls the snapshot natively on every
+// Android resume (60s throttle). In-app edits while foregrounded are picked up
+// on the next resume — no JS→native push bridge exists in v1.
+function pushWidgetSnapshotNow() {
+  if (!IS_NATIVE) return;
+}
+
+// Day-rollover watchdog: the desktop WebView (and PWA tab) can stay open
+// overnight — without this, countdown badges kept yesterday's "IN X DAYS" and
+// the calendar kept yesterday's "today" highlight until the next manual sync.
+let _lastKnownDay = new Date().getDate();
+
+function refreshDayRelativeState() {
+  const now = new Date();
+  if (now.getDate() === _lastKnownDay) return;
+  _lastKnownDay = now.getDate();
+  if (typeof appState !== "undefined" && appState && appState.assessments) {
+    recalculateAssessmentDeadlines(appState);
+    saveStateCache();
+    updateTopBarAndUser();
+    renderDashboard();
+    renderTasksView();
+    renderWeekCalendar();
+  }
+}
+
+setInterval(refreshDayRelativeState, 30 * 1000);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") refreshDayRelativeState();
+});
 
 async function loadFullState() {
   const params = new URLSearchParams(window.location.search);
@@ -3098,6 +3475,40 @@ function applyDemoDummyData() {
   });
 }
 
+// Unified radar-status model: one honest summary derived from real config -
+// consumed by the sidebar footer (and available for any future surface).
+function computeSyncStatusSummary() {
+  const cfg = appState.config || {};
+  const sources = [];
+  if (cfg.auto_sync_gcal && (appState.auth?.authenticated || cfg.user_email)) sources.push("Gmail+" + "GCal");
+  if (cfg.teams_enabled && (cfg.teams_token || cfg.teams_refresh_token)) sources.push("Teams");
+  if (cfg.classroom_enabled && (appState.auth?.authenticated || cfg.user_email)) sources.push("Classroom");
+  if (cfg.moodle_enabled && (cfg.moodle_token || cfg.moodle_ical_url || cfg.moodle_url)) sources.push("Moodle");
+  if (Array.isArray(cfg.feeds) && cfg.feeds.some((f) => f.enabled !== false)) sources.push("Feeds");
+
+  const connected = !!appState.auth?.authenticated;
+
+  if (!connected && sources.length === 0) {
+    return {
+      label: IS_NATIVE ? "On-Device Engine · No live sources" : "No sources connected",
+      detail: "Add courses manually, connect an account in Accounts, or pair with the desktop app.",
+      dotClass: "bg-slate-400"
+    };
+  }
+  if (sources.length === 0) {
+    return {
+      label: connected ? "Signed in · Auto-scan off" : "Partial radar",
+      detail: "Signed in but auto-scan is off. Use Sync Gmail & Calendar or turn auto-scan on.",
+      dotClass: "bg-blue-500"
+    };
+  }
+  return {
+    label: `Radar Active · ${sources.length} source${sources.length > 1 ? "s" : ""}`,
+    detail: `Scanning: ${sources.join(", ")}. Last scan: ${cfg.last_gmail_sync || "not yet"}.`,
+    dotClass: "bg-emerald-500"
+  };
+}
+
 function updateTopBarAndUser() {
   // "Connected" means REAL authentication (Google OAuth token). A manually typed
   // email must never surface as a signed-in state.
@@ -3123,21 +3534,15 @@ function updateTopBarAndUser() {
   }
 
   // Sync footer must reflect REAL state — never a static "Active" claim.
+  // Single source of truth for every sync-status surface (sidebar + onboarding).
   const syncDot = document.getElementById("sync-dot");
   const syncLabel = document.getElementById("sync-status-label");
+  const summary = computeSyncStatusSummary();
   if (syncLabel) {
-    const autoSync = !!appState.config?.auto_sync_gcal;
-    if (isAuth && autoSync) {
-      syncLabel.textContent = "Google Sync Active";
-      if (syncDot) syncDot.className = "w-2 h-2 rounded-full bg-emerald-500";
-    } else if (isAuth) {
-      syncLabel.textContent = "Google Connected · Auto-sync off";
-      if (syncDot) syncDot.className = "w-2 h-2 rounded-full bg-blue-500";
-    } else {
-      syncLabel.textContent = "Google Not Connected";
-      if (syncDot) syncDot.className = "w-2 h-2 rounded-full bg-slate-400";
-    }
+    syncLabel.textContent = summary.label;
+    syncLabel.title = summary.detail || "";
   }
+  if (syncDot) syncDot.className = `w-2 h-2 rounded-full ${summary.dotClass}`;
 
   const badgeText = appState.auth?.authenticated ? "Connected" : "Sign-In Recommended";
   const badgeClass = appState.auth?.authenticated
@@ -3895,9 +4300,11 @@ function switchDashboardTab(tab) {
   if (window.lucide) lucide.createIcons();
 }
 
-window.addEventListener("resize", () => {
+// rafThrottle the resize handler: dragging the desktop window fires dozens of
+// events per second, each of which re-hydrated every lucide icon in the DOM.
+window.addEventListener("resize", rafThrottle(() => {
   switchDashboardTab(currentDashboardTab);
-});
+}));
 
 function renderDashboard() {
   const dash = appState.dashboard || {};
@@ -3963,7 +4370,7 @@ function renderDashboard() {
             </div>
           </div>
           <div class="flex items-center gap-2 shrink-0">
-            <button id="auto-schedule-blocks-btn" onclick="scheduleSmartStudyBlocks()" class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer">
+            <button id="auto-schedule-blocks-btn" onclick="scheduleSmartStudyBlocks()" class="px-3 py-1.5 rounded-lg bg-amber-700 hover:bg-amber-800 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer">
               <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
               <span>Auto-Schedule Study Blocks</span>
             </button>
@@ -4044,7 +4451,7 @@ function renderDashboard() {
             <i data-lucide="calendar-days" class="w-3.5 h-3.5"></i>
             <span class="hidden sm:inline">Calendar</span>
           </button>
-          <a href="${nextUp.google_cal_url}" target="_blank" class="px-2.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 active:scale-95 text-white text-xs font-semibold transition flex items-center justify-center gap-1 cursor-pointer" title="Sync to Google Calendar">
+          <a href="${escapeHtml(safeExternalUrl(nextUp.google_cal_url) || "#")}" target="_blank" rel="noopener noreferrer" class="px-2.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 active:scale-95 text-white text-xs font-semibold transition flex items-center justify-center gap-1 cursor-pointer" title="Sync to Google Calendar">
             <i data-lucide="calendar-plus" class="w-3.5 h-3.5"></i>
             <span class="hidden sm:inline">Google Cal</span>
           </a>
@@ -4087,7 +4494,7 @@ function renderDashboard() {
   document.getElementById("kpi-week-subtext").textContent =
     weekCount > 0
       ? `${startStr} – ${endStr}`
-      : "No quizzes in the next 7 days";
+      : "Nothing scheduled in the next 7 days";
 
   // Exam Types Breakdown Pills (with active highlight state synced to filter dropdown)
   const currentFilterVal = document.getElementById("dashboard-type-filter")?.value || "UPCOMING";
@@ -4145,7 +4552,7 @@ function renderDashboard() {
   switchDashboardTab(currentDashboardTab);
 
   function formatCompactCardSchedule(str, room) {
-    if (!str) return room ? `Room ${room}` : "Scheduled";
+    if (!str) return room ? `Room ${stripRoomPrefix(room)}` : "Scheduled";
     let cleaned = str.replace(/\((\d{1,2}:\d{2})\s*-\s*\1\)/, "Due $1");
     cleaned = cleaned.replace(/(\d{4})-(\d{2})-(\d{2})/, (m, y, mo, d) => {
       const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -4153,7 +4560,7 @@ function renderDashboard() {
       return `${monthName} ${parseInt(d, 10)}`;
     });
     if (room && !cleaned.toLowerCase().includes(room.toLowerCase())) {
-      const shortRoom = room.replace(/^(Room\s*|Microsoft\s*)/i, "");
+      const shortRoom = stripRoomPrefix(room);
       cleaned += ` · ${shortRoom}`;
     }
     return cleaned;
@@ -4166,10 +4573,10 @@ function renderDashboard() {
     const q = globalSearchQuery.toLowerCase();
     recs = recs.filter(
       (r) =>
-        r.course_id.toLowerCase().includes(q) ||
-        r.course_name.toLowerCase().includes(q) ||
-        r.title.toLowerCase().includes(q) ||
-        r.topics.some((t) => t.topic.toLowerCase().includes(q))
+        (r.course_id || "").toLowerCase().includes(q) ||
+        (r.course_name || "").toLowerCase().includes(q) ||
+        (r.title || "").toLowerCase().includes(q) ||
+        (r.topics || []).some((t) => (t.topic || "").toLowerCase().includes(q))
     );
   }
 
@@ -4178,10 +4585,33 @@ function renderDashboard() {
       recsEl.innerHTML = `
         <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 text-center space-y-2">
           <div class="text-sm font-bold text-slate-800 dark:text-slate-100">No study plans match "${escapeHtml(globalSearchQuery)}"</div>
-          <p class="text-xs text-slate-500 dark:text-slate-400">Clear your search filter to view all upcoming Fall 2026 assessments.</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400">Clear your search filter to view all upcoming assessments.</p>
           <button onclick="clearGlobalSearch()" class="mt-2 px-3.5 py-1.5 rounded-lg bg-[#1a73e8] text-white text-xs font-semibold cursor-pointer">Clear search filter</button>
         </div>
       `;
+    } else if ((appState.schedule?.courses || []).length === 0) {
+      // First-run state: never say "All Clear" while the user has zero
+      // courses — the honest next action is to build the schedule.
+      recsEl.innerHTML = `
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 text-center space-y-3">
+          <div class="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/70 text-[#1a73e8] dark:text-blue-400 mx-auto flex items-center justify-center">
+            <i data-lucide="map" class="w-6 h-6"></i>
+          </div>
+          <div class="text-sm font-bold text-slate-900 dark:text-white">Add your first course to build your study plan</div>
+          <p class="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">QuizRadar turns your weekly timetable + announcements into deadline countdowns and a "what should I study" plan.</p>
+          <div class="flex items-center justify-center gap-2 pt-1">
+            <button onclick="openAddCourseModal()" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#1a73e8] hover:bg-[#1557b0] text-white text-xs font-semibold shadow-xs cursor-pointer active:scale-95 transition">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+              <span>Add Course</span>
+            </button>
+            <button onclick="openAccountModal()" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold cursor-pointer active:scale-95 transition">
+              <i data-lucide="link" class="w-3.5 h-3.5"></i>
+              <span>Connect Account</span>
+            </button>
+          </div>
+        </div>
+      `;
+      if (window.lucide) lucide.createIcons({ root: recsEl });
     } else {
       recsEl.innerHTML = `
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 text-center space-y-3">
@@ -4317,7 +4747,11 @@ function renderDashboard() {
     timelineEl.innerHTML = `
       <div class="p-6 text-center rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
         <div class="text-xs font-semibold text-slate-700 dark:text-slate-200">No assessments scheduled</div>
-        <p class="text-[11px] text-slate-500 dark:text-slate-400">Enrol in courses or connect your university accounts to sync assessments.</p>
+        <p class="text-[11px] text-slate-500 dark:text-slate-400">Add your courses or connect an account to see quizzes and deadlines here.</p>
+        <div class="flex items-center justify-center gap-2 pt-1">
+          <button onclick="openAddCourseModal()" class="px-3 py-1.5 rounded-lg bg-[#1a73e8] hover:bg-[#1557b0] text-white text-[11px] font-semibold cursor-pointer active:scale-95 transition">Add Course</button>
+          <button onclick="openAccountModal()" class="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-[11px] font-semibold cursor-pointer active:scale-95 transition">Connect Account</button>
+        </div>
       </div>
     `;
   } else {
@@ -4641,13 +5075,27 @@ function renderWeekCalendar() {
 
   const isDark = document.documentElement.classList.contains("dark");
 
-  // 1. Render 7 Day Headers (Sun 18 .. Sat 24)
+  // Mobile (< 768px) fits 3 days side-by-side instead of 7's 60px-ish squish:
+  // the window follows the selected day and stays inside the current week.
+  const isNarrowCalendar = window.innerWidth < 768;
+  let dayCount = 7;
+  let dayOffset = 0;
+  if (isNarrowCalendar) {
+    dayCount = 3;
+    const selDiff = Math.round((selectedCalendarDate - currentWeekStart) / 86400000);
+    dayOffset = Math.min(4, Math.max(0, selDiff));
+  }
+
+  // 1. Render Day Headers (7 on desktop / a 3-day window on phones)
   let headerHtml = "";
   const weekDates = [];
   for (let i = 0; i < 7; i++) {
     const d = new Date(currentWeekStart);
     d.setDate(currentWeekStart.getDate() + i);
     weekDates.push(d);
+  }
+  for (let i = dayOffset; i < dayOffset + dayCount; i++) {
+    const d = weekDates[i];
     const iso = toIsoDate(d);
     const isHighlighted = sameDate(d, selectedCalendarDate);
     const isToday = sameDate(d, getTodayDate());
@@ -4694,7 +5142,7 @@ function renderWeekCalendar() {
     const label = h === 12 ? "12 PM" : h > 12 ? `${h - 12} PM` : `${h} AM`;
     gutterHtml += `
       <div class="hour-row relative pr-2 text-right">
-        <span class="text-[10px] tabular-nums text-slate-400 dark:text-slate-500 -top-2 relative">${label}</span>
+        <span class="text-[10px] tabular-nums text-slate-400 dark:text-slate-400 -top-2 relative">${label}</span>
       </div>
     `;
   }
@@ -4707,7 +5155,7 @@ function renderWeekCalendar() {
   });
 
   let colsHtml = "";
-  for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
+  for (let dayIdx = dayOffset; dayIdx < dayOffset + dayCount; dayIdx++) {
     const colDate = weekDates[dayIdx];
     const colIso = toIsoDate(colDate);
 
@@ -4842,7 +5290,7 @@ function renderWeekCalendar() {
               <span class="truncate">${escapeHtml(slot.course_id)} · ${escapeHtml(slot.course_name)}</span>
             </div>
             <div class="text-[10px] truncate text-slate-700 dark:text-slate-300">
-              ${escapeHtml(slot.slot_type)} (Grp ${escapeHtml(slot.group)}) · Room ${escapeHtml(slot.room)}
+              ${escapeHtml(slot.slot_type)}${slot.group ? ` (Grp ${escapeHtml(slot.group)})` : ""} · ${escapeHtml(stripRoomPrefix(slot.room))}
             </div>
             <div class="text-[10px] tabular-nums text-slate-600 dark:text-slate-400">
               ${formatCompactTime(slot.start_time)} – ${formatCompactTime(slot.end_time)}
@@ -4876,8 +5324,8 @@ function renderWeekCalendar() {
           <div class="gcal-card"
                style="top: ${topPx}px; height: ${heightPx}px; ${horizStyle} --card-bg-light: ${bgLight}; --card-bg-dark: ${bgDark}; border-color: ${borderHex};">
             <div class="flex items-center justify-between">
-              <span class="text-[11px] font-bold truncate text-slate-900 dark:text-slate-50">${escapeHtml(ev.title)}</span>
-              <button onclick="deleteCustomEvent('${jsAttr(ev.id)}')" class="text-[10px] hover:underline cursor-pointer">✕</button>
+              <span onclick="openCreateEventModal('${jsAttr(ev.id)}')" class="text-[11px] font-bold truncate text-slate-900 dark:text-slate-50 cursor-pointer hover:underline" title="Edit this event">${escapeHtml(ev.title)}</span>
+              <button onclick="deleteCustomEvent('${jsAttr(ev.id)}')" class="text-[10px] hover:underline cursor-pointer" aria-label="Delete event" title="Delete event">✕</button>
             </div>
             <div class="text-[10px] truncate text-slate-700 dark:text-slate-300">${escapeHtml(ev.event_type)} · ${escapeHtml(ev.room)}</div>
             <div class="text-[10px] tabular-nums text-slate-600 dark:text-slate-400">${formatCompactTime(ev.start_time)} – ${formatCompactTime(ev.end_time)}</div>
@@ -5032,10 +5480,83 @@ function resetCourseFilters() {
 // MODALS: WIDER RECTANGULAR POPUP, ONBOARDING WIZARD & + CREATE EVENT
 // ============================================================================
 
+// Grade what-if: equal-weight projection of the course average if the open
+// assessment lands at a planned score. Uses ONLY recorded grades; the note
+// states the equal-weight assumption honestly instead of pretending precision.
+function renderGradeWhatIf(a) {
+  const section = document.getElementById("modal-whatif-section");
+  if (!section || !a) return;
+  const gradedElsewhere = (appState.assessments || []).filter(
+    (x) =>
+      x &&
+      x.course_id === a.course_id &&
+      x.id !== a.id &&
+      x.achieved_score != null &&
+      x.max_score != null &&
+      Number(x.max_score) > 0
+  );
+  const currentPct =
+    a.achieved_score != null && a.max_score != null && Number(a.max_score) > 0
+      ? (Number(a.achieved_score) / Number(a.max_score)) * 100
+      : null;
+  if (gradedElsewhere.length === 0 && currentPct == null) {
+    section.classList.add("hidden");
+    return;
+  }
+  section.classList.remove("hidden");
+  updateGradeWhatIf();
+}
+
+function updateGradeWhatIf() {
+  const active = activeModalAssessmentId
+    ? (appState.assessments || []).find((x) => x.id === activeModalAssessmentId)
+    : null;
+  if (!active) return;
+  const resultEl = document.getElementById("modal-whatif-result");
+  const noteEl = document.getElementById("modal-whatif-note");
+  const inputEl = document.getElementById("modal-whatif-score");
+  if (!resultEl || !noteEl || !inputEl) return;
+
+  const planPct = Math.min(100, Math.max(0, Number(inputEl.value || 0)));
+  const gradedElsewhere = (appState.assessments || []).filter(
+    (x) =>
+      x &&
+      x.course_id === active.course_id &&
+      x.id !== active.id &&
+      x.achieved_score != null &&
+      x.max_score != null &&
+      Number(x.max_score) > 0
+  );
+  const currentPct =
+    active.achieved_score != null && active.max_score != null && Number(active.max_score) > 0
+      ? (Number(active.achieved_score) / Number(active.max_score)) * 100
+      : null;
+
+  const pcts = gradedElsewhere
+    .map((x) => (Number(x.achieved_score) / Number(x.max_score)) * 100)
+    .filter((n) => Number.isFinite(n));
+  if (currentPct != null) pcts.push(currentPct);
+
+  // Projected = current items + this assessment at the planned score.
+  const projected = (pcts.reduce((sum, n) => sum + n, 0) + planPct) / (pcts.length + 1);
+  resultEl.textContent = `→ avg ${Math.round(projected)}%`;
+  resultEl.className = `tabular-nums font-bold ${
+    projected >= 80
+      ? "text-emerald-600 dark:text-emerald-400"
+      : projected >= 50
+      ? "text-amber-600 dark:text-amber-400"
+      : "text-rose-600 dark:text-rose-400"
+  }`;
+  const gradedCount = pcts.length;
+  noteEl.textContent =
+    gradedCount === 0
+      ? "First graded item in this course."
+      : `Equal-weight average of ${gradedCount + 1} graded item${gradedCount > 0 ? "s" : ""}.`;
+}
+
 function openAssessmentModalById(id) {
   const a = (appState.assessments || []).find((x) => x.id === id);
   if (!a) return;
-
   activeModalAssessmentId = a.id;
   activeModalDateIso = a.date_iso;
 
@@ -5086,7 +5607,9 @@ function openAssessmentModalById(id) {
   document.getElementById("modal-course-fullname").textContent = a.course_name;
   document.getElementById("modal-title").textContent = a.title;
   document.getElementById("modal-time").textContent = a.display_time;
-  document.getElementById("modal-room").textContent = `Room ${a.room} (${a.group})`;
+  document.getElementById("modal-room").textContent = a.room
+    ? `Room ${a.room}${a.group ? ` (${a.group})` : ""}`
+    : "Room TBA";
   document.getElementById("modal-instructor").textContent = a.instructor;
 
   // Retrieve recommendation if available to show full AI reasoning & focus plan
@@ -5158,6 +5681,8 @@ function openAssessmentModalById(id) {
   _currentAssessmentGCalUrl = a.google_cal_url || null;
   _currentAssessmentElearningUrl = a.elearning_url || null;
 
+  renderGradeWhatIf(a);
+
   const courseLink = document.getElementById("modal-course-link");
   if (courseLink) {
     if (a.elearning_url) {
@@ -5224,7 +5749,9 @@ function openSlotPopover(slotId, dateIso) {
   document.getElementById("modal-course-fullname").textContent = slot.course_name;
   document.getElementById("modal-title").textContent = `${slot.course_name} (${slot.slot_type})`;
   document.getElementById("modal-time").textContent = `${slot.day} (${dateIso}) · ${slot.display_time}`;
-  document.getElementById("modal-room").textContent = `Room ${slot.room} (Group ${slot.group})`;
+  document.getElementById("modal-room").textContent = slot.room
+    ? `Room ${stripRoomPrefix(slot.room)}${slot.group ? ` (Group ${slot.group})` : ""}`
+    : "Room TBA";
   document.getElementById("modal-instructor").textContent =
     courseQuiz?.instructor || "University Faculty";
   document.getElementById("modal-ai-inference").textContent = courseQuiz
@@ -5330,7 +5857,7 @@ function selectOnboardingTrack(track, forceUpdateCourses = false) {
 
   // Only populate starter courses if forceUpdateCourses is explicitly requested
   if (forceUpdateCourses && ACADEMIC_TRACK_COURSES[track]) {
-    if (!appState.schedule) appState.schedule = { semester: "Fall 2026", courses: [], slots: [] };
+    if (!appState.schedule) appState.schedule = { semester: "Current Semester", courses: [], slots: [] };
     appState.schedule.courses = JSON.parse(JSON.stringify(ACADEMIC_TRACK_COURSES[track]));
     syncActiveCourseFilters();
     renderOnboardingCourses();
@@ -5443,12 +5970,23 @@ function setOnboardingStep(step) {
   }
   if (nextBtn && nextLabel) {
     if (currentOnboardingStep === 1) {
-      nextLabel.textContent = "Continue to Hubs & Scan";
+      nextLabel.textContent = "Continue to Accounts & Scan";
     } else if (currentOnboardingStep === 2) {
       nextLabel.textContent = "Continue to Schedule & Launch";
     } else {
-      nextLabel.textContent = "🚀 Launch My Radar";
+      nextLabel.textContent = "Open My Dashboard";
     }
+  }
+  // Honest success banner: only celebrate when there's actually data behind it.
+  const successTitle = document.getElementById("onboard-success-title");
+  if (successTitle) {
+    const hasData =
+      (appState.schedule?.courses || []).length > 0 ||
+      appState.auth?.authenticated ||
+      !!appState.config?.teams_token;
+    successTitle.textContent = hasData
+      ? "You're All Set!"
+      : "Your Canvas Is Ready";
   }
   if (currentOnboardingStep === 2) {
     renderOnboardingStep2State();
@@ -5535,7 +6073,7 @@ function clearAllEnrolledCourses() {
     isDanger: true,
     onConfirm: () => {
       triggerHaptic("medium");
-      if (!appState.schedule) appState.schedule = { courses: [], slots: [], semester: "Fall 2026" };
+      if (!appState.schedule) appState.schedule = { courses: [], slots: [], semester: "Current Semester" };
       appState.schedule.courses = [];
       appState.schedule.slots = [];
       activeCourseFilters.clear();
@@ -5634,7 +6172,7 @@ async function handleOnboardClassroomCardClick() {
   if (!appState.config) appState.config = {};
   appState.config.classroom_enabled = !appState.config.classroom_enabled;
   const isEn = appState.config.classroom_enabled;
-  showToast(isEn ? "Connecting to Google Classroom..." : "Google Classroom disconnected.", "info");
+  showToast(isEn ? "Google Classroom enabled. Connect it from a paired desktop or sign in to sync real coursework." : "Google Classroom disconnected.", "info");
   if (isEn) {
     await testClassroomFromSettings();
   }
@@ -5672,6 +6210,9 @@ function renderOnboardingCourses() {
           </label>
           <div class="flex items-center gap-2 shrink-0 pl-1.5">
             <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 tabular-nums">${slotCount} ${slotCount === 1 ? "slot" : "slots"}</span>
+            <button type="button" onclick="openAddCourseModal('${jsAttr(c.id)}')" aria-label="Edit course ${escapeHtml(c.id)}" class="p-1.5 rounded-md text-slate-400 hover:text-[#1a73e8] hover:bg-blue-50 dark:hover:bg-blue-950/40 transition cursor-pointer flex items-center justify-center" title="Edit course">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+            </button>
             <button type="button" onclick="confirmDeleteCourse('${jsAttr(c.id)}', '${jsAttr(c.name)}', event)" aria-label="Remove course ${escapeHtml(c.id)}" class="p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer flex items-center justify-center" title="Remove course">
               <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" x2="10" y1="11" y2="17"></line><line x1="14" x2="14" y1="11" y2="17"></line>
@@ -5744,6 +6285,9 @@ function renderSettingsCourses() {
           </label>
           <div class="flex items-center gap-2 shrink-0 pl-1.5">
             <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 tabular-nums">${slotCount} ${slotCount === 1 ? "slot" : "slots"}</span>
+            <button type="button" onclick="openAddCourseModal('${jsAttr(c.id)}')" aria-label="Edit course ${escapeHtml(c.id)}" class="p-1.5 rounded-md text-slate-400 hover:text-[#1a73e8] hover:bg-blue-50 dark:hover:bg-blue-950/40 transition cursor-pointer flex items-center justify-center" title="Edit course">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+            </button>
             <button type="button" onclick="confirmDeleteCourse('${jsAttr(c.id)}', '${jsAttr(c.name)}', event)" aria-label="Remove course ${escapeHtml(c.id)}" class="p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer flex items-center justify-center" title="Remove course">
               <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" x2="10" y1="11" y2="17"></line><line x1="14" x2="14" y1="11" y2="17"></line>
@@ -5921,28 +6465,62 @@ const COURSE_PRESET_COLORS = [
   "#3949ab", // Indigo
 ];
 let selectedAddCourseColor = "#1a73e8";
+let _editingCourseId = null;
 
-function openAddCourseModal() {
+function openAddCourseModal(courseId) {
   const modal = document.getElementById("add-course-modal");
   if (!modal) return;
 
   const idInput = document.getElementById("add-course-id");
   const nameInput = document.getElementById("add-course-name");
-  if (idInput) idInput.value = "";
-  if (nameInput) nameInput.value = "";
+  const titleEl = document.getElementById("add-course-modal-title");
+  const editingCourse = courseId ? (appState.schedule?.courses || []).find((c) => c.id === courseId) : null;
+  _editingCourseId = editingCourse ? editingCourse.id : null;
 
-  selectedAddCourseColor = "#1a73e8";
+  if (editingCourse) {
+    if (idInput) {
+      idInput.value = editingCourse.id || "";
+      idInput.readOnly = true; // renaming would fork the course — remove & re-add instead
+      idInput.classList.add("bg-slate-50", "dark:bg-slate-800", "cursor-not-allowed");
+    }
+    if (nameInput) nameInput.value = editingCourse.name || "";
+    if (titleEl) titleEl.textContent = `Edit ${editingCourse.id}`;
+    selectedAddCourseColor = editingCourse.color || "#1a73e8";
+  } else {
+    if (idInput) {
+      idInput.value = "";
+      idInput.readOnly = false;
+      idInput.classList.remove("bg-slate-50", "dark:bg-slate-800", "cursor-not-allowed");
+    }
+    if (nameInput) nameInput.value = "";
+    if (titleEl) titleEl.textContent = "Add Course Manually";
+    selectedAddCourseColor = "#1a73e8";
+  }
   renderCourseColorPicker();
 
   const slotsContainer = document.getElementById("add-course-slots-container");
   if (slotsContainer) {
     slotsContainer.innerHTML = "";
-    addCourseSlotRow();
+    const courseSlots = editingCourse
+      ? (appState.schedule?.slots || []).filter((s) => s.course_id === editingCourse.id)
+      : [];
+    if (courseSlots.length > 0) {
+      courseSlots.forEach((slot) => addCourseSlotRow({
+        day: slot.day,
+        start: slot.start_time,
+        end: slot.end_time,
+        room: slot.room,
+        type: slot.type
+      }));
+    } else {
+      addCourseSlotRow();
+    }
   }
 
   modal.classList.add("is-open");
-  if (idInput) idInput.focus();
-  if (window.lucide) lucide.createIcons();
+  if (editingCourse && nameInput) nameInput.focus();
+  else if (idInput) idInput.focus();
+  if (window.lucide) lucide.createIcons({ root: modal });
 }
 
 function closeAddCourseModal() {
@@ -5966,33 +6544,38 @@ function selectCourseModalColor(hex) {
   renderCourseColorPicker();
 }
 
-function addCourseSlotRow() {
+function addCourseSlotRow(preferred) {
   const container = document.getElementById("add-course-slots-container");
   if (!container) return;
 
   const row = document.createElement("div");
   row.className =
     "course-slot-row flex items-center gap-2 p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/40 text-xs flex-wrap sm:flex-nowrap";
+  const day = (preferred && preferred.day) || "Monday";
+  const start = (preferred && preferred.start) || "09:00";
+  const end = (preferred && preferred.end) || "10:30";
+  const room = (preferred && preferred.room != null ? preferred.room : "C203");
+  const type = (preferred && preferred.type) || "Lecture";
   row.innerHTML = `
     <select class="slot-day px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none">
-      <option value="Sunday">Sunday</option>
-      <option value="Monday" selected>Monday</option>
-      <option value="Tuesday">Tuesday</option>
-      <option value="Wednesday">Wednesday</option>
-      <option value="Thursday">Thursday</option>
-      <option value="Friday">Friday</option>
-      <option value="Saturday">Saturday</option>
+      <option value="Sunday" ${day === "Sunday" ? "selected" : ""}>Sunday</option>
+      <option value="Monday" ${day === "Monday" ? "selected" : ""}>Monday</option>
+      <option value="Tuesday" ${day === "Tuesday" ? "selected" : ""}>Tuesday</option>
+      <option value="Wednesday" ${day === "Wednesday" ? "selected" : ""}>Wednesday</option>
+      <option value="Thursday" ${day === "Thursday" ? "selected" : ""}>Thursday</option>
+      <option value="Friday" ${day === "Friday" ? "selected" : ""}>Friday</option>
+      <option value="Saturday" ${day === "Saturday" ? "selected" : ""}>Saturday</option>
     </select>
     <div class="flex items-center gap-1">
-      <input type="time" class="slot-start px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none" value="09:00" />
+      <input type="time" class="slot-start px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none" value="${escapeHtml(start || "09:00")}" />
       <span class="text-slate-400 text-[10px]">to</span>
-      <input type="time" class="slot-end px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none" value="10:30" />
+      <input type="time" class="slot-end px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none" value="${escapeHtml(end || "10:30")}" />
     </div>
-    <input type="text" class="slot-room px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none w-20" placeholder="Room" value="C203" />
+    <input type="text" class="slot-room px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none w-20" placeholder="Room" value="${escapeHtml(room || "")}" />
     <select class="slot-type px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none">
-      <option value="Lecture" selected>Lecture</option>
-      <option value="Lab">Lab</option>
-      <option value="Tutorial">Tutorial</option>
+      <option value="Lecture" ${type === "Lecture" ? "selected" : ""}>Lecture</option>
+      <option value="Lab" ${type === "Lab" ? "selected" : ""}>Lab</option>
+      <option value="Tutorial" ${type === "Tutorial" ? "selected" : ""}>Tutorial</option>
     </select>
     <button type="button" onclick="this.closest('.course-slot-row').remove()" class="p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer" title="Remove slot">
       <i data-lucide="x" class="w-3.5 h-3.5"></i>
@@ -6082,8 +6665,10 @@ async function submitAddCourse() {
       activeCourseFilters.add(courseId);
       saveStateCache();
       renderAllViews();
+      queueNotificationRefresh(true);
       closeAddCourseModal();
-      showToast(`Course ${courseId} added successfully!`);
+      showToast(_editingCourseId ? `Course ${courseId} updated!` : `Course ${courseId} added successfully!`);
+      _editingCourseId = null;
     } else {
       showToast(data.error || "Failed to add course.");
     }
@@ -6185,7 +6770,21 @@ function openSettingsModal() {
 
   updateOnboardingThemeButtons();
   renderSettingsCourses();
-  if (window.lucide) lucide.createIcons({ root: modal });
+  renderNotifyPreferences();
+  let tabRestored = false;
+  try {
+    const savedTab = localStorage.getItem(SETTINGS_TAB_STORAGE_KEY);
+    if (savedTab && ["account", "courses", "integrations"].includes(savedTab)) {
+      switchSettingsTab(savedTab);
+      tabRestored = true;
+    }
+  } catch (e) {}
+  if (!tabRestored) switchSettingsTab("account");
+  if (_activeSettingsTab === "integrations") {
+    renderFeedsSettings();
+    loadPairInfoIntoSettings();
+  }
+  refreshIcons(modal);
 }
 
 function closeSettingsModal() {
@@ -6403,10 +7002,13 @@ async function triggerFullSync() {
   if (mobileBtn) mobileBtn.disabled = true;
   if (mobileIcon) mobileIcon.classList.add("animate-spin");
 
-  showToast("Checking connected accounts for new announcements...", "info", 1800);
+  beginScanProgress("Scanning Gmail / Teams / Classroom / Feeds…");
 
   try {
-    const res = await fetch("/api/sync", { method: "POST" });
+    const res = await fetch("/api/sync", {
+      method: "POST",
+      signal: _activeScanAbort ? _activeScanAbort.signal : undefined
+    });
     const data = await res.json();
     if (data.assessments) appState.assessments = data.assessments;
     if (data.dashboard) appState.dashboard = data.dashboard;
@@ -6423,11 +7025,17 @@ async function triggerFullSync() {
       showToast(data.error || data.message || "Sync could not complete.", "warning", 4000);
     } else {
       triggerHaptic("success");
-      showToast(data.message || "Sync finished.", "success", 3000);
+      showToast(data.message || "Sync finished.", "success", 6000);
     }
+    queueNotificationRefresh(true);
   } catch (err) {
-    showToast("Sync failed — could not reach the backend.", "warning");
+    if (err && (err.name === "AbortError" || err.code === 20)) {
+      // User already got the cancel toast from cancelActiveScan().
+    } else {
+      showToast("Sync failed — could not reach the backend.", "warning");
+    }
   } finally {
+    endScanProgress();
     if (txt) txt.textContent = "Sync Gmail & Calendar";
     if (btn) btn.disabled = false;
     if (mobileBtn) mobileBtn.disabled = false;
@@ -6456,22 +7064,65 @@ async function syncGoogleCalendarOnly() {
   }
 }
 
-function openCreateEventModal() {
+let _editingCustomEventId = null;
+
+function openCreateEventModal(prefillOrEventId) {
+  _editingCustomEventId = null;
+  let prefill = prefillOrEventId || {};
+
+  // Passed an event id: load that custom event as an edit session.
+  if (typeof prefillOrEventId === "string") {
+    const found = (appState.config?.custom_events || []).find((e) => e.id === prefillOrEventId);
+    if (found) {
+      _editingCustomEventId = found.id;
+      prefill = {
+        event: found,
+      };
+    } else {
+      showToast("That event no longer exists — create a new one.", "warning");
+      return;
+    }
+  }
+
+  const shared = prefill.event || prefill;
   const dateInput = document.getElementById("create-ev-date");
-  if (dateInput && !dateInput.value) {
+  if (shared && shared.date_iso) {
+    if (dateInput) dateInput.value = shared.date_iso;
+  } else if (dateInput && !dateInput.value) {
     dateInput.value = toIsoDate(getTodayDate());
   }
+  const titleInput = document.getElementById("create-ev-title");
+  if (titleInput) titleInput.value = shared?.title || prefill.prefillTitle || "";
+  const startInput = document.getElementById("create-ev-start");
+  const endInput = document.getElementById("create-ev-end");
+  if (startInput && shared?.start_time) startInput.value = shared.start_time;
+  if (endInput && shared?.end_time) endInput.value = shared.end_time;
+  const roomInput = document.getElementById("create-ev-room");
+  if (roomInput) roomInput.value = shared?.room || prefill.prefillRoom || "Library Study Room";
+
   const selectEl = document.getElementById("create-ev-course");
   if (selectEl) {
     const courses = appState.schedule?.courses || [];
+    const selectedCourse = shared?.course_id || "SELF";
     if (courses.length > 0) {
       selectEl.innerHTML = courses
-        .map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.id)} (${escapeHtml(c.name)})</option>`)
+        .map((c) => `<option value="${escapeHtml(c.id)}" ${c.id === selectedCourse ? "selected" : ""}>${escapeHtml(c.id)} (${escapeHtml(c.name)})</option>`)
         .join("");
     } else {
       selectEl.innerHTML = `<option value="SELF">General Study Session</option>`;
     }
   }
+  const typeInput = document.getElementById("create-ev-type");
+  if (typeInput) {
+    const wanted = shared?.event_type || prefill.prefillType;
+    if (wanted && Array.from(typeInput.options).some((o) => o.value === wanted)) typeInput.value = wanted;
+  }
+
+  const heading = document.getElementById("create-event-modal-title");
+  if (heading) {
+    heading.textContent = _editingCustomEventId ? "Edit Calendar Event" : "Create Study Session or Custom Assessment";
+  }
+
   document.getElementById("create-event-modal")?.classList.add("is-open");
   setTimeout(() => {
     document.getElementById("create-ev-title")?.focus();
@@ -6479,6 +7130,7 @@ function openCreateEventModal() {
 }
 
 function closeCreateEventModal() {
+  _editingCustomEventId = null;
   document.getElementById("create-event-modal")?.classList.remove("is-open");
 }
 
@@ -6505,22 +7157,29 @@ async function submitCreateCustomEvent() {
   }
 
   try {
+    const payload = { title, course_id, event_type, date_iso, start_time, end_time, room };
+    if (_editingCustomEventId) payload.id = _editingCustomEventId;
     const res = await fetch("/api/events/custom", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, course_id, event_type, date_iso, start_time, end_time, room }),
+      body: JSON.stringify(payload),
     });
     const data = await res.json();
     if (data.success) {
       appState.config.custom_events = data.custom_events;
       saveStateCache();
+      queueNotificationRefresh(true);
       closeCreateEventModal();
       const [y, m, d] = date_iso.split("-").map(Number);
       selectDateInMiniCal(y, m - 1, d);
-      showToast(`Added "${title}" to your Week Calendar!`);
+      showToast(_editingCustomEventId ? `Updated "${title}".` : `Added "${title}" to your Week Calendar!`, "success", 2600);
+      _editingCustomEventId = null;
+    } else {
+      showToast(data.error || "Could not save the event.", "warning");
     }
   } catch (err) {
     console.error("Failed to create custom event:", err);
+    showToast("Could not save the event — check the desktop app is running.", "warning");
   }
 }
 
@@ -6698,7 +7357,7 @@ function updatePaletteMatches() {
           <span class="px-2 py-0.5 rounded-md text-[10px] font-bold text-white shrink-0" style="background-color: ${a.color}">${escapeHtml(a.course_id)}</span>
           <div class="min-w-0">
             <div class="font-medium text-slate-800 dark:text-slate-100 truncate">${escapeHtml(a.title)}</div>
-            <div class="text-[10px] text-slate-400 dark:text-slate-500 truncate">${escapeHtml(a.display_date || a.date_iso)} • ${escapeHtml(a.display_time)}</div>
+            <div class="text-[10px] text-slate-400 dark:text-slate-400 truncate">${escapeHtml(a.display_date || a.date_iso)} • ${escapeHtml(a.display_time)}</div>
           </div>
         </div>
         <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">${escapeHtml(a.assessment_type)}</span>
@@ -6735,6 +7394,10 @@ function closeSearchPalette() {
   }
 }
 
+// Debounced heavy re-renders while typing in search: each keystroke would
+// otherwise rebuild the full dashboard AND the 7x13-hour week grid.
+let _searchRenderTimer = null;
+
 function handleGlobalSearch(val) {
   globalSearchQuery = (val || "").trim();
   const desktopInput = document.getElementById("global-search-input");
@@ -6762,13 +7425,17 @@ function handleGlobalSearch(val) {
     if (globalSearchQuery) {
       queryText.innerHTML = `Search for <strong class="text-slate-900 dark:text-white font-semibold">"${escapeHtml(globalSearchQuery)}"</strong>`;
     } else {
-      queryText.innerHTML = `<span class="text-slate-400 dark:text-slate-500">Type to search courses, topics & exams...</span>`;
+      queryText.innerHTML = `<span class="text-slate-400 dark:text-slate-400">Type to search courses, topics & exams...</span>`;
     }
   }
 
   updatePaletteMatches();
-  renderDashboard();
-  renderWeekCalendar();
+  if (_searchRenderTimer) clearTimeout(_searchRenderTimer);
+  _searchRenderTimer = setTimeout(() => {
+    _searchRenderTimer = null;
+    renderDashboard();
+    renderWeekCalendar();
+  }, 120);
 }
 
 function clearGlobalSearch() {
@@ -6941,6 +7608,29 @@ function escapeHtml(str) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;")
     .replace(/\\/g, "&#92;");
+}
+
+// Calendar data sometimes carries room strings that already start with
+// "Room" — rendering "Room Room 204" reads broken. Normalize once, use it
+// everywhere rooms are printed.
+function stripRoomPrefix(room) {
+  const raw = String(room ?? "").trim();
+  if (!raw) return "TBA";
+  return raw.replace(/^(Room\s*)+/i, "");
+}
+
+
+// Allow-list for URLs that end up inside href="..." attributes (rendered from
+// server/engine/imported data): only Google Calendar template links and other
+// HTTPS resources may pass; anything else renders as a harmless anchor.
+function safeExternalUrl(url) {
+  const raw = String(url ?? "").trim();
+  if (!raw) return "";
+  if (/^https:\/\/calendar\.google\.com\//i.test(raw)) return raw;
+  if (/^https:\/\//i.test(raw) && !raw.includes('"') && !raw.includes("'") && !/javascript:/i.test(raw)) {
+    return raw;
+  }
+  return "";
 }
 
 // ============================================================================
@@ -7311,6 +8001,7 @@ async function saveAssessmentGradeFromModal() {
       saveStateCache();
       openAssessmentModalById(activeModalAssessmentId);
       renderDashboard();
+      pushWidgetSnapshotNow();
     } else {
       showToast(data.message || "Could not save grade.");
     }
@@ -7876,10 +8567,8 @@ function openPomodoroModal(course, topic, taskKey) {
   openPomodoroForTask(course || "QuizRadar Focus", topic || "Independent Study Session", taskKey);
 }
 
-function openMobileSyncTab() {
-  triggerHaptic("selection");
-  openCloudSyncModal();
-}
+// NOTE: openMobileSyncTab is defined once (line ~2027). A duplicate definition
+// that silently shadowed this one was removed.
 
 async function openCloudSyncModal() {
   const modal = document.getElementById("cloud-sync-modal");
@@ -7887,6 +8576,10 @@ async function openCloudSyncModal() {
   const pairInput = document.getElementById("pair-desktop-url");
   if (pairInput && !pairInput.value) {
     pairInput.value = localStorage.getItem(DESKTOP_PAIRING_URL_KEY) || "";
+  }
+  const pinInput = document.getElementById("pair-desktop-pin");
+  if (pinInput && !pinInput.value) {
+    pinInput.value = getSavedPairingPin();
   }
   modal.classList.add("is-open");
   if (window.lucide) lucide.createIcons({ root: modal });
@@ -7989,10 +8682,605 @@ function resetLocalDatabase() {
 }
 
 // ============================================================================
+// SETTINGS TABS · STUDY ALERTS · ICS FEEDS · PAIR PHONE (desktop QR + PIN)
+// ============================================================================
+
+const SETTINGS_TAB_STORAGE_KEY = "quizradar_settings_active_tab";
+const NOTIFY_PREFS_KEY = "quizradar_notify_prefs_v1";
+const NOTIFY_SCHEDULED_IDS_KEY = "quizradar_notify_scheduled_ids";
+const NOTIFY_CHANGE_HOOK_KEY = "quizradar_notify_change_hook";
+let _activeSettingsTab = "account";
+
+function switchSettingsTab(tabId) {
+  _activeSettingsTab = tabId;
+  try { localStorage.setItem(SETTINGS_TAB_STORAGE_KEY, tabId); } catch (e) {}
+  ["account", "courses", "integrations"].forEach((t) => {
+    const panel = document.getElementById(`settings-tab-${t}`);
+    const btn = document.getElementById(`settings-tab-btn-${t}`);
+    if (panel) panel.classList.toggle("hidden", t !== tabId);
+    if (btn) {
+      const active = t === tabId;
+      btn.classList.toggle("text-[#1a73e8]", active);
+      btn.classList.toggle("dark:text-blue-400", active);
+      btn.classList.toggle("font-bold", active);
+      btn.classList.toggle("bg-white", active);
+      btn.classList.toggle("dark:bg-slate-900", active);
+      btn.classList.toggle("text-slate-600", !active);
+      btn.classList.toggle("dark:text-slate-400", !active);
+      btn.setAttribute("aria-selected", active ? "true" : "false");
+    }
+  });
+  if (tabId === "integrations") {
+    renderFeedsSettings();
+    if (typeof loadPairInfoIntoSettings === "function") loadPairInfoIntoSettings();
+  }
+}
+
+// ---- Study alerts (Android LocalNotifications) -------------------------------
+
+function getNotifyPrefs() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(NOTIFY_PREFS_KEY) || "{}");
+    return {
+      exams: raw.exams !== false,
+      digest: !!raw.digest,
+      digest_hour: Number.isInteger(raw.digest_hour) && raw.digest_hour >= 6 && raw.digest_hour <= 8 ? raw.digest_hour : 7,
+    };
+  } catch (e) {
+    return { exams: true, digest: false, digest_hour: 7 };
+  }
+}
+
+function renderNotifyPreferences() {
+  const prefs = getNotifyPrefs();
+  const examsEl = document.getElementById("settings-notify-exams");
+  const digestEl = document.getElementById("settings-notify-digest");
+  const hourEl = document.getElementById("settings-notify-digest-hour");
+  if (examsEl) examsEl.checked = prefs.exams;
+  if (digestEl) digestEl.checked = prefs.digest;
+  if (hourEl) hourEl.value = String(prefs.digest_hour);
+  const on = prefs.exams || prefs.digest;
+  const badge = document.getElementById("settings-notify-badge");
+  const note = document.getElementById("settings-notify-note");
+  if (badge) {
+    if (on) {
+      badge.textContent = IS_NATIVE ? "Active on this phone" : "Saved (alerts fire on the phone)";
+      badge.className = "text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300";
+    } else {
+      badge.textContent = "Off";
+      badge.className = "text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300";
+    }
+  }
+  if (note) {
+    note.textContent = IS_NATIVE
+      ? (on ? "Alerts appear even when the app is closed. Re-scan or reopen the app to refresh upcoming reminders." : "Turn on exam alerts below to be reminded before quizzes, midterms and finals.")
+      : "Notifications fire on the Android app. Open QuizRadar on your phone and enable them there.";
+  }
+}
+
+async function persistNotifyPreferences() {
+  const prefs = {
+    exams: document.getElementById("settings-notify-exams")?.checked !== false,
+    digest: !!document.getElementById("settings-notify-digest")?.checked,
+    digest_hour: Number(document.getElementById("settings-notify-digest-hour")?.value || 7),
+  };
+  try { localStorage.setItem(NOTIFY_PREFS_KEY, JSON.stringify(prefs)); } catch (e) {}
+  renderNotifyPreferences();
+  triggerHaptic("selection");
+  await scheduleStudyNotifications({ force: true });
+  showToast("Study alerts updated.", "success", 1800);
+}
+
+// Stable numeric notification id from a stable string key.
+function notificationIdFromString(text) {
+  let h = 2166136261;
+  for (let i = 0; i < String(text).length; i++) {
+    h ^= String(text).charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return Math.abs(h % 1000000000);
+}
+
+function getLocalNotificationsPlugin() {
+  if (!IS_NATIVE) return null;
+  return window.Capacitor?.Plugins?.LocalNotifications || null;
+}
+
+async function cancelScheduledNotificationsByIds(ids) {
+  const plugin = getLocalNotificationsPlugin();
+  if (!plugin || !Array.isArray(ids) || ids.length === 0) return;
+  try {
+    await plugin.cancel({ notifications: ids.map((id) => ({ id })) });
+  } catch (err) {
+    console.debug("[notify] cancel failed:", err);
+  }
+}
+
+let _notifyQueueTimer = null;
+function queueNotificationRefresh(force) {
+  if (_notifyQueueTimer) clearTimeout(_notifyQueueTimer);
+  _notifyQueueTimer = setTimeout(() => {
+    _notifyQueueTimer = null;
+    scheduleStudyNotifications({ force: !!force }).catch((err) => console.debug("[notify] schedule failed:", err));
+  }, 900);
+}
+
+// Schedules exam alerts (T-24h + T-1h... same-day morning fallback) and up to 7
+// days of morning digests. Re-entrancy is guarded by a change hook so hydrate
+// + sync + edits don't re-schedule identical notifications all day.
+async function scheduleStudyNotifications({ force = false } = {}) {
+  const plugin = getLocalNotificationsPlugin();
+  if (!plugin) return;
+  const prefs = getNotifyPrefs();
+  if (!prefs.exams && !prefs.digest) {
+    const ids = getStoredScheduledNotificationIds();
+    await cancelScheduledNotificationsByIds(ids);
+    try { localStorage.removeItem(NOTIFY_SCHEDULED_IDS_KEY); } catch (e) {}
+    try { localStorage.removeItem(NOTIFY_CHANGE_HOOK_KEY); } catch (e) {}
+    return;
+  }
+
+  try {
+    const current = await plugin.checkPermissions();
+    if (!current || current.display !== "granted") {
+      const req = await plugin.requestPermissions();
+      if (!req || req.display !== "granted") return;
+    }
+  } catch (err) {
+    console.debug("[notify] permission check failed:", err);
+    return;
+  }
+
+  const todayIso = toIsoDate(getTodayDate());
+  const examSource = (appState.assessments || [])
+    .filter((a) => a && a.date_iso && a.date_iso >= todayIso)
+    .sort((a, b) => String(a.date_iso).localeCompare(String(b.date_iso)))
+    .slice(0, 30);
+
+  const digestSource = (() => {
+    const out = [];
+    const slotByDayIndex = {};
+    (appState.schedule?.slots || []).forEach((s) => {
+      const idx = typeof s.day_index === "number" ? s.day_index : getDayIndex(s.day);
+      (slotByDayIndex[idx] = slotByDayIndex[idx] || []).push(s.start_time || "");
+    });
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(getTodayDate());
+      day.setDate(day.getDate() + i);
+      const iso = toIsoDate(day);
+      const items = (appState.assessments || []).filter((a) => a && a.date_iso === iso);
+      const classes = (slotByDayIndex[day.getDay()] || []).filter(Boolean).length;
+      out.push({ iso, dayIndex: day.getDay(), classes, assessments: items });
+    }
+    return out;
+  })();
+
+  const changeHook = JSON.stringify({
+    prefs,
+    exams: examSource.map((a) => `${a.id}|${a.date_iso}|${a.time || a.display_time || "09:00"}`),
+    digest: digestSource.map((d) => `${d.iso}:c${d.classes}:a${d.assessments.length}`),
+  });
+  if (!force && localStorage.getItem(NOTIFY_CHANGE_HOOK_KEY) === changeHook) return;
+
+  const priorIds = getStoredScheduledNotificationIds();
+  await cancelScheduledNotificationsByIds(priorIds);
+
+  const notifications = [];
+  if (prefs.exams) {
+    for (const a of examSource) {
+      const baseId = notificationIdFromString(`${a.id}|${a.date_iso}`);
+      const title = `${a.assessment_type || "Assessment"} · ${a.course_id || "Course"}`;
+      const detail = (a.announcement || "").toString().trim();
+      const dayBefore = new Date(`${a.date_iso}T09:00:00`);
+      dayBefore.setDate(dayBefore.getDate() - 1);
+      if (dayBefore.getTime() > Date.now()) {
+        notifications.push({
+          id: baseId * 2,
+          title: `Tomorrow: ${title}`,
+          body: detail ? `${title} — ${detail}`.slice(0, 140) : `${title} is tomorrow. Time to prepare.`,
+          schedule: { at: dayBefore, allowWhileIdle: true }
+        });
+      }
+      const sameDay = new Date(`${a.date_iso}T09:00:00`);
+      if (sameDay.getTime() > Date.now()) {
+        notifications.push({
+          id: baseId * 2 + 1,
+          title: `Today: ${title}`,
+          body: detail ? `${title} — ${detail}`.slice(0, 140) : `${title} is happening today. Good luck!`,
+          schedule: { at: sameDay, allowWhileIdle: true }
+        });
+      }
+    }
+  }
+
+  if (prefs.digest) {
+    digestSource.forEach((d, i) => {
+      const when = new Date(`${d.iso}T${String(prefs.digest_hour).padStart(2, "0")}:00:00`);
+      if (when.getTime() <= Date.now()) return;
+      const parts = [d.classes ? `${d.classes} class${d.classes > 1 ? "es" : ""}` : "Free day"];
+      if (d.assessments.length) parts.push(`${d.assessments.length} due`);
+      notifications.push({
+        id: 700000000 + i,
+        title: "Today at QuizRadar",
+        body: parts.join(" • "),
+        schedule: { at: when, allowWhileIdle: true }
+      });
+    });
+  }
+
+  if (notifications.length === 0) {
+    try { localStorage.removeItem(NOTIFY_SCHEDULED_IDS_KEY); } catch (e) {}
+    try { localStorage.setItem(NOTIFY_CHANGE_HOOK_KEY, changeHook); } catch (e) {}
+    return;
+  }
+
+  // The scheduler caps total pending notifications; send the nearest N only.
+  const MAX = 48;
+  const trimmed = notifications
+    .sort((x, y) => new Date(x.schedule.at).getTime() - new Date(y.schedule.at).getTime())
+    .slice(0, MAX);
+
+  try {
+    await plugin.schedule({ notifications: trimmed });
+    localStorage.setItem(NOTIFY_SCHEDULED_IDS_KEY, JSON.stringify(trimmed.map((n) => n.id)));
+    localStorage.setItem(NOTIFY_CHANGE_HOOK_KEY, changeHook);
+  } catch (err) {
+    console.warn("[notify] schedule failed:", err);
+  }
+}
+
+function getStoredScheduledNotificationIds() {
+  try {
+    const ids = JSON.parse(localStorage.getItem(NOTIFY_SCHEDULED_IDS_KEY) || "[]");
+    return Array.isArray(ids) ? ids.map((n) => (typeof n === "object" ? n.id : n)) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+// ---- Android home-screen widget snapshot (reads current radar state) ---------
+
+window.__quizradarWidgetSnapshot = function () {
+  try {
+    const next = appState && appState.dashboard && appState.dashboard.next_up;
+    if (!next || !next.date_iso) return null;
+    const when = new Date(`${next.date_iso}T00:00:00`);
+    if (isNaN(when.getTime())) return null;
+    const days = Math.round(
+      (new Date(when.getFullYear(), when.getMonth(), when.getDate()) - getTodayDate()) / 86400000
+    );
+    return {
+      course_id: next.course_id || null,
+      title: `${next.assessment_type || "Assessment"} · ${next.course_id || ""}`.trim(),
+      date: toIsoDate(when),
+      assessment_type: next.assessment_type || null,
+      days_until: days,
+    };
+  } catch (err) {
+    return null;
+  }
+};
+
+// ---- Android share-sheet ingest ---------------------------------------------
+
+window.__quizradarHandleShared = function (payload) {
+  try {
+    const text = payload && typeof payload.text === "string" ? payload.text.trim() : "";
+    const subject = payload && typeof payload.title === "string" ? payload.title.trim() : "";
+    if (!text && !subject) {
+      showToast("The shared content was empty.", "warning");
+      return;
+    }
+    const title = subject || text.split("\n")[0].trim() || "Shared Announcement";
+    triggerHaptic("medium");
+    openCreateEventModal({ prefillTitle: title.slice(0, 90), prefillType: "Assignment" });
+    showToast("Shared content imported — pick a date and save it to your calendar.", "info", 3500);
+  } catch (err) {
+    console.warn("[share] failed:", err);
+  }
+};
+
+// ---- ICS Feeds settings card --------------------------------------------------
+
+async function renderFeedsSettings() {
+  const listEl = document.getElementById("settings-feeds-list");
+  const noteEl = document.getElementById("settings-feeds-note");
+  if (!listEl) return;
+  const feeds = appState.config?.feeds || [];
+  if (!feeds.length) {
+    listEl.innerHTML = `<div class="text-[11px] text-slate-400 p-2.5 rounded-lg border border-dashed border-slate-200 dark:border-slate-700 text-center">No feeds yet. Add your university's .ics link above.</div>`;
+  } else {
+    listEl.innerHTML = feeds
+      .map((f) => {
+        const shortUrl = f.url && f.url.length > 44 ? `${f.url.slice(0, 44)}…` : f.url || "";
+        return `
+        <div class="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs">
+          <label class="flex items-center gap-2 flex-1 min-w-0 cursor-pointer">
+            <input type="checkbox" ${f.enabled !== false ? "checked" : ""} onchange="toggleFeedItem('${jsAttr(f.id)}', this.checked)" class="w-4 h-4 accent-cyan-600 rounded" />
+            <span class="font-bold text-slate-800 dark:text-slate-100 truncate">${escapeHtml(f.name || "Feed")}</span>
+            <span class="text-[10px] text-slate-400 truncate font-mono">${escapeHtml(shortUrl)}</span>
+          </label>
+          <button type="button" onclick="deleteFeedItem('${jsAttr(f.id)}')" class="p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer" aria-label="Delete feed">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+          </button>
+        </div>`;
+      })
+      .join("");
+  }
+  if (noteEl) {
+    noteEl.textContent = IS_NATIVE
+      ? "Feeds are fetched by the paired desktop during each scan; results arrive on this phone when you pull its data."
+      : "Feeds are logged into every scan automatically (alongside Gmail, Teams, Classroom & Moodle).";
+  }
+}
+
+function setFeedsStatus(text, isError) {
+  const el = document.getElementById("settings-feeds-test-status");
+  if (!el) return;
+  el.classList.remove("hidden");
+  el.textContent = text;
+  el.className = "text-[11px] p-2 rounded-lg border font-medium " + (isError
+    ? "bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300"
+    : "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900 text-emerald-700 dark:text-emerald-300");
+}
+
+async function persistFeedsToServer() {
+  const feeds = appState.config?.feeds || [];
+  const res = await fetch("/api/feeds/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ feeds })
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || `HTTP ${res.status}`);
+  appState.config.feeds = data.feeds || feeds;
+  sureStateChange();
+}
+
+// A tiny helper to persist local config changes made outside the save modal.
+function sureStateChange() {
+  try {
+    if (appState && window.mobileEngine && mobileEngine.state === appState) {
+      mobileEngine.saveDatabase();
+    }
+    saveStateCache();
+  } catch (e) {}
+}
+
+async function addFeedFromSettings() {
+  const nameEl = document.getElementById("feed-add-name");
+  const urlEl = document.getElementById("feed-add-url");
+  const name = (nameEl?.value || "").trim() || "University Timetable";
+  const url = (urlEl?.value || "").trim();
+  if (!/^https:\/\/.+/i.test(url)) {
+    setFeedsStatus("Enter an https:// .ics URL — plain http is rejected for security.", true);
+    return;
+  }
+  if (IS_NATIVE) {
+    setFeedsStatus("Feeds are configured on the paired desktop — pair first, then add feeds there.", true);
+    return;
+  }
+  try {
+    const res = await fetch("/api/feeds/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, name })
+    });
+    const data = await res.json();
+    if (!data.success) {
+      setFeedsStatus(data.error || "Feed validation failed.", true);
+      return;
+    }
+    const sampleTitle = (data.sample || [])[0] ? `First item: "${data.sample[0]}"` : "";
+    setFeedsStatus(`Feed reachable — ${data.items_found} upcoming item(s) found. ${sampleTitle}`, false);
+    const feed = { id: `feed-${Date.now()}`, name, url, enabled: true };
+    appState.config.feeds = [...(appState.config.feeds || []), feed];
+    await persistFeedsToServer();
+    if (nameEl) nameEl.value = "";
+    if (urlEl) urlEl.value = "";
+    renderFeedsSettings();
+  } catch (err) {
+    setFeedsStatus(`Could not test feed: ${err.message}`, true);
+  }
+}
+
+async function toggleFeedItem(feedId, enabled) {
+  const feeds = appState.config?.feeds || [];
+  const feed = feeds.find((f) => f.id === feedId);
+  if (!feed) return;
+  feed.enabled = !!enabled;
+  try {
+    await persistFeedsToServer();
+    renderFeedsSettings();
+  } catch (err) {
+    setFeedsStatus(`Save failed: ${err.message}`, true);
+  }
+}
+
+async function deleteFeedItem(feedId) {
+  try {
+    const res = await fetch("/api/feeds/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: feedId })
+    });
+    const data = await res.json();
+    if (data.success) {
+      appState.config.feeds = data.feeds || (appState.config.feeds || []).filter((f) => f.id !== feedId);
+      renderFeedsSettings();
+      showToast("Feed removed.", "success", 1600);
+    } else {
+      setFeedsStatus(data.error || "Delete failed.", true);
+    }
+  } catch (err) {
+    setFeedsStatus(`Delete failed: ${err.message}`, true);
+  }
+}
+
+async function saveFeedsFromSettings() {
+  try {
+    await persistFeedsToServer();
+    showToast("Feeds saved — they run on every scan now.", "success");
+    renderFeedsSettings();
+  } catch (err) {
+    setFeedsStatus(`Save failed: ${err.message}`, true);
+  }
+}
+
+// ---- Pair Phone card (desktop only): live QR + optional PIN -------------------
+
+let _lastPairConnectUrl = "";
+
+async function loadPairInfoIntoSettings() {
+  const card = document.getElementById("settings-pair-phone-card");
+  if (!card) return;
+  if (IS_NATIVE) {
+    card.classList.add("hidden");
+    return;
+  }
+  card.classList.remove("hidden");
+  try {
+    const res = await fetch("/api/sync/pair/info");
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || `HTTP ${res.status}`);
+    _lastPairConnectUrl = data.connect_url || "";
+    const urlCode = document.getElementById("pair-connect-url-code");
+    if (urlCode) urlCode.textContent = _lastPairConnectUrl || "—";
+    renderPairQr(_lastPairConnectUrl);
+    const noteEl = document.getElementById("pair-info-note");
+    if (noteEl) noteEl.textContent = data.pairing_note || "";
+    const pinStatus = document.getElementById("pair-pin-status");
+    if (pinStatus) {
+      pinStatus.classList.remove("hidden");
+      pinStatus.textContent = data.pin_required
+        ? "A PIN is currently ACTIVE. Enter your new PIN to change it, or leave empty + Save to turn it off."
+        : "No PIN is set. Create one (4-8 digits) so only your phone can pull data.";
+    }
+    refreshIcons(card);
+  } catch (err) {
+    const urlCode = document.getElementById("pair-connect-url-code");
+    if (urlCode) urlCode.textContent = `Pairing info unavailable: ${err.message}`;
+  }
+}
+
+// Renders the pairing QR: desktop URL wrapped in the app deep link so a
+// standard Android camera app opens QuizRadar with the address pre-filled.
+function renderPairQr(connectUrl) {
+  const box = document.getElementById("pair-qr-image");
+  if (!box) return;
+  if (!connectUrl) {
+    box.innerHTML = `<span class="text-[10px] text-slate-400">No address yet</span>`;
+    return;
+  }
+  if (typeof window.qrcode !== "function") {
+    box.innerHTML = `<span class="text-[10px] text-slate-400">QR library unavailable</span>`;
+    return;
+  }
+  const deepLink = `com.quizradar.app://pair?url=${encodeURIComponent(connectUrl)}`;
+  try {
+    const qr = window.qrcode(0, "M");
+    qr.addData(deepLink);
+    qr.make();
+    box.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+    const svg = box.querySelector("svg");
+    if (svg) {
+      svg.removeAttribute("width");
+      svg.removeAttribute("height");
+      svg.style.width = "100%";
+      svg.style.height = "100%";
+      svg.style.display = "block";
+    }
+  } catch (err) {
+    box.innerHTML = `<span class="text-[10px] text-slate-400">Address too long to encode</span>`;
+  }
+}
+
+async function copyPairUrlFromSettings() {
+  const value = _lastPairConnectUrl || document.getElementById("pair-connect-url-code")?.textContent || "";
+  if (!value || value === "—") return;
+  try {
+    await navigator.clipboard.writeText(value);
+    showToast("Desktop address copied.", "success", 1600);
+  } catch (err) {
+    // Clipboard API can be denied — fall back to a selected read-only input.
+    const tmp = document.createElement("textarea");
+    tmp.value = value;
+    document.body.appendChild(tmp);
+    tmp.select();
+    try { document.execCommand("copy"); showToast("Desktop address copied.", "success", 1600); }
+    catch (e) { showToast("Copy failed — select the address manually.", "warning"); }
+    document.body.removeChild(tmp);
+  }
+}
+
+async function savePairingPinFromSettings() {
+  const input = document.getElementById("pair-pin-input-settings");
+  const status = document.getElementById("pair-pin-status");
+  const raw = (input?.value || "").trim();
+  let pin = null;
+  if (raw) {
+    if (!/^\d{4,8}$/.test(raw)) {
+      if (status) {
+        status.classList.remove("hidden");
+        status.textContent = "PIN must be 4-8 digits.";
+      }
+      return;
+    }
+    pin = raw;
+  }
+  try {
+    const res = await fetch("/api/pairing/pin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin })
+    });
+    const data = await res.json();
+    if (data.success) {
+      if (input) input.value = "";
+      showToast(data.pin_required ? "Pairing PIN armed — phones must enter it once." : "Pairing PIN removed — address alone opens access.", "success", 3200);
+      await loadPairInfoIntoSettings();
+    } else {
+      if (status) {
+        status.classList.remove("hidden");
+        status.textContent = data.error || "Could not save the PIN.";
+      }
+    }
+  } catch (err) {
+    if (status) {
+      status.classList.remove("hidden");
+      status.textContent = `Could not save the PIN: ${err.message}`;
+    }
+  }
+}
+
+// ============================================================================
 // DESKTOP PAIRING (mobile engine → real QuizRadar desktop instance on the LAN)
 // ============================================================================
 
 const DESKTOP_PAIRING_URL_KEY = "quizradar_desktop_pairing_url";
+const DESKTOP_PAIRING_PIN_KEY = "quizradar_desktop_pairing_pin";
+
+function getSavedPairingPin() {
+  return (localStorage.getItem(DESKTOP_PAIRING_PIN_KEY) || "").trim();
+}
+
+// Desktop requires x-quizradar-pin on every request when a pairing PIN is set.
+function getPairingHeaders() {
+  const pin = getSavedPairingPin();
+  return pin ? { "x-quizradar-pin": pin } : {};
+}
+
+function savePairingPinInput() {
+  const input = document.getElementById("pair-desktop-pin");
+  const pin = (input?.value || "").trim();
+  if (pin && !/^\d{4,8}$/.test(pin)) {
+    showPairingStatus("PIN must be 4-8 digits — same digits shown on the desktop.", true);
+    return false;
+  }
+  if (pin) localStorage.setItem(DESKTOP_PAIRING_PIN_KEY, pin);
+  else localStorage.removeItem(DESKTOP_PAIRING_PIN_KEY);
+  return true;
+}
 
 function normalizeDesktopUrl(raw) {
   let u = (raw || "").trim();
@@ -8035,12 +9323,18 @@ async function testDesktopPairing() {
   triggerHaptic("selection");
   const desktopUrl = await getValidatedDesktopUrl();
   if (!desktopUrl) return;
+  if (!savePairingPinInput()) return;
   const btn = document.getElementById("pair-test-btn");
   if (btn) { btn.disabled = true; btn.textContent = "Testing..."; }
   try {
     const res = await _originalFetch(`${desktopUrl}/api/state`, {
+      headers: getPairingHeaders(),
       signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined
     });
+    if (res.status === 401) {
+      showPairingStatus("This desktop requires its pairing PIN — type it below (shown on the PC's Pairs card).", true);
+      return;
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (!data || !data.schedule || !data.assessments) throw new Error("Not a QuizRadar desktop instance");
@@ -8060,12 +9354,19 @@ async function importFromDesktop() {
   triggerHaptic("medium");
   const desktopUrl = await getValidatedDesktopUrl();
   if (!desktopUrl) return;
+  if (!savePairingPinInput()) return;
   const btn = document.getElementById("pair-import-btn");
   if (btn) { btn.disabled = true; btn.textContent = "Pulling..."; }
   try {
     const res = await _originalFetch(`${desktopUrl}/api/state`, {
+      headers: getPairingHeaders(),
       signal: AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined
     });
+    if (res.status === 401) {
+      showToast("This desktop requires its pairing PIN — enter it and retry.", "warning");
+      showPairingStatus("Pairing PIN missing or wrong.", true);
+      return;
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 

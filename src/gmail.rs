@@ -390,7 +390,7 @@ mod tests {
     #[test]
     fn test_decode_base64url_invalid_utf8() {
         // Encoded non-UTF-8 bytes 0xFF, 0xFE
-        let invalid_utf8_b64 = URL_SAFE_NO_PAD.encode(&[0xFF, 0xFE]);
+        let invalid_utf8_b64 = URL_SAFE_NO_PAD.encode([0xFF, 0xFE]);
         let decoded = decode_base64url(&invalid_utf8_b64);
         assert!(decoded.contains('\u{FFFD}'));
     }

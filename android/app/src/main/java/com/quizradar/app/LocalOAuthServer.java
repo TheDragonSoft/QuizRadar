@@ -180,6 +180,20 @@ public class LocalOAuthServer {
             // Redact query strings (they can carry authorization codes) from logs.
             Log.i(TAG, "Incoming HTTP request: " + path);
 
+            // CORS preflight: the Capacitor WebView runs at origin http://localhost,
+            // so its POSTs to the loopback listener are cross-origin. Modern WebView
+            // fetches with a JSON content type fire an OPTIONS probe first — if we
+            // don't answer it with permissive CORS headers, the JS side can never
+            // record the pending PKCE state and sign-in fails before it starts.
+            if (requestLine.startsWith("OPTIONS")) {
+                sendCorsPreflight(client);
+                return;
+            }
+
+            // Consume the HTTP headers before reading any body so the two are
+            // never conflated; return the declared content length for POSTs.
+            int contentLength = consumeHeaders(reader);
+
             Map<String, String> params = parseQueryParams(queryString);
 
             if (path.equals("/api/auth/callback")) {
@@ -187,7 +201,7 @@ public class LocalOAuthServer {
             } else if (path.equals("/api/auth/microsoft/callback")) {
                 handleMicrosoftCallback(client, params);
             } else if (path.equals("/api/auth/prepare")) {
-                handlePrepare(client, readBody(reader));
+                handlePrepare(client, readBody(reader, Math.min(contentLength, 4096)));
             } else if (path.equals("/api/state")) {
                 sendJsonResponse(client, 200, "{\"status\":\"ok\"}");
             } else {
@@ -220,11 +234,33 @@ public class LocalOAuthServer {
         }
     }
 
-    private String readBody(BufferedReader reader) {
+    /** Reads the header block up to the blank line; returns the declared
+     *  Content-Length (0 when absent) so POST bodies can be read exactly. */
+    private int consumeHeaders(BufferedReader reader) {
+        int length = 0;
+        try {
+            String line;
+            while ((line = reader.readLine()) != null && !line.isEmpty()) {
+                if (line.toLowerCase().startsWith("content-length:")) {
+                    try {
+                        length = Integer.parseInt(line.substring(line.indexOf(':') + 1).trim());
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+        } catch (Exception ignored) {}
+        return length;
+    }
+
+    /** Reads exactly `contentLength` characters of the request body. */
+    private String readBody(BufferedReader reader, int contentLength) {
         try {
             StringBuilder sb = new StringBuilder();
-            while (reader.ready()) {
-                sb.append((char) reader.read());
+            int remaining = Math.max(0, contentLength);
+            while (remaining > 0) {
+                int chunk = reader.read();
+                if (chunk < 0) break;
+                sb.append((char) chunk);
+                remaining--;
             }
             return sb.toString();
         } catch (Exception e) {
@@ -531,6 +567,21 @@ public class LocalOAuthServer {
             OutputStream os = client.getOutputStream();
             os.write(response.getBytes(StandardCharsets.UTF_8));
             os.write(body);
+            os.flush();
+        } catch (Exception ignored) {}
+    }
+
+    /** CORS preflight answer for the WebView origin (http://localhost). */
+    private void sendCorsPreflight(Socket client) {
+        try {
+            String response = "HTTP/1.1 204 No Content\r\n"
+                    + "Access-Control-Allow-Origin: http://localhost\r\n"
+                    + "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+                    + "Access-Control-Allow-Headers: Content-Type, Authorization\r\n"
+                    + "Access-Control-Max-Age: 600\r\n"
+                    + "Connection: close\r\n\r\n";
+            OutputStream os = client.getOutputStream();
+            os.write(response.getBytes(StandardCharsets.UTF_8));
             os.flush();
         } catch (Exception ignored) {}
     }

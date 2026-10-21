@@ -7,7 +7,7 @@
 const IS_NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 
 // Single source of truth for the UI version (keep in sync with Cargo.toml / package.json)
-const APP_VERSION = "4.2.1";
+const APP_VERSION = "4.2.2";
 
 // ============================================================================
 // QUIZRADAR AUTONOMOUS ON-DEVICE BACKEND ENGINE (100% Isolated, Zero Latency)
@@ -1686,20 +1686,23 @@ let authPollInterval = null;
 let authPollTimeout = null;
 
 /** Posts a pending sign-in expectation to the native loopback listener.
- *  Returns true only when the listener acknowledged it (HTTP ok) within 4s.
- *  Used to fail fast BEFORE opening the external browser. */
+ *  Returns true only when the listener acknowledged it within 4s.
+ *  Used to fail fast BEFORE opening the external browser.
+ *  NOTE: deliberately sent WITHOUT a Content-Type header — with a custom
+ *  content type the WebView turns this into a preflighted cross-origin
+ *  request; the plain-substring body keeps it a CORS-simple request. */
 async function nativeOauthPrepare(provider, state, verifier) {
   try {
     const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
     const timer = ctrl ? setTimeout(() => ctrl.abort(), 4000) : null;
     const res = await _originalFetch("http://127.0.0.1:3000/api/auth/prepare", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       signal: ctrl ? ctrl.signal : undefined,
       body: JSON.stringify({ provider, state, verifier })
     });
     if (timer) clearTimeout(timer);
-    return !!(res && res.ok);
+    const text = res ? await res.text() : "";
+    return !!(res && res.ok && text.includes('"ok":true'));
   } catch (e) {
     return false;
   }

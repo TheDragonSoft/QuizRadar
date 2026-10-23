@@ -14,8 +14,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Serde adapter: `Option<NaiveDate>` ⇄ `"YYYY-MM-DD"` | `null` (v4 field
 /// `date_iso`). An empty/whitespace string deserializes to `None`, never to a
-/// fabricated date.
-mod iso_date {
+/// fabricated date. Shared by the assessment, planner payloads, schedule and
+/// custom events (`plan::` ) so every wire shape stays identical.
+pub mod iso_date {
     use super::{Deserialize, Deserializer, NaiveDate, Serializer};
 
     pub fn serialize<S: Serializer>(
@@ -74,6 +75,29 @@ mod hm_time {
             Ok(time) => Ok(Some(time)),
             Err(error) => Err(serde::de::Error::custom(error)),
         }
+    }
+}
+
+/// Serde adapter: required `NaiveDate` ⇄ `"YYYY-MM-DD"` (planner/derived
+/// payloads always carry concrete dates — no `null` exists there).
+pub mod iso_date_req {
+    use super::{NaiveDate, Serializer};
+
+    pub fn serialize<S: Serializer>(value: &NaiveDate, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&value.format("%Y-%m-%d").to_string())
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<NaiveDate, D::Error> {
+        let raw: String = serde::Deserialize::deserialize(deserializer)?;
+        let text = raw.trim();
+        if text.is_empty() {
+            return Err(serde::de::Error::custom(
+                "empty date string — no fabricated dates",
+            ));
+        }
+        NaiveDate::parse_from_str(text, "%Y-%m-%d").map_err(serde::de::Error::custom)
     }
 }
 
@@ -402,4 +426,44 @@ pub struct Assessment {
     /// 48h — `None` when clean (set by the planner, phase 03).
     #[serde(default)]
     pub conflict_warning: Option<String>,
+}
+
+/// Topic-completion state (`02` §3.2 `completed_topics`): the single source
+/// of truth for readiness, keyed `"{assessment_id}::{topic_index}"`.
+pub type CompletedTopics = std::collections::HashMap<String, bool>;
+
+/// A user-created calendar item (`02` §3.2 `custom_events[]`): custom
+/// deadline, event, or a generated `study-block-{assessment_id}` prep block.
+/// Everything except id/title is optional — nothing defaults itself into
+/// existence; times are the only local-time domain in the app (`plan` docs).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CustomCalendarEvent {
+    /// Stable id. Auto-generated prep blocks use the `study-block-` prefix
+    /// followed by the assessment id (conflict mitigation convention).
+    pub id: String,
+    pub title: String,
+    /// Enrolled course the item belongs to (`None` = user-unclassified).
+    #[serde(default)]
+    pub course_id: Option<String>,
+    /// Free label the user chose (`Custom Event`, `Study Session`, …).
+    #[serde(default)]
+    pub event_type: Option<String>,
+    /// The user's picked date; `None` stays unschedulable (it parries no
+    /// study-block candidate and never conflicts with assessments).
+    #[serde(rename = "date_iso", with = "iso_date", default)]
+    pub date: Option<NaiveDate>,
+    /// Start `HH:MM` when the user set one; both times `None` = timed-until-
+    /// user-fills (blocks all-day windows honestly).
+    #[serde(with = "hm_time", default)]
+    pub start_time: Option<NaiveTime>,
+    #[serde(with = "hm_time", default)]
+    pub end_time: Option<NaiveTime>,
+    /// `None` renders "—" — never a default room string.
+    #[serde(default)]
+    pub room: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+    /// Palette the user picked (course-derived or chosen); `None` = neutral.
+    #[serde(default)]
+    pub color: Option<String>,
 }

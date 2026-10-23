@@ -164,12 +164,15 @@ pub struct ScheduleSlot {
     pub id: String,
     /// Day name as stored by v4 (`"Sun"`, `"Mon"`, …).
     pub day: String,
-    /// 0–6, Sunday-first (v4 week layout).
+    /// 0–6, Sunday-first (v4 week layout). Imports may omit it; the store
+    /// normalizes it from `day` when missing.
+    #[serde(default)]
     pub day_index: u8,
     pub course_id: String,
     pub course_name: String,
     /// `Lecture` / `Tutorial` / `Lab` (serialized as v4's `type` field).
-    #[serde(rename = "type")]
+    /// Imports arrive with v4's default (`"Lecture"`, `02` §3.1).
+    #[serde(rename = "type", default = "default_slot_type")]
     pub slot_type: String,
     /// Section/group, e.g. `"Sec 1"`. `None` passes through as "unknown".
     #[serde(default)]
@@ -214,7 +217,7 @@ impl ScheduleData {
 }
 
 /// Assessment type ladder (`01` §3). Default classification: [`AssessmentType::ClassQuiz`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum AssessmentType {
     #[serde(rename = "Class Quiz")]
     ClassQuiz,
@@ -243,45 +246,142 @@ impl AssessmentType {
             Self::Assignment => "Assignment",
         }
     }
+
+    /// Import-time type normalization (`02` §3.3): the exact v4 ladder labels
+    /// map to themselves; fuzzy labels (`"Assessment"`, `"Quiz 3"`, …) map by
+    /// keyword into the closest v5 rung. The importer attaches an honest
+    /// warning when the match is fuzzy, so the inference is always labeled —
+    /// never silently imposed.
+    #[must_use]
+    pub fn from_import_label(label: &str) -> (Self, bool) {
+        let lowered = label.trim().to_ascii_lowercase();
+        let exact = match lowered.as_str() {
+            "class quiz" => Some(Self::ClassQuiz),
+            "online quiz" => Some(Self::OnlineQuiz),
+            "midterm exam" => Some(Self::MidtermExam),
+            "final exam" => Some(Self::FinalExam),
+            "lab assessment" => Some(Self::LabAssessment),
+            "assignment" => Some(Self::Assignment),
+            _ => None,
+        };
+        if let Some(exact) = exact {
+            return (exact, false);
+        }
+        // Fuzzy keyword ladder, checked most specific first.
+        let fuzzy = if lowered.contains("final") {
+            Self::FinalExam
+        } else if lowered.contains("midterm") {
+            Self::MidtermExam
+        } else if lowered.contains("online") {
+            Self::OnlineQuiz
+        } else if lowered.contains("lab") {
+            Self::LabAssessment
+        } else if lowered.contains("assignment") {
+            Self::Assignment
+        } else {
+            // The v4 ladder's default rung; importer labels this one.
+            Self::ClassQuiz
+        };
+        (fuzzy, true)
+    }
+}
+
+impl<'de> Deserialize<'de> for AssessmentType {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(Self::from_import_label(&String::deserialize(deserializer)?).0)
+    }
 }
 
 /// Urgency ladder (`01` §3): critical ≤2d, high ≤5d, medium ≤14d, upcoming,
-/// past. Serialized lower-case to match v4 (`"critical"`, …).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// past. Serialized lower-case to match v4 (`"critical"`, …). Imports carry
+/// v4's own stamped values; unknown labels fall back to [`UrgencyLevel::Upcoming`]
+/// (urgency is recomputed from the stored date at every render anyway).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum UrgencyLevel {
-    #[serde(rename = "critical")]
     Critical,
-    #[serde(rename = "high")]
     High,
-    #[serde(rename = "medium")]
     Medium,
-    #[serde(rename = "upcoming")]
     Upcoming,
-    #[serde(rename = "past")]
     Past,
 }
 
+impl<'de> Deserialize<'de> for UrgencyLevel {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        match String::deserialize(deserializer)?
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "critical" => Ok(Self::Critical),
+            "high" => Ok(Self::High),
+            "medium" => Ok(Self::Medium),
+            "past" => Ok(Self::Past),
+            // "upcoming" and anything the importer cannot vouch for.
+            _ => Ok(Self::Upcoming),
+        }
+    }
+}
+
+/// The v4 default slot classification (`02` §3.1 `type` field); old exports
+/// may omit it entirely.
+fn default_slot_type() -> String {
+    "Lecture".to_string()
+}
+
 /// Where an assessment came from (`02` §3.3 `source`). Serialized as the
-/// user-facing label string; feeds carry the user's own label.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// plain user-facing label string — exactly v4's wire shape — so backup files
+/// round-trip both ways. Unknown labels (v4 wrote the user's own feed label)
+/// deserializes into [`AssessmentSource::Feed`]; nothing fails import there.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum AssessmentSource {
-    #[serde(rename = "Gmail")]
+    /// v4's default source (`02` §3.3 `default_source`).
+    #[default]
     Gmail,
-    #[serde(rename = "Moodle")]
     Moodle,
-    #[serde(rename = "Microsoft Teams")]
     MicrosoftTeams,
-    #[serde(rename = "Microsoft Outlook")]
     MicrosoftOutlook,
-    #[serde(rename = "Google Classroom")]
     GoogleClassroom,
-    #[serde(rename = "Custom")]
     Custom,
-    #[serde(rename = "Feed")]
+    /// A subscribed .ics feed; carries the feed's user label as written by
+    /// v4 (`a.source = feed.name`). Never mapped/renamed — the label is data.
     Feed(String),
 }
 
+impl Serialize for AssessmentSource {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for AssessmentSource {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let label = String::deserialize(deserializer)?;
+        Ok(Self::from_label(&label))
+    }
+}
+
 impl AssessmentSource {
+    /// The v4 default (`02` §3.3 `default_source`) when a label is absent.
+    #[must_use]
+    pub fn gmail_default() -> Self {
+        Self::Gmail
+    }
+
+    /// Label → variant: the exact v4 labels; anything else becomes the
+    /// user's feed label (`02` §3.3: feed items carry the feed's own name).
+    #[must_use]
+    pub fn from_label(label: &str) -> Self {
+        match label.trim() {
+            "Gmail" => Self::Gmail,
+            "Moodle" => Self::Moodle,
+            "Microsoft Teams" => Self::MicrosoftTeams,
+            "Microsoft Outlook" => Self::MicrosoftOutlook,
+            "Google Classroom" => Self::GoogleClassroom,
+            "Custom" => Self::Custom,
+            other => Self::Feed(other.to_string()),
+        }
+    }
+
     /// Exact label the UI displays (matches v4 strings for importer checks).
     #[must_use]
     pub fn as_str(&self) -> &str {
@@ -413,6 +513,7 @@ pub struct Assessment {
     /// Source announcement date `YYYY-MM-DD` (`None` for calendar feeds).
     #[serde(default)]
     pub email_sent_date: Option<String>,
+    #[serde(default = "default_assessment_source")]
     pub source: AssessmentSource,
     #[serde(default)]
     pub source_icon: Option<String>,
@@ -426,6 +527,51 @@ pub struct Assessment {
     /// 48h — `None` when clean (set by the planner, phase 03).
     #[serde(default)]
     pub conflict_warning: Option<String>,
+}
+
+/// The v4 default authorship of an assessment with no `source` field
+/// (`02` §3.3): everything v4 parsed before the multi-source era was Gmail.
+fn default_assessment_source() -> AssessmentSource {
+    AssessmentSource::gmail_default()
+}
+
+/// One recorded grade (`02` §3.2 `grades` map values). Every member is
+/// optional — the store keeps exactly what the user (or importer) provided;
+/// nothing grades itself. Explicit `null` clears the field.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct GradeRecord {
+    #[serde(default)]
+    pub achieved_score: Option<f64>,
+    #[serde(default)]
+    pub max_score: Option<f64>,
+    #[serde(default)]
+    pub weightage_percent: Option<f64>,
+}
+
+impl GradeRecord {
+    /// `true` when nothing has been recorded (an empty record is never
+    /// stored — the repo deletes it instead, keeping the map honest).
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+/// A subscribed .ics calendar feed subscription (`02` §3.2 `feeds[]`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeedConfig {
+    /// Stable id, e.g. `"feed-<unix_millis>"` (assigned by the caller).
+    pub id: String,
+    /// User label (becomes each parsed item's `source`).
+    pub name: String,
+    /// https-only URL (`repo::validate_feed_url` enforces before persist).
+    pub url: String,
+    #[serde(default = "default_feed_enabled")]
+    pub enabled: bool,
+}
+
+fn default_feed_enabled() -> bool {
+    true
 }
 
 /// Topic-completion state (`02` §3.2 `completed_topics`): the single source

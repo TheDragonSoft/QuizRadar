@@ -12,6 +12,15 @@ chrono.workspace = true
 reqwest.workspace = true
 rusqlite.workspace = true
 thiserror.workspace = true
+# Async facade: store ops run on spawn_blocking so Tauri/Android callers
+# never block their runtime threads on SQLite (phase 04 item 1).
+tokio = { version = "1", default-features = false, features = ["rt"] }
+
+[dev-dependencies]
+tokio = { version = "1", default-features = false, features = [
+    "rt-multi-thread",
+    "macros",
+] }
 
 [lints.rust]
 unsafe_code = "deny"

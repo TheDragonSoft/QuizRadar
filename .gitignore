@@ -1,28 +1,50 @@
-# Rust target & release packaging directories
+# Rust
 /target/
-/dist/
-*.apk
-scratch/
-**/*.rs.bk
+Cargo.lock.bak
 
-# Sensitive Google OAuth credentials & local user data/caches (DO NOT COMMIT)
+# Node / web
+node_modules/
+dist/
+dist-ssr/
+.swc/
+
+# Android / Kotlin (any gradle project)
+.gradle/
+build/
+**/build/
+local.properties
+captures/
+.cxx/
+*.keystore
+key.properties
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# v5 runtime state — NEVER commit personal data or secrets
+/data/
+*.db
+*.db-journal
+*.sqlite
+*.tmp
+
+# Secrets & private material
+.env
+.env.*
 token.json
+microsoft_token.json
 credentials.json
 client_secret*.json
-.env
-data/app_config.json
-data/quizzes.json
-data/gemini_parsed_cache.json
-data/schedule.json
+gemini_parsed_cache.json
 quiz_emails_cache.json
 processed_quizzes.json
+*.pem
+*.p12
 
-# Agent skill caches
-.agents/
-skills-lock.json
-
-# Node & Capacitor
-node_modules/
-__pycache__/
-*.py[cod]
+# Scratch
+/scratch/
 *.log

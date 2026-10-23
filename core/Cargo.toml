@@ -1,0 +1,27 @@
+[package]
+name = "quizradar-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "QuizRadar v5 core: parsers, planner, calendar, store, sources, auth — pure Rust, UI-agnostic."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+regex.workspace = true
+reqwest.workspace = true
+rusqlite.workspace = true
+thiserror.workspace = true
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+todo = "deny"
+panic = "warn"
+dbg_macro = "warn"
+print_stdout = "warn"
+print_stderr = "warn"

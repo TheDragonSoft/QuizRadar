@@ -1,0 +1,8 @@
+packages:
+  - "apps/*"
+
+# pnpm ≥12: dependency postinstall scripts are blocked by default. Allow-list
+# only what legitimately ships one and needs it (esbuild resolves its
+# platform binary in install.js). Keep this list minimal.
+allowBuilds:
+  esbuild: true

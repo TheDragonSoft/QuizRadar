@@ -1,0 +1,18 @@
+node_modules/
+**/node_modules/
+dist/
+build/
+target/
+gen/
+pnpm-lock.yaml
+Cargo.lock
+apps/desktop/src-tauri/icons/
+apps/mobile-android/gradlew
+apps/mobile-android/gradlew.bat
+apps/mobile-android/gradle/
+apps/web/src/generated/
+
+# Immutable spec/prompt/protocol area — agent cohorts never reformat these
+docs/
+prompts/
+AGENTS.md

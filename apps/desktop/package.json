@@ -1,0 +1,10 @@
+{
+  "name": "@quizradar/desktop",
+  "version": "5.0.0-alpha.1",
+  "private": true,
+  "scripts": {
+    "dev": "cargo tauri dev",
+    "build": "cargo tauri build",
+    "tauri": "cargo tauri"
+  }
+}

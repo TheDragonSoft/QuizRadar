@@ -1,0 +1,31 @@
+[package]
+name = "quizradar-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "QuizRadar v5 desktop shell (Tauri 2) — thin glue over the core crate."
+
+[lib]
+name = "quizradar_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde.workspace = true
+serde_json.workspace = true
+tauri-plugin-opener = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
+quizradar-core = { path = "../../../core" }
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+todo = "deny"
+dbg_macro = "warn"

@@ -1,0 +1,52 @@
+/*
+ * Design tokens — copied exactly from docs/rebuild/01-product-spec.md §6
+ * (preserved v4 language). Single visual source of truth for the React +
+ * PWA tier; the Compose theme maps the same hexes (phase 12).
+ * Fonts: Inter variable, self-hosted via @fontsource-variable/inter (no CDNs).
+ */
+:root {
+  /* Accent — Google-blue family */
+  --accent: #1a73e8;
+  --accent-hover: #1557b0;
+
+  /* Surfaces */
+  --page: #f8fafc;
+  --surface: #ffffff;
+  --surface-border: #e2e8f0; /* slate-200 */
+  --text: #1e293b; /* slate-800 */
+  --text-muted: #64748b; /* slate-500 */
+
+  /* Exam-glow red shadow (v4 `.has-exam-glow`) */
+  --exam-glow: 0 3px 10px rgba(220, 38, 38, 0.14);
+
+  /* Custom events */
+  --custom-event: #db2777;
+
+  /* Course palette — the 8 v4 presets (refined derivation in phase 08) */
+  --course-1: #1a73e8;
+  --course-2: #0f9d58;
+  --course-3: #ea8600;
+  --course-4: #d93025;
+  --course-5: #8e24aa;
+  --course-6: #00acc1;
+  --course-7: #e67c73;
+  --course-8: #3949ab;
+
+  /* Typography */
+  --font-sans: "Inter Variable", "Inter", system-ui, sans-serif;
+
+  color-scheme: light;
+}
+
+.dark {
+  /* v4 dark accents lift the base family */
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --page: #0b0f19;
+  --surface: #0f172a; /* slate-900 */
+  --surface-border: #1e293b; /* slate-800 */
+  --text: #f1f5f9; /* slate-100 */
+  --text-muted: #94a3b8; /* slate-400 */
+
+  color-scheme: dark;
+}

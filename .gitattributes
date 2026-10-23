@@ -1,0 +1,11 @@
+# Line endings that must survive cross-platform checkouts
+gradlew text eol=lf
+*.bat text eol=crlf
+*.sh text eol=lf
+
+# Binary assets stay binary (no diff noise)
+*.png binary
+*.ico binary
+*.icns binary
+*.jar binary
+*.woff2 binary

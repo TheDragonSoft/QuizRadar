@@ -1,0 +1,32 @@
+{
+  "name": "quizradar",
+  "private": true,
+  "packageManager": "pnpm@12.3.4",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "generate:version": "node tooling/generate-version.mjs",
+    "generate:version:check": "node tooling/generate-version.mjs --check",
+    "core:test": "cargo test -p quizradar-core",
+    "core:watch": "cargo watch -x test -p quizradar-core",
+    "tauri:dev": "pnpm --dir apps/desktop dev",
+    "tauri:build": "pnpm --dir apps/desktop build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.20.0",
+    "eslint": "^9.20.0",
+    "eslint-config-prettier": "^10.0.0",
+    "eslint-plugin-react": "^7.37.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-react-refresh": "^0.4.18",
+    "globals": "^15.14.0",
+    "prettier": "^3.4.0",
+    "typescript-eslint": "^8.22.0"
+  }
+}

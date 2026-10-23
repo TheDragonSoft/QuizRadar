@@ -1,0 +1,5 @@
+# ktlint configuration (AGP/Gradle Kotlin project)
+# Compose convention keeps composables PascalCase — ktlint's generic naming
+# rule doesn't know the Compose factory-convention exception.
+[*.{kt,kts}]
+ktlint_standard_function-naming = disabled

@@ -1,0 +1,29 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Moodle//QuizRadar fixtures//EN
+BEGIN:VEVENT
+UID:quiz123@moodle.uni-eg.net
+SUMMARY:CSE241 Quiz 1\, Chapter 1-2
+DESCRIPTION:Instructions:\n• Lecture 1 - Basics\n- Chapter 2 - Functions\nNote: 30 minute time limit\, password required
+DTSTART:20261018T100000Z
+DTEND:20261018T120000Z
+URL:https://e-learning.uni-eg.net/mod/quiz/view.php?id=55
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:Reminder
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:midterm@moodle.uni-eg.net
+SUMMARY:Object-Oriented Programming Midterm
+DESCRIPTION:Hall per section announcement
+DTSTART:20261019T080000Z
+DTEND:20261019T100000Z
+END:VEVENT
+BEGIN:VEVENT
+UID:lecture@x
+SUMMARY:CSE241 Lecture Intro
+DESCRIPTION:Syllabus overview
+DTSTART:20261020T090000Z
+END:VEVENT
+END:VCALENDAR

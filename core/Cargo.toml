@@ -9,7 +9,6 @@ description = "QuizRadar v5 core: parsers, planner, calendar, store, sources, au
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
-regex.workspace = true
 reqwest.workspace = true
 rusqlite.workspace = true
 thiserror.workspace = true

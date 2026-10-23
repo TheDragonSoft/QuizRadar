@@ -1,0 +1,42 @@
+{
+  "ref_date": "2026-10-17",
+  "emails": [
+    {
+      "id": "ann-03",
+      "subject": "CSE241 quiz 1 next week",
+      "from": "Sec Head <sec@univ.edu>",
+      "date": "Sat, 10 Oct 2026 07:00:00 +0000",
+      "snippet": null,
+      "body": "Dear students,\n\nYour CSE241 quiz 1 will be held next week during tutorial time.\n\nGood luck,\nYour instructors"
+    }
+  ],
+  "expected": {
+    "stats": { "scanned": 1, "candidates": 1, "parsed": 1, "skipped_duplicates": 0 },
+    "items": [
+      {
+        "id": "ann-03",
+        "course": "CSE241",
+        "course_name": "Object-Oriented Programming",
+        "title": "Quiz 1: CSE241",
+        "type": "Class Quiz",
+        "date": "2026-10-20",
+        "day_name": "Tuesday",
+        "start_time": "11:00",
+        "end_time": "12:00",
+        "room": null,
+        "group": "Sec 1",
+        "instructor": "Sec Head",
+        "days_until": 3,
+        "upcoming": true,
+        "urgency": "high",
+        "url": null,
+        "warning_count": 0,
+        "topics_count": 1,
+        "hours": 2.5,
+        "note_startswith": "Estimated (local heuristic):",
+        "note_contains": "snapped to the nearest Tutorial slot",
+        "note_contains2": "Configure a Gemini API key"
+      }
+    ]
+  }
+}

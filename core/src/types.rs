@@ -2,10 +2,117 @@
 //!
 //! Single serde truth for API payloads; field names and semantics mirror the
 //! v4 data model (`docs/rebuild/02-current-architecture.md` §3) so the v4
-//! backup importer stays byte-compatible. Display strings are produced here,
-//! never formatted by the UI (`04` §4.1 rules).
+//! backup importer stays compatible. Display strings are produced in the core
+//! (`parse::util`), never formatted by the UI (`04` §4.1 rules).
+//!
+//! Honesty doctrine encoded at the type level: every piece of data nobody
+//! actually established stays `None` (date, room, instructor, palette…) and
+//! renders as "—" downstream. Nothing defaults itself into existence.
 
-use serde::{Deserialize, Serialize};
+use chrono::{NaiveDate, NaiveTime};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+/// Serde adapter: `Option<NaiveDate>` ⇄ `"YYYY-MM-DD"` | `null` (v4 field
+/// `date_iso`). An empty/whitespace string deserializes to `None`, never to a
+/// fabricated date.
+mod iso_date {
+    use super::{Deserialize, Deserializer, NaiveDate, Serializer};
+
+    pub fn serialize<S: Serializer>(
+        value: &Option<NaiveDate>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        match value {
+            Some(date) => serializer.serialize_str(&date.format("%Y-%m-%d").to_string()),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<NaiveDate>, D::Error> {
+        let raw: Option<String> = Option::deserialize(deserializer)?;
+        match raw.map(|s| s.trim().to_string()) {
+            None => Ok(None),
+            Some(s) if s.is_empty() => Ok(None),
+            Some(s) => NaiveDate::parse_from_str(&s, "%Y-%m-%d")
+                .map(Some)
+                .map_err(serde::de::Error::custom),
+        }
+    }
+}
+
+/// Serde adapter: `Option<NaiveTime>` ⇄ `"HH:MM"` | `null` (v4 keeps `HH:MM`
+/// without seconds; seconds inside incoming values are truncated).
+mod hm_time {
+    use super::{Deserialize, Deserializer, NaiveTime, Serializer};
+
+    pub fn serialize<S: Serializer>(
+        value: &Option<NaiveTime>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        match value {
+            Some(time) => serializer.serialize_str(&time.format("%H:%M").to_string()),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<NaiveTime>, D::Error> {
+        let raw: Option<String> = Deserialize::deserialize(deserializer)?;
+        let Some(text) = raw else {
+            return Ok(None);
+        };
+        let text = text.trim();
+        if text.is_empty() {
+            return Ok(None);
+        }
+        match NaiveTime::parse_from_str(text, "%H:%M")
+            .or_else(|_| NaiveTime::parse_from_str(text, "%H:%M:%S"))
+        {
+            Ok(time) => Ok(Some(time)),
+            Err(error) => Err(serde::de::Error::custom(error)),
+        }
+    }
+}
+
+/// Serde adapter: required `NaiveTime` ⇄ `"HH:MM"` (timetable slots always
+/// carry concrete times; incoming seconds are tolerated and truncated).
+mod hm_time_req {
+    use super::{Deserialize, Deserializer, NaiveTime, Serializer};
+
+    pub fn serialize<S: Serializer>(value: &NaiveTime, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&value.format("%H:%M").to_string())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<NaiveTime, D::Error> {
+        let raw: String = Deserialize::deserialize(deserializer)?;
+        let text = raw.trim();
+        match NaiveTime::parse_from_str(text, "%H:%M")
+            .or_else(|_| NaiveTime::parse_from_str(text, "%H:%M:%S"))
+        {
+            Ok(time) => Ok(time),
+            Err(error) => Err(serde::de::Error::custom(error)),
+        }
+    }
+}
+
+/// A v4-shaped announcement email as cached from a source before parsing
+/// (`02` §3.4 `quiz_emails_cache.json`). The parser takes these in and is
+/// responsible for the honesty of everything it derives.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CachedEmail {
+    pub id: String,
+    pub subject: String,
+    pub from: String,
+    /// Raw RFC-ish date header (`"Sat, 10 Oct 2026 09:00:00 +0000"`).
+    pub date: String,
+    #[serde(default)]
+    pub snippet: Option<String>,
+    /// Body in plain text or HTML (HTML is sanitized before parsing).
+    pub body: String,
+}
 
 /// Enrolled course (`02` §3.1). The `id` is the unique key (course code, e.g.
 /// `"CSE241"`) — renaming a course must keep its id.
@@ -17,10 +124,12 @@ pub struct Course {
     pub name: String,
     /// Accent hex color (`#rrggbb`), chosen from the 8-preset palette.
     pub color: String,
-    /// Pre-computed translucent background (`#rrggbbaa`/`rgba(...)`); `None`
-    /// ⇒ derived from `color` at render time, never a default hall string.
+    /// Pre-computed translucent background (`#rrggbbaa`/`rgba(...)`). `None`
+    /// ⇒ derived from `color` at render time, never defaulted.
+    #[serde(default)]
     pub bg: Option<String>,
     /// Pre-computed translucent border color.
+    #[serde(default)]
     pub border: Option<String>,
 }
 
@@ -38,22 +147,46 @@ pub struct ScheduleSlot {
     /// `Lecture` / `Tutorial` / `Lab` (serialized as v4's `type` field).
     #[serde(rename = "type")]
     pub slot_type: String,
-    /// Section/group, e.g. `"Sec 1"`.
+    /// Section/group, e.g. `"Sec 1"`. `None` passes through as "unknown".
+    #[serde(default)]
     pub group: Option<String>,
-    /// Room if known; `None` renders "—" (honesty doctrine: never a default
-    /// room string).
+    /// Room if known; `None` renders "—" (never a default hall string).
     #[serde(default)]
     pub room: Option<String>,
     /// Start time `HH:MM`.
-    pub start_time: String,
+    #[serde(with = "hm_time_req")]
+    pub start_time: NaiveTime,
     /// End time `HH:MM`.
-    pub end_time: String,
-    /// Pre-formatted display string (`08:00–10:30`, en dash) produced by core.
+    #[serde(with = "hm_time_req")]
+    pub end_time: NaiveTime,
+    /// Pre-formatted display (`08:00–10:30`, en dash) produced by the core.
     pub display_time: String,
     #[serde(default)]
     pub has_quiz: bool,
     #[serde(default)]
     pub quiz_title: Option<String>,
+}
+
+/// The semester's timetable (`02` §3.1). `semester` is whatever the user (or
+/// an extraction) actually wrote — nothing invents a label here.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ScheduleData {
+    #[serde(default)]
+    pub semester: Option<String>,
+    #[serde(default)]
+    pub courses: Vec<Course>,
+    #[serde(default)]
+    pub slots: Vec<ScheduleSlot>,
+}
+
+impl ScheduleData {
+    /// First enrolled course whose id equals `code` (ASCII-case-insensitive).
+    #[must_use]
+    pub fn find_course(&self, code: &str) -> Option<&Course> {
+        self.courses
+            .iter()
+            .find(|c| c.id.eq_ignore_ascii_case(code.trim()))
+    }
 }
 
 /// Assessment type ladder (`01` §3). Default classification: [`AssessmentType::ClassQuiz`].
@@ -104,33 +237,115 @@ pub enum UrgencyLevel {
     Past,
 }
 
+/// Where an assessment came from (`02` §3.3 `source`). Serialized as the
+/// user-facing label string; feeds carry the user's own label.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AssessmentSource {
+    #[serde(rename = "Gmail")]
+    Gmail,
+    #[serde(rename = "Moodle")]
+    Moodle,
+    #[serde(rename = "Microsoft Teams")]
+    MicrosoftTeams,
+    #[serde(rename = "Microsoft Outlook")]
+    MicrosoftOutlook,
+    #[serde(rename = "Google Classroom")]
+    GoogleClassroom,
+    #[serde(rename = "Custom")]
+    Custom,
+    #[serde(rename = "Feed")]
+    Feed(String),
+}
+
+impl AssessmentSource {
+    /// Exact label the UI displays (matches v4 strings for importer checks).
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Gmail => "Gmail",
+            Self::Moodle => "Moodle",
+            Self::MicrosoftTeams => "Microsoft Teams",
+            Self::MicrosoftOutlook => "Microsoft Outlook",
+            Self::GoogleClassroom => "Google Classroom",
+            Self::Custom => "Custom",
+            Self::Feed(name) => name,
+        }
+    }
+
+    /// Icon for the source pill (lucide set, vendored).
+    #[must_use]
+    pub fn as_icon(&self) -> &'static str {
+        match self {
+            Self::Gmail | Self::MicrosoftOutlook => "mail",
+            Self::Moodle => "graduation-cap",
+            Self::MicrosoftTeams => "users",
+            Self::GoogleClassroom => "school",
+            Self::Custom => "calendar-plus",
+            Self::Feed(_) => "calendar",
+        }
+    }
+
+    /// v4 id-prefix convention (`<source>-…`; source gating keys off these).
+    #[must_use]
+    pub fn id_prefix(&self) -> &str {
+        match self {
+            Self::Gmail | Self::MicrosoftOutlook => "gmail-",
+            Self::Moodle => "moodle-",
+            Self::MicrosoftTeams => "teams-",
+            Self::GoogleClassroom => "classroom-",
+            Self::Custom | Self::Feed(_) => "custom-",
+        }
+    }
+}
+
 /// The radar item (`02` §3.3): a quiz/exam/assignment resolved from a source
 /// announcement plus the student's own timetable. Any field the sources did
-/// not establish stays `None` — the UI renders "—", estimates stay labeled
-/// through `ai_inference_note`.
+/// not establish stays `None` — the UI renders "—"; heuristic estimates stay
+/// labeled through `ai_inference_note`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Assessment {
-    /// Stable id; source-prefixed (`teams-…`, `moodle-…`, `classroom-…`,
-    /// `feed-…`, `custom-…`) — source gating keys off these prefixes.
+    /// Stable id; source-prefixed (`teams-…`, `moodle-…`, `feed-…`).
     pub id: String,
-    pub course_id: String,
-    pub course_name: String,
+    /// Course code when the announcement carried one (`None` renders
+    /// "General" only at display time — never a fabricated "GENERAL" id).
+    #[serde(default)]
+    pub course_id: Option<String>,
+    /// Enrolled course title if the course is in the user's schedule.
+    #[serde(default)]
+    pub course_name: Option<String>,
     pub title: String,
     pub assessment_type: AssessmentType,
-    /// Explicit date `YYYY-MM-DD` (never silently invented).
-    pub date_iso: String,
-    /// Localized day name for `date_iso`, produced by core.
-    pub day_name: String,
-    pub start_time: Option<String>,
-    pub end_time: Option<String>,
-    /// Pre-formatted time range/display string.
+    /// Explicit/estimated date `YYYY-MM-DD`. `None` = no verifiable date —
+    /// the assessment is a draft "needs manual confirmation", never a
+    /// silently invented date.
+    #[serde(rename = "date_iso", with = "iso_date", default)]
+    pub date: Option<NaiveDate>,
+    /// Weekday of `date`, produced by the core.
+    #[serde(default)]
+    pub day_name: Option<String>,
+    #[serde(with = "hm_time", default)]
+    pub start_time: Option<NaiveTime>,
+    #[serde(with = "hm_time", default)]
+    pub end_time: Option<NaiveTime>,
+    /// Pre-formatted display (`Sunday, 18 October 2026 (9:00 AM – 10:30 AM)`).
+    #[serde(default)]
     pub display_time: Option<String>,
-    /// Room if known; `None` renders "—".
+    /// Room if known (`None` renders "—" — never a default hall string).
+    #[serde(default)]
     pub room: Option<String>,
+    /// Group/section as announced or as on the slot (no "All Groups"
+    /// fabrication).
+    #[serde(default)]
     pub group: Option<String>,
+    /// Sender display name; `None` when the announcement has no usable name.
+    #[serde(default)]
     pub instructor: Option<String>,
+    /// Dateless items count as upcoming (radar placeholder until a date is
+    /// confirmed); past items are false.
     pub is_upcoming: bool,
-    /// Negative when past; used by badges (TODAY/TOMORROW/IN N DAYS).
+    /// Days until the (known) date; `None` when undated — no countdown is
+    /// invented.
+    #[serde(default)]
     pub days_until: Option<i32>,
     pub urgency_level: UrgencyLevel,
     /// 0..=100 composite (capped), drives "What Should I Study?" ordering.
@@ -139,62 +354,52 @@ pub struct Assessment {
     pub topics: Vec<String>,
     #[serde(default)]
     pub warnings: Vec<String>,
-    /// Honesty note: which heuristic/AI call produced inferred fields.
+    /// Honesty note: what the pipeline inferred (heuristic vs explicit) and
+    /// why; `None` only for fully user-created items that need no explanation.
+    #[serde(default)]
     pub ai_inference_note: Option<String>,
+    #[serde(default)]
     pub ai_study_plan: Option<String>,
+    /// Heuristic estimate, labeled as such in `ai_study_plan`.
+    #[serde(default)]
     pub estimated_study_hours: Option<f32>,
-    /// e-learning portal link extracted from the source, if any.
+    /// Course/LMS link extracted from the source, if any.
+    #[serde(default)]
     pub elearning_url: Option<String>,
-    /// Google Calendar template URL (or pushed event link) if set.
+    /// Google Calendar template URL (or pushed event link) if set (phase 06).
+    #[serde(default)]
     pub google_cal_url: Option<String>,
     #[serde(default)]
     pub gcal_synced: bool,
     #[serde(default)]
     pub gcal_event_id: Option<String>,
+    /// Palette taken from the enrolled course only; `None` (neutral) when the
+    /// course is not enrolled — no default demo palettes.
+    #[serde(default)]
     pub color: Option<String>,
+    #[serde(default)]
     pub bg: Option<String>,
+    #[serde(default)]
     pub border: Option<String>,
+    /// Semester label inferred from the date itself (`Fall 2026` …).
+    #[serde(default)]
     pub semester: Option<String>,
+    #[serde(default)]
     pub email_subject: Option<String>,
-    /// Source email date `YYYY-MM-DD`.
+    /// Source announcement date `YYYY-MM-DD` (`None` for calendar feeds).
+    #[serde(default)]
     pub email_sent_date: Option<String>,
-    /// `Gmail` / `Moodle` / `Microsoft Teams` / `Microsoft Outlook` /
-    /// `Google Classroom` / `Custom` / user-facing feed label.
-    pub source: String,
+    pub source: AssessmentSource,
+    #[serde(default)]
     pub source_icon: Option<String>,
+    #[serde(default)]
     pub weightage_percent: Option<f64>,
+    #[serde(default)]
     pub achieved_score: Option<f64>,
+    #[serde(default)]
     pub max_score: Option<f64>,
     /// Conflict-chain description when a neighboring assessment lands within
     /// 48h — `None` when clean (set by the planner, phase 03).
+    #[serde(default)]
     pub conflict_warning: Option<String>,
-}
-
-/// User-created calendar entry (`02` §3.2 `custom_events[]`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CustomEvent {
-    pub id: String,
-    pub title: String,
-    pub course_id: Option<String>,
-    pub event_type: Option<String>,
-    /// `YYYY-MM-DD`.
-    pub date_iso: String,
-    pub start_time: Option<String>,
-    pub end_time: Option<String>,
-    pub room: Option<String>,
-    pub notes: Option<String>,
-    /// Custom event pink `#db2777` by default (`01` §6).
-    pub color: Option<String>,
-}
-
-/// User-subscribed .ics feed (`01` §4.2). Https-only and ≤10 enforced by the
-/// sources module, not by this type.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct IcsFeed {
-    /// `feed-<unix_ms>`; feed items bypass source toggles once synced.
-    pub id: String,
-    pub name: String,
-    /// Https URL (token-bearing allowed by design).
-    pub url: String,
-    pub enabled: bool,
 }

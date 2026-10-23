@@ -5,7 +5,7 @@ _Agents update this file after every phase. Prompts are defined in `prompts/READ
 ## Phases
 
 - [x] 01 scaffold-monorepo (`prompts/p01-scaffold-monorepo.md`) — shipped: Rust workspace (`core` + Tauri shell), pnpm root scripts, React 19/Vite/Tailwind 3 web skeleton, Android Compose skeleton, version generator + 5 stamped sinks, PR CI (3 jobs), lint/test gates everywhere green.
-- [ ] 02 core: types + email/ICS parsing + fixtures (`prompts/p02-core-types-parse.md`)
+- [x] 02 core: types + email/ICS parsing + fixtures (`prompts/p02-core-types-parse.md`) — shipped: serde types (`core/src/types.rs` incl. `ScheduleData`/`Course`/`ScheduleSlot`/`CachedEmail`/`Assessment` with honest `None` semantics + v4-compatible serde adapters), announcement email parser (`core/src/parse/email.rs`, hand-written char scanners — no regex dependency in core), ICS parser (`core/src/parse/ics.rs`, Moodle + generic feeds with `IcsOrigin`, RFC 5545 unfolding/VALARM-skip/TEXT-unescape, UTC conversion through caller-provided `FixedOffset`), shared dedupe key (`core/src/parse/merge.rs`) and pure helpers (`core/src/parse/util.rs`: urgency/priority ladders, 12h formatting, semester inference). Golden fixtures: 11 email cases + 2 ICS files × 3 runs (`core/tests/fixtures/`, harnesses `email_fixtures.rs` + `ics_fixtures.rs` with ignored dumper). 55 lib unit tests + 9 fixture/smoke tests green; clippy/fmt clean.
 - [ ] 03 core: plan/derive (dashboard, tasks, conflicts, study blocks)
 - [ ] 04 core: store + migrations + v4 importer + Drive backup (data-only)
 - [ ] 05 core: source fetchers (Gmail/Teams/Moodle/Classroom/feeds) + honest sync orchestrator
@@ -25,7 +25,23 @@ _Agents update this file after every phase. Prompts are defined in `prompts/READ
 
 _Track against `docs/rebuild/01-product-spec.md` §8. Tick items only with a CITATION to the §4/§5 item implemented + the commit hash._
 
-(competitive reproduction: leave empty until phases 02+ start producing features)
+- [x] Parse announcement emails → quizzes/exams/assignments with course matching (`01` §4.1 / `02` §3.2): `core/src/parse/email.rs` — placeholder commit this phase (`phase(2): core types + email/ics parsing with golden fixtures`).
+- [x] Moodle/ICS calendar feed parsing with week/time inference (`01` §4.2 / `02` §3.2): `core/src/parse/ics.rs` (structural parse + course/slot matching + honesty notes; the *fetch* layer itself is phase 05).
+- [x] No-fabrication honesty rules for parsed items (`01` §5 honesty): missing room/time renders "—", undated drafts stay dateless, wrong/missing course matching falls back course-less, notes always label estimates ("Estimated (local heuristic):…") — enforced through unit + fixture tests.
+- [x] Dedupe/stable ids across sources (`02` §3.3/merge): `core/src/parse/merge.rs` normalized merge key + `moodle-`/`feed-`/uid-hash id scheme (cross-scan merge belongs to phase 03, which reuses the same key).
+
+## Phase-02 divergence log (deliberate deviations from v4, per 03/01 §3)
+
+- Urgency/priority ladders UNIFIED (`01` §3): ICS constant priority `85` and the divergent ICS urgency table are gone — everything runs through `parse/util.rs` (`urgency_for`, `compute_priority_score`), so ICS as_on_ref+1d quiz scores are computed, not fixed.
+- No defaults on sparse ICS events: date-only DTSTART no longer invents `09:00`; missing DTEND no longer invents +90min / `10:30`; room only when a course slot actually carries one (v4's "E-Learning Lab / Online" default deleted); instructor/group never fabricated.
+- `classify_ics_text` defaults to Online Quiz (v4 ICS ladder), while email-pipeline text classification defaults to Class Quiz after the explicit ladders (v4 email parity) — surfaced for review.
+- Email link domain: v4 accepted only `e-learning.*` hosts; v5 accepts any `https://` link, preferring `/mod/quiz/` paths (host-lock dropped as host-specific).
+- `"15 minutes"` warning fixed at digit boundary (v4's bare `"115 minutes"` false positive).
+- MCQ warning reworded: `"+ Explain & Discuss"` fabrication dropped.
+- Course-code months: v4 regex-accepted only full month names; v5 also accepts 3-letter abbreviations per the phase prompt's explicit-date ladder ("d Mon YYYY").
+- Courseless quiz titles keep just `"Quiz N"` (v4's `"GENERAL"` fabrication deleted); ICS uid-less events get deterministic `fnv1a64` content-hash ids instead of v4's course-keyed id.
+- Numeric garbage dates (e.g. month 13, `"118-…"` runs) yield `None` — the event/email is skipped or undated, never silently re-dated.
+- Feed URL validation ported verbatim (https-only, token-in-URL honesty) from v4 `feeds.rs`.
 
 ## Compile-time TODO list (honest, no NotImplemented stubs)
 
@@ -36,6 +52,16 @@ _Track against `docs/rebuild/01-product-spec.md` §8. Tick items only with a CIT
 - `apps/web/src/generated/version.ts` provides `SW_CACHE_KEY_PREFIX`; the actual service worker (phase 11) consumes it. `__APP_VERSION__` is also defined in vite.config.ts as the compile-time define.
 
 ## Commands (append as established)
+
+### Rust core (phase-02 established)
+
+```powershell
+cargo test -p quizradar-core                                    # 55 lib unit tests + email/ics fixtures + smoke
+cargo test -p quizradar-core --test email_fixtures dump_email_outputs -- --ignored --nocapture
+                                                                # ignored dumper: prints actual parse JSON per case
+cargo clippy -p quizradar-core --all-targets -- -D warnings     # gate (denies panics/unwrap/expect outside test modules)
+cargo fmt -p quizradar-core                                     # format
+```
 
 ### Rust workspace (repo root)
 

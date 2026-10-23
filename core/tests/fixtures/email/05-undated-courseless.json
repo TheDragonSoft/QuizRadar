@@ -1,0 +1,40 @@
+{
+  "ref_date": "2026-10-17",
+  "emails": [
+    {
+      "id": "ann-05",
+      "subject": "Mathematics department quiz",
+      "from": "msc-math@univ.edu",
+      "date": "Thu, 15 Oct 2026 09:00:00 +0000",
+      "snippet": null,
+      "body": "Dear students,\n\nA department quiz is being organized. Date to be confirmed.\n\nYour instructors"
+    }
+  ],
+  "expected": {
+    "stats": { "scanned": 1, "candidates": 1, "parsed": 1, "skipped_duplicates": 0 },
+    "items": [
+      {
+        "id": "ann-05",
+        "course": null,
+        "course_name": null,
+        "title": "Mathematics department quiz",
+        "type": "Class Quiz",
+        "date": null,
+        "day_name": null,
+        "start_time": null,
+        "end_time": null,
+        "room": null,
+        "group": null,
+        "instructor": null,
+        "days_until": null,
+        "upcoming": true,
+        "urgency": "upcoming",
+        "url": null,
+        "warning_count": 0,
+        "topics_count": 1,
+        "hours": 2.5,
+        "note_startswith": "No date in the announcement —"
+      }
+    ]
+  }
+}

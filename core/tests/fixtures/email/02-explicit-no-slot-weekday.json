@@ -1,0 +1,40 @@
+{
+  "ref_date": "2026-10-17",
+  "emails": [
+    {
+      "id": "ann-02",
+      "subject": "CSE346 revision quiz on 21 October 2026",
+      "from": "TA Office <ta@univ.edu>",
+      "date": "Fri, 16 Oct 2026 09:00:00 +0000",
+      "snippet": null,
+      "body": "Dear CSE346 students,\n\nThe revision quiz will be held on Wednesday, 21 October 2026.\n\nGood luck,\nTA Office"
+    }
+  ],
+  "expected": {
+    "stats": { "scanned": 1, "candidates": 1, "parsed": 1, "skipped_duplicates": 0 },
+    "items": [
+      {
+        "id": "ann-02",
+        "course": "CSE346",
+        "course_name": "Computer Networks",
+        "title": "CSE346 revision quiz on 21 October 2026",
+        "type": "Class Quiz",
+        "date": "2026-10-21",
+        "day_name": "Wednesday",
+        "start_time": null,
+        "end_time": null,
+        "room": null,
+        "group": null,
+        "instructor": "TA Office",
+        "days_until": 4,
+        "upcoming": true,
+        "urgency": "high",
+        "url": null,
+        "warning_count": 0,
+        "topics_count": 1,
+        "hours": 2.5,
+        "note_startswith": "Parsed from announcement: explicit date found. The course's weekly slots do not run on that weekday"
+      }
+    ]
+  }
+}

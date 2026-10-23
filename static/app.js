@@ -6723,7 +6723,7 @@ function openAssessmentModalById(id) {
             <input type="checkbox" data-topic-key="${escapeHtml(key)}" ${done ? "checked" : ""} onchange="toggleTopicCheckbox('${jsAttr(key)}', this.checked)" class="mt-0.5 w-4 h-4 accent-[#1a73e8] rounded shrink-0 cursor-pointer" />
             <span data-topic-label="${escapeHtml(key)}" class="text-xs transition-colors ${done ? "line-through text-slate-400 dark:text-slate-500" : "text-slate-900 dark:text-slate-100 font-medium"}">${escapeHtml(topicName)}</span>
           </label>
-          <button type="button" title="Start Focus Pomodoro for this topic" onclick="event.stopPropagation(); triggerHaptic('selection'); openPomodoroForTask('${jsAttr(a.course_id)} • ${jsAttr(a.title)}', '${jsAttr(topicName)}', '${jsAttr(key)}')" class="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950/60 text-rose-500 transition cursor-pointer shrink-0">
+          <button type="button" title="Start Focus Pomodoro for this topic" aria-label="Start Focus Pomodoro timer for ${escapeHtml(topicName)}" onclick="event.stopPropagation(); triggerHaptic('selection'); openPomodoroForTask('${jsAttr(a.course_id)} • ${jsAttr(a.title)}', '${jsAttr(topicName)}', '${jsAttr(key)}')" class="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950/60 text-rose-500 transition cursor-pointer shrink-0">
             <i data-lucide="timer" class="w-3.5 h-3.5"></i>
           </button>
         </div>
@@ -7607,7 +7607,7 @@ function renderCourseColorPicker() {
   if (!container) return;
   container.innerHTML = COURSE_PRESET_COLORS.map(
     (hex) => `
-    <button type="button" onclick="selectCourseModalColor('${hex}')" class="w-6 h-6 rounded-full transition transform hover:scale-110 active:scale-95 cursor-pointer shadow-xs ${
+    <button type="button" aria-label="Select course color ${hex}" onclick="selectCourseModalColor('${hex}')" class="w-6 h-6 rounded-full transition transform hover:scale-110 active:scale-95 cursor-pointer shadow-xs ${
       selectedAddCourseColor === hex ? "ring-2 ring-offset-2 ring-[#1a73e8] dark:ring-offset-slate-900 scale-110" : ""
     }" style="background-color: ${hex}"></button>
   `
@@ -7652,7 +7652,7 @@ function addCourseSlotRow(preferred) {
       <option value="Lab" ${type === "Lab" ? "selected" : ""}>Lab</option>
       <option value="Tutorial" ${type === "Tutorial" ? "selected" : ""}>Tutorial</option>
     </select>
-    <button type="button" onclick="this.closest('.course-slot-row').remove()" class="p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer" title="Remove slot">
+    <button type="button" aria-label="Remove class time slot" onclick="this.closest('.course-slot-row').remove()" class="p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer" title="Remove slot">
       <i data-lucide="x" class="w-3.5 h-3.5"></i>
     </button>
   `;
@@ -8357,7 +8357,7 @@ function renderRecentSearchesList() {
         ${
           !isDefault
             ? `
-          <button type="button" onclick="removeRecentSearch('${jsAttr(term)}', event)" class="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer" title="Remove">
+          <button type="button" aria-label="Remove search term ${escapeHtml(term)}" onclick="removeRecentSearch('${jsAttr(term)}', event)" class="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer" title="Remove">
             <i data-lucide="x" class="w-3 h-3"></i>
           </button>
         `

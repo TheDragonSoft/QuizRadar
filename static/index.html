@@ -688,13 +688,13 @@
     <!-- Right: Sync, Dark Mode Toggle, Settings, Account (Unified control rhythm) -->
     <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
       <!-- Sync with Gmail + Gemini + Google Calendar Button (Desktop/Tablet) -->
-      <button id="top-sync-btn" onclick="triggerFullSync()" class="hidden md:flex h-9 items-center gap-1.5 px-3 sm:px-3.5 rounded-lg bg-[#e8f0fe] dark:bg-blue-950/70 hover:bg-[#d2e3fc] dark:hover:bg-blue-900/70 active:scale-[0.98] text-[#1a73e8] dark:text-blue-400 text-xs font-semibold transition border border-blue-200/60 dark:border-blue-800/60 cursor-pointer" title="Scan Gmail with Gemini AI & Auto-Sync Google Calendar">
+      <button id="top-sync-btn" onclick="triggerFullSync()" aria-label="Check for quizzes" class="hidden md:flex h-9 items-center gap-1.5 px-3 sm:px-3.5 rounded-lg bg-[#e8f0fe] dark:bg-blue-950/70 hover:bg-[#d2e3fc] dark:hover:bg-blue-900/70 active:scale-[0.98] text-[#1a73e8] dark:text-blue-400 text-xs font-semibold transition border border-blue-200/60 dark:border-blue-800/60 cursor-pointer" title="Scan Gmail with Gemini AI & Auto-Sync Google Calendar">
         <i id="top-sync-icon" data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
         <span id="top-sync-text" class="hidden sm:inline">Check for quizzes</span>
       </button>
 
       <!-- On-Device Engine & Local Backup Button (Desktop/Tablet) -->
-      <button id="top-cloud-sync-btn" onclick="openCloudSyncModal()" class="hidden md:flex h-9 items-center gap-1.5 px-2.5 sm:px-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 active:scale-[0.98] text-emerald-700 dark:text-emerald-300 text-xs font-semibold transition border border-emerald-200/70 dark:border-emerald-800/60 cursor-pointer" title="On-Device Engine & Local Data Backup">
+      <button id="top-cloud-sync-btn" onclick="openCloudSyncModal()" aria-label="Data and backup" class="hidden md:flex h-9 items-center gap-1.5 px-2.5 sm:px-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 active:scale-[0.98] text-emerald-700 dark:text-emerald-300 text-xs font-semibold transition border border-emerald-200/70 dark:border-emerald-800/60 cursor-pointer" title="On-Device Engine & Local Data Backup">
         <i data-lucide="database" class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400"></i>
         <span>Data & Backup</span>
       </button>
@@ -730,7 +730,7 @@
       </button>
 
       <!-- Settings & Preferences Modal Trigger -->
-      <button id="settings-nav-btn" onclick="openSettingsModal()" class="group h-9 px-2.5 sm:px-3 rounded-lg flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-slate-700 dark:text-slate-200 text-xs font-semibold transition cursor-pointer" title="Settings & Preferences">
+      <button id="settings-nav-btn" onclick="openSettingsModal()" aria-label="Settings and preferences" class="group h-9 px-2.5 sm:px-3 rounded-lg flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-slate-700 dark:text-slate-200 text-xs font-semibold transition cursor-pointer" title="Settings & Preferences">
         <span class="settings-btn-stage">
           <i data-lucide="settings" class="w-4 h-4 text-slate-600 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white transition-colors"></i>
         </span>

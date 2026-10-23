@@ -48,3 +48,7 @@ processed_quizzes.json
 # Scratch
 /scratch/
 *.log
+
+# Local agent tooling (opencode skills) — stays untracked
+.agents/
+skills-lock.json

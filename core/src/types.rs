@@ -136,6 +136,12 @@ pub struct CachedEmail {
     pub snippet: Option<String>,
     /// Body in plain text or HTML (HTML is sanitized before parsing).
     pub body: String,
+    /// Honesty flag (`03` §C3 fix): `true` when the fetcher capped the body
+    /// (at [`crate::sources::gmail::MAX_BODY_CHARS`] for Gmail) and content
+    /// was dropped — consumers (AI extraction, manual review) must know the
+    /// text is incomplete instead of trusting a silently shortened body.
+    #[serde(default)]
+    pub body_truncated: bool,
 }
 
 /// Enrolled course (`02` §3.1). The `id` is the unique key (course code, e.g.

@@ -143,12 +143,17 @@ pub fn strip_html_tags(html: &str) -> String {
             // Style/script blocks are removed only when properly closed —
             // otherwise the v4 generic `<[^>]+>` stripper handled them, so we
             // fall through to exactly that.
-            if char_text_starts(&lower, i, "<style") || char_text_starts(&lower, i, "<script") {
-                let tag_len = if lower[i + 1] == 's' { 6 } else { 7 };
-                let close_marker = if lower[i + 1] == 's' {
-                    "</style>"
+            // (Phase-05 fix: the old `lower[i+1] == 's'` discriminator matched
+            // BOTH `<style` and `<script`, so script blocks with content were
+            // never removed — the shipped test only passed because its script
+            // body was empty.)
+            let is_style = char_text_starts(&lower, i, "<style");
+            let is_script = char_text_starts(&lower, i, "<script");
+            if is_style || is_script {
+                let (tag_len, close_marker) = if is_style {
+                    (6, "</style>")
                 } else {
-                    "</script>"
+                    (7, "</script>")
                 };
                 if let Some(close_at) = find_char_text(&lower, i + tag_len, close_marker) {
                     i = close_at + close_marker.len();
@@ -1086,11 +1091,26 @@ pub fn find_announcement_url(body: &str) -> Option<String> {
 /// established them; every derivation is explained in `ai_inference_note`
 /// (machine-checkable prefixes: "Parsed from announcement:", "Estimated
 /// (local heuristic):", "No date in the announcement —").
+///
+/// Gmail-flavoured entry point; other mail sources (Outlook/Teams) use
+/// [`parse_email_announcement_from_source`] so the assessment carries the
+/// source it actually came from (v4's JS engine parameterized this label).
 #[must_use]
 pub fn parse_email_announcement(
     email: &CachedEmail,
     schedule: &ScheduleData,
     ref_date: NaiveDate,
+) -> Assessment {
+    parse_email_announcement_from_source(email, schedule, ref_date, AssessmentSource::Gmail)
+}
+
+/// Source-parameterized pipeline (the real body of [`parse_email_announcement`]).
+#[must_use]
+pub fn parse_email_announcement_from_source(
+    email: &CachedEmail,
+    schedule: &ScheduleData,
+    ref_date: NaiveDate,
+    source: AssessmentSource,
 ) -> Assessment {
     // Sanitize first (HTML bodies), then cut away forwarded-thread noise —
     // the v4 JS order (the separator survives the sanitizer as plain text).
@@ -1253,8 +1273,8 @@ pub fn parse_email_announcement(
         semester: date.map(infer_semester_from_date),
         email_subject: Some(email.subject.clone()),
         email_sent_date: sent_date.map(|d| d.format("%Y-%m-%d").to_string()),
-        source: AssessmentSource::Gmail,
-        source_icon: Some(AssessmentSource::Gmail.as_icon().to_string()),
+        source: source.clone(),
+        source_icon: Some(source.as_icon().to_string()),
         weightage_percent: None,
         achieved_score: None,
         max_score: None,
@@ -1267,11 +1287,25 @@ pub fn parse_email_announcement(
 /// using the shared [`merge_key`] — cross-scan merge/refresh is the planner's
 /// job (`plan/`, phase 03). Ordering is NOT normalized here: the planner owns
 /// radar order (v4's parser-side sort was dropped with the demo-purge).
+///
+/// Gmail-flavoured entry point; see [`parse_emails_from_source`].
 #[must_use]
 pub fn parse_emails(
     emails: &[CachedEmail],
     schedule: &ScheduleData,
     ref_date: NaiveDate,
+) -> (Vec<Assessment>, ScanStats) {
+    parse_emails_from_source(emails, schedule, ref_date, AssessmentSource::Gmail)
+}
+
+/// [`parse_emails`] with the source label carried onto every produced
+/// assessment (Outlook/Teams mail flows through this same honest pipeline).
+#[must_use]
+pub fn parse_emails_from_source(
+    emails: &[CachedEmail],
+    schedule: &ScheduleData,
+    ref_date: NaiveDate,
+    source: AssessmentSource,
 ) -> (Vec<Assessment>, ScanStats) {
     let mut stats = ScanStats {
         scanned: emails.len(),
@@ -1288,7 +1322,8 @@ pub fn parse_emails(
             continue;
         }
         stats.candidates += 1;
-        let assessment = parse_email_announcement(email, schedule, ref_date);
+        let assessment =
+            parse_email_announcement_from_source(email, schedule, ref_date, source.clone());
         if seen.insert(merge_key(&assessment)) {
             parsed.push(assessment);
             stats.parsed += 1;
@@ -1325,6 +1360,7 @@ mod tests {
             date: date.to_string(),
             snippet: None,
             body: body.to_string(),
+            body_truncated: false,
         }
     }
 

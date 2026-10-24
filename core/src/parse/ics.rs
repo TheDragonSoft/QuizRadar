@@ -382,10 +382,19 @@ fn event_context(event: &IcsEvent) -> String {
     combined
 }
 
+/// Combined candidate check used by [`parse_ics_assessments`] and by the
+/// `sources/` fetchers that map structured events (Moodle REST) through the
+/// same honesty filter.
+pub(crate) fn is_ics_candidate(event: &IcsEvent) -> bool {
+    let context_lower = event_context(event);
+    let summary_lower = event.summary.to_ascii_lowercase();
+    summary_candidate(&summary_lower) || description_candidate(&context_lower)
+}
+
 /// v4 course matching, one sweep: id substring, then name, then the
 /// announcement course-code scanner (`"CSE 241"` with the spaced code). The
 /// returned label feeds the honesty note.
-fn match_course_with_how<'a>(
+pub(crate) fn match_course_with_how<'a>(
     schedule: &'a ScheduleData,
     context_lower: &str,
 ) -> Option<(&'a Course, &'static str)> {
@@ -503,7 +512,7 @@ pub fn parse_ics_events(text: &str) -> Vec<IcsEvent> {
 /// "lecture"/"chapter" lines of real length become topics; anything else
 /// falls back to generic-but-true guidance, never hardcoded course topics
 /// like v4's BJT/MOSFET bedroom lists.
-fn extract_ics_topics(description: &str, summary: &str) -> Vec<String> {
+pub(crate) fn extract_ics_topics(description: &str, summary: &str) -> Vec<String> {
     let mut topics: Vec<String> = Vec::new();
     for raw in description.split('\n') {
         let line = raw.trim();
@@ -615,104 +624,14 @@ pub fn parse_ics_assessments(
     let mut assessments: Vec<Assessment> = Vec::new();
     let mut seen_keys = std::collections::HashSet::new();
     for event in events {
-        let context_lower = event_context(&event);
-        let summary_lower = event.summary.to_ascii_lowercase();
-        if !(summary_candidate(&summary_lower) || description_candidate(&context_lower)) {
+        if !is_ics_candidate(&event) {
             continue;
         }
         stats.candidates += 1;
 
-        let Some(ref dtstart) = event.dtstart else {
+        let Some(candidate) = assessment_from_event(&event, schedule, origin, ref_date, local)
+        else {
             continue;
-        };
-
-        // UTC values convert through the caller's offset; TZID stays a wall
-        // clock (recorded in `tzid`, not resolved — core is tzdb-free).
-        let (date, time, is_utc) = match (dtstart.time, dtstart.is_utc) {
-            (Some(elapsed), true) => {
-                let naive = NaiveDateTime::new(dtstart.date, elapsed);
-                let converted = naive.and_utc().with_timezone(&local);
-                let wall = NaiveTime::from_hms_opt(converted.hour(), converted.minute(), 0)
-                    .unwrap_or(elapsed);
-                (converted.date_naive(), Some(wall), true)
-            }
-            (elapsed, utc_flag) => (dtstart.date, elapsed, utc_flag),
-        };
-
-        let match_found = match_course_with_how(schedule, &context_lower);
-        let course = match_found.map(|(found, _)| found);
-        let course_id = course.map(|c| c.id.clone());
-        let course_name = course.map(|c| c.name.clone());
-
-        // End time only when DTEND carries its own clock — v4 invented +90min
-        // (and default "10:30" for date-only events); both deleted per `03`.
-        let end_time = event.dtend.as_ref().and_then(|end| end.time);
-        let room = course_id
-            .as_deref()
-            .and_then(|id| room_for_course(schedule, id));
-
-        let assessment_type = classify_ics_text(&summary_lower, "");
-        let topics = extract_ics_topics(&event.description, &event.summary);
-        let (plan, hours) = fallback_ics_study_plan(origin);
-
-        let days_i64 = days_until(Some(date), ref_date).map(i64::from);
-        let days_until_i32 = days_i64.map(|days| i32::try_from(days).unwrap_or(i32::MAX));
-
-        let candidate = Assessment {
-            id: assessment_id(&event, origin),
-            course_id,
-            course_name,
-            title: decide_ics_title(&event.summary, assessment_type),
-            assessment_type,
-            date: Some(date),
-            day_name: day_name_for(Some(date)),
-            start_time: time,
-            end_time,
-            display_time: Some(build_display_time(date, time, end_time)),
-            room,
-            group: None,      // v4's "All Sections" fabrication is gone
-            instructor: None, // v4's "Course Faculty" fabrication is gone
-            is_upcoming: days_i64.map(|days| days >= 0).unwrap_or(true),
-            days_until: days_until_i32,
-            urgency_level: urgency_for(days_i64),
-            priority_score: compute_priority_score(days_i64, assessment_type, topics.len()),
-            topics,
-            warnings: build_ics_warnings(&context_lower, origin),
-            ai_inference_note: Some(build_ics_note(
-                match_found.map(|found| (found.0.id.as_str(), found.1)),
-                is_utc,
-            )),
-            ai_study_plan: Some(plan),
-            estimated_study_hours: Some(hours),
-            elearning_url: event
-                .url
-                .clone()
-                .filter(|link| link.starts_with("https://") || link.starts_with("http://"))
-                .or_else(|| {
-                    // A generic feed honestly falls back to nothing: only its
-                    // own URL property can name an event page. Moodle keeps
-                    // the portal upcoming-view fallback.
-                    if matches!(origin, IcsOrigin::Moodle { .. }) {
-                        origin.fallback_url()
-                    } else {
-                        None
-                    }
-                }),
-            google_cal_url: None,
-            gcal_synced: false,
-            gcal_event_id: None,
-            color: course.map(|c| c.color.clone()),
-            bg: course.and_then(|c| c.bg.clone()),
-            border: course.and_then(|c| c.border.clone()),
-            semester: Some(infer_semester_from_date(date)),
-            email_subject: None,   // no fabricated "Moodle Calendar Event" header
-            email_sent_date: None, // calendar events carry no sent date
-            source: origin.source(),
-            source_icon: Some(origin.source().as_icon().to_string()),
-            weightage_percent: None,
-            achieved_score: None,
-            max_score: None,
-            conflict_warning: None,
         };
 
         let key = merge_key(&candidate);
@@ -724,6 +643,112 @@ pub fn parse_ics_assessments(
         stats.parsed += 1;
     }
     (assessments, stats)
+}
+
+/// One parsed VEVENT → an honest [`Assessment`] (or `None` when it carries no
+/// parseable DTSTART — a missing date is never invented). The single builder
+/// shared by the ICS text pipeline *and* the `sources/` fetchers that map
+/// structured items (Moodle REST events) onto this same honesty surface.
+pub(crate) fn assessment_from_event(
+    event: &IcsEvent,
+    schedule: &ScheduleData,
+    origin: &IcsOrigin,
+    ref_date: NaiveDate,
+    local: FixedOffset,
+) -> Option<Assessment> {
+    let context_lower = event_context(event);
+    let summary_lower = event.summary.to_ascii_lowercase();
+
+    let dtstart = event.dtstart.as_ref()?;
+
+    // UTC values convert through the caller's offset; TZID stays a wall
+    // clock (recorded in `tzid`, not resolved — core is tzdb-free).
+    let (date, time, is_utc) = match (dtstart.time, dtstart.is_utc) {
+        (Some(elapsed), true) => {
+            let naive = NaiveDateTime::new(dtstart.date, elapsed);
+            let converted = naive.and_utc().with_timezone(&local);
+            let wall =
+                NaiveTime::from_hms_opt(converted.hour(), converted.minute(), 0).unwrap_or(elapsed);
+            (converted.date_naive(), Some(wall), true)
+        }
+        (elapsed, utc_flag) => (dtstart.date, elapsed, utc_flag),
+    };
+
+    let match_found = match_course_with_how(schedule, &context_lower);
+    let course = match_found.map(|(found, _)| found);
+    let course_id = course.map(|c| c.id.clone());
+    let course_name = course.map(|c| c.name.clone());
+
+    // End time only when DTEND carries its own clock — v4 invented +90min
+    // (and default "10:30" for date-only events); both deleted per `03`.
+    let end_time = event.dtend.as_ref().and_then(|end| end.time);
+    let room = course_id
+        .as_deref()
+        .and_then(|id| room_for_course(schedule, id));
+
+    let assessment_type = classify_ics_text(&summary_lower, "");
+    let topics = extract_ics_topics(&event.description, &event.summary);
+    let (plan, hours) = fallback_ics_study_plan(origin);
+
+    let days_i64 = days_until(Some(date), ref_date).map(i64::from);
+    let days_until_i32 = days_i64.map(|days| i32::try_from(days).unwrap_or(i32::MAX));
+
+    Some(Assessment {
+        id: assessment_id(event, origin),
+        course_id,
+        course_name,
+        title: decide_ics_title(&event.summary, assessment_type),
+        assessment_type,
+        date: Some(date),
+        day_name: day_name_for(Some(date)),
+        start_time: time,
+        end_time,
+        display_time: Some(build_display_time(date, time, end_time)),
+        room,
+        group: None,      // v4's "All Sections" fabrication is gone
+        instructor: None, // v4's "Course Faculty" fabrication is gone
+        is_upcoming: days_i64.map(|days| days >= 0).unwrap_or(true),
+        days_until: days_until_i32,
+        urgency_level: urgency_for(days_i64),
+        priority_score: compute_priority_score(days_i64, assessment_type, topics.len()),
+        topics,
+        warnings: build_ics_warnings(&context_lower, origin),
+        ai_inference_note: Some(build_ics_note(
+            match_found.map(|found| (found.0.id.as_str(), found.1)),
+            is_utc,
+        )),
+        ai_study_plan: Some(plan),
+        estimated_study_hours: Some(hours),
+        elearning_url: event
+            .url
+            .clone()
+            .filter(|link| link.starts_with("https://") || link.starts_with("http://"))
+            .or_else(|| {
+                // A generic feed honestly falls back to nothing: only its
+                // own URL property can name an event page. Moodle keeps
+                // the portal upcoming-view fallback.
+                if matches!(origin, IcsOrigin::Moodle { .. }) {
+                    origin.fallback_url()
+                } else {
+                    None
+                }
+            }),
+        google_cal_url: None,
+        gcal_synced: false,
+        gcal_event_id: None,
+        color: course.map(|c| c.color.clone()),
+        bg: course.and_then(|c| c.bg.clone()),
+        border: course.and_then(|c| c.border.clone()),
+        semester: Some(infer_semester_from_date(date)),
+        email_subject: None,   // no fabricated "Moodle Calendar Event" header
+        email_sent_date: None, // calendar events carry no sent date
+        source: origin.source(),
+        source_icon: Some(origin.source().as_icon().to_string()),
+        weightage_percent: None,
+        achieved_score: None,
+        max_score: None,
+        conflict_warning: None,
+    })
 }
 
 // ---------------------------------------------------------------------------

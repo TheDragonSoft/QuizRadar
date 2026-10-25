@@ -1221,15 +1221,15 @@
               </div>
               <div class="grid grid-cols-3 gap-2">
                 <div>
-                  <label class="block text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-0.5">Weight %</label>
+                  <label for="modal-grade-weight" class="block text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-0.5">Weight %</label>
                   <input id="modal-grade-weight" type="number" step="0.5" placeholder="10.0" class="w-full px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white font-semibold outline-none focus:border-amber-500" />
                 </div>
                 <div>
-                  <label class="block text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-0.5">Score</label>
+                  <label for="modal-grade-score" class="block text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-0.5">Score</label>
                   <input id="modal-grade-score" type="number" step="0.5" placeholder="9.5" class="w-full px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white font-semibold outline-none focus:border-amber-500" />
                 </div>
                 <div>
-                  <label class="block text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-0.5">Max Score</label>
+                  <label for="modal-grade-max" class="block text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-0.5">Max Score</label>
                   <input id="modal-grade-max" type="number" step="0.5" placeholder="10.0" class="w-full px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white font-semibold outline-none focus:border-amber-500" />
                 </div>
               </div>
@@ -1371,7 +1371,7 @@
           <!-- Student Identity Input -->
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/80">
             <div class="space-y-1">
-              <label class="block text-xs font-bold text-slate-800 dark:text-slate-200">Your Name</label>
+              <label for="onboard-student-name" class="block text-xs font-bold text-slate-800 dark:text-slate-200">Your Name</label>
               <input id="onboard-student-name" type="text" placeholder="e.g. Student Name" class="w-full h-9 px-3 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-[#1a73e8]" />
             </div>
 
@@ -1574,7 +1574,7 @@
 
                 <!-- Subtle Optional Gemini Key Input -->
                 <div class="pt-1.5">
-                  <label class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">Optional Gemini API Key (Custom Studio Quota)</label>
+                  <label for="onboard-gemini-key" class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">Optional Gemini API Key (Custom Studio Quota)</label>
                   <input id="onboard-gemini-key" type="password" placeholder="AIzaSy... (optional — core features work without AI)" class="w-full h-8 px-2.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-blue-500" />
                   <button type="button" onclick="openGeminiKeyHelper()" class="mt-1 text-[10px] font-semibold text-blue-600 dark:text-blue-400 hover:underline">No key yet? Get a free one — no billing needed</button>
                 </div>
@@ -1643,7 +1643,7 @@
 
                 <!-- Optional Institution Name Input -->
                 <div class="pt-1.5">
-                  <label class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">Institution / University Name (Optional)</label>
+                  <label for="onboard-university-name" class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-0.5">Institution / University Name (Optional)</label>
                   <input id="onboard-university-name" type="text" placeholder="e.g. State University / College" class="w-full h-8 px-2.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none text-slate-900 dark:text-white focus:border-indigo-500" />
                 </div>
               </div>
@@ -1810,18 +1810,18 @@
 
         <div class="space-y-3 text-xs">
           <div>
-            <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Title</label>
+            <label for="create-ev-title" class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Title</label>
             <input id="create-ev-title" type="text" placeholder="e.g. Study Session: Midterm Prep" class="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg outline-none focus:border-[#1a73e8]" />
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Course</label>
+              <label for="create-ev-course" class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Course</label>
               <select id="create-ev-course" class="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
                 <option value="SELF">General Study Session</option>
               </select>
             </div>
             <div>
-              <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Type</label>
+              <label for="create-ev-type" class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Type</label>
               <select id="create-ev-type" class="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg outline-none bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
                 <option value="Study Session">Study Session</option>
                 <option value="Custom Quiz">Custom Quiz</option>
@@ -1832,20 +1832,20 @@
           </div>
           <div class="grid grid-cols-3 gap-2">
             <div>
-              <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Date</label>
+              <label for="create-ev-date" class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Date</label>
               <input id="create-ev-date" type="date" class="w-full px-2.5 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg outline-none tabular-nums" />
             </div>
             <div>
-              <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Start</label>
+              <label for="create-ev-start" class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Start</label>
               <input id="create-ev-start" type="time" value="16:00" class="w-full px-2.5 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg outline-none tabular-nums" />
             </div>
             <div>
-              <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">End</label>
+              <label for="create-ev-end" class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">End</label>
               <input id="create-ev-end" type="time" value="17:30" class="w-full px-2.5 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg outline-none tabular-nums" />
             </div>
           </div>
           <div>
-            <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Room / Location</label>
+            <label for="create-ev-room" class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Room / Location</label>
             <input id="create-ev-room" type="text" placeholder="Library / Study Hall" value="Library Study Room" class="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg outline-none" />
           </div>
         </div>
@@ -2566,11 +2566,11 @@
           </p>
           <div class="flex flex-wrap items-end gap-2">
             <div class="flex-1 min-w-[130px]">
-              <label class="block text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-0.5">Feed name</label>
+              <label for="feed-add-name" class="block text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-0.5">Feed name</label>
               <input id="feed-add-name" type="text" placeholder="University Timetable" class="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none" />
             </div>
             <div class="flex-1 min-w-[180px]">
-              <label class="block text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-0.5">.ics URL (https)</label>
+              <label for="feed-add-url" class="block text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-0.5">.ics URL (https)</label>
               <input id="feed-add-url" type="text" inputmode="url" placeholder="https://registrar.university.edu/timetable.ics" class="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none" />
             </div>
             <button type="button" onclick="addFeedFromSettings()" class="px-3 py-1.5 rounded-lg border border-cyan-300 dark:border-cyan-800 hover:bg-cyan-100 dark:hover:bg-cyan-900/40 text-cyan-800 dark:text-cyan-200 text-[11px] font-semibold transition cursor-pointer">Test & Add</button>
@@ -2719,11 +2719,11 @@
       <div class="p-6 space-y-4 overflow-y-auto flex-1">
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div class="sm:col-span-1">
-            <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Course Code</label>
+            <label for="add-course-id" class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Course Code</label>
             <input id="add-course-id" type="text" placeholder="e.g. CS 301" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:border-[#1a73e8]" />
           </div>
           <div class="sm:col-span-2">
-            <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Full Course Name</label>
+            <label for="add-course-name" class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Full Course Name</label>
             <input id="add-course-name" type="text" placeholder="e.g. Operating Systems" class="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:border-[#1a73e8]" />
           </div>
         </div>

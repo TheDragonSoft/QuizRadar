@@ -219,6 +219,26 @@ impl Store {
             .await
     }
 
+    /// Dismiss the conflict banner (`/api/conflicts/dismiss`).
+    pub async fn dismiss_conflicts(&self) -> Result<(), StoreError> {
+        self.run(move |db| {
+            let conn = db.conn();
+            let config = repo::ConfigRepo::new(conn);
+            config.set_bool("dismiss_conflict_banner", true)
+        })
+        .await
+    }
+
+    /// Read whether the conflict banner has been dismissed.
+    pub async fn get_dismiss_conflict_banner(&self) -> Result<bool, StoreError> {
+        self.run(move |db| {
+            let conn = db.conn();
+            let config = repo::ConfigRepo::new(conn);
+            config.dismiss_conflict_banner()
+        })
+        .await
+    }
+
     /// v4 backup import (one transaction; secrets dropped, documented).
     /// `reference_date` is pinned in the surface for future derived-field
     /// stamping but unused today (rows keep their stored derived values).

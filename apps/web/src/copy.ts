@@ -86,6 +86,117 @@ export const copy = {
     release: "Release to scan sources",
     syncing: "Scanning sources…",
   },
+
+  dashboard: {
+    kpiUpcomingTitle: "Next 7 Days",
+    kpiUpcomingEmpty: "Nothing scheduled in the next 7 days",
+    kpiReadinessTitle: "Exam Readiness",
+    kpiReadinessSubtext: "Mastery across all upcoming assessments",
+    kpiReadinessCounts: (done: number, total: number) =>
+      `${done} of ${total} topic${total === 1 ? "" : "s"} mastered`,
+    kpiSyncTitle: "Connected Sources",
+    kpiSyncActive: (count: number) => `${count} source${count === 1 ? "" : "s"} active`,
+    kpiSyncNone: "No sources connected",
+
+    subtabs: {
+      study: "Study",
+      assessments: "Assessments",
+      overview: "Overview",
+    },
+
+    conflictBanner: {
+      unresolvedTitle: (count: number) =>
+        `Exam Overload & Schedule Conflict Detected (${count} conflict${count > 1 ? "s" : ""})`,
+      autoScheduleAction: "Auto-Schedule Study Blocks",
+      mitigatedTitle: (count: number) =>
+        `Exam Overload Mitigated (${count} Active Study Preparation Blocks)`,
+      mitigatedBadge: "Protected",
+      mitigatedBody: (count: number) =>
+        `All ${count} exam cluster${count > 1 ? "s have" : " has"} dedicated 90-minute preparation blocks booked in your timetable to distribute your study load and prevent last-minute cramming.`,
+      viewOnCalendarAction: "View Blocks on Week Calendar",
+      dismissTitle: "Dismiss banner",
+    },
+
+    recommendationsTitle: "What Should I Study?",
+    recommendationsSubtitle:
+      "Prioritized study recommendations based on your upcoming exams and remaining topics",
+    recommendationsEmpty: "No active study recommendations. You're all caught up!",
+    scheduleAt: "@",
+    topicsCompletedProgress: (done: number, total: number) => `${done}/${total} topics`,
+
+    timelineTitle: "All Assessments",
+    timelineSubtitle: "Live radar of quizzes, assignments, midterms, and finals",
+    filterAll: "All",
+    filterUpcomingOnly: "All Upcoming",
+    sourcePillGmail: "Gmail",
+    sourcePillMoodle: "Moodle",
+    sourcePillTeams: "Teams",
+    sourcePillClassroom: "Classroom",
+    sourcePillManual: "Manual",
+    sourcePillFeed: "Feeds",
+  },
+
+  tasks: {
+    summaryLine: (pending: number, upcoming: number, hours: number | null) =>
+      hours !== null
+        ? `${pending} pending topics across ${upcoming} upcoming exams • Est. ${hours} hrs`
+        : `${pending} pending topics across ${upcoming} upcoming exams`,
+    filterAllCourses: "All Courses",
+    readinessTitle: "Exam Readiness",
+    avgBadge: "avg",
+    roadmapTitle: "Daily Study Roadmap",
+    todayBadge: "Today",
+    prepDay: (day: number, total: number) => `Prep day ${day} of ${total}`,
+    estHours: (hrs: number) => `${hrs} hr${hrs === 1 ? "" : "s"}`,
+  },
+
+  calendar: {
+    today: "Today",
+    prevWeek: "Previous week",
+    nextWeek: "Next week",
+    jumpToToday: "Jump to Today",
+    legendExam: "Exam / Quiz",
+    legendClass: "Class Slot",
+    legendCustom: "Custom / Study Block",
+    timeGutterAria: "Time of day",
+    daysHeaderAria: "Week days",
+  },
+
+  assessmentDetail: {
+    title: "Assessment Detail",
+    defaultSource: "Gmail Ingestion",
+    dateLabel: "Date & Time",
+    roomLabel: "Room / Location",
+    instructorLabel: "Instructor",
+    missingValue: "—",
+    topicsHeader: "Syllabus Topics",
+    topicsProgress: (done: number, total: number) => `${done} of ${total} topics completed`,
+    pomodoroAction: "Start Focus Pomodoro",
+    warningsHeader: "Warnings & Alerts",
+    examOverloadWarning:
+      "⚠️ EXAM OVERLOAD: Another assessment is scheduled within 36 hours of this exam!",
+    studyStrategyHeader: "Study Strategy & Guidance",
+    aiGuidanceFallback: "Analyzed from course schedule and academic syllabus.",
+    elearningLink: "Open in University E-Learning Portal",
+    actionsHeader: "Integrations & Export",
+    addToGcal: "Add to Google Calendar",
+    addedToGcal: "Synced to Google Calendar",
+    exportIcs: "Export .ics Calendar File",
+    gradeEditorHeader: "Grade Recording & What-If",
+    achievedScoreLabel: "Achieved Score",
+    maxScoreLabel: "Max Score",
+    weightageLabel: "Weightage (%)",
+    saveGradeAction: "Save Grade",
+    recordedStatus: (score: number, max: number, weight?: number | null) =>
+      weight != null ? `Recorded: ${score}/${max} (${weight}%)` : `Recorded: ${score}/${max}`,
+    notGradedStatus: "Not Graded",
+    whatIfHeader: "Grade Projection & What-If",
+    whatIfScoreInputLabel: "Planned score on this assessment (%):",
+    whatIfResult: (avg: number) => `→ avg ${avg}%`,
+    whatIfFirstItem: "First graded item in this course.",
+    whatIfEqualWeight: (count: number) => `Equal-weight average of ${count} graded items.`,
+    whatIfNote: "(honest equal-weight average projection across recorded grades)",
+  },
 } as const;
 
 export type Copy = typeof copy;

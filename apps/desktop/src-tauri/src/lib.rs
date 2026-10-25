@@ -93,6 +93,7 @@ pub fn run() -> tauri::Result<()> {
             commands::check_update,
             commands::export_backup_file,
             commands::import_backup_file,
+            commands::export_ics,
         ])
         .run(tauri::generate_context!())
 }

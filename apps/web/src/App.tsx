@@ -9,6 +9,11 @@ import { DashboardView, TasksView, CalendarView, FocusView } from "./views/views
 import { DevRig } from "./dev/DevRig";
 import { useAppStore, applyThemeToDocument, initDayRolloverWatchdog } from "./state/store";
 import type { View } from "./state/types";
+import { registerModal, type ModalComponent } from "./components/modalRegistry";
+import { AssessmentDetailModal } from "./components/AssessmentDetailModal";
+
+// Register default modal components
+registerModal("assessment-detail", AssessmentDetailModal as unknown as ModalComponent);
 
 const VIEWS: Record<View, React.ComponentType> = {
   dashboard: DashboardView,

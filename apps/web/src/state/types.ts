@@ -211,6 +211,7 @@ export interface DesktopConfig {
   dismissConflictBanner: boolean;
   syncedGcalMap: Record<string, string>;
   feeds: FeedConfig[];
+  customEvents: CustomCalendarEvent[];
   lastGmailSync?: string | null;
   lastGcalSync?: string | null;
   lastBackupPush?: string | null;

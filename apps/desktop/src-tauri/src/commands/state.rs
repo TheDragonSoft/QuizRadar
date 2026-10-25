@@ -38,6 +38,7 @@ pub struct DesktopConfig {
     pub dismiss_conflict_banner: bool,
     pub synced_gcal_map: HashMap<String, String>,
     pub feeds: Vec<FeedConfig>,
+    pub custom_events: Vec<CustomCalendarEvent>,
     pub last_gmail_sync: Option<String>,
     pub last_gcal_sync: Option<String>,
     pub last_backup_push: Option<String>,
@@ -161,9 +162,14 @@ pub async fn build_full_state(state: &AppState) -> Result<GetStatePayload, Strin
         moodle_url: None,
         moodle_ical_url: None,
         classroom_enabled: false,
-        dismiss_conflict_banner: false,
+        dismiss_conflict_banner: state
+            .store
+            .get_dismiss_conflict_banner()
+            .await
+            .unwrap_or(false),
         synced_gcal_map: HashMap::new(),
         feeds: snapshot.feeds.clone(),
+        custom_events: snapshot.custom_events.clone(),
         last_gmail_sync: None,
         last_gcal_sync: None,
         last_backup_push: None,
@@ -339,7 +345,38 @@ pub async fn dismiss_conflicts(
     pair_keys: Option<Vec<String>>,
 ) -> Result<GetStatePayload, String> {
     let _ = pair_keys;
+    state
+        .store
+        .dismiss_conflicts()
+        .await
+        .map_err(|e| format!("Failed to dismiss conflicts: {e}"))?;
     build_full_state(&state).await
+}
+
+#[tauri::command]
+pub async fn export_ics(
+    state: State<'_, AppState>,
+    assessment_id: Option<String>,
+) -> Result<String, String> {
+    let today = state.today();
+    let snapshot = state
+        .store
+        .load_state(today)
+        .await
+        .map_err(|e| format!("Failed to read state: {e}"))?;
+
+    match assessment_id {
+        Some(id) => {
+            let assessment = snapshot
+                .assessments
+                .into_iter()
+                .find(|a| a.id == id)
+                .ok_or_else(|| format!("Assessment not found: {id}"))?;
+            quizradar_core::cal::ics::export_ics_single(&assessment)
+                .map_err(|e| format!("Failed to export ICS: {e}"))
+        }
+        None => Ok(quizradar_core::cal::ics::export_ics_all(&snapshot.assessments)),
+    }
 }
 
 #[tauri::command]

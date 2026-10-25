@@ -320,11 +320,11 @@ pub async fn push_assessments_to_google_calendar(
         };
     }
 
-    let pending: Vec<(usize, &Assessment, Option<String>)> = assessments
+    let pending: Vec<(usize, Assessment, Option<String>)> = assessments
         .iter()
         .enumerate()
         .filter(|(_, item)| item.is_upcoming && item.date.is_some())
-        .map(|(index, item)| (index, item, synced_gcal_map.get(&item.id).cloned()))
+        .map(|(index, item)| (index, item.clone(), synced_gcal_map.get(&item.id).cloned()))
         .collect();
 
     let results: Vec<(usize, Outcome)> = futures::stream::iter(pending)
@@ -332,7 +332,7 @@ pub async fn push_assessments_to_google_calendar(
             (
                 index,
                 push_one(
-                    client, base_url, provider, capability, item, existing, offset,
+                    client, base_url, provider, capability, &item, existing, offset,
                 )
                 .await,
             )

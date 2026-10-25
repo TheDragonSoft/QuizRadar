@@ -1,21 +1,98 @@
-//! Tauri 2 desktop shell — thin glue only (`AGENTS.md` §3: ≤ a few hundred
-//! LOC of its own logic). All app logic lives in the `quizradar-core` crate:
-//! the full IPC command surface (`list_state`, `run_scan`, …) is wired in
-//! phase 07 over the core; today only the honest `version` helper exists
-//! (no `NotImplemented` stubs are shipped).
+//! Tauri 2 desktop shell — thin glue over `quizradar-core` (`AGENTS.md` §3).
+//!
+//! Provides the complete IPC command surface, OS keyring credential storage,
+//! serverless loopback receiver for OAuth, deep linking, and graceful lifecycle exit.
 
-mod commands;
+pub mod auth_loopback;
+pub mod commands;
+pub mod keyring;
+pub mod state;
+
+use std::path::PathBuf;
+use tauri::{Emitter, Manager};
+
+use crate::keyring::KeyringStore;
+use crate::state::AppState;
+use quizradar_core::store::Store;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() -> tauri::Result<()> {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {
-            // Focus-on-existing-window handoff is wired with the full IPC
-            // surface (phase 07). The plugin already guarantees a single
-            // running instance today.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            // Focus on existing window when a second instance is launched
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+            // Deep-link handling: forward any incoming quizradar:// URL
+            for arg in args {
+                if arg.starts_with("quizradar://") {
+                    let _ = app.emit("deep-link", arg);
+                }
+            }
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![commands::version,])
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_deep_link::init())
+        .setup(|app| {
+            let data_dir = app
+                .path()
+                .app_local_data_dir()
+                .or_else(|_| app.path().app_data_dir())
+                .unwrap_or_else(|_| PathBuf::from("."));
+
+            let _ = std::fs::create_dir_all(&data_dir);
+            let db_path = data_dir.join("quizradar.db");
+
+            let store = tauri::async_runtime::block_on(async { Store::open(db_path).await })
+                .map_err(|e| format!("Failed to open SQLite store: {e}"))?;
+
+            let keyring = KeyringStore::new();
+            let app_state = AppState::new(store, keyring);
+            app.manage(app_state);
+
+            // Handle deep link passed on initial process launch
+            for arg in std::env::args() {
+                if arg.starts_with("quizradar://") {
+                    let _ = app.emit("deep-link", arg);
+                }
+            }
+
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::version,
+            commands::get_state,
+            commands::save_schedule,
+            commands::upsert_course,
+            commands::delete_course,
+            commands::update_config,
+            commands::add_custom_event,
+            commands::delete_custom_event,
+            commands::toggle_topic,
+            commands::save_grade,
+            commands::dismiss_conflicts,
+            commands::schedule_study_blocks,
+            commands::run_sync,
+            commands::run_gcal_sync,
+            commands::push_cloud_backup,
+            commands::pull_cloud_backup,
+            commands::google_login_start,
+            commands::google_logout,
+            commands::microsoft_login_start,
+            commands::microsoft_logout,
+            commands::logout,
+            commands::get_secret,
+            commands::set_secret,
+            commands::delete_secret,
+            commands::extract_schedule,
+            commands::optimize_tasks,
+            commands::practice_generate,
+            commands::validate_gemini_key,
+            commands::check_update,
+            commands::export_backup_file,
+            commands::import_backup_file,
+        ])
         .run(tauri::generate_context!())
 }

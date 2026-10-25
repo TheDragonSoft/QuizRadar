@@ -70,8 +70,9 @@ pub async fn scan_classroom(
         format!("{error} (the Classroom scope may need granting at the next Google sign-in)")
     })?;
 
-    progress.emit("fetching", courses.len(), 0);
-    let per_course: Vec<(usize, Vec<Assessment>)> = futures::stream::iter(courses.iter())
+    let course_count = courses.len();
+    progress.emit("fetching", course_count, 0);
+    let per_course: Vec<(usize, Vec<Assessment>)> = futures::stream::iter(courses)
         .map(|course| async move {
             let Some(course_id) = course.get("id").and_then(Value::as_str) else {
                 return (0, Vec::new());
@@ -88,7 +89,7 @@ pub async fn scan_classroom(
             let scanned = items.len();
             let mapped = items
                 .iter()
-                .filter_map(|item| assessment_from_coursework(item, course, schedule, ref_date))
+                .filter_map(|item| assessment_from_coursework(item, &course, schedule, ref_date))
                 .collect::<Vec<_>>();
             (scanned, mapped)
         })
@@ -97,7 +98,7 @@ pub async fn scan_classroom(
         .await;
 
     let mut stats = ClassroomStats {
-        courses: courses.len(),
+        courses: course_count,
         ..ClassroomStats::default()
     };
     let mut assessments: Vec<Assessment> = Vec::new();
@@ -107,7 +108,7 @@ pub async fn scan_classroom(
     }
     stats.with_due_date = assessments.len();
 
-    progress.emit("done", assessments.len(), courses.len());
+    progress.emit("done", assessments.len(), course_count);
     Ok(ClassroomScan {
         assessments,
         stats,

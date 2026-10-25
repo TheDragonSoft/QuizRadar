@@ -95,7 +95,7 @@ pub async fn scan_feeds(
     local: FixedOffset,
     progress: &Progress<'_>,
 ) -> Result<FeedScan, String> {
-    let mut selected: Vec<&FeedConfig> = Vec::new();
+    let mut selected: Vec<FeedConfig> = Vec::new();
     let mut seen_urls: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut duplicate_urls = 0usize;
     for feed in feeds {
@@ -105,7 +105,7 @@ pub async fn scan_feeds(
             continue;
         }
         if selected.len() < MAX_FEEDS {
-            selected.push(feed);
+            selected.push(feed.clone());
         }
     }
     let overflow = feeds.len() - duplicate_urls - selected.len();

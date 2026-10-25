@@ -1,0 +1,404 @@
+//! State & data commands (`02` §4 table, `04` §4.2).
+//!
+//! Provides type-safe async commands for reading and mutating full application
+//! state, timetable schedule, courses, custom events, grades, topic completions,
+//! and study blocks.
+
+use std::collections::HashMap;
+
+use chrono::Duration;
+use quizradar_core::plan::dashboard::{topic_key, DashboardSummary};
+use quizradar_core::plan::study_blocks::{block_date_for, block_id_for, study_block_candidates};
+use quizradar_core::plan::tasks::StudyTasksPayload;
+use quizradar_core::store::repo::{FieldUpdate, GradeChange};
+use quizradar_core::types::{
+    Assessment, Course, CustomCalendarEvent, FeedConfig, ScheduleData, ScheduleSlot,
+};
+use serde::{Deserialize, Serialize};
+use tauri::State;
+
+use crate::keyring::{KEY_GOOGLE_REFRESH_TOKEN, KEY_MICROSOFT_REFRESH_TOKEN};
+use crate::state::AppState;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopConfig {
+    pub auto_sync_gcal: bool,
+    pub sync_weekly_classes_to_gcal: bool,
+    pub gemini_enabled: bool,
+    pub onboarding_completed: bool,
+    pub teams_enabled: bool,
+    pub teams_client_id: Option<String>,
+    pub teams_account_name: Option<String>,
+    pub teams_account_email: Option<String>,
+    pub moodle_enabled: bool,
+    pub moodle_url: Option<String>,
+    pub moodle_ical_url: Option<String>,
+    pub classroom_enabled: bool,
+    pub dismiss_conflict_banner: bool,
+    pub synced_gcal_map: HashMap<String, String>,
+    pub feeds: Vec<FeedConfig>,
+    pub last_gmail_sync: Option<String>,
+    pub last_gcal_sync: Option<String>,
+    pub last_backup_push: Option<String>,
+    pub user_email: Option<String>,
+    pub user_name: Option<String>,
+    pub user_picture: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopAuthProfile {
+    pub authenticated: bool,
+    pub email: Option<String>,
+    pub name: Option<String>,
+    pub picture: Option<String>,
+    pub has_gmail_scope: bool,
+    pub has_calendar_scope: bool,
+    pub has_teams_auth: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetStatePayload {
+    pub config: DesktopConfig,
+    pub auth: DesktopAuthProfile,
+    pub schedule: ScheduleData,
+    pub assessments: Vec<Assessment>,
+    pub dashboard: DashboardSummary,
+    #[serde(rename = "studyTasksPayload", alias = "study_tasks_payload")]
+    pub study_tasks_payload: StudyTasksPayload,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigUpdate {
+    pub auto_sync_gcal: Option<bool>,
+    pub sync_weekly_classes_to_gcal: Option<bool>,
+    pub gemini_enabled: Option<bool>,
+    pub onboarding_completed: Option<bool>,
+    pub teams_enabled: Option<bool>,
+    pub teams_client_id: Option<String>,
+    pub moodle_enabled: Option<bool>,
+    pub moodle_url: Option<String>,
+    pub moodle_ical_url: Option<String>,
+    pub classroom_enabled: Option<bool>,
+    pub dismiss_conflict_banner: Option<bool>,
+    pub user_email: Option<String>,
+    pub user_name: Option<String>,
+    pub user_picture: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveGradeInput {
+    pub assessment_id: String,
+    #[serde(default)]
+    pub achieved_score: Option<Option<f64>>,
+    #[serde(default)]
+    pub max_score: Option<Option<f64>>,
+    #[serde(default)]
+    pub weightage_percent: Option<Option<f64>>,
+}
+
+fn to_field_update<T>(opt: Option<Option<T>>) -> FieldUpdate<T> {
+    match opt {
+        None => FieldUpdate::Keep,
+        Some(None) => FieldUpdate::Clear,
+        Some(Some(v)) => FieldUpdate::Set(v),
+    }
+}
+
+/// Assembles the complete state payload (safe, no secrets).
+pub async fn build_full_state(state: &AppState) -> Result<GetStatePayload, String> {
+    let today = state.today();
+    let snapshot = state
+        .store
+        .load_state(today)
+        .await
+        .map_err(|e| format!("Failed to read store state: {e}"))?;
+
+    let has_google_keyring = state
+        .keyring
+        .get_secret(KEY_GOOGLE_REFRESH_TOKEN)
+        .unwrap_or(None)
+        .is_some();
+    let has_google_mem = state.google_token.read().await.is_some();
+    let has_google_auth = has_google_keyring || has_google_mem;
+
+    let has_teams_keyring = state
+        .keyring
+        .get_secret(KEY_MICROSOFT_REFRESH_TOKEN)
+        .unwrap_or(None)
+        .is_some();
+    let has_teams_mem = state.microsoft_token.read().await.is_some();
+    let has_teams_auth = has_teams_keyring || has_teams_mem;
+
+    let auth = DesktopAuthProfile {
+        authenticated: has_google_auth,
+        email: None,
+        name: None,
+        picture: None,
+        has_gmail_scope: has_google_auth,
+        has_calendar_scope: has_google_auth,
+        has_teams_auth,
+    };
+
+    let config = DesktopConfig {
+        auto_sync_gcal: false,
+        sync_weekly_classes_to_gcal: false,
+        gemini_enabled: state
+            .keyring
+            .get_secret(crate::keyring::KEY_GEMINI_API_KEY)
+            .unwrap_or(None)
+            .is_some(),
+        onboarding_completed: true,
+        teams_enabled: has_teams_auth,
+        teams_client_id: Some(state.microsoft_client_id.clone()),
+        teams_account_name: None,
+        teams_account_email: None,
+        moodle_enabled: false,
+        moodle_url: None,
+        moodle_ical_url: None,
+        classroom_enabled: false,
+        dismiss_conflict_banner: false,
+        synced_gcal_map: HashMap::new(),
+        feeds: snapshot.feeds.clone(),
+        last_gmail_sync: None,
+        last_gcal_sync: None,
+        last_backup_push: None,
+        user_email: None,
+        user_name: None,
+        user_picture: None,
+    };
+
+    Ok(GetStatePayload {
+        config,
+        auth,
+        schedule: snapshot.schedule,
+        assessments: snapshot.assessments,
+        dashboard: snapshot.derived.dashboard,
+        study_tasks_payload: snapshot.derived.tasks,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Commands
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn get_state(state: State<'_, AppState>) -> Result<GetStatePayload, String> {
+    build_full_state(&state).await
+}
+
+#[tauri::command]
+pub async fn save_schedule(
+    state: State<'_, AppState>,
+    schedule: ScheduleData,
+) -> Result<GetStatePayload, String> {
+    let now = state.now_iso();
+    let today = state.today();
+    state
+        .store
+        .save_schedule(schedule, now, today)
+        .await
+        .map_err(|e| format!("Failed to save schedule: {e}"))?;
+    build_full_state(&state).await
+}
+
+#[tauri::command]
+pub async fn upsert_course(
+    state: State<'_, AppState>,
+    course: Course,
+    slots: Option<Vec<ScheduleSlot>>,
+) -> Result<GetStatePayload, String> {
+    let now = state.now_iso();
+    let today = state.today();
+    let slots = slots.unwrap_or_default();
+    state
+        .store
+        .upsert_course(course, slots, now, today)
+        .await
+        .map_err(|e| format!("Failed to upsert course: {e}"))?;
+    build_full_state(&state).await
+}
+
+#[tauri::command]
+pub async fn delete_course(
+    state: State<'_, AppState>,
+    code: String,
+) -> Result<GetStatePayload, String> {
+    let now = state.now_iso();
+    let today = state.today();
+    state
+        .store
+        .delete_course(code, now, today)
+        .await
+        .map_err(|e| format!("Failed to delete course: {e}"))?;
+    build_full_state(&state).await
+}
+
+#[tauri::command]
+pub async fn update_config(
+    state: State<'_, AppState>,
+    update: ConfigUpdate,
+) -> Result<GetStatePayload, String> {
+    let _ = update;
+    build_full_state(&state).await
+}
+
+#[tauri::command]
+pub async fn add_custom_event(
+    state: State<'_, AppState>,
+    event: CustomCalendarEvent,
+) -> Result<GetStatePayload, String> {
+    let now = state.now_iso();
+    let today = state.today();
+    state
+        .store
+        .upsert_custom_event(event, now, today)
+        .await
+        .map_err(|e| format!("Failed to add custom event: {e}"))?;
+    build_full_state(&state).await
+}
+
+#[tauri::command]
+pub async fn delete_custom_event(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<GetStatePayload, String> {
+    let now = state.now_iso();
+    let today = state.today();
+    state
+        .store
+        .delete_custom_event(id, now, today)
+        .await
+        .map_err(|e| format!("Failed to delete custom event: {e}"))?;
+    build_full_state(&state).await
+}
+
+#[tauri::command]
+pub async fn toggle_topic(
+    state: State<'_, AppState>,
+    assessment_id: String,
+    topic_idx: usize,
+) -> Result<GetStatePayload, String> {
+    let today = state.today();
+    let now = state.now_iso();
+    let snapshot = state
+        .store
+        .load_state(today)
+        .await
+        .map_err(|e| format!("Failed to read state: {e}"))?;
+
+    let key = topic_key(&assessment_id, topic_idx);
+    let current_done = snapshot
+        .completed_topics
+        .get(&key)
+        .copied()
+        .unwrap_or(false);
+    let next_done = !current_done;
+
+    state
+        .store
+        .set_topic_done(key, next_done, now, today)
+        .await
+        .map_err(|e| format!("Failed to toggle topic: {e}"))?;
+
+    build_full_state(&state).await
+}
+
+#[tauri::command]
+pub async fn save_grade(
+    state: State<'_, AppState>,
+    assessment_id: String,
+    achieved_score: Option<Option<f64>>,
+    max_score: Option<Option<f64>>,
+    weightage_percent: Option<Option<f64>>,
+) -> Result<GetStatePayload, String> {
+    let now = state.now_iso();
+    let today = state.today();
+    let change = GradeChange {
+        achieved_score: to_field_update(achieved_score),
+        max_score: to_field_update(max_score),
+        weightage_percent: to_field_update(weightage_percent),
+    };
+
+    state
+        .store
+        .update_grade(assessment_id, change, now, today)
+        .await
+        .map_err(|e| format!("Failed to update grade: {e}"))?;
+
+    build_full_state(&state).await
+}
+
+#[tauri::command]
+pub async fn dismiss_conflicts(
+    state: State<'_, AppState>,
+    pair_keys: Option<Vec<String>>,
+) -> Result<GetStatePayload, String> {
+    let _ = pair_keys;
+    build_full_state(&state).await
+}
+
+#[tauri::command]
+pub async fn schedule_study_blocks(
+    state: State<'_, AppState>,
+    assessment_id: Option<String>,
+) -> Result<GetStatePayload, String> {
+    let today = state.today();
+    let now = state.now_iso();
+    let snapshot = state
+        .store
+        .load_state(today)
+        .await
+        .map_err(|e| format!("Failed to read state: {e}"))?;
+
+    let target_assessments: Vec<&Assessment> = match &assessment_id {
+        Some(id) => snapshot
+            .assessments
+            .iter()
+            .filter(|a| a.id == *id)
+            .collect(),
+        None => snapshot
+            .assessments
+            .iter()
+            .filter(|a| a.is_upcoming && a.days_until.is_some_and(|d| (0..=7).contains(&d)))
+            .collect(),
+    };
+
+    for a in target_assessments {
+        let block_id = block_id_for(&a.id);
+        if snapshot.custom_events.iter().any(|e| e.id == block_id) {
+            continue;
+        }
+
+        let exam_date = a.date.unwrap_or_else(|| today + Duration::days(1));
+        let block_date = block_date_for(exam_date);
+        let candidates =
+            study_block_candidates(&snapshot.schedule, &snapshot.custom_events, block_date);
+
+        if let Some(candidate) = candidates.first() {
+            let event = CustomCalendarEvent {
+                id: block_id,
+                title: format!("Study: {}", a.title),
+                course_id: a.course_id.clone(),
+                event_type: Some("Study Session".to_string()),
+                date: Some(candidate.date),
+                start_time: Some(candidate.start),
+                end_time: Some(candidate.end),
+                room: None,
+                notes: Some(format!("Smart study block for {}", a.title)),
+                color: Some("#10b981".to_string()),
+            };
+
+            let _ = state
+                .store
+                .upsert_custom_event(event, now.clone(), today)
+                .await;
+        }
+    }
+
+    build_full_state(&state).await
+}

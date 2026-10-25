@@ -1,0 +1,324 @@
+//! Sync & scanning commands (`02` §4 table, `04` §4.5, `04` §4.6).
+//!
+//! Bridges the core sync orchestrator, Google Calendar push, and Google Drive
+//! appDataFolder cloud backup to Tauri IPC with live progress streaming.
+
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+
+use quizradar_core::cal::gcal::{
+    push_assessments_to_google_calendar, GCalSyncReport, GCAL_API_BASE,
+};
+use quizradar_core::sources::sync::{run_sync as core_run_sync, SyncConfig, SyncInput};
+use quizradar_core::sources::{SourceProgress, TokenProvider};
+use quizradar_core::store::backup::{DriveBackupClient, MergeReport, PushOutcome};
+use quizradar_core::types::Course;
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, State};
+
+use crate::state::{AppState, DesktopGoogleTokenProvider, DesktopMicrosoftTokenProvider};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopSourceProgress {
+    pub name: String,
+    pub stage: String,
+    pub found: usize,
+    pub done: usize,
+}
+
+impl From<SourceProgress> for DesktopSourceProgress {
+    fn from(p: SourceProgress) -> Self {
+        Self {
+            name: p.name,
+            stage: p.stage.to_string(),
+            found: p.found,
+            done: p.done,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncResult {
+    pub success: bool,
+    pub total_new: usize,
+    pub total_updated: usize,
+    pub notes: Vec<String>,
+    pub discovered_teams: Vec<Course>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopGCalSyncReport {
+    pub success: bool,
+    pub created: usize,
+    pub updated: usize,
+    pub total_pushable: usize,
+    pub failed_ids: Vec<String>,
+    pub skipped_undated: usize,
+    pub needs_scope: bool,
+    pub message: String,
+}
+
+impl From<GCalSyncReport> for DesktopGCalSyncReport {
+    fn from(r: GCalSyncReport) -> Self {
+        Self {
+            success: r.success,
+            created: r.created,
+            updated: r.updated,
+            total_pushable: r.total_pushable,
+            failed_ids: r.failed_ids,
+            skipped_undated: r.skipped_undated,
+            needs_scope: r.needs_scope,
+            message: r.message,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopPushOutcome {
+    pub created: bool,
+    pub file_id: Option<String>,
+}
+
+impl From<PushOutcome> for DesktopPushOutcome {
+    fn from(p: PushOutcome) -> Self {
+        match p {
+            PushOutcome::Created => Self {
+                created: true,
+                file_id: None,
+            },
+            PushOutcome::Updated { file_id } => Self {
+                created: false,
+                file_id: Some(file_id),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudPullResult {
+    pub found: bool,
+    pub merge_report: Option<MergeReport>,
+}
+
+// ---------------------------------------------------------------------------
+// Inner testable execution
+// ---------------------------------------------------------------------------
+
+pub async fn run_sync_inner(
+    progress_emit: Option<Arc<dyn Fn(SourceProgress) + Send + Sync>>,
+    state: &AppState,
+) -> Result<SyncResult, String> {
+    if state
+        .sync_in_flight
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return Err("A sync operation is already in progress.".to_string());
+    }
+
+    struct FlightGuard(Arc<std::sync::atomic::AtomicBool>);
+    impl Drop for FlightGuard {
+        fn drop(&mut self) {
+            self.0.store(false, Ordering::Release);
+        }
+    }
+    let _guard = FlightGuard(Arc::clone(&state.sync_in_flight));
+
+    let today = state.today();
+    let now = state.now_iso();
+    let snapshot = state
+        .store
+        .load_state(today)
+        .await
+        .map_err(|e| format!("Failed to read store state: {e}"))?;
+
+    let google_provider: Option<Arc<dyn TokenProvider>> = if state
+        .keyring
+        .get_secret(crate::keyring::KEY_GOOGLE_REFRESH_TOKEN)
+        .unwrap_or(None)
+        .is_some()
+        || state.google_token.read().await.is_some()
+    {
+        Some(Arc::new(DesktopGoogleTokenProvider {
+            state: state.clone(),
+        }))
+    } else {
+        None
+    };
+
+    let microsoft_provider: Option<Arc<dyn TokenProvider>> = if state
+        .keyring
+        .get_secret(crate::keyring::KEY_MICROSOFT_REFRESH_TOKEN)
+        .unwrap_or(None)
+        .is_some()
+        || state.microsoft_token.read().await.is_some()
+    {
+        Some(Arc::new(DesktopMicrosoftTokenProvider {
+            state: state.clone(),
+        }))
+    } else {
+        None
+    };
+
+    let config = SyncConfig {
+        gmail_enabled: google_provider.is_some(),
+        teams_enabled: microsoft_provider.is_some(),
+        classroom_enabled: google_provider.is_some(),
+        moodle_enabled: false,
+        feeds: snapshot.feeds.clone(),
+        google: google_provider,
+        microsoft: microsoft_provider,
+        moodle_ical_url: None,
+        moodle_rest_url: None,
+        moodle_rest_token: None,
+    };
+
+    let input = SyncInput {
+        schedule: snapshot.schedule,
+        emails_cache: Vec::new(),
+        existing_assessments: snapshot.assessments,
+        reference_date: today,
+        local: state.local_offset(),
+    };
+
+    let progress_cb = move |progress: SourceProgress| {
+        if let Some(emit) = &progress_emit {
+            emit(progress);
+        }
+    };
+
+    let report = core_run_sync(&config, &input, None, &progress_cb).await?;
+
+    if !report.assessments.is_empty() {
+        state
+            .store
+            .replace_assessments(report.assessments, now, today)
+            .await
+            .map_err(|e| format!("Failed to save merged assessments: {e}"))?;
+    }
+
+    let discovered_teams = report
+        .discovered_teams
+        .map(|d| d.courses)
+        .unwrap_or_default();
+
+    Ok(SyncResult {
+        success: true,
+        total_new: report.total_new,
+        total_updated: report.total_updated,
+        notes: report.notes,
+        discovered_teams,
+    })
+}
+
+pub async fn run_gcal_sync_inner(state: &AppState) -> Result<DesktopGCalSyncReport, String> {
+    let today = state.today();
+    let snapshot = state
+        .store
+        .load_state(today)
+        .await
+        .map_err(|e| format!("Failed to read store state: {e}"))?;
+
+    let provider = DesktopGoogleTokenProvider {
+        state: state.clone(),
+    };
+    let synced_map = std::collections::HashMap::new();
+    let offset = state.local_offset();
+    let offset_fn = move || offset;
+
+    let report = push_assessments_to_google_calendar(
+        &state.http_client,
+        GCAL_API_BASE,
+        &provider,
+        &snapshot.assessments,
+        &synced_map,
+        &offset_fn,
+    )
+    .await;
+
+    Ok(DesktopGCalSyncReport::from(report))
+}
+
+// ---------------------------------------------------------------------------
+// Commands
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn run_sync(app: AppHandle, state: State<'_, AppState>) -> Result<SyncResult, String> {
+    let state_clone = state.inner().clone();
+    let app_handle = app.clone();
+    let emit_fn: Arc<dyn Fn(SourceProgress) + Send + Sync> = Arc::new(move |progress| {
+        let _ = app_handle.emit("source-progress", DesktopSourceProgress::from(progress));
+    });
+
+    tokio::task::spawn(async move { run_sync_inner(Some(emit_fn), &state_clone).await })
+        .await
+        .map_err(|e| format!("Sync task joined with error: {e}"))?
+}
+
+#[tauri::command]
+pub async fn run_gcal_sync(state: State<'_, AppState>) -> Result<DesktopGCalSyncReport, String> {
+    let state_clone = state.inner().clone();
+    tokio::task::spawn(async move { run_gcal_sync_inner(&state_clone).await })
+        .await
+        .map_err(|e| format!("GCal sync task joined with error: {e}"))?
+}
+
+#[tauri::command]
+pub async fn push_cloud_backup(state: State<'_, AppState>) -> Result<DesktopPushOutcome, String> {
+    let access_token = state.get_google_access_token().await?;
+    let client = DriveBackupClient::new(access_token)
+        .map_err(|e| format!("Failed to initialize Drive client: {e}"))?;
+
+    let now = state.now_iso();
+    let payload = state
+        .store
+        .build_backup_payload("quizradar-desktop".to_string(), now)
+        .await
+        .map_err(|e| format!("Failed to build backup payload: {e}"))?;
+
+    let outcome = client
+        .push(&payload)
+        .await
+        .map_err(|e| format!("Failed to push backup to Google Drive: {e}"))?;
+
+    Ok(DesktopPushOutcome::from(outcome))
+}
+
+#[tauri::command]
+pub async fn pull_cloud_backup(state: State<'_, AppState>) -> Result<CloudPullResult, String> {
+    let access_token = state.get_google_access_token().await?;
+    let client = DriveBackupClient::new(access_token)
+        .map_err(|e| format!("Failed to initialize Drive client: {e}"))?;
+
+    let maybe_payload = client
+        .pull()
+        .await
+        .map_err(|e| format!("Failed to pull backup from Google Drive: {e}"))?;
+
+    match maybe_payload {
+        Some(payload) => {
+            let now = state.now_iso();
+            let today = state.today();
+            let merge_report = state
+                .store
+                .merge_backup(payload, now, today)
+                .await
+                .map_err(|e| format!("Failed to merge cloud backup: {e}"))?;
+
+            Ok(CloudPullResult {
+                found: true,
+                merge_report: Some(merge_report),
+            })
+        }
+        None => Ok(CloudPullResult {
+            found: false,
+            merge_report: None,
+        }),
+    }
+}

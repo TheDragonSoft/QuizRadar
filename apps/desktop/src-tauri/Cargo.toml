@@ -16,9 +16,20 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde.workspace = true
 serde_json.workspace = true
+chrono.workspace = true
+reqwest.workspace = true
+thiserror.workspace = true
+
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-deep-link = "2"
+
+keyring = { version = "4.2", default-features = true }
+tokio = { version = "1", features = ["sync", "rt", "net", "io-util", "time"] }
+futures = "0.3"
+
 quizradar-core = { path = "../../../core" }
 
 [lints.rust]

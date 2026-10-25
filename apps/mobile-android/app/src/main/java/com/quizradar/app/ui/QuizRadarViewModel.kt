@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.quizradar.app.core.QuizRadarCore
 import com.quizradar.app.model.AppSnapshotModel
+import com.quizradar.app.model.CustomEventModel
 import com.quizradar.app.model.PracticeQuizModel
 import com.quizradar.app.model.QuizRadarJsonParser
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -78,6 +79,28 @@ class QuizRadarViewModel(
 
     private val _activePomodoroTopic = MutableStateFlow<String?>(null)
     val activePomodoroTopic: StateFlow<String?> = _activePomodoroTopic.asStateFlow()
+
+    private val _activeCreateEventDraft = MutableStateFlow<com.quizradar.app.ui.share.SharedEventDraft?>(null)
+    val activeCreateEventDraft: StateFlow<com.quizradar.app.ui.share.SharedEventDraft?> = _activeCreateEventDraft.asStateFlow()
+
+    private val _toastMessage = MutableStateFlow<String?>(null)
+    val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
+
+    fun openCreateEventDraft(draft: com.quizradar.app.ui.share.SharedEventDraft) {
+        _activeCreateEventDraft.value = draft
+    }
+
+    fun dismissCreateEventDraft() {
+        _activeCreateEventDraft.value = null
+    }
+
+    fun showToast(message: String) {
+        _toastMessage.value = message
+    }
+
+    fun clearToast() {
+        _toastMessage.value = null
+    }
 
     init {
         loadState()
@@ -358,6 +381,32 @@ class QuizRadarViewModel(
                     val snapshot = QuizRadarJsonParser.parseAppSnapshot(updatedState)
                     _uiState.value = UiState.Ready(snapshot)
                 }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    fun addCustomEvent(event: CustomEventModel) {
+        viewModelScope.launch {
+            try {
+                val refDate = clockDate()
+                val eventJson =
+                    JSONObject().apply {
+                        put("id", event.id)
+                        put("title", event.title)
+                        put("course_id", event.courseId)
+                        put("event_type", event.eventType ?: "Custom")
+                        put("date", event.dateIso?.toString())
+                        put("start_time", event.startTime)
+                        put("end_time", event.endTime)
+                        put("room", event.room)
+                        put("notes", event.notes)
+                        put("color", event.color ?: "#db2777")
+                    }.toString()
+                val updatedJson = core.upsertCustomEvent(eventJson, refDate)
+                val snapshot = QuizRadarJsonParser.parseAppSnapshot(updatedJson)
+                _uiState.value = UiState.Ready(snapshot)
+                _activeCreateEventDraft.value = null
             } catch (_: Exception) {
             }
         }

@@ -1,5 +1,12 @@
 //! UniFFI binding module for Android and Kotlin integration.
 
+use crate::auth::pkce::{random_state, PkceChallenge};
+use crate::auth::providers::{
+    google_authorize_url, google_token_exchange_params, google_union_scopes,
+    microsoft_authorize_url, microsoft_token_exchange_params, microsoft_union_scopes,
+    AuthorizeRequest, GoogleCapability, MicrosoftCapability, TokenExchangeRequest,
+    GOOGLE_TOKEN_URL, MICROSOFT_TOKEN_URL,
+};
 use crate::cal::ics::{export_ics_all, export_ics_single};
 use crate::parse::email::parse_email_announcement;
 use crate::parse::ics::{parse_ics_assessments, IcsOrigin};
@@ -222,6 +229,181 @@ pub fn merge_sync_assessments(
         }
     });
     Ok(serde_json::to_string(&payload)?)
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct OAuthUrlPayload {
+    pub url: String,
+    pub verifier: String,
+    pub state: String,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct OAuthTokensPayload {
+    pub access_token: String,
+    pub refresh_token: Option<String>,
+    pub expires_in: Option<u64>,
+}
+
+#[uniffi::export]
+pub fn build_google_auth_url(
+    client_id: String,
+    redirect_uri: String,
+) -> Result<String, QuizRadarFfiError> {
+    let pkce = PkceChallenge::generate()
+        .map_err(|e| QuizRadarFfiError::Validation { msg: e.to_string() })?;
+    let verifier = pkce.verifier().to_string();
+    let state = random_state()
+        .map_err(|e| QuizRadarFfiError::Validation { msg: e.to_string() })?;
+    let scopes = google_union_scopes(&[
+        GoogleCapability::GmailRead,
+        GoogleCapability::UserProfile,
+        GoogleCapability::CalendarEvents,
+        GoogleCapability::DriveAppdata,
+        GoogleCapability::ClassroomRead,
+    ]);
+    let req = AuthorizeRequest {
+        client_id: &client_id,
+        redirect_uri: &redirect_uri,
+        scopes: &scopes,
+        state: &state,
+        code_challenge: pkce.challenge(),
+    };
+    let url = google_authorize_url(&req)
+        .map_err(|e| QuizRadarFfiError::Validation { msg: e.to_string() })?;
+    let payload = OAuthUrlPayload {
+        url,
+        verifier,
+        state,
+    };
+    Ok(serde_json::to_string(&payload)?)
+}
+
+#[uniffi::export]
+pub fn build_microsoft_auth_url(
+    client_id: String,
+    redirect_uri: String,
+) -> Result<String, QuizRadarFfiError> {
+    let pkce = PkceChallenge::generate()
+        .map_err(|e| QuizRadarFfiError::Validation { msg: e.to_string() })?;
+    let verifier = pkce.verifier().to_string();
+    let state = random_state()
+        .map_err(|e| QuizRadarFfiError::Validation { msg: e.to_string() })?;
+    let scopes = microsoft_union_scopes(&[
+        MicrosoftCapability::OfflineAccess,
+        MicrosoftCapability::UserProfile,
+        MicrosoftCapability::MailRead,
+        MicrosoftCapability::CalendarsRead,
+    ]);
+    let req = AuthorizeRequest {
+        client_id: &client_id,
+        redirect_uri: &redirect_uri,
+        scopes: &scopes,
+        state: &state,
+        code_challenge: pkce.challenge(),
+    };
+    let url = microsoft_authorize_url(&req)
+        .map_err(|e| QuizRadarFfiError::Validation { msg: e.to_string() })?;
+    let payload = OAuthUrlPayload {
+        url,
+        verifier,
+        state,
+    };
+    Ok(serde_json::to_string(&payload)?)
+}
+
+#[uniffi::export]
+pub fn exchange_oauth_code(
+    provider: String,
+    client_id: String,
+    code: String,
+    redirect_uri: String,
+    code_verifier: String,
+    token_endpoint_override: Option<String>,
+) -> Result<String, QuizRadarFfiError> {
+    let exchange_req = TokenExchangeRequest {
+        client_id: &client_id,
+        code: &code,
+        redirect_uri: &redirect_uri,
+        code_verifier: &code_verifier,
+    };
+
+    let (default_endpoint, form_params) = match provider.to_lowercase().as_str() {
+        "google" => (
+            GOOGLE_TOKEN_URL,
+            google_token_exchange_params(&exchange_req),
+        ),
+        "microsoft" => (
+            MICROSOFT_TOKEN_URL,
+            microsoft_token_exchange_params(&exchange_req),
+        ),
+        other => {
+            return Err(QuizRadarFfiError::Validation {
+                msg: format!("Unsupported OAuth provider: {other}"),
+            })
+        }
+    };
+
+    let endpoint = token_endpoint_override.as_deref().unwrap_or(default_endpoint);
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| QuizRadarFfiError::Store {
+            msg: format!("Failed to create tokio runtime: {e}"),
+        })?;
+
+    rt.block_on(async {
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(endpoint)
+            .form(&form_params)
+            .send()
+            .await
+            .map_err(|e| QuizRadarFfiError::Store {
+                msg: format!("OAuth token request failed: {e}"),
+            })?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(QuizRadarFfiError::Validation {
+                msg: format!("OAuth token exchange returned {status}: {body}"),
+            });
+        }
+
+        let token_json: serde_json::Value =
+            resp.json().await.map_err(|e| QuizRadarFfiError::Serialization {
+                msg: format!("Failed to parse token response: {e}"),
+            })?;
+
+        let access_token = token_json["access_token"]
+            .as_str()
+            .ok_or_else(|| QuizRadarFfiError::Validation {
+                msg: "Missing access_token in token response".to_string(),
+            })?
+            .to_string();
+
+        let refresh_token = token_json["refresh_token"].as_str().map(|s| s.to_string());
+        let expires_in = token_json["expires_in"].as_u64();
+
+        let payload = OAuthTokensPayload {
+            access_token,
+            refresh_token,
+            expires_in,
+        };
+        Ok(serde_json::to_string(&payload)?)
+    })
+}
+
+#[uniffi::export]
+pub fn notification_id_for(assessment_id: String, kind: String) -> i32 {
+    let mut hash: u32 = 0x811c9dc5;
+    for byte in format!("{kind}::{assessment_id}").bytes() {
+        hash ^= byte as u32;
+        hash = hash.wrapping_mul(0x01000193);
+    }
+    (hash & 0x7fffffff) as i32
 }
 
 /// Thread-safe NativeStore handle wrapping core `Store`.

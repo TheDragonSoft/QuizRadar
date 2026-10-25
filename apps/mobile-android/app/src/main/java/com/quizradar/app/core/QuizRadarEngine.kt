@@ -1,6 +1,8 @@
 package com.quizradar.app.core
 
 import android.content.Context
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDate
 
@@ -200,6 +202,47 @@ class QuizRadarEngine(
         incomingJson: String,
     ): String {
         return mergeSyncAssessments(existingJson, incomingJson)
+    }
+
+    override fun buildGoogleAuthUrl(
+        clientId: String,
+        redirectUri: String,
+    ): String {
+        return com.quizradar.app.core.buildGoogleAuthUrl(clientId, redirectUri)
+    }
+
+    override fun buildMicrosoftAuthUrl(
+        clientId: String,
+        redirectUri: String,
+    ): String {
+        return com.quizradar.app.core.buildMicrosoftAuthUrl(clientId, redirectUri)
+    }
+
+    override suspend fun exchangeOAuthCode(
+        provider: String,
+        clientId: String,
+        code: String,
+        redirectUri: String,
+        codeVerifier: String,
+        tokenEndpointOverride: String?,
+    ): String {
+        return withContext(Dispatchers.IO) {
+            com.quizradar.app.core.exchangeOauthCode(
+                provider = provider,
+                clientId = clientId,
+                code = code,
+                redirectUri = redirectUri,
+                codeVerifier = codeVerifier,
+                tokenEndpointOverride = tokenEndpointOverride,
+            )
+        }
+    }
+
+    override fun notificationIdFor(
+        assessmentId: String,
+        kind: String,
+    ): Int {
+        return com.quizradar.app.core.notificationIdFor(assessmentId, kind)
     }
 
     companion object {

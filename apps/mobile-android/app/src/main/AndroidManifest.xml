@@ -14,16 +14,53 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- Custom-scheme PKCE OAuth redirect (RFC 8252) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="com.quizradar.app"
+                    android:host="oauth" />
+            </intent-filter>
+
+            <!-- Pairing deep link com.quizradar.app://pair -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="com.quizradar.app"
+                    android:host="pair" />
+            </intent-filter>
+
+            <!-- Share-sheet ingest for announcement text / emails -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
 
-        <!-- Custom-scheme PKCE OAuth redirect, share-sheet ingest and the
-             Glance widget receiver are native-edge work that lands in
-             phase 14 (prompts/p14-android-native.md) — declared then, not now. -->
+        <!-- 2x1 Glance Countdown Widget -->
+        <receiver
+            android:name=".glance.QuizRadarWidgetReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/quizradar_widget_info" />
+        </receiver>
+
     </application>
 
 </manifest>

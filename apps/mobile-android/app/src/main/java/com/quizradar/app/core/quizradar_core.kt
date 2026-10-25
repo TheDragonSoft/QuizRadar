@@ -777,6 +777,14 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -830,6 +838,10 @@ internal interface UniffiLib : Library {
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_upsert_custom_event(`ptr`: Pointer,`eventJson`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
+    fun uniffi_quizradar_core_fn_func_build_google_auth_url(`clientId`: RustBuffer.ByValue,`redirectUri`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_quizradar_core_fn_func_build_microsoft_auth_url(`clientId`: RustBuffer.ByValue,`redirectUri`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_core_version(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_derive_dashboard_summary(`assessmentsJson`: RustBuffer.ByValue,`topicsJson`: RustBuffer.ByValue,`eventsJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -837,6 +849,8 @@ internal interface UniffiLib : Library {
     fun uniffi_quizradar_core_fn_func_derive_study_tasks(`assessmentsJson`: RustBuffer.ByValue,`topicsJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_detect_schedule_conflicts(`assessmentsJson`: RustBuffer.ByValue,`eventsJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_quizradar_core_fn_func_exchange_oauth_code(`provider`: RustBuffer.ByValue,`clientId`: RustBuffer.ByValue,`code`: RustBuffer.ByValue,`redirectUri`: RustBuffer.ByValue,`codeVerifier`: RustBuffer.ByValue,`tokenEndpointOverride`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_export_ics_calendar(`assessmentsJson`: RustBuffer.ByValue,`assessmentId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -846,6 +860,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_merge_sync_assessments(`existingJson`: RustBuffer.ByValue,`incomingJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_quizradar_core_fn_func_notification_id_for(`assessmentId`: RustBuffer.ByValue,`kind`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Int
     fun uniffi_quizradar_core_fn_func_open_in_memory_native_store(uniffi_out_err: UniffiRustCallStatus, 
     ): Pointer
     fun uniffi_quizradar_core_fn_func_open_native_store(`dbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -968,6 +984,10 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_quizradar_core_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_quizradar_core_checksum_func_build_google_auth_url(
+    ): Short
+    fun uniffi_quizradar_core_checksum_func_build_microsoft_auth_url(
+    ): Short
     fun uniffi_quizradar_core_checksum_func_core_version(
     ): Short
     fun uniffi_quizradar_core_checksum_func_derive_dashboard_summary(
@@ -976,6 +996,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_quizradar_core_checksum_func_detect_schedule_conflicts(
     ): Short
+    fun uniffi_quizradar_core_checksum_func_exchange_oauth_code(
+    ): Short
     fun uniffi_quizradar_core_checksum_func_export_ics_calendar(
     ): Short
     fun uniffi_quizradar_core_checksum_func_generate_practice_mcq(
@@ -983,6 +1005,8 @@ internal interface UniffiLib : Library {
     fun uniffi_quizradar_core_checksum_func_generate_study_blocks_for_exam(
     ): Short
     fun uniffi_quizradar_core_checksum_func_merge_sync_assessments(
+    ): Short
+    fun uniffi_quizradar_core_checksum_func_notification_id_for(
     ): Short
     fun uniffi_quizradar_core_checksum_func_open_in_memory_native_store(
     ): Short
@@ -1041,6 +1065,12 @@ private fun uniffiCheckContractApiVersion(lib: UniffiLib) {
 
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: UniffiLib) {
+    if (lib.uniffi_quizradar_core_checksum_func_build_google_auth_url() != 30795.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_func_build_microsoft_auth_url() != 47571.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_quizradar_core_checksum_func_core_version() != 41050.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1053,6 +1083,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_quizradar_core_checksum_func_detect_schedule_conflicts() != 35150.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_quizradar_core_checksum_func_exchange_oauth_code() != 16759.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_quizradar_core_checksum_func_export_ics_calendar() != 50302.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1063,6 +1096,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_func_merge_sync_assessments() != 16001.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_func_notification_id_for() != 14410.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_func_open_in_memory_native_store() != 63271.toShort()) {
@@ -1211,6 +1247,29 @@ inline fun <T : Disposable?, R> T.use(block: (T) -> R) =
  * @suppress
  * */
 object NoPointer
+
+/**
+ * @suppress
+ */
+public object FfiConverterInt: FfiConverter<Int, Int> {
+    override fun lift(value: Int): Int {
+        return value
+    }
+
+    override fun read(buf: ByteBuffer): Int {
+        return buf.getInt()
+    }
+
+    override fun lower(value: Int): Int {
+        return value
+    }
+
+    override fun allocationSize(value: Int) = 4UL
+
+    override fun write(value: Int, buf: ByteBuffer) {
+        buf.putInt(value)
+    }
+}
 
 /**
  * @suppress
@@ -2144,6 +2203,26 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
 
 
 
+
+    @Throws(QuizRadarFfiException::class) fun `buildGoogleAuthUrl`(`clientId`: kotlin.String, `redirectUri`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(QuizRadarFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_build_google_auth_url(
+        FfiConverterString.lower(`clientId`),FfiConverterString.lower(`redirectUri`),_status)
+}
+    )
+    }
+    
+
+    @Throws(QuizRadarFfiException::class) fun `buildMicrosoftAuthUrl`(`clientId`: kotlin.String, `redirectUri`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(QuizRadarFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_build_microsoft_auth_url(
+        FfiConverterString.lower(`clientId`),FfiConverterString.lower(`redirectUri`),_status)
+}
+    )
+    }
+    
  fun `coreVersion`(): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
@@ -2184,6 +2263,16 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
     }
     
 
+    @Throws(QuizRadarFfiException::class) fun `exchangeOauthCode`(`provider`: kotlin.String, `clientId`: kotlin.String, `code`: kotlin.String, `redirectUri`: kotlin.String, `codeVerifier`: kotlin.String, `tokenEndpointOverride`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(QuizRadarFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_exchange_oauth_code(
+        FfiConverterString.lower(`provider`),FfiConverterString.lower(`clientId`),FfiConverterString.lower(`code`),FfiConverterString.lower(`redirectUri`),FfiConverterString.lower(`codeVerifier`),FfiConverterOptionalString.lower(`tokenEndpointOverride`),_status)
+}
+    )
+    }
+    
+
     @Throws(QuizRadarFfiException::class) fun `exportIcsCalendar`(`assessmentsJson`: kotlin.String, `assessmentId`: kotlin.String?): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCallWithError(QuizRadarFfiException) { _status ->
@@ -2219,6 +2308,15 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
     uniffiRustCallWithError(QuizRadarFfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_merge_sync_assessments(
         FfiConverterString.lower(`existingJson`),FfiConverterString.lower(`incomingJson`),_status)
+}
+    )
+    }
+    
+ fun `notificationIdFor`(`assessmentId`: kotlin.String, `kind`: kotlin.String): kotlin.Int {
+            return FfiConverterInt.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_notification_id_for(
+        FfiConverterString.lower(`assessmentId`),FfiConverterString.lower(`kind`),_status)
 }
     )
     }

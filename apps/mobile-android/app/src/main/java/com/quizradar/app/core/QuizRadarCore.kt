@@ -136,4 +136,28 @@ interface QuizRadarCore {
         existingJson: String,
         incomingJson: String,
     ): String
+
+    fun buildGoogleAuthUrl(
+        clientId: String,
+        redirectUri: String,
+    ): String
+
+    fun buildMicrosoftAuthUrl(
+        clientId: String,
+        redirectUri: String,
+    ): String
+
+    suspend fun exchangeOAuthCode(
+        provider: String,
+        clientId: String,
+        code: String,
+        redirectUri: String,
+        codeVerifier: String,
+        tokenEndpointOverride: String? = null,
+    ): String
+
+    fun notificationIdFor(
+        assessmentId: String,
+        kind: String,
+    ): Int
 }

@@ -1,5 +1,6 @@
 package com.quizradar.app.ui
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,6 +20,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,7 +29,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import com.quizradar.app.ui.detail.AssessmentDetailSheet
+import com.quizradar.app.ui.detail.CreateEventSheet
 import com.quizradar.app.ui.screens.CalendarScreen
 import com.quizradar.app.ui.screens.DashboardScreen
 import com.quizradar.app.ui.screens.FocusScreen
@@ -50,12 +54,26 @@ fun AppScaffold(viewModel: QuizRadarViewModel) {
     var selectedTab by rememberSaveable { mutableStateOf(TABS.first().label) }
     val uiState by viewModel.uiState.collectAsState()
     val activeDetailId by viewModel.activeDetailAssessmentId.collectAsState()
+    val activeDraft by viewModel.activeCreateEventDraft.collectAsState()
+    val toastMessage by viewModel.toastMessage.collectAsState()
+    val context = LocalContext.current
+
+    LaunchedEffect(toastMessage) {
+        toastMessage?.let { msg ->
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+            viewModel.clearToast()
+        }
+    }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // Predictive back handler: dismiss sheet if open before navigating or exiting
-    BackHandler(enabled = activeDetailId != null) {
-        viewModel.closeAssessmentDetail()
+    // Predictive back handler: dismiss sheet if open before returning to Dashboard or exiting
+    BackHandler(enabled = activeDraft != null || activeDetailId != null || selectedTab != "Dashboard") {
+        when {
+            activeDraft != null -> viewModel.dismissCreateEventDraft()
+            activeDetailId != null -> viewModel.closeAssessmentDetail()
+            selectedTab != "Dashboard" -> selectedTab = "Dashboard"
+        }
     }
 
     Scaffold(
@@ -153,6 +171,15 @@ fun AppScaffold(viewModel: QuizRadarViewModel) {
                                 viewModel.openPomodoro(selectedAssessment.id, topicTitle)
                                 selectedTab = "Focus"
                             },
+                        )
+                    }
+
+                    // Active Create Event Sheet from share-sheet ingest or manual flow
+                    if (activeDraft != null) {
+                        CreateEventSheet(
+                            draft = activeDraft,
+                            onSave = { event -> viewModel.addCustomEvent(event) },
+                            onDismiss = { viewModel.dismissCreateEventDraft() },
                         )
                     }
                 }

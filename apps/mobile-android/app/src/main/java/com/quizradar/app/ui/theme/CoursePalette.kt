@@ -22,6 +22,18 @@ object CoursePalette {
             Color(0xFF3949AB),
         )
 
+    val HEX_PRESETS =
+        listOf(
+            "#1a73e8",
+            "#0f9d58",
+            "#ea8600",
+            "#d93025",
+            "#8e24aa",
+            "#00acc1",
+            "#e67c73",
+            "#3949ab",
+        )
+
     private fun hashCourseId(id: String): Int {
         var hash = -0x7ee3623b // 0x811c9dc5 as signed int
         for (char in id) {
@@ -46,5 +58,11 @@ object CoursePalette {
             background = primary.copy(alpha = 0.12f),
             border = primary.copy(alpha = 0.35f),
         )
+    }
+
+    fun getHex(courseId: String?): String {
+        val id = courseId?.trim()?.ifEmpty { null } ?: "GENERAL"
+        val index = hashCourseId(id) % HEX_PRESETS.size
+        return HEX_PRESETS[index]
     }
 }

@@ -267,4 +267,13 @@ impl Store {
         self.run(move |db| backup::merge_backup_payload(db, &payload, &updated_at))
             .await
     }
+
+    /// The BYOK AI layer's usage-ledger kv seam (phase 06): the
+    /// [`crate::ai::provider::QuotaLedger`] persists its Pacific-day call
+    /// counters through this adapter into `config_kv` — counts only, never
+    /// keys or tokens. Constructing it is cheap; the ledger holds the
+    /// parsed record, not this handle.
+    pub fn quota_kv(&self) -> crate::ai::provider::StoreQuotaKv {
+        crate::ai::provider::StoreQuotaKv(Arc::clone(&self.db))
+    }
 }

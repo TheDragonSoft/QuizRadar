@@ -43,15 +43,17 @@ use crate::types::{Assessment, AssessmentType, CompletedTopics, UrgencyLevel};
 
 /// Generic scaffold topics for an assessment the sources posted without a
 /// topic list (deterministic, non-course-specific plannability — the only
-/// honest fallback path; per-course demo plans are deleted).
-const FALLBACK_TOPICS: [&str; 3] = [
+/// honest fallback path; per-course demo plans are deleted). `pub(crate)`:
+/// the AI optimize task validates against the same real topic list.
+pub(crate) const FALLBACK_TOPICS: [&str; 3] = [
     "Core Lecture Concepts & Slides Review",
     "Practice Problem Sets & Exercises",
     "Mock Revision & Key Formula Summary",
 ];
 
-/// 14-day max horizon (v4 `days_until <= 14`).
-const HORIZON_DAYS: i64 = 14;
+/// 14-day max horizon (v4 `days_until <= 14`). `pub(crate)`: the AI optimize
+/// task validates proposed tasks against the same window.
+pub(crate) const HORIZON_DAYS: i64 = 14;
 
 /// Maximum prep days per assessment (v4); an assessment landing today
 /// keeps everything on day 0.
@@ -177,7 +179,8 @@ pub fn per_topic_hours(estimated_study_hours: Option<f32>, topic_count: usize) -
 }
 
 /// Deterministic reasoning copy (v4 wording, honest day boundaries).
-fn reasoning_for_days(days: i32) -> String {
+/// `pub(crate)`: the AI optimize task reuses it as the fallback reasoning.
+pub(crate) fn reasoning_for_days(days: i32) -> String {
     match days {
         0 => "Immediate exam deadline in a few hours — high grade impact.".to_string(),
         1 => "Immediate exam deadline in 24 hours — high grade impact.".to_string(),

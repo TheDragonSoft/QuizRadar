@@ -44,8 +44,9 @@ pub mod iso_date {
 }
 
 /// Serde adapter: `Option<NaiveTime>` ⇄ `"HH:MM"` | `null` (v4 keeps `HH:MM`
-/// without seconds; seconds inside incoming values are truncated).
-mod hm_time {
+/// without seconds; seconds inside incoming values are truncated). `pub` so
+/// the AI draft types (`ai::tasks`) reuse the exact same wire shape.
+pub mod hm_time {
     use super::{Deserialize, Deserializer, NaiveTime, Serializer};
 
     pub fn serialize<S: Serializer>(

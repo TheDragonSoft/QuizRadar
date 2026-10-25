@@ -824,7 +824,7 @@ internal interface UniffiLib : Library {
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_toggle_topic(`ptr`: Pointer,`topicKey`: RustBuffer.ByValue,`done`: Byte,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
-    fun uniffi_quizradar_core_fn_method_nativestore_update_grade(`ptr`: Pointer,`assessmentId`: RustBuffer.ByValue,`achieved`: RustBuffer.ByValue,`max`: RustBuffer.ByValue,`weightage`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
+    fun uniffi_quizradar_core_fn_method_nativestore_update_grade(`ptr`: Pointer,`assessmentId`: RustBuffer.ByValue,`achieved`: RustBuffer.ByValue,`max`: RustBuffer.ByValue,`weightage`: RustBuffer.ByValue,`clearAchieved`: Byte,`clearMax`: Byte,`clearWeightage`: Byte,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_upsert_course(`ptr`: Pointer,`courseJson`: RustBuffer.ByValue,`slotsJson`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
@@ -1116,7 +1116,7 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_toggle_topic() != 63292.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_quizradar_core_checksum_method_nativestore_update_grade() != 8962.toShort()) {
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_update_grade() != 48002.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_upsert_course() != 53079.toShort()) {
@@ -1506,7 +1506,7 @@ public interface NativeStoreInterface {
     
     suspend fun `toggleTopic`(`topicKey`: kotlin.String, `done`: kotlin.Boolean, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
     
-    suspend fun `updateGrade`(`assessmentId`: kotlin.String, `achieved`: kotlin.Double?, `max`: kotlin.Double?, `weightage`: kotlin.Double?, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
+    suspend fun `updateGrade`(`assessmentId`: kotlin.String, `achieved`: kotlin.Double?, `max`: kotlin.Double?, `weightage`: kotlin.Double?, `clearAchieved`: kotlin.Boolean, `clearMax`: kotlin.Boolean, `clearWeightage`: kotlin.Boolean, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
     
     suspend fun `upsertCourse`(`courseJson`: kotlin.String, `slotsJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
     
@@ -1856,12 +1856,12 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
     
     @Throws(QuizRadarFfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
-    override suspend fun `updateGrade`(`assessmentId`: kotlin.String, `achieved`: kotlin.Double?, `max`: kotlin.Double?, `weightage`: kotlin.Double?, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String) : kotlin.String {
+    override suspend fun `updateGrade`(`assessmentId`: kotlin.String, `achieved`: kotlin.Double?, `max`: kotlin.Double?, `weightage`: kotlin.Double?, `clearAchieved`: kotlin.Boolean, `clearMax`: kotlin.Boolean, `clearWeightage`: kotlin.Boolean, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String) : kotlin.String {
         return uniffiRustCallAsync(
         callWithPointer { thisPtr ->
             UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_update_grade(
                 thisPtr,
-                FfiConverterString.lower(`assessmentId`),FfiConverterOptionalDouble.lower(`achieved`),FfiConverterOptionalDouble.lower(`max`),FfiConverterOptionalDouble.lower(`weightage`),FfiConverterString.lower(`updatedAt`),FfiConverterString.lower(`refDateIso`),
+                FfiConverterString.lower(`assessmentId`),FfiConverterOptionalDouble.lower(`achieved`),FfiConverterOptionalDouble.lower(`max`),FfiConverterOptionalDouble.lower(`weightage`),FfiConverterBoolean.lower(`clearAchieved`),FfiConverterBoolean.lower(`clearMax`),FfiConverterBoolean.lower(`clearWeightage`),FfiConverterString.lower(`updatedAt`),FfiConverterString.lower(`refDateIso`),
             )
         },
         { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },

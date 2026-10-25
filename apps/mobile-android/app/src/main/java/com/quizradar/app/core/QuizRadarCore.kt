@@ -43,6 +43,9 @@ interface QuizRadarCore {
         achieved: Double?,
         max: Double?,
         weightage: Double?,
+        clearAchieved: Boolean = false,
+        clearMax: Boolean = false,
+        clearWeightage: Boolean = false,
         refDate: LocalDate = LocalDate.now(),
     ): String
 

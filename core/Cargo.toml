@@ -14,7 +14,7 @@ path = "src/bin/uniffi-bindgen.rs"
 required-features = ["cli"]
 
 [features]
-default = []
+default = ["uniffi"]
 uniffi = ["dep:uniffi", "uniffi/tokio"]
 cli = ["uniffi", "uniffi/cli"]
 

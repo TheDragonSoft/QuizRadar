@@ -303,13 +303,18 @@ impl<'de> Deserialize<'de> for AssessmentType {
 /// past. Serialized lower-case to match v4 (`"critical"`, …). Imports carry
 /// v4's own stamped values; unknown labels fall back to [`UrgencyLevel::Upcoming`]
 /// (urgency is recomputed from the stored date at every render anyway).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 pub enum UrgencyLevel {
     Critical,
     High,
     Medium,
+    #[default]
     Upcoming,
     Past,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl<'de> Deserialize<'de> for UrgencyLevel {
@@ -473,13 +478,16 @@ pub struct Assessment {
     pub instructor: Option<String>,
     /// Dateless items count as upcoming (radar placeholder until a date is
     /// confirmed); past items are false.
+    #[serde(default = "default_true")]
     pub is_upcoming: bool,
     /// Days until the (known) date; `None` when undated — no countdown is
     /// invented.
     #[serde(default)]
     pub days_until: Option<i32>,
+    #[serde(default)]
     pub urgency_level: UrgencyLevel,
     /// 0..=100 composite (capped), drives "What Should I Study?" ordering.
+    #[serde(default)]
     pub priority_score: u8,
     #[serde(default)]
     pub topics: Vec<String>,

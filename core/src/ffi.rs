@@ -78,7 +78,7 @@ pub fn parse_ics(
     let schedule: ScheduleData = serde_json::from_str(&schedule_json)?;
     let ref_date = parse_ref_date(&ref_date_iso)?;
     let origin = IcsOrigin::Moodle { portal_url: None };
-    let offset = FixedOffset::east_opt(0).expect("0 is valid offset");
+    let offset = FixedOffset::east_opt(0).unwrap_or_else(|| unreachable!());
     let (assessments, _stats) =
         parse_ics_assessments(&content, &schedule, &origin, ref_date, offset);
     Ok(serde_json::to_string(&assessments)?)
@@ -325,26 +325,42 @@ impl NativeStore {
         Ok(serde_json::to_string(&snapshot)?)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn update_grade(
         &self,
         assessment_id: String,
         achieved: Option<f64>,
         max: Option<f64>,
         weightage: Option<f64>,
+        clear_achieved: bool,
+        clear_max: bool,
+        clear_weightage: bool,
         updated_at: String,
         ref_date_iso: String,
     ) -> Result<String, QuizRadarFfiError> {
         let ref_date = parse_ref_date(&ref_date_iso)?;
         let change = crate::store::repo::GradeChange {
-            achieved_score: achieved
-                .map(crate::store::repo::FieldUpdate::Set)
-                .unwrap_or(crate::store::repo::FieldUpdate::Keep),
-            max_score: max
-                .map(crate::store::repo::FieldUpdate::Set)
-                .unwrap_or(crate::store::repo::FieldUpdate::Keep),
-            weightage_percent: weightage
-                .map(crate::store::repo::FieldUpdate::Set)
-                .unwrap_or(crate::store::repo::FieldUpdate::Keep),
+            achieved_score: if clear_achieved {
+                crate::store::repo::FieldUpdate::Clear
+            } else if let Some(val) = achieved {
+                crate::store::repo::FieldUpdate::Set(val)
+            } else {
+                crate::store::repo::FieldUpdate::Keep
+            },
+            max_score: if clear_max {
+                crate::store::repo::FieldUpdate::Clear
+            } else if let Some(val) = max {
+                crate::store::repo::FieldUpdate::Set(val)
+            } else {
+                crate::store::repo::FieldUpdate::Keep
+            },
+            weightage_percent: if clear_weightage {
+                crate::store::repo::FieldUpdate::Clear
+            } else if let Some(val) = weightage {
+                crate::store::repo::FieldUpdate::Set(val)
+            } else {
+                crate::store::repo::FieldUpdate::Keep
+            },
         };
         let snapshot = self
             .inner

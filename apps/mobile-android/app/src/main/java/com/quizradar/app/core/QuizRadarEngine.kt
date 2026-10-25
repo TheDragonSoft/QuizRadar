@@ -60,9 +60,22 @@ class QuizRadarEngine(
         achieved: Double?,
         max: Double?,
         weightage: Double?,
+        clearAchieved: Boolean,
+        clearMax: Boolean,
+        clearWeightage: Boolean,
         refDate: LocalDate,
     ): String {
-        return store.updateGrade(assessmentId, achieved, max, weightage, nowIso(), refDate.toString())
+        return store.updateGrade(
+            assessmentId,
+            achieved,
+            max,
+            weightage,
+            clearAchieved,
+            clearMax,
+            clearWeightage,
+            nowIso(),
+            refDate.toString(),
+        )
     }
 
     override suspend fun upsertCustomEvent(

@@ -43,6 +43,13 @@ if (typeof window !== "undefined") {
         dispatchEvent: () => false,
       };
     };
+
+  if (!window.URL.createObjectURL) {
+    window.URL.createObjectURL = () => "blob:mock-url";
+  }
+  if (!window.URL.revokeObjectURL) {
+    window.URL.revokeObjectURL = () => {};
+  }
 }
 
 afterEach(() => {

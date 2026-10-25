@@ -239,6 +239,71 @@ impl Store {
         .await
     }
 
+    /// Read a boolean configuration property.
+    pub async fn get_config_bool(&self, key: String, default: bool) -> Result<bool, StoreError> {
+        self.run(move |db| {
+            let conn = db.conn();
+            let config = repo::ConfigRepo::new(conn);
+            config.get_bool(&key, default)
+        })
+        .await
+    }
+
+    /// Read an optional string configuration property.
+    pub async fn get_config_string(&self, key: String) -> Result<Option<String>, StoreError> {
+        self.run(move |db| {
+            let conn = db.conn();
+            let config = repo::ConfigRepo::new(conn);
+            config.get_string(&key)
+        })
+        .await
+    }
+
+    /// Write a boolean configuration property.
+    pub async fn set_config_bool(&self, key: String, value: bool) -> Result<(), StoreError> {
+        self.run(move |db| {
+            let conn = db.conn();
+            let config = repo::ConfigRepo::new(conn);
+            config.set_bool(&key, value)
+        })
+        .await
+    }
+
+    /// Write an optional string configuration property.
+    pub async fn set_config_string(
+        &self,
+        key: String,
+        value: Option<String>,
+    ) -> Result<(), StoreError> {
+        self.run(move |db| {
+            let conn = db.conn();
+            let config = repo::ConfigRepo::new(conn);
+            config.set_string(&key, value.as_deref())
+        })
+        .await
+    }
+
+    /// Permanently wipes all tables and records, recreating a clean database state.
+    pub async fn reset_all(&self) -> Result<(), StoreError> {
+        self.run(move |db| {
+            let conn = db.conn();
+            conn.execute_batch(
+                "DELETE FROM assessments;
+                 DELETE FROM courses;
+                 DELETE FROM slots;
+                 DELETE FROM topics_done;
+                 DELETE FROM grades;
+                 DELETE FROM events;
+                 DELETE FROM feeds;
+                 DELETE FROM config_kv;
+                 DELETE FROM tokens_meta;
+                 DELETE FROM kv_meta;",
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
     /// v4 backup import (one transaction; secrets dropped, documented).
     /// `reference_date` is pinned in the surface for future derived-field
     /// stamping but unused today (rows keep their stored derived values).

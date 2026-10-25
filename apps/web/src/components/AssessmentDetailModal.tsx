@@ -11,6 +11,7 @@ import {
   Calculator,
   Save,
   CheckCircle,
+  HelpCircle,
 } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
@@ -32,6 +33,8 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
   const saveGrade = useAppStore((s) => s.saveGrade);
   const exportIcs = useAppStore((s) => s.exportIcs);
   const addToast = useAppStore((s) => s.addToast);
+  const openPracticeQuiz = useAppStore((s) => s.openPracticeQuiz);
+  const openPomodoro = useAppStore((s) => s.openPomodoro);
 
   const assessment = assessments.find((a) => a.id === assessmentId);
   const rec = recommendations.find((r) => r.assessmentId === assessmentId);
@@ -316,6 +319,30 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
           >
             <Download className="h-4 w-4 text-[var(--accent)]" aria-hidden="true" />
             <span>{copy.assessmentDetail.exportIcs}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              openPomodoro({ assessmentId: assessment.id });
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text)] transition cursor-pointer"
+          >
+            <Clock className="h-4 w-4 text-amber-500" aria-hidden="true" />
+            <span>{copy.assessmentDetail.pomodoroAction}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              openPracticeQuiz(assessment.id);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text)] transition cursor-pointer"
+          >
+            <HelpCircle className="h-4 w-4 text-purple-500" aria-hidden="true" />
+            <span>{copy.practice.practiceQuizAction}</span>
           </button>
 
           {assessment.elearningUrl && (

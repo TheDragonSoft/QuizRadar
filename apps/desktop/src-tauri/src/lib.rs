@@ -94,6 +94,9 @@ pub fn run() -> tauri::Result<()> {
             commands::export_backup_file,
             commands::import_backup_file,
             commands::export_ics,
+            commands::upsert_feed,
+            commands::delete_feed,
+            commands::reset_database,
         ])
         .run(tauri::generate_context!())
 }

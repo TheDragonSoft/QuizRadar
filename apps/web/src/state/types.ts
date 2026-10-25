@@ -262,3 +262,89 @@ export interface LayerToggles {
   exams: boolean;
   classes: boolean;
 }
+
+export interface PracticeQuestion {
+  id: string;
+  question: string;
+  options: string[];
+  correctIndex?: number;
+  correct_index?: number;
+  explanation: string;
+}
+
+export interface PracticeQuizPayload {
+  assessmentId?: string;
+  assessment_id?: string;
+  courseId?: string | null;
+  course_id?: string | null;
+  assessmentTitle?: string;
+  assessment_title?: string;
+  questions: PracticeQuestion[];
+  generatedByAi?: boolean;
+  generated_by_ai?: boolean;
+  authoredLocally?: boolean;
+  authored_locally?: boolean;
+  credit?: { source: string } | null;
+}
+
+export interface DesktopExtractedTimetable {
+  schedule: ScheduleData;
+  droppedCourses?: number;
+  dropped_courses?: number;
+  droppedSlots?: number;
+  dropped_slots?: number;
+}
+
+export interface UpdateCheckResult {
+  available: boolean;
+  currentVersion: string;
+  latestVersion?: string | null;
+  body?: string | null;
+  error?: string | null;
+}
+
+export interface SyncResult {
+  success: boolean;
+  totalNew?: number;
+  total_new?: number;
+  totalUpdated?: number;
+  total_updated?: number;
+  notes: string[];
+  discoveredTeams?: Course[];
+  discovered_teams?: Course[];
+}
+
+export interface ConfigUpdate {
+  autoSyncGcal?: boolean;
+  syncWeeklyClassesToGcal?: boolean;
+  geminiEnabled?: boolean;
+  onboardingCompleted?: boolean;
+  teamsEnabled?: boolean;
+  teamsClientId?: string;
+  moodleEnabled?: boolean;
+  moodleUrl?: string;
+  moodleIcalUrl?: string;
+  classroomEnabled?: boolean;
+  dismissConflictBanner?: boolean;
+  userEmail?: string;
+  userName?: string;
+  userPicture?: string;
+}
+
+export interface ExportBackupResult {
+  saved: boolean;
+  path?: string | null;
+  json?: string | null;
+}
+
+export interface ImportReport {
+  assessmentsImported: number;
+  coursesImported: number;
+  slotsImported: number;
+  gradesImported: number;
+  topicsImported: number;
+  eventsImported: number;
+  feedsImported: number;
+  secretsIgnored: string[];
+  warnings: string[];
+}

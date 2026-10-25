@@ -135,33 +135,87 @@ pub async fn build_full_state(state: &AppState) -> Result<GetStatePayload, Strin
     let has_teams_mem = state.microsoft_token.read().await.is_some();
     let has_teams_auth = has_teams_keyring || has_teams_mem;
 
+    let user_email = state
+        .store
+        .get_config_string("user_email".to_string())
+        .await
+        .unwrap_or(None);
+    let user_name = state
+        .store
+        .get_config_string("user_name".to_string())
+        .await
+        .unwrap_or(None);
+    let user_picture = state
+        .store
+        .get_config_string("user_picture".to_string())
+        .await
+        .unwrap_or(None);
+
     let auth = DesktopAuthProfile {
         authenticated: has_google_auth,
-        email: None,
-        name: None,
-        picture: None,
+        email: user_email.clone(),
+        name: user_name.clone(),
+        picture: user_picture.clone(),
         has_gmail_scope: has_google_auth,
         has_calendar_scope: has_google_auth,
         has_teams_auth,
     };
 
     let config = DesktopConfig {
-        auto_sync_gcal: false,
-        sync_weekly_classes_to_gcal: false,
+        auto_sync_gcal: state
+            .store
+            .get_config_bool("auto_sync_gcal".to_string(), false)
+            .await
+            .unwrap_or(false),
+        sync_weekly_classes_to_gcal: state
+            .store
+            .get_config_bool("sync_weekly_classes_to_gcal".to_string(), false)
+            .await
+            .unwrap_or(false),
         gemini_enabled: state
             .keyring
             .get_secret(crate::keyring::KEY_GEMINI_API_KEY)
             .unwrap_or(None)
-            .is_some(),
-        onboarding_completed: true,
-        teams_enabled: has_teams_auth,
+            .is_some()
+            && state
+                .store
+                .get_config_bool("gemini_enabled".to_string(), true)
+                .await
+                .unwrap_or(true),
+        onboarding_completed: state
+            .store
+            .get_config_bool("onboarding_completed".to_string(), false)
+            .await
+            .unwrap_or(false),
+        teams_enabled: has_teams_auth
+            && state
+                .store
+                .get_config_bool("teams_enabled".to_string(), true)
+                .await
+                .unwrap_or(true),
         teams_client_id: Some(state.microsoft_client_id.clone()),
         teams_account_name: None,
         teams_account_email: None,
-        moodle_enabled: false,
-        moodle_url: None,
-        moodle_ical_url: None,
-        classroom_enabled: false,
+        moodle_enabled: state
+            .store
+            .get_config_bool("moodle_enabled".to_string(), false)
+            .await
+            .unwrap_or(false),
+        moodle_url: state
+            .store
+            .get_config_string("moodle_url".to_string())
+            .await
+            .unwrap_or(None),
+        moodle_ical_url: state
+            .store
+            .get_config_string("moodle_ical_url".to_string())
+            .await
+            .unwrap_or(None),
+        classroom_enabled: state
+            .store
+            .get_config_bool("classroom_enabled".to_string(), false)
+            .await
+            .unwrap_or(false),
         dismiss_conflict_banner: state
             .store
             .get_dismiss_conflict_banner()
@@ -173,9 +227,9 @@ pub async fn build_full_state(state: &AppState) -> Result<GetStatePayload, Strin
         last_gmail_sync: None,
         last_gcal_sync: None,
         last_backup_push: None,
-        user_email: None,
-        user_name: None,
-        user_picture: None,
+        user_email,
+        user_name,
+        user_picture,
     };
 
     Ok(GetStatePayload {
@@ -249,7 +303,145 @@ pub async fn update_config(
     state: State<'_, AppState>,
     update: ConfigUpdate,
 ) -> Result<GetStatePayload, String> {
-    let _ = update;
+    if let Some(v) = update.auto_sync_gcal {
+        state
+            .store
+            .set_config_bool("auto_sync_gcal".to_string(), v)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = update.sync_weekly_classes_to_gcal {
+        state
+            .store
+            .set_config_bool("sync_weekly_classes_to_gcal".to_string(), v)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = update.gemini_enabled {
+        state
+            .store
+            .set_config_bool("gemini_enabled".to_string(), v)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = update.onboarding_completed {
+        state
+            .store
+            .set_config_bool("onboarding_completed".to_string(), v)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = update.teams_enabled {
+        state
+            .store
+            .set_config_bool("teams_enabled".to_string(), v)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = update.teams_client_id {
+        state
+            .store
+            .set_config_string("teams_client_id".to_string(), Some(v))
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = update.moodle_enabled {
+        state
+            .store
+            .set_config_bool("moodle_enabled".to_string(), v)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = update.moodle_url {
+        state
+            .store
+            .set_config_string("moodle_url".to_string(), Some(v))
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = update.moodle_ical_url {
+        state
+            .store
+            .set_config_string("moodle_ical_url".to_string(), Some(v))
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = update.classroom_enabled {
+        state
+            .store
+            .set_config_bool("classroom_enabled".to_string(), v)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = update.dismiss_conflict_banner {
+        state
+            .store
+            .set_config_bool("dismiss_conflict_banner".to_string(), v)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = update.user_email {
+        state
+            .store
+            .set_config_string("user_email".to_string(), Some(v))
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = update.user_name {
+        state
+            .store
+            .set_config_string("user_name".to_string(), Some(v))
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = update.user_picture {
+        state
+            .store
+            .set_config_string("user_picture".to_string(), Some(v))
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    build_full_state(&state).await
+}
+
+#[tauri::command]
+pub async fn upsert_feed(
+    state: State<'_, AppState>,
+    feed: FeedConfig,
+) -> Result<GetStatePayload, String> {
+    let now = state.now_iso();
+    let today = state.today();
+    state
+        .store
+        .save_feed(feed, now, today)
+        .await
+        .map_err(|e| format!("Failed to upsert feed: {e}"))?;
+    build_full_state(&state).await
+}
+
+#[tauri::command]
+pub async fn delete_feed(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<GetStatePayload, String> {
+    let now = state.now_iso();
+    let today = state.today();
+    state
+        .store
+        .delete_feed(id, now, today)
+        .await
+        .map_err(|e| format!("Failed to delete feed: {e}"))?;
+    build_full_state(&state).await
+}
+
+#[tauri::command]
+pub async fn reset_database(state: State<'_, AppState>) -> Result<GetStatePayload, String> {
+    state
+        .store
+        .reset_all()
+        .await
+        .map_err(|e| format!("Failed to reset database: {e}"))?;
+    state.clear_memory_tokens().await;
     build_full_state(&state).await
 }
 
@@ -375,7 +567,9 @@ pub async fn export_ics(
             quizradar_core::cal::ics::export_ics_single(&assessment)
                 .map_err(|e| format!("Failed to export ICS: {e}"))
         }
-        None => Ok(quizradar_core::cal::ics::export_ics_all(&snapshot.assessments)),
+        None => Ok(quizradar_core::cal::ics::export_ics_all(
+            &snapshot.assessments,
+        )),
     }
 }
 

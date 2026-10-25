@@ -4,12 +4,23 @@ import { rpc } from "./rpc";
 import { loadCachedState, saveCachedState } from "./swr";
 import { applyOptimistic } from "./optimistic";
 import type {
+  ConfigUpdate,
+  Course,
+  CustomCalendarEvent,
+  DesktopExtractedTimetable,
+  ExportBackupResult,
+  FeedConfig,
   GetStatePayload,
+  ImportReport,
   LayerToggles,
   ModalInstance,
+  PracticeQuizPayload,
+  ScheduleData,
+  ScheduleSlot,
   SyncStatus,
   ThemeMode,
   ToastItem,
+  UpdateCheckResult,
   View,
 } from "./types";
 import { getLocalDateString, startDayRolloverWatchdog } from "./watchdog";
@@ -194,6 +205,34 @@ export interface AppStoreState {
   dismissConflicts: () => Promise<void>;
   scheduleStudyBlocks: (assessmentId?: string) => Promise<void>;
   exportIcs: (assessmentId?: string) => Promise<void>;
+
+  updateConfig: (update: ConfigUpdate) => Promise<void>;
+  upsertCourse: (course: Course, slots?: ScheduleSlot[]) => Promise<void>;
+  deleteCourse: (code: string) => Promise<void>;
+  saveSchedule: (schedule: ScheduleData) => Promise<void>;
+  addCustomEvent: (event: CustomCalendarEvent) => Promise<void>;
+  deleteCustomEvent: (id: string) => Promise<void>;
+  upsertFeed: (feed: FeedConfig) => Promise<void>;
+  deleteFeed: (id: string) => Promise<void>;
+
+  runGcalSync: () => Promise<void>;
+  googleLogin: () => Promise<string>;
+  googleLogout: () => Promise<void>;
+  microsoftLogin: () => Promise<string>;
+  microsoftLogout: () => Promise<void>;
+  validateGeminiKey: (key: string) => Promise<{ valid: boolean; error?: string }>;
+  extractSchedule: (image: string) => Promise<DesktopExtractedTimetable>;
+  practiceGenerate: (assessmentId: string) => Promise<PracticeQuizPayload>;
+  checkUpdate: () => Promise<UpdateCheckResult>;
+  exportBackupFile: (path?: string) => Promise<ExportBackupResult>;
+  importBackupFile: (path?: string, jsonContent?: string) => Promise<ImportReport>;
+  resetDatabase: () => Promise<void>;
+
+  openPracticeQuiz: (assessmentId: string) => void;
+  openPomodoro: (props?: { assessmentId?: string; topicKey?: string; topicTitle?: string }) => void;
+  openCourseModal: (course?: Course) => void;
+  openEventModal: (event?: CustomCalendarEvent) => void;
+  openSchedulePreview: (extracted: DesktopExtractedTimetable) => void;
 }
 
 export const useAppStore = create<AppStoreState>((set, get) => ({
@@ -618,6 +657,277 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         message: `Failed to export ICS: ${err instanceof Error ? err.message : String(err)}`,
       });
     }
+  },
+
+  updateConfig: async (update) => {
+    try {
+      const fresh = await rpc<GetStatePayload>("update_config", { update });
+      saveCachedState(fresh);
+      set({ data: fresh });
+    } catch (err) {
+      get().addToast({
+        type: "error",
+        message: `Failed to update configuration: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      throw err;
+    }
+  },
+
+  upsertCourse: async (course, slots) => {
+    try {
+      const fresh = await rpc<GetStatePayload>("upsert_course", { course, slots });
+      saveCachedState(fresh);
+      set({ data: fresh });
+      get().addToast({
+        type: "success",
+        message: `Course ${course.id} saved successfully`,
+      });
+    } catch (err) {
+      get().addToast({
+        type: "error",
+        message: `Failed to save course: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      throw err;
+    }
+  },
+
+  deleteCourse: async (code) => {
+    try {
+      const fresh = await rpc<GetStatePayload>("delete_course", { code });
+      saveCachedState(fresh);
+      set({ data: fresh });
+      get().addToast({
+        type: "success",
+        message: `Course ${code} deleted`,
+      });
+    } catch (err) {
+      get().addToast({
+        type: "error",
+        message: `Failed to delete course: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      throw err;
+    }
+  },
+
+  saveSchedule: async (schedule) => {
+    try {
+      const fresh = await rpc<GetStatePayload>("save_schedule", { schedule });
+      saveCachedState(fresh);
+      set({ data: fresh });
+      get().addToast({
+        type: "success",
+        message: "Schedule updated successfully",
+      });
+    } catch (err) {
+      get().addToast({
+        type: "error",
+        message: `Failed to save schedule: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      throw err;
+    }
+  },
+
+  addCustomEvent: async (event) => {
+    try {
+      const fresh = await rpc<GetStatePayload>("add_custom_event", { event });
+      saveCachedState(fresh);
+      set({ data: fresh });
+      get().addToast({
+        type: "success",
+        message: "Calendar event saved",
+      });
+    } catch (err) {
+      get().addToast({
+        type: "error",
+        message: `Failed to save event: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      throw err;
+    }
+  },
+
+  deleteCustomEvent: async (id) => {
+    try {
+      const fresh = await rpc<GetStatePayload>("delete_custom_event", { id });
+      saveCachedState(fresh);
+      set({ data: fresh });
+      get().addToast({
+        type: "success",
+        message: "Calendar event deleted",
+      });
+    } catch (err) {
+      get().addToast({
+        type: "error",
+        message: `Failed to delete event: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      throw err;
+    }
+  },
+
+  upsertFeed: async (feed) => {
+    try {
+      const fresh = await rpc<GetStatePayload>("upsert_feed", { feed });
+      saveCachedState(fresh);
+      set({ data: fresh });
+      get().addToast({
+        type: "success",
+        message: `Feed "${feed.name}" saved`,
+      });
+    } catch (err) {
+      get().addToast({
+        type: "error",
+        message: `Failed to save feed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      throw err;
+    }
+  },
+
+  deleteFeed: async (id) => {
+    try {
+      const fresh = await rpc<GetStatePayload>("delete_feed", { id });
+      saveCachedState(fresh);
+      set({ data: fresh });
+      get().addToast({
+        type: "success",
+        message: "Feed removed",
+      });
+    } catch (err) {
+      get().addToast({
+        type: "error",
+        message: `Failed to delete feed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      throw err;
+    }
+  },
+
+  runGcalSync: async () => {
+    try {
+      get().addToast({
+        type: "info",
+        message: "Pushing assessments to Google Calendar...",
+      });
+      const res = await rpc<{
+        success: boolean;
+        created: number;
+        updated: number;
+        message: string;
+      }>("run_gcal_sync");
+      await get().refreshState();
+      get().addToast({
+        type: "success",
+        message: res.message || "Google Calendar sync completed",
+      });
+    } catch (err) {
+      get().addToast({
+        type: "error",
+        message: `Google Calendar sync failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  },
+
+  googleLogin: async () => {
+    return await rpc<string>("google_login_start");
+  },
+
+  googleLogout: async () => {
+    await rpc("google_logout");
+    await get().refreshState();
+    get().addToast({
+      type: "info",
+      message: "Google account disconnected and tokens wiped",
+    });
+  },
+
+  microsoftLogin: async () => {
+    return await rpc<string>("microsoft_login_start");
+  },
+
+  microsoftLogout: async () => {
+    await rpc("microsoft_logout");
+    await get().refreshState();
+    get().addToast({
+      type: "info",
+      message: "Microsoft account disconnected and tokens wiped",
+    });
+  },
+
+  validateGeminiKey: async (key) => {
+    return await rpc<{ valid: boolean; error?: string }>("validate_gemini_key", { key });
+  },
+
+  extractSchedule: async (image) => {
+    return await rpc<DesktopExtractedTimetable>("extract_schedule", { image });
+  },
+
+  practiceGenerate: async (assessmentId) => {
+    return await rpc<PracticeQuizPayload>("practice_generate", { assessmentId });
+  },
+
+  checkUpdate: async () => {
+    return await rpc<UpdateCheckResult>("check_update");
+  },
+
+  exportBackupFile: async (path) => {
+    const res = await rpc<ExportBackupResult>("export_backup_file", { path });
+    // If browser fallback without saved file path:
+    if (!res.saved && res.json && typeof window !== "undefined") {
+      const blob = new Blob([res.json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `quizradar-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+    return res;
+  },
+
+  importBackupFile: async (path, jsonContent) => {
+    const report = await rpc<ImportReport>("import_backup_file", { path, jsonContent });
+    await get().refreshState();
+    return report;
+  },
+
+  resetDatabase: async () => {
+    const fresh = await rpc<GetStatePayload>("reset_database");
+    saveCachedState(fresh);
+    set({ data: fresh });
+  },
+
+  openPracticeQuiz: (assessmentId) => {
+    get().openModal({
+      id: "practice-quiz",
+      props: { assessmentId },
+    });
+  },
+
+  openPomodoro: (props) => {
+    get().openModal({
+      id: "pomodoro",
+      props: props || {},
+    });
+  },
+
+  openCourseModal: (course) => {
+    get().openModal({
+      id: "add-course",
+      props: { course },
+    });
+  },
+
+  openEventModal: (event) => {
+    get().openModal({
+      id: "create-edit-event",
+      props: { event },
+    });
+  },
+
+  openSchedulePreview: (extracted) => {
+    get().openModal({
+      id: "schedule-preview",
+      props: { extracted },
+    });
   },
 }));
 

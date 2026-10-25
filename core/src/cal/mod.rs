@@ -7,5 +7,6 @@
 //! - `ics.rs` — single/all `.ics` export (RFC 5545, floating local times,
 //!   no IANA tz in the payload — mirrors v4's working behavior)
 
+#[cfg(not(target_arch = "wasm32"))]
 pub mod gcal;
 pub mod ics;

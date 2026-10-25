@@ -23,7 +23,16 @@ use std::sync::Arc;
 use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
+#[cfg(not(target_arch = "wasm32"))]
 use crate::store::db::StoreError;
+#[cfg(target_arch = "wasm32")]
+#[derive(Debug, thiserror::Error)]
+pub enum StoreError {
+    #[error("store error: {0}")]
+    Validation(String),
+    #[error("json error: {0}")]
+    Json(#[from] serde_json::Error),
+}
 
 /// A caller-injected UTC clock reading (shells pass `Utc::now`; tests pass
 /// fixed instants). The core never reads the wall clock itself.
@@ -281,8 +290,10 @@ impl QuotaKv for MemoryQuotaKv {
 /// `spawn_blocking` so an async caller never blocks its runtime thread on
 /// SQLite. The record carries day-keyed call counters only — never keys,
 /// never tokens, never email content.
+#[cfg(not(target_arch = "wasm32"))]
 pub struct StoreQuotaKv(pub std::sync::Arc<std::sync::Mutex<crate::store::db::Db>>);
 
+#[cfg(not(target_arch = "wasm32"))]
 impl QuotaKv for StoreQuotaKv {
     fn load(
         &self,

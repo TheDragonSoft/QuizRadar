@@ -60,7 +60,7 @@ export interface Assessment {
   estimatedStudyHours?: number | null;
   elearningUrl?: string | null;
   googleCalUrl?: string | null;
-  gcalSynced: boolean;
+  gcalSynced?: boolean;
   gcalEventId?: string | null;
   color?: string | null;
   bg?: string | null;
@@ -74,6 +74,22 @@ export interface Assessment {
   achievedScore?: number | null;
   maxScore?: number | null;
   conflictWarning?: string | null;
+  // Rust snake_case aliases for WASM interoperability
+  course_id?: string | null;
+  course_name?: string | null;
+  assessment_type?: string;
+  date_iso?: string | null;
+  day_name?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  display_time?: string | null;
+  is_upcoming?: boolean;
+  days_until?: number | null;
+  urgency_level?: UrgencyLevel;
+  priority_score?: number;
+  weightage_percent?: number | null;
+  achieved_score?: number | null;
+  max_score?: number | null;
 }
 
 export interface TopicCheckItem {
@@ -239,7 +255,7 @@ export interface GetStatePayload {
   studyTasksPayload: StudyTasksPayload;
 }
 
-export type View = "dashboard" | "tasks" | "calendar" | "focus";
+export type View = "dashboard" | "tasks" | "calendar" | "focus" | "help";
 
 export type ThemeMode = "light" | "dark";
 

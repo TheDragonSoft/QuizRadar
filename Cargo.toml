@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["core", "apps/desktop/src-tauri"]
+members = ["core", "apps/desktop/src-tauri", "core/bindings/wasm"]
 
 [workspace.package]
 edition = "2021"

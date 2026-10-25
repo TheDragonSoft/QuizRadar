@@ -29,6 +29,7 @@ pub const AI_DISCLOSURE: &str = "Your email announcements and timetable images a
 /// The companion opt-out line (`05` §5.1), shown next to the AI toggle.
 pub const AI_LOCAL_OFF_COPY: &str = "Turn off to stay fully local.";
 
+#[cfg(not(target_arch = "wasm32"))]
 pub mod gemini;
 pub mod practice_fallback;
 pub mod provider;

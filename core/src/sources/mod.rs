@@ -5,11 +5,17 @@
 //! (due-date-gated). Empty results are reported honestly — a scan says what
 //! ran and what was found, never "connection active" theatre.
 
+#[cfg(not(target_arch = "wasm32"))]
 pub mod classroom;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod feeds;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod gmail;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod moodle;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod sync;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod teams;
 
 #[cfg(test)]
@@ -61,6 +67,7 @@ impl TokenProvider for FixedTokenProvider {
 
 /// `reqwest` client with v4's timeouts (10 s connect / 30 s total). Built per
 /// sync run — no `expect()` panics on the fetch path.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
@@ -71,6 +78,7 @@ pub(crate) fn http_client() -> Result<reqwest::Client, String> {
 
 /// Network error string with the request URL stripped: feed URLs embed
 /// personal access tokens and must never land in notes, logs or UI copy.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn net_err(prefix: &str, error: reqwest::Error) -> String {
     format!("{prefix}: {}", error.without_url())
 }
@@ -101,6 +109,7 @@ pub(crate) fn enforce_https(url: &str, insecure_message: &str) -> Result<(), Str
 /// [`TokenProvider`]; only a genuinely different token triggers one retry.
 /// A still-401 response (or an unchanged token) surfaces honestly to the
 /// caller, which reports "reconnect your account" instead of pretending.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) async fn authed_get(
     client: &reqwest::Client,
     provider: &dyn TokenProvider,

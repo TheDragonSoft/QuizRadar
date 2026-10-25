@@ -140,3 +140,5 @@ export const FocusView: React.FC = () => {
     </section>
   );
 };
+
+export { HelpView } from "./HelpView";

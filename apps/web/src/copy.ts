@@ -15,6 +15,7 @@ export const copy = {
     tasks: "Tasks",
     calendar: "Calendar",
     focus: "Focus",
+    help: "Help & Tiers",
   },
 
   topBar: {

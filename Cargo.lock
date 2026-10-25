@@ -3337,6 +3337,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "quizradar-wasm"
+version = "5.0.0-alpha.1"
+dependencies = [
+ "chrono",
+ "quizradar-core",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"

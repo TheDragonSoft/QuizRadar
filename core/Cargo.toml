@@ -9,13 +9,7 @@ description = "QuizRadar v5 core: parsers, planner, calendar, store, sources, au
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
-reqwest.workspace = true
-rusqlite.workspace = true
 thiserror.workspace = true
-# Async facade: store ops run on spawn_blocking so Tauri/Android callers
-# never block their runtime threads on SQLite (phase 04 item 1). `macros`
-# powers tokio::join! in the bounded-concurrency source scans (phase 05).
-tokio = { version = "1", default-features = false, features = ["rt", "macros"] }
 # Bounded-concurrency source scans (buffer_unordered/buffered) — phase 05.
 futures = { version = "0.3", default-features = false, features = ["std", "async-await"] }
 # PKCE (RFC 7636) S256 challenge + single-use state entropy — phase 05.
@@ -23,6 +17,14 @@ futures = { version = "0.3", default-features = false, features = ["std", "async
 sha2 = "0.10"
 base64 = "0.22"
 getrandom = "0.2"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rusqlite.workspace = true
+reqwest.workspace = true
+tokio = { version = "1", default-features = false, features = ["rt", "macros"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
 
 [dev-dependencies]
 tokio = { version = "1", default-features = false, features = [

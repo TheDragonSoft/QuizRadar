@@ -774,9 +774,22 @@ export function SettingsModal({
 
       {/* Footer */}
       <div className="mt-6 flex items-center justify-between border-t border-[var(--border)] pt-4">
-        <div className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
-          <ShieldCheck className="h-4 w-4 text-emerald-500" />
-          <span>Local Storage · Zero Server Logs</span>
+        <div className="flex items-center gap-3 text-[11px] text-[var(--text-muted)]">
+          <div className="flex items-center gap-1.5">
+            <ShieldCheck className="h-4 w-4 text-emerald-500" />
+            <span>Local Storage · Zero Server Logs</span>
+          </div>
+          <span>·</span>
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              useAppStore.getState().setView("help");
+            }}
+            className="text-[var(--accent)] hover:underline font-medium cursor-pointer"
+          >
+            Tier Capabilities & Help →
+          </button>
         </div>
         <button
           type="button"

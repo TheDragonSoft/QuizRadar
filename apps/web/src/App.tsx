@@ -5,7 +5,7 @@ import { MobileNav } from "./components/MobileNav";
 import { ModalStack } from "./components/ModalStack";
 import { ToastContainer } from "./components/Toast";
 import { PullToRefresh } from "./components/PullToRefresh";
-import { DashboardView, TasksView, CalendarView, FocusView } from "./views/views";
+import { DashboardView, TasksView, CalendarView, FocusView, HelpView } from "./views/views";
 import { DevRig } from "./dev/DevRig";
 import { useAppStore, applyThemeToDocument, initDayRolloverWatchdog } from "./state/store";
 import type { View } from "./state/types";
@@ -44,6 +44,7 @@ const VIEWS: Record<View, React.ComponentType> = {
   tasks: TasksView,
   calendar: CalendarView,
   focus: FocusView,
+  help: HelpView,
 };
 
 export default function App() {
@@ -60,10 +61,16 @@ export default function App() {
     return url.pathname === "/dev" || url.searchParams.get("dev") === "true";
   });
 
-  // Startup initialization: theme + initial SWR load + day-rollover watchdog
+  // Startup initialization: theme + initial SWR load + day-rollover watchdog + route check
   useEffect(() => {
     applyThemeToDocument(theme);
     loadInitialData();
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (url.pathname === "/help" || url.hash === "#help") {
+        useAppStore.getState().setView("help");
+      }
+    }
     const stopWatchdog = initDayRolloverWatchdog();
     return () => {
       stopWatchdog();

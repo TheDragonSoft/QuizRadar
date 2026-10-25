@@ -11,6 +11,8 @@ apps/mobile-android/gradlew
 apps/mobile-android/gradlew.bat
 apps/mobile-android/gradle/
 apps/web/src/generated/
+apps/web/public/sw.js
+apps/web/public/wasm/
 
 # Immutable spec/prompt/protocol area — agent cohorts never reformat these
 docs/

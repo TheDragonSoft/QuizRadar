@@ -34,6 +34,7 @@ export async function rpc<T>(fn: string, args?: Record<string, unknown>): Promis
     }
   }
 
-  // Non-Tauri fallback (browser / headless / tests)
-  throw new Error(`RPC call "${fn}" is not available in non-desktop environment`);
+  // Non-Tauri fallback (browser / PWA companion tier)
+  const { pwaRpcHandler } = await import("../pwadapters/rpcAdapter");
+  return await pwaRpcHandler<T>(fn, args);
 }

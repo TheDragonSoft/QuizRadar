@@ -1,0 +1,328 @@
+/**
+ * Pure IndexedDB persistence for the QuizRadar PWA tier.
+ * Schema version 1 matching SQLite SCHEMA_VERSION = 1 from core/src/store/db.rs.
+ * Stores: courses, slots, assessments, topics_done, grades, events, feeds, config_kv, tokens_meta.
+ */
+
+import type {
+  Assessment,
+  Course,
+  ScheduleData,
+  ScheduleSlot,
+  CustomCalendarEvent,
+  FeedConfig,
+} from "../state/types";
+
+export const IDB_DATABASE_NAME = "quizradar";
+export const IDB_SCHEMA_VERSION = 1;
+
+export interface IdbGradeRecord {
+  assessment_id: string;
+  achieved_score?: number | null;
+  max_score?: number | null;
+  weightage_percent?: number | null;
+  updated_at?: string;
+}
+
+export interface IdbTopicRecord {
+  key: string;
+  done: boolean;
+  updated_at?: string;
+}
+
+export interface IdbConfigRecord {
+  key: string;
+  value: unknown;
+}
+
+export interface IdbTokenMetaRecord {
+  key: string;
+  email?: string | null;
+  name?: string | null;
+  picture?: string | null;
+  scopes?: string[];
+  updated_at?: string;
+}
+
+const STORE_NAMES = [
+  "courses",
+  "slots",
+  "assessments",
+  "topics_done",
+  "grades",
+  "events",
+  "feeds",
+  "config_kv",
+  "tokens_meta",
+] as const;
+
+type StoreName = (typeof STORE_NAMES)[number];
+
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+export function openIdb(): Promise<IDBDatabase> {
+  if (dbPromise) return dbPromise;
+
+  dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+    if (typeof indexedDB === "undefined") {
+      reject(new Error("IndexedDB is not supported in this environment"));
+      return;
+    }
+
+    const request = indexedDB.open(IDB_DATABASE_NAME, IDB_SCHEMA_VERSION);
+
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      for (const name of STORE_NAMES) {
+        if (!db.objectStoreNames.contains(name)) {
+          if (name === "grades") {
+            db.createObjectStore(name, { keyPath: "assessment_id" });
+          } else if (name === "topics_done" || name === "config_kv" || name === "tokens_meta") {
+            db.createObjectStore(name, { keyPath: "key" });
+          } else {
+            db.createObjectStore(name, { keyPath: "id" });
+          }
+        }
+      }
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+    request.onblocked = () => {
+      // Old connections blocking upgrade
+      console.warn("IndexedDB upgrade blocked by open tab");
+    };
+  });
+
+  return dbPromise;
+}
+
+export async function idbGetAll<T>(storeName: StoreName): Promise<T[]> {
+  const db = await openIdb();
+  return new Promise<T[]>((resolve, reject) => {
+    const tx = db.transaction(storeName, "readonly");
+    const store = tx.objectStore(storeName);
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result as T[]);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function idbGet<T>(storeName: StoreName, key: IDBValidKey): Promise<T | undefined> {
+  const db = await openIdb();
+  return new Promise<T | undefined>((resolve, reject) => {
+    const tx = db.transaction(storeName, "readonly");
+    const store = tx.objectStore(storeName);
+    const req = store.get(key);
+    req.onsuccess = () => resolve(req.result as T | undefined);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function idbPut<T>(storeName: StoreName, value: T): Promise<void> {
+  const db = await openIdb();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(storeName, "readwrite");
+    const store = tx.objectStore(storeName);
+    const req = store.put(value);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function idbDelete(storeName: StoreName, key: IDBValidKey): Promise<void> {
+  const db = await openIdb();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(storeName, "readwrite");
+    const store = tx.objectStore(storeName);
+    const req = store.delete(key);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function idbClear(storeName: StoreName): Promise<void> {
+  const db = await openIdb();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(storeName, "readwrite");
+    const store = tx.objectStore(storeName);
+    const req = store.clear();
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function idbResetAll(): Promise<void> {
+  for (const name of STORE_NAMES) {
+    await idbClear(name);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// High-level Domain Store Helpers
+// ---------------------------------------------------------------------------
+
+export async function loadScheduleData(): Promise<ScheduleData> {
+  const courses = await idbGetAll<Course>("courses");
+  const slots = await idbGetAll<ScheduleSlot>("slots");
+  const semesterRecord = await idbGet<IdbConfigRecord>("config_kv", "semester");
+  return {
+    semester: (semesterRecord?.value as string) || null,
+    courses,
+    slots,
+  };
+}
+
+export async function saveScheduleData(schedule: ScheduleData): Promise<void> {
+  const db = await openIdb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(["courses", "slots", "config_kv"], "readwrite");
+    const courseStore = tx.objectStore("courses");
+    const slotStore = tx.objectStore("slots");
+    const configStore = tx.objectStore("config_kv");
+
+    courseStore.clear();
+    for (const c of schedule.courses) {
+      courseStore.put(c);
+    }
+
+    slotStore.clear();
+    for (const s of schedule.slots) {
+      slotStore.put(s);
+    }
+
+    if (schedule.semester !== undefined) {
+      configStore.put({ key: "semester", value: schedule.semester });
+    }
+
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function upsertCourse(course: Course): Promise<void> {
+  await idbPut("courses", course);
+}
+
+export async function deleteCourse(courseId: string): Promise<void> {
+  const db = await openIdb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(["courses", "slots"], "readwrite");
+    const courseStore = tx.objectStore("courses");
+    const slotStore = tx.objectStore("slots");
+
+    courseStore.delete(courseId);
+
+    // Delete associated slots
+    const req = slotStore.getAll();
+    req.onsuccess = () => {
+      const slots = req.result as ScheduleSlot[];
+      for (const slot of slots) {
+        if (slot.courseId === courseId) {
+          slotStore.delete(slot.id);
+        }
+      }
+    };
+
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function loadAssessments(): Promise<Assessment[]> {
+  return await idbGetAll<Assessment>("assessments");
+}
+
+export async function saveAssessments(assessments: Assessment[]): Promise<void> {
+  const db = await openIdb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction("assessments", "readwrite");
+    const store = tx.objectStore("assessments");
+    store.clear();
+    for (const a of assessments) {
+      store.put(a);
+    }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function loadTopicsDone(): Promise<Record<string, boolean>> {
+  const records = await idbGetAll<IdbTopicRecord>("topics_done");
+  const map: Record<string, boolean> = {};
+  for (const r of records) {
+    if (r.done) {
+      map[r.key] = true;
+    }
+  }
+  return map;
+}
+
+export async function setTopicDone(key: string, done: boolean): Promise<void> {
+  if (done) {
+    await idbPut("topics_done", { key, done: true, updated_at: new Date().toISOString() });
+  } else {
+    await idbDelete("topics_done", key);
+  }
+}
+
+export async function loadGrades(): Promise<Record<string, IdbGradeRecord>> {
+  const records = await idbGetAll<IdbGradeRecord>("grades");
+  const map: Record<string, IdbGradeRecord> = {};
+  for (const r of records) {
+    map[r.assessment_id] = r;
+  }
+  return map;
+}
+
+export async function saveGrade(record: IdbGradeRecord): Promise<void> {
+  await idbPut("grades", {
+    ...record,
+    updated_at: new Date().toISOString(),
+  });
+}
+
+export async function loadCustomEvents(): Promise<CustomCalendarEvent[]> {
+  return await idbGetAll<CustomCalendarEvent>("events");
+}
+
+export async function upsertCustomEvent(event: CustomCalendarEvent): Promise<void> {
+  await idbPut("events", event);
+}
+
+export async function deleteCustomEvent(id: string): Promise<void> {
+  await idbDelete("events", id);
+}
+
+export async function loadFeeds(): Promise<FeedConfig[]> {
+  return await idbGetAll<FeedConfig>("feeds");
+}
+
+export async function upsertFeed(feed: FeedConfig): Promise<void> {
+  await idbPut("feeds", feed);
+}
+
+export async function deleteFeed(id: string): Promise<void> {
+  await idbDelete("feeds", id);
+}
+
+export async function getConfigValue<T>(key: string, fallback: T): Promise<T> {
+  const record = await idbGet<IdbConfigRecord>("config_kv", key);
+  if (!record || record.value === undefined || record.value === null) {
+    return fallback;
+  }
+  return record.value as T;
+}
+
+export async function setConfigValue(key: string, value: unknown): Promise<void> {
+  await idbPut("config_kv", { key, value });
+}
+
+export async function loadAllConfig(): Promise<Record<string, unknown>> {
+  const records = await idbGetAll<IdbConfigRecord>("config_kv");
+  const config: Record<string, unknown> = {};
+  for (const r of records) {
+    config[r.key] = r.value;
+  }
+  return config;
+}

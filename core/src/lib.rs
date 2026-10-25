@@ -18,6 +18,7 @@ pub mod cal;
 pub mod parse;
 pub mod plan;
 pub mod sources;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod store;
 pub mod types;
 

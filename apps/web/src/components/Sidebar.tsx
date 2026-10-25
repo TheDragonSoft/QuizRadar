@@ -1,5 +1,14 @@
 import React from "react";
-import { Calendar, CheckSquare, Clock, Layers, LayoutDashboard, Radio, Timer } from "lucide-react";
+import {
+  Calendar,
+  CheckSquare,
+  Clock,
+  HelpCircle,
+  Layers,
+  LayoutDashboard,
+  Radio,
+  Timer,
+} from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
 import { computeSyncStatusSummary } from "../state/syncStatus";
@@ -17,6 +26,7 @@ const NAV_ITEMS: ReadonlyArray<{
   { id: "tasks", label: copy.nav.tasks, icon: CheckSquare },
   { id: "calendar", label: copy.nav.calendar, icon: Calendar },
   { id: "focus", label: copy.nav.focus, icon: Timer },
+  { id: "help", label: copy.nav.help, icon: HelpCircle },
 ];
 
 export const Sidebar: React.FC = () => {

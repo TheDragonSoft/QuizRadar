@@ -203,6 +203,10 @@ export const copy = {
     title: "Welcome to QuizRadar",
     subtitle:
       "Resolve fuzzy announcements into exact dates by cross-referencing your weekly timetable.",
+    comingFromV4Title: "Coming from QuizRadar v4?",
+    comingFromV4Subtitle:
+      "Restore your courses, timetable, grades, and completed topics directly from a v4 backup JSON.",
+    importV4Action: "Import v4 Backup",
     step1Title: "Profile & Rhythm",
     step2Title: "Connect Sources",
     step3Title: "Courses & Sync",

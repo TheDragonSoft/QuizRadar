@@ -424,6 +424,29 @@ class QuizRadarViewModel(
         }
     }
 
+    fun importBackup(
+        jsonContent: String,
+        onComplete: ((String) -> Unit)? = null,
+    ) {
+        viewModelScope.launch {
+            try {
+                val reportJson = core.importBackup(jsonContent, clockDate())
+                loadState()
+                onComplete?.invoke(reportJson)
+                val reportObj = org.json.JSONObject(reportJson)
+                val courses = reportObj.optInt("courses_imported", 0)
+                val assessments = reportObj.optInt("assessments_imported", 0)
+                val grades = reportObj.optInt("grades_imported", 0)
+                val topics = reportObj.optInt("topics_imported", 0)
+                val secretsCount = reportObj.optJSONArray("secrets_ignored")?.length() ?: 0
+                val secretsMsg = if (secretsCount > 0) " ($secretsCount legacy secrets dropped)" else ""
+                _toastMessage.value = "Restored: $courses courses, $assessments assessments, $grades grades, $topics topics.$secretsMsg"
+            } catch (e: Exception) {
+                _toastMessage.value = "Import failed: ${e.message}"
+            }
+        }
+    }
+
     fun exportIcs(assessmentId: String?): String {
         val current = (_uiState.value as? UiState.Ready)?.snapshot ?: return ""
         val arr = JSONArray()

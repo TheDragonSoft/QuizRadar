@@ -22,7 +22,7 @@ android {
         targetSdk = 35
         // STAMPED by tooling/generate-version.mjs from tooling/version.json — do not edit.
         versionCode = 50000
-        versionName = "5.0.0-alpha.1"
+        versionName = "5.0.0"
     }
 
     signingConfigs {

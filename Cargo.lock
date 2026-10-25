@@ -3550,7 +3550,7 @@ dependencies = [
 
 [[package]]
 name = "quizradar-core"
-version = "5.0.0-alpha.1"
+version = "5.0.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -3569,7 +3569,7 @@ dependencies = [
 
 [[package]]
 name = "quizradar-desktop"
-version = "5.0.0-alpha.1"
+version = "5.0.0"
 dependencies = [
  "chrono",
  "futures",
@@ -3591,7 +3591,7 @@ dependencies = [
 
 [[package]]
 name = "quizradar-wasm"
-version = "5.0.0-alpha.1"
+version = "5.0.0"
 dependencies = [
  "chrono",
  "quizradar-core",

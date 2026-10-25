@@ -30,6 +30,7 @@ export function OnboardingWizardModal({
   const microsoftLogout = useAppStore((s) => s.microsoftLogout);
   const validateGeminiKey = useAppStore((s) => s.validateGeminiKey);
   const extractSchedule = useAppStore((s) => s.extractSchedule);
+  const importBackupFile = useAppStore((s) => s.importBackupFile);
   const openModal = useAppStore((s) => s.openModal);
   const addToast = useAppStore((s) => s.addToast);
 
@@ -37,6 +38,24 @@ export function OnboardingWizardModal({
   const [userName, setUserName] = useState(config.userName || auth.name || "");
   const [userEmail, setUserEmail] = useState(config.userEmail || auth.email || "");
   const [selectedTrack, setSelectedTrack] = useState<string>("eng");
+  const [migrationSummary, setMigrationSummary] = useState<string | null>(null);
+
+  const handleImportV4File = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const report = await importBackupFile(undefined, text);
+      const summary = `Restored: ${report.coursesImported} courses, ${report.assessmentsImported} assessments, ${report.gradesImported} grades, ${report.topicsImported} completed topics.${report.secretsIgnored.length > 0 ? ` (${report.secretsIgnored.length} legacy secrets dropped)` : ""}`;
+      setMigrationSummary(summary);
+      addToast({ type: "success", message: summary });
+    } catch (err) {
+      addToast({
+        type: "error",
+        message: `Import failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  };
 
   // Step 2: Connections State
   const [geminiKey, setGeminiKey] = useState("");
@@ -229,6 +248,35 @@ export function OnboardingWizardModal({
       {/* STEP 1: Profile, Track & Theme */}
       {step === 1 && (
         <div className="mt-6 space-y-6">
+          {/* Coming from v4 card */}
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h4 className="text-xs font-bold text-[var(--text)]">
+                  {copy.onboarding.comingFromV4Title}
+                </h4>
+                <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                  {copy.onboarding.comingFromV4Subtitle}
+                </p>
+              </div>
+              <label className="cursor-pointer shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-xs font-semibold text-[var(--text)] hover:border-[var(--accent)] transition">
+                <Upload className="h-3.5 w-3.5" />
+                <span>{copy.onboarding.importV4Action}</span>
+                <input
+                  type="file"
+                  accept=".json"
+                  className="hidden"
+                  onChange={handleImportV4File}
+                />
+              </label>
+            </div>
+            {migrationSummary && (
+              <div className="mt-3 p-2.5 rounded-lg bg-[var(--accent)]/10 text-xs text-[var(--text)] font-medium">
+                {migrationSummary}
+              </div>
+            )}
+          </div>
+
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1">

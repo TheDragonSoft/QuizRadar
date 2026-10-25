@@ -30,8 +30,10 @@ use chrono::{Datelike, Duration, NaiveDate, NaiveTime};
 use crate::parse::util::{weekday_index, weekday_to_index};
 use crate::types::{CustomCalendarEvent, ScheduleData};
 
+use serde::{Deserialize, Serialize};
+
 /// One bookable candidate window for `date`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StudyBlockCandidate {
     pub date: NaiveDate,
     pub start: NaiveTime,

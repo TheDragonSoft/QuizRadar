@@ -46,21 +46,29 @@ pub struct Store {
 impl Store {
     /// Opens (and migrates) the store file: one SQLite file per device.
     pub async fn open(path: impl AsRef<Path> + Send + 'static) -> Result<Self, StoreError> {
-        let db = tokio::task::spawn_blocking(move || db::Db::open(path.as_ref()))
-            .await
-            .map_err(flatten_join)?;
-        Ok(Self::wrap(db?))
+        let db = if tokio::runtime::Handle::try_current().is_ok() {
+            tokio::task::spawn_blocking(move || db::Db::open(path.as_ref()))
+                .await
+                .map_err(flatten_join)??
+        } else {
+            db::Db::open(path.as_ref())?
+        };
+        Ok(Self::wrap(db))
     }
 
     /// In-memory store for tests and scratch shells.
     pub async fn open_in_memory() -> Result<Self, StoreError> {
-        let db = tokio::task::spawn_blocking(db::Db::open_in_memory)
-            .await
-            .map_err(flatten_join)?;
-        Ok(Self::wrap(db?))
+        let db = if tokio::runtime::Handle::try_current().is_ok() {
+            tokio::task::spawn_blocking(db::Db::open_in_memory)
+                .await
+                .map_err(flatten_join)??
+        } else {
+            db::Db::open_in_memory()?
+        };
+        Ok(Self::wrap(db))
     }
 
-    fn wrap(db: db::Db) -> Self {
+    pub(crate) fn wrap(db: db::Db) -> Self {
         Self {
             db: Arc::new(Mutex::new(db)),
         }
@@ -78,14 +86,19 @@ impl Store {
     {
         let db = Arc::clone(&self.db);
         async move {
-            let result = tokio::task::spawn_blocking(move || {
+            if tokio::runtime::Handle::try_current().is_ok() {
+                let result = tokio::task::spawn_blocking(move || {
+                    let mut guard = db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                    operation(&mut guard)
+                })
+                .await;
+                match result {
+                    Ok(inner) => inner,
+                    Err(join_err) => Err(flatten_join(join_err)),
+                }
+            } else {
                 let mut guard = db.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                 operation(&mut guard)
-            })
-            .await;
-            match result {
-                Ok(inner) => inner,
-                Err(join_err) => Err(flatten_join(join_err)),
             }
         }
     }

@@ -19,6 +19,8 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 use chrono::{NaiveDate, NaiveTime};
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -85,7 +87,7 @@ pub struct GradeChange {
 /// Everything derived views need in one struct — dashboard and tasks both
 /// already computed at the caller's reference date, so no shell ever
 /// re-derives separately (`04` §4.4 item 5).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSnapshot {
     /// Radar list, refreshed for `reference_date` (day-rollover semantics).
     pub assessments: Vec<Assessment>,
@@ -99,7 +101,7 @@ pub struct AppSnapshot {
 
 /// The two always-fresh derived payloads (`04` §6 phases): dashboard radar
 /// summary + deterministic study-roadmap.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DerivedState {
     pub dashboard: plan::dashboard::DashboardSummary,
     pub tasks: plan::tasks::StudyTasksPayload,

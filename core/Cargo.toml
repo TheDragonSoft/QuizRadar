@@ -5,6 +5,19 @@ edition.workspace = true
 license.workspace = true
 description = "QuizRadar v5 core: parsers, planner, calendar, store, sources, auth — pure Rust, UI-agnostic."
 
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["cli"]
+
+[features]
+default = []
+uniffi = ["dep:uniffi", "uniffi/tokio"]
+cli = ["uniffi", "uniffi/cli"]
+
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
@@ -17,6 +30,7 @@ futures = { version = "0.3", default-features = false, features = ["std", "async
 sha2 = "0.10"
 base64 = "0.22"
 getrandom = "0.2"
+uniffi = { version = "0.28", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rusqlite.workspace = true

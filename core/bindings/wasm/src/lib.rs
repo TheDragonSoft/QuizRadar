@@ -60,15 +60,19 @@ impl QuizRadarWasm {
         let date = NaiveDate::parse_from_str(ref_date_iso, "%Y-%m-%d")
             .map_err(|e| JsValue::from_str(&format!("Invalid ref_date: {e}")))?;
         let origin = IcsOrigin::Moodle { portal_url: None };
-        let offset = FixedOffset::east_opt(0)
-            .ok_or_else(|| JsValue::from_str("Invalid UTC offset"))?;
+        let offset =
+            FixedOffset::east_opt(0).ok_or_else(|| JsValue::from_str("Invalid UTC offset"))?;
         let (assessments, _stats) =
             parse_ics_assessments(content, &schedule, &origin, date, offset);
         serde_json::to_string(&assessments)
             .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
     }
 
-    pub fn radar_order(&self, assessments_json: &str, ref_date_iso: &str) -> Result<String, JsValue> {
+    pub fn radar_order(
+        &self,
+        assessments_json: &str,
+        ref_date_iso: &str,
+    ) -> Result<String, JsValue> {
         let assessments: Vec<Assessment> = serde_json::from_str(assessments_json)
             .map_err(|e| JsValue::from_str(&format!("Invalid assessments JSON: {e}")))?;
         let date = NaiveDate::parse_from_str(ref_date_iso, "%Y-%m-%d")
@@ -153,7 +157,9 @@ impl QuizRadarWasm {
                 .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")));
         }
 
-        let exam_date = assessment.date.unwrap_or_else(|| today + chrono::Duration::days(1));
+        let exam_date = assessment
+            .date
+            .unwrap_or_else(|| today + chrono::Duration::days(1));
         let block_date = block_date_for(exam_date);
         let candidates = study_block_candidates(&schedule, &events, block_date);
 

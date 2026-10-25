@@ -5,6 +5,13 @@ plugins {
     id("org.jlleitschuh.gradle.ktlint")
 }
 
+ktlint {
+    filter {
+        exclude("**/quizradar_core.kt")
+        exclude("**/generated/**")
+    }
+}
+
 android {
     namespace = "com.quizradar.app"
     compileSdk = 35
@@ -42,6 +49,37 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
+}
+
+tasks.withType<Test> {
+    systemProperty("jna.library.path", file("${rootProject.projectDir}/../../target/debug").absolutePath)
+}
+
+tasks.register<Exec>("uniffiGenerate") {
+    group = "build"
+    description = "Generates Kotlin bindings from quizradar-core cdylib using uniffi-bindgen"
+    workingDir = rootProject.projectDir.resolve("../..")
+    val osName = System.getProperty("os.name").lowercase()
+    val cdylibPath =
+        when {
+            osName.contains("win") -> "target/debug/quizradar_core.dll"
+            osName.contains("mac") -> "target/debug/libquizradar_core.dylib"
+            else -> "target/debug/libquizradar_core.so"
+        }
+    commandLine(
+        "cargo", "run", "-p", "quizradar-core", "--bin", "uniffi-bindgen", "--features", "cli", "--",
+        "generate",
+        "--library", cdylibPath,
+        "--language", "kotlin",
+        "--config", "core/bindings/uniffi.toml",
+        "--out-dir", "apps/mobile-android/app/src/main/java",
+    )
 }
 
 dependencies {
@@ -54,5 +92,16 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
+    // UniFFI runtime (JNA) + Coroutines
+    implementation("net.java.dev.jna:jna:5.14.0@aar")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
+    // Secure token storage (EncryptedSharedPreferences)
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
     testImplementation("junit:junit:4.13.2")
+    testImplementation("net.java.dev.jna:jna:5.14.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    testImplementation("org.robolectric:robolectric:4.14.1")
 }

@@ -22,6 +22,12 @@ pub mod sources;
 pub mod store;
 pub mod types;
 
+#[cfg(feature = "uniffi")]
+pub mod ffi;
+
+#[cfg(feature = "uniffi")]
+uniffi::setup_scaffolding!();
+
 /// Crate name for shells' about/version surfaces.
 pub const CRATE_NAME: &str = env!("CARGO_PKG_NAME");
 

@@ -1,10 +1,136 @@
 package com.quizradar.app.core
 
+import java.time.LocalDate
+
 /**
- * Placeholder for the UniFFI-generated Kotlin bindings of the Rust core
- * crate (`core/`, `quizradar-core`). Generated bindings REPLACE this file in
- * phase 12 (prompts/p12-android-scaffold.md) once core symbols exist — the
- * generation command is recorded in docs/STATUS.md §Commands. No inference
- * methods here: stubs that fabricate answers are forbidden.
+ * High-level Kotlin interface for QuizRadar operations on Android.
+ * Calls Rust core over UniFFI with zero server dependencies.
  */
-interface QuizRadarCore
+interface QuizRadarCore {
+    fun version(): String
+
+    suspend fun getState(refDate: LocalDate = LocalDate.now()): String
+
+    suspend fun saveSchedule(
+        scheduleJson: String,
+        refDate: LocalDate = LocalDate.now(),
+    ): String
+
+    suspend fun upsertCourse(
+        courseJson: String,
+        slotsJson: String,
+        refDate: LocalDate = LocalDate.now(),
+    ): String
+
+    suspend fun deleteCourse(
+        code: String,
+        refDate: LocalDate = LocalDate.now(),
+    ): String
+
+    suspend fun replaceAssessments(
+        assessmentsJson: String,
+        refDate: LocalDate = LocalDate.now(),
+    ): String
+
+    suspend fun toggleTopic(
+        topicKey: String,
+        done: Boolean,
+        refDate: LocalDate = LocalDate.now(),
+    ): String
+
+    suspend fun updateGrade(
+        assessmentId: String,
+        achieved: Double?,
+        max: Double?,
+        weightage: Double?,
+        refDate: LocalDate = LocalDate.now(),
+    ): String
+
+    suspend fun upsertCustomEvent(
+        eventJson: String,
+        refDate: LocalDate = LocalDate.now(),
+    ): String
+
+    suspend fun deleteCustomEvent(
+        id: String,
+        refDate: LocalDate = LocalDate.now(),
+    ): String
+
+    suspend fun setConfigString(
+        key: String,
+        value: String?,
+    )
+
+    suspend fun getConfigString(key: String): String?
+
+    suspend fun setConfigBool(
+        key: String,
+        value: Boolean,
+    )
+
+    suspend fun getConfigBool(
+        key: String,
+        default: Boolean,
+    ): Boolean
+
+    suspend fun exportBackup(refDate: LocalDate = LocalDate.now()): String
+
+    suspend fun importBackup(
+        backupJson: String,
+        refDate: LocalDate = LocalDate.now(),
+    ): String
+
+    fun parseEmail(
+        emailJson: String,
+        scheduleJson: String,
+        refDate: LocalDate = LocalDate.now(),
+    ): String
+
+    fun parseIcs(
+        content: String,
+        scheduleJson: String,
+        refDate: LocalDate = LocalDate.now(),
+    ): String
+
+    fun radarOrder(
+        assessmentsJson: String,
+        refDate: LocalDate = LocalDate.now(),
+    ): String
+
+    fun deriveDashboard(
+        assessmentsJson: String,
+        topicsJson: String,
+        eventsJson: String,
+        refDate: LocalDate = LocalDate.now(),
+    ): String
+
+    fun deriveStudyTasks(
+        assessmentsJson: String,
+        topicsJson: String,
+        refDate: LocalDate = LocalDate.now(),
+    ): String
+
+    fun detectConflicts(
+        assessmentsJson: String,
+        eventsJson: String,
+    ): String
+
+    fun generateStudyBlocks(
+        assessmentJson: String,
+        scheduleJson: String,
+        eventsJson: String,
+        today: LocalDate = LocalDate.now(),
+    ): String
+
+    fun exportIcs(
+        assessmentsJson: String,
+        assessmentId: String? = null,
+    ): String
+
+    fun generatePracticeQuiz(assessmentJson: String): String
+
+    fun mergeSync(
+        existingJson: String,
+        incomingJson: String,
+    ): String
+}

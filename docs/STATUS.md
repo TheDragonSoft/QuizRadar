@@ -18,7 +18,7 @@ _Agents update this file after every phase. Prompts are defined in `prompts/READ
 - [x] 12 android: scaffold + UniFFI core bindings + Compose skeleton (`prompts/p12-android-scaffold.md`) — shipped: `apps/mobile-android/` configured with `compileSdk 35`, `minSdk 26`, `targetSdk 35`, Compose BOM `2025.01.00`, Material 3, `INTERNET` and `POST_NOTIFICATIONS` permissions, and strict `android:usesCleartextTraffic="false"` (HTTPS-only); UniFFI bindings in `core/src/ffi.rs` + `core/bindings/uniffi.toml` exporting `core_version()`, `parse_email()`, `parse_ics()`, `radar_order_list()`, `derive_dashboard_summary()`, `derive_study_tasks()`, `detect_schedule_conflicts()`, `generate_study_blocks_for_exam()`, `export_ics_calendar()`, `generate_practice_mcq()`, `merge_sync_assessments()`, and thread-safe async `NativeStore` (wrapping `core::store::Store` SQLite); Gradle task `uniffiGenerate` using in-crate binary `core/src/bin/uniffi-bindgen.rs` (`uniffi = "0.28"`); `TokenProvider` interface with Android Keystore-backed `EncryptedTokenStore` (`androidx.security.crypto:security-crypto`) storing refresh tokens and Gemini API keys at app-private scope and holding 1-hour access tokens strictly in-memory (plus `MemoryTokenStore` for tests); `QuizRadarEngine` Kotlin wrapper exposing suspend functions over native store and pure derivations; Compose M3 skeleton (`MainActivity`, `QuizRadarTheme` mapping exact spec hexes, 4-destination `AppScaffold` with predictive back integration); CI android job extended to build native cdylib and run `ktlintCheck`, `assembleDebug`, and native unit tests (`testDebugUnitTest`). 6 Android unit tests green in Robolectric/JVM with native JNA DLL loading; ktlint and build clean.
 - [x] 13 android: Compose UI parity (views + detail/pomodoro/practice) (`prompts/p13-android-ui.md`) — shipped: Material 3 Compose UI parity for Android across Dashboard, Tasks, Calendar, and Focus screens, matching `01` §4.3–§4.6 and mobile modifiers `[M]`. Dashboard features 3 sub-tabs (Overview/Assessments/Study), KPI cards row (7-day count + type breakdown pills, readiness %, sync/accounts KPI with active sources count), ConflictBanner (unresolved vs mitigated states, auto-schedule 90-min evening blocks via core, dismiss persistence), "What Should I Study?" recommendation cards with optimistic topic toggles, and timeline rows with source icon, conflict chip, score chip, urgency pill, and honest room "—". Pull-to-refresh via `PullToRefreshBox` respecting opened sheets. Tasks screen features summary metrics line, course filter dropdown, readiness card grid with color thresholds and average badge, and Daily Study Roadmap day cards ("Today" ring/pulse) with topic checkboxes. Calendar screen features clamped 3-day sliding window (<600dp) and 7-day tablet window (08:00–21:00), pure greedy lane-overlap interval packing algorithm (`CalendarLanes.kt`), 4 block kinds (merged slot+exam with exam-glow, plain class slot, standalone assessment, custom event pink with inline delete/sheet), and tap-to-inspect opening the assessment detail sheet. Assessment Detail M3 `ModalBottomSheet` features course-color header bar, facts grid (room "—" when null, never "Hall B-204"), warnings, topics checklist with optimistic checkmarks, grade editor with Keep/Clear/Set explicit-null-clears semantics (`clearAchieved`/`clearMax`/`clearWeightage`), live what-if projection arithmetic (`WhatIfCalculator.kt`) with honest equal-weight disclosure note, and Google Calendar intent + RFC 5545 `.ics` share actions (`Intent.ACTION_SEND`). Focus screen features 25/5/15 Pomodoro timer (countdown, play/pause/reset, topic-done hook) and 5-MCQ practice quiz generated via core with local fallback provenance badges. M3 bottom navigation with 4 destinations (Dashboard, Tasks, Calendar, Focus) with `BackHandler` closing sheets before navigating or exiting. 20 Android unit and Robolectric UI tests green; ktlint and debug APK assemble clean.
 - [x] 14 android: native edge (PKCE custom-scheme OAuth, Glance widget, share ingest, notifications) (`prompts/p14-android-native.md`) — shipped: Full native Android capability parity replacing v4's `LocalOAuthServer`/FGS with standard RFC 8252 custom-scheme PKCE OAuth (`com.quizradar.app://oauth/google` and `com.quizradar.app://oauth/microsoft`) via Chrome Custom Tabs and core token exchange (refresh tokens in `EncryptedSharedPreferences`, access tokens in memory, zero loopback servers, zero FGS `specialUse`). Jetpack Glance 2x1 countdown widget (`QuizRadarWidget` + `QuizRadarWidgetReceiver`) displaying course color, title, date, and dynamic urgency badges ("TODAY", "TOMORROW", "IN X DAYS"), updated immediately on state changes and every 30 minutes via `WidgetUpdateWorker`. Share-sheet ingest (`ACTION_SEND` text/plain) with Gmail `subject\n\ntext` split (`ShareIngestParser`) routing directly into M3 `CreateEventSheet` and saving to core store. First-party notifications (`ExamReminderWorker` + `NotificationHelper`) managing high-importance `quizradar_exam_reminders` (T-24h and same-day alerts) and `quizradar_morning_digest` with deterministic FNV-1a IDs and ≤48 nearest policy. Predictive back handling across sheets and dashboard tabs. 40 Android unit and Robolectric tests green; ktlint and assembleDebug clean.
-- [ ] 15 release pipeline (signed tauri updater, release APK/AAB, PWA deploy, notes)
+- [x] 15 release pipeline (signed tauri updater, release APK/AAB, PWA deploy, notes) (`prompts/p15-release-ci.md`) — shipped: Monolithic version truth enforced via `tooling/version.json` with `generate-version.mjs --apply` stamping 5 sinks (`apps/web/package.json`, `apps/desktop/src-tauri/tauri.conf.json`, `Cargo.toml`, `apps/mobile-android/app/build.gradle.kts`, `apps/web/src/generated/version.ts`) and verified by `core/build.rs` compile-time passthrough assertion. Release CI pipeline `.github/workflows/release.yml` with least-privilege permissions, multi-platform desktop matrix (Windows NSIS + portable zip, macOS DMG, Linux deb/AppImage), signed Tauri 2 updater artifacts (`latest.json` generator via `tooling/generate-updater-manifest.mjs`), honest updater error handling ("Update check unavailable — github link down" on network/404 errors), Android release signing with real keystore via Gradle `signingConfigs` and `apksigner` verification, PWA deployment to GitHub Pages with relative assets and dynamic service worker URL, and automated markdown release notes from git history via `tooling/generate-changelog.mjs`. 4 version pipeline tests, 3 updater command tests, and Android release signing verified.
 - [ ] 16 migration UX + docs honesty pass + v1.0 cut
 
 ## Feature-parity checklist status
@@ -93,6 +93,7 @@ _Track against `docs/rebuild/01-product-spec.md` §8. Tick items only with a CIT
 - [x] `[M]` Share-sheet ingest: ACTION_SEND text/plain with Gmail subject\n\ntext split into New Event sheet (`01` §4.8): `apps/mobile-android/app/src/main/java/com/quizradar/app/ui/share/ShareIngestParser.kt` + `CreateEventSheet.kt` (phase(14)).
 - [x] `[M]` First-party notifications: T-24h/same-day exam reminders + morning digest via WorkManager (`01` §4.8): `apps/mobile-android/app/src/main/java/com/quizradar/app/notifications/ExamReminderWorker.kt` + `NotificationHelper.kt` (phase(14)).
 - [x] `[M]` Manifest security: zero usesCleartextTraffic, zero Foreground Service specialUse, zero http VIEW intents (`01` §8 / `04` §5): `AndroidManifest.xml` (verified in `ManifestSecurityTest.kt`, phase(14)).
+- [x] Signed updater and release pipeline with monotonic versioning (`01` §8 / `04` §4.8): `tooling/generate-version.mjs`, `tooling/generate-updater-manifest.mjs`, `tooling/generate-changelog.mjs`, `core/build.rs`, `.github/workflows/release.yml`, `apps/mobile-android/app/build.gradle.kts` release signing config, `apksigner` v2 verified (phase(15)).
 
 ## Phase-02 divergence log (deliberate deviations from v4, per 03/01 §3)
 
@@ -329,6 +330,100 @@ $env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot"
 ### CI
 
 `.github/workflows/ci.yml` — three PR jobs running the exact commands above: `rust` (fmt/clippy/test + version check), `web` (pnpm lint/typecheck/test + version check), `android` (temurin 21 + `./gradlew assembleDebug`). Replace/extend in phase 15.
+
+### CI & Release Commands
+
+```powershell
+# Version synchronization across 5 sinks
+node tooling/generate-version.mjs --check       # CI gate: fails 1 if sinks are stale
+node tooling/generate-version.mjs --apply       # writes tooling/version.json to all 5 sinks
+
+# Release changelog and Tauri updater manifest
+node tooling/generate-changelog.mjs             # updates CHANGELOG.md from git log
+node tooling/generate-changelog.mjs --notes-only # prints release body for GitHub Release
+node tooling/generate-updater-manifest.mjs --artifacts-dir dist --tag v5.0.0-alpha.1 # creates latest.json
+
+# Android release build & verification (requires KEYSTORE_* environment variables)
+.\gradlew.bat assembleRelease bundleRelease     # from apps\mobile-android
+$env:ANDROID_HOME\build-tools\35.0.0\apksigner.bat verify --verbose apps\mobile-android\app\build\outputs\apk\release\app-release.apk
+```
+
+## Release-runbook
+
+### 1. One-Time Setup: Keys and Secrets
+QuizRadar requires **zero** backend servers and uses strictly platform-native signing:
+
+1. **Desktop Tauri Updater Signing Keypair**:
+   - Generate a minisign keypair using `cargo tauri signer generate`:
+     ```powershell
+     cargo tauri signer generate -w quizradar.key
+     ```
+   - Store the public key string in `apps/desktop/src-tauri/tauri.conf.json` under `plugins.updater.pubkey`.
+   - Store the private key string into GitHub Repository Secret: `TAURI_SIGNING_PRIVATE_KEY`.
+   - If password-protected, store password in `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+   - **Never commit `quizradar.key` or private keys to git** (guarded by `.gitignore`).
+
+2. **Android Release Keystore**:
+   - Generate a 2048-bit RSA release keystore:
+     ```powershell
+     keytool -genkeypair -v -keystore quizradar-release.keystore -alias quizradar -keyalg RSA -keysize 2048 -validity 10000
+     ```
+   - Encode the keystore as base64:
+     ```powershell
+     [Convert]::ToBase64String([IO.File]::ReadAllBytes("quizradar-release.keystore")) | Set-Clipboard
+     ```
+   - In GitHub Repository Settings > Secrets and variables > Actions, add:
+     - `ANDROID_KEYSTORE_BASE64`: base64 string copied above
+     - `ANDROID_KEYSTORE_PASSWORD`: keystore password
+     - `ANDROID_KEY_ALIAS`: `quizradar` (or chosen alias)
+     - `ANDROID_KEY_PASSWORD`: key password
+   - Keep the original keystore backed up safely in an offline password manager. Never commit it to git (enforced by `*.keystore` and `*.jks` in `.gitignore`).
+
+### 2. Key Rotation Procedure
+- **Updater Key Rotation**:
+  - Generate a new keypair via `cargo tauri signer generate`.
+  - Update `pubkey` in `tauri.conf.json`.
+  - Update `TAURI_SIGNING_PRIVATE_KEY` in GitHub Secrets.
+  - Previous builds verify updates with their bundled public key; deploy an intermediate bridge update or notify users via GitHub Releases if public key rotation is required.
+- **Android Keystore Rotation**:
+  - For direct APK sideloading, sign with the new key (users must uninstall previous build or follow standard Android app signature update).
+  - For Google Play, configure Play App Signing key rotation via Google Play Console.
+
+### 3. Local Verification & Updater Testing
+- **Local Updater Check Simulation**:
+  - Pure unit tests verify spec error copy: `cargo test -p quizradar-desktop -- updater::tests`.
+  - Offline/unreachable GitHub link test: when repo link is down, returns explicit `"Update check unavailable — github link down"`.
+  - Dry-run manifest test:
+    ```powershell
+    node tooling/generate-updater-manifest.mjs --dry-run --version 5.0.0-alpha.1 --output target/test-latest.json
+    ```
+- **Local Release Build Verification**:
+  - Web bundle: `pnpm --filter quizradar-web build`
+  - Android signed APK: set `KEYSTORE_FILE`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`, run `./gradlew.bat assembleRelease`, and verify with `apksigner verify --verbose`.
+
+### 4. Release Tagging & Publication Procedure
+When cutting a new release:
+1. Bump version in `tooling/version.json` (e.g. `5.0.0-alpha.2`).
+2. Run `node tooling/generate-version.mjs --apply` to synchronize all 5 sinks.
+3. Run `node tooling/generate-changelog.mjs` to append conventional phase commits to `CHANGELOG.md`.
+4. Validate that all sinks are in sync: `node tooling/generate-version.mjs --check`.
+5. Run full test suites:
+   ```powershell
+   pnpm format:check; pnpm lint; pnpm typecheck; pnpm test
+   cargo fmt --all --check; cargo clippy --workspace --all-targets -- -D warnings
+   cargo test --workspace
+   cd apps/mobile-android; .\gradlew.bat ktlintCheck testDebugUnitTest; cd ../..
+   ```
+6. Commit changes: `git commit -am "chore(release): bump version to vX.Y.Z"`.
+7. Create annotated git tag: `git tag vX.Y.Z`.
+8. Push commits and tag: `git push origin main --tags`.
+9. The `.github/workflows/release.yml` GitHub Actions pipeline will execute:
+   - Validate version sinks, lints, and test suites.
+   - Build desktop matrix (Windows NSIS + portable zip, macOS DMG, Linux deb/AppImage).
+   - Build signed Android APK and AAB with `apksigner` verification.
+   - Deploy PWA to GitHub Pages (`/QuizRadar/` base).
+   - Generate `SHA256SUMS.txt` checksum manifest and updater `latest.json`.
+   - Publish GitHub Release attaching all built installers and archives with release notes.
 
 ## Dogfood notes
 

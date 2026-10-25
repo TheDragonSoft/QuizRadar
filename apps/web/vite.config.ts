@@ -12,6 +12,7 @@ const versionJson = fileURLToPath(new URL("../../tooling/version.json", import.m
 const { version } = JSON.parse(readFileSync(versionJson, "utf8")) as { version: string };
 
 export default defineConfig({
+  base: "./",
   plugins: [react()],
   define: {
     __APP_VERSION__: JSON.stringify(version),

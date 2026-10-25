@@ -22,7 +22,8 @@ export async function getWasmEngine(): Promise<QuizRadarWasm> {
 
     if (!isTestOrNode) {
       // Real browser environment
-      await initWasm({ module_or_path: "/wasm/quizradar_wasm_bg.wasm" });
+      const wasmUrl = new URL("wasm/quizradar_wasm_bg.wasm", window.location.href).href;
+      await initWasm({ module_or_path: wasmUrl });
     } else {
       // Node.js / Vitest / JSDOM environment
       const fs = await import(/* @vite-ignore */ "node:fs");

@@ -55,18 +55,31 @@ const sinks = [
   },
   {
     name: "Cargo.toml ([workspace.package].version)",
-    read: () =>
-      readFileSync(path.join(repoRoot, "Cargo.toml"), "utf8").replace(
-        /^(version = ")[^"]*(")$/m,
-        `$1${version}$2`,
-      ),
+    read: () => {
+      const content = readFileSync(path.join(repoRoot, "Cargo.toml"), "utf8");
+      if (!/^version = "[^"]*"/m.test(content)) {
+        throw new Error('Cargo.toml: pattern `version = "..."` not found');
+      }
+      return content.replace(/^(version = ")[^"]*(")$/m, `$1${version}$2`);
+    },
   },
   {
     name: "apps/mobile-android/app/build.gradle.kts (versionName/versionCode)",
-    read: () =>
-      readFileSync(path.join(repoRoot, "apps/mobile-android/app/build.gradle.kts"), "utf8")
-        .replace(/^(versionCode = )\d+$/m, `$1${versionCode}`)
-        .replace(/^(versionName = ")[^"]*(")$/m, `$1${version}$2`),
+    read: () => {
+      const content = readFileSync(
+        path.join(repoRoot, "apps/mobile-android/app/build.gradle.kts"),
+        "utf8",
+      );
+      if (
+        !/^\s*versionCode = \d+$/m.test(content) ||
+        !/^\s*versionName = "[^"]*"$/m.test(content)
+      ) {
+        throw new Error("build.gradle.kts: versionCode or versionName pattern not found");
+      }
+      return content
+        .replace(/^(\s*versionCode = )\d+$/m, `$1${versionCode}`)
+        .replace(/^(\s*versionName = ")[^"]*(")$/m, `$1${version}$2`);
+    },
   },
   {
     name: "apps/web/src/generated/version.ts (APP_VERSION + SW cache key)",
@@ -96,7 +109,9 @@ const stale = results.filter((r) => r.stale);
 
 if (check) {
   if (stale.length > 0) {
-    console.error("Version sinks stale (run `node tooling/generate-version.mjs`, then re-check):");
+    console.error(
+      "Version sinks stale (run `node tooling/generate-version.mjs --apply`, then re-check):",
+    );
     for (const s of stale) console.error(`  - ${s.name} (${s.file})`);
     process.exit(1);
   }

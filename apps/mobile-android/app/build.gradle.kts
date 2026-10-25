@@ -25,9 +25,36 @@ android {
         versionName = "5.0.0-alpha.1"
     }
 
+    signingConfigs {
+        create("release") {
+            val keystorePath =
+                System.getenv("KEYSTORE_FILE")
+                    ?: (project.findProperty("KEYSTORE_FILE") as? String)
+            val storePassword =
+                System.getenv("KEYSTORE_PASSWORD")
+                    ?: (project.findProperty("KEYSTORE_PASSWORD") as? String)
+            val keyAlias =
+                System.getenv("KEY_ALIAS")
+                    ?: (project.findProperty("KEY_ALIAS") as? String)
+            val keyPassword =
+                System.getenv("KEY_PASSWORD")
+                    ?: (project.findProperty("KEY_PASSWORD") as? String)
+
+            if (!keystorePath.isNullOrBlank() && file(keystorePath).exists()) {
+                storeFile = file(keystorePath)
+                this.storePassword = storePassword
+                this.keyAlias = keyAlias
+                this.keyPassword = keyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // Real keystore signing lands in phase 15 (prompts/p15-release-ci.md).
+            val releaseSigning = signingConfigs.getByName("release")
+            if (releaseSigning.storeFile != null && releaseSigning.storeFile!!.exists()) {
+                signingConfig = releaseSigning
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

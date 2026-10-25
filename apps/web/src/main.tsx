@@ -13,7 +13,8 @@ createRoot(document.getElementById("root")!).render(
 // Register service worker in browser environments
 if (typeof window !== "undefined" && "serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch((err) => {
+    const swUrl = new URL("sw.js", window.location.href).href;
+    navigator.serviceWorker.register(swUrl).catch((err) => {
       console.warn("Service Worker registration failed:", err);
     });
   });

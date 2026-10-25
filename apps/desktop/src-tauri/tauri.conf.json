@@ -33,8 +33,10 @@
   },
   "plugins": {
     "updater": {
-      "endpoints": [],
-      "pubkey": "",
+      "endpoints": [
+        "https://github.com/TheDragonSoft/QuizRadar/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMyQjRCRjE1QzM1QTBEMzUKUldRMURWckRGYiswTXNjUS9FeHhxVGZQN3dUa1VOQVlRNzhiNE9BMVZCS1dtazZIWWxkWk4xYUcK",
       "windows": {
         "main": {}
       }

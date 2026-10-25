@@ -1,7 +1,11 @@
-//! Updater commands (`02` §5.9, `04` §4.8).
+//! Updater commands (`02` §5.9, `04` §4.8, `prompts/p15-release-ci.md`).
 //!
-//! Provides update checking via `tauri-plugin-updater`. Until phase 15 establishes
-//! signed release artifacts and endpoints, returns honest "release channel not configured".
+//! Provides update checking via `tauri-plugin-updater`.
+//! Follows the honesty doctrine (anti v4 `03` §D7):
+//! - Hits `releases/latest` endpoint configured in `tauri.conf.json`.
+//! - When repo is unreachable or returns 404/network error, returns explicit error
+//!   "Update check unavailable — github link down".
+//! - When unconfigured, returns "Release channel not configured (<reason>)".
 
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
@@ -15,6 +19,33 @@ pub struct UpdateCheckResult {
     pub latest_version: Option<String>,
     pub body: Option<String>,
     pub error: Option<String>,
+}
+
+/// Formats raw updater errors honestly according to spec.
+pub fn format_updater_error(err_str: &str) -> String {
+    let lower = err_str.to_lowercase();
+    if lower.contains("network")
+        || lower.contains("dns")
+        || lower.contains("connect")
+        || lower.contains("connection")
+        || lower.contains("404")
+        || lower.contains("status code")
+        || lower.contains("request")
+        || lower.contains("timeout")
+        || lower.contains("unreachable")
+        || lower.contains("hyper")
+        || lower.contains("reqwest")
+    {
+        "Update check unavailable — github link down".to_string()
+    } else if lower.contains("pubkey")
+        || lower.contains("endpoint")
+        || lower.contains("empty")
+        || lower.contains("not configured")
+    {
+        format!("Release channel not configured ({err_str})")
+    } else {
+        format!("Update check unavailable — {err_str}")
+    }
 }
 
 #[tauri::command]
@@ -42,9 +73,7 @@ pub async fn check_update(app: AppHandle) -> Result<UpdateCheckResult, String> {
                 current_version,
                 latest_version: None,
                 body: None,
-                error: Some(format!(
-                    "Release channel not configured ({e}) — updater arrives with phase 15."
-                )),
+                error: Some(format_updater_error(&e.to_string())),
             }),
         },
         Err(e) => Ok(UpdateCheckResult {
@@ -52,9 +81,48 @@ pub async fn check_update(app: AppHandle) -> Result<UpdateCheckResult, String> {
             current_version,
             latest_version: None,
             body: None,
-            error: Some(format!(
-                "Release channel not configured ({e}) — updater arrives with phase 15."
-            )),
+            error: Some(format_updater_error(&e.to_string())),
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_updater_error_network() {
+        assert_eq!(
+            format_updater_error("error sending request for url (https://...): dns error"),
+            "Update check unavailable — github link down"
+        );
+        assert_eq!(
+            format_updater_error("HTTP status client error (404 Not Found)"),
+            "Update check unavailable — github link down"
+        );
+        assert_eq!(
+            format_updater_error("connection reset by peer"),
+            "Update check unavailable — github link down"
+        );
+    }
+
+    #[test]
+    fn test_format_updater_error_unconfigured() {
+        assert_eq!(
+            format_updater_error("updater endpoint list is empty"),
+            "Release channel not configured (updater endpoint list is empty)"
+        );
+        assert_eq!(
+            format_updater_error("pubkey is not configured"),
+            "Release channel not configured (pubkey is not configured)"
+        );
+    }
+
+    #[test]
+    fn test_format_updater_error_generic() {
+        assert_eq!(
+            format_updater_error("unexpected json shape"),
+            "Update check unavailable — unexpected json shape"
+        );
     }
 }

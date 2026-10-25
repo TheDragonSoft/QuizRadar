@@ -253,8 +253,7 @@ pub fn build_google_auth_url(
     let pkce = PkceChallenge::generate()
         .map_err(|e| QuizRadarFfiError::Validation { msg: e.to_string() })?;
     let verifier = pkce.verifier().to_string();
-    let state = random_state()
-        .map_err(|e| QuizRadarFfiError::Validation { msg: e.to_string() })?;
+    let state = random_state().map_err(|e| QuizRadarFfiError::Validation { msg: e.to_string() })?;
     let scopes = google_union_scopes(&[
         GoogleCapability::GmailRead,
         GoogleCapability::UserProfile,
@@ -287,8 +286,7 @@ pub fn build_microsoft_auth_url(
     let pkce = PkceChallenge::generate()
         .map_err(|e| QuizRadarFfiError::Validation { msg: e.to_string() })?;
     let verifier = pkce.verifier().to_string();
-    let state = random_state()
-        .map_err(|e| QuizRadarFfiError::Validation { msg: e.to_string() })?;
+    let state = random_state().map_err(|e| QuizRadarFfiError::Validation { msg: e.to_string() })?;
     let scopes = microsoft_union_scopes(&[
         MicrosoftCapability::OfflineAccess,
         MicrosoftCapability::UserProfile,
@@ -344,7 +342,9 @@ pub fn exchange_oauth_code(
         }
     };
 
-    let endpoint = token_endpoint_override.as_deref().unwrap_or(default_endpoint);
+    let endpoint = token_endpoint_override
+        .as_deref()
+        .unwrap_or(default_endpoint);
 
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -373,9 +373,11 @@ pub fn exchange_oauth_code(
         }
 
         let token_json: serde_json::Value =
-            resp.json().await.map_err(|e| QuizRadarFfiError::Serialization {
-                msg: format!("Failed to parse token response: {e}"),
-            })?;
+            resp.json()
+                .await
+                .map_err(|e| QuizRadarFfiError::Serialization {
+                    msg: format!("Failed to parse token response: {e}"),
+                })?;
 
         let access_token = token_json["access_token"]
             .as_str()

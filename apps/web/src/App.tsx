@@ -1,55 +1,91 @@
-import type { FC } from "react";
+import { useEffect, useState } from "react";
+import { TopBar } from "./components/TopBar";
+import { Sidebar } from "./components/Sidebar";
+import { MobileNav } from "./components/MobileNav";
 import { ModalStack } from "./components/ModalStack";
-import { useStore, type View } from "./store/useStore";
-import { CalendarView, Dashboard, Tasks } from "./views/placeholders";
+import { ToastContainer } from "./components/Toast";
+import { PullToRefresh } from "./components/PullToRefresh";
+import { DashboardView, TasksView, CalendarView, FocusView } from "./views/views";
+import { DevRig } from "./dev/DevRig";
+import { useAppStore, applyThemeToDocument, initDayRolloverWatchdog } from "./state/store";
+import type { View } from "./state/types";
 
-const VIEWS: Record<View, FC> = {
-  dashboard: Dashboard,
-  tasks: Tasks,
+const VIEWS: Record<View, React.ComponentType> = {
+  dashboard: DashboardView,
+  tasks: TasksView,
   calendar: CalendarView,
+  focus: FocusView,
 };
 
-const NAV: ReadonlyArray<{ id: View; label: string }> = [
-  { id: "dashboard", label: "Dashboard" },
-  { id: "tasks", label: "Tasks" },
-  { id: "calendar", label: "Calendar" },
-];
-
-/**
- * View-router stub: three placeholder views + the empty `<ModalStack/>`
- * (declarative layer replacing the v4 hardcoded Escape-stack, `04` §4.7).
- * Real chrome (top bar, sidebar, KPIs) lands in phase 08.
- */
 export default function App() {
-  const view = useStore((state) => state.view);
-  const setView = useStore((state) => state.setView);
-  const Current = VIEWS[view];
+  const currentView = useAppStore((s) => s.view);
+  const theme = useAppStore((s) => s.theme);
+  const loadInitialData = useAppStore((s) => s.loadInitialData);
+  const isOffline = useAppStore((s) => s.isOffline);
+
+  const [isDevRigActive, setIsDevRigActive] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const url = new URL(window.location.href);
+    return url.pathname === "/dev" || url.searchParams.get("dev") === "true";
+  });
+
+  // Startup initialization: theme + initial SWR load + day-rollover watchdog
+  useEffect(() => {
+    applyThemeToDocument(theme);
+    loadInitialData();
+    const stopWatchdog = initDayRolloverWatchdog();
+    return () => {
+      stopWatchdog();
+    };
+  }, [loadInitialData, theme]);
+
+  if (isDevRigActive) {
+    return <DevRig onExit={() => setIsDevRigActive(false)} />;
+  }
+
+  const ActiveViewComponent = VIEWS[currentView] || DashboardView;
 
   return (
-    <div className="min-h-screen">
-      <nav aria-label="Main navigation" className="flex items-center gap-2 p-3">
-        <span className="mr-4 text-sm font-bold tracking-tight">QuizRadar</span>
-        {NAV.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => setView(item.id)}
-            aria-current={view === item.id ? "page" : undefined}
-            className="rounded-lg px-3 py-1.5 text-sm font-medium transition"
-            style={
-              view === item.id
-                ? { backgroundColor: "var(--accent)", color: "#ffffff" }
-                : { color: "var(--text)" }
-            }
+    <div
+      data-testid="app-shell"
+      className="flex h-screen w-screen flex-col overflow-hidden bg-[var(--page)] text-[var(--text)]"
+    >
+      {/* Top Bar */}
+      <TopBar />
+
+      {/* Main Container: Sidebar + View Content */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Desktop Sidebar */}
+        <Sidebar />
+
+        {/* View Content Area wrapped in touch PullToRefresh */}
+        <PullToRefresh>
+          <main
+            data-testid="main-content-viewport"
+            className="h-full overflow-y-auto px-4 py-6 pb-24 sm:px-6 lg:pb-8"
           >
-            {item.label}
-          </button>
-        ))}
-      </nav>
-      <main className="p-3">
-        <Current />
-      </main>
+            {isOffline && (
+              <div
+                role="status"
+                data-testid="offline-banner"
+                className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-600 dark:text-amber-400"
+              >
+                Offline mode · Rendering verified local cache
+              </div>
+            )}
+            <div className="mx-auto max-w-6xl">
+              <ActiveViewComponent />
+            </div>
+          </main>
+        </PullToRefresh>
+      </div>
+
+      {/* Mobile M3 Bottom Navigation */}
+      <MobileNav />
+
+      {/* Declarative Modals & Toast Containers */}
       <ModalStack />
+      <ToastContainer />
     </div>
   );
 }

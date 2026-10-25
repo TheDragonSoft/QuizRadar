@@ -5,13 +5,19 @@ export default {
   theme: {
     extend: {
       colors: {
-        accent: "#1a73e8",
-        "accent-hover": "#1557b0",
-        "custom-event": "#db2777",
+        accent: "var(--accent)",
+        "accent-hover": "var(--accent-hover)",
+        page: "var(--page)",
+        surface: "var(--surface)",
+        "surface-border": "var(--surface-border)",
+        "surface-hover": "var(--surface-hover)",
+        "text-primary": "var(--text)",
+        "text-muted": "var(--text-muted)",
+        "custom-event": "var(--custom-event)",
         "dark-base": "#0b0f19",
       },
       boxShadow: {
-        "exam-glow": "0 3px 10px rgba(220, 38, 38, 0.14)",
+        "exam-glow": "var(--exam-glow)",
       },
       fontFamily: {
         sans: ['"Inter Variable"', "Inter", "system-ui", "sans-serif"],

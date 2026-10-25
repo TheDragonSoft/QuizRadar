@@ -13,6 +13,7 @@
   --page: #f8fafc;
   --surface: #ffffff;
   --surface-border: #e2e8f0; /* slate-200 */
+  --surface-hover: #f1f5f9; /* slate-100 */
   --text: #1e293b; /* slate-800 */
   --text-muted: #64748b; /* slate-500 */
 
@@ -22,7 +23,7 @@
   /* Custom events */
   --custom-event: #db2777;
 
-  /* Course palette — the 8 v4 presets (refined derivation in phase 08) */
+  /* Course palette — the 8 v4 presets */
   --course-1: #1a73e8;
   --course-2: #0f9d58;
   --course-3: #ea8600;
@@ -45,8 +46,49 @@
   --page: #0b0f19;
   --surface: #0f172a; /* slate-900 */
   --surface-border: #1e293b; /* slate-800 */
+  --surface-hover: #1e293b; /* slate-800 */
   --text: #f1f5f9; /* slate-100 */
   --text-muted: #94a3b8; /* slate-400 */
 
   color-scheme: dark;
+}
+
+/* Smooth crossfade applied via CSS only */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease !important;
+  transition-delay: 0 !important;
+}
+
+/* Reduced-motion respect */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* View transition fade animation */
+.view-transition {
+  animation: viewFadeIn 150ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes viewFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

@@ -16,3 +16,4 @@ apps/web/src/generated/
 docs/
 prompts/
 AGENTS.md
+core/tests/fixtures/

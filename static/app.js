@@ -5253,7 +5253,7 @@ function renderDailyRoadmap() {
               isCompleted ? "opacity-55" : ""
             }">
               <!-- Accessible Checkbox Button -->
-              <button onclick="toggleDailyTask('${jsAttr(t.key)}', event)" class="mt-0.5 w-5 h-5 rounded-md flex items-center justify-center shrink-0 border transition-all cursor-pointer ${
+              <button onclick="toggleDailyTask('${jsAttr(t.key)}', event)" aria-label="${isCompleted ? "Mark topic as incomplete" : "Mark topic as completed"}" class="mt-0.5 w-5 h-5 rounded-md flex items-center justify-center shrink-0 border transition-all cursor-pointer ${
                 isCompleted
                   ? "bg-emerald-600 border-emerald-600 text-white"
                   : "border-slate-300 dark:border-slate-600 hover:border-[#1a73e8] dark:hover:border-blue-400 bg-white dark:bg-slate-800"

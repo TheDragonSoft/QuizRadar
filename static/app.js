@@ -5253,7 +5253,7 @@ function renderDailyRoadmap() {
               isCompleted ? "opacity-55" : ""
             }">
               <!-- Accessible Checkbox Button -->
-              <button onclick="toggleDailyTask('${jsAttr(t.key)}', event)" class="mt-0.5 w-5 h-5 rounded-md flex items-center justify-center shrink-0 border transition-all cursor-pointer ${
+              <button onclick="toggleDailyTask('${jsAttr(t.key)}', event)" aria-label="${isCompleted ? "Mark topic incomplete: " : "Mark topic complete: "}${escapeHtml(t.topic)}" class="mt-0.5 w-5 h-5 rounded-md flex items-center justify-center shrink-0 border transition-all cursor-pointer ${
                 isCompleted
                   ? "bg-emerald-600 border-emerald-600 text-white"
                   : "border-slate-300 dark:border-slate-600 hover:border-[#1a73e8] dark:hover:border-blue-400 bg-white dark:bg-slate-800"
@@ -6723,7 +6723,7 @@ function openAssessmentModalById(id) {
             <input type="checkbox" data-topic-key="${escapeHtml(key)}" ${done ? "checked" : ""} onchange="toggleTopicCheckbox('${jsAttr(key)}', this.checked)" class="mt-0.5 w-4 h-4 accent-[#1a73e8] rounded shrink-0 cursor-pointer" />
             <span data-topic-label="${escapeHtml(key)}" class="text-xs transition-colors ${done ? "line-through text-slate-400 dark:text-slate-500" : "text-slate-900 dark:text-slate-100 font-medium"}">${escapeHtml(topicName)}</span>
           </label>
-          <button type="button" title="Start Focus Pomodoro for this topic" onclick="event.stopPropagation(); triggerHaptic('selection'); openPomodoroForTask('${jsAttr(a.course_id)} • ${jsAttr(a.title)}', '${jsAttr(topicName)}', '${jsAttr(key)}')" class="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950/60 text-rose-500 transition cursor-pointer shrink-0">
+          <button type="button" aria-label="Start Focus Pomodoro for topic: ${escapeHtml(topicName)}" title="Start Focus Pomodoro for this topic" onclick="event.stopPropagation(); triggerHaptic('selection'); openPomodoroForTask('${jsAttr(a.course_id)} • ${jsAttr(a.title)}', '${jsAttr(topicName)}', '${jsAttr(key)}')" class="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950/60 text-rose-500 transition cursor-pointer shrink-0">
             <i data-lucide="timer" class="w-3.5 h-3.5"></i>
           </button>
         </div>

@@ -4839,6 +4839,10 @@ function switchMainView(view) {
     renderWeekCalendar();
   }
 
+  if (btnDash) btnDash.setAttribute("aria-selected", view === "dashboard" ? "true" : "false");
+  if (btnTasks) btnTasks.setAttribute("aria-selected", view === "tasks" ? "true" : "false");
+  if (btnCal) btnCal.setAttribute("aria-selected", view === "calendar" ? "true" : "false");
+
   // Sync Material 3 mobile bottom navigation active indicator pills and labels
   const m3Tabs = ["dashboard", "tasks", "calendar", "focus"];
   m3Tabs.forEach((tab) => {

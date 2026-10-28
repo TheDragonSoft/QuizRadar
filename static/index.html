@@ -504,10 +504,10 @@
       </button>
 
       <!-- App Icon + Brand (Always visible on mobile & desktop) -->
-      <div class="flex items-center gap-2 sm:gap-2.5 pr-1 cursor-pointer shrink-0" onclick="switchMainView('dashboard')">
-        <img src="icon.svg" alt="QuizRadar Icon" class="w-8 h-8 sm:w-9 sm:h-9 rounded-lg shrink-0" />
+      <button type="button" class="flex items-center gap-2 sm:gap-2.5 pr-1 cursor-pointer shrink-0 text-left bg-transparent border-0 p-0 font-inherit" onclick="switchMainView('dashboard')" aria-label="QuizRadar Home - Go to Dashboard">
+        <img src="icon.svg" alt="" class="w-8 h-8 sm:w-9 sm:h-9 rounded-lg shrink-0" />
         <span class="text-base sm:text-lg font-bold text-slate-900 dark:text-white tracking-tight">QuizRadar</span>
-      </div>
+      </button>
 
       <!-- Auto-Updater Pill (Borrowed from Axial with QuizRadar Colors) -->
       <div id="update-pill-container" class="hidden relative inline-flex items-center shrink-0">
@@ -572,18 +572,18 @@
       </div>
 
       <!-- Primary View Switcher: Dashboard vs Tasks vs Week Calendar (Desktop/Tablet) -->
-      <div class="hidden md:flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700 shrink-0">
-        <button id="tab-btn-dashboard" onclick="switchMainView('dashboard')" class="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition bg-white dark:bg-slate-900 text-[#1a73e8] dark:text-blue-400 shadow-2xs cursor-pointer">
-          <i data-lucide="layout-dashboard" class="w-3.5 h-3.5"></i>
+      <div role="tablist" aria-label="Main Navigation Views" class="hidden md:flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/80 dark:border-slate-700 shrink-0">
+        <button id="tab-btn-dashboard" role="tab" aria-selected="true" aria-controls="view-dashboard" onclick="switchMainView('dashboard')" class="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition bg-white dark:bg-slate-900 text-[#1a73e8] dark:text-blue-400 shadow-2xs cursor-pointer">
+          <i data-lucide="layout-dashboard" class="w-3.5 h-3.5" aria-hidden="true"></i>
           <span>Dashboard</span>
         </button>
-        <button id="tab-btn-tasks" onclick="switchMainView('tasks')" class="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer">
-          <i data-lucide="check-square" class="w-3.5 h-3.5"></i>
+        <button id="tab-btn-tasks" role="tab" aria-selected="false" aria-controls="view-tasks" onclick="switchMainView('tasks')" class="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer">
+          <i data-lucide="check-square" class="w-3.5 h-3.5" aria-hidden="true"></i>
           <span>Tasks</span>
           <span id="tasks-badge-count" class="hidden ml-0.5 px-1.5 py-0.2 bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-[10px] font-bold rounded-full"></span>
         </button>
-        <button id="tab-btn-calendar" onclick="switchMainView('calendar')" class="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer">
-          <i data-lucide="calendar-days" class="w-3.5 h-3.5"></i>
+        <button id="tab-btn-calendar" role="tab" aria-selected="false" aria-controls="view-calendar" onclick="switchMainView('calendar')" class="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer">
+          <i data-lucide="calendar-days" class="w-3.5 h-3.5" aria-hidden="true"></i>
           <span>Week Calendar</span>
         </button>
       </div>
@@ -688,13 +688,13 @@
     <!-- Right: Sync, Dark Mode Toggle, Settings, Account (Unified control rhythm) -->
     <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
       <!-- Sync with Gmail + Gemini + Google Calendar Button (Desktop/Tablet) -->
-      <button id="top-sync-btn" onclick="triggerFullSync()" class="hidden md:flex h-9 items-center gap-1.5 px-3 sm:px-3.5 rounded-lg bg-[#e8f0fe] dark:bg-blue-950/70 hover:bg-[#d2e3fc] dark:hover:bg-blue-900/70 active:scale-[0.98] text-[#1a73e8] dark:text-blue-400 text-xs font-semibold transition border border-blue-200/60 dark:border-blue-800/60 cursor-pointer" title="Scan Gmail with Gemini AI & Auto-Sync Google Calendar">
+      <button id="top-sync-btn" onclick="triggerFullSync()" aria-label="Check for quizzes" class="hidden md:flex h-9 items-center gap-1.5 px-3 sm:px-3.5 rounded-lg bg-[#e8f0fe] dark:bg-blue-950/70 hover:bg-[#d2e3fc] dark:hover:bg-blue-900/70 active:scale-[0.98] text-[#1a73e8] dark:text-blue-400 text-xs font-semibold transition border border-blue-200/60 dark:border-blue-800/60 cursor-pointer" title="Scan Gmail with Gemini AI & Auto-Sync Google Calendar">
         <i id="top-sync-icon" data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
         <span id="top-sync-text" class="hidden sm:inline">Check for quizzes</span>
       </button>
 
       <!-- On-Device Engine & Local Backup Button (Desktop/Tablet) -->
-      <button id="top-cloud-sync-btn" onclick="openCloudSyncModal()" class="hidden md:flex h-9 items-center gap-1.5 px-2.5 sm:px-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 active:scale-[0.98] text-emerald-700 dark:text-emerald-300 text-xs font-semibold transition border border-emerald-200/70 dark:border-emerald-800/60 cursor-pointer" title="On-Device Engine & Local Data Backup">
+      <button id="top-cloud-sync-btn" onclick="openCloudSyncModal()" aria-label="On-Device Engine & Local Data Backup" class="hidden md:flex h-9 items-center gap-1.5 px-2.5 sm:px-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 active:scale-[0.98] text-emerald-700 dark:text-emerald-300 text-xs font-semibold transition border border-emerald-200/70 dark:border-emerald-800/60 cursor-pointer" title="On-Device Engine & Local Data Backup">
         <i data-lucide="database" class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400"></i>
         <span>Data & Backup</span>
       </button>
@@ -730,7 +730,7 @@
       </button>
 
       <!-- Settings & Preferences Modal Trigger -->
-      <button id="settings-nav-btn" onclick="openSettingsModal()" class="group h-9 px-2.5 sm:px-3 rounded-lg flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-slate-700 dark:text-slate-200 text-xs font-semibold transition cursor-pointer" title="Settings & Preferences">
+      <button id="settings-nav-btn" onclick="openSettingsModal()" aria-label="Settings & Preferences" class="group h-9 px-2.5 sm:px-3 rounded-lg flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-slate-700 dark:text-slate-200 text-xs font-semibold transition cursor-pointer" title="Settings & Preferences">
         <span class="settings-btn-stage">
           <i data-lucide="settings" class="w-4 h-4 text-slate-600 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white transition-colors"></i>
         </span>
@@ -738,7 +738,7 @@
       </button>
 
       <!-- Signed-in Google User Pill (Opens dedicated Account & Profile modal) -->
-      <div onclick="openAccountModal()" class="h-9 flex items-center gap-2 pl-1.5 pr-2 sm:pr-2.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer active:scale-95 transition" title="Account & Profile">
+      <button type="button" onclick="openAccountModal()" aria-label="Account & Profile" class="h-9 flex items-center gap-2 pl-1.5 pr-2 sm:pr-2.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer active:scale-95 transition text-left" title="Account & Profile">
         <div id="user-avatar-badge" class="w-6 h-6 rounded-md bg-[#1a73e8] text-white flex items-center justify-center text-xs font-semibold">
           A
         </div>
@@ -746,7 +746,7 @@
           <div id="user-name-label" class="text-[11px] font-semibold text-slate-900 dark:text-slate-100 truncate max-w-[115px]">Student</div>
           <div id="user-email-label" class="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[125px]">Not Connected</div>
         </div>
-      </div>
+      </button>
     </div>
   </header>
 

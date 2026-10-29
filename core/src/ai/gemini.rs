@@ -7,9 +7,11 @@
 //!   is structurally absent here);
 //! - the key is scrubbed from every error string before it can reach
 //!   notes/logs/UI;
-//! - model ladder per `05` §3.3: `gemini-2.5-flash-lite` for the bulk
-//!   extraction/practice tasks, `gemini-2.5-flash` for vision import and
+//! - model ladder per `05` §3.3: `gemini-3.5-flash-lite` for the bulk
+//!   extraction/practice tasks, `gemini-3.5-flash` for vision import and
 //!   optimize; `responseMimeType: application/json`, temperature 0.1–0.2.
+//!   (The `gemini-2.5-*` ids this ladder used to pin are retired for new
+//!   projects — HTTP 404 "no longer available to new users", 2026-10-28.)
 
 use serde_json::{json, Value};
 
@@ -72,12 +74,8 @@ impl GeminiProvider {
         Ok(Self::new(client, api_key, GEMINI_API_BASE, clock, ledger))
     }
 
-    fn generate_url(&self, model: AiModel) -> String {
-        format!(
-            "{}/models/{}:generateContent",
-            self.base_url,
-            model.model_id()
-        )
+    fn generate_url(&self, model_id: &str) -> String {
+        format!("{}/models/{}:generateContent", self.base_url, model_id)
     }
 
     async fn generate(
@@ -106,62 +104,84 @@ impl GeminiProvider {
             }
         });
 
-        let response = self
-            .client
-            .post(self.generate_url(model))
-            .header("x-goog-api-key", key.as_str())
-            .json(&payload)
-            .send()
-            .await;
+        // Walk the tier's candidate ids: a model that is retired for this
+        // key's project (404) or congested (503) is a model-level problem,
+        // so the next candidate is tried. Every other failure (invalid key,
+        // quota, transport) is the caller's problem and is returned as is.
+        let mut last_error: Option<AiError> = None;
+        for model_id in model.model_ids() {
+            let response = self
+                .client
+                .post(self.generate_url(model_id))
+                .header("x-goog-api-key", key.as_str())
+                .json(&payload)
+                .send()
+                .await;
 
-        let response = match response {
-            Ok(response) => response,
-            Err(error) => {
-                return Err(AiError::Retryable(redact_key(
-                    &format!("network error: {}", error.without_url()),
-                    key,
-                )));
+            let response = match response {
+                Ok(response) => response,
+                Err(error) => {
+                    // A transport failure is not model-specific — retrying
+                    // another id would only repeat it.
+                    return Err(AiError::Retryable(redact_key(
+                        &format!("network error: {}", error.without_url()),
+                        key,
+                    )));
+                }
+            };
+
+            let status = response.status();
+            if !status.is_success() {
+                let detail = response.text().await.unwrap_or_default();
+                let detail = redact_key(&detail, key);
+                let error = map_status(status.as_u16(), &detail);
+                if is_model_level_failure(status.as_u16()) {
+                    last_error = Some(error);
+                    continue;
+                }
+                return Err(error);
             }
-        };
 
-        let status = response.status();
-        if !status.is_success() {
-            let detail = response.text().await.unwrap_or_default();
-            let detail = redact_key(&detail, key);
-            return Err(map_status(status.as_u16(), &detail));
+            let value: Value = match response.json().await {
+                Ok(value) => value,
+                Err(error) => {
+                    return Err(AiError::BadResponse(format!(
+                        "unreadable response body: {error}"
+                    )));
+                }
+            };
+
+            let text = candidate_text(&value).ok_or_else(|| {
+                AiError::BadResponse(format!(
+                    "no candidate text (finishReason: {})",
+                    value
+                        .pointer("/candidates/0/finishReason")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown")
+                ))
+            })?;
+
+            let cleaned = strip_code_fences(&text);
+            let parsed: Value = serde_json::from_str(&cleaned).map_err(|error| {
+                AiError::BadResponse(format!("model text was not valid JSON: {error}"))
+            })?;
+
+            // Post-record: only a completed generation consumes quota, and
+            // it is counted against the model that actually served it.
+            if let Some(ledger) = &self.ledger {
+                // A finished call is not retro-failed when only tracking broke.
+                let _ = ledger.record_model((self.clock)(), model_id).await;
+            }
+
+            return Ok(RawJson {
+                value: parsed,
+                model: model_id.to_string(),
+            });
         }
 
-        let value: Value = match response.json().await {
-            Ok(value) => value,
-            Err(error) => {
-                return Err(AiError::BadResponse(format!(
-                    "unreadable response body: {error}"
-                )));
-            }
-        };
-
-        let text = candidate_text(&value).ok_or_else(|| {
-            AiError::BadResponse(format!(
-                "no candidate text (finishReason: {})",
-                value
-                    .pointer("/candidates/0/finishReason")
-                    .and_then(Value::as_str)
-                    .unwrap_or("unknown")
-            ))
-        })?;
-
-        let cleaned = strip_code_fences(&text);
-        let parsed: Value = serde_json::from_str(&cleaned).map_err(|error| {
-            AiError::BadResponse(format!("model text was not valid JSON: {error}"))
-        })?;
-
-        // Post-record: only a completed generation consumes quota.
-        if let Some(ledger) = &self.ledger {
-            // A finished call is not retro-failed when only tracking broke.
-            let _ = ledger.record((self.clock)(), model).await;
-        }
-
-        Ok(RawJson(parsed))
+        Err(last_error.unwrap_or_else(|| {
+            AiError::BadResponse("no model candidate answered the request".to_string())
+        }))
     }
 }
 
@@ -197,6 +217,22 @@ impl AiProvider for GeminiProvider {
                 .await
         })
     }
+}
+
+/// Whether a failed status is a *model* problem (so another candidate id in
+/// the same tier may still answer) rather than a caller problem.
+///
+/// - **404** — the model id is retired for this key's project ("no longer
+///   available to new users"). Google retired the `gemini-2.5-*` ids this
+///   way, which would otherwise break every freshly created key.
+/// - **503** — the model is congested ("high demand"). Another model in the
+///   tier usually serves the request.
+///
+/// Everything else (400 invalid key, 429 quota, 401) is the caller's own
+/// credential or quota and must surface honestly instead of being retried
+/// against another model.
+fn is_model_level_failure(status: u16) -> bool {
+    matches!(status, 404 | 503)
 }
 
 /// Maps non-2xx statuses onto the honest typed errors (`03` §E2): 400 with
@@ -327,7 +363,7 @@ mod tests {
         // Matches ONLY with the header key and the JSON mime config — the
         // request shape is pinned by this mock existing at all.
         Mock::given(method("POST"))
-            .and(path("/models/gemini-2.5-flash-lite:generateContent"))
+            .and(path("/models/gemini-3.5-flash-lite:generateContent"))
             .and(header("x-goog-api-key", "k-test-123"))
             .and(body_partial_json(json!({
                 "generationConfig": {
@@ -429,6 +465,114 @@ mod tests {
         .unwrap_err();
         assert_eq!(error, AiError::QuotaExhausted);
         assert!(error.to_string().contains("offline heuristics until"));
+    }
+
+    #[tokio::test]
+    async fn a_retired_model_falls_back_to_the_next_candidate() {
+        let server = MockServer::start().await;
+        let ids = AiModel::FlashLite.model_ids();
+        let (first, second) = (ids[0], ids[1]);
+
+        // The first id is retired for this key's project — exactly what
+        // Google answers for a key created after the retirement.
+        Mock::given(method("POST"))
+            .and(path(format!("/models/{first}:generateContent")))
+            .respond_with(ResponseTemplate::new(404).set_body_json(json!({
+                "error": {
+                    "code": 404,
+                    "message": "This model is no longer available to new users."
+                }
+            })))
+            .mount(&server)
+            .await;
+        // The next id serves the request.
+        Mock::given(method("POST"))
+            .and(path(format!("/models/{second}:generateContent")))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(gemini_response("{\"ok\": true}")),
+            )
+            .mount(&server)
+            .await;
+
+        let result = provider(
+            &server.uri(),
+            Some("k"),
+            None,
+            std::time::Duration::from_secs(5),
+        )
+        .chat_json(prompt())
+        .await
+        .unwrap();
+
+        assert_eq!(
+            result.model(),
+            second,
+            "the response names the model that actually served it"
+        );
+        assert_eq!(result.value(), &json!({ "ok": true }));
+    }
+
+    #[tokio::test]
+    async fn every_candidate_failing_reports_the_honest_error() {
+        let server = MockServer::start().await;
+        for id in AiModel::FlashLite.model_ids() {
+            Mock::given(method("POST"))
+                .and(path(format!("/models/{id}:generateContent")))
+                .respond_with(ResponseTemplate::new(404).set_body_json(json!({
+                    "error": { "code": 404, "message": "no longer available to new users" }
+                })))
+                .mount(&server)
+                .await;
+        }
+
+        let error = provider(
+            &server.uri(),
+            Some("k"),
+            None,
+            std::time::Duration::from_secs(5),
+        )
+        .chat_json(prompt())
+        .await
+        .unwrap_err();
+
+        assert!(matches!(error, AiError::BadResponse(_)), "{error}");
+        assert!(
+            error.to_string().contains("404"),
+            "the last provider failure is reported, not swallowed: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_quota_429_is_not_retried_against_another_model() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(429).set_body_json(json!({
+                "error": { "code": 429, "message": "Resource has been exhausted." }
+            })))
+            .mount(&server)
+            .await;
+
+        let error = provider(
+            &server.uri(),
+            Some("k"),
+            None,
+            std::time::Duration::from_secs(5),
+        )
+        .chat_json(prompt())
+        .await
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            AiError::QuotaExhausted,
+            "the user's own quota is surfaced, not hidden behind another model"
+        );
+        let requests = server.received_requests().await.unwrap_or_default();
+        assert_eq!(
+            requests.len(),
+            1,
+            "a quota error stops the call instead of retrying the next model"
+        );
     }
 
     #[tokio::test]
@@ -538,14 +682,14 @@ mod tests {
         server.verify().await;
 
         let snapshot = ledger.usage((clock())()).await.unwrap();
-        assert_eq!(snapshot.counts.get("gemini-2.5-flash-lite"), Some(&1));
+        assert_eq!(snapshot.counts.get("gemini-3.5-flash-lite"), Some(&1));
     }
 
     #[tokio::test]
     async fn vision_requests_send_inline_data_with_a_stripped_data_url() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/models/gemini-2.5-flash:generateContent"))
+            .and(path("/models/gemini-3.5-flash:generateContent"))
             .and(body_partial_json(json!({
                 "contents": [{ "parts": [
                     { "text": "Read the timetable." },

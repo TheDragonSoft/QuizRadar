@@ -324,6 +324,11 @@ pub fn exchange_oauth_code(
         code: &code,
         redirect_uri: &redirect_uri,
         code_verifier: &code_verifier,
+        // The UniFFI tier exchanges public-client codes only; a confidential
+        // client's secret never enters the core crate (and therefore never
+        // reaches the WASM bundle). The desktop shell runs its own exchange
+        // when a confidential Google client is in use.
+        client_secret: None,
     };
 
     let (default_endpoint, form_params) = match provider.to_lowercase().as_str() {

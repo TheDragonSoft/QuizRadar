@@ -68,6 +68,12 @@
       .btn:hover {
         background: #1557b0;
       }
+      .hint {
+        font-size: 11px;
+        color: #64748b;
+        margin: 14px 0 0 0;
+        line-height: 1.5;
+      }
     </style>
   </head>
   <body>
@@ -75,17 +81,11 @@
       <div class="icon">✅</div>
       <h2>Google Account Connected!</h2>
       <p>
-        You are signed in. You can close this tab and return to the QuizRadar app — your account,
-        email, and calendar will sync automatically.
+        You are signed in. Your account, email, and calendar will sync automatically — QuizRadar has
+        already been brought to the front.
       </p>
-      <button class="btn" onclick="window.close()">Return to QuizRadar</button>
+      <a class="btn" href="quizradar://signed-in">Open QuizRadar</a>
+      <p class="hint">If the app does not come forward, switch back to the QuizRadar window.</p>
     </div>
-    <script>
-      setTimeout(function () {
-        try {
-          window.close();
-        } catch (e) {}
-      }, 1500);
-    </script>
   </body>
 </html>

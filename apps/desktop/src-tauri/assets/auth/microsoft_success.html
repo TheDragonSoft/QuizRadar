@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>QuizRadar — Microsoft Teams Connected</title>
+    <title>QuizRadar â€” Microsoft Teams Connected</title>
     <style>
       body {
         background: #0b0f19;
@@ -72,20 +72,13 @@
   </head>
   <body>
     <div class="card">
-      <div class="icon">💼</div>
+      <div class="icon">ðŸ’¼</div>
       <h2>Microsoft Account Connected!</h2>
       <p>
-        Your university account is connected. You can close this tab and return to QuizRadar — your
-        courses and assignments will sync automatically.
+        Your university account is connected. You can close this tab and return to QuizRadar â€”
+        your courses and assignments will sync automatically.
       </p>
-      <button class="btn" onclick="window.close()">Return to QuizRadar</button>
+      <a class="btn" href="quizradar://signed-in">Open QuizRadar</a>
     </div>
-    <script>
-      setTimeout(function () {
-        try {
-          window.close();
-        } catch (e) {}
-      }, 1500);
-    </script>
   </body>
 </html>

@@ -24,6 +24,7 @@ export default tseslint.config(
       "apps/web/public/**",
       "apps/web/src/generated/**",
       ".agents/**",
+      ".zcode/**",
       "apps/mobile-android/**",
     ],
   },

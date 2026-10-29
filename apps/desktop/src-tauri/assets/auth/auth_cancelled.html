@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>QuizRadar — Sign-In Cancelled</title>
+    <title>QuizRadar â€” Sign-In Cancelled</title>
     <style>
       body {
         background: #0b0f19;
@@ -71,17 +71,10 @@
   </head>
   <body>
     <div class="card">
-      <div class="icon">⏹️</div>
+      <div class="icon">&#10003;</div>
       <h2>Sign-In Cancelled</h2>
-      <p>No account was connected. You can close this tab and try again from the QuizRadar app.</p>
-      <button class="btn" onclick="window.close()">Return to QuizRadar</button>
+      <p>No account was connected. Open QuizRadar and start the sign-in again.</p>
+      <a class="btn" href="quizradar://signed-in">Open QuizRadar</a>
     </div>
-    <script>
-      setTimeout(function () {
-        try {
-          window.close();
-        } catch (e) {}
-      }, 2000);
-    </script>
   </body>
 </html>

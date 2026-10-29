@@ -18,9 +18,11 @@ use quizradar_core::store::repo::{FieldUpdate, GradeChange};
 use quizradar_core::store::Store;
 use quizradar_core::types::{Assessment, AssessmentSource, AssessmentType, UrgencyLevel};
 use quizradar_desktop_lib::commands::state::build_full_state;
-use quizradar_desktop_lib::commands::sync::run_sync_inner;
+use quizradar_desktop_lib::commands::sync::{run_sync_inner, SCAN_CANCELED_MESSAGE};
 use quizradar_desktop_lib::keyring::KeyringStore;
 use quizradar_desktop_lib::state::AppState;
+use wiremock::matchers::method;
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Creates a test AppState with an in-memory SQLite store and unique test keyring service.
 async fn test_app_state(test_name: &str) -> AppState {
@@ -293,6 +295,133 @@ async fn test_sync_orchestrator_command_with_fixture_transport() {
     assert!(
         pulses.iter().any(|p| p.name == "Calendar feeds"),
         "pulse must be from Calendar feeds"
+    );
+}
+
+/// An ICS fixture dated relative to today, so the test never drifts out of
+/// the parser's recency window.
+fn ics_fixture(today: chrono::NaiveDate) -> String {
+    let start = (today + chrono::Duration::days(7))
+        .format("%Y%m%dT100000Z")
+        .to_string();
+    format!(
+        "BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:CSE241 Quiz 3\nDTSTART:{start}\nUID:q3@registrar\nEND:VEVENT\nEND:VCALENDAR\n"
+    )
+}
+
+/// Points the Moodle iCal channel at a local fixture server.
+async fn configure_local_moodle_feed(
+    state: &AppState,
+    server: &MockServer,
+    today: chrono::NaiveDate,
+) {
+    state
+        .store
+        .set_config_string(
+            "moodle_ical_url".to_string(),
+            Some(format!("{}/moodle.ics", server.uri())),
+        )
+        .await
+        .expect("save the Moodle iCal url");
+    state
+        .store
+        .set_config_bool("moodle_enabled".to_string(), true)
+        .await
+        .expect("enable Moodle");
+    let _ = today;
+}
+
+#[tokio::test]
+async fn test_scan_that_fetched_something_stamps_last_synced() {
+    let state = test_app_state("sync_stamp").await;
+    let today = state.today();
+    let now = state.now_iso();
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(ics_fixture(today)))
+        .mount(&server)
+        .await;
+    configure_local_moodle_feed(&state, &server, today).await;
+
+    let result = run_sync_inner(None, &state).await.expect("scan runs");
+    assert!(result.success);
+    assert!(
+        result.total_new >= 1,
+        "the fixture feed contributes at least one assessment"
+    );
+
+    // "Last synced" reflects the real fetch.
+    let payload = build_full_state(&state).await.expect("state");
+    let stamp = payload
+        .config
+        .last_gmail_sync
+        .expect("a real fetch must stamp 'Last synced'");
+    assert_eq!(stamp.len(), 16, "unexpected stamp format: {stamp}");
+    assert!(
+        stamp.chars().nth(4) == Some('-') && stamp.chars().nth(10) == Some(' '),
+        "unexpected stamp format: {stamp}"
+    );
+    let _ = now;
+}
+
+#[tokio::test]
+async fn test_scan_that_fetched_nothing_never_claims_a_sync() {
+    let state = test_app_state("sync_no_sources").await;
+
+    let result = run_sync_inner(None, &state).await.expect("scan runs");
+    assert!(result.success);
+    assert!(result
+        .notes
+        .iter()
+        .any(|n| n.contains("No sources are configured")));
+
+    // Nothing was fetched, so the UI must still say "Never synced".
+    let payload = build_full_state(&state).await.expect("state");
+    assert!(
+        payload.config.last_gmail_sync.is_none(),
+        "a scan that fetched nothing must not stamp 'Last synced'"
+    );
+}
+
+#[tokio::test]
+async fn test_cancel_aborts_the_scan_and_leaves_the_data_untouched() {
+    let state = test_app_state("sync_cancel").await;
+    let today = state.today();
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_delay(std::time::Duration::from_secs(5))
+                .set_body_string(ics_fixture(today)),
+        )
+        .mount(&server)
+        .await;
+    configure_local_moodle_feed(&state, &server, today).await;
+
+    let scan_state = state.clone();
+    let scan = tokio::task::spawn(async move { run_sync_inner(None, &scan_state).await });
+
+    // Let the scan reach the (slow) fetch, then abort it.
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    state.request_cancel();
+
+    let outcome = scan
+        .await
+        .expect("the scan task joins")
+        .expect_err("an aborted scan reports the cancellation");
+    assert_eq!(outcome, SCAN_CANCELED_MESSAGE);
+
+    // The abort happens during the fetch phase: nothing was written.
+    let snapshot = state.store.load_state(today).await.unwrap();
+    assert!(
+        snapshot.assessments.is_empty(),
+        "an aborted scan must not write assessments"
+    );
+    assert!(
+        state.store.get_last_gmail_sync().await.unwrap().is_none(),
+        "an aborted scan must not stamp 'Last synced'"
     );
 }
 

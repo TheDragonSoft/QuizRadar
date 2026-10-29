@@ -1,7 +1,9 @@
 /*
- * Design tokens — copied exactly from docs/rebuild/01-product-spec.md §6
- * (preserved v4 language). Single visual source of truth for the React +
- * PWA tier; the Compose theme maps the same hexes (phase 12).
+ * Design tokens — the v4 visual language, preserved.
+ *
+ * Values are the v4-final token set (v4-final:static/index.html `:root` /
+ * `html.dark`) so the rebuilt app keeps the look people already approved;
+ * the React + PWA tier and the Compose theme map the same hexes.
  * Fonts: Inter variable, self-hosted via @fontsource-variable/inter (no CDNs).
  */
 :root {
@@ -9,13 +11,18 @@
   --accent: #1a73e8;
   --accent-hover: #1557b0;
 
-  /* Surfaces */
+  /* Surfaces (v4 `--surface-bg` / `--panel-bg` / `--border-subtle`) */
   --page: #f8fafc;
   --surface: #ffffff;
   --surface-border: #e2e8f0; /* slate-200 */
+  --border-strong: #cbd5e1; /* slate-300 */
   --surface-hover: #f1f5f9; /* slate-100 */
-  --text: #1e293b; /* slate-800 */
-  --text-muted: #64748b; /* slate-500 */
+  --text: #0f172a; /* slate-900 */
+  --text-muted: #475569; /* slate-600 */
+
+  /* Aliases: component layers were authored against v4's border names. */
+  --border: var(--surface-border);
+  --border-subtle: var(--surface-border);
 
   /* Exam-glow red shadow (v4 `.has-exam-glow`) */
   --exam-glow: 0 3px 10px rgba(220, 38, 38, 0.14);
@@ -36,6 +43,10 @@
   /* Typography */
   --font-sans: "Inter Variable", "Inter", system-ui, sans-serif;
 
+  /* v4 motion curves */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-quart: cubic-bezier(0.22, 1, 0.36, 1);
+
   color-scheme: light;
 }
 
@@ -44,11 +55,16 @@
   --accent: #3b82f6;
   --accent-hover: #60a5fa;
   --page: #0b0f19;
-  --surface: #0f172a; /* slate-900 */
+  --surface: #111827; /* slate-900 */
   --surface-border: #1e293b; /* slate-800 */
+  --border-strong: #334155; /* slate-700 */
   --surface-hover: #1e293b; /* slate-800 */
-  --text: #f1f5f9; /* slate-100 */
+  --text: #f8fafc; /* slate-50 */
   --text-muted: #94a3b8; /* slate-400 */
+
+  /* Aliases: component layers were authored against v4's border names. */
+  --border: var(--surface-border);
+  --border-subtle: var(--surface-border);
 
   color-scheme: dark;
 }

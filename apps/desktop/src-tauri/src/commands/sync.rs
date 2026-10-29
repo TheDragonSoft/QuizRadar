@@ -10,13 +10,24 @@ use quizradar_core::cal::gcal::{
     push_assessments_to_google_calendar, GCalSyncReport, GCAL_API_BASE,
 };
 use quizradar_core::sources::sync::{run_sync as core_run_sync, SyncConfig, SyncInput};
-use quizradar_core::sources::{SourceProgress, TokenProvider};
+use quizradar_core::sources::{SourceProgress, SourceStatus, TokenProvider};
 use quizradar_core::store::backup::{DriveBackupClient, MergeReport, PushOutcome};
 use quizradar_core::types::Course;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::state::{AppState, DesktopGoogleTokenProvider, DesktopMicrosoftTokenProvider};
+
+/// The event the scan overlay listens on. This is a cross-tier contract: the
+/// web tier subscribes to exactly this name (`apps/web/src/state/ipcEvents.ts`
+/// → `SYNC_PROGRESS_EVENT`), and a regression test asserts that both sides
+/// agree. Emitting a different name leaves the overlay frozen on a stale
+/// stage while the scan runs — the bug this constant exists to prevent.
+pub const SYNC_PROGRESS_EVENT: &str = "sync-progress";
+
+/// Honest abort message. The UI shows a cancellation as a cancellation (with
+/// "your data was left untouched"), never as a failed scan.
+pub const SCAN_CANCELED_MESSAGE: &str = "Scan canceled - your data was left untouched.";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -165,15 +176,45 @@ pub async fn run_sync_inner(
         None
     };
 
+    // The source toggles are the user's controls (spec `01` §4.1): a source
+    // the user turned off must not run. A toggle the user never touched falls
+    // back to "on when the account is connected" — Classroom and Teams follow
+    // their account, Moodle follows an entered URL.
+    let teams_toggle = state
+        .store
+        .get_config_bool("teams_enabled".to_string(), true)
+        .await
+        .unwrap_or(true);
+    let classroom_toggle = match state
+        .store
+        .get_config_bool_opt("classroom_enabled".to_string())
+        .await
+        .unwrap_or(None)
+    {
+        Some(explicit) => explicit,
+        None => google_provider.is_some(),
+    };
+    let moodle_ical_url = state
+        .store
+        .get_config_string("moodle_ical_url".to_string())
+        .await
+        .unwrap_or(None)
+        .filter(|url| !url.trim().is_empty());
+    let moodle_toggle = state
+        .store
+        .get_config_bool("moodle_enabled".to_string(), false)
+        .await
+        .unwrap_or(false);
+
     let config = SyncConfig {
         gmail_enabled: google_provider.is_some(),
-        teams_enabled: microsoft_provider.is_some(),
-        classroom_enabled: google_provider.is_some(),
-        moodle_enabled: false,
+        teams_enabled: microsoft_provider.is_some() && teams_toggle,
+        classroom_enabled: google_provider.is_some() && classroom_toggle,
+        moodle_enabled: moodle_toggle,
         feeds: snapshot.feeds.clone(),
         google: google_provider,
         microsoft: microsoft_provider,
-        moodle_ical_url: None,
+        moodle_ical_url,
         moodle_rest_url: None,
         moodle_rest_token: None,
     };
@@ -192,7 +233,25 @@ pub async fn run_sync_inner(
         }
     };
 
-    let report = core_run_sync(&config, &input, None, &progress_cb).await?;
+    // The user may abort the scan from the overlay's Cancel button. The abort
+    // is honoured during the fetch phase only — the merge into the store
+    // happens after it — so a canceled scan really leaves the radar
+    // untouched instead of half-updated.
+    let mut cancel_rx = state.cancel_token();
+    let report = tokio::select! {
+        biased;
+        _ = cancel_rx.changed() => {
+            return Err(SCAN_CANCELED_MESSAGE.to_string());
+        }
+        result = core_run_sync(&config, &input, None, &progress_cb) => result?,
+    };
+
+    // "Last synced" reflects real fetches only: a scan in which every source
+    // was skipped or failed fetched nothing, so no stamp is written.
+    let fetched_anything = report
+        .per_source
+        .iter()
+        .any(|run| matches!(run.status, SourceStatus::Ran));
 
     if !report.assessments.is_empty() {
         state
@@ -200,6 +259,21 @@ pub async fn run_sync_inner(
             .replace_assessments(report.assessments, now, today)
             .await
             .map_err(|e| format!("Failed to save merged assessments: {e}"))?;
+    }
+
+    let mut notes = report.notes;
+    if fetched_anything {
+        if let Err(e) = state
+            .store
+            .set_last_gmail_sync(state.now_local_stamp())
+            .await
+        {
+            // The scan itself succeeded; say so in the report instead of
+            // pretending the whole scan failed.
+            notes.push(format!(
+                "The scan finished, but the 'Last synced' stamp could not be saved: {e}"
+            ));
+        }
     }
 
     let discovered_teams = report
@@ -211,7 +285,7 @@ pub async fn run_sync_inner(
         success: true,
         total_new: report.total_new,
         total_updated: report.total_updated,
-        notes: report.notes,
+        notes,
         discovered_teams,
     })
 }
@@ -241,6 +315,20 @@ pub async fn run_gcal_sync_inner(state: &AppState) -> Result<DesktopGCalSyncRepo
     )
     .await;
 
+    // The Calendar stamp is written only after a push that really reached
+    // Google Calendar — a "needs scope" or failed push stays unstamped.
+    if report.success {
+        if let Err(e) = state
+            .store
+            .set_last_gcal_sync(state.now_local_stamp())
+            .await
+        {
+            return Err(format!(
+                "The calendar push finished, but the 'Last synced' stamp could not be saved: {e}"
+            ));
+        }
+    }
+
     Ok(DesktopGCalSyncReport::from(report))
 }
 
@@ -253,12 +341,21 @@ pub async fn run_sync(app: AppHandle, state: State<'_, AppState>) -> Result<Sync
     let state_clone = state.inner().clone();
     let app_handle = app.clone();
     let emit_fn: Arc<dyn Fn(SourceProgress) + Send + Sync> = Arc::new(move |progress| {
-        let _ = app_handle.emit("source-progress", DesktopSourceProgress::from(progress));
+        let _ = app_handle.emit(SYNC_PROGRESS_EVENT, DesktopSourceProgress::from(progress));
     });
 
     tokio::task::spawn(async move { run_sync_inner(Some(emit_fn), &state_clone).await })
         .await
         .map_err(|e| format!("Sync task joined with error: {e}"))?
+}
+
+/// Aborts the running source scan (the overlay's Cancel button). The scan
+/// drops its in-flight requests and returns without touching the store, so
+/// the user's radar keeps exactly what it had.
+#[tauri::command]
+pub async fn cancel_sync(state: State<'_, AppState>) -> Result<(), String> {
+    state.request_cancel();
+    Ok(())
 }
 
 #[tauri::command]
@@ -286,6 +383,16 @@ pub async fn push_cloud_backup(state: State<'_, AppState>) -> Result<DesktopPush
         .push(&payload)
         .await
         .map_err(|e| format!("Failed to push backup to Google Drive: {e}"))?;
+
+    if let Err(e) = state
+        .store
+        .set_last_backup_push(state.now_local_stamp())
+        .await
+    {
+        return Err(format!(
+            "The backup reached Google Drive, but the 'Last synced' stamp could not be saved: {e}"
+        ));
+    }
 
     Ok(DesktopPushOutcome::from(outcome))
 }

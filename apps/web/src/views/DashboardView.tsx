@@ -8,9 +8,15 @@ import {
   ChevronRight,
   ShieldCheck,
   CheckCircle2,
+  Zap,
+  Calendar,
+  BookOpen,
+  RefreshCw,
+  UserCheck,
 } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
+import { computeActiveSourceLabels } from "../state/syncStatus";
 import { ConflictBanner } from "../components/ConflictBanner";
 import { coursePalette } from "../lib/coursePalette";
 import type { Assessment, StudyRecommendation } from "../state/types";
@@ -21,6 +27,7 @@ export const DashboardView: React.FC = () => {
   const dash = useAppStore((s) => s.data.dashboard);
   const assessments = useAppStore((s) => s.data.assessments);
   const config = useAppStore((s) => s.data.config);
+  const auth = useAppStore((s) => s.data.auth);
   const selectedCourseIds = useAppStore((s) => s.selectedCourseIds);
   const activeSourceFilter = useAppStore((s) => s.activeSourceFilter);
   const setActiveSourceFilter = useAppStore((s) => s.setActiveSourceFilter);
@@ -28,6 +35,9 @@ export const DashboardView: React.FC = () => {
   const setActiveTypeFilter = useAppStore((s) => s.setActiveTypeFilter);
   const toggleTopic = useAppStore((s) => s.toggleTopic);
   const openAssessmentDetail = useAppStore((s) => s.openAssessmentDetail);
+  const setView = useAppStore((s) => s.setView);
+  const triggerSync = useAppStore((s) => s.triggerSync);
+  const openModal = useAppStore((s) => s.openModal);
 
   const [mobileTab, setMobileTab] = useState<MobileDashboardTab>("study");
 
@@ -69,14 +79,17 @@ export const DashboardView: React.FC = () => {
     isCourseSelected(r.courseId),
   );
 
-  // Active sources count for Account/Sync KPI
-  const activeSourcesCount = [
-    config.teamsEnabled,
-    config.moodleEnabled,
-    config.classroomEnabled,
-    config.feeds.length > 0,
-    true, // Local / Gmail
-  ].filter(Boolean).length;
+  // v4 hero spotlight: the next assessment, honouring the course filter.
+  const nextUp =
+    (dash.nextUp && isCourseSelected(dash.nextUp.courseId) ? dash.nextUp : null) ??
+    filteredUpcoming[0] ??
+    (dash.allUpcoming || []).find((a) => isCourseSelected(a.courseId)) ??
+    null;
+
+  // Active sources for the Account/Sync KPI — the same honest list the
+  // sidebar footer uses (no hardcoded "Gmail is always on").
+  const activeSourceLabels = computeActiveSourceLabels(config, auth);
+  const activeSourcesCount = activeSourceLabels.length;
 
   const readinessPct = dash.readinessPercent ?? 100;
   const readinessColor =
@@ -127,6 +140,15 @@ export const DashboardView: React.FC = () => {
           <span>{copy.dashboard.subtabs.overview}</span>
         </button>
       </div>
+
+      {/* v4 hero spotlight — "What's coming next" */}
+      <NextUpHero
+        assessment={nextUp}
+        onOpenDetail={() => nextUp && openAssessmentDetail(nextUp.id)}
+        onOpenCalendar={() => setView("calendar")}
+        onConnect={() => openModal({ id: "settings", props: { initialTab: "account" } })}
+        onSync={() => void triggerSync()}
+      />
 
       {/* KPI Row (Desktop: always visible; Mobile: visible when mobileTab === 'overview') */}
       <div
@@ -239,9 +261,23 @@ export const DashboardView: React.FC = () => {
             </p>
           </div>
 
-          <div className="mt-4 text-[10px] text-[var(--text-muted)] flex items-center justify-between">
-            <span>Gmail, Teams, Moodle</span>
-            <span className="font-semibold text-emerald-600 dark:text-emerald-400">Active</span>
+          <div className="mt-4 text-[10px] text-[var(--text-muted)] flex items-center justify-between gap-2">
+            <span className="truncate">
+              {activeSourceLabels.length > 0
+                ? activeSourceLabels.join(", ")
+                : copy.dashboard.kpiSyncNone}
+            </span>
+            <span
+              className={
+                activeSourcesCount > 0
+                  ? "shrink-0 font-semibold text-emerald-600 dark:text-emerald-400"
+                  : "shrink-0 font-semibold text-[var(--text-muted)]"
+              }
+            >
+              {activeSourcesCount > 0
+                ? copy.dashboard.kpiSyncBadgeActive
+                : copy.dashboard.kpiSyncBadgeInactive}
+            </span>
           </div>
         </div>
       </div>
@@ -357,6 +393,143 @@ export const DashboardView: React.FC = () => {
         </div>
       </div>
     </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// v4 hero spotlight (v4-final:static/index.html `#dashboard-next-up-hero`)
+// ---------------------------------------------------------------------------
+
+interface NextUpHeroProps {
+  assessment: Assessment | null;
+  onOpenDetail: () => void;
+  onOpenCalendar: () => void;
+  onConnect: () => void;
+  onSync: () => void;
+}
+
+const HERO_SHELL =
+  "rounded-2xl bg-gradient-to-r from-[#1e3a8a] via-[#1d4ed8] to-[#2563eb] dark:from-slate-900 dark:via-blue-950 dark:to-indigo-950 border border-blue-700/30 dark:border-blue-800/50 text-white p-3.5 sm:p-5 lg:p-6 shadow-sm";
+
+const NextUpHero: React.FC<NextUpHeroProps> = ({
+  assessment,
+  onOpenDetail,
+  onOpenCalendar,
+  onConnect,
+  onSync,
+}) => {
+  if (!assessment) {
+    return (
+      <section data-testid="dashboard-next-up-hero" className={HERO_SHELL}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-amber-300" aria-hidden="true" />
+              <span>{copy.dashboard.heroEmptyTitle}</span>
+            </h2>
+            <p className="text-xs text-blue-100 mt-0.5">{copy.dashboard.heroEmptyBody}</p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={onConnect}
+              className="px-3.5 py-2 rounded-xl bg-white text-[#1a73e8] hover:bg-blue-50 text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+            >
+              <UserCheck className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>{copy.dashboard.heroConnectAccount}</span>
+            </button>
+            <button
+              type="button"
+              onClick={onSync}
+              className="px-3 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-semibold transition flex items-center gap-1 cursor-pointer"
+            >
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>{copy.dashboard.heroSyncRadar}</span>
+            </button>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  const days = assessment.daysUntil ?? null;
+  const countdownLabel =
+    days === 0
+      ? copy.dashboard.heroToday
+      : days === 1
+        ? copy.dashboard.heroTomorrow
+        : days !== null
+          ? copy.dashboard.heroInDays(days)
+          : "";
+  const room = assessment.room?.trim();
+  const when = assessment.displayTime || assessment.dayName || assessment.dateIso || "—";
+
+  return (
+    <section data-testid="dashboard-next-up-hero" className={HERO_SHELL}>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 sm:gap-4">
+        <div className="space-y-2 min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+            {countdownLabel && (
+              <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[11px] sm:text-xs font-bold tabular-nums flex items-center gap-1 shadow-2xs">
+                <Zap className="h-3 w-3" aria-hidden="true" />
+                <span>{copy.dashboard.heroUpNext(countdownLabel)}</span>
+              </span>
+            )}
+            <span className="px-2 py-0.5 rounded-full bg-white/20 text-white text-[11px] sm:text-xs font-semibold">
+              {assessment.courseId || "—"} · {assessment.assessmentType}
+            </span>
+            {room && (
+              <span className="hidden sm:inline-flex px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-100 border border-emerald-300/30 text-xs font-medium items-center gap-1">
+                <MapPin className="h-3 w-3" aria-hidden="true" />
+                <span>Room {room}</span>
+              </span>
+            )}
+          </div>
+
+          <h1 className="text-base sm:text-xl lg:text-2xl font-bold tracking-tight text-white leading-snug line-clamp-2">
+            {assessment.title}
+            {assessment.courseName && (
+              <span className="font-normal text-blue-100 text-xs sm:text-sm">
+                {" "}
+                ({assessment.courseName})
+              </span>
+            )}
+          </h1>
+
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-4 text-[11px] sm:text-xs text-blue-100 tabular-nums">
+            <span className="flex items-center gap-1 font-medium">
+              <Calendar className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>{when}</span>
+            </span>
+            {room && (
+              <span className="sm:hidden flex items-center gap-1">
+                <MapPin className="h-3 w-3" aria-hidden="true" />
+                <span>Room {room}</span>
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0 pt-1 md:pt-0">
+          <button
+            type="button"
+            onClick={onOpenDetail}
+            className="flex-1 md:flex-initial px-3.5 py-2 rounded-xl bg-white text-[#1a73e8] hover:bg-blue-50 active:scale-[0.98] text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+          >
+            <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>{copy.dashboard.heroStudyPlan}</span>
+          </button>
+          <button
+            type="button"
+            onClick={onOpenCalendar}
+            className="px-2.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 active:scale-95 text-white text-xs font-semibold transition flex items-center justify-center gap-1 cursor-pointer"
+          >
+            <Calendar className="h-3.5 w-3.5" aria-hidden="true" />
+            <span className="hidden sm:inline">{copy.dashboard.heroCalendar}</span>
+          </button>
+        </div>
+      </div>
+    </section>
   );
 };
 

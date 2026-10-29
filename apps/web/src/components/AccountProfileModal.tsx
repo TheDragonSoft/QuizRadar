@@ -22,9 +22,8 @@ export function AccountProfileModal({
 
   const handleOpenSettings = () => {
     onClose();
-    openModal({ id: "settings", props: { initialTab: "account" } });
+    openModal({ id: "settings", props: { initialTab: "account" }, flush: true, size: "lg" });
   };
-
   return (
     <div
       role="dialog"

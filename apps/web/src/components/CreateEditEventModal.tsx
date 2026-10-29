@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Calendar, Trash2, X, Check } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
+import { getLocalDateString } from "../state/watchdog";
 import type { CustomCalendarEvent } from "../state/types";
 
 export interface CreateEditEventModalProps {
@@ -26,9 +27,7 @@ export function CreateEditEventModal({
 
   const [title, setTitle] = useState(initialEvent?.title || "");
   const [courseId, setCourseId] = useState(initialEvent?.courseId || "");
-  const [dateIso, setDateIso] = useState(
-    initialEvent?.dateIso || new Date().toISOString().slice(0, 10),
-  );
+  const [dateIso, setDateIso] = useState(initialEvent?.dateIso || getLocalDateString());
   const [startTime, setStartTime] = useState(initialEvent?.startTime || "10:00");
   const [endTime, setEndTime] = useState(initialEvent?.endTime || "11:30");
   const [room, setRoom] = useState(initialEvent?.room || "");

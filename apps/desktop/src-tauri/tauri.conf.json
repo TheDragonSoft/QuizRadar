@@ -32,6 +32,13 @@
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "quizradar"
+        ]
+      }
+    },
     "updater": {
       "endpoints": [
         "https://github.com/TheDragonSoft/QuizRadar/releases/latest/download/latest.json"

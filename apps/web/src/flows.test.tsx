@@ -89,7 +89,7 @@ describe("Web UI Flows & Modals (Phase 10)", () => {
 
   // 1. Onboarding Wizard: First-run gating and stepper data preservation
   describe("Onboarding Wizard", () => {
-    it("auto-opens onboarding on first run when onboardingCompleted is false", () => {
+    it("auto-opens onboarding on first run when onboardingCompleted is false", async () => {
       useAppStore.setState({
         data: {
           ...sampleState,
@@ -98,8 +98,12 @@ describe("Web UI Flows & Modals (Phase 10)", () => {
       });
 
       render(<App />);
-      expect(useAppStore.getState().openModals).toEqual(
-        expect.arrayContaining([expect.objectContaining({ id: "onboarding" })]),
+      // The wizard opens only after the first real state load, so a returning
+      // user never gets it flashed at them (App.tsx first-run effect).
+      await waitFor(() =>
+        expect(useAppStore.getState().openModals).toEqual(
+          expect.arrayContaining([expect.objectContaining({ id: "onboarding" })]),
+        ),
       );
     });
 
@@ -169,8 +173,8 @@ describe("Web UI Flows & Modals (Phase 10)", () => {
       // Courses tab should be active
       expect(screen.getByText(copy.settings.coursesHeader)).toBeInTheDocument();
 
-      // Click Integrations tab
-      const integrationsTab = screen.getByRole("button", {
+      // Click Integrations tab (the v4-style tab bar exposes ARIA tabs)
+      const integrationsTab = screen.getByRole("tab", {
         name: new RegExp(copy.settings.tabIntegrations, "i"),
       });
       fireEvent.click(integrationsTab);
@@ -192,11 +196,10 @@ describe("Web UI Flows & Modals (Phase 10)", () => {
       ).toBeInTheDocument();
       expect(screen.getByText(/Turn off to stay fully local\./i)).toBeInTheDocument();
 
-      // Quota note
+      // Quota note — the daily limit belongs to the user's Google project,
+      // so the panel points at AI Studio instead of quoting a made-up number.
       expect(
-        screen.getByText(
-          /~250 req\/day \(flash\) \/ ~1,000 req\/day \(flash-lite\); resets midnight PT/i,
-        ),
+        screen.getByText(/Google sets the free-tier daily limit per project/i),
       ).toBeInTheDocument();
     });
 
@@ -221,6 +224,42 @@ describe("Web UI Flows & Modals (Phase 10)", () => {
           message: copy.settings.feedHttpsError,
         }),
       );
+    });
+
+    it("offers the browser-tier OAuth client IDs and keeps a single theme control", () => {
+      localStorage.setItem("quizradar_settings_tab", "account");
+      render(<SettingsModal modalId="settings" onClose={vi.fn()} />);
+
+      expect(screen.getByText(copy.settings.browserSignInHeader)).toBeInTheDocument();
+      expect(
+        screen.getByText(copy.settings.googleClientIdLabel, { exact: false }),
+      ).toBeInTheDocument();
+
+      // The theme tiles live in the onboarding wizard only — the topbar keeps
+      // the single quick toggle. A second "Light Theme" block in Settings was
+      // the duplicate the report was about.
+      expect(screen.queryByText(copy.onboarding.themeLight)).not.toBeInTheDocument();
+      expect(screen.queryByText(copy.onboarding.themeDark)).not.toBeInTheDocument();
+    });
+
+    it("asks for a Desktop app client ID on the desktop tier", () => {
+      const globals = window as unknown as Record<string, unknown>;
+      globals.__TAURI_INTERNALS__ = {};
+      try {
+        localStorage.setItem("quizradar_settings_tab", "account");
+        render(<SettingsModal modalId="settings" onClose={vi.fn()} />);
+
+        expect(screen.getByText(copy.settings.desktopSignInHeader)).toBeInTheDocument();
+        expect(
+          screen.getByText(copy.settings.googleDesktopClientIdLabel, { exact: false }),
+        ).toBeInTheDocument();
+        expect(
+          screen.getByText(copy.settings.googleDesktopClientIdHint, { exact: false }),
+        ).toBeInTheDocument();
+        expect(screen.queryByText(copy.onboarding.themeLight)).not.toBeInTheDocument();
+      } finally {
+        delete globals.__TAURI_INTERNALS__;
+      }
     });
   });
 

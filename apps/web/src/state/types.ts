@@ -220,6 +220,7 @@ export interface DesktopConfig {
   teamsClientId?: string | null;
   teamsAccountName?: string | null;
   teamsAccountEmail?: string | null;
+  googleClientId?: string | null;
   moodleEnabled: boolean;
   moodleUrl?: string | null;
   moodleIcalUrl?: string | null;
@@ -246,6 +247,16 @@ export interface DesktopAuthProfile {
   hasTeamsAuth: boolean;
 }
 
+/**
+ * The device's real AI usage for today, read from the store-backed quota
+ * ledger. `callsToday` is `null` in tiers that keep no ledger (the browser
+ * companion) — the UI then says "not tracked" instead of showing a zero.
+ */
+export interface AiQuotaUsage {
+  callsToday: number | null;
+  perModel: Record<string, number>;
+}
+
 export interface GetStatePayload {
   config: DesktopConfig;
   auth: DesktopAuthProfile;
@@ -261,6 +272,22 @@ export type ThemeMode = "light" | "dark";
 
 export type SyncStatus = "idle" | "syncing" | "success" | "error";
 
+/**
+ * The honest outcome of the last scan. It outlives the transient
+ * `syncStatus` (which returns to `idle` a few seconds later) so the scan
+ * overlay can show what actually happened instead of stranding the user on
+ * a stale "Scanning…" stage.
+ */
+export interface SyncOutcome {
+  status: "success" | "error" | "canceled";
+  totalNew: number;
+  totalUpdated: number;
+  /** The source lines the backend reported — what ran, what was found. */
+  notes: string[];
+  /** The failure reason, when the scan failed. */
+  message?: string;
+}
+
 export interface ToastItem {
   id: string;
   message: string;
@@ -272,6 +299,14 @@ export interface ModalInstance {
   id: string;
   props?: Record<string, unknown>;
   dismissible?: boolean;
+  /**
+   * Full-bleed modal: the shell drops its own padding so the modal can own
+   * a v4-style header band with a divider and a scrolling body (Settings,
+   * Onboarding).
+   */
+  flush?: boolean;
+  /** Panel width (v4 used a 2xl-wide Settings sheet). */
+  size?: "sm" | "md" | "lg";
 }
 
 export interface LayerToggles {
@@ -337,6 +372,9 @@ export interface ConfigUpdate {
   onboardingCompleted?: boolean;
   teamsEnabled?: boolean;
   teamsClientId?: string;
+  teamsAccountName?: string;
+  teamsAccountEmail?: string;
+  googleClientId?: string;
   moodleEnabled?: boolean;
   moodleUrl?: string;
   moodleIcalUrl?: string;

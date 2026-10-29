@@ -25,7 +25,10 @@ export const copy = {
     syncIdle: "Sync",
     syncScanning: "Scanning…",
     syncSynced: "Synced",
+    syncSyncedSummary: (added: number, updated: number) =>
+      `Synced · ${added} new, ${updated} updated`,
     syncFailed: "Sync Failed",
+    syncCanceled: "Scan canceled - your data was left untouched.",
     themeLight: "Switch to light mode",
     themeDark: "Switch to dark mode",
     themeToggleAria: "Toggle light or dark theme",
@@ -88,7 +91,37 @@ export const copy = {
     syncing: "Scanning sources…",
   },
 
+  scan: {
+    scanComplete: "Scan complete",
+    scanCanceledTitle: "Scan canceled",
+    scanFailedTitle: "Scan failed",
+    scanSummary: (added: number, updated: number) =>
+      `${added} new, ${updated} updated - ${copy.topBar.syncSynced.toLowerCase()}`,
+    sourcesRunning: (count: number) =>
+      count === 1 ? "1 source reported" : `${count} sources reported`,
+    waitingForSources: "Waiting for the first source…",
+    noItemsYet: "No items yet",
+    noScanRunning: "No scan is running.",
+    cancelKeepsData:
+      "The scan was aborted before anything was written. Your radar is exactly as it was.",
+    doctrineTitle: "Honest Scan Doctrine",
+    doctrineOnDevice: "Direct on-device fetches from authorized student accounts",
+    doctrineNoServer: "Scans run concurrently without sending tokens to any server",
+    doctrinePreserved: "User-edited grades and custom calendar events are safely preserved",
+  },
+
   dashboard: {
+    heroUpNext: (label: string) => `Up next · ${label}`,
+    heroToday: "Today",
+    heroTomorrow: "Tomorrow",
+    heroInDays: (days: number) => `In ${days} days`,
+    heroEmptyTitle: "No Upcoming Quizzes Scheduled",
+    heroEmptyBody:
+      "Connect your University Account or Google Account, or tap Sync Radar to discover your courses and upcoming exams.",
+    heroStudyPlan: "Study Plan",
+    heroCalendar: "Calendar",
+    heroConnectAccount: "Connect Account",
+    heroSyncRadar: "Sync Radar",
     kpiUpcomingTitle: "Next 7 Days",
     kpiUpcomingEmpty: "Nothing scheduled in the next 7 days",
     kpiReadinessTitle: "Exam Readiness",
@@ -98,6 +131,8 @@ export const copy = {
     kpiSyncTitle: "Connected Sources",
     kpiSyncActive: (count: number) => `${count} source${count === 1 ? "" : "s"} active`,
     kpiSyncNone: "No sources connected",
+    kpiSyncBadgeActive: "Active",
+    kpiSyncBadgeInactive: "Not connected",
 
     subtabs: {
       study: "Study",
@@ -221,6 +256,8 @@ export const copy = {
     trackBiz: "Business & Humanities",
     trackBizSub: "Case studies, midterms, group project milestones",
     themeTitle: "Visual Theme",
+    themeLight: "Light Theme",
+    themeDark: "Dark Theme",
     googleConnect: "Connect Google (Gmail & Calendar)",
     microsoftConnect: "Connect Microsoft Teams",
     moodleConnect: "Connect Moodle LMS",
@@ -235,6 +272,8 @@ export const copy = {
     timetableUploadButton: "Select Timetable Image",
     timetableUploadManual: "Skip / Enter Courses Manually",
     timetableExtracting: "Analyzing timetable with Gemini Vision…",
+    timetableUploadBrowserNote:
+      "Timetable image import runs in the desktop app. In the browser, add your courses and their weekly slots below.",
     connectedBadge: "Connected",
     notConnectedBadge: "Not Connected",
     next: "Next Step",
@@ -247,14 +286,21 @@ export const copy = {
     disclosure:
       "Your email announcements and timetable images are sent to Google's Gemini API when AI is used. On Google's free tier, Google may use that content to improve its products.",
     turnOff: "Turn off to stay fully local.",
-    quotaText: (count: number) => `AI calls today: ${count}/~250 (resets midnight PT)`,
+    quotaText: (count: number | null) =>
+      count === null
+        ? "AI calls today: not tracked on this tier"
+        : `AI calls today: ${count} (resets midnight PT)`,
     quotaCapNote: "Free tier quota resets every day at midnight Pacific Time (PT).",
-    keyPlaceholder: "Paste AI Studio API key (AIzaSy…)",
+    quotaLimitNote:
+      "Google sets the free-tier daily limit per project — see your project in AI Studio.",
+    keyPlaceholder: "Paste AI Studio API key (AIzaSy… or AQ…)",
     validateButton: "Validate Key",
     keyValid: "Key validated & stored in OS Keyring",
     keyInvalid: "Invalid API key",
     aiEnabledLabel:
       "Enable Gemini AI features (Timetable Vision, Task Optimization, Practice Quizzes)",
+    sharedKeyHint:
+      "Shared key for a private install: set QUIZRADAR_GEMINI_API_KEY, or place a gemini.key file next to the app. A key pasted here always wins.",
   },
 
   settings: {
@@ -266,6 +312,32 @@ export const copy = {
     connectedAs: (email: string) => `Connected as ${email}`,
     notSignedIn: "Not signed in · Running in local-first standalone mode",
     disconnect: "Disconnect & Wipe Tokens",
+    browserSignInHeader: "Browser Sign-In (OAuth Client IDs)",
+    browserSignInNote:
+      "On the web tier you sign in with your own OAuth client IDs — QuizRadar is local-first and holds no client secrets. Tokens stay in memory for ~1 hour and are never persisted.",
+    desktopSignInHeader: "Desktop Sign-In (OAuth Client IDs)",
+    desktopSignInNote:
+      "Google sign-in works out of the box — the desktop app ships a Google client ID together with its secret, and signs in with PKCE. Microsoft works out of the box too; add your own Azure app client ID only if your university tenant requires one.",
+    googleClientIdLabel: "Google OAuth Client ID (Web application)",
+    googleClientIdPlaceholder: "1234567890-abc123.apps.googleusercontent.com",
+    googleDesktopClientIdLabel: "Google OAuth Client ID (optional override)",
+    googleDesktopClientIdHint:
+      "QuizRadar ships a working Google client (project gmail-summary-511914), so sign-in needs nothing from you. Paste your own client ID only to use a different OAuth app — a Web application client additionally needs its secret in the field below.",
+    googleDesktopClientSecretHint:
+      "Only needed for a client ID you paste yourself: Google refuses a secretless token exchange for Web application clients. Stored in the OS keyring (never in the database, the logs or the web bundle). Leave empty to use the bundled secret.",
+    googleBrowserClientIdHint:
+      "The browser tier ships a public client ID (an identifier, never a secret). Add this app's origin — e.g. http://localhost:5173 — to the client's Authorized JavaScript origins, or paste your own client ID.",
+    teamsClientIdLabel: "Microsoft Azure App Client ID",
+    teamsClientIdPlaceholder: "00000000-0000-0000-0000-000000000000",
+    teamsDesktopClientIdLabel: "Microsoft App (Client) ID (optional)",
+    teamsDesktopClientIdHint:
+      "Azure portal → App registrations → your app → Overview. Leave empty to use the bundled Microsoft Graph Command Line Tools registration.",
+    redirectUriLabel: (uri: string) => `Register this redirect URI on your OAuth app: ${uri}`,
+    desktopRedirectUriNote:
+      "Register http://127.0.0.1 (Google) and http://localhost (Microsoft) — the port is picked at runtime and ignored by both providers.",
+    openGoogleConsole: "Open Google Cloud Console → Credentials",
+    openAzureConsole: "Open Azure → App registrations",
+    browserSignInSaved: "OAuth client IDs saved",
     coursesHeader: "Enrolled Courses & Timetable Slots",
     addCourse: "Add Course",
     reopenOnboarding: "Re-open Onboarding Wizard",

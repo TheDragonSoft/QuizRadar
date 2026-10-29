@@ -958,7 +958,11 @@ Return ONLY a JSON array of 5 objects matching this exact structure:
     );
 
     let prompt = StructuredPrompt::new(AiModel::FlashLite, 0.2, instruction);
-    let value = provider.chat_json(prompt).await?.into_value();
+    let response = provider.chat_json(prompt).await?;
+    // The model that actually served the request — a fallback inside the
+    // tier is named honestly instead of the tier's first id.
+    let served_by = response.model().to_string();
+    let value = response.into_value();
 
     let raw_questions: Vec<Value> = match &value {
         Value::Array(items) => items.clone(),
@@ -1022,7 +1026,7 @@ Return ONLY a JSON array of 5 objects matching this exact structure:
         questions,
         generated_by_ai: true,
         authored_locally: false,
-        credit: AiCreditNote::provider(AiModel::FlashLite),
+        credit: AiCreditNote::provider_model(&served_by),
     })
 }
 
@@ -1101,7 +1105,7 @@ mod tests {
         let server = MockServer::start().await;
         mount_model(
             &server,
-            "/models/gemini-2.5-flash-lite:generateContent",
+            "/models/gemini-3.5-flash-lite:generateContent",
             r#"{
   "is_assessment": true,
   "course_id": "CSE241",
@@ -1153,7 +1157,7 @@ mod tests {
         let server = MockServer::start().await;
         mount_model(
             &server,
-            "/models/gemini-2.5-flash-lite:generateContent",
+            "/models/gemini-3.5-flash-lite:generateContent",
             r#"{
   "is_assessment": true,
   "date_iso": "2026-13-45",
@@ -1190,7 +1194,7 @@ mod tests {
         let server = MockServer::start().await;
         mount_model(
             &server,
-            "/models/gemini-2.5-flash-lite:generateContent",
+            "/models/gemini-3.5-flash-lite:generateContent",
             r#"{ "is_assessment": false }"#,
         )
         .await;
@@ -1301,7 +1305,7 @@ mod tests {
         let server = MockServer::start().await;
         mount_model(
             &server,
-            "/models/gemini-2.5-flash:generateContent",
+            "/models/gemini-3.5-flash:generateContent",
             r##"{
   "semester": "Fall 2026",
   "courses": [
@@ -1374,7 +1378,7 @@ mod tests {
         let server = MockServer::start().await;
         mount_model(
             &server,
-            "/models/gemini-2.5-flash:generateContent",
+            "/models/gemini-3.5-flash:generateContent",
             r#"{ "semester": "", "courses": [], "slots": [] }"#,
         )
         .await;
@@ -1394,7 +1398,7 @@ mod tests {
         let server = MockServer::start().await;
         mount_model(
             &server,
-            "/models/gemini-2.5-flash:generateContent",
+            "/models/gemini-3.5-flash:generateContent",
             r#"{
   "readiness_cards": [
     { "assessment_id": "gmail-1", "recommended_focus": "Quantum Entanglement", "readiness_percent": 95 }
@@ -1477,7 +1481,7 @@ mod tests {
         let server = MockServer::start().await;
         mount_model(
             &server,
-            "/models/gemini-2.5-flash:generateContent",
+            "/models/gemini-3.5-flash:generateContent",
             r#"{
   "readiness_cards": [],
   "tasks": [
@@ -1517,7 +1521,7 @@ mod tests {
         let server = MockServer::start().await;
         mount_model(
             &server,
-            "/models/gemini-2.5-flash-lite:generateContent",
+            "/models/gemini-3.5-flash-lite:generateContent",
             r#"[
   { "question": "What does SOLID stand for in design?", "options": ["A set of design principles", "A physics constant", "A database engine", "A sorting algorithm"], "correct_index": 0, "explanation": "SOLID is the five OOP design principles." },
   { "question": "Empty option row?", "options": ["ok", "  ", "also ok"], "correct_index": 0, "explanation": "" },
@@ -1559,11 +1563,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_practice_credit_note_names_the_model_that_actually_served() {
+        let server = MockServer::start().await;
+        let ids = AiModel::FlashLite.model_ids();
+        let (first, second) = (ids[0], ids[1]);
+
+        // The first id is retired for this key's project.
+        Mock::given(method("POST"))
+            .and(path(format!("/models/{first}:generateContent")))
+            .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
+                "error": { "code": 404, "message": "no longer available to new users" }
+            })))
+            .mount(&server)
+            .await;
+        // The next id serves the request.
+        mount_model(
+            &server,
+            &format!("/models/{second}:generateContent"),
+            r#"[{ "question": "What is SOLID?", "options": ["A principle set", "A protocol"], "correct_index": 0, "explanation": "SOLID is five design principles." }]"#,
+        )
+        .await;
+
+        let assessment = assessment_on(
+            "gmail-1",
+            Some("CSE241"),
+            "Quiz 1",
+            Some(ref_date() + Duration::days(3)),
+            vec!["SOLID"],
+        );
+        let payload = generate_practice(&fixture_provider(&server.uri()), &assessment)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            payload.credit,
+            AiCreditNote::provider_model(second),
+            "the provenance chip names the model that really ran, not the tier's first id"
+        );
+    }
+
+    #[tokio::test]
     async fn generate_practice_with_no_surviving_questions_is_unavailable() {
         let server = MockServer::start().await;
         mount_model(
             &server,
-            "/models/gemini-2.5-flash-lite:generateContent",
+            "/models/gemini-3.5-flash-lite:generateContent",
             r#"[{ "question": "x", "options": [""], "correct_index": 0 }]"#,
         )
         .await;

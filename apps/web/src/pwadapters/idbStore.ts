@@ -12,6 +12,7 @@ import type {
   CustomCalendarEvent,
   FeedConfig,
 } from "../state/types";
+import { aliasDeep } from "../state/ipcShape";
 
 export const IDB_DATABASE_NAME = "quizradar";
 export const IDB_SCHEMA_VERSION = 1;
@@ -169,7 +170,11 @@ export async function loadScheduleData(): Promise<ScheduleData> {
   return {
     semester: (semesterRecord?.value as string) || null,
     courses,
-    slots,
+    // The stored slots may predate the snake_case twins (older browser
+    // builds wrote camelCase only). Adding the twins here means every
+    // consumer — the WASM core (snake_case) and the React views (camelCase)
+    // — reads the same slot, whatever shape it was stored in.
+    slots: aliasDeep(slots),
   };
 }
 

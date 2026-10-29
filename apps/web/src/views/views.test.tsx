@@ -227,6 +227,36 @@ describe("Web UI Views & Assessment Detail (Phase 09 Full Behavior)", () => {
     expect(toggleTopicMock).toHaveBeenCalledWith("a-cse241-q1", 0);
   });
 
+  // 2b. v4 hero spotlight: the next assessment with honest countdown + actions
+  it("shows the v4 next-up hero and opens the study plan of the next assessment", () => {
+    const openAssessmentDetailMock = vi.fn();
+    const nextUp = sampleState.assessments[0];
+    useAppStore.setState({
+      openAssessmentDetail: openAssessmentDetailMock,
+      data: {
+        ...sampleState,
+        dashboard: {
+          ...sampleState.dashboard,
+          nextUp,
+          upcomingThisWeek: [nextUp],
+          allUpcoming: [nextUp],
+        },
+      },
+    });
+
+    render(<DashboardView />);
+
+    const hero = screen.getByTestId("dashboard-next-up-hero");
+    expect(hero).toBeInTheDocument();
+    expect(hero).toHaveTextContent(/Up next/i);
+    expect(hero).toHaveTextContent(/Quiz 1: Logic Gates/i);
+    // The room is only rendered when the source actually stated one.
+    expect(hero.textContent).not.toMatch(/Room —/);
+
+    fireEvent.click(screen.getByRole("button", { name: /Study Plan/i }));
+    expect(openAssessmentDetailMock).toHaveBeenCalledWith("a-cse241-q1");
+  });
+
   // 3. Tasks View: Summary Line, Readiness Grid, Daily Roadmap
   it("renders tasks view summary line, readiness card %, and roadmap today pulse", () => {
     const openAssessmentDetailMock = vi.fn();

@@ -14,6 +14,7 @@ import type {
   FeedConfig,
   GetStatePayload,
   ScheduleData,
+  ScheduleSlot,
   StudyTasksPayload,
 } from "../state/types";
 import {
@@ -40,6 +41,7 @@ import {
 } from "./idbStore";
 import { getWasmEngine } from "./wasmBridge";
 import {
+  DEFAULT_BROWSER_GOOGLE_CLIENT_ID,
   getMemoryGoogleToken,
   getMemoryMsToken,
   scanBrowserFeeds,
@@ -47,6 +49,33 @@ import {
   setMemoryMsToken,
   validateGeminiKeyBrowser,
 } from "./browserSources";
+
+/**
+ * The desktop IPC contract speaks camelCase, but the browser tier persists
+ * configuration in the same snake_case keys the Rust core uses. Without this
+ * mapping a saved OAuth client ID was written under `googleClientId` and then
+ * read back as `google_client_id` — i.e. it never survived a reload, which is
+ * exactly why the browser sign-in kept asking for a client ID.
+ */
+const CONFIG_KEY_MAP: Record<string, string> = {
+  autoSyncGcal: "auto_sync_gcal",
+  syncWeeklyClassesToGcal: "sync_weekly_classes_to_gcal",
+  geminiEnabled: "gemini_enabled",
+  onboardingCompleted: "onboarding_completed",
+  teamsEnabled: "teams_enabled",
+  teamsClientId: "teams_client_id",
+  teamsAccountName: "teams_account_name",
+  teamsAccountEmail: "teams_account_email",
+  googleClientId: "google_client_id",
+  moodleEnabled: "moodle_enabled",
+  moodleUrl: "moodle_url",
+  moodleIcalUrl: "moodle_ical_url",
+  classroomEnabled: "classroom_enabled",
+  dismissConflictBanner: "dismiss_conflict_banner",
+  userEmail: "user_email",
+  userName: "user_name",
+  userPicture: "user_picture",
+};
 
 export function toRustAssessment(a: Assessment | Record<string, unknown>): Record<string, unknown> {
   const rec = a as unknown as Record<string, unknown>;
@@ -91,6 +120,47 @@ export function toJsAssessment(a: Record<string, unknown>): Assessment {
     achievedScore: (a.achieved_score ?? a.achievedScore ?? null) as number | null,
     maxScore: (a.max_score ?? a.maxScore ?? null) as number | null,
     weightagePercent: (a.weightage_percent ?? a.weightagePercent ?? null) as number | null,
+  };
+}
+
+/**
+ * The core's slot shape, exactly as `core/src/types.rs` declares it. Used
+ * for the backup export so the browser tier writes the same snake_case
+ * contract the desktop tier does (the core ignores unknown fields, but the
+ * file is user-visible and should stay clean).
+ */
+function toRustSlotPayload(slot: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: slot.id,
+    day: slot.day,
+    day_index: slot.day_index ?? slot.dayIndex ?? 0,
+    course_id: slot.course_id ?? slot.courseId ?? "",
+    course_name: slot.course_name ?? slot.courseName ?? "",
+    type: slot.type ?? slot.slotType ?? "Lecture",
+    group: slot.group ?? null,
+    room: slot.room ?? null,
+    start_time: slot.start_time ?? slot.startTime ?? "09:00",
+    end_time: slot.end_time ?? slot.endTime ?? "10:30",
+    display_time: slot.display_time ?? slot.displayTime ?? "",
+    has_quiz: slot.has_quiz ?? slot.hasQuiz ?? false,
+    quiz_title: slot.quiz_title ?? slot.quizTitle ?? null,
+  };
+}
+
+/** A schedule in the core's wire shape (snake_case), for the backup export. */
+export function toRustSchedulePayload(schedule: ScheduleData): Record<string, unknown> {
+  return {
+    semester: schedule.semester ?? null,
+    courses: (schedule.courses || []).map((c) => ({
+      id: c.id,
+      name: c.name,
+      color: c.color,
+      bg: c.bg ?? null,
+      border: c.border ?? null,
+    })),
+    slots: (schedule.slots || []).map((s) =>
+      toRustSlotPayload(s as unknown as Record<string, unknown>),
+    ),
   };
 }
 
@@ -153,6 +223,7 @@ export async function buildFullState(refDate?: string): Promise<GetStatePayload>
     teamsClientId: (allConfig.teams_client_id as string) || null,
     teamsAccountName: (allConfig.teams_account_name as string) || null,
     teamsAccountEmail: (allConfig.teams_account_email as string) || null,
+    googleClientId: (allConfig.google_client_id as string) || DEFAULT_BROWSER_GOOGLE_CLIENT_ID,
     moodleEnabled: Boolean(allConfig.moodle_enabled),
     moodleUrl: (allConfig.moodle_url as string) || null,
     moodleIcalUrl: (allConfig.moodle_ical_url as string) || null,
@@ -190,6 +261,22 @@ export async function buildFullState(refDate?: string): Promise<GetStatePayload>
 }
 
 /**
+ * The running browser-tier scan, if any. `cancel_sync` aborts it, which
+ * drops the in-flight feed request so a canceled scan writes nothing.
+ */
+let activeScanController: AbortController | null = null;
+
+/**
+ * The "Last synced" stamp, in the same human-readable local shape the
+ * desktop shell writes (`2026-10-28 19:04`) — the UI shows it verbatim.
+ */
+function lastSyncedStamp(): string {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}
+
+/**
  * Dispatches an RPC command to the local browser / WASM implementation.
  */
 export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown>): Promise<T> {
@@ -208,12 +295,25 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
 
     case "upsert_course": {
       const course = (args?.course || args) as Course;
+      const slots = ((args?.slots || []) as ScheduleSlot[]) ?? [];
       await upsertCourse(course);
+      // The browser tier used to drop the timetable slots here, so a saved
+      // class never showed up in the week calendar.
+      if (slots.length > 0) {
+        const existing = await loadScheduleData();
+        const otherCourses = existing.courses.filter((c) => c.id !== course.id);
+        const otherSlots = existing.slots.filter((s) => s.courseId !== course.id);
+        await saveScheduleData({
+          semester: existing.semester,
+          courses: [...otherCourses, course],
+          slots: [...otherSlots, ...slots],
+        });
+      }
       return (await buildFullState()) as T;
     }
 
     case "delete_course": {
-      const id = (args?.id as string) || "";
+      const id = (args?.code as string) || (args?.id as string) || "";
       await deleteCourse(id);
       return (await buildFullState()) as T;
     }
@@ -221,7 +321,7 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
     case "update_config": {
       const update = (args?.update || args) as Record<string, unknown>;
       for (const [k, v] of Object.entries(update)) {
-        await setConfigValue(k, v);
+        await setConfigValue(CONFIG_KEY_MAP[k] ?? k, v);
       }
       return (await buildFullState()) as T;
     }
@@ -239,9 +339,17 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
     }
 
     case "toggle_topic": {
-      const topicKey = (args?.topicKey as string) || "";
-      const completed = Boolean(args?.completed);
-      await setTopicDone(topicKey, completed);
+      // The desktop shell toggles by (assessment id, topic index) and derives
+      // the `"{assessment_id}::{topic_index}"` key itself; the browser tier
+      // used to expect a pre-built key that the UI never sent.
+      const assessmentId = (args?.assessmentId as string) || "";
+      const topicIdx = Number(args?.topicIdx ?? 0);
+      const topicKey =
+        (args?.topicKey as string) ||
+        `${assessmentId}::${Number.isFinite(topicIdx) ? topicIdx : 0}`;
+      const done = await loadTopicsDone();
+      const next = args?.completed !== undefined ? Boolean(args.completed) : !done[topicKey];
+      await setTopicDone(topicKey, next);
       return (await buildFullState()) as T;
     }
 
@@ -315,11 +423,18 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
         schema_version: 1,
         exported_at: new Date().toISOString(),
         tier: "pwa",
-        schedule,
-        assessments,
+        schedule: toRustSchedulePayload(schedule),
+        assessments: assessments.map(toRustAssessment),
         topics_done: topicsDone,
         grades,
-        events,
+        events: events.map((ev) => ({
+          ...ev,
+          course_id: ev.courseId ?? null,
+          event_type: ev.eventType ?? null,
+          date_iso: ev.dateIso ?? null,
+          start_time: ev.startTime ?? null,
+          end_time: ev.endTime ?? null,
+        })),
         feeds,
         config,
       };
@@ -407,8 +522,25 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
       return result as T;
     }
 
-    case "google_login_start": {
-      return { url: null, port: null, mode: "gis" } as T;
+    case "ai_quota_usage": {
+      // The browser companion keeps no quota ledger: the key is only checked
+      // against the model list, and practice quizzes run on-device. Reporting
+      // "not tracked" is honest; a zero would read as "you used nothing".
+      return { callsToday: null, perModel: {} } as T;
+    }
+
+    case "google_login_start":
+    case "microsoft_login_start":
+    case "microsoft_scanning_consent_start": {
+      // Browser tier: the store runs the GIS token client / PKCE popup flow
+      // locally (needs the user's own OAuth client ID from Settings → Account).
+      // `microsoft_scanning_consent_start` asks for the mail + calendar
+      // scopes, which many work tenants gate behind administrator approval.
+      return {
+        url: null,
+        port: null,
+        mode: fn === "google_login_start" ? "gis" : "pkce-popup",
+      } as T;
     }
 
     case "google_logout":
@@ -426,7 +558,22 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
       const feeds = await loadFeeds();
       const todayIso = new Date().toISOString().split("T")[0];
 
-      const feedResult = await scanBrowserFeeds(feeds, schedule, todayIso);
+      // The browser tier can abort its scan too: `cancel_sync` aborts this
+      // controller, which drops the in-flight feed request.
+      const controller = new AbortController();
+      activeScanController = controller;
+
+      let feedResult;
+      try {
+        feedResult = await scanBrowserFeeds(feeds, schedule, todayIso, controller.signal);
+      } finally {
+        activeScanController = null;
+      }
+
+      if (controller.signal.aborted) {
+        throw new Error("Scan canceled - your data was left untouched.");
+      }
+
       const mergeJson = wasm.merge_sync(
         JSON.stringify(existing.map(toRustAssessment)),
         JSON.stringify(feedResult.assessments.map(toRustAssessment)),
@@ -437,14 +584,26 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
       };
 
       await saveAssessments(merged);
-      await setConfigValue("last_gmail_sync", new Date().toISOString());
+
+      // "Last synced" reflects real fetches only: with no feed fetched, the
+      // stamp would claim a sync that never reached a source.
+      if (feedResult.fetched > 0) {
+        await setConfigValue("last_gmail_sync", lastSyncedStamp());
+      }
 
       return {
         success: true,
         totalNew: counts.added,
         totalUpdated: counts.updated,
+        notes: feedResult.errors,
         errors: feedResult.errors,
       } as T;
+    }
+
+    case "cancel_sync": {
+      activeScanController?.abort();
+      activeScanController = null;
+      return null as T;
     }
 
     default:

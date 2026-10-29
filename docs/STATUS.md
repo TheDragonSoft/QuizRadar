@@ -253,6 +253,194 @@ _Track against `docs/rebuild/01-product-spec.md` §8. Tick items only with a CIT
 - **First-Party WorkManager Notifications**: Implemented `ExamReminderWorker` computing T-24h and same-day notifications and morning digests directly from the core store with deterministic FNV-1a deduplication IDs and the ≤48 nearest policy, respecting runtime `POST_NOTIFICATIONS` permissions.
 - **Deep-Link Pairing & Cancelled Fallbacks**: Integrated `com.quizradar.app://pair` and `oauth/cancelled` handling in `MainActivity` with user-facing toasts and no crashes or unhandled intent leaks.
 
+## Post-ship audit fixes (broken sign-in buttons, v4 calendar port, design tokens, date math)
+
+_Audit pass over the 16 shipped phases. Root causes found, fixed, and regression-tested; no phase prompts touched._
+
+### Fixed defects
+
+- **Google / Teams sign-in buttons did nothing (`01` §4.8, §4.9):** the store actions called `google_login_start` / `microsoft_login_start` and discarded the returned authorize URL, so no browser ever opened and no error was ever shown. `apps/web/src/state/store.ts` now opens the desktop authorize URL via `@tauri-apps/plugin-opener` (with a `window.open` fallback) and, when the shell returns no URL, runs the browser-tier flow: GIS token-client login (`apps/web/src/pwadapters/browserSources.ts::googleGisLogin`) and Microsoft auth-code + PKCE popup (`microsoftPkcePopupLogin`, RFC 7636 S256, single-use state, 5-minute timeout). Failures surface as honest error toasts instead of silent no-ops. 8 regression tests in `apps/web/src/state/auth.test.ts`.
+- **Desktop Google login wiped the user's timetable (data loss):** `apps/desktop/src-tauri/src/auth_loopback.rs` called `save_schedule(ScheduleData::default())` twice after a successful Google login, and `repo::save_schedule` is a `save_all` — every course and slot was erased. Both calls removed; the handler now only persists the fetched profile (`user_email` / `user_name` / `user_picture`, plus `teams_account_name` / `teams_account_email` for Microsoft) into `config_kv`. The profile fetch was previously thrown away (`let _ = info`), leaving the account card stuck on "Student User"; it is now stored and displayed.
+- **Invisible borders across 13 components:** `src/tokens.css` defined `--surface-border`, but the components referenced an undefined `var(--border)`, so every card/panel border silently collapsed. `--border` and `--border-subtle` aliases added (light + dark).
+- **Week calendar showed the wrong week:** the store computed the week anchor by parsing a local midnight and formatting it back with `toISOString()`, which shifts the day for every user east or west of UTC (this machine, GMT+3, showed the week starting on Saturday). `getWeekStart` / `shiftWeek` now use pure calendar-date arithmetic; `CreateEditEventModal` and the backup filename use the local date helper. Regression tests in `apps/web/src/state/weekMath.test.ts`.
+- **Onboarding wizard flashed for returning users:** the first-run wizard auto-opened before the first real state load and never closed. It now waits for `hasLoaded` (`apps/web/src/App.tsx`) and honours the per-session dismissal.
+- **Hardcoded version string:** `SettingsModal` displayed a literal `v5.0.0-alpha.1`; it now reads `APP_VERSION` from `src/generated/version.ts` (single-source version truth).
+
+### v4 calendar parity (ported from `v4-final:static/app.js::renderWeekCalendar`)
+
+`apps/web/src/views/CalendarView.tsx` + `apps/web/src/lib/calendarLanes.ts` + `apps/web/src/index.css` now reproduce v4's week view: v4 constants (`START_HOUR=8`, `END_HOUR=20`, `HOUR_HEIGHT=56`), the 12-hour gutter (`8 AM … 8 PM`), v4 `gcal-card` blocks (course-tinted fill at 22% alpha, course-colored border, exam glow on merged blocks), the day-header exam chips, `formatCompactTime` (`9am` / `9:30am`), `stripRoomPrefix`, `hexToRgba`, and v4's global-search matching. 8 parity tests in `apps/web/src/views/CalendarView.test.tsx`.
+
+Deliberate v5 deviations from v4 (honesty doctrine + platform truth): a missing room renders "—" (v4's "TBA"), the gutter shows the device's real UTC offset (v4 hardcoded "GMT+03"), mobile renders 3 real columns (v4 left 4 empty), and the close affordance uses the lucide `X` icon instead of v4's "✕" glyph.
+
+### Verification
+
+`pnpm lint` · `pnpm typecheck` · `pnpm test` (89 web tests, 15 suites) · `pnpm format:check` · `cargo fmt --all --check` · `cargo clippy --workspace --all-targets -- -D warnings` · `cargo test --workspace` (232 core + desktop suites) — all green. Impeccable detector over the changed UI targets: clean.
+
+## Post-ship audit fixes #2 (desktop OAuth client ids, duplicate theme control, v4 dashboard + icon port)
+
+_User-reported: Google and Teams sign-in "does not work", the Light Theme button appears twice, and the UI should reuse the good parts of v4. Root causes fixed in the existing v5 backend; no phase prompts or `docs/rebuild/` touched._
+
+### Fixed defects
+
+- **Google sign-in could never work on the desktop tier (root cause):** `apps/desktop/src-tauri/src/state.rs` hardcoded v4's Google client id (`341760934836-….apps.googleusercontent.com`) — a **Web application** client, which Google rejects without a client secret, and which v5's PKCE-only architecture forbids (`AGENTS.md` §3.2). v5 now ships **no** Google client id: the desktop shell resolves one from Settings → Account (`google_client_id`) → `QUIZRADAR_GOOGLE_CLIENT_ID`, validates it (no spaces, non-empty), and otherwise fails with an actionable message instead of opening a doomed browser tab.
+- **The saved client ids were ignored:** `commands/state.rs` persisted `google_client_id` / `teams_client_id`, but the auth path always used the hardcoded constants. `AppState::effective_google_client_id()` / `effective_microsoft_client_id()` now resolve the effective id on every authorize *and* refresh, so a configured id is actually used (and a changed id invalidates the old refresh token honestly). Microsoft keeps the public "Microsoft Graph Command Line Tools" id as the default (`docs/rebuild/02-current-architecture.md` §5.3 allows it or a user-supplied app id) and prefers a user-supplied one.
+- **Microsoft redirect host mismatch:** the loopback redirect was `http://127.0.0.1:<port>/api/auth/microsoft/callback`; Microsoft app registrations for "Mobile and desktop applications" require the host `localhost` (otherwise AADSTS50011). The redirect is now `http://localhost:<port>` (port ignored by the provider), and the listener also accepts the IPv6 loopback on the same port so `localhost` never resolves to a dead port. Google's loopback redirect is now the path-free `http://127.0.0.1:<port>`, matching the Desktop-app registration Google creates.
+- **Browser tier dropped saved client ids:** the PWA adapter wrote camelCase config keys (`googleClientId`) while the state builder read the core's snake_case keys (`google_client_id`), so a saved client id never came back and the web sign-in kept asking for one. `apps/web/src/pwadapters/rpcAdapter.ts` now maps camelCase → snake_case on `update_config`.
+- **Duplicate "Light Theme" control:** the onboarding wizard *and* Settings both rendered sun/moon tiles. Settings now has a single theme control surface (the topbar quick toggle); the onboarding choice stays (spec-required). No copy was removed from the onboarding wizard.
+
+### v4 UI reuse
+
+- **v4 next-up hero** ported to `apps/web/src/views/DashboardView.tsx` (`#dashboard-next-up-hero`: blue gradient banner, countdown pill, course/type pill, room pill only when the source stated one, "Study Plan" + "Calendar" actions, honest empty state).
+- **v4 app icon** restored: `apps/web/public/icons/radar.svg` is now `v4-final:static/icon.svg`; the PWA PNGs (`icon-192/512`, `icon-maskable-192/512`) were re-rendered from the same artwork, and the sidebar brand uses the v4 radar mark (`RadarMark` in `apps/web/src/components/BrandMarks.tsx`).
+- **Settings → Account** now shows the tier-correct OAuth client-ID setup (desktop: Desktop-app client id + optional Azure app id + redirect hints; browser: web client id + SPA app id + origin hint) and flags "No Google client ID yet" instead of pretending sign-in is ready.
+
+### Verification
+
+`pnpm lint` · `pnpm typecheck` · `pnpm --dir apps/web test` (98 web tests, 15 suites) · `pnpm --dir apps/web build` · `cargo fmt --all --check` · `cargo clippy --workspace --all-targets -- -D warnings` · `cargo test -p quizradar-core` (237) · `cargo test -p quizradar-desktop` (11 unit + 5 integration) — all green. Impeccable detector over the changed UI targets: clean. New regression tests: 7 Rust (client-id resolution), 5 web (desktop OAuth setup copy, single theme control, browser-tier client-id round-trip, honest desktop error, v4 hero).
+
+### Open blocker
+
+A real Google sign-in still needs the user's own **Desktop app** client id (Google Cloud Console → APIs & Services → Credentials → Create client → Desktop app). QuizRadar cannot ship one (no client secret may live in the repo), and the v4 web client id is unusable under PKCE. The Microsoft default works without configuration; a university tenant that restricts Graph consent still needs its own app registration.
+
+## Post-ship audit fixes #3 (class save, empty calendar, double X, one sign-in window)
+
+_User-reported: "adding a class" failed with `missing field 'course_id'`, the week calendar stayed empty, every dialog showed two X buttons, and the sign-in buttons opened different windows. Root causes fixed in the existing v5 code; no phase prompts or `docs/rebuild/` touched._
+
+### Fixed defects
+
+- **Core ↔ web shape mismatch (the real cause of both the failed class save and the empty calendar):** the core's JSON is snake_case (`course_id`, `day_index`, `date_iso`, `start_time`, …) while the React views read camelCase. The desktop shell therefore rejected every saved class (`missing field 'course_id'`), and the schedule that came back carried keys the UI never read, so the week calendar rendered zero slots even with an enrolled course. New adapter `apps/web/src/state/ipcShape.ts` (symmetric, idempotent) is wired into `apps/web/src/state/rpc.ts` (every state payload is normalized on the way in) and into the three write paths in `apps/web/src/state/store.ts` (`upsert_course`, `save_schedule`, `add_custom_event` send the snake_case twins the core parses). The core's schema stays snake_case — it is the v4 backup/storage contract.
+- **Browser tier dropped the timetable:** `pwadapters/rpcAdapter.ts::upsert_course` persisted only the course and threw the slots away, and `delete_course` read `args.id` while the UI sends `code`. Both are fixed (the course's slots are replaced, not appended).
+- **Browser tier topic toggle was a no-op:** the adapter expected a pre-built `topicKey`; the UI sends `(assessmentId, topicIdx)`. The key is now derived and the value flips like the desktop does.
+- **Browser tier schedule could not reach the WASM core:** slots stored by older browser builds were camelCase-only, so the WASM (`derive_tasks`, `parse_ics`, `generate_study_blocks`) could not deserialize the schedule. `pwadapters/idbStore.ts::loadScheduleData` now adds the snake_case twins on read, so legacy and new rows both work, and the PWA backup export writes the clean core shape (`course_id`, `day_index`, `start_time`, …) instead of the browser's camelCase.
+- **Duplicate X buttons:** `ModalStack` drew its own close button *and* every registered modal drew a second one. The stack's default button is gone; `AssessmentDetailModal` (the only modal without one) got the v4-style header X.
+- **One sign-in window:** the topbar chip, the account profile card and the onboarding wizard all opened different surfaces with different behaviour. Every sign-in entry point now routes to **Settings → Account** (`initialTab: "account"`), which is where the client-id setup and the honest "not configured" state live. Settings also gained one-click links to the Google Cloud credentials page and the Azure app registrations page.
+- **Stale service-worker version:** `apps/web/public/sw.js` was committed with `5.0.0-alpha.1` while `tooling/version.json` says `5.0.0`. The file is regenerated from the version source of truth, and the PWA test now derives the expected cache key from the stamped `APP_VERSION` instead of hardcoding a literal.
+
+### v4 parity checks
+
+- Week calendar re-verified against `v4-final:static/app.js::renderWeekCalendar`: `START_HOUR`/`END_HOUR`/`HOUR_HEIGHT` (8 AM–8 PM, 56px), `DAY_ABBR`, the 12-hour gutter labels, `computeBlockPosition`, `assignOverlapLanes`, the slot+exam merge rule (same course **and** start time) and the `.gcal-card` / `.hour-row` / `.day-col` styles all match v4 exactly (honest deviations only: "—" for a missing room, the device's real UTC offset instead of v4's hardcoded "GMT+03").
+- `day_index` is Sunday-first in the core (`parse::util::weekday_index`) and in the UI (`Date.getDay()`), and the week starts on Sunday on both sides — the slot/column mapping is consistent.
+
+### Verification
+
+`pnpm lint` · `pnpm typecheck` · `pnpm --dir apps/web test` (111 web tests, 16 suites) · `pnpm --dir apps/web build` · `cargo fmt --all --check` · `cargo clippy --workspace --all-targets -- -D warnings` · `cargo test --workspace` (237 core + 11 desktop lib + 5 desktop integration) — all green. Impeccable detector over the changed UI targets: clean (one `border-accent-on-rounded` hit on the onboarding stepper was fixed by dropping the rounded top). New regression tests: 9 web (`src/state/ipcShape.test.ts` — snake↔camel normalization, idempotence, outgoing twins, desktop round trip, browser-tier slot persistence), 2 web (`src/components/chrome.test.tsx` — exactly one close button per modal, topbar sign-in routes to Settings → Account) and 2 web (`src/pwa.test.tsx` — snake_case backup contract, legacy camelCase slot upgrade).
+
+### Open blocker
+
+Unchanged: a real Google sign-in needs the user's own **Desktop app** client id (Settings → Account now links straight to the console). Microsoft works out of the box; a tenant that restricts Graph consent still needs its own Azure app registration.
+
+## Post-ship audit fixes #4 (sign-in routing, modal width, Google client id)
+
+_User-reported: the onboarding sign-in buttons dumped the user on the Settings page; pressing a sign-in button made the dialog visibly narrower; and the Google client id was missing._
+
+### Fixed defects
+
+- **Sign-in buttons sign in again:** the topbar chip, the account profile card and the onboarding wizard now start the OAuth flow directly instead of routing through Settings → Account. Settings → Account keeps the client-id setup and the honest "not configured" state, reachable from the topbar cog and from the "Manage Accounts" card.
+- **The dialog shrank when a sign-in failed:** the failure path re-opened the settings modal without its size props, so `ModalStack` re-rendered it at the default `max-w-lg` instead of `max-w-2xl` (the OS window never resized — no code resizes it). `store.ts::openModal` now normalizes the settings instance to `size: "lg"` + `flush: true`, so every open is the same width.
+- **Google client id:** the browser tier now ships the project's **public** OAuth client identifier (`341760934836-….apps.googleusercontent.com`) as the GIS token-client default — an identifier, not a credential; no client secret is read, stored or sent anywhere (AGENTS §3.2, architecture §4.3 "no client_secret exists at all"). The desktop tier still requires a **Desktop app** client id, because Google answers a secretless token exchange for a Web-application client with `client_secret is missing` (verified against `oauth2.googleapis.com/token`); the core already explains exactly that in `auth::providers::explain_oauth_error`, and Settings → Account now links straight to the credentials page with the precise steps.
+
+### Verification
+
+`pnpm lint` · `pnpm typecheck` · `pnpm --dir apps/web test` (112 web tests, 16 suites) · `cargo test --workspace` · `cargo clippy --workspace --all-targets -- -D warnings` · `cargo fmt --all --check` — all green. Impeccable detector: clean. New regression tests: topbar chip signs in (no modal), settings panel keeps one width across re-opens.
+
+## Post-ship audit fixes #5 (bundled Google client: id + secret)
+
+_Maintainer decision: the Google OAuth client of project `gmail-summary-511914` is a **Web application** client, and Google rejects a secretless token exchange for it (`invalid_request: client_secret is missing`). The maintainer asked for that client id **and its secret** to be hardcoded so the desktop sign-in works out of the box._
+
+### What shipped
+
+- `apps/desktop/src-tauri/src/state.rs`: `DEFAULT_GOOGLE_CLIENT_ID` + `DEFAULT_GOOGLE_CLIENT_SECRET` (the bundled pair) and `AppState::effective_google_client_secret()` — resolution order **OS keyring (`google_client_secret`) → `QUIZRADAR_GOOGLE_CLIENT_SECRET` → bundled value**, so the secret can be rotated without a rebuild.
+- `core/src/auth/providers.rs`: `TokenExchangeRequest` gained an optional `client_secret`; `google_token_exchange_params` sends it only when present, `refresh_token_params_with_secret` does the same for the refresh grant. The **core crate holds no secret** → the WASM/PWA bundle stays secret-free.
+- `apps/desktop/src-tauri/src/auth_loopback.rs`: the Google code exchange sends the resolved secret; Microsoft stays secret-free (public client).
+- `apps/web/src/components/SettingsModal.tsx`: new optional **Google client secret** field (password input) → stored in the OS keyring via `set_secret`, never in the SQLite config; an empty field clears the override and falls back to the bundled secret. Copy updated: the desktop no longer asks for a Desktop-app client id.
+- Provider error copy (`core/src/auth/providers.rs` + the browser twin `apps/web/src/pwadapters/browserSources.ts`) now names the actual fix instead of "QuizRadar never stores secrets".
+
+### Verification (no fabricated claims)
+
+- `POST https://oauth2.googleapis.com/token` with the bundled id+secret and a dummy code → `invalid_grant: Malformed auth code` (i.e. client, secret and redirect accepted; only the code was fake). Without the secret → `invalid_request: client_secret is missing`.
+- Redirect URI variants all accepted by Google: `http://127.0.0.1:49152`, `http://localhost:49152`, `http://localhost`, `http://127.0.0.1`.
+- `GET accounts.google.com/o/oauth2/auth` with the app's exact parameter set → **302 to the sign-in page** (client id + `redirect_uri=http://127.0.0.1:49152` + PKCE + scopes accepted); the same request with a bogus client id → `302 /signin/oauth/error?authError=invalid_client`.
+- Unit test guard: the authorize URL contains the client id but **never** the secret.
+- `cargo test --workspace` · `cargo clippy --workspace --all-targets -- -D warnings` · `cargo fmt --all --check` · `pnpm lint` · `pnpm typecheck` · `pnpm --dir apps/web test` (112 tests) — all green.
+
+### Honest limitations / risks
+
+- The secret is now inside the desktop binary and in the repo working tree. Anyone with the binary can extract it. Rotate it in Google Cloud Console if that matters; the keyring/env override exists exactly for that.
+- The browser/PWA tier still ships **no** secret (GIS token client needs none) — the bundled client id is used there as a public identifier, and the app origin must be listed in the client's Authorized JavaScript origins.
+- The Android tier still carries its placeholder client ids; the UniFFI exchange stays secret-free by design.
+
+## Post-ship audit fixes #6 (Gemini model ladder, `AQ.` auth keys, shared-key seeding)
+
+_Trigger: the maintainer asked whether users could drop the "get your own AI Studio key" step and simply sign in with Google. Verified against Google's current documentation and the live API on 2026-10-29: **no supported consumer path exists** — the key stays BYOK. What did change is that a **newly created key now works at all** (the pinned model ids were retired) and that one shared key can now serve a private install without entering the repo._
+
+### What shipped
+
+- `core/src/ai/provider.rs`: `AiModel::model_ids()` — each tier carries an ordered candidate list instead of one pinned id (`FlashLite`: `gemini-3.5-flash-lite` → `gemini-3.1-flash-lite` → `gemini-flash-lite-latest` → `gemini-2.5-flash-lite`; `Flash`: `gemini-3.5-flash` → `gemini-3.8-flash` → `gemini-3.7-flash` → `gemini-3.6-flash` → `gemini-flash-latest` → `gemini-2.5-flash`). `model_id()` is the first candidate.
+- `core/src/ai/gemini.rs`: the provider walks the candidates and uses the first that answers. **404** (model retired for the key's project) and **503** (model congested) are model-level failures → the next candidate is tried. 400/401/429 are the caller's own credential or quota → they surface honestly and are **not** retried elsewhere. `RawJson` now carries the id of the model that actually served the request.
+- `core/src/ai/provider.rs`: the quota ledger counts a call under the model that really ran (`record_model`) and sums a tier's candidates when checking the daily limit.
+- `core/src/ai/tasks.rs`: the practice payload's provenance chip names the model that actually served the request (`AiCreditNote::provider_model`), so a fallback is never mislabeled as the tier's first id.
+- `apps/desktop/src-tauri/src/state.rs`: shared-key seeding — resolution order **OS keyring (`gemini_api_key`) → `QUIZRADAR_GEMINI_API_KEY` → `gemini.key` next to the executable**. A key pasted in Settings always wins; a shipped install can carry one shared key that never touches the repository or the git history.
+- `apps/desktop/src-tauri/src/commands/ai.rs`: the "no key" error now names all three sources instead of only the keyring.
+- `apps/web/src/components/SettingsModal.tsx`: the Gemini card shows the shared-key hint on the desktop tier.
+- `apps/web/src/components/OnboardingWizardModal.tsx`: the timetable-image upload card is **desktop-only**; the browser tier says so plainly instead of offering a command the tier cannot run.
+- `apps/web/src/copy.ts`: the key placeholder accepts both key shapes (`AIzaSy…` **or** `AQ…`).
+
+### Verification (no fabricated claims)
+
+Live against `generativelanguage.googleapis.com` on 2026-10-29 with a key created that day:
+
+- `gemini-2.5-flash` → **HTTP 404** *"This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.8-flash…"*; `gemini-2.5-flash-lite` → **HTTP 404** *"…use models/gemini-3.5-flash-lite"*. The ids this repo pinned until now are dead for any new key.
+- `gemini-3.5-flash-lite` and `gemini-3.5-flash` → **HTTP 200** with the app's exact request shape (`temperature: 0.1`, `responseMimeType: application/json`, `inline_data` image part): the vision call returned the expected `{semester, courses, slots}` JSON.
+- `gemini-3.6-flash` / `3.7-flash` / `3.8-flash` → **HTTP 503** *"high demand"* at the time of the check (transient) — the reason the ladder falls back on 503 as well as on 404.
+- The app's `x-goog-api-key` header transport is accepted for these keys (the key stays out of URLs and proxy logs). The `?key=` query form and `Authorization: Bearer` are **not** used.
+- Unit tests: a retired primary model falls back and the response names the serving model; every candidate failing reports the honest 404; a 429 is **not** retried against another model (exactly one request); the practice credit note names the fallback model. Desktop tests: keyring → env → seed-file precedence, blank candidates never shadow a later one, a missing/empty seed file yields no key.
+- `cargo test --workspace --lib` (241 core + 23 desktop) · `cargo clippy -p quizradar-core -p quizradar-desktop --all-targets -- -D warnings` · `cargo fmt --all --check` · `pnpm lint` · `pnpm typecheck` · `pnpm --dir apps/web test` (122 tests) — all green.
+- Not run: `cargo test --workspace` (the full form) — the running `quizradar-desktop.exe` holds `target/debug/quizradar-desktop.exe` open, so the bin target cannot be relinked while the app is open. The lib targets (the entire test suite) are green.
+
+### Honest limitations / risks
+
+- **A Google sign-in cannot replace the key.** The Gemini Developer API accepts OAuth bearer tokens only for tuning/retrieval-shaped scopes and requires the user to own a Google Cloud project with the Generative Language API enabled plus an `x-goog-user-project` header; Vertex AI accepts a user OAuth token but needs a **billed** project with the `aiplatform.user` role; Vertex express mode authenticates with an API key anyway. Firebase AI Logic is the only key-free path and it needs a Firebase backend — forbidden by this repo's zero-server rule. **BYOK stays.**
+- The `AQ.` prefix is Google's new **auth key** (a service-account-bound API key), not an OAuth access token — AI Studio has issued only those since 2026-05-28. It travels in `x-goog-api-key` like any key, and the app's transport is already correct. The key format in the Settings placeholder was widened accordingly.
+- One shared key is **one quota pool** for every friend, and its daily limit is set by Google per project (the app does not claim a number). If a friend's machine leaks it, rotate the key in AI Studio — the env/seed overrides exist so no rebuild is needed.
+- `gemini.key` next to the executable is readable by anyone with that folder, and a build that ships it exposes the key. The repository stays clean either way; the keyring entry is the safest source.
+- The browser/PWA tier still has no vision-import command at all, so the timetable upload card is now desktop-only by design rather than by accident.
+
+## Post-ship audit fixes #7 (scan overlay truth, real cancellation, sync stamps, honest AI quota)
+
+_A live pass over the rebuilt desktop build: the scan overlay was frozen on a stage that never changed, its "Cancel" button only closed the dialog, "Last synced" was never written on the desktop, and the AI panel quoted a quota nobody had measured. Every claim below was checked against the running app or a green test run._
+
+### Fixed defects
+
+- **The scan overlay was frozen for the whole scan (event-name mismatch):** the shell emitted its progress on `source-progress` while the web tier listened for `sync-progress` (the name this file had always documented), so no pulse ever reached the overlay. The name is now pinned on both sides — `apps/desktop/src-tauri/src/commands/sync.rs::SYNC_PROGRESS_EVENT` and `apps/web/src/state/ipcEvents.ts` — and `apps/web/src/state/syncProgressContract.test.ts` reads the shell's source and fails if the two drift apart again.
+- **The overlay claimed work that was never reported:** with no pulse arriving, `progress.found` stayed 0 and the bar rendered a hard-coded **60%**; the header had no finished state at all, so the title stayed "Scanning…" forever. `ScanProgressModal` now renders only what the sources reported — a determinate bar when a real done/found ratio exists, an indeterminate pulse when no count has arrived, one row per source with its live stage and counts — and a real outcome ("Scan complete" / "Scan canceled" / the error) instead of a stranded dialog.
+- **"Cancel" only closed the dialog:** the old button called `onClose`, so the scan kept running behind a closed overlay. `cancel_sync` now bumps a cancellation epoch (`tokio::sync::watch`) held in `AppState`; the scan's fetch phase runs under `tokio::select!` and aborts the moment the epoch moves. The abort happens **before** the merge into the store, so "your data was left untouched" is literally true rather than a promise.
+- **The desktop never persisted `last_gmail_sync`:** the stamp existed only in the browser tier's storage, so the desktop sidebar could only ever say "Never synced". The store gained a `kv_meta` facade (`get/set_last_gmail_sync`, `last_gcal_sync`, `last_backup_push` over `MetaRepo`), and the desktop writes it **only when a source actually fetched something** (`SourceStatus::Ran`) — a scan in which every source was skipped or failed writes nothing.
+- **The desktop ignored the user's source toggles:** `classroom_enabled` was reported as a constant rather than the user's setting; it now reads the real config value. The "N sources" counts come from one honest function (`computeActiveSourceLabels`) that names only the sources that are actually connected and enabled — the dashboard KPI card used to hard-code "Gmail" and a static "Gmail, Teams, Moodle" line.
+- **The AI panel quoted a quota nobody measured:** the Settings panel hard-coded "AI calls today: 0/~250". There is now a real `ai_quota_usage` command over the store-backed `QuotaLedger`, and the panel prints the actual count ("AI calls today: N (resets midnight PT)") or "not tracked on this tier" where no ledger exists (the browser companion). The daily limit itself is **not** quoted any more — Google sets it per project and shows it in AI Studio, so the UI points there instead of inventing a number. The key-validation ping counts as a call, because it is one.
+
+### Live verification (the running desktop app, not a mock)
+
+- Scan started from the top bar: the overlay opened with real per-source progress — "1 source reported", "0/116 items" rising to "17/116 items", the row "Gmail — Fetching… · 17/116", a determinate bar — confirming the event-name fix and the no-fabricated-percentage fix on screen.
+- The scan ran to completion and the overlay switched to **"Scan complete"** with the honest per-source notes ("Sources ran: Gmail. Found 0 new, 0 refreshed, 39 unchanged." / "Gmail: 5 queries ran, 116 unique message(s), 116 fetched this run; 39 candidate announcement(s) parsed from the cache.") — no stranded "Scanning…".
+- A second scan was canceled mid-flight from the overlay's Cancel button: the overlay switched to **"Scan canceled"** with "Scan canceled - your data was left untouched." and "The scan was aborted before anything was written. Your radar is exactly as it was."
+- The sidebar shows the real stamp ("Last synced: …") and the "Connected sources" card counts only what is actually connected ("1 connected · 1 source active · Gmail — Active").
+
+### Verification
+
+- `cargo fmt --all --check` · `cargo clippy --workspace --all-targets -- -D warnings` · `cargo test --workspace` — **241** core unit tests + email/ICS/smoke/v4-round-trip fixtures + **23** desktop unit + **8** desktop integration (including `test_scan_that_fetched_something_stamps_last_synced`, `test_scan_that_fetched_nothing_never_claims_a_sync`, `test_cancel_aborts_the_scan_and_leaves_the_data_untouched`) — green. (This closes the "full `cargo test --workspace` not run" caveat above: the desktop binary has to be closed so the bin target can be relinked.)
+- `pnpm lint` · `pnpm typecheck` · `pnpm --dir apps/web test` (**122** tests, 19 suites) · `pnpm --dir apps/web build` · `pnpm format:check` · `node tooling/generate-version.mjs --check` (5 sinks in sync) — green.
+- `tauri.conf.json` is in `.prettierignore`: `tooling/generate-version.mjs` rewrites that file whole, and prettier's array layout fought the sink check.
+
+### New dependency
+
+`wiremock = "0.6"` as a **dev-dependency of the desktop crate** (`apps/desktop/src-tauri/Cargo.toml`): the sync-stamp and cancel regression tests need a local HTTP server that answers like Gmail's API. Test-only — it never reaches a shipped binary.
+
+### Honest limitations / risks
+
+- The cancel aborts the **fetch** phase. A scan that has already merged its results keeps them; the window is deliberately narrow so that "your data was left untouched" is always true.
+- "Last synced" records the last scan in which a source **ran** — a scan that found nothing new still stamps the time, because a fetch did happen. A scan where every source was skipped or failed writes nothing.
+- The desktop's "AI calls today" counts the calls made **by this device**; Google meters the project, so a key used from several machines shows a lower number here than in AI Studio.
+
 ## Compile-time TODO list (honest, no NotImplemented stubs)
 
 - `tauri.conf.json` → `app.security.csp: null` for now; exact CSP locked in phase 07/08 once the dev-server/font/img sources are known.
@@ -294,7 +482,7 @@ cargo check --workspace                                        # fast compile ch
 pnpm install                     # workspace install (root + apps/*; esbuild build approved via allowBuilds)
 pnpm lint                        # eslint flat config (root-only shared config)
 pnpm typecheck                   # tsc per package (web: src + vite.config)
-pnpm test                        # vitest run per package (web: 49 tests in 10 suites, jsdom)
+pnpm test                        # vitest run per package (web: 89 tests in 15 suites, jsdom)
 pnpm format:check                # prettier gate (docs/ and prompts/ are unformatted by policy)
 pnpm generate:version            # stamp all version sinks from tooling/version.json
 pnpm generate:version:check      # CI check — exits 1 when any sink is stale
@@ -479,7 +667,7 @@ When cutting a new release:
 
 - ~~Android local build requires JDK 21 + Android SDK~~ — resolved during phase 01: Temurin JDK 21 installed via winget; platform 35 + working cmdline-tools installed into the local SDK. CI still uses ubuntu + temurin 21 (`ci.yml`).
 - `pnpm core:watch` requires `cargo-watch` (not installed locally; optional dev nicety — plain `pnpm core:test` always works).
-- `cargo tauri dev` opens a real window on this machine; the headless shell cannot visually confirm the placeholder rendering — the maintainer should run `pnpm --dir apps/desktop dev` once and confirm the shell (verified equivalent: built exe + dist smoke above).
+- ~~`cargo tauri dev` opens a real window on this machine; the headless shell cannot visually confirm the placeholder rendering~~ — **resolved** in the post-ship audit passes: `pnpm --dir apps/desktop dev` was run and the real desktop window was inspected directly (scan overlay, Cancel, sidebar sync footer, connected-sources card). See "Post-ship audit fixes #7 → Live verification".
 
 ## New dependencies (with rationale, per §7 DoD)
 
@@ -491,3 +679,4 @@ When cutting a new release:
 - Phase 12 added to `core`: `uniffi = { version = "0.28.3", default-features = false }` with optional features `tokio` and `cli` (for Kotlin binding generation); added to `apps/mobile-android`: `net.java.dev.jna:jna:5.14.0@aar` (UniFFI dynamic loader), `androidx.security:security-crypto:1.1.0-alpha06` (AES-256 GCM EncryptedSharedPreferences backed by Android Keystore), `kotlinx-coroutines-android:1.9.0` (coroutine dispatcher for UI and native store calls); dev/test dependencies: `robolectric:4.14.1`, `kotlinx-coroutines-test:1.9.0`, `net.java.dev.jna:jna:5.14.0`.
 - Phase 13 added to `apps/mobile-android`: `androidx.compose.ui:ui-test-junit4:1.7.6` and `androidx.compose.ui:ui-test-manifest:1.7.6` (dev/test dependencies for Robolectric Compose UI testing).
 - Phase 14 added to `apps/mobile-android`: `androidx.browser:browser:1.8.0` (Chrome Custom Tabs for PKCE OAuth), `androidx.glance:glance-appwidget:1.1.1` and `androidx.glance:glance-material3:1.1.1` (Glance 2x1 home-screen countdown widget), `androidx.work:work-runtime-ktx:2.10.0` (WorkManager periodic widget updates and exam reminder notifications); test dependency: `androidx.work:work-testing:2.10.0`.
+- Post-ship audit added to `apps/desktop/src-tauri`: dev-dependency `wiremock = "0.6"` — the same version the core crate already uses, so no new package enters the lockfile. It backs the recorded-HTTP fixture server the sync-stamp and cancel integration tests need (a local server that answers like Gmail's API). Test-only; it never reaches a shipped binary.

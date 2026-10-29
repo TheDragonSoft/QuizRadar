@@ -12,6 +12,9 @@ pub const SERVICE_NAME: &str = "com.quizradar.app";
 pub const KEY_GOOGLE_REFRESH_TOKEN: &str = "google_refresh_token";
 pub const KEY_MICROSOFT_REFRESH_TOKEN: &str = "microsoft_refresh_token";
 pub const KEY_GEMINI_API_KEY: &str = "gemini_api_key";
+/// Optional runtime override for the bundled Google client secret (Settings →
+/// Account → Google client secret). Lives in the OS keyring, never in SQLite.
+pub const KEY_GOOGLE_CLIENT_SECRET: &str = "google_client_secret";
 
 #[derive(Debug, Clone, Default)]
 pub struct KeyringStore {

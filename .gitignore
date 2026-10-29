@@ -57,3 +57,9 @@ processed_quizzes.json
 # Local agent tooling (opencode skills) — stays untracked
 .agents/
 skills-lock.json
+
+# Local agent scratch (reference dumps, helper scripts) — stays untracked
+.zcode/
+tooling/.screenshots/
+tooling/screenshot.ps1
+tooling/ui-click.ps1

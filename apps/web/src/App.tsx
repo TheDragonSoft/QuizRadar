@@ -8,6 +8,7 @@ import { PullToRefresh } from "./components/PullToRefresh";
 import { DashboardView, TasksView, CalendarView, FocusView, HelpView } from "./views/views";
 import { DevRig } from "./dev/DevRig";
 import { useAppStore, applyThemeToDocument, initDayRolloverWatchdog } from "./state/store";
+import { isTauriEnvironment } from "./state/rpc";
 import type { View } from "./state/types";
 import { registerModal, type ModalComponent } from "./components/modalRegistry";
 import { AssessmentDetailModal } from "./components/AssessmentDetailModal";
@@ -52,6 +53,7 @@ export default function App() {
   const theme = useAppStore((s) => s.theme);
   const loadInitialData = useAppStore((s) => s.loadInitialData);
   const isOffline = useAppStore((s) => s.isOffline);
+  const hasLoaded = useAppStore((s) => s.hasLoaded);
   const config = useAppStore((s) => s.data.config);
   const openModal = useAppStore((s) => s.openModal);
 
@@ -77,15 +79,52 @@ export default function App() {
     };
   }, [loadInitialData, theme]);
 
-  // First-run onboarding check
+  // First-run onboarding check — waits for the first real state load so a
+  // returning user is never shown the wizard (it only opens, never closes).
   useEffect(() => {
-    if (typeof window !== "undefined" && !config.onboardingCompleted) {
+    if (!hasLoaded) return;
+    if (config.onboardingCompleted) return;
+    if (typeof window !== "undefined") {
       const dismissed = sessionStorage.getItem("quizradar_onboarding_dismissed");
-      if (!dismissed) {
-        openModal("onboarding");
-      }
+      if (dismissed) return;
     }
-  }, [config.onboardingCompleted, openModal]);
+    openModal({ id: "onboarding", flush: true, size: "lg" });
+  }, [hasLoaded, config.onboardingCompleted, openModal]);
+
+  // Desktop auth bridge: the OAuth round trip finishes in the browser, so the
+  // shell emits "auth-changed" when the token lands. Without this listener the
+  // app kept showing "Sign in" even though the account was connected.
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    const subscribe = async () => {
+      if (!isTauriEnvironment()) return;
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        const stop = await listen<string>("auth-changed", () => {
+          void useAppStore.getState().refreshState();
+          useAppStore.getState().addToast({
+            type: "success",
+            message: "Account connected — signed in.",
+          });
+        });
+        if (disposed) {
+          stop();
+          return;
+        }
+        unlisten = stop;
+      } catch {
+        // The event bridge is a nicety: a failure here must never break the app.
+      }
+    };
+
+    void subscribe();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   if (isDevRigActive) {
     return <DevRig onExit={() => setIsDevRigActive(false)} />;

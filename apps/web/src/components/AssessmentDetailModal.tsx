@@ -12,6 +12,7 @@ import {
   Save,
   CheckCircle,
   HelpCircle,
+  X,
 } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
@@ -119,8 +120,17 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
   return (
     <div
       data-testid="assessment-detail-modal"
-      className="max-h-[85vh] overflow-y-auto -m-6 p-6 space-y-6 text-[var(--text)]"
+      className="relative max-h-[85vh] overflow-y-auto -m-6 p-6 space-y-6 text-[var(--text)]"
     >
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label={copy.common.close}
+        className="absolute right-4 top-5 z-10 rounded-lg p-1 text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+      >
+        <X className="h-5 w-5" aria-hidden="true" />
+      </button>
+
       {/* Course Color Header Bar */}
       <div
         className="h-3 w-full -mt-6 -mx-6 mb-4 rounded-t-2xl"

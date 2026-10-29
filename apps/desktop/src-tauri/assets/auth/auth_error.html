@@ -3,26 +3,45 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>QuizRadar — {{TITLE}}</title>
+    <title>QuizRadar â€” {{TITLE}}</title>
     <style>
+      :root {
+        color-scheme: dark;
+        --accent: #3b82f6;
+        --accent-hover: #60a5fa;
+        --surface-bg: #0b0f19;
+        --panel-bg: #111827;
+        --border-subtle: #1e293b;
+        --border-strong: #334155;
+        --text-primary: #f8fafc;
+        --text-secondary: #94a3b8;
+      }
+      * {
+        box-sizing: border-box;
+      }
       body {
-        background: #0b0f19;
-        color: #f8fafc;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: var(--surface-bg);
+        color: var(--text-primary);
+        font-family:
+          "Inter",
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
         display: flex;
         align-items: center;
         justify-content: center;
         min-height: 100vh;
         margin: 0;
         padding: 20px;
-        box-sizing: border-box;
+        -webkit-font-smoothing: antialiased;
       }
       .card {
-        background: #131927;
-        border: 1px solid #1e293b;
+        background: var(--panel-bg);
+        border: 1px solid var(--border-subtle);
         border-radius: 16px;
         padding: 28px;
-        max-width: 440px;
+        max-width: 460px;
         width: 100%;
         box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
         text-align: center;
@@ -31,30 +50,34 @@
         width: 48px;
         height: 48px;
         border-radius: 12px;
-        background: rgba(239, 68, 68, 0.15);
+        background: rgba(239, 68, 68, 0.14);
         color: #ef4444;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        font-size: 24px;
         margin-bottom: 16px;
+      }
+      .icon svg {
+        width: 24px;
+        height: 24px;
       }
       h2 {
         font-size: 18px;
         margin: 0 0 8px 0;
-        color: #ffffff;
+        color: var(--text-primary);
         font-weight: 700;
+        letter-spacing: -0.02em;
       }
       p {
         font-size: 13px;
-        color: #94a3b8;
-        line-height: 1.5;
+        color: var(--text-secondary);
+        line-height: 1.6;
         margin: 0 0 20px 0;
         word-break: break-word;
       }
       .btn {
         display: inline-block;
-        background: #1a73e8;
+        background: var(--accent);
         color: #ffffff;
         text-decoration: none;
         font-size: 13px;
@@ -66,16 +89,41 @@
         border: none;
       }
       .btn:hover {
-        background: #1557b0;
+        background: var(--accent-hover);
+      }
+      .hint {
+        margin: 14px 0 0 0;
+        font-size: 11px;
+        color: #64748b;
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
       }
     </style>
   </head>
   <body>
     <div class="card">
-      <div class="icon">⚠️</div>
+      <div class="icon" aria-hidden="true">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path
+            d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"
+          ></path>
+          <path d="M12 9v4"></path>
+          <path d="M12 17h.01"></path>
+        </svg>
+      </div>
       <h2>{{TITLE}}</h2>
       <p>{{MESSAGE}}</p>
-      <button class="btn" onclick="window.close()">Return to QuizRadar</button>
+      <a class="btn" href="quizradar://signed-in">Open QuizRadar</a>
+      <p class="hint">If the app does not come forward, switch back to the QuizRadar window.</p>
     </div>
   </body>
 </html>

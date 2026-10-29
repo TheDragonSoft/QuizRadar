@@ -10,3 +10,324 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
+
+/* ---------------------------------------------------------------------------
+   Week calendar — v4 parity (v4-final:static/index.html `.gcal-card` block).
+   1px full border + CSS-driven light/dark surface variables, exam glow,
+   and the v4 hover lift. Colors come from the course palette at render time.
+   --------------------------------------------------------------------------- */
+
+.gcal-card {
+  position: absolute;
+  border-radius: 8px;
+  padding: 5px 8px;
+  overflow: hidden;
+  cursor: pointer;
+  line-height: 1.25;
+  border: 1px solid transparent;
+  background-color: var(--card-bg-light, #e8f0fe);
+  color: #111827;
+  transition:
+    transform 140ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 140ms cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: 10;
+}
+
+.dark .gcal-card {
+  background-color: var(--card-bg-dark, rgba(59, 130, 246, 0.22));
+  color: #f8fafc;
+}
+
+@media (hover: hover) {
+  .gcal-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px -4px rgba(15, 23, 42, 0.16);
+    z-index: 30;
+  }
+  .dark .gcal-card:hover {
+    box-shadow: 0 6px 16px -4px rgba(0, 0, 0, 0.5);
+  }
+}
+
+.gcal-card.has-exam-glow {
+  box-shadow: var(--exam-glow);
+}
+
+/* Calendar grid rows: 56px per hour with a hairline separator. */
+.hour-row {
+  height: 56px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* Day column shell — v4 `.day-col`. */
+.day-col {
+  border-right: 1px solid var(--border-subtle);
+  position: relative;
+}
+
+/* Focus ring: visible for keyboard users, invisible for pointer users. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+   v4 interaction choreography — ported from v4-final:static/index.html.
+   The Sun/Moon crossfade, the rotating settings cog, the card lift, the
+   onboarding choice states and the modal sheet transitions are the parts
+   people read as "this app feels finished"; they are pure CSS, so they
+   survive the React rewrite unchanged.
+   --------------------------------------------------------------------------- */
+
+/* Sun <-> Moon focal toggle choreography */
+.theme-toggle-stage {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.theme-icon-moon,
+.theme-icon-sun {
+  position: absolute;
+  inset: 0;
+  width: 16px;
+  height: 16px;
+  transition:
+    transform 220ms var(--ease-out-expo),
+    opacity 180ms ease;
+  will-change: transform, opacity;
+}
+
+.theme-icon-moon {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+}
+
+.theme-icon-sun {
+  opacity: 0;
+  transform: rotate(-75deg) scale(0.55);
+}
+
+.dark .theme-icon-moon {
+  opacity: 0;
+  transform: rotate(75deg) scale(0.55);
+}
+
+.dark .theme-icon-sun {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+}
+
+/* Settings cog micro-animation */
+.settings-btn-stage {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 400ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: transform;
+}
+
+.group:hover .settings-btn-stage {
+  transform: rotate(55deg);
+}
+
+.group:active .settings-btn-stage {
+  transform: rotate(180deg) scale(0.9);
+  transition-duration: 160ms;
+}
+
+/* Interactive card micro-feedback */
+.interactive-card {
+  transition:
+    border-color 160ms var(--ease-out-quart),
+    transform 160ms var(--ease-out-expo),
+    background-color 160ms var(--ease-out-quart);
+}
+
+@media (hover: hover) {
+  .interactive-card:hover {
+    transform: translateY(-1px);
+  }
+}
+
+.interactive-card:active {
+  transform: translateY(0) scale(0.996);
+}
+
+/* Onboarding choice + track chip states */
+.onboard-choice-card {
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms var(--ease-out-expo);
+}
+
+.onboard-choice-card:hover {
+  transform: translateY(-1px);
+}
+
+.onboard-choice-card.is-selected {
+  border-color: var(--accent) !important;
+  background-color: rgba(26, 115, 232, 0.08) !important;
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 4px 12px rgba(26, 115, 232, 0.12) !important;
+}
+
+.dark .onboard-choice-card.is-selected {
+  background-color: rgba(59, 130, 246, 0.14) !important;
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 4px 14px rgba(59, 130, 246, 0.18) !important;
+}
+
+.onboard-track-chip {
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms var(--ease-out-expo);
+}
+
+.onboard-track-chip:hover {
+  border-color: var(--accent) !important;
+  transform: translateY(-1px);
+}
+
+.onboard-track-chip.is-selected {
+  border-color: var(--accent) !important;
+  background-color: rgba(26, 115, 232, 0.12) !important;
+  color: var(--accent) !important;
+  font-weight: 700 !important;
+  box-shadow:
+    0 0 0 1.5px var(--accent),
+    0 2px 8px rgba(26, 115, 232, 0.18) !important;
+}
+
+.dark .onboard-track-chip.is-selected {
+  background-color: rgba(59, 130, 246, 0.22) !important;
+  color: #93c5fd !important;
+  box-shadow:
+    0 0 0 1.5px var(--accent),
+    0 2px 10px rgba(59, 130, 246, 0.28) !important;
+}
+
+/* Onboarding step panel entry */
+.onboard-step-panel {
+  animation: onboardPanelEnter 240ms var(--ease-out-expo) both;
+}
+
+@keyframes onboardPanelEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Modal sheet + panel transitions (v4 `.modal-backdrop` / `.modal-panel`) */
+.modal-backdrop {
+  animation: modalBackdropIn 280ms var(--ease-out-expo) both;
+}
+
+.modal-panel {
+  animation: modalPanelIn 280ms var(--ease-out-expo) both;
+}
+
+@keyframes modalBackdropIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modalPanelIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* M3 bottom-sheet treatment on compact screens (v4 < 768px rule) */
+@media (max-width: 767px) {
+  .modal-backdrop {
+    align-items: flex-end !important;
+    padding: 0 !important;
+  }
+
+  .modal-panel {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 88dvh !important;
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    border-top-left-radius: 28px !important;
+    border-top-right-radius: 28px !important;
+    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.4) !important;
+    padding-bottom: max(16px, env(safe-area-inset-bottom, 16px)) !important;
+    overscroll-behavior: contain;
+  }
+}
+
+/* Custom themed scrollbars (v4) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* v4 text balance for headings */
+h1,
+h2,
+h3,
+h4 {
+  text-wrap: balance;
+  letter-spacing: -0.02em;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* v4 selection colors */
+::selection {
+  background-color: rgba(26, 115, 232, 0.16);
+  color: #1557b0;
+}
+
+.dark ::selection {
+  background-color: rgba(59, 130, 246, 0.28);
+  color: #dbeafe;
+}

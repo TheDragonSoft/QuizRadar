@@ -1,4 +1,4 @@
-const u = "5.0.0-alpha.1", o = "quizradar-v5.0.0-alpha.1", c = `${o}-shell`, l = `${o}-cross-origin`, d = [
+const u = "5.0.0", o = "quizradar-v5.0.0", c = `${o}-shell`, l = `${o}-cross-origin`, d = [
   "/",
   "/index.html",
   "/manifest.webmanifest",
@@ -9,26 +9,26 @@ const u = "5.0.0-alpha.1", o = "quizradar-v5.0.0-alpha.1", c = `${o}-shell`, l =
   "/icons/icon-maskable-512.png",
   "/wasm/quizradar_wasm.js",
   "/wasm/quizradar_wasm_bg.wasm"
-], s = self;
-s.addEventListener("install", (t) => {
+], a = self;
+a.addEventListener("install", (t) => {
   t.waitUntil(
-    caches.open(c).then((n) => n.addAll(d)).then(() => s.skipWaiting())
+    caches.open(c).then((s) => s.addAll(d)).then(() => a.skipWaiting())
   );
 });
-s.addEventListener("activate", (t) => {
+a.addEventListener("activate", (t) => {
   t.waitUntil(
     caches.keys().then(
-      (n) => Promise.all(
-        n.filter(
+      (s) => Promise.all(
+        s.filter(
           (e) => e.startsWith("quizradar-") && e !== c && e !== l
         ).map((e) => caches.delete(e))
       )
-    ).then(() => s.clients.claim())
+    ).then(() => a.clients.claim())
   );
 });
-s.addEventListener("fetch", (t) => {
-  const n = new URL(t.request.url);
-  if (n.pathname.startsWith("/api/") || n.hostname.includes("googleapis.com")) {
+a.addEventListener("fetch", (t) => {
+  const s = new URL(t.request.url);
+  if (s.pathname.startsWith("/api/") || s.hostname.includes("googleapis.com")) {
     t.respondWith(
       fetch(t.request).catch(
         () => new Response(
@@ -46,12 +46,12 @@ s.addEventListener("fetch", (t) => {
     );
     return;
   }
-  if (n.origin !== s.location.origin) {
+  if (s.origin !== a.location.origin) {
     t.respondWith(
       caches.match(t.request).then((e) => e || fetch(t.request).then((i) => {
         if (i.ok) {
-          const a = i.clone();
-          caches.open(l).then((r) => r.put(t.request, a));
+          const n = i.clone();
+          caches.open(l).then((r) => r.put(t.request, n));
         }
         return i;
       }))
@@ -60,16 +60,16 @@ s.addEventListener("fetch", (t) => {
   }
   t.respondWith(
     caches.match(t.request).then((e) => {
-      const i = fetch(t.request).then((a) => {
-        if (a.ok) {
-          const r = a.clone();
+      const i = fetch(t.request).then((n) => {
+        if (n.ok) {
+          const r = n.clone();
           caches.open(c).then((h) => h.put(t.request, r));
         }
-        return a;
+        return n;
       }).catch(async () => {
         if (t.request.mode === "navigate") {
-          const a = await caches.match("/index.html");
-          if (a) return a;
+          const n = await caches.match("/index.html");
+          if (n) return n;
         }
         return e || new Response(JSON.stringify({ error: "Offline — QuizRadar is in local mode" }), {
           status: 503,

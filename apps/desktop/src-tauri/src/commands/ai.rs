@@ -26,6 +26,19 @@ pub struct KeyValidationResult {
     pub error: Option<String>,
 }
 
+/// The device's real AI usage for today (the Pacific quota day).
+///
+/// The counters come from the store-backed ledger, so the Settings line
+/// reports what this device actually spent — never a hardcoded zero.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiQuotaUsage {
+    /// Total provider calls recorded today.
+    pub calls_today: u32,
+    /// Per-model breakdown (`gemini-3.5-flash-lite` → 2, …).
+    pub per_model: std::collections::BTreeMap<String, u32>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DesktopExtractedTimetable {
@@ -58,7 +71,10 @@ pub async fn validate_gemini_key(
     }
 
     let clock = Arc::new(chrono::Utc::now);
-    let provider = GeminiProvider::production(Some(trimmed.clone()), clock, None)
+    // The validation ping is a real provider call, so it runs against the
+    // same ledger as every other call: it counts against the day's quota.
+    let ledger = Arc::new(QuotaLedger::new(Arc::new(state.store.quota_kv()), None));
+    let provider = GeminiProvider::production(Some(trimmed.clone()), clock, Some(ledger))
         .map_err(|e| format!("Failed to initialize Gemini provider: {e}"))?;
 
     let prompt = StructuredPrompt::new(
@@ -84,6 +100,21 @@ pub async fn validate_gemini_key(
     }
 }
 
+/// The device's AI usage for today, read from the store-backed ledger.
+/// The Settings panel shows this instead of a hardcoded counter.
+#[tauri::command]
+pub async fn ai_quota_usage(state: State<'_, AppState>) -> Result<AiQuotaUsage, String> {
+    let ledger = QuotaLedger::new(Arc::new(state.store.quota_kv()), None);
+    let snapshot = ledger
+        .usage(chrono::Utc::now())
+        .await
+        .map_err(|e| format!("Failed to read the AI usage ledger: {e}"))?;
+    Ok(AiQuotaUsage {
+        calls_today: snapshot.total(),
+        per_model: snapshot.counts,
+    })
+}
+
 #[tauri::command]
 pub async fn extract_schedule(
     app: AppHandle,
@@ -91,7 +122,9 @@ pub async fn extract_schedule(
     image: String,
 ) -> Result<DesktopExtractedTimetable, String> {
     let key = state.get_gemini_api_key()?.ok_or_else(|| {
-        "No Gemini API key found in keyring. Please add your key in Settings.".to_string()
+        "No Gemini API key found. Add one in Settings, or set QUIZRADAR_GEMINI_API_KEY / place a \
+         gemini.key file next to the app."
+            .to_string()
     })?;
 
     let clock = Arc::new(chrono::Utc::now);
@@ -124,7 +157,9 @@ pub async fn extract_schedule(
 #[tauri::command]
 pub async fn optimize_tasks(state: State<'_, AppState>) -> Result<StudyTasksPayload, String> {
     let key = state.get_gemini_api_key()?.ok_or_else(|| {
-        "No Gemini API key found in keyring. Please add your key in Settings.".to_string()
+        "No Gemini API key found. Add one in Settings, or set QUIZRADAR_GEMINI_API_KEY / place a \
+         gemini.key file next to the app."
+            .to_string()
     })?;
 
     let today = state.today();

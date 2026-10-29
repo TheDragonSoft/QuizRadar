@@ -48,8 +48,12 @@ pub fn fixed_clock(instant: DateTime<Utc>) -> UtcClock {
 // flash for the rare manual vision import + optimize button)
 // ---------------------------------------------------------------------------
 
-/// Which Gemini model a task uses. The id strings are the provider's
-/// (`gemini-2.5-flash-lite` ≈ 1,000 RPD free tier; `gemini-2.5-flash` ≈ 250).
+/// Which Gemini model a task uses. The ids are the provider's current
+/// free-tier ids: Google retired the `gemini-2.5-*` ids for new projects
+/// ("no longer available to new users" — HTTP 404, verified 2026-10-28) and
+/// names the `gemini-3.5-*` ids as the replacements.
+/// No per-model daily limit is claimed here: Google's free-tier quota is
+/// set per project and shown in AI Studio, not in this repo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum AiModel {
     /// Email extraction + practice quizzes (bulk, cheap tier).
@@ -59,13 +63,39 @@ pub enum AiModel {
 }
 
 impl AiModel {
-    /// The provider model id sent in the URL path.
+    /// The provider model ids for this tier, in preference order.
+    ///
+    /// Google retires model ids for new projects (the `gemini-2.5-*` ids
+    /// answer 404 "no longer available to new users" to a key created in
+    /// 2026) and a model can be congested (503 "high demand"). The provider
+    /// walks this list and uses the first id that answers, so a model
+    /// retirement does not break a shipped install. The legacy ids stay at
+    /// the end for keys created before the retirement.
+    #[must_use]
+    pub fn model_ids(self) -> &'static [&'static str] {
+        match self {
+            Self::FlashLite => &[
+                "gemini-3.5-flash-lite",
+                "gemini-3.1-flash-lite",
+                "gemini-flash-lite-latest",
+                "gemini-2.5-flash-lite",
+            ],
+            Self::Flash => &[
+                "gemini-3.5-flash",
+                "gemini-3.8-flash",
+                "gemini-3.7-flash",
+                "gemini-3.6-flash",
+                "gemini-flash-latest",
+                "gemini-2.5-flash",
+            ],
+        }
+    }
+
+    /// The provider model id sent in the URL path first — the one the
+    /// provenance chip names when no fallback was needed.
     #[must_use]
     pub fn model_id(self) -> &'static str {
-        match self {
-            Self::FlashLite => "gemini-2.5-flash-lite",
-            Self::Flash => "gemini-2.5-flash",
-        }
+        self.model_ids()[0]
     }
 }
 
@@ -116,17 +146,29 @@ pub struct VisionRequest {
 /// The model's response as raw JSON (already de-fenced by the provider —
 /// fences are a transport artifact, not data).
 #[derive(Debug, Clone, PartialEq)]
-pub struct RawJson(pub serde_json::Value);
+pub struct RawJson {
+    pub value: serde_json::Value,
+    /// The model id that actually served the request. It differs from the
+    /// requested tier's first id when the provider fell back to another
+    /// model — the provenance chip must name the model that really ran.
+    pub model: String,
+}
 
 impl RawJson {
     #[must_use]
     pub fn value(&self) -> &serde_json::Value {
-        &self.0
+        &self.value
     }
 
     #[must_use]
     pub fn into_value(self) -> serde_json::Value {
-        self.0
+        self.value
+    }
+
+    /// The id of the model that served this response.
+    #[must_use]
+    pub fn model(&self) -> &str {
+        &self.model
     }
 }
 
@@ -208,9 +250,16 @@ pub struct AiCreditNote {
 impl AiCreditNote {
     #[must_use]
     pub fn provider(model: AiModel) -> Self {
+        Self::provider_model(model.model_id())
+    }
+
+    /// The provenance note for a concrete model id — the id that actually
+    /// served the request, which can be a fallback within the tier.
+    #[must_use]
+    pub fn provider_model(model_id: &str) -> Self {
         Self {
             source: AiSource::Provider {
-                model: model.model_id().to_string(),
+                model: model_id.to_string(),
             },
         }
     }
@@ -355,12 +404,20 @@ pub struct QuotaUsageRecord {
 impl QuotaUsageRecord {
     /// Count for `model` on the given Pacific day — a record stamped with
     /// any other day reads as zero (the automatic midnight-PT reset).
+    ///
+    /// The count is the sum over the tier's candidate ids: a call that fell
+    /// back to another model in the same tier still consumed that tier's
+    /// quota, so it must count against the tier.
     #[must_use]
     pub fn used(&self, today: NaiveDate, model: AiModel) -> u32 {
         if self.day != today.format("%Y-%m-%d").to_string() {
             return 0;
         }
-        self.counts.get(model.model_id()).copied().unwrap_or(0)
+        model
+            .model_ids()
+            .iter()
+            .map(|id| self.counts.get(*id).copied().unwrap_or(0))
+            .sum()
     }
 }
 
@@ -455,7 +512,11 @@ impl QuotaLedger {
         model: AiModel,
     ) -> Result<QuotaSnapshot, AiError> {
         let snapshot = self.usage(now).await.map_err(kv_err)?;
-        let used = snapshot.counts.get(model.model_id()).copied().unwrap_or(0);
+        let used = model
+            .model_ids()
+            .iter()
+            .map(|id| snapshot.counts.get(*id).copied().unwrap_or(0))
+            .sum::<u32>();
         if let Some(limit) = self.daily_limit {
             if used >= limit {
                 return Err(AiError::QuotaExhausted);
@@ -468,6 +529,14 @@ impl QuotaLedger {
     /// caller decides whether a broken ledger should fail a finished call —
     /// the provider treats tracking as non-fatal after success).
     pub async fn record(&self, now: DateTime<Utc>, model: AiModel) -> Result<(), StoreError> {
+        self.record_model(now, model.model_id()).await
+    }
+
+    /// Records one completed call against the concrete model id that served
+    /// it — a fallback within the tier is counted under the model that
+    /// actually ran, so the ledger never claims a call used a model it did
+    /// not use.
+    pub async fn record_model(&self, now: DateTime<Utc>, model_id: &str) -> Result<(), StoreError> {
         let today = pacific_date(now);
         let today_key = today.format("%Y-%m-%d").to_string();
         let mut record = self.load_record().await?;
@@ -477,10 +546,7 @@ impl QuotaLedger {
                 counts: Default::default(),
             };
         }
-        *record
-            .counts
-            .entry(model.model_id().to_string())
-            .or_insert(0) += 1;
+        *record.counts.entry(model_id.to_string()).or_insert(0) += 1;
         self.kv
             .save(&serde_json::to_value(&record).map_err(StoreError::Json)?)
             .await
@@ -574,8 +640,8 @@ mod tests {
 
         let today = ledger.usage(day_a).await.unwrap();
         assert_eq!(today.total(), 3);
-        assert_eq!(today.counts.get("gemini-2.5-flash-lite"), Some(&2));
-        assert_eq!(today.counts.get("gemini-2.5-flash"), Some(&1));
+        assert_eq!(today.counts.get("gemini-3.5-flash-lite"), Some(&2));
+        assert_eq!(today.counts.get("gemini-3.5-flash"), Some(&1));
 
         let tomorrow = ledger.usage(day_b).await.unwrap();
         assert_eq!(
@@ -611,7 +677,7 @@ mod tests {
         let kv = Arc::new(MemoryQuotaKv::default());
         kv.save(&serde_json::json!({
             "day": "2026-10-23",
-            "counts": { "gemini-2.5-flash-lite": 999 }
+            "counts": { "gemini-3.5-flash-lite": 999 }
         }))
         .await
         .unwrap();
@@ -635,6 +701,6 @@ mod tests {
         ledger.record(now, AiModel::FlashLite).await.unwrap();
         let snapshot = ledger.usage(now).await.unwrap();
         assert_eq!(snapshot.total(), 2);
-        assert_eq!(snapshot.counts.get("gemini-2.5-flash-lite"), Some(&2));
+        assert_eq!(snapshot.counts.get("gemini-3.5-flash-lite"), Some(&2));
     }
 }

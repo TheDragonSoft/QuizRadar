@@ -1,5 +1,4 @@
 import React, { useEffect, useRef } from "react";
-import { X } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
 import type { ModalInstance } from "../state/types";
@@ -29,13 +28,9 @@ const ModalLayer: React.FC<ModalLayerProps> = ({ modal, index, isTop, onClose })
     const container = containerRef.current;
     if (!container) return;
 
-    // Focus first focusable element or modal container
-    const focusable = container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
-    if (focusable.length > 0) {
-      focusable[0].focus();
-    } else {
-      container.focus();
-    }
+    // Focus the dialog itself, not the close button: a focus ring landing on
+    // the X reads as a broken chip on the panel edge (v4 never rang it).
+    container.focus({ preventScroll: true });
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Tab") {
@@ -78,13 +73,15 @@ const ModalLayer: React.FC<ModalLayerProps> = ({ modal, index, isTop, onClose })
   };
 
   const zIndex = 50 + index * 5;
+  const panelWidth =
+    modal.size === "lg" ? "max-w-2xl" : modal.size === "sm" ? "max-w-md" : "max-w-lg";
 
   return (
     <div
       role="presentation"
       style={{ zIndex }}
       onClick={handleBackdropClick}
-      className="fixed inset-0 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm transition-opacity"
+      className="modal-backdrop fixed inset-0 flex items-center justify-center bg-slate-950/60 p-0 backdrop-blur-xs md:p-4"
     >
       <div
         ref={containerRef}
@@ -92,19 +89,13 @@ const ModalLayer: React.FC<ModalLayerProps> = ({ modal, index, isTop, onClose })
         aria-modal="true"
         tabIndex={-1}
         data-testid={`modal-${modal.id}`}
-        className="relative w-full max-w-lg rounded-2xl border border-[var(--surface-border)] bg-[var(--surface)] p-6 shadow-2xl focus:outline-none transition-all"
+        className={`modal-panel relative flex max-h-[92vh] w-full ${panelWidth} flex-col overflow-hidden rounded-t-[28px] border border-[var(--surface-border)] bg-[var(--surface)] shadow-2xl focus:outline-none md:max-h-[85vh] md:rounded-2xl ${
+          modal.flush ? "" : "p-6"
+        }`}
       >
-        {/* Default close button */}
-        {modal.dismissible !== false && (
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={copy.common.close}
-            className="absolute right-4 top-4 rounded-lg p-1 text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)] transition"
-          >
-            <X className="h-5 w-5" aria-hidden="true" />
-          </button>
-        )}
+        {/* No default close button here: every registered modal draws its own
+            single X in its header (v4 style). The stack used to add a second
+            one, so every dialog showed two X buttons. */}
 
         {/* Modal content */}
         {Component ? (
@@ -125,6 +116,7 @@ const ModalLayer: React.FC<ModalLayerProps> = ({ modal, index, isTop, onClose })
               <button
                 type="button"
                 onClick={onClose}
+                aria-label={copy.common.close}
                 className="rounded-lg border border-[var(--surface-border)] px-4 py-2 text-sm font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] transition"
               >
                 {copy.common.close}

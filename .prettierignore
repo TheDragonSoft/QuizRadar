@@ -14,6 +14,10 @@ apps/web/src/generated/
 apps/web/public/sw.js
 apps/web/public/wasm/
 
+# The version generator owns this file's formatting (`generate-version.mjs`
+# rewrites it whole); prettier's array layout would fight the sink check.
+apps/desktop/src-tauri/tauri.conf.json
+
 # Immutable spec/prompt/protocol area — agent cohorts never reformat these
 docs/
 prompts/

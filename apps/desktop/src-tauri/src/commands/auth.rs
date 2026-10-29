@@ -5,7 +5,9 @@
 
 use tauri::{AppHandle, Emitter, State};
 
-use crate::auth_loopback::{start_google_login, start_microsoft_login};
+use crate::auth_loopback::{
+    start_google_login, start_microsoft_login, start_microsoft_scanning_consent,
+};
 use crate::keyring::{KEY_GOOGLE_REFRESH_TOKEN, KEY_MICROSOFT_REFRESH_TOKEN};
 use crate::state::AppState;
 
@@ -31,6 +33,18 @@ pub async fn microsoft_login_start(
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     start_microsoft_login(state.inner().clone(), app).await
+}
+
+/// Incremental consent for the mail + calendar scopes. Microsoft tenants that
+/// restrict user consent show "Need admin approval" for those permissions;
+/// this command re-runs the consent screen with the wider scope set so the
+/// user can ask their administrator for exactly these permissions.
+#[tauri::command]
+pub async fn microsoft_scanning_consent_start(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    start_microsoft_scanning_consent(state.inner().clone(), app).await
 }
 
 #[tauri::command]

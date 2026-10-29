@@ -14,6 +14,7 @@ use tauri::{Emitter, Manager};
 use crate::keyring::KeyringStore;
 use crate::state::AppState;
 use quizradar_core::store::Store;
+use tauri_plugin_deep_link::DeepLinkExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() -> tauri::Result<()> {
@@ -36,6 +37,14 @@ pub fn run() -> tauri::Result<()> {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
+            // Register the `quizradar://` scheme with the OS so the browser
+            // page shown at the end of an OAuth round trip can hand control
+            // back to the app ("Open QuizRadar"). Best effort: on Windows the
+            // plugin writes HKCU\Software\Classes, on Linux a .desktop file,
+            // and on macOS the scheme comes from the bundle Info.plist.
+            if let Err(err) = app.deep_link().register_all() {
+                eprintln!("[deep-link] scheme registration failed: {err}");
+            }
             let data_dir = app
                 .path()
                 .app_local_data_dir()
@@ -75,12 +84,14 @@ pub fn run() -> tauri::Result<()> {
             commands::dismiss_conflicts,
             commands::schedule_study_blocks,
             commands::run_sync,
+            commands::cancel_sync,
             commands::run_gcal_sync,
             commands::push_cloud_backup,
             commands::pull_cloud_backup,
             commands::google_login_start,
             commands::google_logout,
             commands::microsoft_login_start,
+            commands::microsoft_scanning_consent_start,
             commands::microsoft_logout,
             commands::logout,
             commands::get_secret,
@@ -90,6 +101,7 @@ pub fn run() -> tauri::Result<()> {
             commands::optimize_tasks,
             commands::practice_generate,
             commands::validate_gemini_key,
+            commands::ai_quota_usage,
             commands::check_update,
             commands::export_backup_file,
             commands::import_backup_file,

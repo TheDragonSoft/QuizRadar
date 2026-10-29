@@ -218,7 +218,58 @@ describe("Web UI Foundation & Chrome Components", () => {
     cleanup();
   });
 
-  // 9. SWR cache loads local snapshot immediately on startup
+  // 10. One close button per modal (the stack used to add a second X)
+  it("renders exactly one close button for a registered modal", async () => {
+    // Importing App registers every modal component in the registry.
+    await import("../App");
+
+    render(<ModalStack />);
+    act(() => {
+      useAppStore.getState().openModal({ id: "add-course" });
+    });
+
+    const modal = screen.getByTestId("modal-add-course");
+    const closeButtons = modal.querySelectorAll('button[aria-label="Close"]');
+    expect(closeButtons).toHaveLength(1);
+  });
+
+  // 11. Sign-in buttons sign in (they never dump the user on a settings page)
+  it("signs in straight from the topbar chip when signed out", () => {
+    const googleLogin = vi.fn();
+    useAppStore.setState({
+      googleLogin,
+      data: {
+        ...initialFullState,
+        auth: { ...initialFullState.auth, authenticated: false },
+      },
+    });
+
+    render(<TopBar />);
+    fireEvent.click(screen.getByLabelText(/sign in/i));
+
+    expect(googleLogin).toHaveBeenCalled();
+    expect(useAppStore.getState().openModals).toHaveLength(0);
+  });
+
+  // 12. The settings panel keeps one width across re-opens
+  it("opens the settings panel at the same size every time", () => {
+    act(() => {
+      useAppStore.getState().openModal({ id: "settings", props: { initialTab: "account" } });
+    });
+    const first = useAppStore.getState().openModals[0];
+
+    act(() => {
+      useAppStore.getState().openModal({ id: "settings", props: { initialTab: "account" } });
+    });
+    const second = useAppStore.getState().openModals[0];
+
+    expect(first.size).toBe("lg");
+    expect(first.flush).toBe(true);
+    expect(second.size).toBe(first.size);
+    expect(second.flush).toBe(first.flush);
+  });
+
+  // 13. SWR cache loads local snapshot immediately on startup
   it("SWR cache saves and loads state payload from localStorage", () => {
     const sampleState = {
       ...initialFullState,

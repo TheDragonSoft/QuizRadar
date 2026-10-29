@@ -8,39 +8,54 @@ export interface SyncStatusSummary {
   lastSyncedText: string;
 }
 
-export function computeActiveSourceCount(
+/**
+ * The sources that are actually connected and enabled, named. This is the
+ * single honest source of truth for the "N sources" counts: the dashboard KPI
+ * card used to hardcode a `true` for Gmail and a static "Gmail, Teams,
+ * Moodle" line, which claimed connections the user never made.
+ */
+export function computeActiveSourceLabels(
   config?: Partial<DesktopConfig> | null,
   auth?: Partial<DesktopAuthProfile> | null,
-): number {
-  if (!config && !auth) return 0;
-  let count = 0;
+): string[] {
+  if (!config && !auth) return [];
+  const labels: string[] = [];
 
   // Gmail
   if (auth?.hasGmailScope || (auth?.authenticated && config?.lastGmailSync)) {
-    count += 1;
+    labels.push("Gmail");
   }
 
   // Microsoft Teams
   if (config?.teamsEnabled && auth?.hasTeamsAuth) {
-    count += 1;
+    labels.push("Teams");
   }
 
   // Moodle
   if (config?.moodleEnabled && (config?.moodleUrl || config?.moodleIcalUrl)) {
-    count += 1;
+    labels.push("Moodle");
   }
 
   // Google Classroom
   if (config?.classroomEnabled && auth?.authenticated) {
-    count += 1;
+    labels.push("Classroom");
   }
 
-  // Active feeds
+  // Active feeds (under the user's own label for each one)
   if (config?.feeds && Array.isArray(config.feeds)) {
-    count += config.feeds.filter((f) => f.enabled).length;
+    for (const feed of config.feeds) {
+      if (feed.enabled) labels.push(feed.name || feed.id);
+    }
   }
 
-  return count;
+  return labels;
+}
+
+export function computeActiveSourceCount(
+  config?: Partial<DesktopConfig> | null,
+  auth?: Partial<DesktopAuthProfile> | null,
+): number {
+  return computeActiveSourceLabels(config, auth).length;
 }
 
 export function formatLastSynced(timestamp?: string | null): string {

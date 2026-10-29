@@ -6,7 +6,6 @@ import {
   HelpCircle,
   Layers,
   LayoutDashboard,
-  Radio,
   Timer,
 } from "lucide-react";
 import { copy } from "../copy";
@@ -14,6 +13,7 @@ import { useAppStore } from "../state/store";
 import { computeSyncStatusSummary } from "../state/syncStatus";
 import type { View } from "../state/types";
 import { MiniCalendar } from "./MiniCalendar";
+import { RadarMark } from "./BrandMarks";
 
 declare const __APP_VERSION__: string;
 
@@ -58,9 +58,7 @@ export const Sidebar: React.FC = () => {
       {/* Brand Header */}
       <div className="flex h-14 items-center justify-between border-b border-[var(--surface-border)] px-4">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)] text-white shadow-sm">
-            <Radio className="h-4 w-4" aria-hidden="true" />
-          </div>
+          <RadarMark className="h-8 w-8 rounded-lg shadow-sm" />
           <span className="font-bold tracking-tight text-[var(--text)]">{copy.brand.name}</span>
         </div>
         <span

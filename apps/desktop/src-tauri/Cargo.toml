@@ -32,6 +32,11 @@ futures = "0.3"
 
 quizradar-core = { path = "../../../core" }
 
+[dev-dependencies]
+# Recorded-HTTP fixture server for the sync/cancel integration tests (same
+# version the core crate uses - no new package in the lockfile).
+wiremock = "0.6"
+
 [lints.rust]
 unsafe_code = "deny"
 

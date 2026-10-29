@@ -1,5 +1,5 @@
-import React, { useMemo, useState, useEffect } from "react";
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Trash2 } from "lucide-react";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, X } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
 import { coursePalette } from "../lib/coursePalette";
@@ -7,15 +7,41 @@ import {
   START_HOUR,
   END_HOUR,
   HOUR_HEIGHT,
+  DAY_ABBR,
   computeBlockPosition,
   assignOverlapLanes,
   getClampedDayWindow,
+  formatCompactTime,
+  hourLabel,
+  stripRoomPrefix,
+  hexToRgba,
+  toIsoLocal,
+  matchesGlobalSearch,
   type CalendarLaneItem,
 } from "../lib/calendarLanes";
 import { rpc } from "../state/rpc";
-import type { Assessment, ScheduleSlot, CustomCalendarEvent } from "../state/types";
+import type { Assessment, Course, ScheduleSlot, CustomCalendarEvent } from "../state/types";
 
-const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+/**
+ * Week calendar — v4 parity port (v4-final:static/app.js `renderWeekCalendar`).
+ *
+ * Visual language copied from v4: the Google-Calendar-style `gcal-card` blocks
+ * (course-tinted surface, 1px border, exam glow), the 8 AM – 8 PM gutter with
+ * 12-hour labels straddling the hour line, the big day-abbr/date-circle
+ * headers with the per-day exam chips, and v4's greedy side-by-side overlap
+ * layout.
+ *
+ * Deliberate v5 deviations (AGENTS §1 honesty doctrine):
+ *  - a missing room renders "—" (v4 printed an empty/"TBD" room);
+ *  - the gutter shows the device's real UTC offset (v4 hardcoded "GMT+03");
+ *  - the mobile window renders 3 columns wide (v4 left 4 empty columns).
+ */
+
+interface BlockPalette {
+  color: string;
+  bg: string;
+  border: string;
+}
 
 interface CalendarBlockItem extends CalendarLaneItem {
   kind: "merged_exam" | "standalone_exam" | "class_slot" | "custom_event";
@@ -25,11 +51,63 @@ interface CalendarBlockItem extends CalendarLaneItem {
   assessmentType?: string | null;
   room?: string | null;
   group?: string | null;
+  instructor?: string | null;
+  eventType?: string | null;
   startTime: string;
   endTime: string;
   assessmentId?: string | null;
-  colorHex: string;
-  bgHex: string;
+  eventId?: string | null;
+  event?: CustomCalendarEvent;
+  palette: BlockPalette;
+}
+
+const CUSTOM_EVENT_PALETTE: BlockPalette = {
+  color: "#db2777",
+  bg: "#fce7f3",
+  border: "#db2777",
+};
+
+const STUDY_BLOCK_PALETTE: BlockPalette = {
+  color: "#10b981",
+  bg: "#d1fae5",
+  border: "#10b981",
+};
+
+function isSolidHex(value?: string | null): boolean {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value.trim());
+}
+
+/**
+ * Palette resolution (v4 semantics): a course's own palette wins, otherwise the
+ * deterministic per-course preset. `border` must stay a solid hex so the dark
+ * card tint can be derived from it.
+ */
+function resolvePalette(
+  courseId: string | null | undefined,
+  courses: Map<string, Course>,
+  override?: { color?: string | null; bg?: string | null; border?: string | null },
+): BlockPalette {
+  const course = courseId ? courses.get(courseId) : undefined;
+  const derived = coursePalette(courseId || "");
+  const color = override?.color || course?.color || derived.color;
+  const bg = override?.bg || course?.bg || `${color}18`;
+  const border =
+    (isSolidHex(override?.border) ? (override?.border as string) : undefined) ||
+    (isSolidHex(course?.border) ? (course?.border as string) : undefined) ||
+    color;
+  return { color, bg, border };
+}
+
+/** Device-local UTC offset label (v4 hardcoded "GMT+03" — that was wrong). */
+function localUtcOffsetLabel(): string {
+  const offsetMinutes = -new Date().getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const abs = Math.abs(offsetMinutes);
+  const hours = Math.floor(abs / 60);
+  const minutes = abs % 60;
+  return minutes === 0
+    ? `GMT${sign}${hours}`
+    : `GMT${sign}${hours}:${String(minutes).padStart(2, "0")}`;
 }
 
 export const CalendarView: React.FC = () => {
@@ -39,8 +117,10 @@ export const CalendarView: React.FC = () => {
   const jumpToToday = useAppStore((s) => s.jumpToToday);
   const setSelectedCalendarDate = useAppStore((s) => s.setSelectedCalendarDate);
   const openAssessmentDetail = useAppStore((s) => s.openAssessmentDetail);
+  const openEventModal = useAppStore((s) => s.openEventModal);
   const refreshState = useAppStore((s) => s.refreshState);
   const addToast = useAppStore((s) => s.addToast);
+  const searchQuery = useAppStore((s) => s.searchQuery);
 
   const schedule = useAppStore((s) => s.data.schedule);
   const assessments = useAppStore((s) => s.data.assessments);
@@ -88,6 +168,14 @@ export const CalendarView: React.FC = () => {
     [allWeekDates, dayOffset, dayCount],
   );
 
+  const coursesById = useMemo(() => {
+    const map = new Map<string, Course>();
+    (schedule.courses || []).forEach((c) => map.set(c.id, c));
+    return map;
+  }, [schedule.courses]);
+
+  const todayIso = useMemo(() => toIsoLocal(new Date()), []);
+
   // Format header title e.g. "Oct 19 – Oct 25, 2026"
   const headerRangeTitle = useMemo(() => {
     const start = allWeekDates[0];
@@ -101,10 +189,14 @@ export const CalendarView: React.FC = () => {
     return `${startStr} – ${endStr}`;
   }, [allWeekDates]);
 
-  const isCourseSelected = (courseId?: string | null) => {
-    if (!courseId || selectedCourseIds === null) return true;
-    return selectedCourseIds.includes(courseId);
-  };
+  const isCourseSelected = useCallback(
+    (courseId?: string | null) => {
+      if (!courseId) return true;
+      if (selectedCourseIds === null) return true;
+      return selectedCourseIds.includes(courseId);
+    },
+    [selectedCourseIds],
+  );
 
   const handleDeleteCustomEvent = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -120,14 +212,28 @@ export const CalendarView: React.FC = () => {
     }
   };
 
-  // Generate hourly time slots for the gutter
+  // Generate hourly time slots for the gutter (v4: 8 AM – 8 PM inclusive)
   const hours = useMemo(() => {
-    const list: string[] = [];
+    const list: number[] = [];
     for (let h = START_HOUR; h <= END_HOUR; h++) {
-      list.push(`${String(h).padStart(2, "0")}:00`);
+      list.push(h);
     }
     return list;
   }, []);
+
+  // Per-day exam chips in the header row (v4 `dayExams` overlay chips)
+  const headerExamsByDate = useMemo(() => {
+    const map = new Map<string, Assessment[]>();
+    if (!layers.exams) return map;
+    assessments.forEach((a) => {
+      if (!a.dateIso || !isCourseSelected(a.courseId)) return;
+      if (!matchesGlobalSearch(searchQuery, a.courseId, a.courseName, a.title)) return;
+      const list = map.get(a.dateIso) || [];
+      list.push(a);
+      map.set(a.dateIso, list);
+    });
+    return map;
+  }, [assessments, layers.exams, isCourseSelected, searchQuery]);
 
   return (
     <div data-testid="calendar-view" className="space-y-4">
@@ -145,30 +251,29 @@ export const CalendarView: React.FC = () => {
           </div>
         </div>
 
-        {/* Navigation Actions */}
-        <div className="flex items-center gap-2">
+        {/* Navigation Actions (v4 controls: Today + chevrons) */}
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={jumpToToday}
-            className="px-3 py-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text)] transition shadow-2xs cursor-pointer"
+            className="h-8 px-2.5 rounded-lg border border-[var(--surface-border)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-xs font-medium text-[var(--text)] transition active:scale-95 cursor-pointer"
           >
             {copy.calendar.jumpToToday}
           </button>
-          <div className="flex items-center border border-[var(--surface-border)] rounded-xl overflow-hidden bg-[var(--surface)]">
+          <div className="flex items-center">
             <button
               type="button"
               onClick={() => shiftWeek(-1)}
               aria-label={copy.calendar.prevWeek}
-              className="p-1.5 text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)] transition cursor-pointer"
+              className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-[var(--surface-hover)] text-[var(--text-muted)] transition cursor-pointer"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <div className="h-4 w-[1px] bg-[var(--surface-border)]" />
             <button
               type="button"
               onClick={() => shiftWeek(1)}
               aria-label={copy.calendar.nextWeek}
-              className="p-1.5 text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)] transition cursor-pointer"
+              className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-[var(--surface-hover)] text-[var(--text-muted)] transition cursor-pointer"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
@@ -179,44 +284,76 @@ export const CalendarView: React.FC = () => {
       {/* Week Grid Container */}
       <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface)] overflow-hidden shadow-xs">
         {/* Days Header Row */}
-        <div className="flex border-b border-[var(--surface-border)] bg-[var(--surface-hover)]">
-          {/* Time Gutter Spacer */}
-          <div className="w-14 shrink-0 border-r border-[var(--surface-border)]" />
+        <div className="flex border-b border-[var(--surface-border)]">
+          {/* Time Gutter Header (v4 showed the UTC offset here) */}
+          <div className="w-16 shrink-0 border-r border-[var(--surface-border)] flex flex-col justify-end items-center pb-2 text-[10px] tabular-nums text-[var(--text-muted)]">
+            <span>{localUtcOffsetLabel()}</span>
+          </div>
 
           {/* Day Header Cells */}
           <div
-            className="grid flex-1"
+            className="flex-1 grid"
             style={{ gridTemplateColumns: `repeat(${displayedDates.length}, minmax(0, 1fr))` }}
           >
             {displayedDates.map((date) => {
-              const iso = date.toISOString().slice(0, 10);
+              const iso = toIsoLocal(date);
               const isSelected = iso === selectedDateStr;
-              const isToday = iso === new Date().toISOString().slice(0, 10);
+              const isToday = iso === todayIso;
+              const dayExams = headerExamsByDate.get(iso) || [];
 
               return (
                 <div
                   key={iso}
                   onClick={() => setSelectedCalendarDate(iso)}
-                  className={`py-2 px-1 text-center cursor-pointer transition border-r border-[var(--surface-border)] last:border-r-0 ${
-                    isSelected ? "bg-[var(--accent)]/10" : "hover:bg-[var(--surface)]"
-                  }`}
+                  className="border-r border-[var(--surface-border)] last:border-r-0 py-2.5 px-2 text-center cursor-pointer hover:bg-[var(--surface-hover)] transition"
                 >
                   <div
-                    className={`text-[11px] font-semibold ${isToday ? "text-[var(--accent)] font-bold" : "text-[var(--text-muted)]"}`}
+                    className={`text-xs font-semibold ${
+                      isToday
+                        ? "text-[var(--accent)] font-bold"
+                        : isSelected
+                          ? "text-[var(--accent)]"
+                          : "text-[var(--text-muted)]"
+                    }`}
                   >
-                    {DAY_NAMES[date.getDay()]}
+                    {DAY_ABBR[date.getDay()]}
                   </div>
                   <div
-                    className={`mt-0.5 mx-auto h-7 w-7 rounded-full flex items-center justify-center text-xs tabular-nums font-bold transition ${
+                    className={`mt-1 w-9 h-9 mx-auto rounded-full flex items-center justify-center text-lg tabular-nums ${
                       isSelected
-                        ? "bg-[var(--accent)] text-white shadow-2xs"
+                        ? "bg-[var(--accent)] text-white font-semibold"
                         : isToday
-                          ? "border border-[var(--accent)] text-[var(--accent)]"
-                          : "text-[var(--text)]"
+                          ? "border-2 border-[var(--accent)] text-[var(--accent)] font-bold hover:bg-[var(--surface-hover)]"
+                          : "text-[var(--text)] hover:bg-[var(--surface-hover)] font-medium"
                     }`}
                   >
                     {date.getDate()}
                   </div>
+                  {dayExams.length > 0 && (
+                    <div className="mt-1.5 flex flex-col gap-0.5">
+                      {dayExams.map((ex) => {
+                        const palette = resolvePalette(ex.courseId, coursesById, {
+                          color: ex.color,
+                          bg: ex.bg,
+                          border: ex.border,
+                        });
+                        return (
+                          <div
+                            key={ex.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openAssessmentDetail(ex.id);
+                            }}
+                            className="text-[10px] font-bold px-1.5 py-0.5 rounded-md truncate text-white hover:opacity-90 transition cursor-pointer"
+                            style={{ backgroundColor: palette.color }}
+                            title={`${ex.courseId || "—"}: ${ex.title}`}
+                          >
+                            {ex.courseId || "—"}: {ex.title}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -224,19 +361,17 @@ export const CalendarView: React.FC = () => {
         </div>
 
         {/* Scrollable Hours & Columns Area */}
-        <div className="relative flex overflow-x-auto max-h-[680px]">
+        <div className="relative flex overflow-x-auto max-h-[680px] bg-[var(--surface)]">
           {/* Time Gutter Column */}
           <div
             data-testid="calendar-time-gutter"
-            className="w-14 shrink-0 border-r border-[var(--surface-border)] bg-[var(--surface-hover)] select-none"
+            className="w-16 shrink-0 border-r border-[var(--surface-border)] bg-[var(--surface)] select-none"
           >
             {hours.map((hour) => (
-              <div
-                key={hour}
-                style={{ height: HOUR_HEIGHT }}
-                className="text-[10px] text-[var(--text-muted)] font-semibold text-right pr-2 pt-1 border-b border-[var(--surface-border)]/40 tabular-nums"
-              >
-                {hour}
+              <div key={hour} className="hour-row relative pr-2 text-right">
+                <span className="text-[10px] tabular-nums text-[var(--text-muted)] -top-2 relative">
+                  {hourLabel(hour)}
+                </span>
               </div>
             ))}
           </div>
@@ -244,14 +379,14 @@ export const CalendarView: React.FC = () => {
           {/* Day Columns */}
           <div
             data-testid="calendar-columns-grid"
-            className="grid flex-1 relative"
+            className="flex-1 grid relative"
             style={{
               gridTemplateColumns: `repeat(${displayedDates.length}, minmax(0, 1fr))`,
-              minWidth: displayedDates.length * (isNarrow ? 100 : 120),
+              minWidth: displayedDates.length * (isNarrow ? 110 : 130),
             }}
           >
             {displayedDates.map((date) => {
-              const iso = date.toISOString().slice(0, 10);
+              const iso = toIsoLocal(date);
               const dayIndex = date.getDay();
 
               return (
@@ -263,10 +398,13 @@ export const CalendarView: React.FC = () => {
                   scheduleSlots={schedule.slots || []}
                   assessments={assessments || []}
                   customEvents={customEvents}
+                  coursesById={coursesById}
                   showExams={layers.exams}
                   showClasses={layers.classes}
                   isCourseSelected={isCourseSelected}
+                  searchQuery={searchQuery}
                   onOpenAssessmentDetail={openAssessmentDetail}
+                  onOpenEvent={openEventModal}
                   onDeleteCustomEvent={handleDeleteCustomEvent}
                 />
               );
@@ -289,10 +427,13 @@ interface DayColumnProps {
   scheduleSlots: ScheduleSlot[];
   assessments: Assessment[];
   customEvents: CustomCalendarEvent[];
+  coursesById: Map<string, Course>;
   showExams: boolean;
   showClasses: boolean;
   isCourseSelected: (courseId?: string | null) => boolean;
+  searchQuery: string;
   onOpenAssessmentDetail: (id: string) => void;
+  onOpenEvent: (event: CustomCalendarEvent) => void;
   onDeleteCustomEvent: (id: string, e: React.MouseEvent) => void;
 }
 
@@ -304,96 +445,67 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
     scheduleSlots,
     assessments,
     customEvents,
+    coursesById,
     showExams,
     showClasses,
     isCourseSelected,
+    searchQuery,
     onOpenAssessmentDetail,
+    onOpenEvent,
     onDeleteCustomEvent,
   }) => {
-    // 1. Gather Day Items
+    // 1. Gather Day Items (v4 order: slots → standalone exams → custom events)
     const dayItems: CalendarBlockItem[] = useMemo(() => {
       const items: CalendarBlockItem[] = [];
 
-      // Day slots
-      const daySlots = scheduleSlots.filter(
-        (s) => s.dayIndex === dayIndex && isCourseSelected(s.courseId),
-      );
+      const daySlots = showClasses
+        ? scheduleSlots.filter(
+            (s) =>
+              s.dayIndex === dayIndex &&
+              isCourseSelected(s.courseId) &&
+              matchesGlobalSearch(searchQuery, s.courseId, s.courseName, s.type),
+          )
+        : [];
 
-      // Day assessments
-      const dayExams = assessments.filter(
-        (a) => a.dateIso === dateIso && isCourseSelected(a.courseId),
-      );
+      const dayExams = showExams
+        ? assessments.filter(
+            (a) =>
+              a.dateIso === dateIso &&
+              isCourseSelected(a.courseId) &&
+              matchesGlobalSearch(searchQuery, a.courseId, a.courseName, a.title),
+          )
+        : [];
 
-      // Day custom events
-      const dayCustoms = customEvents.filter(
-        (e) => e.dateIso === dateIso && isCourseSelected(e.courseId),
-      );
+      // v4 merge rule: a slot and an exam are the same block when they share
+      // the course AND the start time.
+      const mergedExamIds = new Set<string>();
 
-      const matchedExamIds = new Set<string>();
+      daySlots.forEach((slot) => {
+        const matchingExam = dayExams.find(
+          (a) => a.courseId === slot.courseId && a.startTime === slot.startTime,
+        );
+        const pos = computeBlockPosition(slot.startTime, slot.endTime);
+        const palette = resolvePalette(slot.courseId, coursesById);
 
-      // 1. Check for Merged Slot + Exam blocks
-      if (showClasses && showExams) {
-        daySlots.forEach((slot) => {
-          const overlappingExam = dayExams.find((ex) => {
-            if (matchedExamIds.has(ex.id)) return false;
-            if (ex.courseId !== slot.courseId) return false;
-            // Overlaps if exam time matches or slot has quiz
-            return (
-              slot.hasQuiz ||
-              (ex.startTime &&
-                slot.startTime &&
-                ex.startTime >= slot.startTime &&
-                ex.startTime < slot.endTime)
-            );
+        if (matchingExam) {
+          mergedExamIds.add(matchingExam.id);
+          items.push({
+            id: `merged-${slot.id}-${matchingExam.id}`,
+            kind: "merged_exam",
+            topPx: pos.topPx,
+            heightPx: pos.heightPx,
+            title: matchingExam.title,
+            courseId: slot.courseId,
+            courseName: slot.courseName,
+            assessmentType: matchingExam.assessmentType,
+            room: slot.room ?? matchingExam.room,
+            group: slot.group,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+            assessmentId: matchingExam.id,
+            palette,
           });
-
-          if (overlappingExam) {
-            matchedExamIds.add(overlappingExam.id);
-            const pos = computeBlockPosition(slot.startTime, slot.endTime);
-            const palette = coursePalette(slot.courseId);
-            items.push({
-              id: `merged-${slot.id}-${overlappingExam.id}`,
-              kind: "merged_exam",
-              topPx: pos.topPx,
-              heightPx: pos.heightPx,
-              title: overlappingExam.title,
-              courseId: slot.courseId,
-              courseName: slot.courseName,
-              assessmentType: overlappingExam.assessmentType,
-              room: slot.room || overlappingExam.room,
-              group: slot.group,
-              startTime: slot.startTime,
-              endTime: slot.endTime,
-              assessmentId: overlappingExam.id,
-              colorHex: palette.color,
-              bgHex: palette.bg,
-            });
-          } else {
-            // Plain class slot
-            const pos = computeBlockPosition(slot.startTime, slot.endTime);
-            const palette = coursePalette(slot.courseId);
-            items.push({
-              id: `slot-${slot.id}`,
-              kind: "class_slot",
-              topPx: pos.topPx,
-              heightPx: pos.heightPx,
-              title: slot.type || "Lecture",
-              courseId: slot.courseId,
-              courseName: slot.courseName,
-              room: slot.room,
-              group: slot.group,
-              startTime: slot.startTime,
-              endTime: slot.endTime,
-              colorHex: palette.color,
-              bgHex: palette.bg,
-            });
-          }
-        });
-      } else if (showClasses) {
-        // Classes only
-        daySlots.forEach((slot) => {
-          const pos = computeBlockPosition(slot.startTime, slot.endTime);
-          const palette = coursePalette(slot.courseId);
+        } else {
           items.push({
             id: `slot-${slot.id}`,
             kind: "class_slot",
@@ -406,55 +518,60 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
             group: slot.group,
             startTime: slot.startTime,
             endTime: slot.endTime,
-            colorHex: palette.color,
-            bgHex: palette.bg,
+            palette,
           });
-        });
-      }
+        }
+      });
 
-      // 2. Standalone Assessments
-      if (showExams) {
-        dayExams.forEach((exam) => {
-          if (matchedExamIds.has(exam.id)) return;
-          const pos = computeBlockPosition(exam.startTime || "09:00", exam.endTime || "10:30");
-          const palette = coursePalette(exam.courseId || "GENERAL");
-          items.push({
-            id: `exam-${exam.id}`,
-            kind: "standalone_exam",
-            topPx: pos.topPx,
-            heightPx: pos.heightPx,
-            title: exam.title,
-            courseId: exam.courseId,
-            courseName: exam.courseName,
-            assessmentType: exam.assessmentType,
-            room: exam.room,
-            startTime: exam.startTime || "09:00",
-            endTime: exam.endTime || "10:30",
-            assessmentId: exam.id,
-            colorHex: palette.color,
-            bgHex: palette.bg,
-          });
+      // Standalone assessments
+      dayExams.forEach((exam) => {
+        if (mergedExamIds.has(exam.id)) return;
+        const pos = computeBlockPosition(exam.startTime, exam.endTime);
+        const palette = resolvePalette(exam.courseId, coursesById, {
+          color: exam.color,
+          bg: exam.bg,
+          border: exam.border,
         });
-      }
-
-      // 3. Custom Calendar Events (Pink palette or Emerald for study blocks)
-      dayCustoms.forEach((ev) => {
-        const pos = computeBlockPosition(ev.startTime || "10:00", ev.endTime || "11:30");
-        const isStudyBlock = ev.id.startsWith("study-block-") || ev.id.startsWith("study_block_");
         items.push({
-          id: `custom-${ev.id}`,
-          kind: "custom_event",
+          id: `exam-${exam.id}`,
+          kind: "standalone_exam",
           topPx: pos.topPx,
           heightPx: pos.heightPx,
-          title: ev.title,
-          courseId: ev.courseId,
-          room: ev.room,
-          startTime: ev.startTime || "10:00",
-          endTime: ev.endTime || "11:30",
-          colorHex: isStudyBlock ? "#10b981" : "#db2777",
-          bgHex: isStudyBlock ? "#d1fae5" : "#fce7f3",
+          title: exam.title,
+          courseId: exam.courseId,
+          courseName: exam.courseName,
+          assessmentType: exam.assessmentType,
+          room: exam.room,
+          instructor: exam.instructor,
+          startTime: exam.startTime || "09:00",
+          endTime: exam.endTime || "10:30",
+          assessmentId: exam.id,
+          palette,
         });
       });
+
+      // Custom calendar events (pink; smart study blocks stay emerald)
+      customEvents
+        .filter((ev) => ev.dateIso === dateIso)
+        .forEach((ev) => {
+          const pos = computeBlockPosition(ev.startTime, ev.endTime);
+          const isStudyBlock = ev.id.startsWith("study-block-") || ev.id.startsWith("study_block_");
+          items.push({
+            id: `custom-${ev.id}`,
+            kind: "custom_event",
+            topPx: pos.topPx,
+            heightPx: pos.heightPx,
+            title: ev.title,
+            courseId: ev.courseId,
+            eventType: ev.eventType,
+            room: ev.room,
+            startTime: ev.startTime || "10:00",
+            endTime: ev.endTime || "11:30",
+            eventId: ev.id,
+            event: ev,
+            palette: isStudyBlock ? STUDY_BLOCK_PALETTE : CUSTOM_EVENT_PALETTE,
+          });
+        });
 
       // Assign overlap lanes
       return assignOverlapLanes(items);
@@ -464,41 +581,47 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
       scheduleSlots,
       assessments,
       customEvents,
+      coursesById,
       showClasses,
       showExams,
       isCourseSelected,
+      searchQuery,
     ]);
 
     return (
       <div
         data-testid={`calendar-day-col-${dateIso}`}
-        className="relative border-r border-[var(--surface-border)] last:border-r-0 select-none"
+        className="day-col last:border-r-0 select-none"
         style={{ height: hoursCount * HOUR_HEIGHT }}
       >
         {/* Background Hour Grid Lines */}
         {Array.from({ length: hoursCount }).map((_, i) => (
-          <div
-            key={i}
-            style={{ height: HOUR_HEIGHT }}
-            className="border-b border-[var(--surface-border)]/40 pointer-events-none"
-          />
+          <div key={i} className="hour-row pointer-events-none" />
         ))}
 
-        {/* Calendar Blocks */}
+        {/* Calendar Blocks (v4 `gcal-card`) */}
         {dayItems.map((item) => {
           const laneCount = item.laneCount || 1;
           const laneIndex = item.laneIndex || 0;
           const widthPct = 100 / laneCount;
           const leftPct = laneIndex * widthPct;
 
+          const borderHex = item.palette.border || item.palette.color || "#1a73e8";
+          const bgLight = item.palette.bg || "#e8f0fe";
+          const bgDark = hexToRgba(borderHex, 0.22);
+
+          const horizontal =
+            laneCount === 1
+              ? { left: "4px", right: "4px" }
+              : { left: `calc(${leftPct}% + 2px)`, width: `calc(${widthPct}% - 4px)` };
+
           const style: React.CSSProperties = {
             top: item.topPx,
             height: item.heightPx,
-            position: "absolute",
-            zIndex: item.kind === "merged_exam" ? 12 : item.kind === "standalone_exam" ? 10 : 5,
-            ...(laneCount === 1
-              ? { left: "4px", right: "4px" }
-              : { left: `calc(${leftPct}% + 2px)`, width: `calc(${widthPct}% - 4px)` }),
+            ...horizontal,
+            borderColor: borderHex,
+            ["--card-bg-light" as string]: bgLight,
+            ["--card-bg-dark" as string]: bgDark,
           };
 
           if (item.kind === "merged_exam") {
@@ -507,28 +630,31 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                 key={item.id}
                 style={style}
                 onClick={() => item.assessmentId && onOpenAssessmentDetail(item.assessmentId)}
-                className="rounded-xl border border-red-500 bg-[var(--surface)] p-2 shadow-xs transition hover:scale-[1.01] hover:shadow-md cursor-pointer overflow-hidden has-exam-glow"
+                className="gcal-card has-exam-glow"
               >
                 <div className="flex items-center justify-between gap-1">
-                  <span
-                    className="px-1.5 py-0.2 rounded text-[9px] font-bold"
-                    style={{ backgroundColor: item.bgHex, color: item.colorHex }}
-                  >
-                    {item.courseId}
+                  <span className="text-[11px] font-bold truncate flex items-center gap-1 text-[var(--text)]">
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: borderHex }}
+                    />
+                    <span className="truncate">
+                      {item.courseId} · {item.courseName}
+                    </span>
                   </span>
-                  <span className="px-1.5 py-0.2 rounded bg-red-600 text-white text-[9px] font-bold truncate">
+                  <span className="px-1.5 py-0.2 rounded bg-red-600 text-white text-[9px] font-bold shrink-0">
                     {item.assessmentType}
                   </span>
                 </div>
-                <div className="mt-1 text-xs font-bold text-red-700 dark:text-red-300 truncate">
+                <div className="text-[11px] font-bold text-red-700 dark:text-red-300 truncate mt-0.5">
                   {item.title}
                 </div>
-                <div className="text-[10px] text-[var(--text-muted)] truncate flex items-center gap-1 mt-0.5">
-                  <Clock className="h-2.5 w-2.5 shrink-0" />
-                  <span>
-                    {item.startTime} – {item.endTime}
-                  </span>
-                  {item.room && <span>• {item.room}</span>}
+                <div className="text-[10px] truncate text-[var(--text)]">
+                  Room {stripRoomPrefix(item.room)}
+                  {item.group ? ` · Group ${item.group}` : ""}
+                </div>
+                <div className="text-[10px] tabular-nums text-[var(--text-muted)]">
+                  {formatCompactTime(item.startTime)} – {formatCompactTime(item.endTime)}
                 </div>
               </div>
             );
@@ -540,27 +666,28 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                 key={item.id}
                 style={style}
                 onClick={() => item.assessmentId && onOpenAssessmentDetail(item.assessmentId)}
-                className="rounded-xl border border-[var(--accent)] bg-[var(--surface)] p-2 shadow-xs transition hover:scale-[1.01] hover:shadow-md cursor-pointer overflow-hidden"
+                className="gcal-card has-exam-glow"
               >
                 <div className="flex items-center justify-between gap-1">
-                  <span
-                    className="px-1.5 py-0.2 rounded text-[9px] font-bold"
-                    style={{ backgroundColor: item.bgHex, color: item.colorHex }}
-                  >
-                    {item.courseId}
+                  <span className="text-[11px] font-bold truncate flex items-center gap-1 text-[var(--text)]">
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: borderHex }}
+                    />
+                    <span className="truncate">
+                      {item.courseId} · {item.title}
+                    </span>
                   </span>
-                  <span className="px-1.5 py-0.2 rounded bg-[var(--surface-hover)] text-[10px] font-semibold text-[var(--text-muted)] truncate">
+                  <span className="px-1.5 py-0.2 rounded bg-red-600 text-white text-[9px] font-bold shrink-0">
                     {item.assessmentType}
                   </span>
                 </div>
-                <div className="mt-0.5 text-xs font-bold text-[var(--text)] truncate">
-                  {item.title}
+                <div className="text-[10px] truncate text-[var(--text)]">
+                  Room {stripRoomPrefix(item.room)}
+                  {item.instructor ? ` · ${item.instructor}` : ""}
                 </div>
-                <div className="text-[10px] text-[var(--text-muted)] truncate flex items-center gap-1 mt-0.5">
-                  <Clock className="h-2.5 w-2.5 shrink-0" />
-                  <span>
-                    {item.startTime} – {item.endTime}
-                  </span>
+                <div className="text-[10px] tabular-nums text-[var(--text-muted)]">
+                  {formatCompactTime(item.startTime)} – {formatCompactTime(item.endTime)}
                 </div>
               </div>
             );
@@ -568,30 +695,30 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
 
           if (item.kind === "custom_event") {
             return (
-              <div
-                key={item.id}
-                className="rounded-xl border p-2 shadow-xs overflow-hidden transition group"
-                style={{
-                  ...style,
-                  borderColor: item.colorHex,
-                  backgroundColor: item.bgHex,
-                }}
-              >
+              <div key={item.id} style={style} className="gcal-card">
                 <div className="flex items-center justify-between gap-1">
-                  <span className="text-[10px] font-bold truncate" style={{ color: item.colorHex }}>
+                  <span
+                    onClick={() => item.event && onOpenEvent(item.event)}
+                    className="text-[11px] font-bold truncate text-[var(--text)] cursor-pointer hover:underline"
+                    title="Edit this event"
+                  >
                     {item.title}
                   </span>
                   <button
                     type="button"
-                    onClick={(e) => onDeleteCustomEvent(item.id.replace("custom-", ""), e)}
-                    className="opacity-0 group-hover:opacity-100 p-0.5 text-[var(--text-muted)] hover:text-red-600 transition"
+                    onClick={(e) => item.eventId && onDeleteCustomEvent(item.eventId, e)}
+                    className="shrink-0 text-[var(--text-muted)] hover:text-red-600 transition"
+                    aria-label="Delete event"
                     title="Delete event"
                   >
-                    <Trash2 className="h-3 w-3" />
+                    <X className="h-2.5 w-2.5" />
                   </button>
                 </div>
-                <div className="text-[9px] text-[var(--text-muted)] truncate">
-                  {item.startTime} – {item.endTime}
+                <div className="text-[10px] truncate text-[var(--text)]">
+                  {item.eventType || "Event"} · {item.room ? item.room : "—"}
+                </div>
+                <div className="text-[10px] tabular-nums text-[var(--text-muted)]">
+                  {formatCompactTime(item.startTime)} – {formatCompactTime(item.endTime)}
                 </div>
               </div>
             );
@@ -599,29 +726,22 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
 
           // Plain class slot
           return (
-            <div
-              key={item.id}
-              style={style}
-              className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] p-2 shadow-xs transition hover:bg-[var(--surface-hover)] overflow-hidden"
-            >
-              <div className="flex items-center gap-1">
+            <div key={item.id} style={style} className="gcal-card">
+              <div className="text-[11px] font-bold truncate flex items-center gap-1.5 text-[var(--text)]">
                 <span
-                  className="px-1.5 py-0.2 rounded text-[9px] font-bold"
-                  style={{ backgroundColor: item.bgHex, color: item.colorHex }}
-                >
-                  {item.courseId}
-                </span>
-                <span className="text-[9px] text-[var(--text-muted)] font-semibold truncate">
-                  {item.title}
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ backgroundColor: borderHex }}
+                />
+                <span className="truncate">
+                  {item.courseId} · {item.courseName}
                 </span>
               </div>
-              {item.courseName && (
-                <div className="text-[10px] font-medium text-[var(--text)] truncate mt-0.5">
-                  {item.courseName}
-                </div>
-              )}
-              <div className="text-[9px] text-[var(--text-muted)] truncate mt-0.5">
-                {item.startTime} – {item.endTime} {item.room ? `• ${item.room}` : ""}
+              <div className="text-[10px] truncate text-[var(--text)]">
+                {item.title}
+                {item.group ? ` (Grp ${item.group})` : ""} · {stripRoomPrefix(item.room)}
+              </div>
+              <div className="text-[10px] tabular-nums text-[var(--text-muted)]">
+                {formatCompactTime(item.startTime)} – {formatCompactTime(item.endTime)}
               </div>
             </div>
           );

@@ -72,6 +72,12 @@ pub enum MicrosoftCapability {
     MailRead,
     /// Calendar reads.
     CalendarsRead,
+    /// Sign-in only: identity + silent renewal. Every scope here is a
+    /// low user-consent impact scope, so a tenant that restricts user consent
+    /// can still let the user sign in without an administrator. The
+    /// high-impact mail/calendar scopes are requested separately, only when
+    /// the user actually asks to scan those sources.
+    SignIn,
 }
 
 impl MicrosoftCapability {
@@ -82,6 +88,7 @@ impl MicrosoftCapability {
             Self::UserProfile => &["User.Read"],
             Self::MailRead => &["Mail.Read"],
             Self::CalendarsRead => &["Calendars.Read"],
+            Self::SignIn => &["openid", "profile", "email", "User.Read"],
         }
     }
 }
@@ -211,48 +218,71 @@ pub fn google_authorize_url(request: &AuthorizeRequest<'_>) -> Result<String, Au
 /// Microsoft authorization URL (v2 endpoint, `prompt=select_account` parity
 /// so the user explicitly picks the university account).
 pub fn microsoft_authorize_url(request: &AuthorizeRequest<'_>) -> Result<String, AuthError> {
+    microsoft_authorize_url_with_prompt(request, "select_account")
+}
+
+/// Microsoft authorization URL with an explicit `prompt` value.
+/// `prompt=consent` forces the consent screen to appear again, which is what
+/// incremental consent (adding mail/calendar scopes to an existing sign-in)
+/// needs.
+pub fn microsoft_authorize_url_with_prompt(
+    request: &AuthorizeRequest<'_>,
+    prompt: &str,
+) -> Result<String, AuthError> {
     RedirectTarget::classify(request.redirect_uri)?;
     Ok(format!(
-        "{}?client_id={}&response_type=code&redirect_uri={}&response_mode=query&scope={}&state={}&code_challenge={}&code_challenge_method=S256&prompt=select_account",
+        "{}?client_id={}&response_type=code&redirect_uri={}&response_mode=query&scope={}&state={}&code_challenge={}&code_challenge_method=S256&prompt={}",
         MICROSOFT_AUTHORIZE_URL,
         percent_encode(request.client_id),
         percent_encode(request.redirect_uri),
         percent_encode(&request.scopes.join(" ")),
         percent_encode(request.state),
         percent_encode(request.code_challenge),
+        percent_encode(prompt),
     ))
 }
 
-/// Inputs for the authorization-code exchange (PKCE public client).
+/// Inputs for the authorization-code exchange (PKCE).
 pub struct TokenExchangeRequest<'a> {
     pub client_id: &'a str,
     pub code: &'a str,
     pub redirect_uri: &'a str,
     pub code_verifier: &'a str,
+    /// Optional client secret. `None` = a pure PKCE public client. `Some` = a
+    /// *confidential* client (Google "Web application" type), which the
+    /// provider insists on authenticating with a secret. The secret never
+    /// reaches the UI, the database, the logs or the web bundle.
+    pub client_secret: Option<&'a str>,
 }
 
-/// Form body for the Google token exchange — structurally secret-free.
+/// Form body for the Google token exchange. The secret is included only when
+/// the caller supplies one; a PKCE public client sends no secret at all.
 pub fn google_token_exchange_params(
     request: &TokenExchangeRequest<'_>,
 ) -> Vec<(&'static str, String)> {
-    vec![
+    let mut params = vec![
         ("client_id", request.client_id.to_string()),
         ("grant_type", "authorization_code".to_string()),
         ("code", request.code.to_string()),
         ("redirect_uri", request.redirect_uri.to_string()),
         ("code_verifier", request.code_verifier.to_string()),
-    ]
+    ];
+    if let Some(secret) = request.client_secret {
+        params.push(("client_secret", secret.to_string()));
+    }
+    params
 }
 
-/// Form body for the Microsoft token exchange — structurally secret-free.
+/// Form body for the Microsoft token exchange (no secret: Microsoft public
+/// clients authenticate with PKCE alone).
 pub fn microsoft_token_exchange_params(
     request: &TokenExchangeRequest<'_>,
 ) -> Vec<(&'static str, String)> {
     google_token_exchange_params(request)
 }
 
-/// Form body for a refresh-token grant (scopes repeated; still PKCE-class
-/// public client, no secret).
+/// Form body for a refresh-token grant (scopes repeated; PKCE-class public
+/// client, no secret).
 pub fn refresh_token_params(
     client_id: &str,
     refresh_token: &str,
@@ -264,6 +294,20 @@ pub fn refresh_token_params(
         ("refresh_token", refresh_token.to_string()),
         ("scope", scopes.join(" ")),
     ]
+}
+
+/// Form body for a refresh-token grant that may carry a client secret.
+pub fn refresh_token_params_with_secret(
+    client_id: &str,
+    refresh_token: &str,
+    scopes: &[&str],
+    client_secret: Option<&str>,
+) -> Vec<(&'static str, String)> {
+    let mut params = refresh_token_params(client_id, refresh_token, scopes);
+    if let Some(secret) = client_secret {
+        params.push(("client_secret", secret.to_string()));
+    }
+    params
 }
 
 /// Minimal RFC 3986 percent-encoding for query values (unreserved set kept
@@ -280,6 +324,61 @@ pub fn percent_encode(value: &str) -> String {
         }
     }
     out
+}
+
+/// The OAuth provider whose error body is being explained.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OAuthProvider {
+    Google,
+    Microsoft,
+}
+
+/// Turn a provider's raw OAuth error body into an honest, actionable
+/// explanation. The mapping only reads the provider's own error codes — it
+/// never guesses what went wrong beyond what the provider stated.
+#[must_use]
+pub fn explain_oauth_error(provider: OAuthProvider, body: &str) -> String {
+    let body = body.trim();
+    let lower = body.to_ascii_lowercase();
+
+    if provider == OAuthProvider::Google {
+        if lower.contains("client_secret") {
+            return "This Google client ID belongs to a Web application client, and Google requires its client secret for the token exchange. Add the matching secret in Settings → Account (Google client secret), or switch to a Desktop app client ID, which needs no secret.".to_string();
+        }
+        if lower.contains("redirect_uri_mismatch") {
+            return "Google rejected the redirect URI for this client ID. For the desktop app, add \"http://127.0.0.1\" (loopback, any port) under your Desktop app client's Authorized redirect URIs.".to_string();
+        }
+        if lower.contains("invalid_client") {
+            return "Google rejected this client ID. Copy it again from Google Cloud Console → APIs & Services → Credentials and make sure it is the Desktop app client.".to_string();
+        }
+        if lower.contains("invalid_grant") {
+            return "Google rejected the authorization code. It is single-use and short-lived — start the sign-in again and finish it in the same browser session.".to_string();
+        }
+    }
+
+    if provider == OAuthProvider::Microsoft {
+        if lower.contains("aadsts65001")
+            || lower.contains("consent_required")
+            || lower.contains("admin")
+            || lower.contains("authorization_pending")
+        {
+            return "Your Microsoft organization requires administrator approval for this permission, so the consent screen cannot finish on its own. Ask your tenant administrator to grant consent for the app, or sign in with a personal Microsoft account.".to_string();
+        }
+        if lower.contains("invalid_client") || lower.contains("aadsts7000215") {
+            return "Microsoft rejected this application ID. Copy the Application (client) ID from Azure portal → App registrations and make sure it is the app's own client ID, not its secret.".to_string();
+        }
+        if lower.contains("redirect_uri") || lower.contains("aadsts50011") {
+            return "Microsoft rejected the redirect URI. Register \"http://localhost\" (loopback, any port) as a Mobile and desktop application redirect URI for this app registration.".to_string();
+        }
+        if lower.contains("invalid_scope") {
+            return "Microsoft rejected one of the requested permissions. Remove the scope from the app registration and try again.".to_string();
+        }
+    }
+
+    if body.is_empty() {
+        return "The provider returned no error detail.".to_string();
+    }
+    body.to_string()
 }
 
 #[cfg(test)]
@@ -342,18 +441,103 @@ mod tests {
     }
 
     #[test]
-    fn exchange_and_refresh_params_cannot_express_a_secret() {
+    fn sign_in_scopes_are_low_consent_and_exclude_mail_and_calendar() {
+        let scopes = microsoft_union_scopes(&[
+            MicrosoftCapability::SignIn,
+            MicrosoftCapability::OfflineAccess,
+        ]);
+        assert!(scopes.contains(&"openid"));
+        assert!(scopes.contains(&"profile"));
+        assert!(scopes.contains(&"email"));
+        assert!(scopes.contains(&"User.Read"));
+        assert!(scopes.contains(&"offline_access"));
+        // The high-impact scopes stay out of the sign-in request: a tenant
+        // that requires administrator approval must not block sign-in itself.
+        assert!(!scopes.contains(&"Mail.Read"));
+        assert!(!scopes.contains(&"Calendars.Read"));
+    }
+
+    #[test]
+    fn incremental_consent_forces_the_consent_screen() {
+        let scopes = microsoft_union_scopes(&[
+            MicrosoftCapability::SignIn,
+            MicrosoftCapability::MailRead,
+            MicrosoftCapability::CalendarsRead,
+        ]);
+        let url = microsoft_authorize_url_with_prompt(
+            &AuthorizeRequest {
+                client_id: "app-id",
+                redirect_uri: "http://127.0.0.1:49152/callback",
+                scopes: &scopes,
+                state: "state",
+                code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+            },
+            "consent",
+        )
+        .unwrap();
+        assert!(url.contains("prompt=consent"));
+        assert!(url.contains("Mail.Read"));
+        assert!(url.contains("Calendars.Read"));
+        assert!(!url.contains("client_secret"));
+    }
+
+    #[test]
+    fn google_web_client_error_explains_the_needed_secret() {
+        let explained = explain_oauth_error(
+            OAuthProvider::Google,
+            r#"{"error":"invalid_request","error_description":"client_secret is missing."}"#,
+        );
+        assert!(explained.contains("client secret"));
+        assert!(explained.contains("Settings"));
+        // The copy must point at the settings field, not at pasting the secret
+        // into a chat or a config file.
+        assert!(explained.contains("Google client secret"));
+    }
+
+    #[test]
+    fn microsoft_admin_consent_error_names_the_next_step() {
+        let explained = explain_oauth_error(
+            OAuthProvider::Microsoft,
+            r#"{"error":"invalid_request","error_description":"AADSTS65001: The user or administrator has not consented..."}"#,
+        );
+        assert!(explained.contains("administrator"));
+        assert!(explained.contains("personal Microsoft account"));
+    }
+
+    #[test]
+    fn unknown_provider_errors_are_passed_through_verbatim() {
+        let raw = r#"{"error":"temporarily_unavailable"}"#;
+        assert_eq!(
+            explain_oauth_error(OAuthProvider::Google, raw),
+            raw.to_string()
+        );
+    }
+
+    #[test]
+    fn exchange_params_carry_a_secret_only_when_the_caller_supplies_one() {
         let verifier = "a".repeat(43);
-        let params = google_token_exchange_params(&TokenExchangeRequest {
+        let public_params = google_token_exchange_params(&TokenExchangeRequest {
             client_id: "cid",
             code: "auth-code",
             redirect_uri: "http://127.0.0.1:9/callback",
             code_verifier: &verifier,
+            client_secret: None,
         });
-        assert!(params.iter().all(|(k, _)| *k != "client_secret"));
-        assert!(params
+        assert!(public_params.iter().all(|(k, _)| *k != "client_secret"));
+        assert!(public_params
             .iter()
             .any(|(k, v)| *k == "code_verifier" && v.len() == 43));
+
+        let confidential_params = google_token_exchange_params(&TokenExchangeRequest {
+            client_id: "cid",
+            code: "auth-code",
+            redirect_uri: "http://127.0.0.1:9/callback",
+            code_verifier: &verifier,
+            client_secret: Some("secret-value"),
+        });
+        assert!(confidential_params
+            .iter()
+            .any(|(k, v)| *k == "client_secret" && v == "secret-value"));
 
         let refresh = refresh_token_params(
             "cid",
@@ -362,6 +546,16 @@ mod tests {
         );
         assert!(refresh.iter().all(|(k, _)| *k != "client_secret"));
         assert!(refresh.iter().any(|(k, _)| *k == "refresh_token"));
+
+        let confidential_refresh = refresh_token_params_with_secret(
+            "cid",
+            "refresh-token",
+            microsoft_union_scopes(&[MicrosoftCapability::OfflineAccess]).as_slice(),
+            Some("secret-value"),
+        );
+        assert!(confidential_refresh
+            .iter()
+            .any(|(k, v)| *k == "client_secret" && v == "secret-value"));
     }
 
     #[test]

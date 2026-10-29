@@ -31,6 +31,7 @@ pub struct DesktopConfig {
     pub teams_client_id: Option<String>,
     pub teams_account_name: Option<String>,
     pub teams_account_email: Option<String>,
+    pub google_client_id: Option<String>,
     pub moodle_enabled: bool,
     pub moodle_url: Option<String>,
     pub moodle_ical_url: Option<String>,
@@ -80,6 +81,9 @@ pub struct ConfigUpdate {
     pub onboarding_completed: Option<bool>,
     pub teams_enabled: Option<bool>,
     pub teams_client_id: Option<String>,
+    pub teams_account_name: Option<String>,
+    pub teams_account_email: Option<String>,
+    pub google_client_id: Option<String>,
     pub moodle_enabled: Option<bool>,
     pub moodle_url: Option<String>,
     pub moodle_ical_url: Option<String>,
@@ -193,9 +197,25 @@ pub async fn build_full_state(state: &AppState) -> Result<GetStatePayload, Strin
                 .get_config_bool("teams_enabled".to_string(), true)
                 .await
                 .unwrap_or(true),
-        teams_client_id: Some(state.microsoft_client_id.clone()),
-        teams_account_name: None,
-        teams_account_email: None,
+        teams_client_id: Some(
+            state
+                .effective_microsoft_client_id()
+                .await
+                .unwrap_or_else(|_| crate::state::DEFAULT_MICROSOFT_CLIENT_ID.to_string()),
+        ),
+        teams_account_name: state
+            .store
+            .get_config_string("teams_account_name".to_string())
+            .await
+            .unwrap_or(None),
+        teams_account_email: state
+            .store
+            .get_config_string("teams_account_email".to_string())
+            .await
+            .unwrap_or(None),
+        // `None` means "no Google client id configured" — the UI shows the
+        // setup hint instead of pretending sign-in is ready.
+        google_client_id: state.effective_google_client_id().await.ok(),
         moodle_enabled: state
             .store
             .get_config_bool("moodle_enabled".to_string(), false)
@@ -211,11 +231,18 @@ pub async fn build_full_state(state: &AppState) -> Result<GetStatePayload, Strin
             .get_config_string("moodle_ical_url".to_string())
             .await
             .unwrap_or(None),
-        classroom_enabled: state
+        // The Classroom toggle follows its account unless the user set it:
+        // never set means "on while Google is connected" (same rule the scan
+        // uses), an explicit `false` means the user turned it off.
+        classroom_enabled: match state
             .store
-            .get_config_bool("classroom_enabled".to_string(), false)
+            .get_config_bool_opt("classroom_enabled".to_string())
             .await
-            .unwrap_or(false),
+            .unwrap_or(None)
+        {
+            Some(explicit) => explicit,
+            None => has_google_auth,
+        },
         dismiss_conflict_banner: state
             .store
             .get_dismiss_conflict_banner()
@@ -224,9 +251,11 @@ pub async fn build_full_state(state: &AppState) -> Result<GetStatePayload, Strin
         synced_gcal_map: HashMap::new(),
         feeds: snapshot.feeds.clone(),
         custom_events: snapshot.custom_events.clone(),
-        last_gmail_sync: None,
-        last_gcal_sync: None,
-        last_backup_push: None,
+        // The real sync stamps (`kv_meta`): written by the scan / Calendar
+        // push / Drive backup only after a fetch that actually happened.
+        last_gmail_sync: state.store.get_last_gmail_sync().await.unwrap_or(None),
+        last_gcal_sync: state.store.get_last_gcal_sync().await.unwrap_or(None),
+        last_backup_push: state.store.get_last_backup_push().await.unwrap_or(None),
         user_email,
         user_name,
         user_picture,
@@ -342,6 +371,27 @@ pub async fn update_config(
         state
             .store
             .set_config_string("teams_client_id".to_string(), Some(v))
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = update.teams_account_name {
+        state
+            .store
+            .set_config_string("teams_account_name".to_string(), Some(v))
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = update.teams_account_email {
+        state
+            .store
+            .set_config_string("teams_account_email".to_string(), Some(v))
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = update.google_client_id {
+        state
+            .store
+            .set_config_string("google_client_id".to_string(), Some(v))
             .await
             .map_err(|e| e.to_string())?;
     }

@@ -5,6 +5,7 @@ import path from "node:path";
 import { getWasmEngine } from "./pwadapters/wasmBridge";
 import { pwaRpcHandler, toRustAssessment } from "./pwadapters/rpcAdapter";
 import { setupMockIndexedDb } from "./test/mockIndexedDb";
+import { APP_VERSION } from "./generated/version";
 import { HelpView } from "./views/HelpView";
 import type { Assessment, GetStatePayload, ScheduleData } from "./state/types";
 
@@ -252,6 +253,22 @@ describe("Phase 11: PWA Companion Tier", () => {
       );
     });
 
+    it("persists OAuth client IDs under the core's config keys so they survive a reload", async () => {
+      // Regression: the browser tier wrote camelCase keys ("googleClientId")
+      // while the state builder read snake_case ("google_client_id"), so a
+      // saved client ID never came back and the sign-in kept asking for one.
+      await pwaRpcHandler("update_config", {
+        update: {
+          googleClientId: "browser-google-client.apps.googleusercontent.com",
+          teamsClientId: "11111111-2222-3333-4444-555555555555",
+        },
+      });
+
+      const state = await pwaRpcHandler<GetStatePayload>("get_state");
+      expect(state.config.googleClientId).toBe("browser-google-client.apps.googleusercontent.com");
+      expect(state.config.teamsClientId).toBe("11111111-2222-3333-4444-555555555555");
+    });
+
     it("generates secret-free backup payload", async () => {
       const backupJson = await pwaRpcHandler<string>("export_backup_file");
       const backup = JSON.parse(backupJson);
@@ -260,6 +277,70 @@ describe("Phase 11: PWA Companion Tier", () => {
       // Security rule: No tokens or secrets in backup
       expect(backupJson).not.toContain("refresh_token");
       expect(backupJson).not.toContain("client_secret");
+    });
+
+    it("exports the schedule in the core's snake_case shape (backup contract)", async () => {
+      await pwaRpcHandler("save_schedule", {
+        schedule: {
+          semester: "Fall 2026",
+          courses: [{ id: "CSE241", name: "Digital Design", color: "#1a73e8" }],
+          slots: [
+            {
+              id: "slot-1",
+              day: "Friday",
+              dayIndex: 5,
+              courseId: "CSE241",
+              courseName: "Digital Design",
+              type: "Lecture",
+              room: "Room 301",
+              startTime: "09:00",
+              endTime: "10:30",
+              displayTime: "09:00 – 10:30",
+            },
+          ],
+        },
+      });
+
+      const backup = JSON.parse(await pwaRpcHandler<string>("export_backup_file"));
+      const slot = backup.schedule.slots[0];
+      expect(slot.course_id).toBe("CSE241");
+      expect(slot.day_index).toBe(5);
+      expect(slot.start_time).toBe("09:00");
+      expect(slot.end_time).toBe("10:30");
+      // No camelCase leftovers in the exported contract.
+      expect(slot.courseId).toBeUndefined();
+      expect(slot.dayIndex).toBeUndefined();
+    });
+
+    it("upgrades a legacy camelCase-only slot so the WASM core can read it", async () => {
+      // Older browser builds stored camelCase slots only; the WASM core needs
+      // the snake_case contract, so the store adds the twins on read.
+      const { upsertCourse, saveScheduleData } = await import("./pwadapters/idbStore");
+      await upsertCourse({ id: "CSE241", name: "Digital Design", color: "#1a73e8" });
+      await saveScheduleData({
+        semester: "Fall 2026",
+        courses: [{ id: "CSE241", name: "Digital Design", color: "#1a73e8" }],
+        slots: [
+          {
+            id: "slot-legacy",
+            day: "Friday",
+            dayIndex: 5,
+            courseId: "CSE241",
+            courseName: "Digital Design",
+            type: "Lecture",
+            room: "Room 301",
+            startTime: "09:00",
+            endTime: "10:30",
+            displayTime: "09:00 – 10:30",
+          } as never,
+        ],
+      });
+
+      // get_state runs the WASM dashboard/task derivation over the schedule.
+      const state = await pwaRpcHandler<GetStatePayload>("get_state");
+      expect(state.schedule.slots).toHaveLength(1);
+      expect(state.schedule.slots[0].courseId).toBe("CSE241");
+      expect(state.schedule.slots[0].dayIndex).toBe(5);
     });
   });
 
@@ -276,8 +357,9 @@ describe("Phase 11: PWA Companion Tier", () => {
       expect(swContent).toContain("/manifest.webmanifest");
       expect(swContent).toContain("/icons/radar.svg");
 
-      // Version prefix
-      expect(swContent).toContain("quizradar-v5.0.0-alpha.1");
+      // Version prefix — derived from the stamped app version (single source
+      // of truth: tooling/version.json), never a hardcoded literal.
+      expect(swContent).toContain(`quizradar-v${APP_VERSION}`);
 
       // Offline 503 response
       expect(swContent).toContain("Offline — QuizRadar is in local mode");

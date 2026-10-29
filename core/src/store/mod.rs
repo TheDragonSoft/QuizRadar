@@ -262,6 +262,19 @@ impl Store {
         .await
     }
 
+    /// Read a boolean configuration property without applying a default:
+    /// `None` means "the user never set this", which is different from an
+    /// explicit `false`. Shells use it for source toggles whose sensible
+    /// default depends on what the user has connected.
+    pub async fn get_config_bool_opt(&self, key: String) -> Result<Option<bool>, StoreError> {
+        self.run(move |db| {
+            let conn = db.conn();
+            let config = repo::ConfigRepo::new(conn);
+            Ok(config.get_raw(&key)?.and_then(|value| value.as_bool()))
+        })
+        .await
+    }
+
     /// Read an optional string configuration property.
     pub async fn get_config_string(&self, key: String) -> Result<Option<String>, StoreError> {
         self.run(move |db| {
@@ -294,6 +307,49 @@ impl Store {
             config.set_string(&key, value.as_deref())
         })
         .await
+    }
+
+    // ---- Sync stamps (`kv_meta`, the canonical home per the store contract) ----
+    //
+    // These are dataset-level metadata, not user settings: they travel with
+    // the v4 backup export/import round-trip (`exporter`/`importer` read and
+    // write the same keys) and they are what a shell shows as "Last synced".
+    // A shell must only write a stamp when a real fetch actually happened.
+
+    /// When a source scan last completed successfully (`last_gmail_sync`).
+    pub async fn get_last_gmail_sync(&self) -> Result<Option<String>, StoreError> {
+        self.run(move |db| repo::MetaRepo::new(db.conn()).last_gmail_sync())
+            .await
+    }
+
+    /// Stamps the last successful source scan.
+    pub async fn set_last_gmail_sync(&self, stamp: String) -> Result<(), StoreError> {
+        self.run(move |db| repo::MetaRepo::new(db.conn()).set_last_gmail_sync(&stamp))
+            .await
+    }
+
+    /// When assessments were last pushed to Google Calendar (`last_gcal_sync`).
+    pub async fn get_last_gcal_sync(&self) -> Result<Option<String>, StoreError> {
+        self.run(move |db| repo::MetaRepo::new(db.conn()).last_gcal_sync())
+            .await
+    }
+
+    /// Stamps the last successful Google Calendar push.
+    pub async fn set_last_gcal_sync(&self, stamp: String) -> Result<(), StoreError> {
+        self.run(move |db| repo::MetaRepo::new(db.conn()).set_last_gcal_sync(&stamp))
+            .await
+    }
+
+    /// When the Drive backup was last pushed (`last_backup_push`).
+    pub async fn get_last_backup_push(&self) -> Result<Option<String>, StoreError> {
+        self.run(move |db| repo::MetaRepo::new(db.conn()).last_backup_push())
+            .await
+    }
+
+    /// Stamps the last successful Drive backup push.
+    pub async fn set_last_backup_push(&self, stamp: String) -> Result<(), StoreError> {
+        self.run(move |db| repo::MetaRepo::new(db.conn()).set_last_backup_push(&stamp))
+            .await
     }
 
     /// Permanently wipes all tables and records, recreating a clean database state.

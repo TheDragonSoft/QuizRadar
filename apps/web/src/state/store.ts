@@ -4,6 +4,7 @@ import { rpc } from "./rpc";
 import { loadCachedState, saveCachedState } from "./swr";
 import { applyOptimistic } from "./optimistic";
 import type {
+  AiQuotaUsage,
   ConfigUpdate,
   Course,
   CustomCalendarEvent,
@@ -17,6 +18,7 @@ import type {
   PracticeQuizPayload,
   ScheduleData,
   ScheduleSlot,
+  SyncOutcome,
   SyncStatus,
   ThemeMode,
   ToastItem,
@@ -24,12 +26,38 @@ import type {
   View,
 } from "./types";
 import { getLocalDateString, startDayRolloverWatchdog } from "./watchdog";
+import { toRustEvent, toRustSchedule, toRustSlots } from "./ipcShape";
+
+/**
+ * True when an OAuth failure is a *setup* problem (no client id configured,
+ * or an unusable one) rather than a provider/consent failure. Those are
+ * fixed in Settings → Account, so the UI jumps straight there instead of
+ * dumping a wall of text into a toast.
+ */
+function isClientIdSetupError(message: string): boolean {
+  return (
+    /client id/i.test(message) &&
+    /(needs your own|not configured|not usable|missing)/i.test(message)
+  );
+}
+
+/**
+ * Calendar-date arithmetic on plain `YYYY-MM-DD` strings. Dates are anchored
+ * at UTC noon internally so the result never shifts with the device timezone
+ * (a local-midnight `toISOString()` round-trip moves the day for every user
+ * east or west of UTC).
+ */
+function addDaysToIsoDate(dateIso: string, days: number): string {
+  const [year, month, day] = dateIso.split("-").map(Number);
+  const anchor = new Date(Date.UTC(year, month - 1, day + days));
+  return anchor.toISOString().slice(0, 10);
+}
 
 export function getWeekStart(dateStr: string): string {
-  const d = new Date(dateStr + "T00:00:00");
-  const day = d.getDay(); // 0 is Sunday
-  d.setDate(d.getDate() - day);
-  return d.toISOString().slice(0, 10);
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const anchor = new Date(Date.UTC(year, month - 1, day));
+  const weekday = anchor.getUTCDay(); // 0 is Sunday
+  return addDaysToIsoDate(dateStr, -weekday);
 }
 
 export const THEME_STORAGE_KEY = "quizradar-theme";
@@ -137,6 +165,8 @@ export interface AppStoreState {
   // Core derived data
   data: GetStatePayload;
   isOffline: boolean;
+  /** True once the first real state load finished (cache + IPC). */
+  hasLoaded: boolean;
 
   // UI state
   view: View;
@@ -152,6 +182,13 @@ export interface AppStoreState {
   // Sync state
   syncStatus: SyncStatus;
   syncProgressMessage: string | null;
+  /** The honest outcome of the last scan (kept after `syncStatus` resets). */
+  syncOutcome: SyncOutcome | null;
+  /** True while the user asked the running scan to abort. */
+  cancelRequested: boolean;
+
+  /** The device's real AI usage today (null = this tier keeps no ledger). */
+  aiQuota: AiQuotaUsage | null;
 
   // Calendar navigation & selection
   selectedCalendarDate: string;
@@ -185,13 +222,16 @@ export interface AppStoreState {
   openModal: (modal: ModalInstance | string) => void;
   closeModal: (id?: string) => void;
   closeAllModals: () => void;
+  openExternalUrl: (url: string) => Promise<void>;
 
   addToast: (toast: Omit<ToastItem, "id"> & { id?: string }) => void;
   removeToast: (id: string) => void;
 
   loadInitialData: () => Promise<void>;
   refreshState: () => Promise<void>;
+  refreshAiQuota: () => Promise<void>;
   triggerSync: () => Promise<void>;
+  cancelSync: () => Promise<void>;
 
   toggleTopic: (assessmentId: string, topicIdx: number) => Promise<void>;
   saveGrade: (
@@ -219,6 +259,7 @@ export interface AppStoreState {
   googleLogin: () => Promise<string>;
   googleLogout: () => Promise<void>;
   microsoftLogin: () => Promise<string>;
+  microsoftGrantScanningAccess: () => Promise<string>;
   microsoftLogout: () => Promise<void>;
   validateGeminiKey: (key: string) => Promise<{ valid: boolean; error?: string }>;
   extractSchedule: (image: string) => Promise<DesktopExtractedTimetable>;
@@ -238,6 +279,7 @@ export interface AppStoreState {
 export const useAppStore = create<AppStoreState>((set, get) => ({
   data: initialFullState,
   isOffline: false,
+  hasLoaded: false,
 
   view: "dashboard",
   theme: getInitialTheme(),
@@ -250,6 +292,9 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
 
   syncStatus: "idle",
   syncProgressMessage: null,
+  syncOutcome: null,
+  cancelRequested: false,
+  aiQuota: null,
 
   selectedCalendarDate: getLocalDateString(),
   currentWeekStart: getWeekStart(getLocalDateString()),
@@ -267,10 +312,9 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     }),
 
   shiftWeek: (deltaWeeks) => {
-    const current = new Date(get().currentWeekStart + "T00:00:00");
-    current.setDate(current.getDate() + deltaWeeks * 7);
-    const nextStart = current.toISOString().slice(0, 10);
-    set({ currentWeekStart: nextStart });
+    set({
+      currentWeekStart: addDaysToIsoDate(get().currentWeekStart, deltaWeeks * 7),
+    });
   },
 
   jumpToToday: () => {
@@ -344,6 +388,13 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       typeof modal === "string"
         ? { id: modal, dismissible: true }
         : { dismissible: true, ...modal };
+    // The settings panel always opens at its full width. Without this, a
+    // re-open (e.g. after a failed sign-in) replaced the instance with the
+    // default size and the dialog visibly shrank.
+    if (instance.id === "settings") {
+      if (instance.size === undefined) instance.size = "lg";
+      if (instance.flush === undefined) instance.flush = true;
+    }
     set((state) => ({
       openModals: [...state.openModals.filter((m) => m.id !== instance.id), instance],
     }));
@@ -361,6 +412,20 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   },
 
   closeAllModals: () => set({ openModals: [] }),
+
+  /**
+   * Opens a provider console page in the system browser (desktop) or a new
+   * tab (web tier). Used by the OAuth setup hints so the user can reach the
+   * exact console page without hunting for it.
+   */
+  openExternalUrl: async (url: string) => {
+    try {
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      await openUrl(url);
+    } catch {
+      window.open(url, "_blank", "noopener");
+    }
+  },
 
   addToast: (toast) => {
     const id = toast.id || `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -397,6 +462,9 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
 
     // 2. Refresh from IPC in background
     await get().refreshState();
+    // 3. Mark the first load as done — first-run gating waits for this so a
+    //    returning user never gets the onboarding wizard flashed at them.
+    set({ hasLoaded: true });
   },
 
   refreshState: async () => {
@@ -410,15 +478,47 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     }
   },
 
-  triggerSync: async () => {
-    set({ syncStatus: "syncing", syncProgressMessage: copy.topBar.syncScanning });
+  refreshAiQuota: async () => {
+    // Best-effort: a tier without a ledger reports "not tracked" instead of
+    // a zero that would read as "you used nothing".
     try {
-      await rpc<{ success: boolean; totalNew: number; totalUpdated: number }>("run_sync");
+      const usage = await rpc<AiQuotaUsage>("ai_quota_usage");
+      set({
+        aiQuota: {
+          callsToday: usage?.callsToday ?? null,
+          perModel: usage?.perModel ?? {},
+        },
+      });
+    } catch {
+      set({ aiQuota: { callsToday: null, perModel: {} } });
+    }
+  },
+
+  triggerSync: async () => {
+    set({
+      syncStatus: "syncing",
+      syncProgressMessage: copy.topBar.syncScanning,
+      syncOutcome: null,
+      cancelRequested: false,
+    });
+    try {
+      const result = await rpc<{
+        success: boolean;
+        totalNew: number;
+        totalUpdated: number;
+        notes?: string[];
+      }>("run_sync");
       await get().refreshState();
-      set({ syncStatus: "success", syncProgressMessage: null });
+      const outcome: SyncOutcome = {
+        status: "success",
+        totalNew: result?.totalNew ?? 0,
+        totalUpdated: result?.totalUpdated ?? 0,
+        notes: result?.notes ?? [],
+      };
+      set({ syncStatus: "success", syncProgressMessage: null, syncOutcome: outcome });
       get().addToast({
         type: "success",
-        message: copy.topBar.syncSynced,
+        message: copy.topBar.syncSyncedSummary(outcome.totalNew, outcome.totalUpdated),
       });
       setTimeout(() => {
         if (get().syncStatus === "success") {
@@ -427,7 +527,35 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       }, 3000);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      set({ syncStatus: "error", syncProgressMessage: null });
+      if (get().cancelRequested) {
+        // The user aborted the scan: the backend dropped the in-flight
+        // requests and left the radar untouched. That is a cancellation,
+        // not a failure, and it is reported as one.
+        set({
+          syncStatus: "idle",
+          syncProgressMessage: null,
+          syncOutcome: {
+            status: "canceled",
+            totalNew: 0,
+            totalUpdated: 0,
+            notes: [],
+            message: copy.topBar.syncCanceled,
+          },
+        });
+        get().addToast({ type: "info", message: copy.topBar.syncCanceled });
+        return;
+      }
+      set({
+        syncStatus: "error",
+        syncProgressMessage: null,
+        syncOutcome: {
+          status: "error",
+          totalNew: 0,
+          totalUpdated: 0,
+          notes: [],
+          message: msg,
+        },
+      });
       get().addToast({
         type: "error",
         message: `${copy.topBar.syncFailed}: ${msg}`,
@@ -437,6 +565,18 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
           set({ syncStatus: "idle" });
         }
       }, 4000);
+    }
+  },
+
+  cancelSync: async () => {
+    if (get().syncStatus !== "syncing") return;
+    set({ cancelRequested: true });
+    try {
+      await rpc("cancel_sync");
+    } catch {
+      // The abort is best-effort: the desktop aborts the running scan, the
+      // browser tier aborts its feed fetches. If the bridge is gone the scan
+      // fails on its own and is reported honestly as a failure.
     }
   },
 
@@ -675,7 +815,12 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
 
   upsertCourse: async (course, slots) => {
     try {
-      const fresh = await rpc<GetStatePayload>("upsert_course", { course, slots });
+      // The desktop shell parses the core's snake_case schema — the adapter
+      // adds the twin keys so a camelCase payload from the UI is accepted.
+      const fresh = await rpc<GetStatePayload>("upsert_course", {
+        course,
+        slots: toRustSlots(slots),
+      });
       saveCachedState(fresh);
       set({ data: fresh });
       get().addToast({
@@ -711,7 +856,9 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
 
   saveSchedule: async (schedule) => {
     try {
-      const fresh = await rpc<GetStatePayload>("save_schedule", { schedule });
+      const fresh = await rpc<GetStatePayload>("save_schedule", {
+        schedule: toRustSchedule(schedule),
+      });
       saveCachedState(fresh);
       set({ data: fresh });
       get().addToast({
@@ -729,7 +876,9 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
 
   addCustomEvent: async (event) => {
     try {
-      const fresh = await rpc<GetStatePayload>("add_custom_event", { event });
+      const fresh = await rpc<GetStatePayload>("add_custom_event", {
+        event: toRustEvent(event),
+      });
       saveCachedState(fresh);
       set({ data: fresh });
       get().addToast({
@@ -825,7 +974,62 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   },
 
   googleLogin: async () => {
-    return await rpc<string>("google_login_start");
+    try {
+      const result = await rpc<string | { url: null; port: null; mode: string }>(
+        "google_login_start",
+      );
+
+      // Desktop: the command returns the PKCE authorize URL and the ephemeral
+      // loopback listener is already waiting for the redirect.
+      if (typeof result === "string" && result !== "error") {
+        get().addToast({ type: "info", message: "Opening Google sign-in in your browser…" });
+        try {
+          const { openUrl } = await import("@tauri-apps/plugin-opener");
+          await openUrl(result);
+        } catch {
+          window.open(result, "_blank", "noopener");
+        }
+        return result;
+      }
+
+      // Browser (PWA/dev server) tier: GIS token client, 1h memory-only token.
+      const clientId = get().data.config.googleClientId?.trim();
+      if (!clientId) {
+        throw new Error(
+          "Google sign-in on the web tier needs your own OAuth client ID. Open Settings → Account → Browser Sign-In and paste a Google 'Web application' client ID (PKCE, no secret).",
+        );
+      }
+      const { googleGisLogin } = await import("../pwadapters/browserSources");
+      const profile = await googleGisLogin(clientId);
+      await get().updateConfig({
+        userEmail: profile.email ?? undefined,
+        userName: profile.name ?? undefined,
+        userPicture: profile.picture ?? undefined,
+      });
+      await get().refreshState();
+      get().addToast({
+        type: "success",
+        message: "Google account connected (1h session token held in memory)",
+      });
+      return "gis";
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // A missing/invalid OAuth client id is a setup problem, not a crash:
+      // open the exact settings screen that fixes it and keep the toast short.
+      if (isClientIdSetupError(message)) {
+        get().openModal({ id: "settings", props: { initialTab: "account" } });
+        get().addToast({
+          type: "error",
+          message: "Google sign-in needs a usable client ID — Settings → Account is now open.",
+        });
+        return "error";
+      }
+      get().addToast({
+        type: "error",
+        message: `Google sign-in failed: ${message}`,
+      });
+      return "error";
+    }
   },
 
   googleLogout: async () => {
@@ -838,7 +1042,67 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   },
 
   microsoftLogin: async () => {
-    return await rpc<string>("microsoft_login_start");
+    try {
+      const result = await rpc<string | { url: null; port: null; mode: string }>(
+        "microsoft_login_start",
+      );
+
+      // Desktop: authorize URL + waiting loopback listener.
+      if (typeof result === "string" && result !== "error") {
+        get().addToast({ type: "info", message: "Opening Microsoft sign-in in your browser…" });
+        try {
+          const { openUrl } = await import("@tauri-apps/plugin-opener");
+          await openUrl(result);
+        } catch {
+          window.open(result, "_blank", "noopener");
+        }
+        return result;
+      }
+
+      // Browser tier: auth-code + PKCE popup against the v2 endpoints.
+      const clientId = get().data.config.teamsClientId?.trim();
+      if (!clientId) {
+        throw new Error(
+          "Microsoft Teams sign-in on the web tier needs your own Azure app client ID. Open Settings → Account → Browser Sign-In and paste it (register this app's origin as a SPA redirect URI).",
+        );
+      }
+      const { microsoftPkcePopupLogin } = await import("../pwadapters/browserSources");
+      const profile = await microsoftPkcePopupLogin(clientId);
+      await get().updateConfig({
+        userEmail: profile.email ?? undefined,
+        userName: profile.name ?? undefined,
+        ...(profile.email ? { teamsAccountEmail: profile.email } : {}),
+        ...(profile.name ? { teamsAccountName: profile.name } : {}),
+        teamsEnabled: true,
+      });
+      await get().refreshState();
+      get().addToast({
+        type: "success",
+        message: "Microsoft Teams connected (1h session token held in memory)",
+      });
+      get().addToast({
+        type: "info",
+        message:
+          "Mail & calendar scanning may still need administrator approval — if a scan is blocked, use “Grant scanning access”.",
+      });
+      return "pkce-popup";
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (isClientIdSetupError(message)) {
+        get().openModal({ id: "settings", props: { initialTab: "account" } });
+        get().addToast({
+          type: "error",
+          message:
+            "Microsoft sign-in needs your own Azure app client ID — Settings → Account is now open.",
+        });
+        return "error";
+      }
+      get().addToast({
+        type: "error",
+        message: `Microsoft sign-in failed: ${message}`,
+      });
+      return "error";
+    }
   },
 
   microsoftLogout: async () => {
@@ -848,6 +1112,66 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       type: "info",
       message: "Microsoft account disconnected and tokens wiped",
     });
+  },
+
+  /**
+   * Stage 2 of the Microsoft consent flow: ask for the mail + calendar
+   * scopes. Many work tenants require an administrator to approve exactly
+   * these permissions, so the sign-in itself stays on the low-consent scope
+   * set and this is the explicit "grant scanning access" step.
+   */
+  microsoftGrantScanningAccess: async () => {
+    try {
+      const result = await rpc<string | { url: null; port: null; mode: string }>(
+        "microsoft_scanning_consent_start",
+      );
+
+      if (typeof result === "string" && result !== "error") {
+        get().addToast({
+          type: "info",
+          message: "Opening the Microsoft consent screen in your browser…",
+        });
+        try {
+          const { openUrl } = await import("@tauri-apps/plugin-opener");
+          await openUrl(result);
+        } catch {
+          window.open(result, "_blank", "noopener");
+        }
+        return result;
+      }
+
+      const clientId = get().data.config.teamsClientId?.trim();
+      if (!clientId) {
+        throw new Error(
+          "Granting mail & calendar access needs your Azure app client ID. Open Settings → Account → Browser Sign-In and paste it.",
+        );
+      }
+      const { microsoftPkcePopupLogin, MICROSOFT_SCAN_SCOPES } =
+        await import("../pwadapters/browserSources");
+      const profile = await microsoftPkcePopupLogin(
+        clientId,
+        crypto,
+        MICROSOFT_SCAN_SCOPES,
+        "consent",
+      );
+      await get().updateConfig({
+        ...(profile.email ? { teamsAccountEmail: profile.email } : {}),
+        ...(profile.name ? { teamsAccountName: profile.name } : {}),
+        teamsEnabled: true,
+      });
+      await get().refreshState();
+      get().addToast({
+        type: "success",
+        message: "Microsoft mail & calendar access granted",
+      });
+      return "pkce-popup";
+    } catch (err) {
+      get().addToast({
+        type: "error",
+        message: `Microsoft consent failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      return "error";
+    }
   },
 
   validateGeminiKey: async (key) => {
@@ -874,7 +1198,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `quizradar-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `quizradar-backup-${getLocalDateString()}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

@@ -1,0 +1,9 @@
+{
+  "authenticated": true,
+  "email": "student@example.edu",
+  "name": "Student",
+  "picture": null,
+  "hasGmailScope": true,
+  "hasCalendarScope": true,
+  "hasTeamsAuth": true
+}

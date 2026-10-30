@@ -22,10 +22,13 @@ pub mod sources;
 pub mod store;
 pub mod types;
 
-#[cfg(feature = "uniffi")]
+// The UniFFI surface is native-only: it exposes the SQLite store and the
+// reqwest/tokio source fetchers, none of which exist on wasm32. The browser
+// tier binds the pure modules through `core/bindings/wasm` instead.
+#[cfg(all(feature = "uniffi", not(target_arch = "wasm32")))]
 pub mod ffi;
 
-#[cfg(feature = "uniffi")]
+#[cfg(all(feature = "uniffi", not(target_arch = "wasm32")))]
 uniffi::setup_scaffolding!();
 
 /// Crate name for shells' about/version surfaces.

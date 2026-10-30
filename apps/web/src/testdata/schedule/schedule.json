@@ -1,0 +1,81 @@
+{
+  "semester": "Fall 2026",
+  "courses": [
+    {
+      "id": "CSE241",
+      "name": "Object-Oriented Programming",
+      "color": "#e67c73",
+      "bg": "#fee2e2",
+      "border": null
+    },
+    {
+      "id": "CSE346",
+      "name": "Computer Networks",
+      "color": "#4285f4",
+      "bg": null,
+      "border": null
+    }
+  ],
+  "slots": [
+    {
+      "id": "s1",
+      "day": "Sun",
+      "day_index": 0,
+      "course_id": "CSE241",
+      "course_name": "",
+      "type": "Lecture",
+      "group": "Sec 1",
+      "room": "Lab A",
+      "start_time": "09:00",
+      "end_time": "10:00",
+      "display_time": "",
+      "has_quiz": false,
+      "quiz_title": null
+    },
+    {
+      "id": "s2",
+      "day": "Tue",
+      "day_index": 2,
+      "course_id": "CSE241",
+      "course_name": "",
+      "type": "Tutorial",
+      "group": "Sec 1",
+      "room": null,
+      "start_time": "11:00",
+      "end_time": "12:00",
+      "display_time": "",
+      "has_quiz": false,
+      "quiz_title": null
+    },
+    {
+      "id": "s3",
+      "day": "Wed",
+      "day_index": 3,
+      "course_id": "CSE241",
+      "course_name": "",
+      "type": "Lab",
+      "group": "Sec 1",
+      "room": "Lab C",
+      "start_time": "14:00",
+      "end_time": "16:00",
+      "display_time": "",
+      "has_quiz": false,
+      "quiz_title": null
+    },
+    {
+      "id": "s4",
+      "day": "Mon",
+      "day_index": 1,
+      "course_id": "CSE346",
+      "course_name": "",
+      "type": "Lecture",
+      "group": "Sec 1",
+      "room": "Hall 2",
+      "start_time": "08:00",
+      "end_time": "10:00",
+      "display_time": "",
+      "has_quiz": false,
+      "quiz_title": null
+    }
+  ]
+}

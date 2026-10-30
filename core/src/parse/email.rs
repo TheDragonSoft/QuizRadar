@@ -177,24 +177,35 @@ pub fn strip_html_tags(html: &str) -> String {
                 }
                 // Malformed br stays fall-through to the generic stripper.
             }
-            // Closing block tags `</p|/div|/tr|/h1..6>` → line break.
-            if i + 1 < len && chars[i + 1] == '/' {
-                let mut j = i + 2;
+            // Block tags — opening or closing — separate prose lines.
+            // Outlook mails ship unclosed `<td>`/`<tr>` cells; without this,
+            // "New Date: …" and "Previous Date: …" ran together into one
+            // word-soup title. Inline tags (`<b>`, `<span>`, …) stay silent.
+            let is_block_name = |name: &str| -> bool {
+                matches!(
+                    name,
+                    "p" | "div" | "tr" | "td" | "th" | "li" | "table" | "blockquote" | "ul" | "ol"
+                ) || (name.len() == 2
+                    && name.starts_with('h')
+                    && matches!(name.chars().nth(1), Some('1'..='6')))
+            };
+            if i + 1 < len && (chars[i + 1] == '/' || chars[i + 1].is_ascii_alphabetic()) {
+                let mut j = i + 1;
+                if chars[j] == '/' {
+                    j += 1;
+                }
                 let mut name = String::new();
                 while j < len && chars[j].is_ascii_alphabetic() {
                     name.push(chars[j].to_ascii_lowercase());
                     j += 1;
                 }
-                if j < len && chars[j] == '>' {
-                    let is_block = name == "p"
-                        || name == "div"
-                        || name == "tr"
-                        || (name.len() == 2
-                            && name.starts_with('h')
-                            && matches!(name.chars().nth(1), Some('1'..='6')));
-                    if is_block {
+                if is_block_name(&name) && j < len && (chars[j] == '>' || chars[j].is_whitespace())
+                {
+                    // Skip through the tag's closing `>` (opening tags may
+                    // carry attributes).
+                    if let Some(gt) = find_char(&chars, j, '>') {
                         prose.push('\n');
-                        i = j + 1;
+                        i = gt + 1;
                         continue;
                     }
                 }
@@ -1450,14 +1461,19 @@ mod tests {
 
     #[test]
     fn strip_html_tags_basics() {
-        // v4 parity: `</p>` and `<br>` become breaks; a following `<div>`
-        // opening tag is removed silently (div breaks appear only at its
-        // closing tag, trimmed here) — "Quiz 1\n\nCSE24118 October".
+        // `</p>` and `<br>` become breaks; opening block tags now ALSO break —
+        // Outlook mails ship unclosed `<td>` cells, and the old silent-strip
+        // glued "New Date: …" onto "Previous Date: …" (sweep fix, 2026-10-29).
         let strip = strip_html_tags("<p>Quiz 1</p><br>CSE241<div>18 October</div>");
-        assert_eq!(strip, "Quiz 1\n\nCSE24118 October");
+        assert_eq!(strip, "Quiz 1\n\nCSE241\n18 October");
         assert_eq!(
             strip_html_tags("plain body 15 minutes"),
             "plain body 15 minutes"
+        );
+        // Unclosed table cells (Outlook) separate instead of running on.
+        assert_eq!(
+            strip_html_tags("<tr><td>New Date: 7 Nov 2026<td>Previous Date: 31 Oct</tr>"),
+            "New Date: 7 Nov 2026\nPrevious Date: 31 Oct"
         );
     }
 

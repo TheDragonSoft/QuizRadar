@@ -159,12 +159,12 @@ export function SearchPaletteModal({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="search-palette-title"
-      className="relative w-full max-w-2xl rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl transition-all overflow-hidden"
-    >
+    <div className="relative w-full max-w-2xl rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl transition-all overflow-hidden">
+      {/* The palette is a command surface: the input is the only visible
+          control, so the dialog needs a heading of its own to be named. */}
+      <h2 id="search-palette-title" className="sr-only">
+        {copy.search.title}
+      </h2>
       {/* Search Input Bar */}
       <div className="flex items-center border-b border-[var(--border)] px-4 py-3.5">
         <SearchIcon className="h-5 w-5 text-[var(--text-muted)] shrink-0 mr-3" />
@@ -193,6 +193,7 @@ export function SearchPaletteModal({
           <button
             type="button"
             onClick={() => setQuery("")}
+            aria-label={copy.search.clearQuery}
             className="p-1 text-[var(--text-muted)] hover:text-[var(--text)] mr-2"
           >
             <X className="h-4 w-4" />

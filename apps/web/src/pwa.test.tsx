@@ -23,7 +23,9 @@ describe("Phase 11: PWA Companion Tier", () => {
   describe("1. WASM Engine Parity (QuizRadarWasm)", () => {
     it("parses golden email fixture with 100% parity to desktop core", async () => {
       const wasm = await getWasmEngine();
-      expect(wasm.version()).toBe("5.0.0-alpha.1");
+      // The compiled WASM must carry the same version truth as the repo.
+      // A hardcoded literal here drifts the moment the version is stamped.
+      expect(wasm.version()).toBe(APP_VERSION);
 
       const repoRoot = path.resolve(process.cwd(), "../..");
       const schedulePath = path.join(repoRoot, "core/tests/fixtures/schedule/schedule.json");

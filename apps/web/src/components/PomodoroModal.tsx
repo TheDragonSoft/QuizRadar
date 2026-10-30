@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Play, Pause, RotateCcw, CheckCircle2, Bell, X } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
+import { stripCoursePrefix } from "../lib/calendarLanes";
 
 export interface PomodoroModalProps {
   assessmentId?: string;
@@ -129,12 +130,7 @@ export function PomodoroModal({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="pomodoro-modal-title"
-      className="relative w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-2xl transition-all"
-    >
+    <div className="relative w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-2xl transition-all">
       <div className="flex items-center justify-between border-b border-[var(--border)] pb-4">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]">
@@ -165,7 +161,7 @@ export function PomodoroModal({
               {matchedAssessment && (
                 <span className="font-semibold text-[var(--text)]">
                   {matchedAssessment.courseId ? `[${matchedAssessment.courseId}] ` : ""}
-                  {matchedAssessment.title}
+                  {stripCoursePrefix(matchedAssessment.title, matchedAssessment.courseId)}
                 </span>
               )}
               {topicTitle && (

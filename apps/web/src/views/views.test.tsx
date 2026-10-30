@@ -219,6 +219,10 @@ describe("Web UI Views & Assessment Detail (Phase 09 Full Behavior)", () => {
     expect(screen.getByText(/What Should I Study\?/i)).toBeInTheDocument();
     expect(screen.getAllByText(/Quiz 1: Logic Gates/i).length).toBeGreaterThan(0);
 
+    // The topics chip expands the inline checklist (v4 cards stay compact).
+    const topicsChip = screen.getByRole("button", { name: /2 topics/i });
+    fireEvent.click(topicsChip);
+
     // Topic checkbox inside recommendation card
     const booleanAlgebraCheck = screen.getByRole("checkbox", { name: /Boolean Algebra/i });
     expect(booleanAlgebraCheck).not.toBeChecked();

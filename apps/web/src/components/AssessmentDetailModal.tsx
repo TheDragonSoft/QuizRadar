@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { copy } from "../copy";
+import { safeExternalUrl } from "../lib/safeUrl";
 import { useAppStore } from "../state/store";
 import { calculateWhatIf } from "../lib/whatIf";
 import { coursePalette } from "../lib/coursePalette";
@@ -167,7 +168,12 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
           )}
         </div>
 
-        <h1 className="text-xl font-bold tracking-tight text-[var(--text)]">{assessment.title}</h1>
+        <h1
+          id="assessment-detail-title"
+          className="text-xl font-bold tracking-tight text-[var(--text)]"
+        >
+          {assessment.title}
+        </h1>
         {assessment.courseName && (
           <p className="text-xs text-[var(--text-muted)]">{assessment.courseName}</p>
         )}
@@ -263,7 +269,7 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
                       className="h-4 w-4 rounded accent-[var(--accent)] cursor-pointer shrink-0"
                     />
                     <span
-                      className={`text-xs transition ${
+                      className={`text-xs whitespace-pre-line transition ${
                         isDone
                           ? "line-through text-[var(--text-muted)]"
                           : "font-medium text-[var(--text)]"
@@ -310,9 +316,9 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
               <CheckCircle className="h-4 w-4" aria-hidden="true" />
               <span>{copy.assessmentDetail.addedToGcal}</span>
             </div>
-          ) : assessment.googleCalUrl ? (
+          ) : safeExternalUrl(assessment.googleCalUrl) ? (
             <a
-              href={assessment.googleCalUrl}
+              href={safeExternalUrl(assessment.googleCalUrl)}
               target="_blank"
               rel="noreferrer"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text)] transition"
@@ -355,9 +361,9 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
             <span>{copy.practice.practiceQuizAction}</span>
           </button>
 
-          {assessment.elearningUrl && (
+          {safeExternalUrl(assessment.elearningUrl) && (
             <a
-              href={assessment.elearningUrl}
+              href={safeExternalUrl(assessment.elearningUrl)}
               target="_blank"
               rel="noreferrer"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text)] transition"

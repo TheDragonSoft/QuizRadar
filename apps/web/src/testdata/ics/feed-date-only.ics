@@ -1,0 +1,21 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+X-WR-CALNAME:CompSci Calendar
+BEGIN:VEVENT
+UID:q1@feeds.uni-eg.net
+SUMMARY:Machine Learning Quiz 2
+DESCRIPTION:Open-book preparation on the university portal
+DTSTART;VALUE=DATE:20261020
+END:VEVENT
+BEGIN:VEVENT
+SUMMARY:Quiz 3 Review Session
+DESCRIPTION:Review session for quiz 3\, bring your templates
+DTSTART:20261021
+DTEND:20261021
+END:VEVENT
+BEGIN:VEVENT
+UID:talk@feeds
+SUMMARY:Guest Lecture: Modern Compilers
+DTSTART;VALUE=DATE:20261022
+END:VEVENT
+END:VCALENDAR

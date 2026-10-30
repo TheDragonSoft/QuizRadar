@@ -97,6 +97,8 @@ export interface TopicCheckItem {
   title: string;
   completed: boolean;
   key: string;
+  /** Rust twin (`topic`). The shape adapter keeps both in sync. */
+  topic?: string | null;
 }
 
 export interface StudyRecommendation {
@@ -105,11 +107,20 @@ export interface StudyRecommendation {
   courseName?: string | null;
   title: string;
   assessmentType: string;
+  dateIso?: string | null;
+  displayTime?: string | null;
   daysUntil?: number | null;
   urgencyLevel: string;
+  /** v4's uppercase countdown badge ("TODAY" / "TOMORROW" / "IN 4 DAYS"). */
+  urgencyBadge?: string | null;
   priorityScore: number;
   color?: string | null;
   whyStudyNow: string;
+  aiStudyPlan?: string | null;
+  /** Exam rules the announcement carried ("Bring a calculator", …). */
+  warnings?: string[];
+  /** Completed-topics share for this card (100 when it has no topics). Rust sends it required. */
+  progressPercent?: number;
   topics: TopicCheckItem[];
 }
 
@@ -118,11 +129,16 @@ export interface ConflictAlert {
   assessmentBId: string;
   titleA?: string;
   titleB?: string;
+  /** The two courses in conflict (`course_a` / `course_b` on the wire). */
+  courseA?: string | null;
+  courseB?: string | null;
   dateA: string;
   dateB: string;
   severity: "critical" | "warning";
   hoursBetween: number;
   message: string;
+  /** True when a study block already covers this pair (`is_mitigated`). */
+  isMitigated?: boolean;
   dismissed: boolean;
 }
 
@@ -145,14 +161,28 @@ export interface DailyStudyTask {
   key: string;
   assessmentId: string;
   courseId?: string | null;
+  courseName?: string | null;
   title: string;
+  /** The core's own name for the same value (`assessment_title`). */
+  assessmentTitle?: string;
+  assessmentType?: string;
   topicTitle: string;
   topicIndex: number;
   dayOffset: number;
+  /** The date the task targets (`target_date_iso`). */
+  targetDateIso?: string;
+  /** The core's honest day label (`display_day`). */
+  displayDay?: string;
   estimatedHours?: number | null;
   priorityRank: number;
   completed: boolean;
   reasoning: string;
+  /** The core's own name for the same value (`ai_reasoning`). */
+  aiReasoning?: string;
+  urgency?: string;
+  color?: string | null;
+  daysUntilAssessment?: number;
+  assessmentDateIso?: string;
 }
 
 export interface ExamReadinessCard {

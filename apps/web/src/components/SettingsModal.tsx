@@ -513,10 +513,14 @@ export function SettingsModal({
                 </div>
                 {!isBrowserTier && (
                   <div>
-                    <label className="block text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1">
-                      Google OAuth Client Secret (optional override)
+                    <label
+                      htmlFor="google-client-secret"
+                      className="block text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1"
+                    >
+                      {copy.settings.googleDesktopClientSecretLabel}
                     </label>
                     <input
+                      id="google-client-secret"
                       type="password"
                       value={googleClientSecret}
                       onChange={(e) => setGoogleClientSecret(e.target.value)}
@@ -531,12 +535,16 @@ export function SettingsModal({
                   </div>
                 )}
                 <div>
-                  <label className="block text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1">
+                  <label
+                    htmlFor="teams-client-id"
+                    className="block text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1"
+                  >
                     {isBrowserTier
                       ? copy.settings.teamsClientIdLabel
                       : copy.settings.teamsDesktopClientIdLabel}
                   </label>
                   <input
+                    id="teams-client-id"
                     type="text"
                     value={teamsClientId}
                     onChange={(e) => setTeamsClientId(e.target.value)}
@@ -626,9 +634,7 @@ export function SettingsModal({
               </div>
 
               {!isBrowserTier && (
-                <p className="mt-2 text-[11px] text-[var(--text-muted)]">
-                  {copy.ai.sharedKeyHint}
-                </p>
+                <p className="mt-2 text-[11px] text-[var(--text-muted)]">{copy.ai.sharedKeyHint}</p>
               )}
 
               {geminiValidationResult && (

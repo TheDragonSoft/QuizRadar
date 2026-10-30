@@ -218,8 +218,10 @@ describe("Web UI Foundation & Chrome Components", () => {
     cleanup();
   });
 
-  // 10. One close button per modal (the stack used to add a second X)
-  it("renders exactly one close button for a registered modal", async () => {
+  // 10. One close button per modal (the stack used to add a second X).
+  // Importing App registers every modal in the registry, which can spill past
+  // the 5 s default under parallel CI load — so this test carries a budget.
+  it("renders exactly one close button for a registered modal", { timeout: 20_000 }, async () => {
     // Importing App registers every modal component in the registry.
     await import("../App");
 

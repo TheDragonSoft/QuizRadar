@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
+  stripCoursePrefix,
+  roomLabel,
   computeBlockPosition,
   assignOverlapLanes,
   getClampedDayWindow,
@@ -150,5 +152,28 @@ describe("calendarLanes: v4 display helpers", () => {
     expect(matchesGlobalSearch("cse", "CSE241", "Digital Design", "Quiz 1")).toBe(true);
     expect(matchesGlobalSearch("quiz", "CSE241", "Digital Design", "Quiz 1")).toBe(true);
     expect(matchesGlobalSearch("moodle", "CSE241", "Digital Design", "Quiz 1")).toBe(false);
+  });
+});
+
+describe("calendarLanes: honest labels (sweep fixes)", () => {
+  it("roomLabel prints the Room prefix once, or an honest em-dash", () => {
+    expect(roomLabel("N4-102")).toBe("Room N4-102");
+    expect(roomLabel("Room 301")).toBe("Room 301");
+    expect(roomLabel(null)).toBe("—");
+    expect(roomLabel(undefined)).toBe("—");
+    expect(roomLabel("")).toBe("—");
+  });
+
+  it("stripCoursePrefix removes the course code the announcement embedded", () => {
+    expect(stripCoursePrefix("CSE263: In-Class Assignment 1", "CSE263")).toBe(
+      "In-Class Assignment 1",
+    );
+    expect(stripCoursePrefix("Quiz 1: CSE263", "CSE263")).toBe("Quiz 1: CSE263");
+    expect(stripCoursePrefix("CSE263 - Portfolio", "CSE263")).toBe("Portfolio");
+    expect(stripCoursePrefix("Untouched title", "CSE263")).toBe("Untouched title");
+    expect(stripCoursePrefix("CSE263: In-Class Assignment 1", null)).toBe(
+      "CSE263: In-Class Assignment 1",
+    );
+    expect(stripCoursePrefix("", "CSE263")).toBe("");
   });
 });

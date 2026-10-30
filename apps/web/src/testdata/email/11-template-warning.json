@@ -1,0 +1,41 @@
+{
+  "ref_date": "2026-10-17",
+  "emails": [
+    {
+      "id": "ann-11",
+      "subject": "Reminder: print the quiz template for the CSE346 in-class assignment",
+      "from": "Course Coord <coord@univ.edu>",
+      "date": "Thu, 15 Oct 2026 14:00:00 +0000",
+      "snippet": null,
+      "body": "Dear students,\n\nThe CSE346 in-class assignment on 23 October 2026 requires the official quiz template; bring the printed quiz template with you.\n\nCourse Coord"
+    }
+  ],
+  "expected": {
+    "stats": { "scanned": 1, "candidates": 1, "parsed": 1, "skipped_duplicates": 0 },
+    "items": [
+      {
+        "id": "ann-11",
+        "course": "CSE346",
+        "course_name": "Computer Networks",
+        "title": "Reminder: print the quiz template for the CSE346 in-class assignment",
+        "type": "Assignment",
+        "date": "2026-10-23",
+        "day_name": "Friday",
+        "start_time": null,
+        "end_time": null,
+        "room": null,
+        "group": null,
+        "instructor": "Course Coord",
+        "days_until": 6,
+        "upcoming": true,
+        "urgency": "medium",
+        "url": null,
+        "warning_count": 1,
+        "topics_count": 1,
+        "hours": 2.5,
+        "note_startswith": "Parsed from announcement: explicit date found. The course's weekly slots do not run on that weekday",
+        "plan_contains": "Don't forget to print your required template before class."
+      }
+    ]
+  }
+}

@@ -14,6 +14,10 @@ apps/web/src/generated/
 apps/web/public/sw.js
 apps/web/public/wasm/
 
+# Generated contract fixture — `apps/web/src/contract/regenerate.mjs` owns its
+# exact bytes (the `--check` freshness gate compares them); prettier would fight it.
+apps/web/src/testdata/
+
 # The version generator owns this file's formatting (`generate-version.mjs`
 # rewrites it whole); prettier's array layout would fight the sink check.
 apps/desktop/src-tauri/tauri.conf.json

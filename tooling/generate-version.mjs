@@ -19,7 +19,16 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+
+// `--root <dir>` repoints every sink lookup at another tree. The version
+// pipeline test uses it to exercise the generator against a throwaway copy of
+// the sinks instead of rewriting tracked files in the working tree.
+const rootArgIndex = process.argv.indexOf("--root");
+const repoRoot =
+  rootArgIndex !== -1 && process.argv[rootArgIndex + 1]
+    ? path.resolve(process.cwd(), process.argv[rootArgIndex + 1])
+    : path.resolve(scriptDir, "..");
 
 const versionRaw = JSON.parse(
   readFileSync(path.join(repoRoot, "tooling/version.json"), "utf8"),
@@ -98,27 +107,58 @@ const sinkPaths = [
 
 const check = process.argv.includes("--check");
 
+// A sink that cannot be read or parsed is a *broken* sink, not a crash of the
+// whole generator: one corrupt file must not hide the state of the other four.
+// Each failure is reported by name so `--check` stays actionable.
 const results = sinks.map((sink, i) => {
   const file = path.join(repoRoot, sinkPaths[i]);
-  const expected = sink.read();
-  const current = readFileSync(file, "utf8");
-  return { name: sink.name, file, expected, current, stale: expected !== current };
+  try {
+    const expected = sink.read();
+    const current = readFileSync(file, "utf8");
+    return {
+      name: sink.name,
+      file,
+      expected,
+      current,
+      stale: expected !== current,
+      error: null,
+    };
+  } catch (err) {
+    return {
+      name: sink.name,
+      file,
+      expected: null,
+      current: null,
+      stale: true,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 });
 
 const stale = results.filter((r) => r.stale);
+const broken = results.filter((r) => r.error !== null);
 
 if (check) {
   if (stale.length > 0) {
     console.error(
       "Version sinks stale (run `node tooling/generate-version.mjs --apply`, then re-check):",
     );
-    for (const s of stale) console.error(`  - ${s.name} (${s.file})`);
+    for (const s of stale) {
+      console.error(`  - ${s.name} (${s.file})`);
+      if (s.error) console.error(`      unreadable sink: ${s.error}`);
+    }
     process.exit(1);
   }
   console.log(
     `version ${version} (versionCode ${versionCode}) — all ${results.length} sinks in sync.`,
   );
   process.exit(0);
+}
+
+if (broken.length > 0) {
+  console.error("Refusing to stamp: these sinks could not be read or parsed:");
+  for (const s of broken) console.error(`  - ${s.name} (${s.file}): ${s.error}`);
+  process.exit(1);
 }
 
 for (const r of results) writeFileSync(r.file, r.expected);

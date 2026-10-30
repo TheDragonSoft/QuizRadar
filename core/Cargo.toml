@@ -41,6 +41,10 @@ tokio = { version = "1", default-features = false, features = ["rt", "macros"] }
 getrandom = { version = "0.2", features = ["js"] }
 
 [dev-dependencies]
+# Property-based tests for the hand-written scanners (`core/tests/property_parse.rs`).
+# `handle-panics` turns a parser panic into a shrunk, reported property failure
+# instead of aborting the whole test binary.
+proptest = { version = "1.12.0", features = ["handle-panics"] }
 tokio = { version = "1", default-features = false, features = [
     "rt-multi-thread",
     "macros",

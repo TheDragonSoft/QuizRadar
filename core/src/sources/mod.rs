@@ -24,7 +24,9 @@ pub mod test_support;
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::PoisonError;
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
 
 use crate::auth::providers::ProviderCapability;
@@ -87,6 +89,7 @@ pub(crate) fn net_err(prefix: &str, error: reqwest::Error) -> String {
 /// with one narrow exception — loopback http (`127.0.0.1`/`localhost`), where
 /// traffic never leaves the device (recorded-fixture tests and local tooling
 /// rely on this; the store's persistence gate stays https-only, unconditionally).
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn enforce_https(url: &str, insecure_message: &str) -> Result<(), String> {
     let trimmed = url.trim();
     let lowered = trimmed.to_ascii_lowercase();
@@ -158,11 +161,13 @@ pub struct SourceProgress {
 /// Bound callback handed to each source runner. Public because the fetcher
 /// signatures expose it; shells normally go through [`sync::run_sync`],
 /// which wires this automatically.
+#[cfg(not(target_arch = "wasm32"))]
 pub struct Progress<'a> {
     name: &'a str,
     callback: &'a (dyn Fn(SourceProgress) + Send + Sync),
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<'a> Progress<'a> {
     #[must_use]
     pub fn new(name: &'a str, callback: &'a (dyn Fn(SourceProgress) + Send + Sync)) -> Self {
@@ -309,6 +314,7 @@ pub fn merge_preserving_user_fields(
 }
 
 /// Recovers a poisoned mutex honestly (same doctrine as the store facade).
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn recover<T>(poisoned: PoisonError<T>) -> T {
     poisoned.into_inner()
 }

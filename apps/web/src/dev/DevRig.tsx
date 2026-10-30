@@ -3,7 +3,7 @@ import { ArrowLeft, Radio } from "lucide-react";
 import { COURSE_PALETTE_PRESETS, coursePalette } from "../lib/coursePalette";
 import { copy } from "../copy";
 import { MiniCalendar } from "../components/MiniCalendar";
-import { useAppStore } from "../state/store";
+import { useAppStore, getWeekStart } from "../state/store";
 
 export const DevRig: React.FC<{ onExit: () => void }> = ({ onExit }) => {
   const addToast = useAppStore((s) => s.addToast);
@@ -96,6 +96,7 @@ export const DevRig: React.FC<{ onExit: () => void }> = ({ onExit }) => {
           </h2>
           <div className="mt-4 max-w-xs">
             <MiniCalendar
+              weekStart={getWeekStart(selectedDate)}
               selectedDate={selectedDate}
               onSelectDate={setSelectedDate}
               assessmentDates={["2026-10-23", "2026-10-27", "2026-11-03"]}

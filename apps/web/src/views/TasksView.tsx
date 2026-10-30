@@ -202,7 +202,9 @@ const ReadinessCard: React.FC<{ card: ExamReadinessCard; onClick: () => void }> 
       </div>
 
       <div>
-        <h3 className="text-xs font-bold text-[var(--text)] line-clamp-1">{card.title}</h3>
+        <h3 className="text-xs font-bold text-[var(--text)] line-clamp-1 whitespace-pre-line">
+          {card.title}
+        </h3>
         <p className="text-[11px] text-[var(--text-muted)] mt-0.5 line-clamp-1">
           {card.recommendedFocus}
         </p>
@@ -263,7 +265,7 @@ const RoadmapTaskRow: React.FC<{
               {task.topicTitle}
             </span>
           </div>
-          <p className="text-[11px] text-[var(--text-muted)] mt-0.5 truncate">
+          <p className="text-[11px] text-[var(--text-muted)] mt-0.5 truncate whitespace-pre-line">
             {task.title} • {task.reasoning}
           </p>
         </div>

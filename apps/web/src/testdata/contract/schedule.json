@@ -1,0 +1,51 @@
+{
+  "semester": "Fall 2026",
+  "courses": [
+    {
+      "id": "CSE241",
+      "name": "Digital Design",
+      "color": "#1a73e8",
+      "bg": "#1a73e81a",
+      "border": "#1a73e833"
+    },
+    {
+      "id": "GSE211",
+      "name": "Discrete Mathematics",
+      "color": "#a142f4",
+      "bg": null,
+      "border": null
+    }
+  ],
+  "slots": [
+    {
+      "id": "slot-1",
+      "day": "Friday",
+      "day_index": 5,
+      "course_id": "CSE241",
+      "course_name": "Digital Design",
+      "type": "Lecture",
+      "group": "Sec 1",
+      "room": "Room 301",
+      "start_time": "09:00",
+      "end_time": "10:30",
+      "display_time": "09:00–10:30",
+      "has_quiz": true,
+      "quiz_title": "Midterm Exam"
+    },
+    {
+      "id": "slot-2",
+      "day": "Sunday",
+      "day_index": 0,
+      "course_id": "GSE211",
+      "course_name": "Discrete Mathematics",
+      "type": "Tutorial",
+      "group": null,
+      "room": null,
+      "start_time": "14:00",
+      "end_time": "14:45",
+      "display_time": "14:00–14:45",
+      "has_quiz": false,
+      "quiz_title": null
+    }
+  ]
+}

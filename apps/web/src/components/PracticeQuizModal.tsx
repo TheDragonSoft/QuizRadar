@@ -92,12 +92,7 @@ export function PracticeQuizModal({
     (!quiz?.generatedByAi && !quiz?.generated_by_ai);
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="practice-quiz-title"
-      className="relative w-full max-w-2xl rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-2xl transition-all max-h-[90vh] overflow-y-auto"
-    >
+    <div className="relative w-full max-w-2xl rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-2xl transition-all max-h-[90vh] overflow-y-auto">
       {/* Header */}
       <div className="flex items-start justify-between border-b border-[var(--border)] pb-4">
         <div>

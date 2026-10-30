@@ -1,0 +1,40 @@
+{
+  "ref_date": "2026-10-17",
+  "emails": [
+    {
+      "id": "ann-06",
+      "subject": "CSE241 tutorial quiz on 20 October 2026",
+      "from": "TA Office <ta@univ.edu>",
+      "date": "Fri, 16 Oct 2026 10:00:00 +0000",
+      "snippet": null,
+      "body": "Dear students,\n\nThe CSE241 tutorial quiz will be held on Tuesday, 20 October 2026, during the tutorial hour.\n\nTA Office"
+    }
+  ],
+  "expected": {
+    "stats": { "scanned": 1, "candidates": 1, "parsed": 1, "skipped_duplicates": 0 },
+    "items": [
+      {
+        "id": "ann-06",
+        "course": "CSE241",
+        "course_name": "Object-Oriented Programming",
+        "title": "CSE241 tutorial quiz on 20 October 2026",
+        "type": "Class Quiz",
+        "date": "2026-10-20",
+        "day_name": "Tuesday",
+        "start_time": "11:00",
+        "end_time": "12:00",
+        "room": null,
+        "group": "Sec 1",
+        "instructor": "TA Office",
+        "days_until": 3,
+        "upcoming": true,
+        "urgency": "high",
+        "url": null,
+        "warning_count": 0,
+        "topics_count": 1,
+        "hours": 2.5,
+        "note_startswith": "Parsed from announcement: explicit date found and aligned with your CSE241 Tutorial slot"
+      }
+    ]
+  }
+}

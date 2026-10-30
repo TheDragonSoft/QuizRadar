@@ -261,3 +261,40 @@ describe("store → desktop round trip", () => {
     }
   });
 });
+
+// Sweep regression (2026-10-29): the desktop shell returns customEvents as
+// the core's snake_case structs nested inside the camelCase DesktopConfig.
+// Without normalization here, CalendarView's `ev.dateIso === dateIso` reads
+// undefined and no custom event or auto study block ever renders.
+describe("normalizeStatePayload: config.customEvents", () => {
+  it("aliases the core's snake_case event keys inside the camelCase config", () => {
+    const payload = {
+      ...initialFullState,
+      config: {
+        ...initialFullState.config,
+        customEvents: [
+          {
+            id: "custom-1",
+            title: "QA Session",
+            course_id: "GSE211",
+            event_type: "Study Session",
+            date_iso: "2026-10-29",
+            start_time: "10:00",
+            end_time: "11:30",
+            room: null,
+            notes: null,
+            color: null,
+          },
+        ],
+      },
+    } as unknown as GetStatePayload;
+
+    const state = normalizeStatePayload(payload);
+    const event = state.config.customEvents[0];
+    expect(event.dateIso).toBe("2026-10-29");
+    expect(event.startTime).toBe("10:00");
+    expect(event.endTime).toBe("11:30");
+    expect(event.eventType).toBe("Study Session");
+    expect(event.courseId).toBe("GSE211");
+  });
+});

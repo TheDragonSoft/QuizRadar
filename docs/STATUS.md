@@ -20,6 +20,7 @@ _Agents update this file after every phase. Prompts are defined in `prompts/READ
 - [x] 14 android: native edge (PKCE custom-scheme OAuth, Glance widget, share ingest, notifications) (`prompts/p14-android-native.md`) — shipped: Full native Android capability parity replacing v4's `LocalOAuthServer`/FGS with standard RFC 8252 custom-scheme PKCE OAuth (`com.quizradar.app://oauth/google` and `com.quizradar.app://oauth/microsoft`) via Chrome Custom Tabs and core token exchange (refresh tokens in `EncryptedSharedPreferences`, access tokens in memory, zero loopback servers, zero FGS `specialUse`). Jetpack Glance 2x1 countdown widget (`QuizRadarWidget` + `QuizRadarWidgetReceiver`) displaying course color, title, date, and dynamic urgency badges ("TODAY", "TOMORROW", "IN X DAYS"), updated immediately on state changes and every 30 minutes via `WidgetUpdateWorker`. Share-sheet ingest (`ACTION_SEND` text/plain) with Gmail `subject\n\ntext` split (`ShareIngestParser`) routing directly into M3 `CreateEventSheet` and saving to core store. First-party notifications (`ExamReminderWorker` + `NotificationHelper`) managing high-importance `quizradar_exam_reminders` (T-24h and same-day alerts) and `quizradar_morning_digest` with deterministic FNV-1a IDs and ≤48 nearest policy. Predictive back handling across sheets and dashboard tabs. 40 Android unit and Robolectric tests green; ktlint and assembleDebug clean.
 - [x] 15 release pipeline (signed tauri updater, release APK/AAB, PWA deploy, notes) (`prompts/p15-release-ci.md`) — shipped: Monolithic version truth enforced via `tooling/version.json` with `generate-version.mjs --apply` stamping 5 sinks (`apps/web/package.json`, `apps/desktop/src-tauri/tauri.conf.json`, `Cargo.toml`, `apps/mobile-android/app/build.gradle.kts`, `apps/web/src/generated/version.ts`) and verified by `core/build.rs` compile-time passthrough assertion. Release CI pipeline `.github/workflows/release.yml` with least-privilege permissions, multi-platform desktop matrix (Windows NSIS + portable zip, macOS DMG, Linux deb/AppImage), signed Tauri 2 updater artifacts (`latest.json` generator via `tooling/generate-updater-manifest.mjs`), honest updater error handling ("Update check unavailable — github link down" on network/404 errors), Android release signing with real keystore via Gradle `signingConfigs` and `apksigner` verification, PWA deployment to GitHub Pages with relative assets and dynamic service worker URL, and automated markdown release notes from git history via `tooling/generate-changelog.mjs`. 4 version pipeline tests, 3 updater command tests, and Android release signing verified.
 - [x] 16 migration UX + docs honesty pass + v1.0 cut (`prompts/p16-polish-migration.md`) — shipped: First-run "Coming from v4?" migration card on all shells (OnboardingWizardModal on Desktop/Web/PWA with native file picker, DashboardScreen on Android with ActivityResultContracts.GetContent() picker) reading v4 backup JSON, restoring courses/assessments/grades/topics, dropping legacy secrets, and reporting honest counts via `importBackupFile`/`QuizRadarViewModel.importBackup`; comprehensive docs honesty pass with root `README.md` rewritten against v5 reality, `docs/architecture-v5.md` public brief, `LICENSE` (MIT), `CONTRIBUTING.md`, `SECURITY.md`, and `PRIVACY.md` (zero-server data locality + verbatim BYOK Gemini consent copy); dogfood matrix executed across Journeys A, B, and C with pass status recorded; anti-checklist audit confirming 0% occurrence of v4 antipatterns (`Hall B-204`, demo palettes, `auto_sync_gcal: true`, `teams_token` in Drive payload, classroom 403 apology path, 4.5k body truncation, `LocalOAuthServer.java`, `specialUse` FGS); version 5.0.0 stamped across all 5 sinks and CHANGELOG.md generated. Full test suites green across Rust, Web, and Android.
+- [x] 18 post-ship audit completion: full testing stack + v4 dashboard port + live UI sweep (`docs/TESTING-PLAYBOOK.md` is the reusable protocol) — shipped: Rust↔TS contract tests (`apps/web/src/contract/` — `regenerate.mjs` derives the wire map from the Rust sources, `contractGuard.ts` validates payloads, 41-test suite with freshness gate + 13 drift mutations), proptest property suites for email/ICS/planner (`core/tests/property_email.rs`, `property_ics.rs`, `property_plan.rs`), axe-core accessibility audits (`apps/web/src/audit/axe.test.tsx`), v4-antipattern source scan + copy-conformance tests, Playwright visual regression with committed baselines (`apps/web/e2e/`, `apps/web/e2e-baselines/`, clock frozen at 2026-10-29T12:00:00Z + UTC, light & dark projects), dev-only store handle `window.__QUIZRADAR_STORE__`, the v4 dashboard ported exactly from `v4-final:static/app.js` + the user's v4 screenshots (`DashboardView` rewrite, baselines regenerated), and a full live sweep of the running desktop app (every button/toggle/input exercised via CDP; 8 real defects fixed, each with a regression test and before/after screenshots). See "Post-ship audit fixes #8".
 
 ## Feature-parity checklist status
 
@@ -441,6 +442,55 @@ _A live pass over the rebuilt desktop build: the scan overlay was frozen on a st
 - "Last synced" records the last scan in which a source **ran** — a scan that found nothing new still stamps the time, because a fetch did happen. A scan where every source was skipped or failed writes nothing.
 - The desktop's "AI calls today" counts the calls made **by this device**; Google meters the project, so a key used from several machines shows a lower number here than in AI Studio.
 
+## Post-ship audit fixes #8 (phase 18: testing stack + v4 dashboard port + live UI sweep)
+
+_Protocol written up as a reusable playbook in `docs/TESTING-PLAYBOOK.md` (6 layers: static gates → unit/fixtures → proptest → contract → Playwright visual regression → agent-driven live sweep). Every claim below is backed by a green gate run or a screenshot of the running desktop app._
+
+### The six testing improvements (all landed, not just the first two)
+
+1. **Real green signal everywhere** — root `pnpm test` now runs the full web suite; `cargo test --workspace` is a merge gate; CI extended (see `.github/workflows/ci.yml`).
+2. **Playwright visual regression with committed baselines** — `apps/web/playwright.config.ts` (chromium, 1440×900, `workers: 1`, clock frozen via `page.clock`, `timezoneId: "UTC"`, `NODE_OPTIONS=--dns-result-order=ipv4first` so vite binds the IPv4 loopback the health check uses), specs in `apps/web/e2e/`, baselines committed in `apps/web/e2e-baselines/` (dashboard/week-calendar/settings × light+dark). Re-stamp: `pnpm --dir apps/web exec playwright test --update-snapshots=all`. Baselines capture the genuine empty first-run UI — no injected fixtures (honesty doctrine).
+3. **Rust↔TS contract test** — `apps/web/src/contract/`: `rustStructs.mjs` parses `core/src/**` (structs, enums, serde renames, FFI exports) into `testdata/contract/rust-structs.json`; `regenerate.mjs --check` is a freshness gate; `contractGuard.ts` validates any payload like serde would; `contract.test.ts` (41 tests) asserts fixtures deserialize, 13 drift mutations are rejected with error codes, the TS mirror declares every Rust field, optionality/enum parity, and that the `ipcShape.ts` adapter fills the names the views actually read.
+4. **Proptest property tests** — `core/tests/property_email.rs`, `property_ics.rs`, `property_plan.rs` (12 planner properties P1–P6 + controls: never panics, no fabrication, date/time sanity, radar never shows the past, readiness 0..=100 with 0/0→100, roadmap ≤14-day horizon & ≤5 prep days, honest 4h/26h conflict gaps, 90-min free study blocks).
+5. **Agent-driven exploratory sweep** — the running desktop build (`cargo tauri build --debug --no-bundle` + `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333`) driven over CDP: coverage matrix of every button/toggle/input across top bar, sidebar, dashboard, tasks, calendar, all 13 modals, keyboard (`/`, Ctrl+K, Escape), both themes; console captured; dead controls re-verified via DOM clicks before being called dead.
+6. **Cheap additions** — copy-conformance test (`src/copy/conformance.test.ts`, every `copy.ts` function must have a sample call), v4-antipattern source audit (`src/audit/antipatterns.test.ts` fails on `MATH101`/`Hall B-204`/`auto_sync_gcal: true`/`?demo=` reappearing), axe-core audits (`src/audit/axe.test.tsx`, 3 surfaces, `region` rule disabled with documented reason), sync-progress event-name contract test.
+
+### v4 UI port (dashboard)
+
+- `apps/web/src/views/DashboardView.tsx` rewritten to match `v4-final:static/app.js` + the user's v4 screenshots exactly: hero "No Upcoming Quizzes Scheduled" + Sync Radar empty state, scoped "Add your first course…" CTA, KPI pills, readiness bar, recommendation cards, timeline rows; the old web-only short-circuit in `views.tsx` removed.
+- Calendar v4 parity (room honesty, chip de-duplication, slot popover) in `CalendarView.tsx` + `lib/calendarLanes.ts` (`roomLabel`, `stripCoursePrefix`).
+- Baselines regenerated; the new empty-state dashboard is the committed baseline.
+
+### Live-sweep defects found and fixed (each with regression test + before/after screenshot)
+
+- **A — undated rows rendered "In 0d"** → semester/"—" (`DashboardView.tsx`; e2e asserts 0 "In 0d").
+- **C — custom events & study blocks invisible on the desktop calendar** → `config.customEvents` entries are core snake_case and are now aliasDeep'd in `ipcShape.ts::normalizeStatePayload` (this was the "empty calendar" class of bug); verified live: QA event + 3 study blocks render.
+- **D — clicking a class slot did nothing** → slot popover `role=dialog` in `CalendarView.tsx`; verified in a seeded browser.
+- **E — chip duplicated the course prefix** ("CSE263: CSE263:") → `stripCoursePrefix`.
+- **F — missing room rendered "Room —"** → `roomLabel()` renders "Room X" or "—", never "Room —".
+- **G — run-on titles from HTML emails** → `strip_html_tags` emits a newline on *opening* block tags too (`core/src/parse/email.rs`) + `whitespace-pre-line` in TasksView/AssessmentDetailModal; fixtures still green.
+- **H — Ctrl+K palette opened without focus in the input** → `ModalStack` only steals focus when focus is outside the container.
+- **X — scanned links rendered without scheme validation** → `safeExternalUrl` guards (`src/lib/safeUrl.ts`) on the e-learning/GCal links in `AssessmentDetailModal.tsx`.
+- Shape-adapter fixes in `ipcShape.ts` (alias twins `assessment_id_a/b`, `course_a/b`, `gap_hours`, `is_mitigated`; fills `topicTitle`/`title`/`reasoning` on tasks, `topic_index` on recommendations; `toJsAssessment` urgency casing) with regression tests in `ipcShape.test.ts`.
+
+### Data-integrity note (resolved, not a bug)
+
+- Mid-sweep the timetable appeared wiped; WAL forensics showed `delete_course` at 2026-10-29T18:55:08Z (`schedule_updated_at`). The user confirmed they removed the GSE211 course themselves for testing — **left deleted, not restored**. The QA sweep event was removed via `delete_custom_event`; all user study-block events untouched.
+
+### Verification (all gates green at commit time)
+
+- `cargo fmt --all --check` · `cargo clippy --workspace --all-targets -- -D warnings` · `cargo test --workspace` — 15 suites, 0 failed (241 core lib + property_email + 14 ICS + 12 plan + desktop 23+8 + fixtures…).
+- `pnpm lint` · `pnpm typecheck` · `pnpm format:check` · `pnpm test` — **200/200** across 24 files (incl. 41 contract, axe, antipattern, copy-conformance).
+- `pnpm --dir apps/web exec playwright test` — 5 passed / 1 skipped vs committed baselines.
+- `node tooling/generate-version.mjs --check` — all 5 sinks in sync.
+- Impeccable detector (`detect --json`) over the 10 changed UI targets — zero findings.
+
+### Honest limitations / risks
+
+- Playwright baselines must be re-stamped after any `@fontsource-variable/inter` upgrade (bundled font glyph changes rasterize differently); every spec waits for `document.fonts.status === "loaded"`.
+- The sweep is LLM-paced; two "dead button" findings during the pass were harness artifacts (OS-level clicks during modal transitions) and were disproven via CDP DOM clicks — the protocol re-verifies before calling anything dead.
+- `window.__QUIZRADAR_STORE__` exists in **dev builds only** (`import.meta.env.DEV` guard in `main.tsx`); the production bundle never exposes it.
+
 ## Compile-time TODO list (honest, no NotImplemented stubs)
 
 - `tauri.conf.json` → `app.security.csp: null` for now; exact CSP locked in phase 07/08 once the dev-server/font/img sources are known.
@@ -536,6 +586,19 @@ node tooling/generate-updater-manifest.mjs --artifacts-dir dist --tag v5.0.0-alp
 .\gradlew.bat assembleRelease bundleRelease     # from apps\mobile-android
 $env:ANDROID_HOME\build-tools\35.0.0\apksigner.bat verify --verbose apps\mobile-android\app\build\outputs\apk\release\app-release.apk
 ```
+
+### Phase-18 testing stack (full protocol in `docs/TESTING-PLAYBOOK.md`)
+
+```powershell
+node apps/web/src/contract/regenerate.mjs          # re-stamp rust-structs.json after core struct changes
+node apps/web/src/contract/regenerate.mjs --check  # CI freshness gate (fails if Rust moved without re-stamp)
+cargo test -p quizradar-core --test property_email --test property_ics --test property_plan   # proptest suites
+pnpm test                                          # vitest: 200 tests / 24 files (contract, axe, antipattern, copy, unit)
+pnpm --dir apps/web exec playwright test           # visual regression vs committed e2e-baselines (light+dark)
+pnpm --dir apps/web exec playwright test --update-snapshots=all   # re-stamp baselines (intentional UI change or font upgrade)
+```
+
+Live sweep of the running desktop app: `cargo tauri build --debug --no-bundle` (kill `quizradar-desktop.exe` first so the bin can relink), launch with `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333`, drive over CDP (`chromium.connectOverCDP("http://127.0.0.1:9333")`, DOM-level clicks + console capture + `window.__TAURI_INTERNALS__.invoke(...)`). If a rebuilt app seems to serve stale JS, clear only `%LOCALAPPDATA%\com.quizradar.app\EBWebView\Default\{Cache,Code Cache,Service Worker,GPUCache}` — never `quizradar.db`, IndexedDB or Local Storage.
 
 ## Release-runbook
 
@@ -680,3 +743,4 @@ When cutting a new release:
 - Phase 13 added to `apps/mobile-android`: `androidx.compose.ui:ui-test-junit4:1.7.6` and `androidx.compose.ui:ui-test-manifest:1.7.6` (dev/test dependencies for Robolectric Compose UI testing).
 - Phase 14 added to `apps/mobile-android`: `androidx.browser:browser:1.8.0` (Chrome Custom Tabs for PKCE OAuth), `androidx.glance:glance-appwidget:1.1.1` and `androidx.glance:glance-material3:1.1.1` (Glance 2x1 home-screen countdown widget), `androidx.work:work-runtime-ktx:2.10.0` (WorkManager periodic widget updates and exam reminder notifications); test dependency: `androidx.work:work-testing:2.10.0`.
 - Post-ship audit added to `apps/desktop/src-tauri`: dev-dependency `wiremock = "0.6"` — the same version the core crate already uses, so no new package enters the lockfile. It backs the recorded-HTTP fixture server the sync-stamp and cancel integration tests need (a local server that answers like Gmail's API). Test-only; it never reaches a shipped binary.
+- Phase 18 added **dev-dependencies only** (nothing reaches a shipped binary or the web bundle): `apps/web`: `@playwright/test` 1.64 (committed visual-regression baselines), `axe-core` + `jest-axe` + `@types/jest-axe` (accessibility audits); `core`: `proptest` 1.12 (property tests for the parsers and planner).

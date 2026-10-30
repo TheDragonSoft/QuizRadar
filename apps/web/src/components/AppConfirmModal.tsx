@@ -41,12 +41,7 @@ export function AppConfirmModal({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="confirm-modal-title"
-      className="relative w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-2xl transition-all"
-    >
+    <div className="relative w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-2xl transition-all">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           {destructive ? (

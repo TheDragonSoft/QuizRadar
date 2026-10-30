@@ -1,0 +1,1896 @@
+{
+  "generatedBy": "apps/web/src/contract/regenerate.mjs",
+  "note": "Machine-derived from the Rust sources. Do not edit by hand.",
+  "sourceFiles": [
+    "apps/desktop/src-tauri/src/commands/state.rs",
+    "core/src/ffi.rs",
+    "core/src/plan/conflicts.rs",
+    "core/src/plan/dashboard.rs",
+    "core/src/plan/tasks.rs",
+    "core/src/store/repo.rs",
+    "core/src/types.rs"
+  ],
+  "sourceHashes": {
+    "core/src/types.rs": "e94f9ac02bf0fb487988b6431348e603c98bd44daa531574b376cd0d3f9a9bb0",
+    "core/src/plan/dashboard.rs": "cfec0f4bd9d0076d6095a703dc00be8d6faf2bb2bebd38bd545fd43edc9d3c35",
+    "core/src/plan/tasks.rs": "5edc8554529d80673eca3cc063f6162e724ceeb2a2c7df1d4d32b642a744b564",
+    "core/src/plan/conflicts.rs": "a953cf743da6a8fc45b43bc6c2dfd716c6842a65a2d4311b08c56a19e8729e74",
+    "apps/desktop/src-tauri/src/commands/state.rs": "28afc09b409b22e931d0f6a17218faf464e4719c7e966cbf645d3223477f7d66",
+    "core/src/store/repo.rs": "799805ef84ad756d7e7953efd98a779687363dce5af861be12787fddd0f8354a",
+    "core/src/ffi.rs": "3e4d5bf0f8c17103dd41a68851ba228980d268664b3dd99efc0768e5d7604e90"
+  },
+  "structs": {
+    "CachedEmail": {
+      "source": "core/src/types.rs",
+      "fields": [
+        {
+          "rustName": "id",
+          "wireName": "id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "subject",
+          "wireName": "subject",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "from",
+          "wireName": "from",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "date",
+          "wireName": "date",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "snippet",
+          "wireName": "snippet",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "body",
+          "wireName": "body",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "body_truncated",
+          "wireName": "body_truncated",
+          "rustType": "bool",
+          "optional": false
+        }
+      ]
+    },
+    "Course": {
+      "source": "core/src/types.rs",
+      "fields": [
+        {
+          "rustName": "id",
+          "wireName": "id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "name",
+          "wireName": "name",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "color",
+          "wireName": "color",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "bg",
+          "wireName": "bg",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "border",
+          "wireName": "border",
+          "rustType": "Option<String>",
+          "optional": true
+        }
+      ]
+    },
+    "ScheduleSlot": {
+      "source": "core/src/types.rs",
+      "fields": [
+        {
+          "rustName": "id",
+          "wireName": "id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "day",
+          "wireName": "day",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "day_index",
+          "wireName": "day_index",
+          "rustType": "u8",
+          "optional": false
+        },
+        {
+          "rustName": "course_id",
+          "wireName": "course_id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "course_name",
+          "wireName": "course_name",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "slot_type",
+          "wireName": "type",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "group",
+          "wireName": "group",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "room",
+          "wireName": "room",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "start_time",
+          "wireName": "start_time",
+          "rustType": "NaiveTime",
+          "optional": false
+        },
+        {
+          "rustName": "end_time",
+          "wireName": "end_time",
+          "rustType": "NaiveTime",
+          "optional": false
+        },
+        {
+          "rustName": "display_time",
+          "wireName": "display_time",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "has_quiz",
+          "wireName": "has_quiz",
+          "rustType": "bool",
+          "optional": false
+        },
+        {
+          "rustName": "quiz_title",
+          "wireName": "quiz_title",
+          "rustType": "Option<String>",
+          "optional": true
+        }
+      ]
+    },
+    "ScheduleData": {
+      "source": "core/src/types.rs",
+      "fields": [
+        {
+          "rustName": "semester",
+          "wireName": "semester",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "courses",
+          "wireName": "courses",
+          "rustType": "Vec<Course>",
+          "optional": false
+        },
+        {
+          "rustName": "slots",
+          "wireName": "slots",
+          "rustType": "Vec<ScheduleSlot>",
+          "optional": false
+        }
+      ]
+    },
+    "Assessment": {
+      "source": "core/src/types.rs",
+      "fields": [
+        {
+          "rustName": "id",
+          "wireName": "id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "course_id",
+          "wireName": "course_id",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "course_name",
+          "wireName": "course_name",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "title",
+          "wireName": "title",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "assessment_type",
+          "wireName": "assessment_type",
+          "rustType": "AssessmentType",
+          "optional": false
+        },
+        {
+          "rustName": "date",
+          "wireName": "date_iso",
+          "rustType": "Option<NaiveDate>",
+          "optional": true
+        },
+        {
+          "rustName": "day_name",
+          "wireName": "day_name",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "start_time",
+          "wireName": "start_time",
+          "rustType": "Option<NaiveTime>",
+          "optional": true
+        },
+        {
+          "rustName": "end_time",
+          "wireName": "end_time",
+          "rustType": "Option<NaiveTime>",
+          "optional": true
+        },
+        {
+          "rustName": "display_time",
+          "wireName": "display_time",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "room",
+          "wireName": "room",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "group",
+          "wireName": "group",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "instructor",
+          "wireName": "instructor",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "is_upcoming",
+          "wireName": "is_upcoming",
+          "rustType": "bool",
+          "optional": false
+        },
+        {
+          "rustName": "days_until",
+          "wireName": "days_until",
+          "rustType": "Option<i32>",
+          "optional": true
+        },
+        {
+          "rustName": "urgency_level",
+          "wireName": "urgency_level",
+          "rustType": "UrgencyLevel",
+          "optional": false
+        },
+        {
+          "rustName": "priority_score",
+          "wireName": "priority_score",
+          "rustType": "u8",
+          "optional": false
+        },
+        {
+          "rustName": "topics",
+          "wireName": "topics",
+          "rustType": "Vec<String>",
+          "optional": false
+        },
+        {
+          "rustName": "warnings",
+          "wireName": "warnings",
+          "rustType": "Vec<String>",
+          "optional": false
+        },
+        {
+          "rustName": "ai_inference_note",
+          "wireName": "ai_inference_note",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "ai_study_plan",
+          "wireName": "ai_study_plan",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "estimated_study_hours",
+          "wireName": "estimated_study_hours",
+          "rustType": "Option<f32>",
+          "optional": true
+        },
+        {
+          "rustName": "elearning_url",
+          "wireName": "elearning_url",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "google_cal_url",
+          "wireName": "google_cal_url",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "gcal_synced",
+          "wireName": "gcal_synced",
+          "rustType": "bool",
+          "optional": false
+        },
+        {
+          "rustName": "gcal_event_id",
+          "wireName": "gcal_event_id",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "color",
+          "wireName": "color",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "bg",
+          "wireName": "bg",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "border",
+          "wireName": "border",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "semester",
+          "wireName": "semester",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "email_subject",
+          "wireName": "email_subject",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "email_sent_date",
+          "wireName": "email_sent_date",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "source",
+          "wireName": "source",
+          "rustType": "AssessmentSource",
+          "optional": false
+        },
+        {
+          "rustName": "source_icon",
+          "wireName": "source_icon",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "weightage_percent",
+          "wireName": "weightage_percent",
+          "rustType": "Option<f64>",
+          "optional": true
+        },
+        {
+          "rustName": "achieved_score",
+          "wireName": "achieved_score",
+          "rustType": "Option<f64>",
+          "optional": true
+        },
+        {
+          "rustName": "max_score",
+          "wireName": "max_score",
+          "rustType": "Option<f64>",
+          "optional": true
+        },
+        {
+          "rustName": "conflict_warning",
+          "wireName": "conflict_warning",
+          "rustType": "Option<String>",
+          "optional": true
+        }
+      ]
+    },
+    "GradeRecord": {
+      "source": "core/src/types.rs",
+      "fields": [
+        {
+          "rustName": "achieved_score",
+          "wireName": "achieved_score",
+          "rustType": "Option<f64>",
+          "optional": true
+        },
+        {
+          "rustName": "max_score",
+          "wireName": "max_score",
+          "rustType": "Option<f64>",
+          "optional": true
+        },
+        {
+          "rustName": "weightage_percent",
+          "wireName": "weightage_percent",
+          "rustType": "Option<f64>",
+          "optional": true
+        }
+      ]
+    },
+    "FeedConfig": {
+      "source": "core/src/types.rs",
+      "fields": [
+        {
+          "rustName": "id",
+          "wireName": "id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "name",
+          "wireName": "name",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "url",
+          "wireName": "url",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "enabled",
+          "wireName": "enabled",
+          "rustType": "bool",
+          "optional": false
+        }
+      ]
+    },
+    "CustomCalendarEvent": {
+      "source": "core/src/types.rs",
+      "fields": [
+        {
+          "rustName": "id",
+          "wireName": "id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "title",
+          "wireName": "title",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "course_id",
+          "wireName": "course_id",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "event_type",
+          "wireName": "event_type",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "date",
+          "wireName": "date_iso",
+          "rustType": "Option<NaiveDate>",
+          "optional": true
+        },
+        {
+          "rustName": "start_time",
+          "wireName": "start_time",
+          "rustType": "Option<NaiveTime>",
+          "optional": true
+        },
+        {
+          "rustName": "end_time",
+          "wireName": "end_time",
+          "rustType": "Option<NaiveTime>",
+          "optional": true
+        },
+        {
+          "rustName": "room",
+          "wireName": "room",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "notes",
+          "wireName": "notes",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "color",
+          "wireName": "color",
+          "rustType": "Option<String>",
+          "optional": true
+        }
+      ]
+    },
+    "TopicCheckItem": {
+      "source": "core/src/plan/dashboard.rs",
+      "fields": [
+        {
+          "rustName": "key",
+          "wireName": "key",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "topic",
+          "wireName": "topic",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "completed",
+          "wireName": "completed",
+          "rustType": "bool",
+          "optional": false
+        }
+      ]
+    },
+    "StudyRecommendation": {
+      "source": "core/src/plan/dashboard.rs",
+      "fields": [
+        {
+          "rustName": "assessment_id",
+          "wireName": "assessment_id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "course_id",
+          "wireName": "course_id",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "course_name",
+          "wireName": "course_name",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "title",
+          "wireName": "title",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "assessment_type",
+          "wireName": "assessment_type",
+          "rustType": "AssessmentType",
+          "optional": false
+        },
+        {
+          "rustName": "date",
+          "wireName": "date_iso",
+          "rustType": "Option<NaiveDate>",
+          "optional": true
+        },
+        {
+          "rustName": "display_time",
+          "wireName": "display_time",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "days_until",
+          "wireName": "days_until",
+          "rustType": "Option<i32>",
+          "optional": true
+        },
+        {
+          "rustName": "urgency_badge",
+          "wireName": "urgency_badge",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "priority_score",
+          "wireName": "priority_score",
+          "rustType": "u8",
+          "optional": false
+        },
+        {
+          "rustName": "why_study_now",
+          "wireName": "why_study_now",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "ai_study_plan",
+          "wireName": "ai_study_plan",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "topics",
+          "wireName": "topics",
+          "rustType": "Vec<TopicCheckItem>",
+          "optional": false
+        },
+        {
+          "rustName": "warnings",
+          "wireName": "warnings",
+          "rustType": "Vec<String>",
+          "optional": false
+        },
+        {
+          "rustName": "color",
+          "wireName": "color",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "progress_percent",
+          "wireName": "progress_percent",
+          "rustType": "u32",
+          "optional": false
+        }
+      ]
+    },
+    "DashboardSummary": {
+      "source": "core/src/plan/dashboard.rs",
+      "fields": [
+        {
+          "rustName": "reference_date",
+          "wireName": "reference_date",
+          "rustType": "NaiveDate",
+          "optional": false
+        },
+        {
+          "rustName": "next_up",
+          "wireName": "next_up",
+          "rustType": "Option<Assessment>",
+          "optional": true
+        },
+        {
+          "rustName": "upcoming_this_week",
+          "wireName": "upcoming_this_week",
+          "rustType": "Vec<Assessment>",
+          "optional": false
+        },
+        {
+          "rustName": "all_upcoming",
+          "wireName": "all_upcoming",
+          "rustType": "Vec<Assessment>",
+          "optional": false
+        },
+        {
+          "rustName": "exam_type_counts",
+          "wireName": "exam_type_counts",
+          "rustType": "BTreeMap<String, usize>",
+          "optional": false
+        },
+        {
+          "rustName": "study_recommendations",
+          "wireName": "study_recommendations",
+          "rustType": "Vec<StudyRecommendation>",
+          "optional": false
+        },
+        {
+          "rustName": "total_topics_count",
+          "wireName": "total_topics_count",
+          "rustType": "usize",
+          "optional": false
+        },
+        {
+          "rustName": "completed_topics_count",
+          "wireName": "completed_topics_count",
+          "rustType": "usize",
+          "optional": false
+        },
+        {
+          "rustName": "readiness_percent",
+          "wireName": "readiness_percent",
+          "rustType": "u32",
+          "optional": false
+        },
+        {
+          "rustName": "conflict_alerts",
+          "wireName": "conflict_alerts",
+          "rustType": "Vec<ConflictAlert>",
+          "optional": false
+        },
+        {
+          "rustName": "sources_count",
+          "wireName": "sources_count",
+          "rustType": "BTreeMap<String, usize>",
+          "optional": false
+        }
+      ]
+    },
+    "DailyStudyTask": {
+      "source": "core/src/plan/tasks.rs",
+      "fields": [
+        {
+          "rustName": "id",
+          "wireName": "id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "key",
+          "wireName": "key",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "assessment_id",
+          "wireName": "assessment_id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "course_id",
+          "wireName": "course_id",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "course_name",
+          "wireName": "course_name",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "assessment_title",
+          "wireName": "assessment_title",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "assessment_type",
+          "wireName": "assessment_type",
+          "rustType": "AssessmentType",
+          "optional": false
+        },
+        {
+          "rustName": "topic",
+          "wireName": "topic",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "day_offset",
+          "wireName": "day_offset",
+          "rustType": "i32",
+          "optional": false
+        },
+        {
+          "rustName": "target_date",
+          "wireName": "target_date_iso",
+          "rustType": "NaiveDate",
+          "optional": false
+        },
+        {
+          "rustName": "display_day",
+          "wireName": "display_day",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "priority_rank",
+          "wireName": "priority_rank",
+          "rustType": "u8",
+          "optional": false
+        },
+        {
+          "rustName": "urgency",
+          "wireName": "urgency",
+          "rustType": "UrgencyLevel",
+          "optional": false
+        },
+        {
+          "rustName": "estimated_hours",
+          "wireName": "estimated_hours",
+          "rustType": "Option<f32>",
+          "optional": true
+        },
+        {
+          "rustName": "ai_reasoning",
+          "wireName": "ai_reasoning",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "completed",
+          "wireName": "completed",
+          "rustType": "bool",
+          "optional": false
+        },
+        {
+          "rustName": "color",
+          "wireName": "color",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "days_until_assessment",
+          "wireName": "days_until_assessment",
+          "rustType": "i32",
+          "optional": false
+        },
+        {
+          "rustName": "assessment_date",
+          "wireName": "assessment_date_iso",
+          "rustType": "NaiveDate",
+          "optional": false
+        }
+      ]
+    },
+    "DailyStudyDayGroup": {
+      "source": "core/src/plan/tasks.rs",
+      "fields": [
+        {
+          "rustName": "day_offset",
+          "wireName": "day_offset",
+          "rustType": "i32",
+          "optional": false
+        },
+        {
+          "rustName": "date",
+          "wireName": "date_iso",
+          "rustType": "NaiveDate",
+          "optional": false
+        },
+        {
+          "rustName": "display_day",
+          "wireName": "display_day",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "is_today",
+          "wireName": "is_today",
+          "rustType": "bool",
+          "optional": false
+        },
+        {
+          "rustName": "total_estimated_hours",
+          "wireName": "total_estimated_hours",
+          "rustType": "Option<f32>",
+          "optional": true
+        },
+        {
+          "rustName": "tasks",
+          "wireName": "tasks",
+          "rustType": "Vec<DailyStudyTask>",
+          "optional": false
+        }
+      ]
+    },
+    "ExamReadinessCard": {
+      "source": "core/src/plan/tasks.rs",
+      "fields": [
+        {
+          "rustName": "assessment_id",
+          "wireName": "assessment_id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "course_id",
+          "wireName": "course_id",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "course_name",
+          "wireName": "course_name",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "title",
+          "wireName": "title",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "assessment_type",
+          "wireName": "assessment_type",
+          "rustType": "AssessmentType",
+          "optional": false
+        },
+        {
+          "rustName": "date",
+          "wireName": "date_iso",
+          "rustType": "NaiveDate",
+          "optional": false
+        },
+        {
+          "rustName": "display_date",
+          "wireName": "display_date",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "days_until",
+          "wireName": "days_until",
+          "rustType": "i32",
+          "optional": false
+        },
+        {
+          "rustName": "readiness_percent",
+          "wireName": "readiness_percent",
+          "rustType": "u32",
+          "optional": false
+        },
+        {
+          "rustName": "completed_count",
+          "wireName": "completed_count",
+          "rustType": "usize",
+          "optional": false
+        },
+        {
+          "rustName": "total_count",
+          "wireName": "total_count",
+          "rustType": "usize",
+          "optional": false
+        },
+        {
+          "rustName": "priority_score",
+          "wireName": "priority_score",
+          "rustType": "u8",
+          "optional": false
+        },
+        {
+          "rustName": "color",
+          "wireName": "color",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "recommended_focus",
+          "wireName": "recommended_focus",
+          "rustType": "String",
+          "optional": false
+        }
+      ]
+    },
+    "StudyTasksPayload": {
+      "source": "core/src/plan/tasks.rs",
+      "fields": [
+        {
+          "rustName": "days",
+          "wireName": "days",
+          "rustType": "Vec<DailyStudyDayGroup>",
+          "optional": false
+        },
+        {
+          "rustName": "readiness_cards",
+          "wireName": "readiness_cards",
+          "rustType": "Vec<ExamReadinessCard>",
+          "optional": false
+        },
+        {
+          "rustName": "total_tasks",
+          "wireName": "total_tasks",
+          "rustType": "usize",
+          "optional": false
+        },
+        {
+          "rustName": "pending_tasks",
+          "wireName": "pending_tasks",
+          "rustType": "usize",
+          "optional": false
+        },
+        {
+          "rustName": "completed_tasks",
+          "wireName": "completed_tasks",
+          "rustType": "usize",
+          "optional": false
+        },
+        {
+          "rustName": "total_hours",
+          "wireName": "total_hours",
+          "rustType": "Option<f32>",
+          "optional": true
+        },
+        {
+          "rustName": "ai_generated",
+          "wireName": "ai_generated",
+          "rustType": "bool",
+          "optional": false
+        }
+      ]
+    },
+    "ConflictAlert": {
+      "source": "core/src/plan/conflicts.rs",
+      "fields": [
+        {
+          "rustName": "assessment_id_a",
+          "wireName": "assessment_id_a",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "assessment_id_b",
+          "wireName": "assessment_id_b",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "title_a",
+          "wireName": "title_a",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "title_b",
+          "wireName": "title_b",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "course_a",
+          "wireName": "course_a",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "course_b",
+          "wireName": "course_b",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "date_a",
+          "wireName": "date_a",
+          "rustType": "NaiveDate",
+          "optional": false
+        },
+        {
+          "rustName": "date_b",
+          "wireName": "date_b",
+          "rustType": "NaiveDate",
+          "optional": false
+        },
+        {
+          "rustName": "gap_hours",
+          "wireName": "gap_hours",
+          "rustType": "i32",
+          "optional": false
+        },
+        {
+          "rustName": "severity",
+          "wireName": "severity",
+          "rustType": "ConflictSeverity",
+          "optional": false
+        },
+        {
+          "rustName": "message",
+          "wireName": "message",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "is_mitigated",
+          "wireName": "is_mitigated",
+          "rustType": "bool",
+          "optional": false
+        }
+      ]
+    },
+    "DesktopConfig": {
+      "source": "apps/desktop/src-tauri/src/commands/state.rs",
+      "fields": [
+        {
+          "rustName": "auto_sync_gcal",
+          "wireName": "autoSyncGcal",
+          "rustType": "bool",
+          "optional": false
+        },
+        {
+          "rustName": "sync_weekly_classes_to_gcal",
+          "wireName": "syncWeeklyClassesToGcal",
+          "rustType": "bool",
+          "optional": false
+        },
+        {
+          "rustName": "gemini_enabled",
+          "wireName": "geminiEnabled",
+          "rustType": "bool",
+          "optional": false
+        },
+        {
+          "rustName": "onboarding_completed",
+          "wireName": "onboardingCompleted",
+          "rustType": "bool",
+          "optional": false
+        },
+        {
+          "rustName": "teams_enabled",
+          "wireName": "teamsEnabled",
+          "rustType": "bool",
+          "optional": false
+        },
+        {
+          "rustName": "teams_client_id",
+          "wireName": "teamsClientId",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "teams_account_name",
+          "wireName": "teamsAccountName",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "teams_account_email",
+          "wireName": "teamsAccountEmail",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "google_client_id",
+          "wireName": "googleClientId",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "moodle_enabled",
+          "wireName": "moodleEnabled",
+          "rustType": "bool",
+          "optional": false
+        },
+        {
+          "rustName": "moodle_url",
+          "wireName": "moodleUrl",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "moodle_ical_url",
+          "wireName": "moodleIcalUrl",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "classroom_enabled",
+          "wireName": "classroomEnabled",
+          "rustType": "bool",
+          "optional": false
+        },
+        {
+          "rustName": "dismiss_conflict_banner",
+          "wireName": "dismissConflictBanner",
+          "rustType": "bool",
+          "optional": false
+        },
+        {
+          "rustName": "synced_gcal_map",
+          "wireName": "syncedGcalMap",
+          "rustType": "HashMap<String, String>",
+          "optional": false
+        },
+        {
+          "rustName": "feeds",
+          "wireName": "feeds",
+          "rustType": "Vec<FeedConfig>",
+          "optional": false
+        },
+        {
+          "rustName": "custom_events",
+          "wireName": "customEvents",
+          "rustType": "Vec<CustomCalendarEvent>",
+          "optional": false
+        },
+        {
+          "rustName": "last_gmail_sync",
+          "wireName": "lastGmailSync",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "last_gcal_sync",
+          "wireName": "lastGcalSync",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "last_backup_push",
+          "wireName": "lastBackupPush",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "user_email",
+          "wireName": "userEmail",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "user_name",
+          "wireName": "userName",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "user_picture",
+          "wireName": "userPicture",
+          "rustType": "Option<String>",
+          "optional": true
+        }
+      ]
+    },
+    "DesktopAuthProfile": {
+      "source": "apps/desktop/src-tauri/src/commands/state.rs",
+      "fields": [
+        {
+          "rustName": "authenticated",
+          "wireName": "authenticated",
+          "rustType": "bool",
+          "optional": false
+        },
+        {
+          "rustName": "email",
+          "wireName": "email",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "name",
+          "wireName": "name",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "picture",
+          "wireName": "picture",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "has_gmail_scope",
+          "wireName": "hasGmailScope",
+          "rustType": "bool",
+          "optional": false
+        },
+        {
+          "rustName": "has_calendar_scope",
+          "wireName": "hasCalendarScope",
+          "rustType": "bool",
+          "optional": false
+        },
+        {
+          "rustName": "has_teams_auth",
+          "wireName": "hasTeamsAuth",
+          "rustType": "bool",
+          "optional": false
+        }
+      ]
+    },
+    "GetStatePayload": {
+      "source": "apps/desktop/src-tauri/src/commands/state.rs",
+      "fields": [
+        {
+          "rustName": "config",
+          "wireName": "config",
+          "rustType": "DesktopConfig",
+          "optional": false
+        },
+        {
+          "rustName": "auth",
+          "wireName": "auth",
+          "rustType": "DesktopAuthProfile",
+          "optional": false
+        },
+        {
+          "rustName": "schedule",
+          "wireName": "schedule",
+          "rustType": "ScheduleData",
+          "optional": false
+        },
+        {
+          "rustName": "assessments",
+          "wireName": "assessments",
+          "rustType": "Vec<Assessment>",
+          "optional": false
+        },
+        {
+          "rustName": "dashboard",
+          "wireName": "dashboard",
+          "rustType": "DashboardSummary",
+          "optional": false
+        },
+        {
+          "rustName": "study_tasks_payload",
+          "wireName": "studyTasksPayload",
+          "rustType": "StudyTasksPayload",
+          "optional": false
+        }
+      ]
+    },
+    "ConfigUpdate": {
+      "source": "apps/desktop/src-tauri/src/commands/state.rs",
+      "fields": [
+        {
+          "rustName": "auto_sync_gcal",
+          "wireName": "autoSyncGcal",
+          "rustType": "Option<bool>",
+          "optional": true
+        },
+        {
+          "rustName": "sync_weekly_classes_to_gcal",
+          "wireName": "syncWeeklyClassesToGcal",
+          "rustType": "Option<bool>",
+          "optional": true
+        },
+        {
+          "rustName": "gemini_enabled",
+          "wireName": "geminiEnabled",
+          "rustType": "Option<bool>",
+          "optional": true
+        },
+        {
+          "rustName": "onboarding_completed",
+          "wireName": "onboardingCompleted",
+          "rustType": "Option<bool>",
+          "optional": true
+        },
+        {
+          "rustName": "teams_enabled",
+          "wireName": "teamsEnabled",
+          "rustType": "Option<bool>",
+          "optional": true
+        },
+        {
+          "rustName": "teams_client_id",
+          "wireName": "teamsClientId",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "teams_account_name",
+          "wireName": "teamsAccountName",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "teams_account_email",
+          "wireName": "teamsAccountEmail",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "google_client_id",
+          "wireName": "googleClientId",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "moodle_enabled",
+          "wireName": "moodleEnabled",
+          "rustType": "Option<bool>",
+          "optional": true
+        },
+        {
+          "rustName": "moodle_url",
+          "wireName": "moodleUrl",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "moodle_ical_url",
+          "wireName": "moodleIcalUrl",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "classroom_enabled",
+          "wireName": "classroomEnabled",
+          "rustType": "Option<bool>",
+          "optional": true
+        },
+        {
+          "rustName": "dismiss_conflict_banner",
+          "wireName": "dismissConflictBanner",
+          "rustType": "Option<bool>",
+          "optional": true
+        },
+        {
+          "rustName": "user_email",
+          "wireName": "userEmail",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "user_name",
+          "wireName": "userName",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "user_picture",
+          "wireName": "userPicture",
+          "rustType": "Option<String>",
+          "optional": true
+        }
+      ]
+    },
+    "SaveGradeInput": {
+      "source": "apps/desktop/src-tauri/src/commands/state.rs",
+      "fields": [
+        {
+          "rustName": "assessment_id",
+          "wireName": "assessmentId",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "achieved_score",
+          "wireName": "achievedScore",
+          "rustType": "Option<Option<f64>>",
+          "optional": true
+        },
+        {
+          "rustName": "max_score",
+          "wireName": "maxScore",
+          "rustType": "Option<Option<f64>>",
+          "optional": true
+        },
+        {
+          "rustName": "weightage_percent",
+          "wireName": "weightagePercent",
+          "rustType": "Option<Option<f64>>",
+          "optional": true
+        }
+      ]
+    }
+  },
+  "enums": {
+    "AssessmentType": {
+      "source": "core/src/types.rs",
+      "variants": [
+        {
+          "name": "ClassQuiz",
+          "wireName": "Class Quiz"
+        },
+        {
+          "name": "OnlineQuiz",
+          "wireName": "Online Quiz"
+        },
+        {
+          "name": "MidtermExam",
+          "wireName": "Midterm Exam"
+        },
+        {
+          "name": "FinalExam",
+          "wireName": "Final Exam"
+        },
+        {
+          "name": "LabAssessment",
+          "wireName": "Lab Assessment"
+        },
+        {
+          "name": "Assignment",
+          "wireName": "Assignment"
+        }
+      ]
+    },
+    "UrgencyLevel": {
+      "source": "core/src/types.rs",
+      "variants": [
+        {
+          "name": "Critical",
+          "wireName": "Critical"
+        },
+        {
+          "name": "High",
+          "wireName": "High"
+        },
+        {
+          "name": "Medium",
+          "wireName": "Medium"
+        },
+        {
+          "name": "Upcoming",
+          "wireName": "Upcoming"
+        },
+        {
+          "name": "Past",
+          "wireName": "Past"
+        }
+      ]
+    },
+    "AssessmentSource": {
+      "source": "core/src/types.rs",
+      "variants": [
+        {
+          "name": "Gmail",
+          "wireName": "Gmail"
+        },
+        {
+          "name": "Moodle",
+          "wireName": "Moodle"
+        },
+        {
+          "name": "MicrosoftTeams",
+          "wireName": "MicrosoftTeams"
+        },
+        {
+          "name": "MicrosoftOutlook",
+          "wireName": "MicrosoftOutlook"
+        },
+        {
+          "name": "GoogleClassroom",
+          "wireName": "GoogleClassroom"
+        },
+        {
+          "name": "Custom",
+          "wireName": "Custom"
+        },
+        {
+          "name": "Feed",
+          "wireName": "Feed"
+        }
+      ]
+    },
+    "ConflictSeverity": {
+      "source": "core/src/plan/conflicts.rs",
+      "variants": [
+        {
+          "name": "Critical",
+          "wireName": "critical"
+        },
+        {
+          "name": "Warning",
+          "wireName": "warning"
+        }
+      ]
+    },
+    "ConflictSide": {
+      "source": "core/src/plan/conflicts.rs",
+      "variants": [
+        {
+          "name": "A",
+          "wireName": "A"
+        },
+        {
+          "name": "B",
+          "wireName": "B"
+        }
+      ]
+    }
+  },
+  "enumLabels": {
+    "AssessmentType": [
+      "Class Quiz",
+      "Online Quiz",
+      "Midterm Exam",
+      "Final Exam",
+      "Lab Assessment",
+      "Assignment"
+    ],
+    "AssessmentSource": [
+      "Gmail",
+      "Moodle",
+      "Microsoft Teams",
+      "Microsoft Outlook",
+      "Google Classroom",
+      "Custom"
+    ],
+    "UrgencyLevelStored": [
+      "critical",
+      "high",
+      "medium",
+      "upcoming",
+      "past"
+    ]
+  },
+  "ffiExports": {
+    "core_version": {
+      "parameters": [],
+      "returns": "String"
+    },
+    "parse_email": {
+      "parameters": [
+        "email_json: String",
+        "schedule_json: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "parse_ics": {
+      "parameters": [
+        "content: String",
+        "schedule_json: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "radar_order_list": {
+      "parameters": [
+        "assessments_json: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "derive_dashboard_summary": {
+      "parameters": [
+        "assessments_json: String",
+        "topics_json: String",
+        "events_json: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "derive_study_tasks": {
+      "parameters": [
+        "assessments_json: String",
+        "topics_json: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "detect_schedule_conflicts": {
+      "parameters": [
+        "assessments_json: String",
+        "events_json: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "generate_study_blocks_for_exam": {
+      "parameters": [
+        "assessment_json: String",
+        "schedule_json: String",
+        "events_json: String",
+        "today_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "export_ics_calendar": {
+      "parameters": [
+        "assessments_json: String",
+        "assessment_id: Option<String>"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "generate_practice_mcq": {
+      "parameters": [
+        "assessment_json: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "merge_sync_assessments": {
+      "parameters": [
+        "existing_json: String",
+        "incoming_json: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "build_google_auth_url": {
+      "parameters": [
+        "client_id: String",
+        "redirect_uri: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "build_microsoft_auth_url": {
+      "parameters": [
+        "client_id: String",
+        "redirect_uri: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "exchange_oauth_code": {
+      "parameters": [
+        "provider: String",
+        "client_id: String",
+        "code: String",
+        "redirect_uri: String",
+        "code_verifier: String",
+        "token_endpoint_override: Option<String>"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "notification_id_for": {
+      "parameters": [
+        "assessment_id: String",
+        "kind: String"
+      ],
+      "returns": "i32"
+    },
+    "open_native_store": {
+      "parameters": [
+        "db_path: String"
+      ],
+      "returns": "Result<Arc<NativeStore>, QuizRadarFfiError>"
+    },
+    "open_in_memory_native_store": {
+      "parameters": [],
+      "returns": "Result<Arc<NativeStore>, QuizRadarFfiError>"
+    },
+    "NativeStore.get_state": {
+      "parameters": [
+        "&self",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.save_schedule": {
+      "parameters": [
+        "&self",
+        "schedule_json: String",
+        "updated_at: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.upsert_course": {
+      "parameters": [
+        "&self",
+        "course_json: String",
+        "slots_json: String",
+        "updated_at: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.delete_course": {
+      "parameters": [
+        "&self",
+        "code: String",
+        "updated_at: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.replace_assessments": {
+      "parameters": [
+        "&self",
+        "assessments_json: String",
+        "updated_at: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.toggle_topic": {
+      "parameters": [
+        "&self",
+        "topic_key: String",
+        "done: bool",
+        "updated_at: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.update_grade": {
+      "parameters": [
+        "&self",
+        "assessment_id: String",
+        "achieved: Option<f64>",
+        "max: Option<f64>",
+        "weightage: Option<f64>",
+        "clear_achieved: bool",
+        "clear_max: bool",
+        "clear_weightage: bool",
+        "updated_at: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.upsert_custom_event": {
+      "parameters": [
+        "&self",
+        "event_json: String",
+        "updated_at: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.delete_custom_event": {
+      "parameters": [
+        "&self",
+        "id: String",
+        "updated_at: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.set_config_string": {
+      "parameters": [
+        "&self",
+        "key: String",
+        "value: Option<String>"
+      ],
+      "returns": "Result<(), QuizRadarFfiError>"
+    },
+    "NativeStore.get_config_string": {
+      "parameters": [
+        "&self",
+        "key: String"
+      ],
+      "returns": "Result<Option<String>, QuizRadarFfiError>"
+    },
+    "NativeStore.set_config_bool": {
+      "parameters": [
+        "&self",
+        "key: String",
+        "value: bool"
+      ],
+      "returns": "Result<(), QuizRadarFfiError>"
+    },
+    "NativeStore.get_config_bool": {
+      "parameters": [
+        "&self",
+        "key: String",
+        "default: bool"
+      ],
+      "returns": "Result<bool, QuizRadarFfiError>"
+    },
+    "NativeStore.export_backup": {
+      "parameters": [
+        "&self",
+        "updated_at: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.import_backup": {
+      "parameters": [
+        "&self",
+        "backup_json: String",
+        "updated_at: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    }
+  }
+}

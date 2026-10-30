@@ -1,0 +1,32 @@
+{
+  "autoSyncGcal": false,
+  "syncWeeklyClassesToGcal": false,
+  "geminiEnabled": false,
+  "onboardingCompleted": true,
+  "teamsEnabled": true,
+  "teamsClientId": null,
+  "teamsAccountName": "Student",
+  "teamsAccountEmail": "student@example.edu",
+  "googleClientId": null,
+  "moodleEnabled": true,
+  "moodleUrl": "https://moodle.example.edu",
+  "moodleIcalUrl": "https://moodle.example.edu/calendar.ics",
+  "classroomEnabled": true,
+  "dismissConflictBanner": false,
+  "syncedGcalMap": {},
+  "feeds": [
+    {
+      "id": "feed-1",
+      "name": "Department Calendar",
+      "url": "https://calendar.example.edu/feed.ics",
+      "enabled": true
+    }
+  ],
+  "customEvents": [],
+  "lastGmailSync": "2026-10-21T08:12:00Z",
+  "lastGcalSync": null,
+  "lastBackupPush": null,
+  "userEmail": "student@example.edu",
+  "userName": "Student",
+  "userPicture": null
+}

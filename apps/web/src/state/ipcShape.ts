@@ -81,13 +81,19 @@ const KEY_ALIASES: ReadonlyArray<readonly [string, string]> = [
   ["progressPercent", "progress_percent"],
   ["topicIndex", "topic_index"],
   // Conflicts
-  ["assessmentAId", "assessment_a_id"],
-  ["assessmentBId", "assessment_b_id"],
+  // The core's ConflictAlert spells these `assessment_id_a` / `gap_hours` —
+  // the old twins (`assessment_a_id` / `hours_between`) were never sent, so
+  // the conflict banner rendered "undefined and undefined" for every pair.
+  ["assessmentAId", "assessment_id_a"],
+  ["assessmentBId", "assessment_id_b"],
   ["titleA", "title_a"],
   ["titleB", "title_b"],
+  ["courseA", "course_a"],
+  ["courseB", "course_b"],
   ["dateA", "date_a"],
   ["dateB", "date_b"],
-  ["hoursBetween", "hours_between"],
+  ["hoursBetween", "gap_hours"],
+  ["isMitigated", "is_mitigated"],
   // Study tasks
   ["dayOffset", "day_offset"],
   ["displayDay", "display_day"],
@@ -160,7 +166,15 @@ function toJsSlot(raw: unknown): Rec {
 }
 
 function toJsAssessment(raw: unknown): Rec {
-  return aliasDeep(asRec(raw));
+  const assessment = aliasDeep(asRec(raw));
+  // `UrgencyLevel` has no `#[serde(rename_all = "lowercase")]`, so serde emits
+  // the variant name verbatim ("Critical"). The mirror declares the
+  // lower-case ladder the core stores in SQLite, so the label is folded here
+  // instead of leaking a value the declared union cannot hold.
+  if (typeof assessment.urgencyLevel === "string") {
+    assessment.urgencyLevel = assessment.urgencyLevel.toLowerCase();
+  }
+  return assessment;
 }
 
 function toJsRecommendation(raw: unknown): Rec {
@@ -174,6 +188,12 @@ function toJsRecommendation(raw: unknown): Rec {
     }
     if (item.topicIndex === undefined) {
       item.topicIndex = index;
+      // Keep the snake twin in sync here: the alias pass already ran, so the
+      // next normalize call would otherwise grow a `topic_index` key that
+      // this pass did not have (idempotence).
+      if (item.topic_index === undefined) {
+        item.topic_index = index;
+      }
     }
     return item;
   });
@@ -194,6 +214,16 @@ function toJsTask(raw: unknown): Rec {
   // The core calls the topic text `topic`; the UI calls it `topicTitle`.
   if (task.topicTitle === undefined && typeof task.topic === "string") {
     task.topicTitle = task.topic;
+  }
+  // The core sends the *assessment's* title as `assessment_title` and the
+  // planner's explanation as `ai_reasoning`; the roadmap row reads
+  // `task.title` / `task.reasoning`. Without these two lines the roadmap
+  // rendered an empty title and an empty reason on every row.
+  if (task.title === undefined && typeof task.assessmentTitle === "string") {
+    task.title = task.assessmentTitle;
+  }
+  if (task.reasoning === undefined && typeof task.aiReasoning === "string") {
+    task.reasoning = task.aiReasoning;
   }
   return task;
 }
@@ -224,9 +254,21 @@ export function normalizeStatePayload(payload: GetStatePayload): GetStatePayload
   const source = asRec(payload);
   const schedule = asRec(source.schedule);
   const slots = Array.isArray(schedule.slots) ? schedule.slots : [];
+  const config = asRec(source.config);
+  const customEvents = Array.isArray(config.customEvents) ? config.customEvents : [];
 
   return {
     ...(source as unknown as GetStatePayload),
+    // The shell serializes DesktopConfig camelCase, but its `customEvents`
+    // entries are the CORE's structs — snake_case (`date_iso`, `start_time`).
+    // Without aliasing them here the week calendar's `ev.dateIso` reads
+    // undefined and no custom event or study block ever renders (desktop tier).
+    config: {
+      ...(config as unknown as GetStatePayload["config"]),
+      customEvents: customEvents.map((event) =>
+        aliasDeep(asRec(event)),
+      ) as unknown as GetStatePayload["config"]["customEvents"],
+    },
     schedule: {
       ...(schedule as unknown as ScheduleData),
       slots: slots.map(toJsSlot) as unknown as ScheduleSlot[],

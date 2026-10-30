@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "cargo tauri dev",
     "build": "cargo tauri build",
-    "tauri": "cargo tauri"
+    "tauri": "cargo tauri",
+    "test": "cargo test -p quizradar-desktop"
   }
 }

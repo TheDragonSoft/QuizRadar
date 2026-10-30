@@ -25,17 +25,12 @@ describe("App shell", () => {
   it("switches views and renders honest empty-state view content", () => {
     render(<App />);
 
-    // Switch to Tasks via sidebar
-    const sidebar = screen.getByTestId("app-sidebar");
-    const tasksBtn = sidebar
-      .querySelector('button[aria-current="page"]')
-      ?.parentElement?.querySelector("button:nth-child(2)");
-    expect(tasksBtn).toBeDefined();
-    if (tasksBtn) {
-      fireEvent.click(tasksBtn);
-    } else {
-      useAppStore.getState().setView("tasks");
-    }
+    // v4 parity: the view switcher lives in the top bar, not the rail.
+    const switcher = screen.getByTestId("topbar-view-switcher");
+    const tasksBtn = screen.getByRole("tab", { name: /tasks/i });
+    expect(switcher).toContainElement(tasksBtn);
+
+    fireEvent.click(tasksBtn);
 
     expect(useAppStore.getState().view).toBe("tasks");
     expect(screen.getByTestId("view-tasks")).toBeInTheDocument();

@@ -277,6 +277,7 @@ impl AiCreditNote {
 // ---------------------------------------------------------------------------
 
 /// The config_kv key holding the usage record.
+#[cfg(not(target_arch = "wasm32"))]
 const QUOTA_KV_KEY: &str = "ai_quota_usage";
 
 /// Async kv seam (single JSON value). Shells implement it over the store;

@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useCallback } from "react";
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, MapPin, X } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
 import { coursePalette } from "../lib/coursePalette";
@@ -13,7 +13,8 @@ import {
   getClampedDayWindow,
   formatCompactTime,
   hourLabel,
-  stripRoomPrefix,
+  roomLabel,
+  stripCoursePrefix,
   hexToRgba,
   toIsoLocal,
   matchesGlobalSearch,
@@ -346,9 +347,9 @@ export const CalendarView: React.FC = () => {
                             }}
                             className="text-[10px] font-bold px-1.5 py-0.5 rounded-md truncate text-white hover:opacity-90 transition cursor-pointer"
                             style={{ backgroundColor: palette.color }}
-                            title={`${ex.courseId || "—"}: ${ex.title}`}
+                            title={`${ex.courseId || "—"}: ${stripCoursePrefix(ex.title, ex.courseId)}`}
                           >
-                            {ex.courseId || "—"}: {ex.title}
+                            {ex.courseId || "—"}: {stripCoursePrefix(ex.title, ex.courseId)}
                           </div>
                         );
                       })}
@@ -454,6 +455,20 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
     onOpenEvent,
     onDeleteCustomEvent,
   }) => {
+    // The class-slot popover (v4 parity: clicking a slot shows its facts).
+    const [slotPopover, setSlotPopover] = useState<{
+      id: string;
+      courseId?: string | null;
+      courseName?: string | null;
+      title: string;
+      group?: string | null;
+      room?: string | null;
+      startTime: string;
+      endTime: string;
+      topPx: number;
+      heightPx: number;
+    } | null>(null);
+
     // 1. Gather Day Items (v4 order: slots → standalone exams → custom events)
     const dayItems: CalendarBlockItem[] = useMemo(() => {
       const items: CalendarBlockItem[] = [];
@@ -650,7 +665,7 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                   {item.title}
                 </div>
                 <div className="text-[10px] truncate text-[var(--text)]">
-                  Room {stripRoomPrefix(item.room)}
+                  {roomLabel(item.room)}
                   {item.group ? ` · Group ${item.group}` : ""}
                 </div>
                 <div className="text-[10px] tabular-nums text-[var(--text-muted)]">
@@ -675,7 +690,7 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                       style={{ backgroundColor: borderHex }}
                     />
                     <span className="truncate">
-                      {item.courseId} · {item.title}
+                      {item.courseId} · {stripCoursePrefix(item.title, item.courseId)}
                     </span>
                   </span>
                   <span className="px-1.5 py-0.2 rounded bg-red-600 text-white text-[9px] font-bold shrink-0">
@@ -683,7 +698,7 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                   </span>
                 </div>
                 <div className="text-[10px] truncate text-[var(--text)]">
-                  Room {stripRoomPrefix(item.room)}
+                  {roomLabel(item.room)}
                   {item.instructor ? ` · ${item.instructor}` : ""}
                 </div>
                 <div className="text-[10px] tabular-nums text-[var(--text-muted)]">
@@ -715,7 +730,7 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                   </button>
                 </div>
                 <div className="text-[10px] truncate text-[var(--text)]">
-                  {item.eventType || "Event"} · {item.room ? item.room : "—"}
+                  {item.eventType || "Event"} · {roomLabel(item.room)}
                 </div>
                 <div className="text-[10px] tabular-nums text-[var(--text-muted)]">
                   {formatCompactTime(item.startTime)} – {formatCompactTime(item.endTime)}
@@ -724,9 +739,28 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
             );
           }
 
-          // Plain class slot
+          // Plain class slot — clicking it opens a small popover with the
+          // slot's real facts (v4's slot popover; the click used to be dead).
           return (
-            <div key={item.id} style={style} className="gcal-card">
+            <div
+              key={item.id}
+              style={style}
+              onClick={() =>
+                setSlotPopover({
+                  id: item.id,
+                  courseId: item.courseId,
+                  courseName: item.courseName,
+                  title: item.title,
+                  group: item.group,
+                  room: item.room,
+                  startTime: item.startTime,
+                  endTime: item.endTime,
+                  topPx: item.topPx,
+                  heightPx: item.heightPx,
+                })
+              }
+              className="gcal-card cursor-pointer hover:ring-1 hover:ring-[var(--accent)]/50 transition-shadow"
+            >
               <div className="text-[11px] font-bold truncate flex items-center gap-1.5 text-[var(--text)]">
                 <span
                   className="w-2 h-2 rounded-full shrink-0"
@@ -738,7 +772,7 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
               </div>
               <div className="text-[10px] truncate text-[var(--text)]">
                 {item.title}
-                {item.group ? ` (Grp ${item.group})` : ""} · {stripRoomPrefix(item.room)}
+                {item.group ? ` (Grp ${item.group})` : ""} · {roomLabel(item.room)}
               </div>
               <div className="text-[10px] tabular-nums text-[var(--text-muted)]">
                 {formatCompactTime(item.startTime)} – {formatCompactTime(item.endTime)}
@@ -746,6 +780,60 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
             </div>
           );
         })}
+
+        {/* Class-slot popover (v4 parity: slots answer a click) */}
+        {slotPopover && (
+          <>
+            <div
+              className="fixed inset-0 z-20"
+              onClick={() => setSlotPopover(null)}
+              aria-hidden="true"
+            />
+            <div
+              role="dialog"
+              aria-label="Class details"
+              className="absolute z-30 w-56 rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] p-3 shadow-xl"
+              style={{
+                top: Math.min(slotPopover.topPx + 8, hoursCount * HOUR_HEIGHT - 150),
+                left: "8px",
+                right: "8px",
+              }}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-[var(--text)]">
+                  {slotPopover.courseId || "—"} · {slotPopover.courseName || "—"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSlotPopover(null)}
+                  aria-label={copy.common.close}
+                  className="shrink-0 rounded-md p-0.5 text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)] transition"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="mt-2 space-y-1 text-[11px] text-[var(--text-muted)]">
+                <div className="font-semibold text-[var(--text)]">{slotPopover.title}</div>
+                <div className="flex items-center gap-1">
+                  <CalendarIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
+                  <span className="tabular-nums">
+                    {formatCompactTime(slotPopover.startTime)} –{" "}
+                    {formatCompactTime(slotPopover.endTime)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <MapPin className="h-3 w-3 shrink-0" aria-hidden="true" />
+                  <span>{roomLabel(slotPopover.room)}</span>
+                </div>
+                {slotPopover.group && (
+                  <div>
+                    <span>Group {slotPopover.group}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </div>
     );
   },

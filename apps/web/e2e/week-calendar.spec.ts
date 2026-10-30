@@ -1,0 +1,52 @@
+/**
+ * Week calendar — visual baseline for the empty week.
+ *
+ * The calendar is reached through the real top-bar view switcher (the v4
+ * segmented control in `apps/web/src/components/TopBar.tsx`). With an empty
+ * IndexedDB there are no classes, no exams and no custom events, so
+ * `apps/web/src/views/views.tsx` renders the honest empty week panel
+ * (`empty-calendar`) — no fake timetable is injected.
+ *
+ * The sidebar mini calendar is part of the same frame, so it doubles as the
+ * proof that the frozen clock (2026-10-29) really is in effect.
+ */
+
+import { expect, test } from "@playwright/test";
+import {
+  bootApp,
+  FIXED_MONTH_LABEL,
+  FIXED_TODAY_DAY,
+  type ToHaveScreenshotOptions,
+} from "./helpers/app";
+import { themeForProject } from "./helpers/theme";
+
+test("week calendar renders the empty week", async ({ page }, testInfo) => {
+  const theme = themeForProject(testInfo.project.name);
+
+  await bootApp(page, theme);
+
+  await page
+    .getByTestId("topbar-view-switcher")
+    .getByRole("tab", { name: "Calendar", exact: true })
+    .click();
+
+  await expect(page.getByTestId("view-calendar")).toBeVisible();
+  await expect(page.getByTestId("empty-calendar")).toContainText(
+    "No classes or exams scheduled for this week.",
+  );
+
+  // The frozen clock is in effect: the mini calendar shows October 2026 with
+  // the 29th selected.
+  const mini = page.getByTestId("mini-calendar");
+  await expect(mini).toContainText(FIXED_MONTH_LABEL);
+  await expect(mini.locator('[aria-current="date"]')).toHaveText(FIXED_TODAY_DAY);
+
+  // Nothing was fabricated: the week really has no assessments.
+  await expect(page.getByTestId("sidebar-week-exam-count")).toHaveText("0");
+
+  await expect(page).toHaveScreenshot({
+    name: `week-calendar-${theme}.png`,
+    maxDiffPixelRatio: 0.01,
+    threshold: 0.2,
+  } as ToHaveScreenshotOptions);
+});

@@ -165,6 +165,36 @@ export function stripRoomPrefix(room?: string | null): string {
   return raw.replace(/^(Room\s*)+/i, "");
 }
 
+/**
+ * Honest room line: "Room X" when the source stated a room, "—" when it did
+ * not — never the v4 bug "Room —" (the prefix printed above the em-dash).
+ */
+export function roomLabel(room?: string | null): string {
+  const raw = String(room ?? "").trim();
+  if (!raw) return "—";
+  return `Room ${stripRoomPrefix(raw)}`;
+}
+
+/**
+ * Announcements often carry the course code inside the title ("CSE263: Quiz 1").
+ * Composed labels (day chips, calendar cards, the Pomodoro target) add the
+ * course themselves, so the embedded prefix is stripped to avoid
+ * "CSE263: CSE263: Quiz 1" duplication.
+ */
+export function stripCoursePrefix(
+  title: string | null | undefined,
+  courseId?: string | null,
+): string {
+  const raw = String(title ?? "").trim();
+  const code = String(courseId ?? "").trim();
+  if (!raw || !code) return raw;
+  const pattern = new RegExp(
+    `^${code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*[:：\\-—]\\s*`,
+    "i",
+  );
+  return raw.replace(pattern, "").trim() || raw;
+}
+
 /** `#1a73e8` + alpha → `rgba(26, 115, 232, alpha)` (v4 `hexToRgba`). */
 export function hexToRgba(hex: string | null | undefined, alpha: number): string {
   const clean = String(hex || "#1a73e8")

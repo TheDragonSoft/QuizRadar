@@ -25,6 +25,9 @@ export default tseslint.config(
       "apps/web/src/generated/**",
       ".agents/**",
       ".zcode/**",
+      // Reference dumps and scratch — not project code (AGENTS §3.8).
+      "tooling/.v4ref/**",
+      "scratch/**",
       "apps/mobile-android/**",
     ],
   },

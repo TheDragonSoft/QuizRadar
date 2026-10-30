@@ -7,6 +7,30 @@ import { getModalComponent } from "./modalRegistry";
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+/**
+ * The id of the heading each modal renders as its visible title. The stack
+ * owns the dialog semantics and names the dialog from that heading, so a
+ * screen reader announces the real title instead of "dialog".
+ *
+ * The modal components deliberately do NOT declare `role="dialog"` themselves:
+ * one dialog per open modal, declared once, here.
+ */
+const MODAL_TITLE_IDS: Record<string, string> = {
+  "assessment-detail": "assessment-detail-title",
+  onboarding: "onboarding-wizard-title",
+  settings: "settings-modal-title",
+  search: "search-palette-title",
+  "practice-quiz": "practice-quiz-title",
+  pomodoro: "pomodoro-modal-title",
+  "schedule-preview": "schedule-preview-title",
+  "add-course": "course-modal-title",
+  "create-edit-event": "event-modal-title",
+  "app-confirm": "confirm-modal-title",
+  "cloud-sync": "cloud-sync-title",
+  "scan-progress": "scan-progress-title",
+  "account-profile": "account-profile-title",
+};
+
 interface ModalLayerProps {
   modal: ModalInstance;
   index: number;
@@ -30,7 +54,11 @@ const ModalLayer: React.FC<ModalLayerProps> = ({ modal, index, isTop, onClose })
 
     // Focus the dialog itself, not the close button: a focus ring landing on
     // the X reads as a broken chip on the panel edge (v4 never rang it).
-    container.focus({ preventScroll: true });
+    // Child effects run BEFORE this parent effect, so a modal that moved
+    // focus itself (the search palette focuses its input) keeps it.
+    if (!container.contains(document.activeElement)) {
+      container.focus({ preventScroll: true });
+    }
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Tab") {
@@ -87,6 +115,7 @@ const ModalLayer: React.FC<ModalLayerProps> = ({ modal, index, isTop, onClose })
         ref={containerRef}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={MODAL_TITLE_IDS[modal.id]}
         tabIndex={-1}
         data-testid={`modal-${modal.id}`}
         className={`modal-panel relative flex max-h-[92vh] w-full ${panelWidth} flex-col overflow-hidden rounded-t-[28px] border border-[var(--surface-border)] bg-[var(--surface)] shadow-2xl focus:outline-none md:max-h-[85vh] md:rounded-2xl ${

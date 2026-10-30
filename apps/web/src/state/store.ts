@@ -47,7 +47,7 @@ function isClientIdSetupError(message: string): boolean {
  * (a local-midnight `toISOString()` round-trip moves the day for every user
  * east or west of UTC).
  */
-function addDaysToIsoDate(dateIso: string, days: number): string {
+export function addDaysToIsoDate(dateIso: string, days: number): string {
   const [year, month, day] = dateIso.split("-").map(Number);
   const anchor = new Date(Date.UTC(year, month - 1, day + days));
   return anchor.toISOString().slice(0, 10);

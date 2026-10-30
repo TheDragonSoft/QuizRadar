@@ -1,14 +1,48 @@
-# Phase 01 minimal PR CI — replace/extend in phase 15 (prompts/p15-release-ci.md).
-# Jobs run the real commands wired by this scaffold; content jobs only, no release work yet.
+# CI — the real green signal for QuizRadar v5.
+#
+# Every job runs the same commands a developer runs locally, so a green run
+# here means a clean checkout is actually green:
+#
+#   version  — the single-source-of-truth gate (tooling/version.json → 5 sinks)
+#   rust     — fmt / clippy / test for the whole Rust workspace
+#   web      — eslint / prettier / tsc / vitest / WASM build
+#   desktop  — the Tauri shell's own Rust tests (they are not part of
+#              `cargo test --workspace` output today, so they get their own job)
+#   android  — ktlint / assembleDebug / testDebugUnitTest
+#   coverage — the two coverage producers plus the ratchet that fails when
+#              coverage drops below the committed floor
+#
+# The version check runs first and gates every other job: a stale version sink
+# must never hide behind a green test suite.
 name: CI
+
 on:
   pull_request:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  version:
+    name: version stamp (single source of truth)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: version stamp check
+        run: node tooling/generate-version.mjs --check
+
   rust:
     name: rust (fmt / clippy / test)
+    needs: version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,8 +50,21 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: version stamp check
-        run: node tooling/generate-version.mjs --check
+      # The desktop shell is a workspace member, so every workspace-wide cargo
+      # command needs the Tauri Linux build dependencies.
+      - name: install Tauri Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
       - name: rustfmt
         run: cargo fmt --all --check
       - name: clippy (warnings are blockers)
@@ -26,7 +73,8 @@ jobs:
         run: cargo test --workspace
 
   web:
-    name: web (lint / typecheck / vitest)
+    name: web (lint / format / typecheck / vitest / wasm)
+    needs: version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,19 +83,70 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
       - name: install
         run: pnpm install --frozen-lockfile
-      - name: version stamp check
-        run: node tooling/generate-version.mjs --check
+      # The WASM engine is built from source (tooling/build-wasm.mjs), and the
+      # wasm-bindgen CLI must match the version Cargo.lock pins.
+      - name: install wasm-bindgen-cli (version pinned by Cargo.lock)
+        run: |
+          WASM_BINDGEN_VERSION="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep '^version' | head -1 | cut -d'"' -f2)"
+          echo "wasm-bindgen-cli ${WASM_BINDGEN_VERSION}"
+          cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked
+      - name: install Tauri Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
       - name: eslint
         run: pnpm lint
+      - name: prettier
+        run: pnpm format:check
       - name: typecheck
         run: pnpm typecheck
       - name: vitest
         run: pnpm test
+      - name: wasm build
+        run: pnpm --dir apps/web build:wasm
+
+  desktop:
+    name: desktop (tauri shell tests)
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: install Tauri Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+      - name: desktop shell tests
+        run: cargo test -p quizradar-desktop
 
   android:
     name: android (ktlint / assembleDebug / test)
+    needs: version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -69,3 +168,57 @@ jobs:
       - name: unit tests
         run: ./gradlew testDebugUnitTest
         working-directory: apps/mobile-android
+
+  coverage:
+    name: coverage (rust + web ratchet)
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: install
+        run: pnpm install --frozen-lockfile
+      - name: install cargo-llvm-cov
+        # Pinned so a toolchain change cannot silently move the measured
+        # numbers the ratchet compares against.
+        run: cargo install cargo-llvm-cov --version 0.9.1 --locked
+      - name: install wasm-bindgen-cli (version pinned by Cargo.lock)
+        run: |
+          WASM_BINDGEN_VERSION="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep '^version' | head -1 | cut -d'"' -f2)"
+          echo "wasm-bindgen-cli ${WASM_BINDGEN_VERSION}"
+          cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked
+      - name: install Tauri Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+      - name: rust coverage
+        run: pnpm coverage:rust
+      - name: web coverage
+        run: pnpm coverage:web
+      - name: coverage ratchet
+        run: pnpm coverage:ratchet
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            target/rust-coverage.json
+            target/coverage
+          if-no-files-found: error

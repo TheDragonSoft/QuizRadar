@@ -1,0 +1,12 @@
+{
+  "core": {
+    "lines": 88,
+    "branches": 0,
+    "functions": 84
+  },
+  "web": {
+    "lines": 68,
+    "branches": 66,
+    "functions": 49
+  }
+}

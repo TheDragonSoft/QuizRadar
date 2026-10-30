@@ -140,9 +140,13 @@ describe("CalendarView — v4 parity", () => {
   });
 
   it("renders an honest em dash for a missing room (never a fabricated room)", () => {
+    // Sweep fix: the room line is the dash alone — "Room —" (prefix above an
+    // em-dash) was exactly the half-honest rendering this replaced.
     const { container } = render(<CalendarView />);
     const text = container.textContent || "";
-    expect(text).toContain("Room —");
+    expect(text).toContain("Midterm— · Dr. Smith");
+    expect(text).toContain("Study Session · —");
+    expect(text).not.toContain("Room —");
     expect(text).not.toContain("Hall B-204");
     expect(text).not.toContain("TBA");
   });

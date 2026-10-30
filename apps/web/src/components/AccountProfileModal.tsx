@@ -25,12 +25,7 @@ export function AccountProfileModal({
     openModal({ id: "settings", props: { initialTab: "account" }, flush: true, size: "lg" });
   };
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="account-profile-title"
-      className="relative w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-2xl transition-all"
-    >
+    <div className="relative w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-2xl transition-all">
       <div className="flex items-center justify-between border-b border-[var(--border)] pb-4">
         <h2 id="account-profile-title" className="text-base font-bold text-[var(--text)]">
           Account Profile

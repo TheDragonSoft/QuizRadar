@@ -2,6 +2,7 @@ import React from "react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { useAppStore, initialFullState } from "../state/store";
+import { copy } from "../copy";
 import { DashboardView, TasksView } from "./views";
 import { ConflictBanner } from "../components/ConflictBanner";
 import { AssessmentDetailModal } from "../components/AssessmentDetailModal";
@@ -208,6 +209,30 @@ describe("Web UI Views & Assessment Detail (Phase 09 Full Behavior)", () => {
     expect(dismissConflictsMock).toHaveBeenCalled();
   });
 
+  // 1b. Phase-19: identical conflict titles are disambiguated with the ids,
+  // never rendered as the stuttering "X and X".
+  it("disambiguates with assessment ids when both conflict titles are identical", () => {
+    const dup = JSON.parse(JSON.stringify(sampleState)) as GetStatePayload;
+    dup.dashboard.conflictAlerts = [
+      {
+        assessmentAId: "a-x",
+        assessmentBId: "b-y",
+        titleA: "Midterm",
+        titleB: "Midterm",
+        dateA: "2026-10-23",
+        dateB: "2026-10-23",
+        severity: "critical",
+        hoursBetween: 2,
+        message: "Same-slot overlap",
+        dismissed: false,
+      },
+    ];
+    useAppStore.setState({ data: dup });
+    render(<ConflictBanner />);
+    expect(screen.getByText(/a-x vs b-y/)).toBeInTheDocument();
+    expect(screen.queryByText(/Midterm and/)).not.toBeInTheDocument();
+  });
+
   // 2. Dashboard View & Optimistic Topic Toggle
   it("renders dashboard KPIs, recommendation cards, and triggers topic toggle", () => {
     const toggleTopicMock = vi.fn();
@@ -261,6 +286,68 @@ describe("Web UI Views & Assessment Detail (Phase 09 Full Behavior)", () => {
     expect(openAssessmentDetailMock).toHaveBeenCalledWith("a-cse241-q1");
   });
 
+  // 2c. Phase-19: zero tracked topics means NO readiness number — never a fake 100%
+  it("shows an em dash, not 100%, for readiness when zero topics are tracked", () => {
+    useAppStore.setState({
+      data: {
+        ...sampleState,
+        dashboard: {
+          ...sampleState.dashboard,
+          totalTopicsCount: 0,
+          completedTopicsCount: 0,
+          readinessPercent: 100,
+        },
+      },
+    });
+    render(<DashboardView />);
+    expect(screen.getByText(copy.dashboard.kpiReadinessNone)).toBeInTheDocument();
+    expect(screen.queryByText("100%")).not.toBeInTheDocument();
+  });
+
+  // 2d. Phase-19: the "All" type chip maps to the ALL filter (was UPCOMING)
+  it("maps the 'All' type chip to the ALL filter", () => {
+    useAppStore.setState({ activeTypeFilter: "UPCOMING" });
+    render(<DashboardView />);
+    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    expect(useAppStore.getState().activeTypeFilter).toBe("ALL");
+  });
+
+  // 2e. Phase-19: filtered-empty timeline says so instead of "No assessments scheduled"
+  it("distinguishes a filtered-empty timeline from a truly empty one", () => {
+    useAppStore.setState({ activeSourceFilter: "TEAMS" });
+    render(<DashboardView />);
+    expect(screen.getByTestId("timeline-empty-filtered")).toBeInTheDocument();
+    expect(screen.getByText(copy.dashboard.timelineEmptyFilteredTitle)).toBeInTheDocument();
+    expect(screen.queryByText(copy.dashboard.timelineEmptyTitle)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: copy.dashboard.timelineClearFilters }));
+    expect(useAppStore.getState().activeSourceFilter).toBe("ALL");
+    expect(screen.getByTestId("timeline-row-a-cse241-q1")).toBeInTheDocument();
+  });
+
+  // 2f. Phase-19: hero and rec cards show the course NAME, never the raw id
+  it("renders course names instead of raw ids in the hero and rec cards", () => {
+    const nextUp = sampleState.assessments[0];
+    useAppStore.setState({
+      data: {
+        ...sampleState,
+        dashboard: {
+          ...sampleState.dashboard,
+          nextUp,
+          upcomingThisWeek: [nextUp],
+          allUpcoming: [nextUp],
+        },
+      },
+    });
+    render(<DashboardView />);
+    const hero = screen.getByTestId("dashboard-next-up-hero");
+    expect(hero).toHaveTextContent("Digital Design");
+    expect(hero.textContent).not.toContain("CSE241");
+    const card = screen.getByTestId("rec-card-a-cse241-q1");
+    expect(card).toHaveTextContent("Digital Design");
+    expect(card.textContent).not.toContain("CSE241");
+  });
+
   // 3. Tasks View: Summary Line, Readiness Grid, Daily Roadmap
   it("renders tasks view summary line, readiness card %, and roadmap today pulse", () => {
     const openAssessmentDetailMock = vi.fn();
@@ -284,6 +371,27 @@ describe("Web UI Views & Assessment Detail (Phase 09 Full Behavior)", () => {
     // Today Roadmap badge
     const todayBadges = screen.getAllByText(/Today/i);
     expect(todayBadges.length).toBeGreaterThan(0);
+  });
+
+  // 3b. Phase-19: the summary line follows the course filter — it must never
+  // contradict the (empty) sections below it.
+  it("tasks summary line reflects the active course filter, not the wider payload", () => {
+    render(<TasksView />);
+    act(() => {
+      useAppStore.setState({ activeCourseFilterTasks: "MAT102" });
+    });
+    expect(screen.getByText(/0 pending topics across 0 upcoming exams/i)).toBeInTheDocument();
+    // Distinct honest copy for each section: readiness vs roadmap.
+    expect(screen.getByText(copy.emptyStates.noUpcomingExams)).toBeInTheDocument();
+    expect(screen.getByText(copy.emptyStates.noStudyTasksPending)).toBeInTheDocument();
+  });
+
+  // 3c. Phase-19: readiness cards show the course name, not the raw id.
+  it("renders the course name on readiness cards", () => {
+    render(<TasksView />);
+    const card = screen.getByTestId("readiness-card-a-cse241-q1");
+    expect(card).toHaveTextContent("Digital Design");
+    expect(card.textContent).not.toContain("CSE241");
   });
 
   // 4. Assessment Detail Modal: Facts, Grade Editing, What-If

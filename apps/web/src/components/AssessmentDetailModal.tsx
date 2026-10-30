@@ -18,7 +18,7 @@ import { copy } from "../copy";
 import { safeExternalUrl } from "../lib/safeUrl";
 import { useAppStore } from "../state/store";
 import { calculateWhatIf } from "../lib/whatIf";
-import { coursePalette } from "../lib/coursePalette";
+import { courseDisplayName, coursePalette } from "../lib/coursePalette";
 
 interface AssessmentDetailModalProps {
   modalId: string;
@@ -37,6 +37,7 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
   const addToast = useAppStore((s) => s.addToast);
   const openPracticeQuiz = useAppStore((s) => s.openPracticeQuiz);
   const openPomodoro = useAppStore((s) => s.openPomodoro);
+  const courses = useAppStore((s) => s.data.schedule.courses);
 
   const assessment = assessments.find((a) => a.id === assessmentId);
   const rec = recommendations.find((r) => r.assessmentId === assessmentId);
@@ -145,7 +146,7 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
             className="px-2.5 py-0.5 rounded-full text-xs font-bold shadow-2xs"
             style={{ backgroundColor: palette.bg, color: palette.color }}
           >
-            {assessment.courseId || "Course"}
+            {courseDisplayName(assessment.courseId, courses)}
           </span>
           <span className="px-2.5 py-0.5 rounded-full bg-red-600/10 text-red-600 dark:text-red-400 text-xs font-bold">
             {assessment.assessmentType}
@@ -184,7 +185,7 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
         <div className="flex items-center gap-2">
           <Clock className="h-4 w-4 text-[var(--accent)] shrink-0" aria-hidden="true" />
           <div className="min-w-0">
-            <span className="text-[10px] text-[var(--text-muted)] block font-semibold">
+            <span className="text-[11px] text-[var(--text-muted)] block font-semibold">
               {copy.assessmentDetail.dateLabel}
             </span>
             <span className="font-semibold text-[var(--text)] truncate block">
@@ -197,7 +198,7 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
         <div className="flex items-center gap-2">
           <MapPin className="h-4 w-4 text-[var(--accent)] shrink-0" aria-hidden="true" />
           <div className="min-w-0">
-            <span className="text-[10px] text-[var(--text-muted)] block font-semibold">
+            <span className="text-[11px] text-[var(--text-muted)] block font-semibold">
               {copy.assessmentDetail.roomLabel}
             </span>
             <span className="font-semibold text-[var(--text)] truncate block">
@@ -210,7 +211,7 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
         <div className="flex items-center gap-2">
           <User className="h-4 w-4 text-[var(--accent)] shrink-0" aria-hidden="true" />
           <div className="min-w-0">
-            <span className="text-[10px] text-[var(--text-muted)] block font-semibold">
+            <span className="text-[11px] text-[var(--text-muted)] block font-semibold">
               {copy.assessmentDetail.instructorLabel}
             </span>
             <span className="font-semibold text-[var(--text)] truncate block">
@@ -385,7 +386,7 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
         <form onSubmit={handleSaveGrade} className="space-y-3">
           <div className="grid grid-cols-3 gap-2">
             <div>
-              <label className="text-[10px] font-semibold text-[var(--text-muted)] block mb-1">
+              <label className="text-[11px] font-semibold text-[var(--text-muted)] block mb-1">
                 {copy.assessmentDetail.achievedScoreLabel}
               </label>
               <input
@@ -399,7 +400,7 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
             </div>
 
             <div>
-              <label className="text-[10px] font-semibold text-[var(--text-muted)] block mb-1">
+              <label className="text-[11px] font-semibold text-[var(--text-muted)] block mb-1">
                 {copy.assessmentDetail.maxScoreLabel}
               </label>
               <input
@@ -413,7 +414,7 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
             </div>
 
             <div>
-              <label className="text-[10px] font-semibold text-[var(--text-muted)] block mb-1">
+              <label className="text-[11px] font-semibold text-[var(--text-muted)] block mb-1">
                 {copy.assessmentDetail.weightageLabel}
               </label>
               <input
@@ -463,7 +464,7 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
             />
           </div>
 
-          <div className="text-[10px] text-[var(--text-muted)]">
+          <div className="text-[11px] text-[var(--text-muted)]">
             <p>
               {whatIf.isFirstGraded
                 ? copy.assessmentDetail.whatIfFirstItem

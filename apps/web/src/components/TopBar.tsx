@@ -330,8 +330,10 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenSearch, on
         )}
       </div>
 
-      {/* Search Bar — v4 floating search shell */}
-      <div className="flex flex-1 items-center justify-center px-1 sm:px-4">
+      {/* Search Bar — v4 floating search shell. min-w-0 on both wrappers lets
+          it shrink below its placeholder's min-content width on narrow
+          screens instead of pushing the action cluster off-canvas. */}
+      <div className="flex min-w-0 flex-1 items-center justify-center px-1 sm:px-4">
         <div
           role="button"
           tabIndex={0}
@@ -342,17 +344,17 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenSearch, on
               handleOpenSearchModal();
             }
           }}
-          className="relative flex h-10 w-full max-w-xl cursor-pointer items-center rounded-2xl border border-[var(--surface-border)] bg-[var(--page)] shadow-xs transition-colors hover:bg-[var(--surface-hover)] focus-within:border-[var(--accent)] focus-within:bg-[var(--surface)] focus-within:ring-2 focus-within:ring-[var(--accent)]/15"
+          className="relative flex h-10 w-full min-w-0 max-w-xl cursor-pointer items-center rounded-2xl border border-[var(--surface-border)] bg-[var(--page)] shadow-xs transition-colors hover:bg-[var(--surface-hover)] focus-within:border-[var(--accent)] focus-within:bg-[var(--surface)] focus-within:ring-2 focus-within:ring-[var(--accent)]/15"
         >
           <Search
-            className="pointer-events-none absolute left-3.5 h-4 w-4 text-[var(--text-muted)]"
+            className="pointer-events-none absolute left-3.5 h-4 w-4 shrink-0 text-[var(--text-muted)]"
             aria-hidden="true"
           />
-          <span className="w-full truncate py-2 pl-9 pr-16 text-[13px] font-medium text-[var(--text-muted)]">
+          <span className="w-full min-w-0 truncate py-2 pl-9 pr-10 text-[13px] font-medium text-[var(--text-muted)] sm:pr-16">
             {searchQuery || copy.topBar.searchPlaceholder}
           </span>
           <kbd
-            className="pointer-events-none absolute right-2.5 flex select-none items-center gap-0.5 rounded-lg border border-[var(--surface-border)] bg-[var(--surface)] px-2 py-0.5 text-[10px] font-semibold text-[var(--text-muted)] shadow-xs tabular-nums"
+            className="pointer-events-none absolute right-2.5 hidden select-none items-center gap-0.5 rounded-lg border border-[var(--surface-border)] bg-[var(--surface)] px-2 py-0.5 text-[11px] font-semibold text-[var(--text-muted)] shadow-xs tabular-nums sm:flex"
             aria-hidden="true"
           >
             {copy.topBar.searchShortcut}

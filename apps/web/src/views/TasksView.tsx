@@ -2,7 +2,7 @@ import React from "react";
 import { Clock, Sparkles } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
-import { coursePalette } from "../lib/coursePalette";
+import { courseDisplayName, coursePalette } from "../lib/coursePalette";
 import type { DailyStudyTask, ExamReadinessCard } from "../state/types";
 
 export const TasksView: React.FC = () => {
@@ -12,10 +12,6 @@ export const TasksView: React.FC = () => {
   const setActiveCourseFilter = useAppStore((s) => s.setActiveCourseFilterTasks);
   const toggleTopic = useAppStore((s) => s.toggleTopic);
   const openAssessmentDetail = useAppStore((s) => s.openAssessmentDetail);
-
-  const pendingCount = tasksPayload.pendingTasks ?? 0;
-  const upcomingCount = tasksPayload.readinessCards?.length ?? 0;
-  const totalHours = tasksPayload.totalHours ?? null;
 
   // Filter readiness cards
   const filteredCards = (tasksPayload.readinessCards || []).filter((card) => {
@@ -36,6 +32,18 @@ export const TasksView: React.FC = () => {
       };
     })
     .filter((day) => day.tasks.length > 0);
+
+  // The summary line must describe exactly what the two sections below render
+  // (after the course filter) — never a wider payload count.
+  const pendingCount = filteredDays.reduce(
+    (sum, day) => sum + day.tasks.filter((t) => !t.completed).length,
+    0,
+  );
+  const upcomingCount = filteredCards.length;
+  const totalHours =
+    filteredDays.length > 0
+      ? filteredDays.reduce((sum, day) => sum + (day.totalEstimatedHours ?? 0), 0)
+      : null;
 
   return (
     <div data-testid="tasks-view" className="space-y-6">
@@ -60,7 +68,7 @@ export const TasksView: React.FC = () => {
             <option value="ALL">{copy.tasks.filterAllCourses}</option>
             {courses.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.id} — {c.name}
+                {c.name}
               </option>
             ))}
           </select>
@@ -80,7 +88,7 @@ export const TasksView: React.FC = () => {
 
         {filteredCards.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-[var(--surface-border)] p-6 text-center text-xs text-[var(--text-muted)]">
-            {copy.emptyStates.noStudyTasksPending}
+            {copy.emptyStates.noUpcomingExams}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -122,7 +130,7 @@ export const TasksView: React.FC = () => {
                     <span className="text-sm font-bold text-[var(--text)]">{day.displayDay}</span>
                     <span className="text-xs text-[var(--text-muted)]">({day.date})</span>
                     {day.isToday && (
-                      <span className="px-2 py-0.5 rounded-full bg-[var(--accent)] text-white text-[10px] font-bold shadow-2xs">
+                      <span className="px-2 py-0.5 rounded-full bg-[var(--accent)] text-white text-[11px] font-bold shadow-2xs">
                         {copy.tasks.todayBadge}
                       </span>
                     )}
@@ -169,6 +177,7 @@ const ReadinessCard: React.FC<{ card: ExamReadinessCard; onClick: () => void }> 
   card,
   onClick,
 }) => {
+  const courses = useAppStore((s) => s.data.schedule.courses);
   const palette = coursePalette(card.courseId || "GENERAL");
   const pct = card.readinessPercent;
   const statusColor =
@@ -189,13 +198,16 @@ const ReadinessCard: React.FC<{ card: ExamReadinessCard; onClick: () => void }> 
           className="px-2 py-0.5 rounded-md text-[11px] font-bold shadow-2xs"
           style={{ backgroundColor: palette.bg, color: palette.color }}
         >
-          {card.courseId}
+          {courseDisplayName(card.courseId, courses)}
         </span>
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] uppercase font-bold text-[var(--text-muted)]">
+          <span className="text-[11px] uppercase font-bold text-[var(--text-muted)]">
             {card.daysUntil === 0 ? "Today" : `in ${card.daysUntil}d`}
           </span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded bg-[var(--surface-hover)] text-[var(--text-muted)] font-semibold">
+          <span
+            className="text-[11px] px-1.5 py-0.2 rounded bg-[var(--surface-hover)] text-[var(--text-muted)] font-semibold"
+            title="Average readiness across upcoming exams"
+          >
             {copy.tasks.avgBadge}
           </span>
         </div>
@@ -233,6 +245,7 @@ const RoadmapTaskRow: React.FC<{
   onToggle: () => void;
   onOpenDetail: () => void;
 }> = ({ task, onToggle, onOpenDetail }) => {
+  const courses = useAppStore((s) => s.data.schedule.courses);
   const palette = coursePalette(task.courseId || "GENERAL");
 
   return (
@@ -250,10 +263,10 @@ const RoadmapTaskRow: React.FC<{
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span
-              className="px-1.5 py-0.2 rounded text-[10px] font-bold"
+              className="px-1.5 py-0.2 rounded text-[11px] font-bold"
               style={{ backgroundColor: palette.bg, color: palette.color }}
             >
-              {task.courseId}
+              {courseDisplayName(task.courseId, courses)}
             </span>
             <span
               className={`text-xs transition ${
@@ -282,8 +295,9 @@ const RoadmapTaskRow: React.FC<{
         <button
           type="button"
           onClick={onOpenDetail}
-          className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-border)] transition"
+          className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-border)] transition"
           title="View assessment details"
+          aria-label="View assessment details"
         >
           <Sparkles className="h-3.5 w-3.5 text-[var(--accent)]" />
         </button>

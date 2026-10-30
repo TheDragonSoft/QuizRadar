@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect, useCallback } from "react";
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, MapPin, X } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
-import { coursePalette } from "../lib/coursePalette";
+import { courseDisplayName, coursePalette } from "../lib/coursePalette";
 import {
   START_HOUR,
   END_HOUR,
@@ -287,7 +287,7 @@ export const CalendarView: React.FC = () => {
         {/* Days Header Row */}
         <div className="flex border-b border-[var(--surface-border)]">
           {/* Time Gutter Header (v4 showed the UTC offset here) */}
-          <div className="w-16 shrink-0 border-r border-[var(--surface-border)] flex flex-col justify-end items-center pb-2 text-[10px] tabular-nums text-[var(--text-muted)]">
+          <div className="w-16 shrink-0 border-r border-[var(--surface-border)] flex flex-col justify-end items-center pb-2 text-[11px] tabular-nums text-[var(--text-muted)]">
             <span>{localUtcOffsetLabel()}</span>
           </div>
 
@@ -345,11 +345,12 @@ export const CalendarView: React.FC = () => {
                               e.stopPropagation();
                               openAssessmentDetail(ex.id);
                             }}
-                            className="text-[10px] font-bold px-1.5 py-0.5 rounded-md truncate text-white hover:opacity-90 transition cursor-pointer"
+                            className="text-[11px] font-bold px-1.5 py-0.5 rounded-md line-clamp-2 text-left text-white hover:opacity-90 transition cursor-pointer"
                             style={{ backgroundColor: palette.color }}
-                            title={`${ex.courseId || "—"}: ${stripCoursePrefix(ex.title, ex.courseId)}`}
+                            title={`${courseDisplayName(ex.courseId, coursesById)}: ${stripCoursePrefix(ex.title, ex.courseId)}`}
                           >
-                            {ex.courseId || "—"}: {stripCoursePrefix(ex.title, ex.courseId)}
+                            {courseDisplayName(ex.courseId, coursesById)}:{" "}
+                            {stripCoursePrefix(ex.title, ex.courseId)}
                           </div>
                         );
                       })}
@@ -370,7 +371,7 @@ export const CalendarView: React.FC = () => {
           >
             {hours.map((hour) => (
               <div key={hour} className="hour-row relative pr-2 text-right">
-                <span className="text-[10px] tabular-nums text-[var(--text-muted)] -top-2 relative">
+                <span className="text-[11px] tabular-nums text-[var(--text-muted)] -top-2 relative">
                   {hourLabel(hour)}
                 </span>
               </div>
@@ -654,21 +655,21 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                       style={{ backgroundColor: borderHex }}
                     />
                     <span className="truncate">
-                      {item.courseId} · {item.courseName}
+                      {item.courseName || courseDisplayName(item.courseId, coursesById)}
                     </span>
                   </span>
-                  <span className="px-1.5 py-0.2 rounded bg-red-600 text-white text-[9px] font-bold shrink-0">
+                  <span className="px-1.5 py-0.2 rounded bg-red-600 text-white text-[11px] font-bold shrink-0">
                     {item.assessmentType}
                   </span>
                 </div>
                 <div className="text-[11px] font-bold text-red-700 dark:text-red-300 truncate mt-0.5">
                   {item.title}
                 </div>
-                <div className="text-[10px] truncate text-[var(--text)]">
+                <div className="text-[11px] truncate text-[var(--text)]">
                   {roomLabel(item.room)}
                   {item.group ? ` · Group ${item.group}` : ""}
                 </div>
-                <div className="text-[10px] tabular-nums text-[var(--text-muted)]">
+                <div className="text-[11px] tabular-nums text-[var(--text-muted)]">
                   {formatCompactTime(item.startTime)} – {formatCompactTime(item.endTime)}
                 </div>
               </div>
@@ -690,18 +691,19 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                       style={{ backgroundColor: borderHex }}
                     />
                     <span className="truncate">
-                      {item.courseId} · {stripCoursePrefix(item.title, item.courseId)}
+                      {courseDisplayName(item.courseId, coursesById)} ·{" "}
+                      {stripCoursePrefix(item.title, item.courseId)}
                     </span>
                   </span>
-                  <span className="px-1.5 py-0.2 rounded bg-red-600 text-white text-[9px] font-bold shrink-0">
+                  <span className="px-1.5 py-0.2 rounded bg-red-600 text-white text-[11px] font-bold shrink-0">
                     {item.assessmentType}
                   </span>
                 </div>
-                <div className="text-[10px] truncate text-[var(--text)]">
+                <div className="text-[11px] truncate text-[var(--text)]">
                   {roomLabel(item.room)}
                   {item.instructor ? ` · ${item.instructor}` : ""}
                 </div>
-                <div className="text-[10px] tabular-nums text-[var(--text-muted)]">
+                <div className="text-[11px] tabular-nums text-[var(--text-muted)]">
                   {formatCompactTime(item.startTime)} – {formatCompactTime(item.endTime)}
                 </div>
               </div>
@@ -722,17 +724,17 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                   <button
                     type="button"
                     onClick={(e) => item.eventId && onDeleteCustomEvent(item.eventId, e)}
-                    className="shrink-0 text-[var(--text-muted)] hover:text-red-600 transition"
+                    className="shrink-0 p-1.5 -m-1.5 text-[var(--text-muted)] hover:text-red-600 transition rounded"
                     aria-label="Delete event"
                     title="Delete event"
                   >
-                    <X className="h-2.5 w-2.5" />
+                    <X className="h-3 w-3" aria-hidden="true" />
                   </button>
                 </div>
-                <div className="text-[10px] truncate text-[var(--text)]">
+                <div className="text-[11px] truncate text-[var(--text)]">
                   {item.eventType || "Event"} · {roomLabel(item.room)}
                 </div>
-                <div className="text-[10px] tabular-nums text-[var(--text-muted)]">
+                <div className="text-[11px] tabular-nums text-[var(--text-muted)]">
                   {formatCompactTime(item.startTime)} – {formatCompactTime(item.endTime)}
                 </div>
               </div>
@@ -767,14 +769,14 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                   style={{ backgroundColor: borderHex }}
                 />
                 <span className="truncate">
-                  {item.courseId} · {item.courseName}
+                  {item.courseName || courseDisplayName(item.courseId, coursesById)}
                 </span>
               </div>
-              <div className="text-[10px] truncate text-[var(--text)]">
+              <div className="text-[11px] truncate text-[var(--text)]">
                 {item.title}
                 {item.group ? ` (Grp ${item.group})` : ""} · {roomLabel(item.room)}
               </div>
-              <div className="text-[10px] tabular-nums text-[var(--text-muted)]">
+              <div className="text-[11px] tabular-nums text-[var(--text-muted)]">
                 {formatCompactTime(item.startTime)} – {formatCompactTime(item.endTime)}
               </div>
             </div>

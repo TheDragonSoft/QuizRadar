@@ -117,7 +117,7 @@ export const MiniCalendar: React.FC<MiniCalendarProps> = ({
         </div>
       </div>
 
-      <div className="mb-1 grid grid-cols-7 text-center text-[10px] font-medium text-[var(--text-muted)]">
+      <div className="mb-1 grid grid-cols-7 text-center text-[11px] font-medium text-[var(--text-muted)]">
         {WEEKDAY_INITIALS.map((initial, index) => (
           <span key={`${initial}-${index}`}>{initial}</span>
         ))}

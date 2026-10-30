@@ -3,7 +3,8 @@ import { Calendar, CheckSquare, Clock, HelpCircle, Layers, Plus, Timer, Zap } fr
 import { copy } from "../copy";
 import { useAppStore, addDaysToIsoDate } from "../state/store";
 import { computeSyncStatusSummary } from "../state/syncStatus";
-import { coursePalette } from "../lib/coursePalette";
+import { coursePalette, courseDisplayName } from "../lib/coursePalette";
+import { roomLabel } from "../lib/calendarLanes";
 import type { View } from "../state/types";
 import { MiniCalendar } from "./MiniCalendar";
 
@@ -168,17 +169,24 @@ export const Sidebar: React.FC = () => {
                           style={{ backgroundColor: palette.color }}
                           aria-hidden="true"
                         />
-                        <span className="truncate">{exam.courseId || "—"}</span>
+                        <span
+                          className="truncate"
+                          title={courseDisplayName(exam.courseId, courses)}
+                        >
+                          {courseDisplayName(exam.courseId, courses)}
+                        </span>
                       </span>
                       {when && (
-                        <span className="shrink-0 text-[10px] tabular-nums text-[var(--text-muted)]">
+                        <span className="shrink-0 text-[11px] tabular-nums text-[var(--text-muted)]">
                           {when}
                         </span>
                       )}
                     </div>
-                    <div className="mt-0.5 truncate text-[var(--text)]">{exam.title}</div>
-                    <div className="text-[10px] text-[var(--text-muted)]">
-                      {copy.sidebar.roomLabel}: {exam.room || copy.assessmentDetail.missingValue}
+                    <div className="mt-0.5 truncate text-[var(--text)]" title={exam.title}>
+                      {exam.title}
+                    </div>
+                    <div className="text-[11px] text-[var(--text-muted)]">
+                      {roomLabel(exam.room)}
                     </div>
                   </button>
                 );
@@ -196,7 +204,7 @@ export const Sidebar: React.FC = () => {
             <button
               type="button"
               onClick={selectAllCourses}
-              className="cursor-pointer text-[11px] font-medium text-[var(--accent)] hover:underline"
+              className="min-h-6 cursor-pointer rounded px-2 py-1 text-[11px] font-medium text-[var(--accent)] hover:underline"
             >
               {copy.sidebar.showAll}
             </button>
@@ -232,13 +240,13 @@ export const Sidebar: React.FC = () => {
                   return (
                     <label
                       key={course.id}
-                      className="flex cursor-pointer items-center gap-2.5 rounded-md px-1 py-1 text-[var(--text)] transition hover:bg-[var(--surface-hover)]"
+                      className="flex min-w-0 cursor-pointer items-center gap-2.5 rounded-md px-1 py-1 text-[var(--text)] transition hover:bg-[var(--surface-hover)]"
                     >
                       <input
                         type="checkbox"
                         checked={isSelected}
                         onChange={() => toggleCourseFilter(course.id)}
-                        className="h-3.5 w-3.5 rounded border-[var(--surface-border)] focus:ring-[var(--accent)]"
+                        className="h-3.5 w-3.5 shrink-0 rounded border-[var(--surface-border)] focus:ring-[var(--accent)]"
                         style={{ accentColor: palette.color }}
                       />
                       <span
@@ -246,8 +254,8 @@ export const Sidebar: React.FC = () => {
                         style={{ backgroundColor: palette.color }}
                         aria-hidden="true"
                       />
-                      <span className="truncate text-[var(--text)]" title={course.name}>
-                        {course.id} · {course.name}
+                      <span className="min-w-0 truncate text-[var(--text)]" title={course.name}>
+                        {course.name}
                       </span>
                     </label>
                   );
@@ -273,11 +281,11 @@ export const Sidebar: React.FC = () => {
               />
               <span>{copy.sidebar.onDeviceEngine}</span>
             </span>
-            <span className="shrink-0 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+            <span className="shrink-0 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
               {copy.sidebar.onDeviceStandalone}
             </span>
           </div>
-          <p className="text-[10px] text-[var(--text-muted)]">{copy.sidebar.onDeviceEngineBody}</p>
+          <p className="text-[11px] text-[var(--text-muted)]">{copy.sidebar.onDeviceEngineBody}</p>
         </div>
       </div>
 
@@ -300,16 +308,16 @@ export const Sidebar: React.FC = () => {
           <button
             type="button"
             onClick={() => void runGcalSync()}
-            className="shrink-0 cursor-pointer font-medium text-[var(--accent)] hover:underline"
+            className="min-h-6 shrink-0 cursor-pointer rounded px-2 py-1 font-medium text-[var(--accent)] hover:underline"
           >
             {copy.sidebar.pushGcal}
           </button>
         </div>
-        <div className="flex items-center gap-1.5 text-[10px] tabular-nums">
+        <div className="flex items-center gap-1.5 text-[11px] tabular-nums">
           <Clock className="h-3 w-3" aria-hidden="true" />
           <span>{syncSummary.lastSyncedText}</span>
         </div>
-        <div className="flex items-center gap-1.5 pt-1 text-[10px]">
+        <div className="flex items-center gap-1.5 pt-1 text-[11px]">
           <Calendar className="h-3 w-3" aria-hidden="true" />
           <CheckSquare className="h-3 w-3" aria-hidden="true" />
           <span data-testid="version-badge">v{appVersion}</span>

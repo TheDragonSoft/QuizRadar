@@ -78,6 +78,7 @@ export const copy = {
     dashboardAddCourseAction: "Add Course",
     noAssessmentsFound: "No assessments found yet. Connect your sources or add an assessment.",
     noStudyTasksPending: "No pending study tasks. Mastered all topics or no upcoming exams.",
+    noUpcomingExams: "No upcoming exams to prepare for yet.",
     noCalendarItems: "No classes or exams scheduled for this week.",
     noFocusTaskSelected: "Select an assessment or task to begin your focus session.",
   },
@@ -150,6 +151,7 @@ export const copy = {
     kpiReadinessSubtext: "Mastery across all upcoming assessments",
     kpiReadinessCounts: (done: number, total: number) =>
       `${done} of ${total} topic${total === 1 ? "" : "s"} mastered`,
+    kpiReadinessNone: "No study topics tracked yet",
     kpiSyncTitle: "Gemini & Calendar sync",
     kpiSyncActive: (count: number) => `${count} source${count === 1 ? "" : "s"} active`,
     kpiSyncNone: "No sources connected",
@@ -213,6 +215,10 @@ export const copy = {
     timelineSubtitle: "Filter by assessment type or browse across all course records.",
     timelineEmptyTitle: "No assessments scheduled",
     timelineEmptyBody: "Add your courses or connect an account to see quizzes and deadlines here.",
+    timelineEmptyFilteredTitle: "No assessments match the current filters",
+    timelineEmptyFilteredBody:
+      "Your assessments are still here — loosen the type or source filter to see them.",
+    timelineClearFilters: "Clear Filters",
     filterAll: "All",
     filterAllSources: "All Sources",
     filterUpcomingOnly: "All Upcoming",
@@ -237,7 +243,7 @@ export const copy = {
         : `${pending} pending topics across ${upcoming} upcoming exams`,
     filterAllCourses: "All Courses",
     readinessTitle: "Exam Readiness",
-    avgBadge: "avg",
+    avgBadge: "avg readiness",
     roadmapTitle: "Daily Study Roadmap",
     todayBadge: "Today",
     prepDay: (day: number, total: number) => `Prep day ${day} of ${total}`,
@@ -354,6 +360,7 @@ export const copy = {
     keyPlaceholder: "Paste AI Studio API key (AIzaSy… or AQ…)",
     validateButton: "Validate Key",
     keyValid: "Key validated & stored in OS Keyring",
+    keyValidMemory: "Key validated — held in memory for this session only (web tier)",
     keyInvalid: "Invalid API key",
     aiEnabledLabel:
       "Enable Gemini AI features (Timetable Vision, Task Optimization, Practice Quizzes)",
@@ -518,6 +525,23 @@ export const copy = {
     defaultTitle: "Are you sure?",
     confirmAction: "Confirm",
     cancelAction: "Cancel",
+  },
+
+  accountProfile: {
+    title: "Account Profile",
+    storageKeyring: "Tokens stored in this device's OS keyring",
+    storageMemory: "Web tier: tokens stay in memory for this session only",
+    connectGoogle: "Connect Google Account",
+    connectMicrosoft: "Connect Microsoft Teams",
+    signOutGoogle: "Disconnect Google",
+    signOutMicrosoft: "Disconnect Microsoft Teams",
+    fullSettings: "Full Settings",
+    signOutConfirmTitle: "Disconnect account?",
+    signOutConfirmBody:
+      "This wipes the stored tokens on this device only. Your courses, assessments and settings stay untouched.",
+    signOutConfirmAction: "Disconnect & Wipe Tokens",
+    scopesNote:
+      "QuizRadar requests read-only Gmail and read/write access to its own Google Calendar events. Nothing else.",
   },
 } as const;
 

@@ -124,7 +124,9 @@ describe("CalendarView — v4 parity", () => {
     // The slot + quiz at 09:00 collapse into ONE merged block, and it glows.
     expect(merged.length).toBe(2);
     const mergedText = merged[0].textContent || "";
-    expect(mergedText).toContain("CSE241");
+    // Phase-19: cards show the course NAME, never the raw id slug.
+    expect(mergedText).toContain("Digital Design");
+    expect(mergedText).not.toContain("CSE241");
     expect(mergedText).toContain("Quiz 1: Logic Gates");
     expect(mergedText).toContain("Class Quiz");
     // The slot's own room survives the merge, without a doubled "Room Room".
@@ -153,10 +155,12 @@ describe("CalendarView — v4 parity", () => {
 
   it("renders the per-day assessment chips in the day header (v4 overlay chips)", () => {
     const { container } = render(<CalendarView />);
-    const chip = container.querySelector('[title="CSE241: Quiz 1: Logic Gates"]') as HTMLElement;
+    const chip = container.querySelector(
+      '[title="Digital Design: Quiz 1: Logic Gates"]',
+    ) as HTMLElement;
     expect(chip).toBeTruthy();
     expect(chip.style.backgroundColor).not.toBe("");
-    expect(chip.textContent).toBe("CSE241: Quiz 1: Logic Gates");
+    expect(chip.textContent).toBe("Digital Design: Quiz 1: Logic Gates");
   });
 
   it("opens the assessment detail when a merged block is clicked", () => {

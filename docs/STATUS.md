@@ -491,6 +491,45 @@ _Protocol written up as a reusable playbook in `docs/TESTING-PLAYBOOK.md` (6 lay
 - The sweep is LLM-paced; two "dead button" findings during the pass were harness artifacts (OS-level clicks during modal transitions) and were disproven via CDP DOM clicks — the protocol re-verifies before calling anything dead.
 - `window.__QUIZRADAR_STORE__` exists in **dev builds only** (`import.meta.env.DEV` guard in `main.tsx`); the production bundle never exposes it.
 
+## Phase 19 — mock-data UI sweep: press every button, screenshot every screen, reviewer agents, fixes (2026-10-29)
+
+_Drove the running web app (vite dev server, `http://127.0.0.1:4317`, `timezoneId: "UTC"` so "today" = 2026-10-29) with a Playwright sweep (`scratch/sweep.cjs`, dev-only `window.__QUIZRADAR_STORE__` seeding) using a fully mock dataset (`scratch/seed_data.cjs`: 4 made-up courses — CS 301 Algorithms, MATH 210, PHYS 150, HIST 220 — 8 slots, 7 assessments incl. a same-day midterm pair 2h apart, conflict alerts, custom events, logged-in + logged-out auth states). 76 screenshots + a geometry/text manifest (tiny-font, clipped-x, small-target, offscreen-x) in the session viz dir under `evidence/sweep2/` — 0 console errors. The shots were then reviewed by **exactly 2 sub-agents at a time** (batch A shots 000–041, batch B 042–075; they are text-only reviewers, so each got the manifest + anomaly list + source paths, not the PNGs). Their findings were fixed; the re-run sweep (403 shots, `evidence/sweep2-fixed/`) shows the fixes in place._
+
+### Fixes applied (each with a regression test)
+
+- **Raw course-id slugs leaked into labels** (`cs301 · CS 301 · …`) → new `courseDisplayName(courseId, courses)` helper in `apps/web/src/lib/coursePalette.ts` (accepts array or `coursesById` Map; "—" for missing id, id only as honest fallback for unenrolled courses — never an invented name). Applied in `DashboardView` (hero chip, rec-card chip, timeline chip), `CalendarView` (day-header chips, merged/standalone/class cards), `TasksView` (readiness card, roadmap chip, course select options), `SearchPaletteModal` (result subtitles/titles, color-pill initials), `AssessmentDetailModal` (header chip), `Sidebar`, `OnboardingWizardModal` (enrolled list shows name, id as secondary line; initials from name).
+- **Dashboard empty-state contradiction** — "No assessments scheduled" + Add-course/Connect buttons while KPIs showed 4 assessments → timeline now distinguishes truly-empty (`timelineEmptyTitle`) from filtered-empty (`timeline-empty-filtered` testid, `timelineEmptyFilteredTitle/Body`, "Clear Filters" button resetting source+type filters) (`DashboardView.tsx`).
+- **Tasks summary contradicted its own sections** — "5 pending topics across 3 upcoming exams" above two "No pending study tasks" blocks → summary line is now derived from the *filtered* data the sections render (`TasksView.tsx`); readiness section gets its own honest empty copy (`emptyStates.noUpcomingExams`) vs the roadmap's.
+- **Search palette footer promised ↑↓ navigation that didn't exist** → real arrow-key selection: `activeIndex`, ArrowUp/Down with clamping, Enter opens the highlighted row, `aria-activedescendant`/`role="listbox"`/`role="option"`/`aria-selected`, mouse hover syncs the highlight, `scrollIntoView` guarded for jsdom (`SearchPaletteModal.tsx`).
+- **Readiness KPI showed 100% with 0/0 topics** → `totalTopicsCount === 0` renders "—" + "No study topics tracked yet" and a 0-width bar (`DashboardView.tsx`, `copy.dashboard.kpiReadinessNone`).
+- **"All" type chip in the exams KPI set filter `UPCOMING`** → now sets `ALL` (the store default), matching its label.
+- **Conflict banner stuttered "Midterm and Midterm"** when both sides share a title → falls back to `(assessmentAId vs assessmentBId)` (`ConflictBanner.tsx`).
+- **Tier-dishonest copy** — Account profile hardcoded "Local Device Keyring Storage" on the web tier → `isTauriEnvironment()`-gated (`accountProfile.storageKeyring` vs `storageMemory`); Settings AI-key success said "stored in OS Keyring" on web → `keyValidMemory`; the "bundled Google client (ID + secret)" sentence no longer renders on the browser tier (`browserSignInNote` instead). Sign-out in the account modal was one-click token-wiping → now routes through the `app-confirm` modal (`accountProfile.signOutConfirm*`), with a scopes note above the connect buttons.
+- **Systemic sub-11px fonts** (1,541 tiny-font hits, mostly `text-[10px]`/`text-[9px]` chips, kbd, weekday initials) → all raised to ≥11px across `DashboardView`, `CalendarView`, `TasksView`, `Sidebar`, `MiniCalendar`, `TopBar` kbd, `SearchPaletteModal`, `ConflictBanner`, `AssessmentDetailModal`, `SettingsModal`.
+- **Sub-24px tap targets** (242 hits) → small icon buttons get `p-1.5`/`min-h-6` + `aria-label`s (palette clear/Esc/recent-X, calendar delete-X, conflict dismiss, tasks detail, onboarding swatches/trash/Add, dashboard topics chip, Sync Calendar link-button).
+- **390px mobile topbar overflow** (Sync at x=394) → search wrapper/input/span now `min-w-0` with truncation, kbd hidden on xs (`TopBar.tsx`); calendar day-header chips allow a 2-line clamp instead of hard truncation.
+- **Scan overlay stayed open forever after success/cancel** → auto-closes via `onClose` 2.2s after a successful/canceled scan (errors stay open; running scans still non-dismissible) (`ScanProgressModal.tsx`).
+- **Onboarding re-opened after the user closed it** (the `quizradar_onboarding_dismissed` read was dead) → the dismiss flag is now written in the same effect that re-opens, so X-close sticks for the session; the auto-open also no longer stacks over an already-open modal (`App.tsx`). Caught by the Playwright suite after the change; fixed and re-green.
+
+### Regression tests added
+
+`coursePalette.test.ts` (courseDisplayName: name preference, unenrolled fallback, "—", Map input) · `views.test.tsx` (readiness 0/0 → "—"/no 100%, "All" chip → ALL filter, filtered-vs-empty timeline + Clear Filters, course names not ids in hero/cards, tasks summary follows course filter + distinct empty copy, readiness-card name, ConflictBanner id-disambiguation) · `flows.test.tsx` (palette arrow-key navigation + aria, account modal tier-honest storage copy both tiers, sign-out opens app-confirm without executing logout) · `CalendarView.test.tsx` updated to the name-first chips/cards.
+
+### Verification (all gates green at commit time)
+
+- `cargo fmt --all --check` · `cargo clippy --workspace --all-targets -- -D warnings` · `cargo test --workspace` — green.
+- `pnpm lint` · `pnpm typecheck` (recursive) · `pnpm format:check` — green.
+- `pnpm --dir apps/web exec vitest run` — **215/215** across 24 files.
+- `pnpm --dir apps/web exec playwright test` — 5 passed / 1 skipped; `dashboard-dark.png` baseline re-stamped for the intentional ≥11px font bumps (`--update-snapshots=all`).
+- `node apps/web/src/contract/regenerate.mjs --check` · `node tooling/generate-version.mjs --check` — green.
+- After-sweep re-run: 406 screenshots, **0 console errors**; geometry anomalies vs the before-sweep manifest — `tiny-font` 1541→**0**, `small-target` 242→**0**, `offscreen-x` 59→**0**; remaining `clipped-x` hits are long course names in narrow chips (now `line-clamp-2`/`title`-tooltipped, never raw ids).
+
+### Honest limitations
+
+- The two reviewer agents are text-only (same non-vision model), so they reviewed the sweep manifest (extracted text + geometry anomalies + source line refs), not the PNG pixels; visual judgment of the new shots still relies on the geometry gates + committed Playwright baselines.
+- `scratch/` sweep scripts are session tooling, not committed (per §8 data safety they hold mock data only, but they are regenerable from `docs/TESTING-PLAYBOOK.md` layer 6).
+- Phase 19 added **no new dependencies**.
+
 ## Compile-time TODO list (honest, no NotImplemented stubs)
 
 - `tauri.conf.json` → `app.security.csp: null` for now; exact CSP locked in phase 07/08 once the dev-server/font/img sources are known.

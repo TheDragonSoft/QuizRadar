@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TopBar } from "./components/TopBar";
 import { Sidebar } from "./components/Sidebar";
 import { MobileNav } from "./components/MobileNav";
@@ -56,6 +56,7 @@ export default function App() {
   const hasLoaded = useAppStore((s) => s.hasLoaded);
   const config = useAppStore((s) => s.data.config);
   const openModal = useAppStore((s) => s.openModal);
+  const openModals = useAppStore((s) => s.openModals);
 
   const [isDevRigActive, setIsDevRigActive] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -80,16 +81,27 @@ export default function App() {
   }, [loadInitialData, theme]);
 
   // First-run onboarding check — waits for the first real state load so a
-  // returning user is never shown the wizard (it only opens, never closes).
+  // returning user is never shown the wizard. It never stacks on top of
+  // another modal (e.g. the scan overlay opened from the top bar first).
+  // The X-dismissed flag is written in the SAME effect, before the reopen
+  // check: two separate effects raced, and the wizard re-opened on Close.
+  const wasOnboardingOpen = useRef(false);
   useEffect(() => {
+    const has = openModals.some((m) => m.id === "onboarding");
+    if (wasOnboardingOpen.current && !has && typeof window !== "undefined") {
+      sessionStorage.setItem("quizradar_onboarding_dismissed", "1");
+    }
+    wasOnboardingOpen.current = has;
+
     if (!hasLoaded) return;
     if (config.onboardingCompleted) return;
+    if (openModals.length > 0) return;
     if (typeof window !== "undefined") {
       const dismissed = sessionStorage.getItem("quizradar_onboarding_dismissed");
       if (dismissed) return;
     }
     openModal({ id: "onboarding", flush: true, size: "lg" });
-  }, [hasLoaded, config.onboardingCompleted, openModal]);
+  }, [hasLoaded, config.onboardingCompleted, openModal, openModals]);
 
   // Desktop auth bridge: the OAuth round trip finishes in the browser, so the
   // shell emits "auth-changed" when the token lands. Without this listener the

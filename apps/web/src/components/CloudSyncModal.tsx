@@ -97,7 +97,7 @@ export function CloudSyncModal({
             <span className="text-xs font-bold text-[var(--text)]">
               Google Drive AppData Backup
             </span>
-            <span className="rounded-md bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+            <span className="rounded-md bg-blue-500/10 px-2 py-0.5 text-[11px] font-semibold text-blue-600 dark:text-blue-400">
               Data Only
             </span>
           </div>

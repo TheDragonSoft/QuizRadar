@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { Search as SearchIcon, X, BookOpen, ArrowRight, History } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
-import { coursePalette } from "../lib/coursePalette";
+import { courseDisplayName, coursePalette } from "../lib/coursePalette";
 
 const RECENTS_STORAGE_KEY = "quizradar_recent_searches";
 
@@ -16,6 +16,7 @@ export function SearchPaletteModal({
   const [query, setQuery] = useState("");
   const [filterType, setFilterType] = useState<"ALL" | "ASSESSMENT" | "COURSE" | "SLOT">("ALL");
   const [recents, setRecents] = useState<string[]>([]);
+  const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const assessments = useAppStore((s) => s.data.assessments);
@@ -96,7 +97,7 @@ export function SearchPaletteModal({
             id: a.id,
             type: "ASSESSMENT",
             title: a.title,
-            subtitle: `${a.courseId || "General"} · ${a.assessmentType} · ${a.displayTime || a.dateIso || "Undated"}`,
+            subtitle: `${courseDisplayName(a.courseId, courses)} · ${a.assessmentType} · ${a.displayTime || a.dateIso || "Undated"}`,
             courseId: a.courseId,
             dateIso: a.dateIso,
             badgeText: a.assessmentType,
@@ -112,7 +113,7 @@ export function SearchPaletteModal({
           matches.push({
             id: c.id,
             type: "COURSE",
-            title: `${c.id} — ${c.name}`,
+            title: c.name,
             subtitle: "Enrolled Course",
             courseId: c.id,
             badgeText: "Course",
@@ -133,7 +134,7 @@ export function SearchPaletteModal({
           matches.push({
             id: s.id,
             type: "SLOT",
-            title: `${s.courseId} ${s.type}`,
+            title: `${courseDisplayName(s.courseId, courses)} ${s.type}`,
             subtitle: `${s.day} ${s.displayTime} @ ${s.room || "—"}`,
             courseId: s.courseId,
             badgeText: s.type,
@@ -144,6 +145,20 @@ export function SearchPaletteModal({
 
     return matches.slice(0, 20);
   }, [query, filterType, assessments, courses, slots]);
+
+  // A new result set always restarts the highlight at the top.
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [results]);
+
+  // Keep the highlighted row visible while arrowing through the list.
+  // (jsdom has no scrollIntoView — the optional call keeps tests alive.)
+  useEffect(() => {
+    if (results.length === 0) return;
+    const el = document.getElementById(`search-result-${activeIndex}`) as
+      (HTMLElement & { scrollIntoView?: (options?: ScrollIntoViewOptions) => void }) | null;
+    el?.scrollIntoView?.({ block: "nearest" });
+  }, [activeIndex, results.length]);
 
   const handleSelectResult = (item: (typeof results)[0]) => {
     addRecent(item.title);
@@ -175,13 +190,26 @@ export function SearchPaletteModal({
           aria-expanded={results.length > 0}
           aria-controls="search-palette-results"
           aria-autocomplete="list"
+          aria-activedescendant={
+            results.length > 0
+              ? `search-result-${Math.min(activeIndex, results.length - 1)}`
+              : undefined
+          }
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setActiveIndex((i) => Math.min(i + 1, results.length - 1));
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setActiveIndex((i) => Math.max(i - 1, 0));
+            } else if (e.key === "Enter") {
               if (results.length > 0) {
-                handleSelectResult(results[0]);
+                handleSelectResult(results[Math.min(activeIndex, results.length - 1)]);
               } else if (query.trim()) {
+                // The "No results found" message is already on screen — this
+                // just remembers the query for next time.
                 addRecent(query.trim());
               }
             }
@@ -194,15 +222,15 @@ export function SearchPaletteModal({
             type="button"
             onClick={() => setQuery("")}
             aria-label={copy.search.clearQuery}
-            className="p-1 text-[var(--text-muted)] hover:text-[var(--text)] mr-2"
+            className="p-1.5 text-[var(--text-muted)] hover:text-[var(--text)] mr-2 rounded"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" aria-hidden="true" />
           </button>
         )}
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg border border-[var(--border)] px-2 py-0.5 text-[11px] font-semibold text-[var(--text-muted)] hover:bg-[var(--border)]/20"
+          className="min-h-6 rounded-lg border border-[var(--border)] px-2 py-1 text-[11px] font-semibold text-[var(--text-muted)] hover:bg-[var(--border)]/20"
         >
           Esc
         </button>
@@ -280,9 +308,10 @@ export function SearchPaletteModal({
                   <button
                     type="button"
                     onClick={(e) => removeRecent(recentText, e)}
-                    className="p-1 text-[var(--text-muted)] hover:text-red-500"
+                    aria-label={`Remove "${recentText}" from recents`}
+                    className="p-1.5 text-[var(--text-muted)] hover:text-red-500 rounded"
                   >
-                    <X className="h-3.5 w-3.5" />
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                 </div>
               ))}
@@ -297,24 +326,31 @@ export function SearchPaletteModal({
         )}
 
         {query && results.length > 0 && (
-          <div className="space-y-1">
-            {results.map((item) => {
+          <div className="space-y-1" role="listbox" aria-label={copy.search.title}>
+            {results.map((item, index) => {
               const colorInfo = item.courseId ? coursePalette(item.courseId) : null;
+              const isActive = index === activeIndex;
               return (
                 <button
                   key={`${item.type}-${item.id}`}
+                  id={`search-result-${index}`}
                   type="button"
+                  role="option"
+                  aria-selected={isActive}
                   onClick={() => handleSelectResult(item)}
-                  className="w-full flex items-center justify-between rounded-xl p-2.5 text-left transition hover:bg-[var(--border)]/25 group"
+                  onMouseEnter={() => setActiveIndex(index)}
+                  className={`w-full flex items-center justify-between rounded-xl p-2.5 text-left transition group ${
+                    isActive ? "bg-[var(--border)]/40" : "hover:bg-[var(--border)]/25"
+                  }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     {/* Course Color Pill or Icon */}
                     {item.courseId ? (
                       <span
-                        className="h-7 w-7 rounded-lg flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+                        className="h-7 w-7 rounded-lg flex items-center justify-center text-[11px] font-bold text-white shrink-0"
                         style={{ backgroundColor: colorInfo?.color || "var(--accent)" }}
                       >
-                        {item.courseId.slice(0, 3)}
+                        {courseDisplayName(item.courseId, courses).slice(0, 2).toUpperCase()}
                       </span>
                     ) : (
                       <span className="h-7 w-7 rounded-lg flex items-center justify-center bg-[var(--border)] text-[var(--text-muted)] shrink-0">
@@ -334,7 +370,7 @@ export function SearchPaletteModal({
 
                   <div className="flex items-center gap-2 shrink-0 ml-2">
                     {item.badgeText && (
-                      <span className="rounded-md border border-[var(--border)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-muted)]">
+                      <span className="rounded-md border border-[var(--border)] px-1.5 py-0.5 text-[11px] font-semibold text-[var(--text-muted)]">
                         {item.badgeText}
                       </span>
                     )}

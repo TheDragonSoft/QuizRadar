@@ -245,9 +245,9 @@ export function AddCourseModal({
             <button
               type="button"
               onClick={handleAddSlot}
-              className="flex items-center gap-1 text-xs font-semibold text-[var(--accent)] hover:underline"
+              className="flex min-h-6 items-center gap-1 rounded px-1 py-0.5 text-xs font-semibold text-[var(--accent)] hover:underline"
             >
-              <Plus className="h-3.5 w-3.5" />
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
               <span>{copy.courseModal.addSlot}</span>
             </button>
           </div>
@@ -328,9 +328,9 @@ export function AddCourseModal({
                     type="button"
                     onClick={() => handleRemoveSlot(index)}
                     aria-label={copy.courseModal.slotRemove(index + 1)}
-                    className="text-[var(--text-muted)] hover:text-red-500"
+                    className="rounded p-1.5 text-[var(--text-muted)] hover:text-red-500"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                 </div>
               </div>

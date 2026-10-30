@@ -4,6 +4,7 @@ import App from "./App";
 import { OnboardingWizardModal } from "./components/OnboardingWizardModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { SearchPaletteModal } from "./components/SearchPaletteModal";
+import { AccountProfileModal } from "./components/AccountProfileModal";
 import { PracticeQuizModal } from "./components/PracticeQuizModal";
 import { PomodoroModal } from "./components/PomodoroModal";
 import { TopBar } from "./components/TopBar";
@@ -282,10 +283,37 @@ describe("Web UI Flows & Modals (Phase 10)", () => {
       fireEvent.change(searchInput, { target: { value: "Boolean" } });
       expect(screen.getByText("Quiz 1: Logic Gates")).toBeInTheDocument();
 
-      // Search by course code
+      // Search by course code still matches, but the result shows the NAME
+      // (phase-19: raw id slugs are never rendered as labels).
       fireEvent.change(searchInput, { target: { value: "CSE241" } });
       expect(screen.getByText("Quiz 1: Logic Gates")).toBeInTheDocument();
-      expect(screen.getByText(/CSE241 — Digital Design/i)).toBeInTheDocument();
+      expect(screen.getByText("Digital Design")).toBeInTheDocument();
+      expect(screen.queryByText(/CSE241 —/)).not.toBeInTheDocument();
+    });
+
+    it("navigates results with ArrowUp/ArrowDown and selects the highlighted row on Enter", () => {
+      const onClose = vi.fn();
+      render(<SearchPaletteModal modalId="search" onClose={onClose} />);
+      const searchInput = screen.getByPlaceholderText(copy.search.placeholder);
+
+      fireEvent.change(searchInput, { target: { value: "Digital" } });
+      const options = screen.getAllByRole("option");
+      expect(options.length).toBeGreaterThan(1);
+
+      // ArrowDown moves the highlight; aria-activedescendant follows.
+      fireEvent.keyDown(searchInput, { key: "ArrowDown" });
+      expect(searchInput).toHaveAttribute("aria-activedescendant", "search-result-1");
+      expect(options[1]).toHaveAttribute("aria-selected", "true");
+
+      // ArrowUp clamps at the top.
+      fireEvent.keyDown(searchInput, { key: "ArrowUp" });
+      fireEvent.keyDown(searchInput, { key: "ArrowUp" });
+      expect(searchInput).toHaveAttribute("aria-activedescendant", "search-result-0");
+
+      // Enter on the highlighted row opens it (assessment detail) and closes.
+      fireEvent.keyDown(searchInput, { key: "ArrowDown" });
+      fireEvent.keyDown(searchInput, { key: "Enter" });
+      expect(onClose).toHaveBeenCalled();
     });
 
     it("saves search queries to recents up to a maximum of 6", () => {
@@ -301,6 +329,52 @@ describe("Web UI Flows & Modals (Phase 10)", () => {
       expect(storedRecents.length).toBeGreaterThan(0);
       expect(storedRecents[0]).toContain("Calculus");
       expect(storedRecents.length).toBeLessThanOrEqual(6);
+    });
+  });
+
+  // 3b. Account profile: tier-honest storage copy + confirmed sign-out (phase-19)
+  describe("Account Profile Modal", () => {
+    it("says tokens stay in memory on the web tier (never claims the OS keyring)", () => {
+      const globals = window as unknown as Record<string, unknown>;
+      delete globals.__TAURI_INTERNALS__;
+      render(<AccountProfileModal modalId="account-profile" onClose={vi.fn()} />);
+      expect(screen.getByText(copy.accountProfile.storageMemory)).toBeInTheDocument();
+      expect(screen.queryByText(copy.accountProfile.storageKeyring)).not.toBeInTheDocument();
+    });
+
+    it("claims the OS keyring only on the desktop tier", () => {
+      const globals = window as unknown as Record<string, unknown>;
+      globals.__TAURI_INTERNALS__ = {};
+      try {
+        render(<AccountProfileModal modalId="account-profile" onClose={vi.fn()} />);
+        expect(screen.getByText(copy.accountProfile.storageKeyring)).toBeInTheDocument();
+      } finally {
+        delete globals.__TAURI_INTERNALS__;
+      }
+    });
+
+    it("routes sign-out through the app-confirm modal instead of wiping tokens on one click", () => {
+      const googleLogoutMock = vi.fn();
+      const loggedIn = JSON.parse(JSON.stringify(sampleState)) as GetStatePayload;
+      loggedIn.auth = {
+        ...loggedIn.auth,
+        authenticated: true,
+        email: "ada.kowalska@university.example.edu",
+        name: "Ada Kowalska",
+      };
+      useAppStore.setState({
+        data: loggedIn,
+        googleLogout: googleLogoutMock,
+        openModals: [],
+      });
+
+      render(<AccountProfileModal modalId="account-profile" onClose={vi.fn()} />);
+      fireEvent.click(screen.getByRole("button", { name: copy.accountProfile.signOutGoogle }));
+
+      // The destructive action is NOT executed yet — a confirm modal is stacked.
+      expect(googleLogoutMock).not.toHaveBeenCalled();
+      const modals = useAppStore.getState().openModals;
+      expect(modals.some((m) => m.id === "app-confirm")).toBe(true);
     });
   });
 

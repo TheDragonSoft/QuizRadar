@@ -75,6 +75,19 @@ export function ScanProgressModal({
     if (scanning) setSources({});
   }, [scanning]);
 
+  // A finished scan (success or canceled) closes itself shortly after the
+  // outcome renders, so the overlay never lingers over the app. While a scan
+  // is running the TopBar keeps the overlay non-dismissible on purpose, so
+  // Escape/backdrop can never hide a scan in flight; errors stay open until
+  // the user reads and closes them.
+  useEffect(() => {
+    if (scanning || !syncOutcome) return;
+    if (syncOutcome.status === "success" || syncOutcome.status === "canceled") {
+      const t = setTimeout(() => onClose(), 2200);
+      return () => clearTimeout(t);
+    }
+  }, [scanning, syncOutcome, onClose]);
+
   const sourceList = useMemo(() => Object.values(sources), [sources]);
   const totalFound = sourceList.reduce((sum, source) => sum + source.found, 0);
   const totalDone = sourceList.reduce((sum, source) => sum + source.done, 0);

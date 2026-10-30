@@ -31,7 +31,7 @@ import {
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
 import { ConflictBanner } from "../components/ConflictBanner";
-import { coursePalette } from "../lib/coursePalette";
+import { courseDisplayName, coursePalette } from "../lib/coursePalette";
 import { safeExternalUrl } from "../lib/safeUrl";
 import type { Assessment, StudyRecommendation } from "../state/types";
 
@@ -212,7 +212,8 @@ export const DashboardView: React.FC = () => {
     null;
 
   const weekLabels = weekRangeLabels(dash.referenceDate);
-  const readinessPct = dash.readinessPercent ?? 100;
+  // 0 tracked topics means no readiness number exists yet — never show 100%.
+  const readinessPct = dash.totalTopicsCount === 0 ? null : (dash.readinessPercent ?? 100);
   const hasCourses = courses.length > 0;
 
   // Adaptive source pills: only the sources that actually have records
@@ -254,7 +255,7 @@ export const DashboardView: React.FC = () => {
           <BrainCircuit className="h-3.5 w-3.5" aria-hidden="true" />
           <span>{copy.dashboard.subtabs.study}</span>
           {filteredRecs.length > 0 && (
-            <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700 dark:bg-blue-900/60 dark:text-blue-300">
+            <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[11px] font-bold text-blue-700 dark:bg-blue-900/60 dark:text-blue-300">
               {filteredRecs.length}
             </span>
           )}
@@ -271,7 +272,7 @@ export const DashboardView: React.FC = () => {
           <RadarIcon className="h-3.5 w-3.5" aria-hidden="true" />
           <span>{copy.dashboard.subtabs.assessments}</span>
           {filteredTimeline.length > 0 && (
-            <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-700 dark:text-slate-300">
+            <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[11px] font-bold text-slate-700 dark:bg-slate-700 dark:text-slate-300">
               {filteredTimeline.length}
             </span>
           )}
@@ -339,9 +340,9 @@ export const DashboardView: React.FC = () => {
               <>
                 <button
                   type="button"
-                  onClick={() => setActiveTypeFilter("UPCOMING")}
+                  onClick={() => setActiveTypeFilter("ALL")}
                   className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${
-                    activeTypeFilter === "UPCOMING"
+                    activeTypeFilter === "ALL"
                       ? "border-[#1a73e8]/40 bg-[#e8f0fe] text-[#1a73e8] dark:border-blue-500/50 dark:bg-blue-950/80 dark:text-blue-300"
                       : "cursor-pointer border-slate-200 bg-slate-100 text-slate-700 hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-blue-950/50"
                   }`}
@@ -387,16 +388,23 @@ export const DashboardView: React.FC = () => {
           <div className="mt-3">
             <div className="flex items-baseline justify-between">
               <span className="text-3xl font-bold tabular-nums text-slate-900 dark:text-white">
-                {readinessPct}%
+                {readinessPct === null ? "—" : `${readinessPct}%`}
               </span>
               <span className="text-xs tabular-nums text-slate-500 dark:text-slate-400">
-                {dash.completedTopicsCount} / {dash.totalTopicsCount} topics studied
+                {readinessPct === null
+                  ? copy.dashboard.kpiReadinessNone
+                  : copy.dashboard.kpiReadinessCounts(
+                      dash.completedTopicsCount,
+                      dash.totalTopicsCount,
+                    )}
               </span>
             </div>
             <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
               <div
                 className="h-full bg-emerald-500 transition-all duration-300"
-                style={{ width: `${Math.min(100, Math.max(0, readinessPct))}%` }}
+                style={{
+                  width: `${readinessPct === null ? 0 : Math.min(100, Math.max(0, readinessPct))}%`,
+                }}
               />
             </div>
           </div>
@@ -413,27 +421,34 @@ export const DashboardView: React.FC = () => {
             </div>
           </div>
           <div className="mt-3">
-            <div className="flex items-center gap-1.5">
+            <div className="flex min-w-0 items-center gap-1.5">
               <span
                 className={`inline-block h-2 w-2 shrink-0 rounded-full ${
                   auth.authenticated ? "bg-emerald-500" : "bg-slate-400"
                 }`}
                 aria-hidden="true"
               />
-              <span className="truncate text-sm font-bold text-slate-900 dark:text-white">
+              <span
+                className="min-w-0 truncate text-sm font-bold text-slate-900 dark:text-white"
+                title={
+                  auth.authenticated
+                    ? auth.email || config.userEmail || auth.name || config.userName || undefined
+                    : undefined
+                }
+              >
                 {auth.authenticated
                   ? auth.email || config.userEmail || auth.name || config.userName
                   : copy.dashboard.kpiNotConnected}
               </span>
             </div>
-            <div className="mt-2 flex items-center justify-between">
+            <div className="mt-2 flex items-center justify-between gap-2">
               <span className="text-[11px] text-slate-500 dark:text-slate-400">
                 {config.geminiEnabled ? copy.dashboard.kpiAiActive : copy.dashboard.kpiAiOff}
               </span>
               <button
                 type="button"
                 onClick={() => void runGcalSync()}
-                className="cursor-pointer text-xs font-semibold text-[#1a73e8] hover:underline dark:text-blue-400"
+                className="min-h-6 shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-xs font-semibold text-[#1a73e8] hover:underline dark:text-blue-400"
               >
                 {copy.dashboard.kpiSyncCalendarAction}
               </button>
@@ -576,30 +591,60 @@ export const DashboardView: React.FC = () => {
 
           <div className="max-h-[640px] flex-1 space-y-2.5 overflow-y-auto pr-1.5 pt-3.5 lg:max-h-none">
             {filteredTimeline.length === 0 ? (
-              <div className="space-y-2 rounded-xl border border-slate-200 p-6 text-center dark:border-slate-800">
-                <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                  {copy.dashboard.timelineEmptyTitle}
+              (assessments || []).length === 0 ? (
+                <div className="space-y-2 rounded-xl border border-slate-200 p-6 text-center dark:border-slate-800">
+                  <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    {copy.dashboard.timelineEmptyTitle}
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    {copy.dashboard.timelineEmptyBody}
+                  </p>
+                  <div className="flex items-center justify-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => openModal("add-course")}
+                      className="cursor-pointer rounded-lg bg-[#1a73e8] px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-[#1557b0] active:scale-95"
+                    >
+                      {copy.dashboard.studyEmptyAddCourse}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openModal({ id: "settings", props: { initialTab: "account" } })
+                      }
+                      className="cursor-pointer rounded-lg border border-slate-300 px-3 py-1.5 text-[11px] font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
+                    >
+                      {copy.dashboard.connectAccount}
+                    </button>
+                  </div>
                 </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  {copy.dashboard.timelineEmptyBody}
-                </p>
-                <div className="flex items-center justify-center gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => openModal("add-course")}
-                    className="cursor-pointer rounded-lg bg-[#1a73e8] px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-[#1557b0] active:scale-95"
-                  >
-                    {copy.dashboard.studyEmptyAddCourse}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openModal({ id: "settings", props: { initialTab: "account" } })}
-                    className="cursor-pointer rounded-lg border border-slate-300 px-3 py-1.5 text-[11px] font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
-                  >
-                    {copy.dashboard.connectAccount}
-                  </button>
+              ) : (
+                // Assessments exist but the active filters exclude all of them —
+                // say so instead of claiming nothing is scheduled.
+                <div
+                  data-testid="timeline-empty-filtered"
+                  className="space-y-2 rounded-xl border border-slate-200 p-6 text-center dark:border-slate-800"
+                >
+                  <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    {copy.dashboard.timelineEmptyFilteredTitle}
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    {copy.dashboard.timelineEmptyFilteredBody}
+                  </p>
+                  <div className="flex items-center justify-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveSourceFilter("ALL");
+                        setActiveTypeFilter("ALL");
+                      }}
+                      className="cursor-pointer rounded-lg bg-[#1a73e8] px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-[#1557b0] active:scale-95"
+                    >
+                      {copy.dashboard.timelineClearFilters}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )
             ) : (
               filteredTimeline.map((assessment) => (
                 <TimelineRow
@@ -702,6 +747,7 @@ const NextUpHero: React.FC<NextUpHeroProps> = ({
   onConnect,
   onSync,
 }) => {
+  const courses = useAppStore((s) => s.data.schedule.courses);
   if (!assessment) {
     return (
       <section data-testid="dashboard-next-up-hero" className={HERO_SHELL}>
@@ -764,7 +810,7 @@ const NextUpHero: React.FC<NextUpHeroProps> = ({
               </span>
             )}
             <span className="rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-semibold text-white sm:text-xs">
-              {assessment.courseId || "—"} · {assessment.assessmentType}
+              {courseDisplayName(assessment.courseId, courses)} · {assessment.assessmentType}
             </span>
             {room && (
               <span className="hidden items-center gap-1 rounded-full border border-emerald-300/30 bg-emerald-400/20 px-2 py-0.5 text-xs font-medium text-emerald-100 sm:inline-flex">
@@ -875,6 +921,7 @@ const StudyRecommendationCard: React.FC<RecommendationCardProps> = ({
   onOpenDetail,
 }) => {
   const [topicsExpanded, setTopicsExpanded] = useState(false);
+  const courses = useAppStore((s) => s.data.schedule.courses);
   const palette = coursePalette(rec.courseId || "GENERAL");
   const accent = rec.color || palette.color;
   const completedCount = rec.topics.filter((t) => t.completed).length;
@@ -908,21 +955,21 @@ const StudyRecommendationCard: React.FC<RecommendationCardProps> = ({
         {/* Top Row: Badges & Readiness Meter */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            <span className="rounded-md bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-white dark:bg-slate-800">
+            <span className="rounded-md bg-slate-900 px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-white dark:bg-slate-800">
               #{index}
             </span>
             <span
-              className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold text-white"
+              className="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold text-white"
               style={{ backgroundColor: accent }}
             >
-              {rec.courseId || copy.dashboard.assessmentCourseFallback}
+              {courseDisplayName(rec.courseId, courses)}
             </span>
-            <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+            <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
               {rec.assessmentType}
             </span>
             {rec.urgencyBadge && (
               <span
-                className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${badgeColor}`}
+                className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${badgeColor}`}
               >
                 {rec.urgencyBadge}
               </span>
@@ -971,7 +1018,7 @@ const StudyRecommendationCard: React.FC<RecommendationCardProps> = ({
                   setTopicsExpanded((v) => !v);
                 }}
                 aria-expanded={topicsExpanded}
-                className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-[#1a73e8] hover:bg-blue-100 dark:bg-blue-950/60 dark:text-blue-300 dark:hover:bg-blue-900/60"
+                className="inline-flex min-h-6 shrink-0 cursor-pointer items-center gap-1 rounded bg-blue-50 px-2 py-1 text-[11px] font-semibold text-[#1a73e8] hover:bg-blue-100 dark:bg-blue-950/60 dark:text-blue-300 dark:hover:bg-blue-900/60"
               >
                 <BookOpen className="h-2.5 w-2.5" aria-hidden="true" />
                 <span>{copy.dashboard.topicsCount(topicsCount)}</span>
@@ -982,7 +1029,7 @@ const StudyRecommendationCard: React.FC<RecommendationCardProps> = ({
               </button>
             )}
             {uniqueWarnings.length > 0 && (
-              <span className="hidden shrink-0 items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 md:inline-flex dark:bg-amber-950/50 dark:text-amber-300">
+              <span className="hidden shrink-0 items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 md:inline-flex dark:bg-amber-950/50 dark:text-amber-300">
                 <AlertCircle className="h-2.5 w-2.5 text-amber-500" aria-hidden="true" />
                 <span>{copy.dashboard.rulesCount(uniqueWarnings.length)}</span>
               </span>
@@ -1034,6 +1081,7 @@ interface TimelineRowProps {
 }
 
 const TimelineRow: React.FC<TimelineRowProps> = ({ assessment: a, onClick }) => {
+  const courses = useAppStore((s) => s.data.schedule.courses);
   const palette = coursePalette(a.courseId || "GENERAL");
   const accent = a.color || palette.color;
 
@@ -1060,21 +1108,21 @@ const TimelineRow: React.FC<TimelineRowProps> = ({ assessment: a, onClick }) => 
       <div className="flex items-center justify-between gap-1.5">
         <div className="flex min-w-0 flex-wrap items-center gap-1">
           <span
-            className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold text-white"
+            className="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold text-white"
             style={{ backgroundColor: accent }}
           >
-            {a.courseId || copy.dashboard.assessmentCourseFallback}
+            {courseDisplayName(a.courseId, courses)}
           </span>
-          <span className="shrink-0 rounded-md bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+          <span className="shrink-0 rounded-md bg-slate-200/80 px-1.5 py-0.5 text-[11px] font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
             {a.assessmentType}
           </span>
-          <span className="flex shrink-0 items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 dark:border-blue-900 dark:bg-blue-950/60 dark:text-blue-300">
+          <span className="flex shrink-0 items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[11px] font-semibold text-blue-700 dark:border-blue-900 dark:bg-blue-950/60 dark:text-blue-300">
             <SourceIcon name={a.sourceIcon || "mail"} className="h-2.5 w-2.5" />
             <span>{a.source || "Gmail"}</span>
           </span>
           {a.conflictWarning && (
             <span
-              className="flex shrink-0 items-center gap-0.5 rounded-md border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 dark:border-amber-300/60 dark:bg-amber-950/80 dark:text-amber-200"
+              className="flex shrink-0 items-center gap-0.5 rounded-md border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-800 dark:border-amber-300/60 dark:bg-amber-950/80 dark:text-amber-200"
               title={a.conflictWarning}
             >
               <AlertTriangle className="h-2.5 w-2.5" aria-hidden="true" />
@@ -1082,7 +1130,7 @@ const TimelineRow: React.FC<TimelineRowProps> = ({ assessment: a, onClick }) => 
             </span>
           )}
           {a.achievedScore != null && (
-            <span className="flex shrink-0 items-center gap-0.5 rounded-md border border-emerald-300 bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800 dark:border-emerald-300/60 dark:bg-emerald-950/80 dark:text-emerald-200">
+            <span className="flex shrink-0 items-center gap-0.5 rounded-md border border-emerald-300 bg-emerald-100 px-1.5 py-0.5 text-[11px] font-bold text-emerald-800 dark:border-emerald-300/60 dark:bg-emerald-950/80 dark:text-emerald-200">
               <Award className="h-2.5 w-2.5" aria-hidden="true" />
               <span>
                 {a.achievedScore}/{a.maxScore ?? "—"}
@@ -1091,7 +1139,7 @@ const TimelineRow: React.FC<TimelineRowProps> = ({ assessment: a, onClick }) => 
           )}
         </div>
         <span
-          className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums ${
+          className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums ${
             a.isUpcoming
               ? "border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
               : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
@@ -1110,7 +1158,7 @@ const TimelineRow: React.FC<TimelineRowProps> = ({ assessment: a, onClick }) => 
       <div className="text-xs font-bold leading-snug text-slate-900 line-clamp-2 dark:text-white">
         {a.title}
       </div>
-      <div className="flex items-center justify-between text-[10px] tabular-nums text-slate-500 sm:text-[11px] dark:text-slate-400">
+      <div className="flex items-center justify-between text-[11px] tabular-nums text-slate-500 sm:text-[11px] dark:text-slate-400">
         <span className="flex items-center gap-1">
           <Calendar className="h-3 w-3" aria-hidden="true" />
           <span>{dateTimeDisplay || "—"}</span>

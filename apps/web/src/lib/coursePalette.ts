@@ -50,3 +50,21 @@ export function coursePalette(course: string | number): CourseColors {
     border: `${color}55`,
   };
 }
+
+/**
+ * User-facing course label: the course's name when it is enrolled, otherwise
+ * the id itself (never an invented name). Raw ids must never be rendered
+ * directly in chips/labels — this helper is the single place that resolves them.
+ */
+export function courseDisplayName(
+  courseId: string | null | undefined,
+  courses:
+    ReadonlyArray<{ id: string; name: string }> | ReadonlyMap<string, { id: string; name: string }>,
+): string {
+  if (!courseId) return "—";
+  const course =
+    "get" in courses
+      ? (courses as ReadonlyMap<string, { id: string; name: string }>).get(courseId)
+      : (courses as ReadonlyArray<{ id: string; name: string }>).find((c) => c.id === courseId);
+  return course?.name ?? courseId;
+}

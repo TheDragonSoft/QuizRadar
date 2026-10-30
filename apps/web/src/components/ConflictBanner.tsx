@@ -35,7 +35,7 @@ export const ConflictBanner: React.FC = () => {
           <div className="space-y-1 min-w-0">
             <div className="text-xs font-bold text-emerald-900 dark:text-emerald-100 flex items-center gap-2 flex-wrap">
               <span>{copy.dashboard.conflictBanner.mitigatedTitle(studyBlocks.length)}</span>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold">
                 {copy.dashboard.conflictBanner.mitigatedBadge}
               </span>
             </div>
@@ -83,26 +83,40 @@ export const ConflictBanner: React.FC = () => {
             <span>{copy.dashboard.conflictBanner.unresolvedTitle(alerts.length)}</span>
           </div>
           <div className="space-y-1">
-            {alerts.map((a, idx) => (
-              <div
-                key={idx}
-                className="text-xs text-amber-800 dark:text-amber-300 flex items-center gap-2 flex-wrap"
-              >
-                <span
-                  className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                    a.severity === "critical"
-                      ? "bg-red-500/20 text-red-700 dark:text-red-300"
-                      : "bg-amber-500/20 text-amber-700 dark:text-amber-300"
-                  }`}
+            {alerts.map((a, idx) => {
+              const labelA = a.titleA || a.assessmentAId;
+              const labelB = a.titleB || a.assessmentBId;
+              return (
+                <div
+                  key={idx}
+                  className="text-xs text-amber-800 dark:text-amber-300 flex items-center gap-2 flex-wrap"
                 >
-                  {a.severity.toUpperCase()}
-                </span>
-                <span>
-                  <strong>{a.titleA || a.assessmentAId}</strong> and{" "}
-                  <strong>{a.titleB || a.assessmentBId}</strong>: {a.message}
-                </span>
-              </div>
-            ))}
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[11px] font-bold ${
+                      a.severity === "critical"
+                        ? "bg-red-500/20 text-red-700 dark:text-red-300"
+                        : "bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                    }`}
+                  >
+                    {a.severity.toUpperCase()}
+                  </span>
+                  <span>
+                    {labelA === labelB ? (
+                      // Same title twice reads as a stutter — disambiguate with
+                      // the two assessment ids instead.
+                      <>
+                        <strong>{labelA}</strong> ({a.assessmentAId} vs {a.assessmentBId}):{" "}
+                        {a.message}
+                      </>
+                    ) : (
+                      <>
+                        <strong>{labelA}</strong> and <strong>{labelB}</strong>: {a.message}
+                      </>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -121,7 +135,7 @@ export const ConflictBanner: React.FC = () => {
           onClick={dismissConflicts}
           aria-label={copy.dashboard.conflictBanner.dismissTitle}
           title={copy.dashboard.conflictBanner.dismissTitle}
-          className="p-1 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 transition cursor-pointer"
+          className="p-1.5 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 transition cursor-pointer"
         >
           <X className="h-4 w-4" aria-hidden="true" />
         </button>

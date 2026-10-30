@@ -145,7 +145,7 @@ export function SettingsModal({
         await updateConfig({ geminiEnabled: true });
         addToast({
           type: "success",
-          message: copy.ai.keyValid,
+          message: isBrowserTier ? copy.ai.keyValidMemory : copy.ai.keyValid,
         });
       } else {
         addToast({
@@ -401,7 +401,9 @@ export function SettingsModal({
               <p className="mt-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
                 {auth.authenticated
                   ? `Connected${auth.email ? ` as ${auth.email}` : ""}. Tokens stay in the OS keyring (desktop) or in memory for one hour (web).`
-                  : "Signs in with the bundled Google client (ID + secret, kept inside the app) over PKCE. You can override the client in Settings → Account below."}
+                  : isBrowserTier
+                    ? copy.settings.browserSignInNote
+                    : "Signs in with the bundled Google client (ID + secret, kept inside the app) over PKCE. You can override the client in Settings → Account below."}
               </p>
               {!isBrowserTier && !auth.authenticated && !config.googleClientId && (
                 <p className="mt-2 rounded-lg border border-slate-300/60 bg-slate-500/10 px-3 py-2 text-[11px] font-semibold text-[var(--text)]">
@@ -492,11 +494,11 @@ export function SettingsModal({
                     spellCheck={false}
                   />
                   {!isBrowserTier ? (
-                    <p className="mt-1 text-[10px] leading-relaxed text-[var(--text-muted)]">
+                    <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
                       {copy.settings.googleDesktopClientIdHint}
                     </p>
                   ) : (
-                    <p className="mt-1 text-[10px] leading-relaxed text-[var(--text-muted)]">
+                    <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
                       {copy.settings.googleBrowserClientIdHint}
                     </p>
                   )}
@@ -505,7 +507,7 @@ export function SettingsModal({
                     onClick={() =>
                       openExternalUrl("https://console.cloud.google.com/apis/credentials")
                     }
-                    className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold text-[var(--accent)] hover:underline"
+                    className="mt-1.5 inline-flex min-h-6 items-center gap-1 rounded px-1 py-0.5 text-[11px] font-semibold text-[var(--accent)] hover:underline"
                   >
                     <ExternalLink className="h-3 w-3" aria-hidden="true" />
                     <span>{copy.settings.openGoogleConsole}</span>
@@ -529,7 +531,7 @@ export function SettingsModal({
                       spellCheck={false}
                       autoComplete="off"
                     />
-                    <p className="mt-1 text-[10px] leading-relaxed text-[var(--text-muted)]">
+                    <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
                       {copy.settings.googleDesktopClientSecretHint}
                     </p>
                   </div>
@@ -553,7 +555,7 @@ export function SettingsModal({
                     spellCheck={false}
                   />
                   {!isBrowserTier && (
-                    <p className="mt-1 text-[10px] leading-relaxed text-[var(--text-muted)]">
+                    <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
                       {copy.settings.teamsDesktopClientIdHint}
                     </p>
                   )}
@@ -564,14 +566,14 @@ export function SettingsModal({
                         "https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
                       )
                     }
-                    className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold text-[var(--accent)] hover:underline"
+                    className="mt-1.5 inline-flex min-h-6 items-center gap-1 rounded px-1 py-0.5 text-[11px] font-semibold text-[var(--accent)] hover:underline"
                   >
                     <ExternalLink className="h-3 w-3" aria-hidden="true" />
                     <span>{copy.settings.openAzureConsole}</span>
                   </button>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-[10px] text-[var(--text-muted)]">
+                  <span className="text-[11px] text-[var(--text-muted)]">
                     {isBrowserTier
                       ? copy.settings.redirectUriLabel(`${window.location.origin}/`)
                       : copy.settings.desktopRedirectUriNote}
@@ -646,7 +648,9 @@ export function SettingsModal({
                   }`}
                 >
                   {geminiValidationResult.valid
-                    ? copy.ai.keyValid
+                    ? isBrowserTier
+                      ? copy.ai.keyValidMemory
+                      : copy.ai.keyValid
                     : geminiValidationResult.error || copy.ai.keyInvalid}
                 </div>
               )}
@@ -656,7 +660,7 @@ export function SettingsModal({
                   <span>{copy.ai.quotaText(aiQuota?.callsToday ?? null)}</span>
                   <span>{copy.ai.quotaCapNote}</span>
                 </div>
-                <div className="text-[10px]">{copy.ai.quotaLimitNote}</div>
+                <div className="text-[11px]">{copy.ai.quotaLimitNote}</div>
               </div>
             </div>
           </div>
@@ -713,16 +717,16 @@ export function SettingsModal({
                           className="h-8 w-8 rounded-lg flex items-center justify-center text-xs font-bold text-white shrink-0 shadow-sm"
                           style={{ backgroundColor: c.color || "var(--accent)" }}
                         >
-                          {c.id.slice(0, 3)}
+                          {c.name.slice(0, 2).toUpperCase()}
                         </span>
                         <div className="min-w-0">
                           <div className="text-xs font-bold text-[var(--text)] truncate">
-                            {c.id}
-                          </div>
-                          <div className="text-[11px] text-[var(--text-muted)] truncate">
                             {c.name}
                           </div>
-                          <div className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                          <div className="text-[11px] text-[var(--text-muted)] truncate">
+                            {c.id}
+                          </div>
+                          <div className="text-[11px] text-[var(--text-muted)] mt-0.5">
                             {courseSlots.length} weekly slot{courseSlots.length === 1 ? "" : "s"}
                           </div>
                         </div>
@@ -1001,7 +1005,7 @@ export function SettingsModal({
               onClose();
               useAppStore.getState().setView("help");
             }}
-            className="cursor-pointer font-medium text-[var(--accent)] hover:underline"
+            className="min-h-6 cursor-pointer rounded px-1 py-0.5 font-medium text-[var(--accent)] hover:underline"
           >
             Tier Capabilities & Help →
           </button>

@@ -2866,18 +2866,18 @@
       </div>
 
       <!-- Mode Tabs (25m Focus, 5m Break, 15m Long Break) -->
-      <div class="flex items-center justify-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-semibold">
-        <button id="pomo-mode-work" onclick="setPomodoroMode('work')" class="flex-1 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-2xs transition cursor-pointer">25m Focus</button>
-        <button id="pomo-mode-short" onclick="setPomodoroMode('short')" class="flex-1 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition cursor-pointer">5m Short Break</button>
-        <button id="pomo-mode-long" onclick="setPomodoroMode('long')" class="flex-1 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition cursor-pointer">15m Long Break</button>
+      <div class="flex items-center justify-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-semibold" role="tablist" aria-label="Timer modes">
+        <button id="pomo-mode-work" role="tab" aria-selected="true" onclick="setPomodoroMode('work')" class="flex-1 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-2xs transition cursor-pointer">25m Focus</button>
+        <button id="pomo-mode-short" role="tab" aria-selected="false" onclick="setPomodoroMode('short')" class="flex-1 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition cursor-pointer">5m Short Break</button>
+        <button id="pomo-mode-long" role="tab" aria-selected="false" onclick="setPomodoroMode('long')" class="flex-1 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition cursor-pointer">15m Long Break</button>
       </div>
 
       <!-- Timer Display -->
       <div class="py-4">
-        <div id="pomodoro-digits" class="text-6xl font-black tabular-nums tracking-tight text-slate-900 dark:text-white font-mono">
+        <div id="pomodoro-digits" aria-live="off" class="text-6xl font-black tabular-nums tracking-tight text-slate-900 dark:text-white font-mono">
           25:00
         </div>
-        <div id="pomodoro-status-text" class="text-xs font-medium text-slate-500 dark:text-slate-400 mt-2">Ready to focus. Eliminate distractions.</div>
+        <div id="pomodoro-status-text" aria-live="polite" class="text-xs font-medium text-slate-500 dark:text-slate-400 mt-2">Ready to focus. Eliminate distractions.</div>
       </div>
 
       <!-- Controls -->

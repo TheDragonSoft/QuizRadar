@@ -4146,7 +4146,7 @@ function initKeyboardShortcuts() {
         return;
       }
       if (accountModal?.classList.contains("is-open")) {
-        closeAccountProfileModal();
+        closeAccountModal();
         return;
       }
       if (mobileSearchModal?.classList.contains("is-open")) {
@@ -9518,23 +9518,28 @@ function setPomodoroMode(mode) {
   const longBtn = document.getElementById("pomo-mode-long");
   const statusEl = document.getElementById("pomodoro-status-text");
 
-  [workBtn, shortBtn, longBtn].forEach((b) => {
-    if (b) {
-      b.className = "flex-1 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition cursor-pointer";
+  [
+    { btn: workBtn, id: "work" },
+    { btn: shortBtn, id: "short" },
+    { btn: longBtn, id: "long" },
+  ].forEach(({ btn, id }) => {
+    if (btn) {
+      const active = id === mode;
+      btn.setAttribute("aria-selected", active ? "true" : "false");
+      btn.className = active
+        ? "flex-1 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 font-bold shadow-2xs transition cursor-pointer"
+        : "flex-1 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition cursor-pointer";
     }
   });
 
   if (mode === "work") {
     pomodoroTotalSeconds = 25 * 60;
-    if (workBtn) workBtn.className = "flex-1 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 font-bold shadow-2xs transition cursor-pointer";
     if (statusEl) statusEl.textContent = "25-minute deep focus block. Eliminate distractions.";
   } else if (mode === "short") {
     pomodoroTotalSeconds = 5 * 60;
-    if (shortBtn) shortBtn.className = "flex-1 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 font-bold shadow-2xs transition cursor-pointer";
     if (statusEl) statusEl.textContent = "5-minute quick recharge. Hydrate or stretch.";
   } else if (mode === "long") {
     pomodoroTotalSeconds = 15 * 60;
-    if (longBtn) longBtn.className = "flex-1 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 font-bold shadow-2xs transition cursor-pointer";
     if (statusEl) statusEl.textContent = "15-minute restorative break. Step away from screen.";
   }
 

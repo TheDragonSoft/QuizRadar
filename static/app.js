@@ -7605,12 +7605,26 @@ function closeAddCourseModal() {
 function renderCourseColorPicker() {
   const container = document.getElementById("add-course-color-picker");
   if (!container) return;
+  const colorNames = {
+    "#1a73e8": "Blue",
+    "#0f9d58": "Emerald",
+    "#ea8600": "Amber",
+    "#d93025": "Red",
+    "#8e24aa": "Purple",
+    "#00acc1": "Cyan",
+    "#e67c73": "Coral",
+    "#3949ab": "Indigo",
+  };
   container.innerHTML = COURSE_PRESET_COLORS.map(
-    (hex) => `
-    <button type="button" onclick="selectCourseModalColor('${hex}')" class="w-6 h-6 rounded-full transition transform hover:scale-110 active:scale-95 cursor-pointer shadow-xs ${
-      selectedAddCourseColor === hex ? "ring-2 ring-offset-2 ring-[#1a73e8] dark:ring-offset-slate-900 scale-110" : ""
+    (hex) => {
+      const isSelected = selectedAddCourseColor === hex;
+      const name = colorNames[hex] || hex;
+      return `
+    <button type="button" onclick="selectCourseModalColor('${hex}')" aria-label="Select ${name} theme color" aria-pressed="${isSelected}" title="${name}" class="w-6 h-6 rounded-full transition transform hover:scale-110 active:scale-95 cursor-pointer shadow-xs focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:focus-visible:ring-offset-slate-900 ${
+      isSelected ? "ring-2 ring-offset-2 ring-[#1a73e8] dark:ring-offset-slate-900 scale-110" : ""
     }" style="background-color: ${hex}"></button>
-  `
+  `;
+    }
   ).join("");
 }
 
@@ -7632,7 +7646,7 @@ function addCourseSlotRow(preferred) {
   const room = (preferred && preferred.room != null ? preferred.room : "C203");
   const type = (preferred && preferred.type) || "Lecture";
   row.innerHTML = `
-    <select class="slot-day px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none">
+    <select aria-label="Class day of week" class="slot-day px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none">
       <option value="Sunday" ${day === "Sunday" ? "selected" : ""}>Sunday</option>
       <option value="Monday" ${day === "Monday" ? "selected" : ""}>Monday</option>
       <option value="Tuesday" ${day === "Tuesday" ? "selected" : ""}>Tuesday</option>
@@ -7642,17 +7656,17 @@ function addCourseSlotRow(preferred) {
       <option value="Saturday" ${day === "Saturday" ? "selected" : ""}>Saturday</option>
     </select>
     <div class="flex items-center gap-1">
-      <input type="time" class="slot-start px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none" value="${escapeHtml(start || "09:00")}" />
+      <input type="time" aria-label="Class start time" class="slot-start px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none" value="${escapeHtml(start || "09:00")}" />
       <span class="text-slate-400 text-[10px]">to</span>
-      <input type="time" class="slot-end px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none" value="${escapeHtml(end || "10:30")}" />
+      <input type="time" aria-label="Class end time" class="slot-end px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none" value="${escapeHtml(end || "10:30")}" />
     </div>
-    <input type="text" class="slot-room px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none w-20" placeholder="Room" value="${escapeHtml(room || "")}" />
-    <select class="slot-type px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none">
+    <input type="text" aria-label="Class room or location" class="slot-room px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none w-20" placeholder="Room" value="${escapeHtml(room || "")}" />
+    <select aria-label="Class session type" class="slot-type px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none">
       <option value="Lecture" ${type === "Lecture" ? "selected" : ""}>Lecture</option>
       <option value="Lab" ${type === "Lab" ? "selected" : ""}>Lab</option>
       <option value="Tutorial" ${type === "Tutorial" ? "selected" : ""}>Tutorial</option>
     </select>
-    <button type="button" onclick="this.closest('.course-slot-row').remove()" class="p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer" title="Remove slot">
+    <button type="button" onclick="this.closest('.course-slot-row').remove()" aria-label="Remove slot" class="p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer" title="Remove slot">
       <i data-lucide="x" class="w-3.5 h-3.5"></i>
     </button>
   `;

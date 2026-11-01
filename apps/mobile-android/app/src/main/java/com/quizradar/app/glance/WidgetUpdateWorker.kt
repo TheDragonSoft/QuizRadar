@@ -17,8 +17,12 @@ class WidgetUpdateWorker(
     params: WorkerParameters,
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
+        // `QuizRadarEngine.create` returns the process-cached singleton — the
+        // store is shared with the UI and MUST NOT be closed here (an earlier
+        // version closed it per-run when each worker owned its own engine;
+        // that now bricks the app's DB access until process restart).
+        val engine = QuizRadarEngine.create(applicationContext)
         return try {
-            val engine = QuizRadarEngine.create(applicationContext)
             QuizRadarWidget.refreshFromEngine(applicationContext, engine)
             Result.success()
         } catch (_: Exception) {
@@ -32,6 +36,15 @@ class WidgetUpdateWorker(
         fun schedule(context: Context) {
             val request =
                 PeriodicWorkRequestBuilder<WidgetUpdateWorker>(30, TimeUnit.MINUTES)
+                    // Without an initial delay the first iteration runs the
+                    // moment the app starts, and the system's job service
+                    // asks the process for it on the MAIN thread - while the
+                    // activity is still starting up. On a slow first run that
+                    // collision produced "No response to onStartJob for
+                    // #WidgetUpdateWorker" (an ANR). Two minutes is enough
+                    // to clear the start-up window, and the widget is
+                    // refreshed by the UI itself on every start anyway.
+                    .setInitialDelay(2, TimeUnit.MINUTES)
                     .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 WORK_NAME,

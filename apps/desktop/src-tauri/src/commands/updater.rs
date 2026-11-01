@@ -8,7 +8,7 @@
 //! - When unconfigured, returns "Release channel not configured (<reason>)".
 
 use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use tauri_plugin_updater::UpdaterExt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,6 +84,37 @@ pub async fn check_update(app: AppHandle) -> Result<UpdateCheckResult, String> {
             error: Some(format_updater_error(&e.to_string())),
         }),
     }
+}
+
+/// Downloads and installs the pending update (`01` §4.8 "download-with-
+/// honest-progress → installer handoff → recovery message").
+///
+/// The progress events carry the bytes received so far and the total when
+/// the server announced one; when the total is unknown the UI says so
+/// instead of inventing a percentage.
+#[tauri::command]
+pub async fn download_and_install_update(app: AppHandle) -> Result<(), String> {
+    let updater = app
+        .updater()
+        .map_err(|e| format_updater_error(&e.to_string()))?;
+    let update = updater
+        .check()
+        .await
+        .map_err(|e| format_updater_error(&e.to_string()))?
+        .ok_or_else(|| "No update is available to install.".to_string())?;
+    let chunk_app = app.clone();
+    let finish_app = app.clone();
+    update
+        .download_and_install(
+            move |chunk_length, content_length| {
+                let _ = chunk_app.emit("update-progress", (chunk_length, content_length));
+            },
+            move || {
+                let _ = finish_app.emit("update-downloaded", ());
+            },
+        )
+        .await
+        .map_err(|e| format_updater_error(&e.to_string()))
 }
 
 #[cfg(test)]

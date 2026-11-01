@@ -11,13 +11,13 @@
     "core/src/types.rs"
   ],
   "sourceHashes": {
-    "core/src/types.rs": "e94f9ac02bf0fb487988b6431348e603c98bd44daa531574b376cd0d3f9a9bb0",
-    "core/src/plan/dashboard.rs": "cfec0f4bd9d0076d6095a703dc00be8d6faf2bb2bebd38bd545fd43edc9d3c35",
-    "core/src/plan/tasks.rs": "5edc8554529d80673eca3cc063f6162e724ceeb2a2c7df1d4d32b642a744b564",
+    "core/src/types.rs": "8160e69fe8d91f9dbc6582aff2ceff1458d48e6fde578f73a2fdbcfbd11b1bbe",
+    "core/src/plan/dashboard.rs": "66435dc70a5ad60f1cb101248f00448dba9fad568f6b8c54bbe3507cac4498f3",
+    "core/src/plan/tasks.rs": "76b0644a6bfd0cc8794d9c496d5eea4be67f787629885b373fac64e6f3b438e8",
     "core/src/plan/conflicts.rs": "a953cf743da6a8fc45b43bc6c2dfd716c6842a65a2d4311b08c56a19e8729e74",
-    "apps/desktop/src-tauri/src/commands/state.rs": "28afc09b409b22e931d0f6a17218faf464e4719c7e966cbf645d3223477f7d66",
-    "core/src/store/repo.rs": "799805ef84ad756d7e7953efd98a779687363dce5af861be12787fddd0f8354a",
-    "core/src/ffi.rs": "3e4d5bf0f8c17103dd41a68851ba228980d268664b3dd99efc0768e5d7604e90"
+    "apps/desktop/src-tauri/src/commands/state.rs": "537d6c73b3dcf31faae548e74e6d703deda0f137fc647411b7a1a590cf34f2ce",
+    "core/src/store/repo.rs": "fc6934c0a6cc86a4822aa676cebcd61e15939566bdf668950b1dc865368805d4",
+    "core/src/ffi.rs": "7e62ef3a5ef3fd80f417d57fa12b22851e73150aff806126f160a049c80b0b36"
   },
   "structs": {
     "CachedEmail": {
@@ -1154,6 +1154,12 @@
           "optional": false
         },
         {
+          "rustName": "academic_track",
+          "wireName": "academicTrack",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
           "rustName": "teams_enabled",
           "wireName": "teamsEnabled",
           "rustType": "bool",
@@ -1385,6 +1391,12 @@
           "optional": true
         },
         {
+          "rustName": "academic_track",
+          "wireName": "academicTrack",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
           "rustName": "teams_enabled",
           "wireName": "teamsEnabled",
           "rustType": "Option<bool>",
@@ -1529,23 +1541,23 @@
       "variants": [
         {
           "name": "Critical",
-          "wireName": "Critical"
+          "wireName": "critical"
         },
         {
           "name": "High",
-          "wireName": "High"
+          "wireName": "high"
         },
         {
           "name": "Medium",
-          "wireName": "Medium"
+          "wireName": "medium"
         },
         {
           "name": "Upcoming",
-          "wireName": "Upcoming"
+          "wireName": "upcoming"
         },
         {
           "name": "Past",
-          "wireName": "Past"
+          "wireName": "past"
         }
       ]
     },

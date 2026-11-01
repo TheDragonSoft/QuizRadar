@@ -33,13 +33,21 @@ export const copy = {
     themeLight: "Switch to light mode",
     themeDark: "Switch to dark mode",
     themeToggleAria: "Toggle light or dark theme",
+    sidebarToggleAria: "Toggle sidebar",
     userSignIn: "Sign in",
     settings: "Settings",
     settingsAria: "Open settings",
     updateAvailable: "Update Available",
     updateNotesFallback: "A new update is ready to install.",
     skipUpdate: "Skip this version",
-    updateNextLaunch: "Update on next launch",
+    // The installer is wired (desktop `download_and_install_update`), so the
+    // button really downloads and hands over to the installer. The old
+    // "Update on next launch" promised something that never happened.
+    updateInstall: "Install update",
+    updateInstalling: "Downloading update…",
+    updateProgress: (label: string) => `Downloading ${label}`,
+    updateInstalled: "Update downloaded — the installer takes over from here.",
+    updateFailed: (reason: string) => `Update failed: ${reason}`,
     viewSwitcherLabel: "Switch view",
     dataBackup: "Data & Backup",
     dataBackupTitle: "On-device engine & local data backup",
@@ -48,8 +56,13 @@ export const copy = {
   sidebar: {
     miniCalendarTitle: "Mini Calendar",
     createEvent: "Create Study Event",
-    weekExamsTitle: "Exams in Selected Week",
-    weekExamsEmpty: "No exams scheduled in this week.",
+    // The panel lists every kind in the selected week (quizzes, exams, labs,
+    // assignments) — the v4 "Exams in Selected Week" title mislabeled them.
+    // The title must not say "this week": the mini-calendar's arrows move the
+    // panel to any week, so the exact range is printed underneath it.
+    weekExamsTitle: "Week's Assessments",
+    weekExamsRange: (start: string, end: string) => `${start} – ${end}`,
+    weekExamsEmpty: "Nothing scheduled that week.",
     myCalendars: "My calendars",
     showAll: "Show all",
     roomLabel: "Room",
@@ -101,6 +114,14 @@ export const copy = {
     retry: "Retry",
     offlineNotice: "Offline mode · Using cached state",
     dayRolloverNotice: "Day rolled over — recomputing study schedule and deadlines",
+    /**
+     * Shown wherever a readiness bar would otherwise render a percentage for
+     * an assessment that has no tracked topics. The core's 0/0 = 100 means
+     * "nothing is pending", not "100% mastered" — so the number is withheld.
+     * "Syllabus" matters: the planner's generic review steps are NOT
+     * syllabus topics the source ever stated.
+     */
+    noTopicsTracked: "No syllabus topics tracked",
   },
 
   pullToRefresh: {
@@ -122,10 +143,6 @@ export const copy = {
     noScanRunning: "No scan is running.",
     cancelKeepsData:
       "The scan was aborted before anything was written. Your radar is exactly as it was.",
-    doctrineTitle: "Honest Scan Doctrine",
-    doctrineOnDevice: "Direct on-device fetches from authorized student accounts",
-    doctrineNoServer: "Scans run concurrently without sending tokens to any server",
-    doctrinePreserved: "User-edited grades and custom calendar events are safely preserved",
   },
 
   dashboard: {
@@ -142,11 +159,17 @@ export const copy = {
     heroFocusLabel: "Focus:",
     heroConnectAccount: "Connect Account",
     heroSyncRadar: "Sync Radar",
-    kpiUpcomingTitle: "Coming up this week",
+    // The window is "today through +7 days" (the core's `days_until` 0..=7,
+    // v4 parity) - it is NOT a calendar week, so the title must not say
+    // "this week". The exact date range is printed underneath.
+    kpiUpcomingTitle: "Next 7 days",
     kpiUpcomingCountLabel: "Assessments",
     kpiUpcomingEmpty: "Nothing scheduled in the next 7 days",
-    kpiTypesTitle: "Types of exams",
-    kpiTypesEmpty: "No upcoming exams",
+    // Replaced the "Types of exams" pill breakdown — the count of upcoming
+    // midterm/final exams is the number people actually need at a glance.
+    kpiExamsTitle: "Exams ahead",
+    kpiExamsSubtitle: "Midterm & final exams",
+    kpiExamsEmpty: "No upcoming exams",
     kpiReadinessTitle: "Study readiness",
     kpiReadinessSubtext: "Mastery across all upcoming assessments",
     kpiReadinessCounts: (done: number, total: number) =>
@@ -155,6 +178,7 @@ export const copy = {
     kpiSyncTitle: "Gemini & Calendar sync",
     kpiSyncActive: (count: number) => `${count} source${count === 1 ? "" : "s"} active`,
     kpiSyncNone: "No sources connected",
+    kpiTypeBreakdown: "By type",
     kpiSyncBadgeActive: "Active",
     kpiSyncBadgeInactive: "Not connected",
     kpiNotConnected: "Not Connected",
@@ -177,13 +201,21 @@ export const copy = {
       mitigatedBadge: "Protected",
       mitigatedBody: (count: number) =>
         `All ${count} exam cluster${count > 1 ? "s have" : " has"} dedicated 90-minute preparation blocks booked in your timetable to distribute your study load and prevent last-minute cramming.`,
+      partiallyMitigatedNote: (count: number) =>
+        `${count} other conflict${count > 1 ? "s" : ""} already ${count > 1 ? "have" : "has"} study blocks booked.`,
       viewOnCalendarAction: "View Blocks on Week Calendar",
       dismissTitle: "Dismiss banner",
+      // The auto-schedule outcome is reported by what actually happened - the
+      // old toast claimed success even when no block was written.
+      blocksCreated: (count: number) =>
+        `Added ${count} study block${count === 1 ? "" : "s"} to your timetable`,
+      blocksSkippedUndated: (count: number) =>
+        `Skipped ${count} assessment${count === 1 ? "" : "s"} without a confirmed date — no study block was added`,
+      blocksNoWindow:
+        "No free 90-minute study window was found in your timetable — no study block was added",
     },
 
-    recommendationsTitle: "What Should I Study? — AI Priority Study Planner",
-    recommendationsSubtitle:
-      "Tap any card to view detailed study plans, topic checklists, and exam instructions.",
+    recommendationsTitle: "What Should I Study?",
     recommendationsEmpty: "No active study recommendations. You're all caught up!",
     studyEmptyTitle: "Add your first course to build your study plan",
     studyEmptyBody:
@@ -219,6 +251,17 @@ export const copy = {
     timelineEmptyFilteredBody:
       "Your assessments are still here — loosen the type or source filter to see them.",
     timelineClearFilters: "Clear Filters",
+    // The top-bar search filters the dashboard lists live (spec §4.8). When it
+    // matches nothing the copy must say "nothing matched", never "you are all
+    // caught up" - the user is not caught up, the filter hid everything.
+    searchFilterActive: (query: string) => `Showing matches for “${query}”`,
+    searchClear: "Clear Search",
+    timelineEmptySearchTitle: "No assessments match your search",
+    timelineEmptySearchBody: (query: string) =>
+      `Nothing in your radar matches “${query}”. Clear the search to see every assessment.`,
+    studyEmptySearchTitle: "No study plans match your search",
+    studyEmptySearchBody: (query: string) =>
+      `Nothing in your study plan matches “${query}”. Clear the search to see every plan.`,
     filterAll: "All",
     filterAllSources: "All Sources",
     filterUpcomingOnly: "All Upcoming",
@@ -227,6 +270,8 @@ export const copy = {
     typeFilterClassQuiz: "Class Quizzes",
     typeFilterOnlineQuiz: "Online Quizzes",
     typeFilterMidterm: "Midterm Exams",
+    typeFilterFinalExam: "Final Exams",
+    typeFilterLabAssessment: "Lab Assessments",
     typeFilterAssignment: "Assignments",
     sourcePillGmail: "Gmail",
     sourcePillMoodle: "Moodle",
@@ -237,10 +282,13 @@ export const copy = {
   },
 
   tasks: {
+    // "study steps", not "topics": when an announcement named no syllabus
+    // topics the planner still schedules generic review steps, and calling
+    // those topics would contradict the readiness card right below.
     summaryLine: (pending: number, upcoming: number, hours: number | null) =>
       hours !== null
-        ? `${pending} pending topics across ${upcoming} upcoming exams • Est. ${hours} hrs`
-        : `${pending} pending topics across ${upcoming} upcoming exams`,
+        ? `${pending} pending study steps across ${upcoming} upcoming exams • Est. ${hours} hrs`
+        : `${pending} pending study steps across ${upcoming} upcoming exams`,
     filterAllCourses: "All Courses",
     readinessTitle: "Exam Readiness",
     avgBadge: "avg readiness",
@@ -258,8 +306,26 @@ export const copy = {
     legendExam: "Exam / Quiz",
     legendClass: "Class Slot",
     legendCustom: "Custom / Study Block",
+    exportAllIcs: "Export all (.ics)",
     timeGutterAria: "Time of day",
     daysHeaderAria: "Week days",
+  },
+
+  cloudSync: {
+    title: "Cloud Backup & Transfer",
+    pushSucceeded: "Data-only cloud backup uploaded to Google Drive AppData",
+    pushFailed: (reason: string) => `Cloud backup push failed: ${reason}`,
+    pullFailed: (reason: string) => `Cloud backup pull failed: ${reason}`,
+    noCloudBackup: "No cloud backup file found in Google Drive AppData",
+    mergedUnknown: "Cloud backup merged (the merge report was not returned)",
+    mergedSummary: (
+      assessments: number,
+      topics: number,
+      grades: number,
+      events: number,
+      schedule: boolean,
+    ) =>
+      `Cloud backup merged: ${assessments} assessment${assessments === 1 ? "" : "s"} replaced, ${topics} topic record${topics === 1 ? "" : "s"} merged, ${grades} grade${grades === 1 ? "" : "s"} merged, ${events} event${events === 1 ? "" : "s"} upserted${schedule ? ", timetable replaced" : ""}`,
   },
 
   assessmentDetail: {
@@ -302,10 +368,6 @@ export const copy = {
     title: "Welcome to QuizRadar",
     subtitle:
       "Resolve fuzzy announcements into exact dates by cross-referencing your weekly timetable.",
-    comingFromV4Title: "Coming from QuizRadar v4?",
-    comingFromV4Subtitle:
-      "Restore your courses, timetable, grades, and completed topics directly from a v4 backup JSON.",
-    importV4Action: "Import v4 Backup",
     step1Title: "Profile & Rhythm",
     step2Title: "Connect Sources",
     step3Title: "Courses & Sync",
@@ -319,6 +381,10 @@ export const copy = {
     trackEngSub: "Lab assessments, problem sets, bi-weekly quizzes",
     trackBiz: "Business & Humanities",
     trackBizSub: "Case studies, midterms, group project milestones",
+    trackNotSet: "Not set",
+    trackUnknown: "Unknown preset",
+    trackSaved: "Academic rhythm saved",
+    trackSaveFailed: "Could not save the academic rhythm",
     themeTitle: "Visual Theme",
     themeLight: "Light Theme",
     themeDark: "Dark Theme",
@@ -336,8 +402,6 @@ export const copy = {
     timetableUploadButton: "Select Timetable Image",
     timetableUploadManual: "Skip / Enter Courses Manually",
     timetableExtracting: "Analyzing timetable with Gemini Vision…",
-    timetableUploadBrowserNote:
-      "Timetable image import runs in the desktop app. In the browser, add your courses and their weekly slots below.",
     connectedBadge: "Connected",
     notConnectedBadge: "Not Connected",
     next: "Next Step",
@@ -354,6 +418,8 @@ export const copy = {
       count === null
         ? "AI calls today: not tracked on this tier"
         : `AI calls today: ${count} (resets midnight PT)`,
+    quotaTextSession: (count: number) =>
+      `AI calls this session: ${count} (browser tier counts in memory — it resets on reload)`,
     quotaCapNote: "Free tier quota resets every day at midnight Pacific Time (PT).",
     quotaLimitNote:
       "Google sets the free-tier daily limit per project — see your project in AI Studio.",
@@ -387,7 +453,7 @@ export const copy = {
     googleClientIdPlaceholder: "1234567890-abc123.apps.googleusercontent.com",
     googleDesktopClientIdLabel: "Google OAuth Client ID (optional override)",
     googleDesktopClientIdHint:
-      "QuizRadar ships a working Google client (project gmail-summary-511914), so sign-in needs nothing from you. Paste your own client ID only to use a different OAuth app — a Web application client additionally needs its secret in the field below.",
+      "QuizRadar ships a working Google client (project quizradar-511922), so sign-in needs nothing from you. Paste your own client ID only to use a different OAuth app — a Web application client additionally needs its secret in the field below.",
     googleDesktopClientSecretLabel: "Google OAuth Client Secret (optional override)",
     googleDesktopClientSecretHint:
       "Only needed for a client ID you paste yourself: Google refuses a secretless token exchange for Web application clients. Stored in the OS keyring (never in the database, the logs or the web bundle). Leave empty to use the bundled secret.",
@@ -407,6 +473,14 @@ export const copy = {
     coursesHeader: "Enrolled Courses & Timetable Slots",
     addCourse: "Add Course",
     reopenOnboarding: "Re-open Onboarding Wizard",
+    timetableImportTitle: "Import Timetable from Image (AI)",
+    timetableImportSub:
+      "Upload a screenshot of your weekly timetable — Gemini Vision reads the courses and class slots, and you review them before anything is saved.",
+    timetableImportButton: "Select Timetable Image",
+    timetableImportExtracting: "Analyzing timetable with Gemini Vision…",
+    timetableImportNoKey:
+      "Add and validate a Gemini API key in the Account tab first — the image is sent to Google's Gemini API (see the free-tier disclosure there).",
+    timetableImportManual: "Enter courses and slots manually instead",
     integrationsHeader: "Data Sources & Calendar",
     gcalAutoPush: "Auto-sync assessments to Google Calendar (consents first)",
     gcalClassesPush: "Sync weekly timetable classes to Google Calendar",
@@ -423,9 +497,9 @@ export const copy = {
     backupHeader: "Data Backup, Migration & Device Pairing",
     exportBackup: "Export Backup (JSON)",
     importBackup: "Import Backup (JSON)",
-    pairPhoneTitle: "Pair with Android Mobile",
+    pairPhoneTitle: "Transfer to Android Mobile",
     pairPhoneHelp:
-      "Export a secret-free backup file to import on your Android phone, or connect directly on your local Wi-Fi.",
+      "Export a secret-free JSON backup file to import on your Android phone or another device.",
     updaterHeader: "Software Updates",
     checkUpdates: "Check for Updates",
     resetDatabase: "Reset All Local Data",
@@ -471,6 +545,8 @@ export const copy = {
     pause: "Pause",
     reset: "Reset",
     markTopicDone: "Mark current study topic completed",
+    startForTopic: "Start a focus session for",
+    topicMarkedDone: (topic: string) => `Topic marked completed: ${topic}`,
     sessionComplete: "Pomodoro session complete!",
     sessionSubtext: "Great focus work! Take a short break to recharge.",
   },
@@ -483,6 +559,8 @@ export const copy = {
     slotsCount: (count: number) => `${count} weekly class slot${count === 1 ? "" : "s"} identified`,
     droppedWarning: (c: number, s: number) =>
       `Honest notice: ${c} unrecognized course line(s) and ${s} invalid slot time(s) were dropped.`,
+    replacesCurrent: (c: number, s: number) =>
+      `Applying this replaces your current timetable (${c} course${c === 1 ? "" : "s"}, ${s} slot${s === 1 ? "" : "s"}).`,
     applyAction: "Apply & Save to Timetable",
     discardAction: "Discard Extraction",
     manualAction: "Enter Manually Instead",

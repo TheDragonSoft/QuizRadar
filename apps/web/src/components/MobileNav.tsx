@@ -34,7 +34,7 @@ export const MobileNav: React.FC = () => {
             type="button"
             onClick={() => setView(item.id)}
             aria-current={isActive ? "page" : undefined}
-            className="flex min-w-[64px] flex-col items-center justify-center gap-1 py-1 focus:outline-none"
+            className="flex min-w-[64px] flex-col items-center justify-center gap-1 py-1 rounded-lg focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
           >
             <div
               className={`flex h-8 w-14 items-center justify-center rounded-full transition-colors ${

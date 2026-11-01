@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark splash/window background: without a night variant the window
+         flashed light before Compose drew the dark theme. -->
+    <color name="window_background">#0B0F19</color>
+</resources>

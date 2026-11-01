@@ -210,10 +210,11 @@ describe("contract: drift mutations are rejected", () => {
     expect(result.warnings.map((issue) => issue.code)).toContain("unknown-field");
   });
 
-  it("accepts the stored lower-case urgency with a non-canonical warning", () => {
+  it("accepts the lower-case stored urgency with no casing warning (shapes unified)", () => {
     const result = mutateAssessment((d) => void (d.urgency_level = "critical"));
     expect(result.ok).toBe(true);
-    expect(result.warnings.map((issue) => issue.code)).toContain("non-canonical-enum-label");
+    expect(result.errors).toEqual([]);
+    expect(result.warnings.map((issue) => issue.code)).not.toContain("non-canonical-enum-label");
   });
 
   it("accepts a user feed source label that is not one of the core's own", () => {
@@ -316,9 +317,11 @@ describe("contract: the TypeScript mirror matches the Rust wire format", () => {
 // 7 — enums -------------------------------------------------------------------
 
 describe("contract: enums", () => {
-  it("emits exactly the recorded urgency variants", () => {
-    expect(RUST_URGENCY_EMIT_LABELS).toEqual(KNOWN_ENUM_DIVERGENCES[0].rustEmit);
-    expect(RUST_URGENCY_EMIT_LABELS).toEqual(["Critical", "High", "Medium", "Upcoming", "Past"]);
+  it("emits exactly the lower-case urgency variants (emit/store shapes unified)", () => {
+    expect(RUST_URGENCY_EMIT_LABELS).toEqual(["critical", "high", "medium", "upcoming", "past"]);
+    // The casing divergence was fixed in the core (serde rename_all) — the
+    // record must stay empty so a future divergence re-registers itself.
+    expect(KNOWN_ENUM_DIVERGENCES).toEqual([]);
   });
 
   it("declares exactly the mirror's lower-case urgency union", () => {
@@ -329,28 +332,21 @@ describe("contract: enums", () => {
         .split("|")
         .map((part) => part.trim().replace(/^["']|["']$/g, ""))
         .filter(Boolean) ?? [];
-    expect(declared).toEqual(KNOWN_ENUM_DIVERGENCES[0].tsDeclared);
+    expect(declared).toEqual(RUST_URGENCY_EMIT_LABELS);
   });
 
-  it("stores the lower-case ladder the emit ladder folds onto", () => {
-    expect(RUST_URGENCY_STORED_LABELS).toEqual(
-      RUST_URGENCY_EMIT_LABELS.map((label) => label.toLowerCase()),
-    );
+  it("stores the same ladder it emits", () => {
+    expect(RUST_URGENCY_STORED_LABELS).toEqual(RUST_URGENCY_EMIT_LABELS);
   });
 
-  it("the guard accepts the emit labels and warns on the stored ones", () => {
-    for (const label of RUST_URGENCY_EMIT_LABELS) {
-      const draft = clone(assessmentsFixture[0]) as Record<string, unknown>;
-      draft.urgency_level = label;
-      const result = validateRustPayload(draft, "Assessment");
-      expect(result.errors).toEqual([]);
-    }
-    for (const label of RUST_URGENCY_STORED_LABELS) {
+  it("the guard accepts the emit and stored labels without a casing warning", () => {
+    for (const label of [...RUST_URGENCY_EMIT_LABELS, ...RUST_URGENCY_STORED_LABELS]) {
       const draft = clone(assessmentsFixture[0]) as Record<string, unknown>;
       draft.urgency_level = label;
       const result = validateRustPayload(draft, "Assessment");
       expect(result.ok).toBe(true);
-      expect(result.warnings.map((issue) => issue.code)).toContain("non-canonical-enum-label");
+      expect(result.errors).toEqual([]);
+      expect(result.warnings.map((issue) => issue.code)).not.toContain("non-canonical-enum-label");
     }
   });
 

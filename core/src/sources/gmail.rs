@@ -6,6 +6,11 @@
 //! Fixes `03` §C3: v4 silently truncated bodies at 4,500 characters. v5 caps
 //! at 30,000 and records `body_truncated: true` on the cached email whenever
 //! content was dropped — consumers always know when a body is incomplete.
+//!
+//! The 60-day recency window (`01` §4.2) is applied where the cached
+//! messages become assessments (`parse::email`), not here: the cache keeps
+//! what Gmail returned, and the scan report says how many messages were
+//! dropped as too old.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
@@ -15,7 +20,7 @@ use futures::StreamExt;
 use serde_json::Value;
 
 use crate::auth::providers::{GoogleCapability, ProviderCapability};
-use crate::parse::email::strip_html_tags;
+use crate::parse::email::{strip_html_tags, PLACEHOLDER_SENDER, PLACEHOLDER_SUBJECT};
 use crate::sources::{authed_get, net_err, Progress, TokenProvider};
 use crate::types::CachedEmail;
 
@@ -303,11 +308,15 @@ async fn fetch_message(
 
 /// Gmail API message → [`CachedEmail`] (v4 field walk, honest placeholders
 /// when headers are absent).
+///
+/// The placeholders are honest *labels* for a missing header — the parser
+/// knows them and never turns one into a title or an instructor
+/// (`parse::email::is_placeholder_header`).
 fn parse_gmail_message(msg_id: &str, message: &Value) -> CachedEmail {
     let payload = message.get("payload").unwrap_or(&Value::Null);
 
-    let mut subject = "(No Subject)".to_string();
-    let mut from = "(Unknown Sender)".to_string();
+    let mut subject = PLACEHOLDER_SUBJECT.to_string();
+    let mut from = PLACEHOLDER_SENDER.to_string();
     let mut date = String::new();
     if let Some(headers) = payload.get("headers").and_then(Value::as_array) {
         for header in headers {
@@ -627,8 +636,92 @@ mod tests {
     async fn base64_decode_handles_both_alphabets() {
         assert_eq!(decode_base64url("SGVsbG8gV29ybGQ"), "Hello World");
         assert_eq!(decode_base64url("SGVsbG8="), "Hello");
-        let standard = STANDARD.encode(b"hello/world+test");
+        let standard = STANDARD.encode("hello/world+test");
         assert_eq!(decode_base64url(&standard), "hello/world+test");
         assert_eq!(decode_base64url("!!!"), "");
+    }
+
+    #[tokio::test]
+    async fn missing_headers_become_placeholders_not_data() {
+        let server = MockServer::start().await;
+        mount_search(&server, &["senderless", "subjectless"]).await;
+        let messages = serde_json::json!({
+            "senderless": {
+                "id": "senderless",
+                "payload": {
+                    "headers": [
+                        {"name": "Subject", "value": "CSE241 Quiz 1 next week"},
+                        {"name": "Date", "value": "Sat, 17 Oct 2026 09:00:00 +0000"}
+                    ],
+                    "body": {"mimeType": "text/plain", "data": STANDARD.encode("CSE241 quiz 1 next week.")}
+                }
+            },
+            "subjectless": {
+                "id": "subjectless",
+                "payload": {
+                    "headers": [
+                        {"name": "From", "value": "e-learning@univ.edu"},
+                        {"name": "Date", "value": "Sat, 17 Oct 2026 09:00:00 +0000"}
+                    ],
+                    "body": {"mimeType": "text/plain", "data": STANDARD.encode("The online quiz opens on 25 October 2026.")}
+                }
+            }
+        });
+        let closure: Box<dyn Fn(&wiremock::Request) -> serde_json::Value + Send + Sync> =
+            Box::new(move |request| {
+                let id = last_path_segment(request);
+                messages
+                    .get(id.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({ "id": id }))
+            });
+        Mock::given(method("GET"))
+            .and(path_regex(r"^/users/me/messages/(?<id>[^/]+)$"))
+            .respond_with(JsonResponder(closure))
+            .mount(&server)
+            .await;
+
+        let client = http_client().unwrap();
+        let progress = Progress::new("Gmail", &|_| {});
+        let scan = scan_gmail(&client, &provider(), &server.uri(), &[], &progress)
+            .await
+            .unwrap();
+
+        let senderless = scan
+            .cache
+            .iter()
+            .find(|email| email.id == "senderless")
+            .unwrap();
+        assert_eq!(senderless.from, PLACEHOLDER_SENDER);
+        let subjectless = scan
+            .cache
+            .iter()
+            .find(|email| email.id == "subjectless")
+            .unwrap();
+        assert_eq!(subjectless.subject, PLACEHOLDER_SUBJECT);
+
+        // The placeholders never become data: no instructor is invented from
+        // a missing `From:` header and no placeholder becomes a title.
+        let ref_date = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+        let (items, _) = crate::parse::email::parse_emails(
+            &scan.cache,
+            &crate::types::ScheduleData::default(),
+            ref_date,
+        );
+        assert_eq!(items.len(), 2);
+        let senderless_item = items
+            .iter()
+            .find(|item| item.id == "senderless")
+            .expect("the senderless announcement is parsed");
+        assert_eq!(senderless_item.instructor, None);
+        let subjectless_item = items
+            .iter()
+            .find(|item| item.id == "subjectless")
+            .expect("the subjectless announcement is parsed");
+        assert_eq!(
+            subjectless_item.title,
+            crate::parse::email::UNTITLED_ASSESSMENT,
+            "a placeholder subject is not a title"
+        );
     }
 }

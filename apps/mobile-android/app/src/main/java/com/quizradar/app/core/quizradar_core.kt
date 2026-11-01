@@ -1137,7 +1137,7 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_import_backup() != 57877.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_quizradar_core_checksum_method_nativestore_replace_assessments() != 1883.toShort()) {
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_replace_assessments() != 34727.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_save_schedule() != 30730.toShort()) {
@@ -1555,6 +1555,15 @@ public interface NativeStoreInterface {
     
     suspend fun `importBackup`(`backupJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
     
+    /**
+     * Replaces the radar with `assessments_json`.
+     *
+     * This is an EXPLICIT, caller-driven write (the Android shell sets the
+     * radar and resets it), NOT the scan path: an empty list really does
+     * mean "the radar is empty now", so it is allowed to clear it. The scan
+     * path goes through the store's `replace_assessments`, which refuses an
+     * empty replace — a scan that found nothing must never wipe the radar.
+     */
     suspend fun `replaceAssessments`(`assessmentsJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
     
     suspend fun `saveSchedule`(`scheduleJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
@@ -1806,6 +1815,15 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
     }
 
     
+    /**
+     * Replaces the radar with `assessments_json`.
+     *
+     * This is an EXPLICIT, caller-driven write (the Android shell sets the
+     * radar and resets it), NOT the scan path: an empty list really does
+     * mean "the radar is empty now", so it is allowed to clear it. The scan
+     * path goes through the store's `replace_assessments`, which refuses an
+     * empty replace — a scan that found nothing must never wipe the radar.
+     */
     @Throws(QuizRadarFfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
     override suspend fun `replaceAssessments`(`assessmentsJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String) : kotlin.String {

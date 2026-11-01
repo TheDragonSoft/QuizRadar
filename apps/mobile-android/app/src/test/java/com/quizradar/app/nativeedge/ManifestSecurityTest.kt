@@ -43,7 +43,7 @@ class ManifestSecurityTest {
             content.contains("""android:scheme="https""""),
         )
 
-        // 4. Custom scheme com.quizradar.app must be registered for oauth and pair
+        // 4. Custom scheme com.quizradar.app must be registered for oauth
         assertTrue(
             "Manifest must register com.quizradar.app custom scheme",
             content.contains("""android:scheme="com.quizradar.app""""),
@@ -52,8 +52,8 @@ class ManifestSecurityTest {
             "Manifest must handle oauth host",
             content.contains("""android:host="oauth""""),
         )
-        assertTrue(
-            "Manifest must handle pair host",
+        assertFalse(
+            "Manifest must not handle obsolete pair host in zero-server mode",
             content.contains("""android:host="pair""""),
         )
 
@@ -67,6 +67,16 @@ class ManifestSecurityTest {
         assertTrue(
             "Manifest must register QuizRadarWidgetReceiver",
             content.contains("QuizRadarWidgetReceiver"),
+        )
+
+        // 7. App Shortcuts & Action Scheme must be registered
+        assertTrue(
+            "Manifest must register quizradar custom scheme",
+            content.contains("""android:scheme="quizradar""""),
+        )
+        assertTrue(
+            "Manifest must declare shortcuts metadata",
+            content.contains("""android:name="android.app.shortcuts""""),
         )
     }
 

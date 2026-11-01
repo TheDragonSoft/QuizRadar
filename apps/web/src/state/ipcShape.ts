@@ -167,10 +167,9 @@ function toJsSlot(raw: unknown): Rec {
 
 function toJsAssessment(raw: unknown): Rec {
   const assessment = aliasDeep(asRec(raw));
-  // `UrgencyLevel` has no `#[serde(rename_all = "lowercase")]`, so serde emits
-  // the variant name verbatim ("Critical"). The mirror declares the
-  // lower-case ladder the core stores in SQLite, so the label is folded here
-  // instead of leaking a value the declared union cannot hold.
+  // The core now serializes `UrgencyLevel` lower-case (serde rename_all),
+  // matching the mirror's declared union. This fold is kept as an idempotent
+  // safety net for payloads that predate the fix (old IDB rows, old backups).
   if (typeof assessment.urgencyLevel === "string") {
     assessment.urgencyLevel = assessment.urgencyLevel.toLowerCase();
   }

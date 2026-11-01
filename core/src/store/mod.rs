@@ -152,6 +152,9 @@ impl Store {
 
     /// Scan-pipeline entry: fresh radar replaces the old, user-owned fields
     /// survive reannouncement (phase 05 calls this per scan).
+    ///
+    /// An empty result is REFUSED here: a scan that found nothing must not
+    /// wipe the radar.
     pub async fn replace_assessments(
         &self,
         assessments: Vec<crate::types::Assessment>,
@@ -160,6 +163,27 @@ impl Store {
     ) -> Result<repo::AppSnapshot, StoreError> {
         self.run(move |db| {
             repo::ops::replace_assessments(db, &assessments, &updated_at, reference_date)
+        })
+        .await
+    }
+
+    /// Explicit, caller-driven replace: an empty list really does mean "the
+    /// radar is empty now" (a user-requested reset, the Android shell
+    /// clearing the radar). Only a caller that says so may clear it — the
+    /// scan path uses [`Store::replace_assessments`], which refuses.
+    pub async fn replace_assessments_allowing_empty(
+        &self,
+        assessments: Vec<crate::types::Assessment>,
+        updated_at: String,
+        reference_date: NaiveDate,
+    ) -> Result<repo::AppSnapshot, StoreError> {
+        self.run(move |db| {
+            repo::ops::replace_assessments_allowing_empty(
+                db,
+                &assessments,
+                &updated_at,
+                reference_date,
+            )
         })
         .await
     }
@@ -252,6 +276,33 @@ impl Store {
         .await
     }
 
+    /// The persisted Google-Calendar idempotency map (`assessment id → event
+    /// id`). A mapped id is a PUT (update), an unmapped id a POST (create) —
+    /// without persisting it, every push re-creates every event.
+    pub async fn synced_gcal_map(
+        &self,
+    ) -> Result<std::collections::HashMap<String, String>, StoreError> {
+        self.run(move |db| {
+            let conn = db.conn();
+            let config = repo::ConfigRepo::new(conn);
+            config.synced_gcal_map()
+        })
+        .await
+    }
+
+    /// Persist the gcal idempotency map returned by a push report.
+    pub async fn set_synced_gcal_map(
+        &self,
+        map: std::collections::HashMap<String, String>,
+    ) -> Result<(), StoreError> {
+        self.run(move |db| {
+            let conn = db.conn();
+            let config = repo::ConfigRepo::new(conn);
+            config.set_synced_gcal_map(&map)
+        })
+        .await
+    }
+
     /// Read a boolean configuration property.
     pub async fn get_config_bool(&self, key: String, default: bool) -> Result<bool, StoreError> {
         self.run(move |db| {
@@ -309,6 +360,21 @@ impl Store {
         .await
     }
 
+    /// Deletes several string configuration keys in one write — used by the
+    /// logout flows to wipe the signed-out account's identity, not just its
+    /// tokens.
+    pub async fn clear_profile_keys(&self, keys: Vec<String>) -> Result<(), StoreError> {
+        self.run(move |db| {
+            let conn = db.conn();
+            let config = repo::ConfigRepo::new(conn);
+            for key in &keys {
+                config.set_string(key, None)?;
+            }
+            Ok(())
+        })
+        .await
+    }
+
     // ---- Sync stamps (`kv_meta`, the canonical home per the store contract) ----
     //
     // These are dataset-level metadata, not user settings: they travel with
@@ -355,8 +421,10 @@ impl Store {
     /// Permanently wipes all tables and records, recreating a clean database state.
     pub async fn reset_all(&self) -> Result<(), StoreError> {
         self.run(move |db| {
-            let conn = db.conn();
-            conn.execute_batch(
+            // One transaction: an autocommit-per-statement wipe that fails
+            // halfway leaves a half-erased database, not "all data reset".
+            let tx = db.transaction()?;
+            tx.execute_batch(
                 "DELETE FROM assessments;
                  DELETE FROM courses;
                  DELETE FROM slots;
@@ -368,6 +436,7 @@ impl Store {
                  DELETE FROM tokens_meta;
                  DELETE FROM kv_meta;",
             )?;
+            tx.commit()?;
             Ok(())
         })
         .await

@@ -81,6 +81,12 @@ data class AssessmentModel(
     val eLearningUrl: String? = null,
     val isGcalSynced: Boolean = false,
     val gcalEventId: String? = null,
+    /**
+     * Short "exam schedule cluster" line the core computes for an
+     * assessment that clashes with a neighbour (`01` §4.3 timeline chip).
+     * `null` when the assessment is clean.
+     */
+    val conflictWarning: String? = null,
 )
 
 data class TopicCheckItemModel(

@@ -35,6 +35,15 @@ export function getMemoryGeminiKey(): string | null {
   return memoryGeminiKey;
 }
 
+/**
+ * Whether a key is currently held in memory. The UI asks this so it can say
+ * "no key in this session" instead of waiting for a failed AI call to explain
+ * it. It never returns the key itself.
+ */
+export function hasMemoryGeminiKey(): boolean {
+  return (memoryGeminiKey ?? "").trim().length > 0;
+}
+
 // ---------------------------------------------------------------------------
 // Browser-tier OAuth (PWA): 1h access tokens, memory-only, PKCE / GIS.
 // Per docs/rebuild/04-rebuild-architecture.md §4.3 — the PWA tier never holds
@@ -55,10 +64,12 @@ export const GOOGLE_BROWSER_SCOPES =
  * this tier can only use it as a public identifier (GIS needs no secret).
  *
  * The user can override it in Settings → Account; the client's authorized
- * JavaScript origins must contain the origin the PWA is served from.
+ * JavaScript origins must contain the origin the PWA is served from. The
+ * bundled registration (project `quizradar-511922`) already authorizes the
+ * dev origins `http://localhost:4317` and `http://127.0.0.1:4317`.
  */
 export const DEFAULT_BROWSER_GOOGLE_CLIENT_ID =
-  "341760934836-60toi8rjgkid0gmc69tmt598teghbgv4.apps.googleusercontent.com";
+  "620389124802-98bn4r9kllknq8l820rts76840l4af7q.apps.googleusercontent.com";
 
 export const GOOGLE_USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v3/userinfo";
 export const MICROSOFT_AUTHORIZE_ENDPOINT =

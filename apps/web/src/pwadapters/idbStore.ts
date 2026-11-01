@@ -61,11 +61,16 @@ type StoreName = (typeof STORE_NAMES)[number];
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
+export function resetIdbForTests(): void {
+  dbPromise = null;
+}
+
 export function openIdb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
 
   dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
     if (typeof indexedDB === "undefined") {
+      dbPromise = null;
       reject(new Error("IndexedDB is not supported in this environment"));
       return;
     }
@@ -88,7 +93,10 @@ export function openIdb(): Promise<IDBDatabase> {
     };
 
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onerror = () => {
+      dbPromise = null;
+      reject(request.error);
+    };
     request.onblocked = () => {
       // Old connections blocking upgrade
       console.warn("IndexedDB upgrade blocked by open tab");
@@ -120,14 +128,20 @@ export async function idbGet<T>(storeName: StoreName, key: IDBValidKey): Promise
   });
 }
 
+/**
+ * Every single-op helper resolves on TRANSACTION COMMIT, not request success:
+ * a request can succeed and the transaction still abort at commit (quota,
+ * connection close), and resolving early would tell the caller a write
+ * persisted when it was rolled back.
+ */
 export async function idbPut<T>(storeName: StoreName, value: T): Promise<void> {
   const db = await openIdb();
   return new Promise<void>((resolve, reject) => {
     const tx = db.transaction(storeName, "readwrite");
-    const store = tx.objectStore(storeName);
-    const req = store.put(value);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
+    tx.objectStore(storeName).put(value);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
   });
 }
 
@@ -135,10 +149,10 @@ export async function idbDelete(storeName: StoreName, key: IDBValidKey): Promise
   const db = await openIdb();
   return new Promise<void>((resolve, reject) => {
     const tx = db.transaction(storeName, "readwrite");
-    const store = tx.objectStore(storeName);
-    const req = store.delete(key);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
+    tx.objectStore(storeName).delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
   });
 }
 
@@ -146,17 +160,27 @@ export async function idbClear(storeName: StoreName): Promise<void> {
   const db = await openIdb();
   return new Promise<void>((resolve, reject) => {
     const tx = db.transaction(storeName, "readwrite");
-    const store = tx.objectStore(storeName);
-    const req = store.clear();
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
+    tx.objectStore(storeName).clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
   });
 }
 
 export async function idbResetAll(): Promise<void> {
-  for (const name of STORE_NAMES) {
-    await idbClear(name);
-  }
+  const db = await openIdb();
+  // One transaction across every store: a per-store loop can half-complete
+  // (quota, tab close mid-reset) and leave a corrupted hybrid database after
+  // a destructive "Reset Everything" the user double-confirmed.
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_NAMES, "readwrite");
+    for (const name of STORE_NAMES) {
+      tx.objectStore(name).clear();
+    }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -202,6 +226,7 @@ export async function saveScheduleData(schedule: ScheduleData): Promise<void> {
 
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
   });
 }
 
@@ -231,6 +256,7 @@ export async function deleteCourse(courseId: string): Promise<void> {
 
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
   });
 }
 
@@ -249,6 +275,7 @@ export async function saveAssessments(assessments: Assessment[]): Promise<void> 
     }
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
   });
 }
 

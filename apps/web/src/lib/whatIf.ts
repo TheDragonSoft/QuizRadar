@@ -37,11 +37,11 @@ export function calculateWhatIf(
   const sumScores = otherPcts.reduce((sum, n) => sum + n, 0) + planPct;
   const projected = Math.round(sumScores / totalItems);
 
-  let scoreColorClass = "text-rose-600 dark:text-rose-400";
+  let scoreColorClass = "text-rose-700 dark:text-rose-400";
   if (projected >= 80) {
-    scoreColorClass = "text-emerald-600 dark:text-emerald-400";
+    scoreColorClass = "text-emerald-700 dark:text-emerald-400";
   } else if (projected >= 50) {
-    scoreColorClass = "text-amber-600 dark:text-amber-400";
+    scoreColorClass = "text-amber-700 dark:text-amber-400";
   }
 
   return {

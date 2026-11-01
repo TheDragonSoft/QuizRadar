@@ -11,6 +11,8 @@
 //! - a date is produced only from an explicit date or a week phrase;
 //!   anything unverifiable stays `None` with a "needs manual confirmation"
 //!   note — the v4 "sent date ⇒ today" fallback is gone,
+//! - an announcement older than the 60-day recency window (`01` §4.2) never
+//!   reaches the radar, and the skip is counted, not hidden,
 //! - times/rooms come only from the student's own timetable slot that
 //!   actually matches the resolved date's weekday; unknown → `None` (UI
 //!   renders "—", never a default room string),
@@ -43,6 +45,32 @@ pub const EMAIL_SEPARATOR: &str =
 /// cannot explode the topic-key space (v4 had no cap).
 const MAX_TOPICS: usize = 32;
 
+/// The subject the Gmail fetcher writes when a message carries no `Subject:`
+/// header (`sources/gmail.rs`). It is an honest *label* for a missing
+/// header — but it is not data: an assessment may never carry it as its
+/// title or its instructor.
+pub const PLACEHOLDER_SUBJECT: &str = "(No Subject)";
+
+/// The sender the Gmail fetcher writes when a message carries no `From:`
+/// header — same rule as [`PLACEHOLDER_SUBJECT`]: a placeholder is never an
+/// instructor.
+pub const PLACEHOLDER_SENDER: &str = "(Unknown Sender)";
+
+/// The honest title for an announcement whose subject header was missing:
+/// generic on purpose — it names no course and no quiz number nobody
+/// wrote.
+pub const UNTITLED_ASSESSMENT: &str = "Untitled assessment";
+
+/// True when `value` is one of the placeholder headers above (compared
+/// case-insensitively) — such a value carries no information about the
+/// message it came from.
+#[must_use]
+pub fn is_placeholder_header(value: &str) -> bool {
+    let trimmed = value.trim();
+    trimmed.eq_ignore_ascii_case(PLACEHOLDER_SUBJECT)
+        || trimmed.eq_ignore_ascii_case(PLACEHOLDER_SENDER)
+}
+
 // ---------------------------------------------------------------------------
 // Honest scan bookkeeping
 // ---------------------------------------------------------------------------
@@ -55,6 +83,9 @@ pub struct ScanStats {
     pub candidates: usize,
     pub parsed: usize,
     pub skipped_duplicates: usize,
+    /// Messages dropped by the recency window ([`MAX_EMAIL_AGE_DAYS`]) —
+    /// announcements that are already too old to belong on the radar.
+    pub skipped_stale: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -195,7 +226,14 @@ pub fn strip_html_tags(html: &str) -> String {
                     j += 1;
                 }
                 let mut name = String::new();
-                while j < len && chars[j].is_ascii_alphabetic() {
+                // One trailing digit is part of the tag NAME (`h1`–`h6`):
+                // a letters-only collector produced "h" for `<h1>`, so the
+                // h1–h6 block arm below was dead and heading text glued to
+                // the previous word — silently breaking date word boundaries.
+                while j < len
+                    && (chars[j].is_ascii_alphabetic()
+                        || (chars[j].is_ascii_digit() && name.len() == 1 && name.starts_with('h')))
+                {
                     name.push(chars[j].to_ascii_lowercase());
                     j += 1;
                 }
@@ -597,10 +635,17 @@ pub fn parse_email_sent_date(date_header: &str) -> Option<NaiveDate> {
     None
 }
 
+/// The announcement recency window (`01` §4.2 / §8): a message older than
+/// this many days is not part of the radar any more — a two-year-old "quiz
+/// next week" must not sit on the dashboard forever.
+pub const MAX_EMAIL_AGE_DAYS: i64 = 60;
+
 /// True when the announcement was sent within `max_age_days` of the
-/// reference date (gates LIVE AI analysis only — parsing checks every
-/// message regardless of age; maintainer decision). Unparseable dates make
-/// this false: unknown-age mail must never count as fresh.
+/// reference date. The radar's recency window ([`MAX_EMAIL_AGE_DAYS`]) is
+/// built on this: an announcement older than the window is dropped instead
+/// of staying on the radar forever. A message whose date header cannot be
+/// parsed has an UNKNOWN age — it is never counted as fresh, and it is
+/// never dropped on a guessed age either (see [`parse_emails_from_source`]).
 #[must_use]
 pub fn is_email_recent(sent: NaiveDate, reference: NaiveDate, max_age_days: i64) -> bool {
     (reference - sent).num_days() <= max_age_days
@@ -691,6 +736,35 @@ enum WeekPhrase {
     ThisWeek,
     NextWeek,
     NextWeekStrict,
+    /// A bare `"not this week"` with no `"next week"` in the same
+    /// announcement. The announcement says the event is NOT in the current
+    /// week, so it must never be anchored to *this* week — that would move
+    /// the date EARLIER than the professor said. It gets the same later-week
+    /// estimate as the strict pair (`+8` days), and the inference note says
+    /// which wording produced the anchor.
+    NotThisWeek,
+}
+
+impl WeekPhrase {
+    /// The wording the estimate was derived from — quoted verbatim in the
+    /// inference note so the note describes what actually happened.
+    fn wording(self) -> &'static str {
+        match self {
+            Self::ThisWeek => "this week",
+            Self::NextWeek => "next week",
+            Self::NextWeekStrict => "next week (not this week)",
+            Self::NotThisWeek => "not this week",
+        }
+    }
+
+    /// The day offset from the sent date (v4 ladder: `+8/+5/+3`).
+    fn offset_days(self) -> i64 {
+        match self {
+            Self::ThisWeek => 3,
+            Self::NextWeek => 5,
+            Self::NextWeekStrict | Self::NotThisWeek => 8,
+        }
+    }
 }
 
 fn find_week_phrase(lower: &str) -> Option<WeekPhrase> {
@@ -698,6 +772,11 @@ fn find_week_phrase(lower: &str) -> Option<WeekPhrase> {
         Some(WeekPhrase::NextWeekStrict)
     } else if lower.contains("next week") {
         Some(WeekPhrase::NextWeek)
+    } else if lower.contains("not this week") {
+        // The negation stands on its own: "the quiz is not this week" says
+        // nothing about *this* week, so it is anchored like the strict pair
+        // instead of falling into the `this week` branch.
+        Some(WeekPhrase::NotThisWeek)
     } else if lower.contains("this week") {
         Some(WeekPhrase::ThisWeek)
     } else {
@@ -765,12 +844,13 @@ fn preferred_slot_type(lower: &str) -> &'static str {
 /// Sender display name (v4 semantics, genericized): text before `<`, quotes
 /// stripped, `(via …)` groups removed (v4 hardcoded one host-specific
 /// instance — a generic strip is the honest equivalent), trimmed. Bare email
-/// addresses yield `None` — an address is not an instructor name.
+/// addresses yield `None` — an address is not an instructor name, and the
+/// fetcher's `"(Unknown Sender)"` placeholder is not one either.
 fn instructor_from(from: &str) -> Option<String> {
     let with_quotes = from.split('<').next().unwrap_or("");
     let no_groups = strip_via_groups(with_quotes.replace('"', "").as_str());
     let name = no_groups.trim();
-    if name.is_empty() || name.contains('@') {
+    if name.is_empty() || name.contains('@') || is_placeholder_header(name) {
         None
     } else {
         Some(name.to_string())
@@ -836,7 +916,8 @@ pub fn classify_ics_text(summary: &str, description: &str) -> AssessmentType {
 
 /// Title ladder (v4 order: quiz 3 → 2 → 1, then midterm, then the subject).
 /// No fabricated course labels: courseless quiz titles keep just the number
-/// (`"Quiz 1"`, not v4's `"GENERAL"`).
+/// (`"Quiz 1"`, not v4's `"GENERAL"`). A missing subject stays generic —
+/// the fetcher's `"(No Subject)"` placeholder is a label, not a title.
 fn decide_title(
     lower: &str,
     course_code: Option<&str>,
@@ -844,7 +925,17 @@ fn decide_title(
     subject: &str,
 ) -> String {
     for quiz in (1..=3).rev() {
-        if lower.contains(&format!("quiz {quiz}")) {
+        // Word-boundary check: `contains("quiz 1")` also matched "quiz 10"
+        // and "quiz 12", fabricating a wrong number (and a different dedupe
+        // key) for courses past nine quizzes.
+        let needle = format!("quiz {quiz}");
+        let matched = lower.match_indices(&needle).any(|(at, _)| {
+            lower[at + needle.len()..]
+                .chars()
+                .next()
+                .is_none_or(|ch| !ch.is_ascii_digit())
+        });
+        if matched {
             return match course_code {
                 Some(code) => format!("Quiz {quiz}: {code}"),
                 None => format!("Quiz {quiz}"),
@@ -856,6 +947,9 @@ fn decide_title(
             Some(code) => format!("{code} Midterm Exam"),
             None => "Midterm Exam".to_string(),
         };
+    }
+    if subject.trim().is_empty() || is_placeholder_header(subject) {
+        return UNTITLED_ASSESSMENT.to_string();
     }
     subject.to_string()
 }
@@ -1074,7 +1168,17 @@ pub fn find_announcement_url(body: &str) -> Option<String> {
     while i + marker.len() <= len {
         if chars[i..i + marker.len()] == marker[..] {
             let mut j = i + marker.len();
-            while j < len && !chars[j].is_whitespace() && chars[j] != ']' {
+            // The stop set must include HTML delimiters: URL extraction runs
+            // on the RAW body, and `<a href="…">` otherwise stored the
+            // quote/tag tail as part of the link.
+            while j < len
+                && !chars[j].is_whitespace()
+                && chars[j] != ']'
+                && chars[j] != '"'
+                && chars[j] != '\''
+                && chars[j] != '<'
+                && chars[j] != '>'
+            {
                 j += 1;
             }
             let raw: String = chars[i..j].iter().collect();
@@ -1153,13 +1257,12 @@ pub fn parse_email_announcement_from_source(
     let preferred = preferred_slot_type(&lower);
     let candidates = candidate_slots(schedule, course_id.as_deref(), preferred);
     let explicit_date = find_explicit_date(&lower);
-    let base_date = explicit_date.or_else(|| {
-        find_week_phrase(&lower).map(|phrase| match phrase {
-            WeekPhrase::NextWeekStrict => anchor + Duration::days(8),
-            WeekPhrase::NextWeek => anchor + Duration::days(5),
-            WeekPhrase::ThisWeek => anchor + Duration::days(3),
-        })
-    });
+    let week_phrase = find_week_phrase(&lower);
+    let base_date = explicit_date
+        .or_else(|| week_phrase.map(|phrase| anchor + Duration::days(phrase.offset_days())));
+    // The note quotes the wording the estimate came from — a bare "not this
+    // week" must never be reported as "this/next week".
+    let phrase_wording = week_phrase.map_or("the week wording", WeekPhrase::wording);
     let date = if let Some(explicit) = explicit_date {
         Some(explicit)
     } else {
@@ -1244,12 +1347,17 @@ pub fn parse_email_announcement_from_source(
             }
         } else {
             format!(
-                "Estimated (local heuristic): the announcement had no explicit date — approximate timing inferred from wording (\"this/next week\"), snapped to the nearest {preferred} slot {slot_detail}. Configure a Gemini API key for precise extraction."
+                "Estimated (local heuristic): the announcement had no explicit date — approximate timing inferred from wording (\"{phrase_wording}\"), snapped to the nearest {preferred} slot {slot_detail}. Configure a Gemini API key for precise extraction."
             )
         }
     } else {
         "No date in the announcement — needs manual confirmation; shown as an upcoming placeholder until a date is verified.".to_string()
     };
+    // The study hours are a flat local heuristic, not a duration anybody
+    // stated — the note has to say so wherever the estimate is attached.
+    let ai_inference_note = format!(
+        "{ai_inference_note} Study time is a flat {hours:.1} h local heuristic estimate — the announcement states no duration."
+    );
 
     Assessment {
         id: email.id.clone(),
@@ -1311,6 +1419,17 @@ pub fn parse_emails(
 
 /// [`parse_emails`] with the source label carried onto every produced
 /// assessment (Outlook/Teams mail flows through this same honest pipeline).
+///
+/// The recency window ([`MAX_EMAIL_AGE_DAYS`], `01` §4.2 / §8) applies to
+/// every announcement mail: a message that is already too old is dropped
+/// before it can become an assessment, because a two-year-old "quiz next
+/// week" must not stay on the radar forever. The drop is counted in
+/// [`ScanStats::skipped_stale`] so the scan report can say what was skipped.
+///
+/// A message whose `Date:` header cannot be parsed has an UNKNOWN age: it is
+/// neither proven fresh nor proven stale, so it is kept (dropping it would
+/// destroy an announcement we merely cannot date) — but it is never counted
+/// as fresh anywhere else either.
 #[must_use]
 pub fn parse_emails_from_source(
     emails: &[CachedEmail],
@@ -1326,6 +1445,12 @@ pub fn parse_emails_from_source(
     let mut seen: HashSet<String> = HashSet::new();
 
     for email in emails {
+        if let Some(sent) = parse_email_sent_date(&email.date) {
+            if !is_email_recent(sent, ref_date, MAX_EMAIL_AGE_DAYS) {
+                stats.skipped_stale += 1;
+                continue;
+            }
+        }
         let subject_lower = email.subject.to_ascii_lowercase();
         let body_lower = email.body.to_ascii_lowercase();
         let from_lower = email.from.to_ascii_lowercase();
@@ -2113,5 +2238,218 @@ mod tests {
         assert_eq!(stats.parsed, 1);
         assert_eq!(stats.skipped_duplicates, 1);
         assert_eq!(parsed[0].course_id.as_deref(), Some("CSE241"));
+    }
+
+    // --- recency window -------------------------------------------------------
+
+    #[test]
+    fn announcements_older_than_the_recency_window_are_skipped() {
+        let schedule = fixture_schedule();
+        let (items, stats) = parse_emails(
+            &[announcement(
+                "mail-old",
+                "Quiz 1 heads up",
+                "Dr. X <x@univ.edu>",
+                "Sat, 01 Aug 2026 09:00:00 +0000",
+                "CSE241 quiz 1 on 25 October 2026",
+            )],
+            &schedule,
+            date(2026, 10, 23),
+        );
+        // 2026-10-23 − 2026-08-01 = 83 days ⇒ outside the 60-day window.
+        assert!(
+            items.is_empty(),
+            "a stale announcement must not reach the radar"
+        );
+        assert_eq!(stats.scanned, 1);
+        assert_eq!(stats.candidates, 0);
+        assert_eq!(stats.parsed, 0);
+        assert_eq!(stats.skipped_stale, 1, "the skip is counted, not hidden");
+    }
+
+    #[test]
+    fn the_recency_window_boundary_is_inclusive() {
+        let schedule = fixture_schedule();
+        // 2026-10-23 − 2026-08-24 = exactly 60 days ⇒ still on the radar.
+        let (items, stats) = parse_emails(
+            &[announcement(
+                "mail-60",
+                "Quiz 1 heads up",
+                "Dr. X <x@univ.edu>",
+                "Mon, 24 Aug 2026 09:00:00 +0000",
+                "CSE241 quiz 1 on 25 October 2026",
+            )],
+            &schedule,
+            date(2026, 10, 23),
+        );
+        assert_eq!(items.len(), 1);
+        assert_eq!(stats.skipped_stale, 0);
+
+        // One day older (61 days) ⇒ dropped.
+        let (items, stats) = parse_emails(
+            &[announcement(
+                "mail-61",
+                "Quiz 1 heads up",
+                "Dr. X <x@univ.edu>",
+                "Sun, 23 Aug 2026 09:00:00 +0000",
+                "CSE241 quiz 1 on 25 October 2026",
+            )],
+            &schedule,
+            date(2026, 10, 23),
+        );
+        assert!(items.is_empty());
+        assert_eq!(stats.skipped_stale, 1);
+    }
+
+    #[test]
+    fn a_message_without_a_readable_date_is_kept_but_never_called_fresh() {
+        let schedule = fixture_schedule();
+        // The `Date:` header cannot be read ⇒ the age is UNKNOWN: the
+        // announcement stays (dropping it would destroy mail we merely
+        // cannot date) and it is not counted as recent anywhere.
+        let (items, stats) = parse_emails(
+            &[announcement(
+                "mail-undated",
+                "Quiz 2 heads up",
+                "Dr. X <x@univ.edu>",
+                "recently",
+                "CSE241 quiz 2 on 27 October 2026",
+            )],
+            &schedule,
+            date(2026, 10, 23),
+        );
+        assert_eq!(items.len(), 1);
+        assert_eq!(stats.skipped_stale, 0);
+        assert_eq!(items[0].email_sent_date, None);
+    }
+
+    // --- week wording ---------------------------------------------------------
+
+    #[test]
+    fn a_bare_not_this_week_never_anchors_to_this_week() {
+        let schedule = fixture_schedule();
+        let email = announcement(
+            "mail-negated",
+            "CSE241 quiz 1",
+            "Dr. X <x@univ.edu>",
+            "Sat, 17 Oct 2026 09:00:00 +0000",
+            "The CSE241 tutorial quiz 1 is not this week.",
+        );
+        let parsed = parse_email_announcement(&email, &schedule, date(2026, 10, 23));
+        // Sent Sat 10-17 → the strict later-week anchor is +8 = Sun 10-25,
+        // snapped forward to the next Tutorial slot: Tue 10-27. The old
+        // "this week" branch anchored +3 = Tue 10-20 — an EARLIER date than
+        // the announcement rules out.
+        assert_eq!(parsed.date, Some(date(2026, 10, 27)));
+        assert_eq!(parsed.day_name.as_deref(), Some("Tuesday"));
+        assert_eq!(parsed.start_time, Some(time(11, 0)));
+        let note = parsed.ai_inference_note.clone().unwrap_or_default();
+        assert!(
+            note.contains("inferred from wording (\"not this week\")"),
+            "note was: {note}"
+        );
+        assert!(
+            !note.contains("this/next week"),
+            "the note must not claim a wording that was not written: {note}"
+        );
+    }
+
+    #[test]
+    fn the_strict_pair_still_wins_over_the_bare_negation() {
+        let schedule = fixture_schedule();
+        let email = announcement(
+            "mail-pair",
+            "CSE241 quiz 1",
+            "Dr. X <x@univ.edu>",
+            "Sat, 17 Oct 2026 09:00:00 +0000",
+            "The CSE241 tutorial quiz 1 is next week, not this week.",
+        );
+        let parsed = parse_email_announcement(&email, &schedule, date(2026, 10, 23));
+        assert_eq!(parsed.date, Some(date(2026, 10, 27)));
+        let note = parsed.ai_inference_note.clone().unwrap_or_default();
+        assert!(
+            note.contains("inferred from wording (\"next week (not this week)\")"),
+            "note was: {note}"
+        );
+    }
+
+    // --- placeholder headers ---------------------------------------------------
+
+    #[test]
+    fn placeholder_headers_never_become_data() {
+        let schedule = fixture_schedule();
+        let email = announcement(
+            "mail-placeholder",
+            PLACEHOLDER_SUBJECT,
+            PLACEHOLDER_SENDER,
+            "Sat, 17 Oct 2026 09:00:00 +0000",
+            "The class quiz will be held on 25 October 2026.",
+        );
+        let parsed = parse_email_announcement(&email, &schedule, date(2026, 10, 23));
+        assert_eq!(
+            parsed.instructor, None,
+            "a placeholder sender is not an instructor"
+        );
+        assert_eq!(
+            parsed.title, UNTITLED_ASSESSMENT,
+            "a placeholder subject is not a title"
+        );
+        // The real facts the announcement did state are still read.
+        assert_eq!(parsed.date, Some(date(2026, 10, 25)));
+    }
+
+    #[test]
+    fn placeholder_recognition_is_case_insensitive() {
+        assert!(is_placeholder_header("(No Subject)"));
+        assert!(is_placeholder_header("  (no subject)  "));
+        assert!(is_placeholder_header("(Unknown Sender)"));
+        assert!(is_placeholder_header("(unknown sender)"));
+        assert!(!is_placeholder_header("Dr. X <x@univ.edu>"));
+        assert!(!is_placeholder_header(""));
+        assert_eq!(instructor_from("(Unknown Sender)"), None);
+        assert_eq!(instructor_from("(No Subject)"), None);
+    }
+
+    #[test]
+    fn a_placeholder_subject_never_becomes_the_title() {
+        let schedule = fixture_schedule();
+        let (items, stats) = parse_emails(
+            &[announcement(
+                "mail-no-subject",
+                PLACEHOLDER_SUBJECT,
+                "e-learning@univ.edu",
+                "Sat, 17 Oct 2026 09:00:00 +0000",
+                "The online quiz opens on 25 October 2026.",
+            )],
+            &schedule,
+            date(2026, 10, 23),
+        );
+        assert_eq!(stats.parsed, 1, "an e-learning quiz mail is a candidate");
+        assert_eq!(items[0].title, UNTITLED_ASSESSMENT);
+        assert_eq!(
+            items[0].instructor, None,
+            "a bare address is not an instructor name"
+        );
+    }
+
+    // --- study-hour honesty ----------------------------------------------------
+
+    #[test]
+    fn the_inference_note_states_the_study_hour_heuristic() {
+        let schedule = fixture_schedule();
+        let email = announcement(
+            "mail-hours",
+            "Quiz 1 heads up",
+            "Dr. X <x@univ.edu>",
+            "Sat, 17 Oct 2026 09:00:00 +0000",
+            "CSE241 quiz 1 on 25 October 2026.",
+        );
+        let parsed = parse_email_announcement(&email, &schedule, date(2026, 10, 23));
+        assert_eq!(parsed.estimated_study_hours, Some(2.5));
+        let note = parsed.ai_inference_note.clone().unwrap_or_default();
+        assert!(
+            note.contains("Study time is a flat 2.5 h local heuristic estimate"),
+            "the flat estimate must be labeled: {note}"
+        );
     }
 }

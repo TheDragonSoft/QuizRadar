@@ -300,10 +300,13 @@ impl<'de> Deserialize<'de> for AssessmentType {
 }
 
 /// Urgency ladder (`01` §3): critical ≤2d, high ≤5d, medium ≤14d, upcoming,
-/// past. Serialized lower-case to match v4 (`"critical"`, …). Imports carry
-/// v4's own stamped values; unknown labels fall back to [`UrgencyLevel::Upcoming`]
+/// past. Serialized lower-case to match v4 (`"critical"`, …) — the store also
+/// writes lower-case labels, so the derived PascalCase wire shape was a
+/// second, drifting encoding of the same field. Imports carry v4's own
+/// stamped values; unknown labels fall back to [`UrgencyLevel::Upcoming`]
 /// (urgency is recomputed from the stored date at every render anyway).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum UrgencyLevel {
     Critical,
     High,

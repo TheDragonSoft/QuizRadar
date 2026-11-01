@@ -22,6 +22,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -34,13 +36,20 @@ fun ReadinessCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val palette = CoursePalette.get(card.courseId)
-    val pct = card.readinessPercent
+    val courseTextColor = CoursePalette.textOnSurface(card.courseId, isDark)
+    // No tracked topics means there is no readiness number to show. The core's
+    // 0/0 = 100 means "nothing is pending", not "100% mastered" — rendering it
+    // as a percentage would claim mastery the student never recorded.
+    val hasTopics = card.totalCount > 0
+    val pct = if (hasTopics) card.readinessPercent.coerceIn(0, 100) else 0
     val readinessColor =
         when {
-            pct >= 80 -> Color(0xFF059669)
-            pct >= 50 -> Color(0xFFD97706)
-            else -> Color(0xFFDC2626)
+            !hasTopics -> MaterialTheme.colorScheme.onSurfaceVariant
+            pct >= 80 -> if (isDark) Color(0xFF34D399) else Color(0xFF047857)
+            pct >= 50 -> if (isDark) Color(0xFFFBBF24) else Color(0xFFB45309)
+            else -> if (isDark) Color(0xFFF87171) else Color(0xFFDC2626)
         }
 
     Column(
@@ -49,7 +58,7 @@ fun ReadinessCard(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
                 .background(MaterialTheme.colorScheme.surface)
-                .border(1.dp, palette.border.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+                .border(1.dp, palette.border, RoundedCornerShape(14.dp))
                 .clickable { onClick() }
                 .padding(14.dp),
     ) {
@@ -68,17 +77,22 @@ fun ReadinessCard(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = card.courseId ?: "GENERAL",
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                    color = palette.color,
+                    text = card.courseName ?: card.courseId ?: "General",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = courseTextColor,
                 )
             }
 
             Text(
                 text = "${card.daysUntil}d away",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                style =
+                    TextStyle(
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFeatureSettings = "tnum",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
             )
         }
 
@@ -96,15 +110,28 @@ fun ReadinessCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "${card.completedCount}/${card.totalCount} topics mastered",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                text =
+                    if (hasTopics) {
+                        "${card.completedCount}/${card.totalCount} topics mastered"
+                    } else {
+                        "No syllabus topics tracked"
+                    },
+                style =
+                    TextStyle(
+                        fontSize = 11.sp,
+                        fontFeatureSettings = "tnum",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
             )
             Text(
-                text = "$pct%",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = readinessColor,
+                text = if (hasTopics) "$pct%" else "—",
+                style =
+                    TextStyle(
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFeatureSettings = "tnum",
+                        color = readinessColor,
+                    ),
             )
         }
 
@@ -114,18 +141,20 @@ fun ReadinessCard(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .height(5.dp)
-                    .clip(RoundedCornerShape(2.dp)),
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp)),
             color = readinessColor,
-            trackColor = readinessColor.copy(alpha = 0.15f),
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
         )
 
         if (card.recommendedFocus.isNotBlank()) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Next: ${card.recommendedFocus}",
+                // "Next: …" only makes sense when there IS a next topic; with
+                // no tracked topic the focus line is a note, not a pointer.
+                text = if (hasTopics) "Next: ${card.recommendedFocus}" else card.recommendedFocus,
                 fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

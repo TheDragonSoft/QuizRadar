@@ -205,13 +205,6 @@ const ALLOW_LIST: ReadonlyArray<AllowEntry> = [
   },
   {
     patternId: "oauth-client-secret-literal",
-    file: "components/SettingsModal.tsx",
-    linePattern: /google_client_secret/,
-    reason:
-      "This is the OS-keyring KEY NAME for the desktop-only client-secret override ('google_client_secret'), not a secret. The value goes to the keyring and never into the config DB, the logs or the web bundle.",
-  },
-  {
-    patternId: "oauth-client-secret-literal",
     file: "pwadapters/browserSources.ts",
     linePattern: /includes\(\s*["'`]client_secret["'`]\s*\)/,
     reason:

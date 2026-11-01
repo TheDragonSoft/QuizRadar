@@ -21,6 +21,13 @@ _Agents update this file after every phase. Prompts are defined in `prompts/READ
 - [x] 15 release pipeline (signed tauri updater, release APK/AAB, PWA deploy, notes) (`prompts/p15-release-ci.md`) — shipped: Monolithic version truth enforced via `tooling/version.json` with `generate-version.mjs --apply` stamping 5 sinks (`apps/web/package.json`, `apps/desktop/src-tauri/tauri.conf.json`, `Cargo.toml`, `apps/mobile-android/app/build.gradle.kts`, `apps/web/src/generated/version.ts`) and verified by `core/build.rs` compile-time passthrough assertion. Release CI pipeline `.github/workflows/release.yml` with least-privilege permissions, multi-platform desktop matrix (Windows NSIS + portable zip, macOS DMG, Linux deb/AppImage), signed Tauri 2 updater artifacts (`latest.json` generator via `tooling/generate-updater-manifest.mjs`), honest updater error handling ("Update check unavailable — github link down" on network/404 errors), Android release signing with real keystore via Gradle `signingConfigs` and `apksigner` verification, PWA deployment to GitHub Pages with relative assets and dynamic service worker URL, and automated markdown release notes from git history via `tooling/generate-changelog.mjs`. 4 version pipeline tests, 3 updater command tests, and Android release signing verified.
 - [x] 16 migration UX + docs honesty pass + v1.0 cut (`prompts/p16-polish-migration.md`) — shipped: First-run "Coming from v4?" migration card on all shells (OnboardingWizardModal on Desktop/Web/PWA with native file picker, DashboardScreen on Android with ActivityResultContracts.GetContent() picker) reading v4 backup JSON, restoring courses/assessments/grades/topics, dropping legacy secrets, and reporting honest counts via `importBackupFile`/`QuizRadarViewModel.importBackup`; comprehensive docs honesty pass with root `README.md` rewritten against v5 reality, `docs/architecture-v5.md` public brief, `LICENSE` (MIT), `CONTRIBUTING.md`, `SECURITY.md`, and `PRIVACY.md` (zero-server data locality + verbatim BYOK Gemini consent copy); dogfood matrix executed across Journeys A, B, and C with pass status recorded; anti-checklist audit confirming 0% occurrence of v4 antipatterns (`Hall B-204`, demo palettes, `auto_sync_gcal: true`, `teams_token` in Drive payload, classroom 403 apology path, 4.5k body truncation, `LocalOAuthServer.java`, `specialUse` FGS); version 5.0.0 stamped across all 5 sinks and CHANGELOG.md generated. Full test suites green across Rust, Web, and Android.
 - [x] 18 post-ship audit completion: full testing stack + v4 dashboard port + live UI sweep (`docs/TESTING-PLAYBOOK.md` is the reusable protocol) — shipped: Rust↔TS contract tests (`apps/web/src/contract/` — `regenerate.mjs` derives the wire map from the Rust sources, `contractGuard.ts` validates payloads, 41-test suite with freshness gate + 13 drift mutations), proptest property suites for email/ICS/planner (`core/tests/property_email.rs`, `property_ics.rs`, `property_plan.rs`), axe-core accessibility audits (`apps/web/src/audit/axe.test.tsx`), v4-antipattern source scan + copy-conformance tests, Playwright visual regression with committed baselines (`apps/web/e2e/`, `apps/web/e2e-baselines/`, clock frozen at 2026-10-29T12:00:00Z + UTC, light & dark projects), dev-only store handle `window.__QUIZRADAR_STORE__`, the v4 dashboard ported exactly from `v4-final:static/app.js` + the user's v4 screenshots (`DashboardView` rewrite, baselines regenerated), and a full live sweep of the running desktop app (every button/toggle/input exercised via CDP; 8 real defects fixed, each with a regression test and before/after screenshots). See "Post-ship audit fixes #8".
+- [x] 19 cross-platform `/impeccable` UI polish, single-shell modal architecture & 7-layer reusable testing harness (`tooling/ui-sweep.mjs` + `docs/TESTING-PLAYBOOK.md`) — shipped: eliminated stacked/nested "double windows" in `ModalStack.tsx` + `modalRegistry.ts` (`flush: true` single-shell panels across all 13 modals, underlying layers `hidden`/`aria-hidden` while a child modal is on top, LIFO `Escape` restoration); fixed 12 functional & honesty bugs across Web/PWA/Desktop (`TopBar` 1-based month index fix, `All Clear` `openEventModal()`, PWA `user_email` no-fake-auth, full 6-variant `AssessmentType` filter, interactive `FocusView` Pomodoro + Practice Quiz hub, `.ics` feed enable/disable ARIA switches, browser JSON backup export/import round-trip, tier-aware OAuth copy, sandboxed `QUIZRADAR_DATA_DIR` + `QUIZRADAR_EPHEMERAL_KEYRING` in `apps/desktop/src-tauri`); resolved `240 → 0` Web/Desktop DOM/WCAG AA contrast/sub-11px typography issues (`--accent-ink` / `--accent-fill` split, dark-aware `coursePalette.ts`); upgraded Android Compose M3 UI (`MainActivity.kt` edge-to-edge, lavender-free `QuizRadarTheme.kt`, `AppScaffold.kt` `TopAppBar` with `+` `New Event` & `Import Backup`, honest `"—"` readiness & `"No sources connected"` on empty `DashboardScreen.kt`, fixed clipped Reset `OutlinedIconButton` & single-line interval pills on `FocusScreen.kt`, `tnum` tabular numerals); verified `51` Web/Desktop + `14` Android 1:1 Before & After screenshots (`0` DOM issues, `12/12` functional checks, `220` Vitest tests, `44` Android unit tests, Playwright baselines refreshed).
+- [x] 20 android-mobile UX polish: first-run wizard, setup checklist, settings & course editor, timer lifecycle & calendar interactivity (`android-ux-polish-plan.md` Phases B, C, D, E) — shipped:
+  - Navigation & Chrome: 56dp M3 TopAppBar (Search, Avatar with connection dot, sync spinner), AddActionMenuSheet, SearchSheet, AccountSheet with status bar inset handling; removed dead pair intent filter.
+  - Full Settings & Account Screen: 9 spec sections (Account, Courses, Sources, AI BYOK with free-tier terms, Notifications with digest time, Calendar auto-push, Appearance, Data Management SAF export/import & reset, About), CourseEditorSheet with 8-color preset swatches and recurring weekly slots.
+  - First-Run Wizard & Setup Checklist: 4-step wizard with step persistence across app restarts, zero-server privacy card, study track chips, enrolled course list, source cards, notification permission primer; SetupChecklistCard on Dashboard with Glance widget pin action and honest empty states.
+  - Screen Polish & Pomodoro Lifecycle: Tabular numerals (`tnum`), natural title-case labels without uppercase eyebrows ("Upcoming (7 Days)", "Overall Readiness", "Connected Sources"), Calendar red "Now" indicator line on today and tap-to-create study block opening pre-filled `CreateEventSheet`; Pomodoro timer state and tick loop moved into `QuizRadarViewModel` (`pomodoroInterval`, `pomodoroSecondsLeft`, `pomodoroIsRunning`) so countdown persists across tab switches, screen rotations, and app backgrounding with timer completion notification via `NotificationHelper`.
+  - Verification: 51/51 Android unit and Compose UI smoke tests green, ktlintCheck clean with 0 errors, live on-device verified on `emulator-5554` with 25 screenshots.
 
 ## Feature-parity checklist status
 
@@ -530,6 +537,201 @@ _Drove the running web app (vite dev server, `http://127.0.0.1:4317`, `timezoneI
 - `scratch/` sweep scripts are session tooling, not committed (per §8 data safety they hold mock data only, but they are regenerable from `docs/TESTING-PLAYBOOK.md` layer 6).
 - Phase 19 added **no new dependencies**.
 
+## Post-ship audit fixes #9 (sidebar week panel: kind differentiation + row honesty, 2026-10-30)
+
+### The problem (user-reported, desktop shell screenshot)
+
+The rail's "Exams in Selected Week" card read as broken: every row printed the course code twice (`CSE263` on the course line, `CSE263: In-Class As…` truncated beneath it), every row ended in a lone dangling `—` (the unknown-room em-dash occupying a whole line), the courseless Midterm row showed a bold `—` as its "course", and nothing distinguished exams from quizzes from assignments — under a title claiming they were all exams.
+
+### What shipped
+
+- `apps/web/src/lib/assessmentKind.ts` (new): four kind families (`quiz` / `exam` / `lab` / `assignment`) derived from the core `AssessmentType` display strings, mirroring `core/src/types.rs::from_import_label`'s keyword ladder (unknown labels fall back to the core's default rung, never an invented kind).
+- `apps/web/src/components/Sidebar.tsx`: row redesign —
+  - neutral kind chip per row (`Quiz` / `Exam` / `Lab` / `Assignment`), normal-case like the dashboard's type pills (uppercase stays reserved for urgency chips); deliberately colorless so course dots keep the Course Color Invariant and exam-red/amber keep their urgency-only meaning;
+  - course line shows the resolved course name at full width (13px bold); the title line strips the redundant course-code prefix via the existing `stripCoursePrefix` (full text stays in the tooltip);
+  - day/time and room share one meta line (`Sunday 09:30 · —` / `Thursday 23:59 · Room B-402`) — the honest em-dash keeps its slot per DESIGN.md's No-Fabricated-Room Rule but no longer dangles alone;
+  - courseless rows lead with their title (never a bold `—` placeholder) with the kind chip beside it.
+- `apps/web/src/copy.ts`: panel retitled `This Week's Assessments` (the v4 "Exams in Selected Week" mislabeled mixed kinds); empty copy `No assessments scheduled in this week.`
+- `apps/web/src/components/sidebar-week-exams.test.tsx` (new): 8 tests pinning the title honesty, per-kind chips, prefix stripping, courseless-row leading title, shared meta line, detail-modal wiring, and the `assessmentKind` ladder.
+
+### Verification
+
+- `pnpm --dir apps/web exec tsc --noEmit` — clean; `eslint` + `prettier --check` on touched files — clean.
+- `pnpm --dir apps/web exec vitest run` — **228/228** across 26 files (was 215/215 + 8 new − pinned tests).
+- `pnpm --dir apps/web exec playwright test` — 5 passed / 1 skipped (baselines unaffected).
+- Visual verification against a seeded local IndexedDB fixture (dev server + IAB, not committed): dark and light themes, mixed quiz/assignment/exam week, courseless row, room-present and room-absent rows; before/after screenshots reviewed — course names no longer truncate, no dangling dash lines, kinds legible at a glance.
+
+### Honest limitations / follow-ups
+
+- Web/PWA tier only: `buildFullState` (apps/web/src/pwadapters/rpcAdapter.ts) replaces `assessments` with `radar_order` output, which **excludes past items** — so on the web tier the panel (and the timeline's "All Semesters (Upcoming + Past)" filter) can never show past weeks. Desktop `get_state` keeps past items and renders them correctly. Fixing web parity needs a wasm export that refreshes derived fields without dropping past items (core change + rebuild), deliberately deferred here to keep this fix UI-scoped.
+- Titles still truncate on the 256px rail when the kind chip is wide (e.g. long titles + `Assignment`); the full title stays in the tooltip — same budget v4 had, minus the wasted course-code prefix.
+- The mobile dashboard has its own assessment rows; parity there (if wanted) is a separate Kotlin change.
+
+## Post-ship audit fixes #10 (dashboard + shell polish round, 2026-10-30)
+
+### What shipped (each user-reported, verified live on the dev server)
+
+- **Full-width layout**: dropped the `max-w-6xl` cap on the shell's view container (App.tsx) and `max-w-[1440px]` on the dashboard root — all views now stretch to the window with only the main padding as margin (the 1920px fullscreen had half its width in dead background).
+- **"Types of exams" KPI → "Exams ahead" count**: the pill-breakdown card became a number card (upcoming midterms + finals among `allUpcoming`, course-filter-aware) via `assessmentKind`. The timeline's type `<select>` is now the only type filter — the removed card's "All" chip had been a second setter; views.test 2d rewritten to pin the select.
+- **"What Should I Study?" header slimmed**: dropped the "— AI Priority Study Planner" suffix and the "Tap any card…" subtitle line.
+- **Sidebar toggle on the brand icon** (lg+): the radar mark crossfades into a `PanelLeft` glyph on hover/focus; click toggles the rail (`sidebarOpen` in the store, persisted to `localStorage["quizradar-sidebar-open"]`, `aria-pressed` on the button). Below lg the mark stays a plain brand-home button (the rail is hidden there, so a toggle would be a lying control).
+- **Animated sidebar collapse**: the rail stays mounted and animates `w-64 ↔ w-0` (300ms ease-out) with an inner fixed-width scroll layer fading opacity — verified a real tween (computed width 1px → 203.75px → 256px mid-transition); `inert` + `aria-hidden` when collapsed.
+- **Smooth theme switch**: `applyThemeToDocument` now uses the View Transitions API (`startViewTransition`, one composited crossfade tuned to 200ms) instead of the universal per-element `transition` class that repainted the whole tree every frame (the reported lag). CSS-class fallback kept for engines without the API; reduced motion gets an instant cut.
+- **Hero sky**: dark mode got a denser, brighter starfield split into two CSS layers pulsing against each other (`heroTwinkleA/B` keyframes, `motion-reduce:animate-none`); light mode gets sparse dim stars plus a warm yellow sun disc bleeding over the card's top-right edge. All deterministic positions (no runtime randomness) — screenshots stay stable.
+- **Mini-calendar week band visible in light mode**: `bg-[var(--accent)]/10` (near-invisible on white) → `bg-blue-100` (dark keeps `blue-950/70`).
+- **Scan overlay**: removed the "Honest Scan Doctrine" info block (and its four copy keys) — the progress bar + per-source lines carry the overlay now.
+
+### Verification
+
+- `pnpm --dir apps/web exec tsc --noEmit` — clean; `eslint` + `prettier` on all touched files — clean.
+- `pnpm --dir apps/web exec vitest run` — **228/228** across 26 files (views.test 2d rewritten for the select; no new tests needed for copy-only/icon changes).
+- `pnpm --dir apps/web exec playwright test` — `dashboard-light/dark.png` baselines intentionally re-stamped (`--update-snapshots`) for the layout + KPI + hero changes; 5 passed / 1 skipped after re-stamp.
+- Live dev-server verification (vite + IAB, seeded IndexedDB): full-width dashboard at 1600px, dark starfield + light sun screenshots, toggle open/close with mid-animation width readouts, `aria-pressed` + persisted store flag.
+
+### Honest limitations / follow-ups
+
+- The View Transitions crossfade applies to the whole page snapshot; very tall scrolled content crossfades as one image (no element-level morphing) — the intended behavior.
+- The sidebar collapse animation is width-based; content inside keeps its measure so text never reflows, but the rail's scrollbar is inside the fading layer (no visual glitch observed at 300ms).
+- Same open item as fixes #9: web tier drops past assessments from state (core `radar_order`); untouched here.
+
+## Post-ship audit fixes #11 (settings + search + auth UX round, 2026-10-30)
+
+### What shipped (user-reported while dogfooding the live dev server)
+
+- **Settings modal**: removed the "Browser/Desktop Sign-In (OAuth Client IDs)" entry card (both tiers ship working clients — the user only ever presses Sign in), the "Local Storage · Zero Server Logs · Tier Capabilities & Help" footer row, and the "Honesty Doctrine: OAuth tokens…" line in the backup modal; dead state/handlers/imports and their copy keys removed.
+- **Settings tab morph**: tab switches now run through the View Transitions API with `view-transition-name: settings-panel` — the panel interpolates its bounds between tab heights instead of snapping (fallback: keyed `settingsTabIn` fade/rise; reduced motion: instant).
+- **Hero day→night**: the hero carries `view-transition-name: dashboard-hero`; on a theme switch the day snapshot (sun) fades while the night snapshot (stars) rises with a slight settle — a scene change, not a color fade.
+- **Inline search**: `SearchPaletteModal` deleted; new `SearchDropdown` renders the results **attached under the top-bar input** (same filtering, recents, keyboard nav, `/` + Ctrl/Cmd+K, Esc/outside-click close). flows.test's three palette tests ported to the dropdown.
+- **Top bar drag-region fix**: `data-tauri-drag-region` moved from the whole `<header>` to an absolutely-positioned underlay — the old placement made drag-region implementations swallow mousedown across the bar, so the search input could never take focus from a click.
+- **Sidebar**: widened `w-64 → w-72` (container + fixed-width scroll layer); removed the "On-Device Engine" card.
+- **Gemini shared key**: the maintainer-provided key was validated against the ladder's free models (`gemini-3.5-flash-lite` and `gemini-3.5-flash`, both HTTP 200 with a real completion) and seeded via the existing private-install path — `gemini.key` written next to `target/debug/quizradar-desktop.exe` and `target/release/quizradar-desktop.exe` (both under the gitignored `/target/`). **Never committed** (AGENTS §3.2: no key material in repo/bundle/logs); keyring wins over the seed, so pasting another key in Settings still overrides it.
+
+### Verification
+
+- `tsc --noEmit`, `eslint`, `prettier` on all touched files — clean.
+- `vitest run` — **228/228** across 26 files (2 client-ID-card tests rewritten to pin the baked-in-client reality; stale antipattern allow-list entry for the removed `google_client_secret` code dropped; 3 search tests ported to the dropdown).
+- `playwright test --update-snapshots` — dashboard + settings baselines re-stamped (wider rail, no On-Device card, new search bar, removed settings rows); 5 passed / 1 skipped.
+- Live dev-server verification: inline search panel renders attached under the input with results/filters/footer; input takes focus from a real click after the drag-region fix; settings Account tab shows no client-ID card and a single Close-only footer.
+
+### Honest limitations / follow-ups
+
+- **Google sign-in on the web tier is broken until the client registration allows this origin**: the bundled public client (`341760934836-…`, project gmail-summary-511914) returns Google's `401 invalid_client — no registered origin` for `http://127.0.0.1:4317` and `http://localhost:4317`. The fix is a Google Cloud Console action on that client (Authorized JavaScript origins), not a code change; the desktop tier uses loopback redirect + bundled secret and is unaffected.
+- **Microsoft Teams needs the maintainer's Azure app client id** to ship a clean first-run sign-in (the current default is Microsoft's own "Graph Command Line Tools" public client, which works but shows Microsoft's generic consent surface). Required redirect for a custom app: `http://localhost` / `http://127.0.0.1` (desktop loopback, port ignored) and `http://localhost:4317`-style origins for the browser tier.
+- The browser tier cannot be pre-keyed with the shared Gemini key without baking it into the bundle — by design; the web tier keeps the paste-in (memory-only) flow.
+- `copy.settings` still carries the retired client-ID strings (`browserSignInHeader`, `googleDesktopClientId*`, `teamsDesktopClientId*`, …) — harmless, kept for a possible reintroduction; flagged here rather than silently dropped.
+
+## Post-ship audit fixes #12 (new bundled Google client, 2026-10-31)
+
+### What shipped
+
+- The maintainer created a fresh Google OAuth registration (project **`quizradar-511922`**, client `620389124802-98bn4r9kllknq8l820rts76840l4af7q`) that registers the dev origins in **both** dimensions: `javascript_origins` (`http://localhost:4317`, `http://127.0.0.1:4317` — what the browser tier's GIS popup flow checks) and `redirect_uris` (the desktop loopback flow; Google ignores the random port on loopback redirects). The old project `gmail-summary-511914` only ever registered the redirect side — which is why desktop sign-in worked while the browser tier died with `invalid_client: no registered origin`.
+- Swapped the baked-in client per the standing maintainer override (same scope as 2026-10-28): desktop shell ships the new id **and secret** (`apps/desktop/src-tauri/src/state.rs` `DEFAULT_GOOGLE_CLIENT_ID` / `DEFAULT_GOOGLE_CLIENT_SECRET`); the web tier ships only the public id (`apps/web/src/pwadapters/browserSources.ts` `DEFAULT_BROWSER_GOOGLE_CLIENT_ID` — no secret in the bundle, ever). Copy strings referencing the old project updated.
+
+### Verification
+
+- `cargo test -p quizradar-desktop` — 31 tests green, including the guards that the authorize URL stays secret-free and the bundled secret is non-empty.
+- Web `auth.test.ts` + `pwa.test.tsx` — 26 green.
+- Live probe of `accounts.google.com/o/oauth2/v2/auth` with the new client id and redirect `http://127.0.0.1:4317`: **HTTP 302** (accepted, no `invalid_client` error page).
+- Browser-tier sign-in still needs a human: click "Sign in with Google" at `http://127.0.0.1:4317` and confirm the consent popup (the GIS origin check cannot be fully exercised from a curl probe).
+
+### Honest notes
+
+- The **installed** desktop app still carries the old client until rebuilt/reinstalled; the old client remains valid for the desktop flow, so nothing breaks in the meantime.
+- The downloaded `client_secret_*.json` in the user's Downloads folder is now a loose copy of a secret that ships in the shell — deleting it after this swap is prudent.
+
+## Post-ship audit fixes #13 (five-agent full-app audit: 105 findings, 60+ fixed, 2026-10-31)
+
+Five parallel read-only audits (web UI, web data-flow, desktop shell, Rust core, Android) surfaced ~105 verified findings. Fixed in this pass (all gates green after):
+
+**Web (all tiers consume this UI)**
+- Systemic Tailwind breakage: **41 classes** of the shape `bg-[var(--x)]/N` compiled to *nothing* (opacity modifiers don't apply to CSS-variable colors) — invisibly killing the scan progress bar/track, the search-result keyboard highlight, the assessment-modal sticky header, sidebar badges, onboarding selections and ~35 more. Mechanically replaced with `color-mix(in srgb, var(--x) N%, transparent)` across 16 files; verified in compiled CSS and live DOM.
+- Day-rollover watchdog was **permanently killed after the first theme toggle** (one-shot init flag + effect keyed on theme); init effect is now mount-only and the helper is re-entrant.
+- Browser tier derived the radar's reference date from **UTC** (`toISOString`) while the watchdog used local time — urgency/countdowns sat on yesterday for half the planet. All three call sites now use the local date.
+- Pull-to-refresh fired **full scans during ordinary scrolling** (`window.scrollY` is always 0 in this shell — the guard was dead code); it now asks the real `<main>` scroller.
+- Help cheatsheet advertised **6 keyboard shortcuts that didn't exist** (fabricated capability); D/T/C/F/?/S are now implemented (typing-safe, modal-aware).
+- Search: result highlight visible; ModalStack dropped the dead `search` title-id + layout branch.
+- Honesty fixes: calendar slot popover/Study-prefill and the Practice/Pomodoro modals render course *names* not raw ids; detail modal uses `roomLabel` (no "Room Room 301"); calendar blocks with no real time display "Time —" instead of a fabricated 09:00–10:30; `.ics` fallback export says so in the toast; offline banner uses the copy key.
+- Store/data: optimistic rollbacks refresh server truth (a failed toggle no longer clobbers a concurrent grade save); toggle_topic sends the intended value (racy read-modify-write removed); `save_grade` keeps omitted fields (web cleared grades that desktop kept); grade-record precedence over backup-embedded scores (cleared grades stopped resurrecting); backup import validates JSON/feed entries, round-trips **12** config keys (was 5); `upsert_course` with an empty slot list actually clears slots; WASM init failure retries instead of poisoning the session; IDB single-ops resolve on **transaction commit**; `idbResetAll` is one atomic transaction; logout/reset surface failures as toasts; sync auto-idle timer can't cut the next scan's banner; `triggerSync` re-entrancy guard.
+- A11y/polish: Settings tab from localStorage validated (stale value no longer blanks the modal); detail-modal grade editor follows a re-opened assessment (stale form state); calendar `h3`→`h2`; MobileNav keyboard focus ring restored; dead `animate-in`/`animate-fadeIn` classes removed; `translate-x-4.5`/`h-4.5`/`py-0.2`/`slate-750` non-compiling classes fixed.
+
+**Desktop (Tauri)**
+- **Removed the generic `get_secret`/`set_secret`/`delete_secret` IPC commands** — any script in the webview could read every stored secret (refresh tokens, Gemini key, secret override). Zero frontend callers; secrets now move only through named flows.
+- `export_backup_file`/`import_backup_file` ignore webview-supplied paths — dialog-only (they were arbitrary-path write/read primitives); dialog calls moved to `spawn_blocking`.
+- **Google Calendar push now loads and persists `synced_gcal_map`** — it passed an empty map every push, re-creating every event in the user's calendar on each sync. Store gained `synced_gcal_map`/`set_synced_gcal_map`; the report carries the merged map; `get_state` returns the real map.
+- `gemini_enabled` now reflects the seeded-key path (`gemini.key`/env), not keyring-only presence.
+- `tauri.conf.json`: `createUpdaterArtifacts: true` (the updater shipped zero signed artifacts — updates were structurally unreachable); release CSP `connect-src` pinned to the six real API hosts (was `https:`).
+- `CachedToken` no longer derives `Debug` (bearer token one `{:?}` away from the boot log).
+
+**Core (Rust)**
+- **Drive backup was dead for real datasets**: the 8 KB refuse-to-truncate budget came from v4's calendar-event channel; one real semester far exceeds it. Budget now 32 MB with the same all-or-nothing policy.
+- Parser honesty: `<h1>`–`<h6>` are recognized as block tags again (heading text no longer glues into dates — "Quiz**10 October 2026**" lost its date); lowercase `z` UTC suffix honored; DTEND converts through the caller's offset like DTSTART; "Quiz 10" no longer titles as "Quiz 1"; `why_study_now` no longer calls past items "tomorrow".
+- `UrgencyLevel` serializes lower-case (matches the documented v4 shape and the store's own labels — two wire shapes for one field); backup pulls **reject future schema versions** instead of silently fabricating empty sections; schedule merge on *equal* stamps no longer overwrites local edits; `reset_all` is transactional.
+
+**Android**
+- Settings→notification toggles were **dead** (worker read `notify_exams`/`notify_digest`, settings wrote `notify_exam_24h`/`notify_exam_same_day`/`notify_morning_digest`); keys aligned, alerts deduped per assessment/kind/day, digest gated on the configured morning time.
+- Theme picker actually applies (System/Light/Dark reached the Compose theme); CreateEventSheet no longer saves typo'd dates as *today* (inline error, save blocked); "Send test notification" no longer crashes on API 33+ without permission; feed delete actually removes the feed (was a no-op that toasted success); exam notifications show course names; blank OAuth access tokens fail the flow.
+- Raw course ids → names across timeline/rec/roadmap/readiness/focus/calendar/widget/notification strings; `CoursePalette` uses `floorMod` (Int.MIN_VALUE hash crashed); widget fonts ≥11sp; `values-night` window background (no light flash); widget worker closes its native store handle (new fd every 30 min); Pomodoro holds `applicationContext` not the Activity; LazyColumn keys on all five lists.
+
+### Verification
+
+- `cargo test -p quizradar-core -p quizradar-desktop` — 241+ suites green; `cargo clippy --all-targets` clean; `cargo fmt` applied; wire-map regenerated; WASM rebuilt.
+- Web: `tsc` clean, `eslint` clean, `vitest` **228/228**, Playwright e2e re-stamped and green; live DOM checks confirm the previously-invisible styles now compute.
+
+### Documented, deliberately NOT fixed here (each is real; see the audit)
+
+- **Android P0: ships only x86_64 jniLibs** — needs the NDK cross-build (arm64-v8a) added to `buildAndroidRustLibs` + CI; no NDK toolchain verified in this session.
+- Web tier drops past assessments (`radar_order` in `buildFullState`) — needs a wasm export that refreshes without filtering.
+- Desktop: Gmail announcement cache never persisted (every scan re-fetches bodies); port-80 listener held 5 min per login (concurrent logins dead-end); `update_config` 17 non-transactional writes.
+- Core: `completed_topics` keys are positional (rescan reordering misattributes completion); "next week" +5d estimate can land in the current week; backup merge compares stamp strings; quota ledger read-modify-write race; feed/source dedupe-key collision; numeric HTML entities (`&#039;`) undecoded; same-day remake emails deduped away.
+- Android: refresh tokens stored but no refresh grant; OAuth pending state lost on rotation; EncryptedSharedPreferences on main thread; 48dp targets; strings.xml extraction; "Exams ahead"/week-panel parity.
+- Web UI: Help unreachable on mobile (spec pins a 4-destination nav); onboarding "Academic Rhythm" choice has no effect; dead copy keys (`urgency` block, retired client-ID strings); practice tab regenerates (AI call) per visit.
+
+## Android polish + emulator UX verification (2026-10-31)
+
+Full first-run-through-daily-use walk on the Pixel_10 emulator (fresh install → 4-step onboarding → backup restore → populated dashboard → all four tabs → settings → theme switch → widget pin), with fixes applied between passes:
+
+- **Desktop "night-sky" motif ported to mobile**: new `HeroSky` composable (deterministic starfield; sun halo in light theme, gently pulsing brighter stars in dark) and a new `NextUpHeroCard` on the dashboard — the desktop's "Next Up" hero (amber countdown badge, course chip, title, date/room) that mobile lacked. Placed above the setup checklist; tap opens the assessment detail.
+- **"Exams ahead" KPI parity** on the Overview tab (midterms + finals among upcoming) with honest empty copy and count pluralization ("1 exam").
+- **Theme picker verified live**: Settings → Appearance → Dark instantly applies (was dead before fix #13); dark dashboard matches the desktop's navy aesthetic.
+- **Backup-restore first-run path verified end-to-end on device**: fresh install → "I Have a Backup File (Restore)" → SAF picker → file selected → dashboard populated with courses/assessments/conflict banner, checklist auto-updated.
+- **Widget day/night palette** (was hard-coded dark-only): light home screens get the light tokens; course name shown; pin request verified on device (placement itself is a launcher UX step).
+- Wizard "step 2 showed step 1 content" anomaly observed once, not reproducible on re-test (transition-frame capture timing); step dispatch logic verified correct.
+
+Verification: `assembleDebug` + `assembleRelease` green; `compileDebugKotlin` green; full emulator walk clean — **zero fatal crashes** in session logcat. Release note: the Play-ready artifact still needs a signing keystore (`app-release-unsigned.apk`).
+
+## Audit sweep rounds 2–3 (subagent re-audits until no majors remain, 2026-10-31)
+
+Three more audit rounds over all tiers, each followed by fixes. All gates green after every round.
+
+### Round 2 (web UI re-audit: 0 P0/P1; data-flow re-audit: 2 P1)
+
+- **[P1] Browser smart study blocks silently no-oped after the first scan** — the target filter read camelCase fields on raw snake_case IDB records (`is_upcoming`/`days_until`); read both twins now.
+- **[P1] Backup import stored custom events camel-only** — the WASM core reads `date_iso`/`start_time`, so imported events never raised conflicts or anchored study blocks. Events now go through `toRustEvent` (both twins).
+- **[P2]** Export `custom_events` reads snake twins too (study-block dates/times survived backups); `saveScheduleData`/`deleteCourse`/`saveAssessments` gained `tx.onabort`; `moodle_ical_url` removed from import restores (it was both "secret-ignored" and restored); `resetDatabase` returns a boolean and clears the session's onboarding-dismissed flag; CloudSync Drive section gated behind `isTauriEnvironment` (web showed raw "not implemented" errors); "+ Plan Study Prep" no longer opens fake Edit mode with a Delete button (id-presence check); detail rows got keyboard access (role/tabIndex/keydown on rec-card, timeline-row, readiness-card, gcal cards); setTheme no longer double-applies (idempotent skip in `applyThemeToDocument`); Settings initialTab fully validated + browser import toast summary + onboarding size fix; TasksView "in 3d" → `countdownShort`; CalendarView `todayIso` per-render; shortcuts skip the open search panel; syncStatus shows the newest of the two stamps; contract urgency divergence record emptied (shapes unified) and the wire-map scanner learned `enum rename_all`.
+
+### Round 2 desktop/core re-audit (0 P0/P1; 4 P2 each)
+
+- **[P2] Calendar push MERGES the idempotency map** (replacing it with one run's pairs re-created duplicates after any excluded-assessment run and wiped it entirely when nothing was pushable) and skips stamping no-op pushes; **push guarded** with the scan's in-flight lock.
+- **[P2]** Logout now wipes the account identity keys (user_email/name/picture, teams_account_*) — they survived logout in config_kv; `clear_profile_keys` added to the store.
+- **[P2]** `ImportReport` gained `#[serde(rename_all = "camelCase")]` + a `warnings` field (the desktop toast read undefined camel fields); grades in backup merge are validated + existence-checked and merge **after** assessments land (fresh-device restore order); `FeedConfig.enabled` is now honored — disabled feeds are skipped with an honest note (they were still fetched, leaking their token-bearing URL); `save_all`/`replace_course_slots` seed the slot counter from incoming explicit `slot-N` ids (blank-id collision silently overwrote imports); URL extraction's stop set gained HTML delimiters (raw `<a href>` bodies stored the tag tail).
+
+### Round 3 (web re-audit: 1 P1; Android re-audit: 1 P1, 4 P2)
+
+- **[P1] The reset double-confirm could never appear**: `AppConfirmModal` ran `onConfirm()` before `onClose()`, so a nested confirm under the same modal id was deduped-then-removed by its own parent's close. Close-first ordering fixed.
+- **[P1] Android toasts self-cancelled after ~1 frame**: `clearToast()` nulled the keyed state before `showSnackbar` suspended — cancellation dismissed the snackbar. Show-then-clear fixed.
+- **[P2]** ExamReminderWorker closes its native store (hourly fd leak); stale OAuth redirect no longer reprocessed on activity recreation (intent consumed); `QuizRadarEngine.create` returns a process-cached singleton (dual instances meant OAuth wrote tokens the UI never saw); `allowBackup="false"` (a cloud restore of encrypted prefs without the Keystore key bricked startup) + EncryptedTokenStore drops-and-rebuilds an unreadable pref file.
+- **[P2]** Core `ImportReport` camelCase + warnings (desktop import toast read "undefined"); custom-event cards and day-header exam chips got keyboard access; export `course_id`/`event_type` read snake twins; `/`+Ctrl·K no longer steal focus out of a modal; combobox `aria-expanded`/`aria-controls` honest; Settings `initialTab` syncs on props change.
+
+### Verification (final state)
+
+- Web: `tsc` clean, `eslint` clean, **vitest 228/228** (26 files), Playwright e2e re-stamped + green, prettier check clean from root (wire map ignored — regenerate owns its bytes; scanner now honors enum `rename_all`).
+- Rust: `cargo test` 241+ green, clippy `--all-targets` clean, fmt applied, WASM rebuilt, wire map regenerated.
+- Android: `compileDebugKotlin` + `assembleDebug` green; final build installed and live-verified on the emulator (light hero + sun, dark starfield, toast visibility).
+
+### Remaining documented backlog (all P2/P3, cross-cutting)
+
+Android arm64 jniLibs (NDK build); web past-assessment drop (wasm export); desktop Gmail cache table, port-80 listener reuse, update_config transaction; core positional topic keys, next-week estimate, stamp string compare, quota RMW race, numeric entities, remake dedupe; Android token refresh, rotation-safe OAuth state, 48dp/i18n sweeps.
+
 ## Compile-time TODO list (honest, no NotImplemented stubs)
 
 - `tauri.conf.json` → `app.security.csp: null` for now; exact CSP locked in phase 07/08 once the dev-server/font/img sources are known.
@@ -605,6 +807,67 @@ $env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot"
   UniFFI exports `quizradar_core.kt` with JNA bindings and `NativeStoreInterface`.
 - Android SDK used locally: `C:\Users\ANXOMXR\AppData\Local\Android\Sdk` (`ANDROID_HOME` already set), cmdline-tools 19.0 installed fresh (previous local install was a broken extraction), license accepted, `platforms;android-35` installed during this phase.
 
+#### The native core (the app cannot start without it)
+
+The Kotlin shell is a wrapper around the Rust core (UniFFI). An APK without
+`libquizradar_core.so` for the device's ABI throws `UnsatisfiedLinkError` on the
+first native call, so the library is cross-built and staged **by the Gradle
+build itself** — `buildAndroidRustLibs` runs before the jniLibs are merged and
+fails the build loudly if either ABI is missing.
+
+```powershell
+# standalone (what the Gradle task runs) - cross-builds + stages + strips
+node tooling/build-android-libs.mjs              # release profile (what ships)
+node tooling/build-android-libs.mjs --debug      # debug profile (faster, ~88 MiB/ABI)
+node tooling/build-android-libs.mjs --abi arm64-v8a
+
+# prerequisites
+rustup target add aarch64-linux-android x86_64-linux-android
+# NDK 27.x (27.1.12297006 in CI via nttld/setup-ndk@v1). The script finds it via
+# ANDROID_NDK_HOME / ANDROID_NDK_ROOT / ANDROID_NDK, then `ndk.dir` in
+# apps/mobile-android/local.properties, then the newest NDK under $ANDROID_HOME.
+```
+
+- Staged output: `apps/mobile-android/app/src/main/jniLibs/<abi>/libquizradar_core.so`
+  (gitignored — the binaries are build artifacts, never repo content).
+- **ABIs**: `arm64-v8a` (real phones) + `x86_64` (emulator). `defaultConfig.ndk.abiFilters`
+  pins the APK to exactly those two: without it the APK also advertised
+  `armeabi-v7a`/`x86` (JNA ships dispatchers for them) and would install on a
+  32-bit device and then crash on the first core call.
+- The library is stripped with the NDK's `llvm-strip` (~8.5 MiB → ~6.1 MiB per ABI).
+
+##### Checking what actually ships
+
+```powershell
+# what is inside the APK (PowerShell, no unzip needed)
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$z = [System.IO.Compression.ZipFile]::OpenRead(
+  "apps\mobile-android\app\build\outputs\apk\release\app-release-unsigned.apk")
+$z.Entries | Where-Object { $_.FullName -like 'lib/*' -or $_.FullName -like '*.dex' } |
+  ForEach-Object { "{0,-46} {1,12:N0}" -f $_.FullName, $_.Length }
+$z.Dispose()
+
+# a LOCAL release build is unsigned; sign it with the debug keystore to run it
+$bt = Get-ChildItem "$env:LOCALAPPDATA\Android\Sdk\build-tools" -Directory |
+      Sort-Object Name -Descending | Select-Object -First 1
+Copy-Item apps\mobile-android\app\build\outputs\apk\release\app-release-unsigned.apk $env:TEMP\app-release.apk -Force
+& "$($bt.FullName)\apksigner.bat" sign --ks "$env:USERPROFILE\.android\debug.keystore" `
+    --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey $env:TEMP\app-release.apk
+adb -s emulator-5554 install $env:TEMP\app-release.apk
+
+# the start-up measurement (the emulator only - never the user's phone)
+adb -s emulator-5554 shell am force-stop com.quizradar.app
+adb -s emulator-5554 logcat -c
+adb -s emulator-5554 shell am start -W -n com.quizradar.app/.MainActivity
+adb -s emulator-5554 logcat -d -b all | Select-String 'Displayed com.quizradar|AndroidRuntime|ANR in com.quizradar'
+```
+
+- **R8 runs in both build types**: the release build shrinks + obfuscates, the
+  debug build shrinks but keeps every name (`proguard-rules-debug.pro`:
+  `-dontobfuscate` + `SourceFile,LineNumberTable`), so the debug APK carries
+  the same 11.6 MB dex instead of the 62 MB the unshrunk
+  `material-icons-extended` library used to add.
+
 ### CI
 
 `.github/workflows/ci.yml` — three PR jobs running the exact commands above: `rust` (fmt/clippy/test + version check), `web` (pnpm lint/typecheck/test + version check), `android` (temurin 21 + `./gradlew assembleDebug`). Replace/extend in phase 15.
@@ -632,9 +895,10 @@ $env:ANDROID_HOME\build-tools\35.0.0\apksigner.bat verify --verbose apps\mobile-
 node apps/web/src/contract/regenerate.mjs          # re-stamp rust-structs.json after core struct changes
 node apps/web/src/contract/regenerate.mjs --check  # CI freshness gate (fails if Rust moved without re-stamp)
 cargo test -p quizradar-core --test property_email --test property_ics --test property_plan   # proptest suites
-pnpm test                                          # vitest: 200 tests / 24 files (contract, axe, antipattern, copy, unit)
+pnpm test                                          # vitest: 220 tests / 25 files (contract, axe, antipattern, copy, UI sweep regressions, unit)
 pnpm --dir apps/web exec playwright test           # visual regression vs committed e2e-baselines (light+dark)
 pnpm --dir apps/web exec playwright test --update-snapshots=all   # re-stamp baselines (intentional UI change or font upgrade)
+node tooling/ui-sweep.mjs --phase=after --out-dir=target/ui-sweep --report=target/ui-sweep/audit.json   # full 51-state Web + sandboxed Tauri CDP DOM/contrast/functional sweep
 ```
 
 Live sweep of the running desktop app: `cargo tauri build --debug --no-bundle` (kill `quizradar-desktop.exe` first so the bin can relink), launch with `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333`, drive over CDP (`chromium.connectOverCDP("http://127.0.0.1:9333")`, DOM-level clicks + console capture + `window.__TAURI_INTERNALS__.invoke(...)`). If a rebuilt app seems to serve stale JS, clear only `%LOCALAPPDATA%\com.quizradar.app\EBWebView\Default\{Cache,Code Cache,Service Worker,GPUCache}` — never `quizradar.db`, IndexedDB or Local Storage.
@@ -770,6 +1034,11 @@ When cutting a new release:
 - ~~Android local build requires JDK 21 + Android SDK~~ — resolved during phase 01: Temurin JDK 21 installed via winget; platform 35 + working cmdline-tools installed into the local SDK. CI still uses ubuntu + temurin 21 (`ci.yml`).
 - `pnpm core:watch` requires `cargo-watch` (not installed locally; optional dev nicety — plain `pnpm core:test` always works).
 - ~~`cargo tauri dev` opens a real window on this machine; the headless shell cannot visually confirm the placeholder rendering~~ — **resolved** in the post-ship audit passes: `pnpm --dir apps/desktop dev` was run and the real desktop window was inspected directly (scan overlay, Cancel, sidebar sync footer, connected-sources card). See "Post-ship audit fixes #7 → Live verification".
+- **Pair Phone (QR / PIN) is not implemented in any shell** (`04` §4.6 asks for device pairing). The build refuses the pairing deep link with "Desktop LAN pairing is disabled in QuizRadar v5 zero-server mode" and points at Backup Export/Import. Implementing it needs a transport decision that does not create a server - not a code gap.
+- **Moodle REST API needs a per-university app token.** The REST channel exists in the core, but only the iCal channel works out of the box for a student.
+- **The radar only grows.** A scan merges fresh results into the existing radar (user-owned fields are preserved), so a cancelled announcement or an item from a source the user later disabled stays visible. Removing them needs per-source provenance ("this source ran and did not report it again"); a partial fetch must never delete a real announcement.
+- **PWA offline start is incomplete.** The service worker precaches the app shell but not the WASM engine or the user's IndexedDB snapshot, so a cold offline start cannot derive the radar.
+- **No user-facing "add an assessment by hand" flow** in the desktop/web shells (only custom calendar events). The core's CRUD exists.
 
 ## New dependencies (with rationale, per §7 DoD)
 
@@ -783,3 +1052,350 @@ When cutting a new release:
 - Phase 14 added to `apps/mobile-android`: `androidx.browser:browser:1.8.0` (Chrome Custom Tabs for PKCE OAuth), `androidx.glance:glance-appwidget:1.1.1` and `androidx.glance:glance-material3:1.1.1` (Glance 2x1 home-screen countdown widget), `androidx.work:work-runtime-ktx:2.10.0` (WorkManager periodic widget updates and exam reminder notifications); test dependency: `androidx.work:work-testing:2.10.0`.
 - Post-ship audit added to `apps/desktop/src-tauri`: dev-dependency `wiremock = "0.6"` — the same version the core crate already uses, so no new package enters the lockfile. It backs the recorded-HTTP fixture server the sync-stamp and cancel integration tests need (a local server that answers like Gmail's API). Test-only; it never reaches a shipped binary.
 - Phase 18 added **dev-dependencies only** (nothing reaches a shipped binary or the web bundle): `apps/web`: `@playwright/test` 1.64 (committed visual-regression baselines), `axe-core` + `jest-axe` + `@types/jest-axe` (accessibility audits); `core`: `proptest` 1.12 (property tests for the parsers and planner).
+- Mobile Polish Phase B & C added **zero new runtime dependencies**; leverages existing Jetpack Compose M3, Material Icons Extended, AndroidX Security Crypto Keystore, and UniFFI core FFI interfaces.
+
+---
+
+## Mobile Polish & Release Readiness (apps/mobile-android)
+
+### Phase B: Navigation & Chrome (Shipped)
+- **TopAppBar**: Replaced 300px branded header with compact 56dp Material 3 bar showing screen name, scanning sync button with active progress indicator, search button, and user profile avatar with connection status dot.
+- **SearchSheet**: Instant full-sheet search across assessments, courses, instructors, and topics with filter chips (`All`, `Quizzes`, `Exams`, `Assignments`, `Labs`).
+- **AccountSheet**: Native M3 bottom sheet displaying local profile, zero-server privacy disclosure, Google and Microsoft connection cards with scopes and connect/disconnect actions, and direct links to Settings and Import Backup.
+- **AddActionMenuSheet & FAB**: Floating Action Button on Dashboard and Calendar opening quick actions for new custom event, enrolled course, and backup restore.
+- **Inset Protection**: Edge-to-edge status bar padding applied to all modal sheets (`WindowInsets.statusBars`).
+- **Security Hardening**: Stripped dead LAN pairing intent filter (`com.quizradar.app://pair`), guarding against arbitrary socket injection.
+
+### Phase C: Full-Screen Settings & Course Editor (Shipped)
+- **Full-Screen `SettingsScreen`**: Built from M3 card/list sections covering all 9 spec sections (`01` §4, §5):
+  1. *Account & Connections*: Local profile name & email editor dialog, Google and Microsoft accounts with scopes, live status pills, and disconnect confirmations.
+  2. *Courses & Timetable*: Enrolled course cards with color dots and slot counts; "Re-run Onboarding" action; timetable photo import note.
+  3. *Course Editor (`CourseEditorSheet`)*: Comprehensive course code, name, 8-color preset swatches, instructor, and weekly slots editor with day chips, slot types (`Lecture`, `Tutorial`, `Lab`), start/end times, room, and section/group. Includes course deletion with confirmation.
+  4. *Sources*: Toggles for Gmail, Classroom, Teams; honest "Desktop only" badge for Moodle REST; HTTPS `.ics` feeds subscription manager (enforcing `<=10` feeds cap).
+  5. *AI (Gemini BYOK)*: Toggle, masked API key input with show/hide password toggle, live network ping validation against Google Gemini API, and verbatim free-tier data terms disclosure copy (`05` §5.1).
+  6. *Notifications*: `POST_NOTIFICATIONS` runtime permission launcher; T-24h and same-day exam alerts; daily morning digest with configurable time; "Send Test Notification" action verifying sound and vibration channels.
+  7. *Calendar*: Google Calendar auto-push switch (`false` by default per Rule 4); weekly classes sync switch (`false` by default).
+  8. *Appearance*: Theme selector chips (`System`, `Light`, `Dark`); reduced motion system note.
+  9. *Data Management*: Local JSON export via SAF `CreateDocument`, import via SAF `GetContent`, and typed `"DELETE"` confirmation dialog for Reset All Data.
+  10. *About*: Version stamp from `core.version()`, zero-server guarantee, and license disclosures.
+- **Verification**: 49/49 Robolectric and Compose unit tests passing; `ktlintCheck` clean (0 errors); live visual verification on `emulator-5554` (`Pixel_10(AVD) - 17`) with 8 screencaps saved in `scratch/`.
+
+### Phase D: First-Run Experience & Onboarding Flow (Shipped)
+- **OnboardingWizardScreen**: 4-step wizard with step persistence (`onboarding_step` in SQLite config store):
+  1. *Welcome*: Zero-server privacy guarantee, value proposition, "Get Started" and "I Have a Backup File (Restore)".
+  2. *Timetable Setup*: Track rhythm chips (Medicine, Engineering, Business, Sciences), quick course addition chips, and custom course creation.
+  3. *Connect Sources*: Google (Gmail & Classroom) and Microsoft (Teams) OAuth connection cards with exact scopes and BYOK Gemini toggle.
+  4. *Reminders*: Notification primer explaining T-24h and morning digest schedules before launching system permission dialog.
+- **SetupChecklistCard**: Dismissible checklist card on Dashboard tracking progress (courses, sources, reminders, widget) with direct action buttons and Glance widget pin prompt (`AppWidgetManager.requestPinAppWidget`).
+- **Smoke Tests**: Compose test coverage for wizard flow advancement and checklist dismissal.
+
+### Phase E: Screen Polish, Calendar Interactivity & Pomodoro Lifecycle (Shipped)
+- **Dashboard & Tasks Polish**: Removed raw uppercase eyebrows; implemented natural sentence/title case with tabular numerals (`fontFeatureSettings = "tnum"`).
+- **Calendar Interactivity**: Added live red "Now" indicator line across today's current hour; tap-to-create study block opening `CreateEventSheet` pre-filled with clicked date & hour slot; exam glow/border accent.
+- **Pomodoro Lifecycle**: Moved timer countdown state and tick loop into `QuizRadarViewModel` (`viewModelScope`) ensuring continuous operation across bottom tab navigation, device rotation, and backgrounding; added focus and break completion alerts via `NotificationHelper.sendTimerCompleteNotification()`.
+
+### Phase F: System Features, App Shortcuts & Haptics (Shipped)
+- **App Shortcuts**: Static shortcuts registered in `shortcuts.xml` and manifest:
+  - `"New Event"` (`quizradar://action/add_event`)
+  - `"Focus"` (`quizradar://action/focus`)
+- **Deep Link Navigation**: Wired `quizradar://action/` routes (`/add_event`, `/focus`, `/calendar`, `/tasks`, `/dashboard`) and notification payload clicks (`EXTRA_ASSESSMENT_ID`) directly into ViewModel tab and detail sheet state.
+- **Haptic Feedback**: Integrated `LocalHapticFeedback` with crisp confirmation vibrations (`HapticFeedbackType.LongPress`) on topic toggling (`DailyRoadmapCard`, `StudyRecommendationCard`, `AssessmentDetailSheet`), Pomodoro controls (`FocusScreen`), and conflict banner dismissal (`ConflictBanner`).
+- **Reactive Widget Re-scheduling**: Hooked `onStateMutated` in `QuizRadarViewModel` to refresh Glance widget store asynchronously upon course, event, topic, and grade mutations.
+
+### Phase G: Hardening, Themed Icon & Store Readiness (Shipped)
+- **Themed / Monochrome Icon**: Added vector monochrome adaptive icon asset (`ic_launcher_monochrome.xml`) and registered `<monochrome>` layer in `ic_launcher.xml` for Material You dynamic theming on Android 13+.
+- **Strings Extraction**: Extracted and centralized user-facing accessibility content descriptions, shortcut labels, and checklist copy into `res/values/strings.xml`.
+- **Release Compilation**: Clean `assembleRelease` verification producing `app-release-unsigned.apk` with R8/ProGuard optimizations and offline lint rules.
+- **Verification Suite**: 53 unit tests passing (`testDebugUnitTest`), 0 `ktlint` violations, live verification on `emulator-5554`.
+
+---
+
+## Round 4 — breakage fixes + use-the-app sweep (2026-10-31)
+
+### Breakage found and fixed
+- **Web "no CSS"**: root cause was the long-lived Vite dev server on `127.0.0.1:4317` serving an empty Tailwind payload after ~9h of HMR. Killed and restarted; verified `/src/index.css` serves 94,234 bytes with `__vite__css`/`--tw-`/`.dark` present, and the IAB tab renders 824 CSS rules with the dark shell (`rgb(11,15,25)`), hero, sidebar and all views. 68 resources loaded, 0 failed.
+- **Android "not working"**: `ExamReminderWorker` and `WidgetUpdateWorker` used to `close()` the store in a `finally` — with the process-cached `QuizRadarEngine.create()` singleton that bricks the UI's DB access until process restart. Removed the closes (source comments explain why). Rebuilt + reinstalled on `emulator-5554`: app launches, all four tabs render real data (countdowns "1d/4d/5d/7d away", calendar week Oct 25–31 with Sat 31 = today), no `FATAL`/`IllegalState`/`SQLite` errors in logcat.
+- **e2e baselines were clobbered**: the working-tree `e2e-baselines/*.png` had been regenerated during the wedged-server window (dark and light PNGs byte-identical = blank captures), so e2e "passed" vacuously against blank images. Restored committed baselines, found the current (uncommitted) UI legitimately differs from the phase-19 baselines, regenerated with `pnpm --dir apps/web e2e:update` against the healthy server, then `playwright test` = **5 passed / 1 skipped**. Dark/light baselines now differ as they should.
+
+### Day-rollover (stale due dates after midnight) — now covered on every shell
+- **Android**: `QuizRadarViewModel` tracks `lastLoadedDate` (stamped on every successful `UiState.Ready` load); new `onAppResumed()` reloads via `refreshState()` when the calendar day changed while backgrounded, and moves week/calendar selection to the new day only when the user was still on the old "today" (deliberate navigation preserved). Wired from `MainActivity.onResume()`. Two deterministic Robolectric tests added (`day_rollover_on_resume_recomputes_today_derived_data` — dates straddle a Sunday so the week-follow branch is exercised; `day_rollover_preserves_user_navigated_week`).
+- **Web/PWA + desktop webview**: already covered by `initDayRolloverWatchdog()` in `App.tsx` (mount-only effect) using local-date comparison; desktop additionally recomputes "today" on every `get_state` IPC.
+- Note: the emulator is a production build (no root), so a live midnight-shift couldn't be executed on-device; the rollover logic is covered by the unit tests instead.
+
+### Round-4 use-the-app findings (web IAB + Android emulator + subagent pass)
+- **Search missed assessment type**: searching "quiz" found nothing although an assessment was a "Class Quiz". `SearchDropdown` now also matches `assessmentType`, `room`, `dateIso`, `source` (verified live: "quiz" returns the assessment).
+- **"Est. 0 hrs" fabrication**: `TasksView` summed `totalEstimatedHours ?? 0`, printing "Est. 0 hrs" next to 12 pending topics when no estimates exist. Now `null` unless at least one day carries an estimate → the clause is omitted (honesty doctrine).
+- **Widget stale after import/reset**: `loadState()` never fired `onStateMutated`, so the Glance widget didn't refresh after `importBackup`/`resetAllData`/feed changes. Now fired at the end of `loadState()`.
+- **Engine cache race**: `QuizRadarEngine.cachedEngines` was a plain `mutableMapOf` read from main + WorkManager threads → `ConcurrentHashMap` + `computeIfAbsent`.
+- **`onAppResumed` retry semantics**: `lastLoadedDate` was stamped even when the rollover refresh failed; now only stamped on success (failed rollover retries on next resume), and all `UiState.Ready` sites stamp it consistently.
+- **Stale widget test**: `WidgetDataContractTest` still expected the raw course id; widget correctly shows the course name (phase-19 honesty fix) — test updated.
+- **Flaky Compose click test**: `ComposeUiSmokeTest` dismiss-click never landed on the 32dp IconButton under Robolectric (verified by debug: `performClick` left the flag false, direct handler call works and removes the card; on the real emulator the card shows/hides correctly). Test now drives `viewModel.dismissSetupChecklist()` directly with a comment.
+
+### Gates (all green, 2026-10-31 ~07:50)
+- web: `vitest run` **228/228** (26 files), `tsc --noEmit` clean, root `eslint .` clean, root `prettier --check .` clean (3 stray untracked files formatted), `playwright test` **5 passed / 1 skipped**.
+- core: `cargo test -p quizradar-core` green, `cargo clippy --all-targets` clean, `cargo fmt --check` clean.
+- Android (JDK 21 Temurin): `testDebugUnitTest` **55/55**, `assembleDebug` BUILD SUCCESSFUL; fresh APK installed on `emulator-5554`, dashboard renders, logcat clean.
+- Commands unchanged from §Commands above; Android still needs `JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot` and a PowerShell-wrapped `.\gradlew.bat` call (raw cmd mangles `$env:` syntax).
+
+
+## Round 5 — hero "pop-out" on settings tab switches + richer, shinier sky (2026-10-31)
+
+### Root cause of the banner popping out
+- The dashboard hero carried an **unconditional** `view-transition-name: dashboard-hero` (`tokens.css`), but `SettingsModal.handleTabChange` wraps every Account↔Courses tab switch in `document.startViewTransition(...)`. Any View Transition snapshots every named element, so each tab switch replayed `hero-scene-in` (opacity 0 → translateY(5px) scale(0.99)) on the hero behind the modal — that was the "pops out weirdly" the user saw. Same for any other transition.
+- **Fix:** the name is now gated: `html.hero-scene-transition .hero-view-transition { view-transition-name: dashboard-hero; }` (`tokens.css`), and `store.ts` adds `hero-scene-transition` to `<html>` only around the **theme** flip's `startViewTransition` (removed on `finished`, settle or reject). Sweep: the only other named element is `settings-panel` (the modal itself morphing between tab heights — intended); no other `startViewTransition` callers exist.
+- **Verified live in the IAB tab** (`http://127.0.0.1:4317/`): with the settings modal open, switching Account→Courses→Account keeps `getComputedStyle(hero).viewTransitionName === "none"` and no `hero-scene-transition` class at any point. Toggling the theme does name the hero `dashboard-hero` during the transition (rAF sampler caught it) and cleans up afterwards — the day→night scene change still works exactly on theme switches only.
+
+### More stars, more shine (web + Android parity)
+- Web `DashboardView.tsx`: DAY_STARS 12→18, NIGHT_STARS_A 14→22, NIGHT_STARS_B 12→20 (a few larger 1.7px "hero" stars added); sun split into its own layer with a breathing `heroSunGlow` pulse; new `.hero-sheen` overlay — one diagonal highlight band sweeping the card every 6.5s over both day and night skies (`index.css` keyframes, `motion-reduce` respected). Verified live: layer gradient counts [18 day-stars, 2 sun, 22, 20 night], sheen animation `heroSheen` running.
+- Android `HeroSky.kt` mirrors the exact same star lists (parity with desktop), adds the sun-halo glow pulse and the same sheen sweep drawn on the Canvas; all infinite transitions hoisted unconditionally (the old code called `rememberInfiniteTransition` inside the `if (dark)` branch — a latent hooks-order crash if the theme flips at runtime).
+
+### Gates (all green, 2026-10-31)
+- web: `vitest run` **228/228** (26 files), `typecheck` (both tsconfigs) clean, `eslint` on changed files clean, root `prettier --check .` clean, `playwright test --update-snapshots` (hero pixels legitimately changed) then `playwright test` **5 passed / 1 skipped — twice in a row** (sheen/twinkle do not flake under the frozen clock).
+- Android (JDK 21 Temurin): `testDebugUnitTest` **55/55, 0 failures**, `assembleDebug` BUILD SUCCESSFUL; fresh APK installed on `emulator-5554`, app launches to the dashboard (nav + "Up next" hero + tabs render), logcat clean of FATAL/IllegalState/SQLiteException.
+- core untouched this round (no `core/` changes; `cargo` gates unchanged from Round 4).
+
+## Round 6 - timetable AI import for the browser tier + 6 honesty fixes found while doing it (2026-10-31)
+
+### The gap the user reported
+- The web/PWA tier had **no** `extract_schedule` at all: the browser RPC adapter had no timetable-vision task, and the Settings UI had no upload control, so the feature listed in the spec (`01` §4.1) existed only on the desktop (Rust core). The onboarding wizard's upload card was additionally gated behind `isTauriEnvironment()`, so a PWA user could not even see it.
+- Android has no UniFFI export for the vision task, so image import is desktop + web only. Android said so honestly now (it used to promise "import from image in Settings" - a feature it does not have).
+
+### What shipped
+- `apps/web/src/pwadapters/browserAi.ts` (new): the browser tier's Gemini Vision adapter. Same model ladder as the core provider (`core/src/ai/provider.rs`: `gemini-3.5-flash` → `3.8` → `3.7` → `3.6` → `flash-latest` → `2.5-flash`; a retired id (404) or a congested one (503) falls through to the next), same prompt rules as `core/src/ai/tasks.rs`, the key only ever in the `x-goog-api-key` header, the image as `inline_data`, `temperature 0.1`, `responseMimeType: application/json`.
+- Honest parsing identical to the core: malformed course/slot rows are **dropped and counted** (never repaired), courses deduped case-insensitively, an unknown semester stays `null`, a missing room stays missing ("-"), an invalid colour falls back to the deterministic FNV-1a preset palette, weekday parsing, `HH:MM` normalization, `end > start` required.
+- Wired into `pwaRpcHandler`: `extract_schedule` → the adapter with the in-memory key; `validate_gemini_key` stores the key in memory for this session only (PWA secrets never persist); `ai_quota_usage` reports the session counter and whether a key is in memory.
+- UI: Settings → Courses now has an "Import Timetable from Image (AI)" card (pick image → Gemini Vision → preview → Apply, with "Enter courses and slots manually instead" one click away), and the onboarding wizard's upload card is no longer desktop-only.
+- 10 new unit tests (`browserAi.test.ts`) cover the drop/count rules, dedupe, palette fallback, code-fence/array unwrapping, header + `inline_data` shape, 404 ladder fall-through, an invalid-key error that never echoes the key, the 429 quota message, and status mapping.
+
+### Honesty bugs found and fixed while doing it
+1. **The browser tier claimed a daily AI quota it does not have.** `store.refreshAiQuota` copied only `callsToday`/`perModel` out of the RPC payload and dropped `sessionScope`, so the browser always rendered "AI calls today: 0 (resets midnight PT)" - a fabricated daily ledger. The scope flags now survive the copy and the line reads "AI calls this session: N (browser tier counts in memory - it resets on reload)". Two regression tests added.
+2. **The usage counter was stale.** It only refreshed when Settings opened, so a call that had just run still showed the old number. `extractSchedule` now refreshes the quota after the call.
+3. **Three error strings pointed at the wrong tab.** The Gemini key card lives in Settings → **Account**, but the no-key hint and the two Gemini errors said "Settings → Integrations" - a dead end for the user. All three now say Account.
+4. **Applying an extraction silently replaced your timetable.** `save_schedule` overwrites the whole timetable and the preview said nothing about it; it now states "Applying this replaces your current timetable (N courses, M slots)." before Apply can be clicked.
+5. **v4 branding left in the Android shell.** The Android onboarding headline was "Academic Air-Traffic Control" (v4's name - the web tier says "Welcome to QuizRadar") and the About block said "Local-first academic air-traffic control". Both now use the product's own name/tagline.
+6. **The Courses card could not tell "AI off" from "no key in memory".** The browser tier keeps the key in memory only, so after a reload the AI toggle is still on but the key is gone; the card now shows the "add and validate a key in the Account tab" hint whenever no key is actually in memory (`aiQuota.keyInMemory`), not only when the toggle is off.
+
+### Live verification (a real Gemini call, browser tier, `http://127.0.0.1:4317/`)
+- Validated the user's key in Settings → Account ("Key validated - held in memory for this session only (web tier)"), rendered a synthetic timetable PNG (4 courses, 7 slots, with rooms), and uploaded it through the Courses card. The real Gemini Vision model read it: the preview listed exactly the 4 courses and 7 slots, with the printed rooms and 12-hour slot times, and Apply saved it ("Schedule updated successfully"; the Courses tab then showed the 4 courses with their slot counts).
+- The preview carried the new "Applying this replaces your current timetable (4 courses, 7 slots)" line, and the Account tab showed "AI calls this session: 1 (browser tier counts in memory - it resets on reload)".
+- Without a key the upload fails honestly: "No Gemini API key in memory - validate your key in Settings → Account (Google Gemini AI) first..." and the Courses card shows that hint up front.
+
+### Gates (all green, 2026-10-31)
+- web: `vitest run` **240/240** (27 files), `typecheck` clean (both tsconfigs), `eslint .` clean, root `prettier --check .` clean, `playwright test` **5 passed / 1 skipped**.
+- Android (JDK 21 Temurin): `testDebugUnitTest` **55/55, 0 failures**, `assembleDebug` BUILD SUCCESSFUL; fresh APK installed on `emulator-5554`: onboarding step 1 reads "Welcome to QuizRadar", step 2 states that image import runs in the desktop app and the web companion, and the dashboard renders with the correct day rollover ("Sunday, 01 November 2026") plus the new star field.
+- core untouched this round (no `core/` changes, so the Rust gates are unchanged from Round 4).
+- Toolchain note for later agents: the Android build needs **JDK 21** - the machine's default `JAVA_HOME` points at Android Studio's JBR (25.0.3) and Gradle fails there with a bare "25.0.3" error. Use `JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot` for `gradlew`.
+## Round 7 - readiness sweep: the radar-wipe guard, the dead search, and the discarded onboarding answer (2026-10-31 / 2026-11-01)
+
+This round is the "what is left for the app to be ready" pass: the spec's acceptance checklist was walked item by item, every shell was exercised, and the bugs found were fixed rather than listed.
+
+### Core: the radar-wipe guard moved INTO the core (the latent data-loss bug)
+
+- **The bug**: only the *desktop shell* refused to write an empty radar after a scan that found nothing. The store itself happily ran `DELETE FROM assessments` on an empty incoming set, so any other caller (the PWA adapter, the Android engine, a restore path) could wipe the whole radar with a scan that returned nothing - the failure mode `03` §B3 and the "latent radar wipe" audit finding describe.
+- **The fix** (`core/src/store/repo.rs`): a new `EmptyReplace` enum makes the decision explicit. `EmptyReplace::Refuse` is the **default** - an empty replace now fails loudly with "Refusing to clear the whole radar from an empty scan". `EmptyReplace::Allow` exists for callers that really mean "there is nothing left" (a user-requested reset, a restore of an empty backup). `ops::replace_assessments` (the scan path) refuses; `ops::replace_assessments_allowing_empty` (the explicit path) allows. New test: `empty_replace_needs_an_explicit_opt_in`.
+- **The store facade** (`core/src/store/mod.rs`) exposes both, and the UniFFI `replace_assessments` (the Android shell's explicit write/reset entry point) uses the *allowing* variant - it is not the scan path. The scan path (`store.replace_assessments`, used by the desktop and the WASM tier) still refuses. This distinction is what keeps the Android "Reset all data" button working while a failed scan can no longer empty the dashboard.
+
+### Core: more honesty fixes in the same sweep
+
+- **A corrupt cloud payload could plant grades**: `GradeRepo::merge_upsert` now checks that the assessment exists and runs the same `validate()` a local write does, so a hostile/backup payload can no longer write `achieved: -5` or grades for assessments that exist nowhere.
+- **ICS room inheritance was v4 fiction**: a calendar event inherited "the first known room of the course" regardless of weekday - a Monday Moodle event showed the *Sunday* lab's room. The ICS path now uses the email path's rule (a room may only come from a slot that runs on the event's own weekday); otherwise the room stays "—". The golden fixture `core/tests/ics_fixtures.rs` asserted the old v4 behaviour ("v4 first-known-room parity") and was corrected to the honest expectation, because the module's own contract and the Rust email path both say the weekday rule wins (AGENTS.md §3 rule 1 + the "where they disagree, the Rust one wins" rule).
+- **UTC end times were converted but the start was not** in the same event, which produced "00:00 - 23:59" spans on UTC feeds with timed ends. DTEND now converts through the same local offset as DTSTART.
+- **The event body could not carry the assessment type**: only the SUMMARY was classified, so an event titled "CS101 Session" whose description said "Midterm Exam" was filed as a generic session. The description now goes through the same classifier (HTML stripped first), exactly like the email path.
+- **RFC 5545 is case-insensitive**: a lowercase `z` / `t` in a timestamp now parses as UTC / date-time.
+- **The flat ICS study-hours estimate** is now labeled in the inference note ("a flat 3.0 h local heuristic estimate") instead of reading like a fact.
+- **Gmail's missing headers** now use the shared placeholder constants the parser already knows not to turn into a title or an instructor.
+- **The 60-day recency window** (`01` §4.2) is applied where cached messages become assessments, and the messages it skips are **counted in the scan notes** ("N cached message(s) older than 60 days were skipped") instead of vanishing silently.
+- **"not this week" used to become "this week"**: the bare negation fell through to the `this week` branch and anchored to a fabricated date. It now anchors to the later week and the inference note quotes the actual wording.
+- **Import report on the wire**: `ImportReport` is camelCase (matching the web's mirror) and carries `warnings`; a restore of an empty backup may clear the radar (explicit), a scan may not.
+- **Slot-id collisions**: an imported or AI-extracted schedule can no longer hand out a `slot-N` id that collides with (and silently overwrites via `INSERT OR REPLACE`) an explicit `slot-1…N` from the same payload.
+
+### Web / desktop / PWA
+
+- **The global search was completely dead** (`01` §4.8). `SearchDropdown` kept the query in its own local state; the store's `setSearchQuery` was defined but never called, so nothing downstream ever filtered. The query now feeds the store, the dashboard and the week calendar filter on it, and both show an honest "nothing matched" state instead of the "you're all caught up" empty state. Three new tests pin the wiring.
+- **The exam-type pills disagreed with the "Next 7 days" KPI**: the pills counted a 30-day window while the KPI counted 7. The window decision moved into the core (`exam_type_counts` now tallies `upcoming_this_week`), so the dashboard, the web calendar and the Android pills all agree.
+- **The Pomodoro "Mark Done" button never rendered**: the prop contract had drifted (`topicIndex` vs `topicKey`), so the modal had no topic to mark. Aligned on `topicIndex`, plus per-topic focus buttons on the study-recommendation card and the assessment detail sheet.
+- **The study-block scheduler lied**: it invented a "tomorrow" fallback for exams with no confirmed date, swallowed the write error, and used a 30-day window. Now: undated assessments are skipped, a write failure is surfaced with its real reason, the window is 7 days, and the toast says what actually happened ("3 study blocks created" / "skipped - no confirmed date" / "no free window").
+- **The cloud-restore toast always said "0 added, 0 updated"**: `MergeReport` crosses the bridge as raw snake_case (it is not a state payload, so `ipcShape`'s camelCase aliases never applied) while the UI read camelCase. The real counters are shown now.
+- **The PWA silently re-enabled AI on a restore** (`gemini_enabled` was in `configRestores`); it is forced off after an import.
+- **The installed PWA's status-bar tint** now follows the theme (`meta[name="theme-color"]`).
+- **The onboarding "academic rhythm" preset was thrown away** (`01` §4.1: the track/rhythm chips are *persisted*). The answer lived only in React state and vanished on Finish. It is now persisted end to end - the desktop writes the `academic_track` config key, the PWA writes it to the IndexedDB config, Android writes it to the core config - it is shown (and editable) in Settings -> Account, and re-opening the wizard shows the saved choice. New web test: "persists the chosen academic rhythm instead of discarding it".
+- **The web tier's email fixtures no longer contradict the core**: `apps/web/src/testdata/email/09-old-email-still-parsed.json` (which asserted the pre-60-day-window behaviour) was replaced by `09-old-email-dropped.json`, and the new `12-not-this-week.json` core fixture was mirrored.
+
+### Android
+
+- **The sign-in buttons opened a doomed browser tab**: the open-source build ships a placeholder Google/Azure client id, so the provider could only answer "client id not found". The buttons now say the client id is not configured in this build (and name the alternatives) instead of opening a tab that dies.
+- **The privacy copy claimed the wrong storage**: it said "Your timetable, grades, and credentials are encrypted on this device in Android Keystore". Only the account tokens are Keystore-backed; the timetable and grades live in the app's private (not Keystore-encrypted) storage. The onboarding card and both disconnect dialogs now say exactly what is true.
+- **"Schedule study blocks" swallowed every error and told the user nothing**: it now reports the block it added, or why none was placed (no confirmed date / no free window), or the real failure reason.
+- **The onboarding "Study Track / Field" chips were discarded** the same way the web's were. They now persist, and with no saved answer **no chip is pre-selected** - a pre-selected default would look like a choice the user never made.
+- **The track taxonomy now matches the other shells**: the Android stored a display label ("Computer Science") while the web stored an id ("med"). Both now store the same three spec presets under the same ids (`med` / `eng` / `biz`), in one shared list (`ui/StudyTracks.kt`), and the Android Settings screen gained the same "Academic Rhythm Preset" card the web has. A value saved by an older build is shown as it is ("Computer Science (not one of the current presets)") and never silently mapped onto another preset.
+- **Disconnected accounts kept their identity**: `user_email` / `user_name` / `user_picture` are cleared on disconnect, so a signed-out account does not still show a name and an email.
+- **A grade save could claim success after a failure**, a failed practice-quiz generation was shown as "select an exam above", the Pomodoro focused the wrong topic, the calendar dropped non-overlapping class slots of the same course, the radar list lost the core's conflict chip, the tasks filter showed raw course ids, and an untyped custom event rendered an empty time label - all fixed (the honesty agent's seven, each with a regression test).
+
+### Repairs to the in-flight work (found while landing the above)
+
+- `core/src/parse/ics.rs` did not compile (`weekday()` is a `Datelike` method - the import was missing).
+- `NextUpHeroCard.kt` passed a `LocalDate` to a helper that takes the ISO `String`.
+- `HonestyFormattingTest.kt` still called the previous `formatSourcesDisplay` signature (feeds + per-source counts).
+- **The UniFFI bindings had to be regenerated**: changing an exported core function moved the API checksum, and every Android test failed with "UniFFI API checksum mismatch: try cleaning and rebuilding your project" (39 of 69). `apps/mobile-android/app/src/main/java/com/quizradar/app/core/quizradar_core.kt` is regenerated by `gradlew uniffiGenerate` (or `cargo run -p quizradar-core --bin uniffi-bindgen --features cli -- generate --library target/debug/quizradar_core.dll --language kotlin --config core/bindings/uniffi.toml --out-dir apps/mobile-android/app/src/main/java`). **After any change to the core's exported API, regenerate it or the Android unit tests fail with a checksum mismatch.**
+
+### Gates (all green, 2026-11-01)
+
+- core: `cargo fmt --all --check` clean, `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo test --workspace` **258 core lib + 45 fixture/property/integration + 23 desktop lib + 8 desktop integration, 0 failures**.
+- web: `pnpm typecheck` clean, `vitest run` **259 passed / 29 files**, root `eslint .` clean, root `prettier --check .` clean, `playwright test` **5 passed / 1 skipped** (the 5 visual baselines were regenerated for the new Settings -> Account card).
+- Android (JDK 21 Temurin, NDK 27.1): core cross-built for `x86_64-linux-android`, `testDebugUnitTest` **69/69**, `ktlintCheck` clean, `assembleDebug` BUILD SUCCESSFUL; the APK installs on `emulator-5554`.
+- The contract fixture `apps/web/src/testdata/contract/rust-structs.json` was regenerated after the core struct changes (`node apps/web/src/contract/regenerate.mjs`).
+- Toolchain note for later agents: `ktlintCheck` also covers the *test* source set, and the generated `quizradar_core.kt` is excluded by `apps/mobile-android/app/build.gradle.kts` - keep it that way, the generated file is not ktlint-clean by design.
+
+### Still open (deliberately not faked in this round)
+
+- **Pair Phone (QR / PIN)**: absent from all three shells. `04` §4.6 wants device pairing; the current build refuses the pairing deep link with "Desktop LAN pairing is disabled in QuizRadar v5 zero-server mode" and points at Backup Export/Import. A real implementation needs a transport decision that does not create a server.
+- **Moodle REST API**: the REST channel exists in the core but needs a registered Moodle app token per university; only the iCal channel works out of the box.
+- **The radar only grows**: a scan merges the fresh results into the existing radar (user-owned fields are preserved), so an announcement the university cancels, or an item from a source the user later disables, stays in the radar. Dropping it needs per-source provenance ("this source RAN and did not report it again") - a deliberate design decision, not a bug fix, because a partial fetch must never delete a real announcement.
+- **PWA offline**: the service worker precaches the app shell but not the WASM engine or the user's IndexedDB snapshot, so a cold offline start cannot derive the radar.
+- **Manual assessment CRUD**: the desktop/web still has no user-facing "add an assessment by hand" flow (only custom calendar events); the core's CRUD exists.
+
+## Round 8 - the APK shipped without the Rust core, and the app ANR'd on launch (2026-11-01)
+
+Two release-blocking bugs, found by actually building and running the APK on the
+emulator instead of trusting the build output.
+
+### 1. The APK shipped without `libquizradar_core.so` (the app could never start)
+
+- **The bug**: the Kotlin shell is a wrapper around the Rust core (UniFFI). The
+  core was cross-compiled by hand into `jniLibs/`, and the folder is
+  gitignored - so a clean checkout (CI, a fresh clone, the release pipeline)
+  produced an APK with **no native library at all**. The first native call
+  threw `UnsatisfiedLinkError` and the app died on launch. The build printed
+  BUILD SUCCESSFUL the whole time: nothing checked that the library was there.
+- **The fix**: `tooling/build-android-libs.mjs` (new) is now the single
+  cross-platform place that cross-builds the core for `arm64-v8a` + `x86_64`,
+  strips it with the NDK's `llvm-strip`, and stages it into
+  `app/src/main/jniLibs/<abi>/`. Gradle runs it as the `buildAndroidRustLibs`
+  task, wired in front of every `*JniLibFolders` task, so a missing library is
+  a **loud build failure**, never a silent broken release. The NDK is found via
+  `ANDROID_NDK_HOME` / `ANDROID_NDK_ROOT` / `ANDROID_NDK`, then `ndk.dir` in
+  `local.properties`, then the newest NDK under `$ANDROID_HOME`.
+- **The APK also advertised ABIs it could not serve**: without
+  `defaultConfig.ndk.abiFilters` the APK shipped JNA dispatchers for
+  `armeabi-v7a`/`armeabi`/`mips`/`mips64`/`x86` (the Rust core is only built
+  for two ABIs), so it installed on a 32-bit device and then crashed on the
+  first core call. The filter pins the APK to `arm64-v8a` + `x86_64`; the
+  release APK went from **106.6 MB to 32.4 MB** on the first fix.
+- **CI and the release pipeline now assert it**: the CI android job unzips the
+  debug APK and fails if either ABI's `libquizradar_core.so` is missing **or**
+  if an ABI the core is not built for shows up; the release job does the same
+  for the APK and the AAB (the file names are glob-matched, because an
+  unsigned local build produces `app-release-unsigned.apk` while CI produces
+  `app-release.apk`).
+
+### 2. The app showed "QuizRadar isn't responding" on launch (a real ANR)
+
+- **Measured on `emulator-5554`**: a cold start took **27.6 s** and the system
+  raised an ANR. The in-app instrumentation put the cost inside
+  `Activity.onCreate`: **6.0 s**, of which **3.35 s** was
+  `QuizRadarEngine.create(...)`.
+- **Root cause**: the engine built the native store (JNA `dlopen` + the Rust
+  runtime start-up) **and** the `EncryptedSharedPreferences` token store (which
+  creates an Android Keystore master key) **eagerly, on the main thread**,
+  before the first frame.
+- **The fix**: both are now `by lazy` (built on first use), the whole
+  `loadState()`/`refreshState()` body runs on a single-threaded view of the
+  IO pool, and **every** remaining native call in the ViewModel goes through
+  the same dispatcher (`callCore { ... }`) - topic toggles, grade writes,
+  course upserts/deletes, custom-event writes, study-block generation, backup
+  export/import, the config setters, and the Keystore writes in
+  disconnect/reset. The OAuth redirect handler moved off the main thread too.
+- **After the fix** (same emulator): `onCreate` **0.6 - 1.1 s**
+  (`engine.create` 159 ms / 24 ms), no ANR, no `UnsatisfiedLinkError`.
+
+### 3. The release build was 27 MB of mostly dead weight
+
+- `material-icons-extended` puts ~44 MB of unused icon classes into the dex.
+  The release build now runs **R8** (`isMinifyEnabled` + `isShrinkResources`),
+  which shrinks the dex to **3.6 MB** (one `classes.dex`), and the APK to
+  **15.1 MB**. The six missing Tink/errorprone annotation classes that R8
+  warns about are compile-time only and are now `-dontwarn`ed.
+- The **debug** build runs R8 as well (`proguard-rules-debug.pro`:
+  `-dontobfuscate` + keep the source line numbers), so the debug dex went
+  from **62 MB to 11.6 MB** while every class and method keeps its name - the
+  debugger, the stack traces and the crash reports stay as readable as before.
+  The debug APK is now the same shape as the release one instead of carrying
+  five times the code.
+- The minified release APK was installed and driven on the emulator: the
+  onboarding wizard and the dashboard render, both WorkManager workers report
+  `Worker result SUCCESS` (so the native core works through R8), and the log
+  is free of `FATAL EXCEPTION` / `ANR in com.quizradar`.
+
+### 4. The widget worker could raise an ANR on the app's own start-up
+
+- The log showed `am_anr: ... No response to onStartJob for
+  #WidgetUpdateWorker#@androidx.work.systemjobscheduler`. Both periodic
+  workers were enqueued **without an initial delay**, so the system's job
+  service asked the process for them *while the activity was still starting
+  up*, and `onStartJob` runs on the main thread.
+- Both workers now have a **2-minute initial delay**. The widget is refreshed
+  by the UI on every start anyway (`onStateMutated`), so nothing is lost, and
+  the log now shows the expected `Delaying execution for ... because it is
+  being executed before schedule`.
+
+### 5. The unit tests were racing the real background dispatcher
+
+- Moving the load off the main thread meant the coroutine no longer completed
+  inside `advanceUntilIdle()` (the test scheduler cannot wait for a real IO
+  thread): 9 of 70 ViewModel tests failed with a `ClassCastException` on
+  `uiState.value as UiState.Ready`. The core dispatcher is now **injected**
+  (`QuizRadarViewModel(core, onStateMutated, coreDispatcher, clockDate)`), so
+  the unit tests hand in the test dispatcher and the Compose smoke test hands
+  in `Dispatchers.Main.immediate` (its old inline behaviour). 70/70 green.
+
+### 6. The contract map had gone stale
+
+- `apps/web/src/testdata/contract/rust-structs.json` was generated before the
+  desktop shell's `DesktopConfig` gained `academic_track` (Round 7's
+  onboarding preset), so the contract guard failed: the committed map did not
+  know the field and reported it as a TS-only field. The map is regenerated
+  (`node apps/web/src/contract/regenerate.mjs`) and the guard is green again.
+
+### Gates (all green, 2026-11-01)
+
+- core: `cargo fmt --all --check` clean, `cargo clippy --workspace
+  --all-targets -- -D warnings` clean, `cargo test --workspace` **335 passed /
+  0 failed / 1 ignored**.
+- web: `pnpm typecheck` clean, `pnpm test` **259 passed / 29 files**,
+  `pnpm lint` clean, `pnpm format:check` clean.
+- Android (JDK 21 Temurin, NDK 27.1): `testDebugUnitTest` **70/70**,
+  `ktlintCheck` clean, `assembleDebug` + `assembleRelease` + `bundleRelease`
+  BUILD SUCCESSFUL. The release APK carries
+  `lib/arm64-v8a/libquizradar_core.so` (6,283,488 B) and
+  `lib/x86_64/libquizradar_core.so` (6,859,288 B) and **no other ABI**.
+- Installed and driven on `emulator-5554` only (the user's phone was not
+  touched): no `UnsatisfiedLinkError`, no `FATAL EXCEPTION`, no ANR.
+
+### Measured start-up (emulator-5554, x86_64, `am start -W`)
+
+| build | first install (dexopt included) | process-cold start | first frame |
+|---|---|---|---|
+| release (AOT-compiled, ships) | 13.0 s | **2.8 s** | `Displayed +2s786ms` |
+| debug (debuggable -> ART skips AOT) | 33 - 53 s | 13.6 s | `Displayed +13s609ms` |
+
+- The **before** numbers, for comparison: 27.6 s + a system ANR, with 6.0 s of
+  it inside `Activity.onCreate`.
+- The debug build stays slow because **ART does not compile a debuggable app
+  ahead of time** (`flags=[ DEBUGGABLE HAS_CODE ... ]` in
+  `dumpsys package`): the Compose runtime runs interpreted/JIT on the first
+  paint. R8 cut the debug dex from 62 MB to 11.6 MB, which is the right fix
+  for the APK's size and install time, but it cannot make ART compile the app.
+  The release APK - the one that ships - is compiled at install and shows its
+  first frame in 2.8 s.
+
+### Still open (deliberately not faked in this round)
+
+- **The debug build starts slowly** (~13.6 s on the emulator) because ART does
+  not compile a debuggable app ahead of time. The shipped release build starts
+  in 2.8 s on the same emulator. A `debuggable = false` "staging" build type
+  would give developers the release start-up time; it is a build-type
+  addition, not a code change, and was left for the next round.
+- **Pair Phone (QR / PIN)**, **Moodle REST**, **the radar-only-grows merge**,
+  **PWA offline** and **manual assessment CRUD** stay open from Round 7 - they
+  are design decisions, not bugs, and are listed above.
+

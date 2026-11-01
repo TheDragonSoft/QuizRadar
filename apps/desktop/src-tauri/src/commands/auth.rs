@@ -23,6 +23,17 @@ pub async fn google_login_start(
 pub async fn google_logout(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     state.keyring.delete_secret(KEY_GOOGLE_REFRESH_TOKEN)?;
     *state.google_token.write().await = None;
+    // Wipe the account identity too — leaving user_email/name/picture in the
+    // config DB kept the signed-out account's name on the top bar (and on a
+    // shared machine that is the next user's data).
+    let _ = state
+        .store
+        .clear_profile_keys(vec![
+            "user_email".to_string(),
+            "user_name".to_string(),
+            "user_picture".to_string(),
+        ])
+        .await;
     let _ = app.emit("auth-changed", ());
     Ok(())
 }
@@ -51,6 +62,13 @@ pub async fn microsoft_scanning_consent_start(
 pub async fn microsoft_logout(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     state.keyring.delete_secret(KEY_MICROSOFT_REFRESH_TOKEN)?;
     *state.microsoft_token.write().await = None;
+    let _ = state
+        .store
+        .clear_profile_keys(vec![
+            "teams_account_name".to_string(),
+            "teams_account_email".to_string(),
+        ])
+        .await;
     let _ = app.emit("auth-changed", ());
     Ok(())
 }
@@ -60,29 +78,23 @@ pub async fn logout(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
     let _ = state.keyring.delete_secret(KEY_GOOGLE_REFRESH_TOKEN);
     let _ = state.keyring.delete_secret(KEY_MICROSOFT_REFRESH_TOKEN);
     state.clear_memory_tokens().await;
+    let _ = state
+        .store
+        .clear_profile_keys(vec![
+            "user_email".to_string(),
+            "user_name".to_string(),
+            "user_picture".to_string(),
+            "teams_account_name".to_string(),
+            "teams_account_email".to_string(),
+        ])
+        .await;
     let _ = app.emit("auth-changed", ());
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Keyring generic commands
-// ---------------------------------------------------------------------------
-
-#[tauri::command]
-pub async fn get_secret(state: State<'_, AppState>, key: String) -> Result<Option<String>, String> {
-    state.keyring.get_secret(&key)
-}
-
-#[tauri::command]
-pub async fn set_secret(
-    state: State<'_, AppState>,
-    key: String,
-    value: String,
-) -> Result<(), String> {
-    state.keyring.set_secret(&key, &value)
-}
-
-#[tauri::command]
-pub async fn delete_secret(state: State<'_, AppState>, key: String) -> Result<(), String> {
-    state.keyring.delete_secret(&key)
-}
+// NOTE: there are deliberately NO generic get_secret/set_secret/delete_secret
+// Tauri commands. A generic keyring IPC would hand every stored secret (Google
+// and Microsoft refresh tokens, the Gemini key, the client-secret override)
+// to any script running in the webview — the app's whole JS surface never
+// needs raw keyring access, so the surface stays closed. Secrets move only
+// through named flows (google_login_start, validate_gemini_key, …).

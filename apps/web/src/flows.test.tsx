@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import App from "./App";
 import { OnboardingWizardModal } from "./components/OnboardingWizardModal";
 import { SettingsModal } from "./components/SettingsModal";
-import { SearchPaletteModal } from "./components/SearchPaletteModal";
+import { SearchDropdown } from "./components/SearchDropdown";
 import { AccountProfileModal } from "./components/AccountProfileModal";
 import { PracticeQuizModal } from "./components/PracticeQuizModal";
 import { PomodoroModal } from "./components/PomodoroModal";
@@ -162,6 +162,46 @@ describe("Web UI Flows & Modals (Phase 10)", () => {
         (screen.getByPlaceholderText("student@university.edu") as HTMLInputElement).value,
       ).toBe("taylor@swift.edu");
     });
+
+    it("persists the chosen academic rhythm instead of discarding it", async () => {
+      // `01` §4.1: the track/rhythm chips are PERSISTED. The answer used to
+      // live in local component state only, so finishing the wizard threw it
+      // away.
+      const calls: { fn: string; args?: Record<string, unknown> }[] = [];
+      setRpcMockHandler(async <T,>(fn: string, args?: Record<string, unknown>) => {
+        calls.push({ fn, args });
+        if (fn === "update_config") return sampleState as unknown as T;
+        if (fn === "run_sync") {
+          return {
+            success: true,
+            totalNew: 0,
+            totalUpdated: 0,
+            notes: [],
+          } as unknown as T;
+        }
+        if (fn === "get_state") return sampleState as unknown as T;
+        return null as unknown as T;
+      });
+
+      render(<OnboardingWizardModal modalId="onboarding" onClose={vi.fn()} />);
+
+      fireEvent.click(screen.getByRole("button", { name: new RegExp(copy.onboarding.trackMed) }));
+
+      const nextBtn = screen.getByRole("button", { name: new RegExp(copy.onboarding.next, "i") });
+      fireEvent.click(nextBtn);
+      fireEvent.click(screen.getByRole("button", { name: new RegExp(copy.onboarding.next, "i") }));
+      fireEvent.click(
+        screen.getByRole("button", { name: new RegExp(copy.onboarding.finish, "i") }),
+      );
+
+      await waitFor(() => {
+        const update = calls.find((call) => call.fn === "update_config");
+        expect(update).toBeTruthy();
+        const payload = (update?.args?.update ?? {}) as Record<string, unknown>;
+        expect(payload.academicTrack).toBe("med");
+        expect(payload.onboardingCompleted).toBe(true);
+      });
+    });
   });
 
   // 2. Settings Modal: Tab restoration, feeds HTTPS validation, AI consent & quota copy
@@ -227,14 +267,16 @@ describe("Web UI Flows & Modals (Phase 10)", () => {
       );
     });
 
-    it("offers the browser-tier OAuth client IDs and keeps a single theme control", () => {
+    it("keeps sign-in simple on the browser tier — client IDs are baked in, not user-entered", () => {
       localStorage.setItem("quizradar_settings_tab", "account");
       render(<SettingsModal modalId="settings" onClose={vi.fn()} />);
 
-      expect(screen.getByText(copy.settings.browserSignInHeader)).toBeInTheDocument();
-      expect(
-        screen.getByText(copy.settings.googleClientIdLabel, { exact: false }),
-      ).toBeInTheDocument();
+      // The OAuth client-ID entry card is gone: both tiers ship working
+      // clients, so the user only ever presses "Sign in".
+      expect(screen.queryByText(copy.settings.browserSignInHeader)).not.toBeInTheDocument();
+      expect(screen.queryByText(copy.settings.googleClientIdLabel)).not.toBeInTheDocument();
+      expect(screen.queryByText(copy.settings.desktopSignInHeader)).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Sign in with Google/i })).toBeInTheDocument();
 
       // The theme tiles live in the onboarding wizard only — the topbar keeps
       // the single quick toggle. A second "Light Theme" block in Settings was
@@ -243,20 +285,19 @@ describe("Web UI Flows & Modals (Phase 10)", () => {
       expect(screen.queryByText(copy.onboarding.themeDark)).not.toBeInTheDocument();
     });
 
-    it("asks for a Desktop app client ID on the desktop tier", () => {
+    it("signs in with the bundled clients on the desktop tier — no client ID form", () => {
       const globals = window as unknown as Record<string, unknown>;
       globals.__TAURI_INTERNALS__ = {};
       try {
         localStorage.setItem("quizradar_settings_tab", "account");
         render(<SettingsModal modalId="settings" onClose={vi.fn()} />);
 
-        expect(screen.getByText(copy.settings.desktopSignInHeader)).toBeInTheDocument();
+        expect(screen.queryByText(copy.settings.desktopSignInHeader)).not.toBeInTheDocument();
         expect(
-          screen.getByText(copy.settings.googleDesktopClientIdLabel, { exact: false }),
-        ).toBeInTheDocument();
-        expect(
-          screen.getByText(copy.settings.googleDesktopClientIdHint, { exact: false }),
-        ).toBeInTheDocument();
+          screen.queryByText(copy.settings.googleDesktopClientIdLabel),
+        ).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /Sign in with Google/i })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /Sign in with Microsoft/i })).toBeInTheDocument();
         expect(screen.queryByText(copy.onboarding.themeLight)).not.toBeInTheDocument();
       } finally {
         delete globals.__TAURI_INTERNALS__;
@@ -264,12 +305,13 @@ describe("Web UI Flows & Modals (Phase 10)", () => {
     });
   });
 
-  // 3. Search Palette: Matching across fields, type filtering, recents
-  describe("Search Palette Modal", () => {
+  // 3. Top-bar Search: Matching across fields, type filtering, recents
+  describe("Top-bar Search Dropdown", () => {
     it("matches assessments, courses, and slots across title, instructor, and topics", () => {
-      render(<SearchPaletteModal modalId="search" onClose={vi.fn()} />);
+      render(<SearchDropdown />);
 
-      const searchInput = screen.getByPlaceholderText(copy.search.placeholder);
+      const searchInput = screen.getByPlaceholderText(copy.topBar.searchPlaceholder);
+      fireEvent.focus(searchInput);
 
       // Search by title
       fireEvent.change(searchInput, { target: { value: "Logic" } });
@@ -292,9 +334,9 @@ describe("Web UI Flows & Modals (Phase 10)", () => {
     });
 
     it("navigates results with ArrowUp/ArrowDown and selects the highlighted row on Enter", () => {
-      const onClose = vi.fn();
-      render(<SearchPaletteModal modalId="search" onClose={onClose} />);
-      const searchInput = screen.getByPlaceholderText(copy.search.placeholder);
+      render(<SearchDropdown />);
+      const searchInput = screen.getByPlaceholderText(copy.topBar.searchPlaceholder);
+      fireEvent.focus(searchInput);
 
       fireEvent.change(searchInput, { target: { value: "Digital" } });
       const options = screen.getAllByRole("option");
@@ -310,16 +352,19 @@ describe("Web UI Flows & Modals (Phase 10)", () => {
       fireEvent.keyDown(searchInput, { key: "ArrowUp" });
       expect(searchInput).toHaveAttribute("aria-activedescendant", "search-result-0");
 
-      // Enter on the highlighted row opens it (assessment detail) and closes.
+      // Enter on the highlighted row opens it (assessment detail) and the
+      // attached panel closes.
       fireEvent.keyDown(searchInput, { key: "ArrowDown" });
       fireEvent.keyDown(searchInput, { key: "Enter" });
-      expect(onClose).toHaveBeenCalled();
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      expect(searchInput).toHaveAttribute("aria-expanded", "false");
     });
 
     it("saves search queries to recents up to a maximum of 6", () => {
-      render(<SearchPaletteModal modalId="search" onClose={vi.fn()} />);
+      render(<SearchDropdown />);
 
-      const searchInput = screen.getByPlaceholderText(copy.search.placeholder);
+      const searchInput = screen.getByPlaceholderText(copy.topBar.searchPlaceholder);
+      fireEvent.focus(searchInput);
       fireEvent.change(searchInput, { target: { value: "Calculus" } });
       fireEvent.keyDown(searchInput, { key: "Enter" });
 

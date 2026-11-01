@@ -10,23 +10,35 @@ import androidx.work.WorkerParameters
 import com.quizradar.app.core.QuizRadarEngine
 import com.quizradar.app.model.QuizRadarJsonParser
 import java.time.LocalDate
+import java.time.LocalTime
 import java.util.concurrent.TimeUnit
 
 /**
  * First-party WorkManager worker for computing and dispatching T-24h / same-day
  * exam reminders and daily morning digests based on core data.
+ *
+ * The Settings keys this worker reads are exactly the ones the ViewModel
+ * writes (`notify_exam_24h`, `notify_exam_same_day`, `notify_morning_digest`,
+ * `notify_morning_time`) — the two sides once drifted apart and every toggle
+ * was silently dead. Each alert carries a per-day "notified" marker: an hourly
+ * periodic worker re-posts otherwise, which burned IMPORTANCE_HIGH alerts
+ * twice a day per assessment for its whole visibility window.
  */
 class ExamReminderWorker(
     appContext: Context,
     params: WorkerParameters,
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
+        // `QuizRadarEngine.create` returns the process-cached singleton — the
+        // store is shared with the UI and MUST NOT be closed here (an hourly
+        // close would brick the app's DB access until process restart).
+        val engine = QuizRadarEngine.create(applicationContext)
         return try {
-            val engine = QuizRadarEngine.create(applicationContext)
-            val notifyExams = engine.getConfigBool("notify_exams", default = true)
-            val notifyDigest = engine.getConfigBool("notify_digest", default = true)
+            val notifyExam24h = engine.getConfigBool("notify_exam_24h", default = true)
+            val notifyExamSameDay = engine.getConfigBool("notify_exam_same_day", default = true)
+            val notifyDigest = engine.getConfigBool("notify_morning_digest", default = false)
 
-            if (!notifyExams && !notifyDigest) {
+            if (!notifyExam24h && !notifyExamSameDay && !notifyDigest) {
                 return Result.success()
             }
 
@@ -40,7 +52,13 @@ class ExamReminderWorker(
             val stateJson = engine.getState(today)
             val snapshot = QuizRadarJsonParser.parseAppSnapshot(stateJson)
 
-            if (notifyExams) {
+            suspend fun alreadyNotified(marker: String): Boolean = engine.getConfigBool(marker, default = false)
+
+            suspend fun markNotified(marker: String) {
+                engine.setConfigBool(marker, true)
+            }
+
+            if (notifyExam24h || notifyExamSameDay) {
                 // Respect ≤48 nearest scheduled policy
                 val upcoming =
                     snapshot.assessments
@@ -49,6 +67,13 @@ class ExamReminderWorker(
 
                 for (assessment in upcoming) {
                     val isSameDay = assessment.daysUntil == 0
+                    if (isSameDay && !notifyExamSameDay) continue
+                    if (!isSameDay && !notifyExam24h) continue
+
+                    val marker =
+                        "notified::${assessment.id}::${if (isSameDay) "same-day" else "24h"}::$today"
+                    if (alreadyNotified(marker)) continue
+
                     val kind = if (isSameDay) "exam-0d" else "exam-24h"
                     val notifId = engine.notificationIdFor(assessment.id, kind)
                     val builder =
@@ -59,6 +84,7 @@ class ExamReminderWorker(
                         )
                     try {
                         notificationManager.notify(notifId, builder.build())
+                        markNotified(marker)
                     } catch (_: SecurityException) {
                         // POST_NOTIFICATIONS runtime permission not granted
                     }
@@ -66,36 +92,50 @@ class ExamReminderWorker(
             }
 
             if (notifyDigest) {
-                val dayOfWeek = today.dayOfWeek.name
-                val todayClasses =
-                    snapshot.schedule.slots.filter {
-                        it.day.equals(dayOfWeek, ignoreCase = true) ||
-                            it.day.take(3).equals(dayOfWeek.take(3), ignoreCase = true)
-                    }
-                val todayExams = snapshot.assessments.filter { it.daysUntil == 0 }
-
-                if (todayClasses.isNotEmpty() || todayExams.isNotEmpty()) {
-                    val digestSummary =
-                        buildString {
-                            if (todayExams.isNotEmpty()) {
-                                append("Exams: ").append(todayExams.joinToString { it.title })
-                                if (todayClasses.isNotEmpty()) append(" · ")
+                // A "morning" digest never fires before the user's configured
+                // time — the ungated version posted at any hour of the day.
+                val morningTime =
+                    runCatching {
+                        LocalTime.parse(engine.getConfigString("notify_morning_time") ?: "08:00")
+                    }.getOrDefault(LocalTime.of(8, 0))
+                if (LocalTime.now() >= morningTime) {
+                    val digestMarker = "notified::digest::$today"
+                    if (!alreadyNotified(digestMarker)) {
+                        val dayOfWeek = today.dayOfWeek.name
+                        val todayClasses =
+                            snapshot.schedule.slots.filter {
+                                it.day.equals(dayOfWeek, ignoreCase = true) ||
+                                    it.day.take(3).equals(dayOfWeek.take(3), ignoreCase = true)
                             }
-                            if (todayClasses.isNotEmpty()) {
-                                append("Classes: ").append(todayClasses.joinToString { it.courseId })
+                        val todayExams = snapshot.assessments.filter { it.daysUntil == 0 }
+
+                        if (todayClasses.isNotEmpty() || todayExams.isNotEmpty()) {
+                            val digestSummary =
+                                buildString {
+                                    if (todayExams.isNotEmpty()) {
+                                        append("Exams: ").append(todayExams.joinToString { it.title })
+                                        if (todayClasses.isNotEmpty()) append(" · ")
+                                    }
+                                    if (todayClasses.isNotEmpty()) {
+                                        append("Classes: ").append(
+                                            todayClasses.joinToString { it.courseName ?: it.courseId },
+                                        )
+                                    }
+                                }
+                            val digestId = engine.notificationIdFor(today.toString(), "digest")
+                            val builder =
+                                NotificationHelper.buildDigestNotification(
+                                    applicationContext,
+                                    todayClasses.size,
+                                    todayExams.size,
+                                    digestSummary,
+                                )
+                            try {
+                                notificationManager.notify(digestId, builder.build())
+                                markNotified(digestMarker)
+                            } catch (_: SecurityException) {
                             }
                         }
-                    val digestId = engine.notificationIdFor(today.toString(), "digest")
-                    val builder =
-                        NotificationHelper.buildDigestNotification(
-                            applicationContext,
-                            todayClasses.size,
-                            todayExams.size,
-                            digestSummary,
-                        )
-                    try {
-                        notificationManager.notify(digestId, builder.build())
-                    } catch (_: SecurityException) {
                     }
                 }
             }
@@ -112,6 +152,10 @@ class ExamReminderWorker(
         fun schedule(context: Context) {
             val request =
                 PeriodicWorkRequestBuilder<ExamReminderWorker>(1, TimeUnit.HOURS)
+                    // Same reason as the widget worker: the first iteration
+                    // used to land on the app's start-up window, where the
+                    // system asks the process for it on the main thread.
+                    .setInitialDelay(2, TimeUnit.MINUTES)
                     .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 WORK_NAME,

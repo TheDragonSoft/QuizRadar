@@ -1,8 +1,15 @@
 import React, { useMemo, useState, useEffect, useCallback } from "react";
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, MapPin, X } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Calendar as CalendarIcon,
+  Download,
+  MapPin,
+  X,
+} from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
-import { courseDisplayName, coursePalette } from "../lib/coursePalette";
+import { courseAccessibleChip, courseDisplayName, coursePalette } from "../lib/coursePalette";
 import {
   START_HOUR,
   END_HOUR,
@@ -56,11 +63,20 @@ interface CalendarBlockItem extends CalendarLaneItem {
   eventType?: string | null;
   startTime: string;
   endTime: string;
+  /** False when the source record had no real time and placement guessed one. */
+  timeKnown: boolean;
   assessmentId?: string | null;
   eventId?: string | null;
   event?: CustomCalendarEvent;
   palette: BlockPalette;
 }
+
+/** Honest time label: real clock range when the source stated one, an em
+ * dash when placement guessed a slot for a time-less record. */
+const blockTimeLabel = (item: CalendarBlockItem): string =>
+  item.timeKnown
+    ? `${formatCompactTime(item.startTime)} – ${formatCompactTime(item.endTime)}`
+    : "Time —";
 
 const CUSTOM_EVENT_PALETTE: BlockPalette = {
   color: "#db2777",
@@ -112,6 +128,7 @@ function localUtcOffsetLabel(): string {
 }
 
 export const CalendarView: React.FC = () => {
+  const theme = useAppStore((s) => s.theme);
   const currentWeekStartStr = useAppStore((s) => s.currentWeekStart);
   const selectedDateStr = useAppStore((s) => s.selectedCalendarDate);
   const shiftWeek = useAppStore((s) => s.shiftWeek);
@@ -119,9 +136,11 @@ export const CalendarView: React.FC = () => {
   const setSelectedCalendarDate = useAppStore((s) => s.setSelectedCalendarDate);
   const openAssessmentDetail = useAppStore((s) => s.openAssessmentDetail);
   const openEventModal = useAppStore((s) => s.openEventModal);
+  const openModal = useAppStore((s) => s.openModal);
   const refreshState = useAppStore((s) => s.refreshState);
   const addToast = useAppStore((s) => s.addToast);
   const searchQuery = useAppStore((s) => s.searchQuery);
+  const exportIcs = useAppStore((s) => s.exportIcs);
 
   const schedule = useAppStore((s) => s.data.schedule);
   const assessments = useAppStore((s) => s.data.assessments);
@@ -175,7 +194,7 @@ export const CalendarView: React.FC = () => {
     return map;
   }, [schedule.courses]);
 
-  const todayIso = useMemo(() => toIsoLocal(new Date()), []);
+  const todayIso = toIsoLocal(new Date());
 
   // Format header title e.g. "Oct 19 – Oct 25, 2026"
   const headerRangeTitle = useMemo(() => {
@@ -241,7 +260,7 @@ export const CalendarView: React.FC = () => {
       {/* Calendar Header Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--surface-border)] pb-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)] text-white shadow-xs">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent-fill)] text-white shadow-xs">
             <CalendarIcon className="h-5 w-5" aria-hidden="true" />
           </div>
           <div>
@@ -252,35 +271,90 @@ export const CalendarView: React.FC = () => {
           </div>
         </div>
 
-        {/* Navigation Actions (v4 controls: Today + chevrons) */}
+        {/* Navigation Actions (compact viewports; lg+ uses TopBar calendar controls) */}
         <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={jumpToToday}
-            className="h-8 px-2.5 rounded-lg border border-[var(--surface-border)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-xs font-medium text-[var(--text)] transition active:scale-95 cursor-pointer"
-          >
-            {copy.calendar.jumpToToday}
-          </button>
-          <div className="flex items-center">
+          {/* Export every assessment as one .ics file (01 §4.6 offers
+              single/all). Hidden when the radar is empty - an empty export
+              would be a file with no events. */}
+          {assessments.length > 0 && (
             <button
               type="button"
-              onClick={() => shiftWeek(-1)}
-              aria-label={copy.calendar.prevWeek}
-              className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-[var(--surface-hover)] text-[var(--text-muted)] transition cursor-pointer"
+              onClick={() => void exportIcs()}
+              title={copy.calendar.exportAllIcs}
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--surface-border)] bg-[var(--surface)] px-2.5 text-xs font-medium text-[var(--text)] transition hover:bg-[var(--surface-hover)] active:scale-95 cursor-pointer"
             >
-              <ChevronLeft className="h-4 w-4" />
+              <Download className="h-3.5 w-3.5 text-[var(--accent-ink)]" aria-hidden="true" />
+              <span className="hidden sm:inline">{copy.calendar.exportAllIcs}</span>
             </button>
+          )}
+          <div className="flex items-center gap-1.5 lg:hidden">
             <button
               type="button"
-              onClick={() => shiftWeek(1)}
-              aria-label={copy.calendar.nextWeek}
-              className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-[var(--surface-hover)] text-[var(--text-muted)] transition cursor-pointer"
+              onClick={jumpToToday}
+              className="h-8 px-2.5 rounded-lg border border-[var(--surface-border)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-xs font-medium text-[var(--text)] transition active:scale-95 cursor-pointer"
             >
-              <ChevronRight className="h-4 w-4" />
+              {copy.calendar.jumpToToday}
             </button>
+            <div className="flex items-center">
+              <button
+                type="button"
+                onClick={() => shiftWeek(-1)}
+                aria-label={copy.calendar.prevWeek}
+                className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-[var(--surface-hover)] text-[var(--text-muted)] transition cursor-pointer"
+              >
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={() => shiftWeek(1)}
+                aria-label={copy.calendar.nextWeek}
+                className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-[var(--surface-hover)] text-[var(--text-muted)] transition cursor-pointer"
+              >
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Empty State Banner — actionable guidance when 0 courses & 0 events */}
+      {(schedule.courses?.length ?? 0) === 0 &&
+        assessments.length === 0 &&
+        customEvents.length === 0 && (
+          <div
+            data-testid="calendar-empty-guide"
+            className="rounded-2xl border border-[var(--border)] bg-[var(--page)] p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--accent-ink)]">
+                <CalendarIcon className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <div>
+                <h2 className="text-xs font-bold text-[var(--text)]">Your Calendar is Ready</h2>
+                <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                  Add courses, sync your timetable, or record custom study events to see your weekly
+                  radar.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => openModal({ id: "settings", props: { initialTab: "courses" } })}
+                className="rounded-xl bg-[var(--accent-fill)] px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-[var(--accent-fill-hover)] transition cursor-pointer active:scale-95"
+              >
+                + Add Course
+              </button>
+              <button
+                type="button"
+                onClick={() => openEventModal()}
+                className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] transition cursor-pointer active:scale-95"
+              >
+                + Custom Event
+              </button>
+            </div>
+          </div>
+        )}
 
       {/* Week Grid Container */}
       <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface)] overflow-hidden shadow-xs">
@@ -305,31 +379,39 @@ export const CalendarView: React.FC = () => {
               return (
                 <div
                   key={iso}
-                  onClick={() => setSelectedCalendarDate(iso)}
-                  className="border-r border-[var(--surface-border)] last:border-r-0 py-2.5 px-2 text-center cursor-pointer hover:bg-[var(--surface-hover)] transition"
+                  className="border-r border-[var(--surface-border)] last:border-r-0 py-2.5 px-2 text-center"
                 >
-                  <div
-                    className={`text-xs font-semibold ${
-                      isToday
-                        ? "text-[var(--accent)] font-bold"
-                        : isSelected
-                          ? "text-[var(--accent)]"
-                          : "text-[var(--text-muted)]"
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCalendarDate(iso)}
+                    aria-pressed={isSelected}
+                    className={`w-full rounded-md py-1 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] ${
+                      isSelected ? "bg-[var(--surface-hover)]" : "hover:bg-[var(--surface-hover)]"
                     }`}
                   >
-                    {DAY_ABBR[date.getDay()]}
-                  </div>
-                  <div
-                    className={`mt-1 w-9 h-9 mx-auto rounded-full flex items-center justify-center text-lg tabular-nums ${
-                      isSelected
-                        ? "bg-[var(--accent)] text-white font-semibold"
-                        : isToday
-                          ? "border-2 border-[var(--accent)] text-[var(--accent)] font-bold hover:bg-[var(--surface-hover)]"
-                          : "text-[var(--text)] hover:bg-[var(--surface-hover)] font-medium"
-                    }`}
-                  >
-                    {date.getDate()}
-                  </div>
+                    <div
+                      className={`text-xs font-semibold ${
+                        isToday
+                          ? "text-[var(--accent-ink)] font-bold"
+                          : isSelected
+                            ? "text-[var(--accent-ink)]"
+                            : "text-[var(--text-muted)]"
+                      }`}
+                    >
+                      {DAY_ABBR[date.getDay()]}
+                    </div>
+                    <div
+                      className={`mt-1 w-9 h-9 mx-auto rounded-full flex items-center justify-center text-lg tabular-nums ${
+                        isSelected
+                          ? "bg-[var(--accent-fill)] text-white font-semibold"
+                          : isToday
+                            ? "border-2 border-[var(--accent-ink)] text-[var(--accent-ink)] font-bold"
+                            : "text-[var(--text)] font-medium"
+                      }`}
+                    >
+                      {date.getDate()}
+                    </div>
+                  </button>
                   {dayExams.length > 0 && (
                     <div className="mt-1.5 flex flex-col gap-0.5">
                       {dayExams.map((ex) => {
@@ -338,15 +420,25 @@ export const CalendarView: React.FC = () => {
                           bg: ex.bg,
                           border: ex.border,
                         });
+                        const chip = courseAccessibleChip(palette.color, theme === "dark");
                         return (
                           <div
                             key={ex.id}
+                            role="button"
+                            tabIndex={0}
                             onClick={(e) => {
                               e.stopPropagation();
                               openAssessmentDetail(ex.id);
                             }}
-                            className="text-[11px] font-bold px-1.5 py-0.5 rounded-md line-clamp-2 text-left text-white hover:opacity-90 transition cursor-pointer"
-                            style={{ backgroundColor: palette.color }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                openAssessmentDetail(ex.id);
+                              }
+                            }}
+                            className="text-[11px] font-bold px-1.5 py-0.5 rounded-md line-clamp-2 text-left text-white hover:opacity-90 transition cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+                            style={{ backgroundColor: chip.solidBg }}
                             title={`${courseDisplayName(ex.courseId, coursesById)}: ${stripCoursePrefix(ex.title, ex.courseId)}`}
                           >
                             {courseDisplayName(ex.courseId, coursesById)}:{" "}
@@ -471,6 +563,11 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
     } | null>(null);
 
     // 1. Gather Day Items (v4 order: slots → standalone exams → custom events)
+    const isToday = dateIso === toIsoLocal(new Date());
+    const now = new Date();
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const nowTopPx = ((nowMinutes - START_HOUR * 60) / 60) * HOUR_HEIGHT;
+
     const dayItems: CalendarBlockItem[] = useMemo(() => {
       const items: CalendarBlockItem[] = [];
 
@@ -518,6 +615,7 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
             group: slot.group,
             startTime: slot.startTime,
             endTime: slot.endTime,
+            timeKnown: true,
             assessmentId: matchingExam.id,
             palette,
           });
@@ -534,6 +632,7 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
             group: slot.group,
             startTime: slot.startTime,
             endTime: slot.endTime,
+            timeKnown: true,
             palette,
           });
         }
@@ -559,8 +658,12 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
           assessmentType: exam.assessmentType,
           room: exam.room,
           instructor: exam.instructor,
+          // Undated-time assessments are still placed at the top of the day
+          // for visibility, but the fabricated clock must never render as
+          // the item's real time.
           startTime: exam.startTime || "09:00",
           endTime: exam.endTime || "10:30",
+          timeKnown: Boolean(exam.startTime),
           assessmentId: exam.id,
           palette,
         });
@@ -583,6 +686,7 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
             room: ev.room,
             startTime: ev.startTime || "10:00",
             endTime: ev.endTime || "11:30",
+            timeKnown: Boolean(ev.startTime),
             eventId: ev.id,
             event: ev,
             palette: isStudyBlock ? STUDY_BLOCK_PALETTE : CUSTOM_EVENT_PALETTE,
@@ -615,12 +719,25 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
           <div key={i} className="hour-row pointer-events-none" />
         ))}
 
+        {/* Live Current Time Indicator (Now Line) */}
+        {isToday && nowTopPx >= 0 && nowTopPx <= hoursCount * HOUR_HEIGHT && (
+          <div
+            data-testid="calendar-now-indicator"
+            className="pointer-events-none absolute left-0 right-0 z-20 flex items-center"
+            style={{ top: `${nowTopPx}px` }}
+          >
+            <div className="-ml-1.5 h-3 w-3 rounded-full bg-red-500 shadow-sm ring-2 ring-white dark:ring-slate-900" />
+            <div className="h-[2px] flex-1 bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.7)]" />
+          </div>
+        )}
+
         {/* Calendar Blocks (v4 `gcal-card`) */}
         {dayItems.map((item) => {
           const laneCount = item.laneCount || 1;
           const laneIndex = item.laneIndex || 0;
           const widthPct = 100 / laneCount;
           const leftPct = laneIndex * widthPct;
+          const isCompact = item.heightPx < 54;
 
           const borderHex = item.palette.border || item.palette.color || "#1a73e8";
           const bgLight = item.palette.bg || "#e8f0fe";
@@ -640,13 +757,23 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
             ["--card-bg-dark" as string]: bgDark,
           };
 
+          const compactClass = isCompact ? " gcal-card-compact" : "";
+
           if (item.kind === "merged_exam") {
             return (
               <div
                 key={item.id}
                 style={style}
+                role="button"
+                tabIndex={0}
                 onClick={() => item.assessmentId && onOpenAssessmentDetail(item.assessmentId)}
-                className="gcal-card has-exam-glow"
+                onKeyDown={(e) => {
+                  if ((e.key === "Enter" || e.key === " ") && item.assessmentId) {
+                    e.preventDefault();
+                    onOpenAssessmentDetail(item.assessmentId);
+                  }
+                }}
+                className={`gcal-card has-exam-glow${compactClass}`}
               >
                 <div className="flex items-center justify-between gap-1">
                   <span className="text-[11px] font-bold truncate flex items-center gap-1 text-[var(--text)]">
@@ -658,20 +785,24 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                       {item.courseName || courseDisplayName(item.courseId, coursesById)}
                     </span>
                   </span>
-                  <span className="px-1.5 py-0.2 rounded bg-red-600 text-white text-[11px] font-bold shrink-0">
+                  <span className="px-1.5 py-0.5 rounded bg-red-700 text-white text-[11px] font-bold shrink-0">
                     {item.assessmentType}
                   </span>
                 </div>
                 <div className="text-[11px] font-bold text-red-700 dark:text-red-300 truncate mt-0.5">
                   {item.title}
                 </div>
-                <div className="text-[11px] truncate text-[var(--text)]">
-                  {roomLabel(item.room)}
-                  {item.group ? ` · Group ${item.group}` : ""}
-                </div>
-                <div className="text-[11px] tabular-nums text-[var(--text-muted)]">
-                  {formatCompactTime(item.startTime)} – {formatCompactTime(item.endTime)}
-                </div>
+                {!isCompact && (
+                  <>
+                    <div className="text-[11px] truncate text-[var(--text)]">
+                      {roomLabel(item.room)}
+                      {item.group ? ` · Group ${item.group}` : ""}
+                    </div>
+                    <div className="text-[11px] tabular-nums text-[var(--text-muted)]">
+                      {blockTimeLabel(item)}
+                    </div>
+                  </>
+                )}
               </div>
             );
           }
@@ -681,8 +812,16 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
               <div
                 key={item.id}
                 style={style}
+                role="button"
+                tabIndex={0}
                 onClick={() => item.assessmentId && onOpenAssessmentDetail(item.assessmentId)}
-                className="gcal-card has-exam-glow"
+                onKeyDown={(e) => {
+                  if ((e.key === "Enter" || e.key === " ") && item.assessmentId) {
+                    e.preventDefault();
+                    onOpenAssessmentDetail(item.assessmentId);
+                  }
+                }}
+                className={`gcal-card has-exam-glow${compactClass}`}
               >
                 <div className="flex items-center justify-between gap-1">
                   <span className="text-[11px] font-bold truncate flex items-center gap-1 text-[var(--text)]">
@@ -695,27 +834,52 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                       {stripCoursePrefix(item.title, item.courseId)}
                     </span>
                   </span>
-                  <span className="px-1.5 py-0.2 rounded bg-red-600 text-white text-[11px] font-bold shrink-0">
+                  <span className="px-1.5 py-0.5 rounded bg-red-700 text-white text-[11px] font-bold shrink-0">
                     {item.assessmentType}
                   </span>
                 </div>
-                <div className="text-[11px] truncate text-[var(--text)]">
-                  {roomLabel(item.room)}
-                  {item.instructor ? ` · ${item.instructor}` : ""}
-                </div>
-                <div className="text-[11px] tabular-nums text-[var(--text-muted)]">
-                  {formatCompactTime(item.startTime)} – {formatCompactTime(item.endTime)}
-                </div>
+                {!isCompact ? (
+                  <>
+                    <div className="text-[11px] truncate text-[var(--text)]">
+                      {roomLabel(item.room)}
+                      {item.instructor ? ` · ${item.instructor}` : ""}
+                    </div>
+                    <div className="text-[11px] tabular-nums text-[var(--text-muted)]">
+                      {blockTimeLabel(item)}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-[11px] tabular-nums truncate text-[var(--text-muted)]">
+                    {blockTimeLabel(item)} · {roomLabel(item.room)}
+                  </div>
+                )}
               </div>
             );
           }
 
           if (item.kind === "custom_event") {
+            const openEvent = () => item.event && onOpenEvent(item.event);
             return (
-              <div key={item.id} style={style} className="gcal-card">
+              <div
+                key={item.id}
+                style={style}
+                role="button"
+                tabIndex={0}
+                onClick={openEvent}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    openEvent();
+                  }
+                }}
+                className={`gcal-card${compactClass} cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]`}
+              >
                 <div className="flex items-center justify-between gap-1">
                   <span
-                    onClick={() => item.event && onOpenEvent(item.event)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEvent();
+                    }}
                     className="text-[11px] font-bold truncate text-[var(--text)] cursor-pointer hover:underline"
                     title="Edit this event"
                   >
@@ -731,12 +895,20 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                     <X className="h-3 w-3" aria-hidden="true" />
                   </button>
                 </div>
-                <div className="text-[11px] truncate text-[var(--text)]">
-                  {item.eventType || "Event"} · {roomLabel(item.room)}
-                </div>
-                <div className="text-[11px] tabular-nums text-[var(--text-muted)]">
-                  {formatCompactTime(item.startTime)} – {formatCompactTime(item.endTime)}
-                </div>
+                {!isCompact ? (
+                  <>
+                    <div className="text-[11px] truncate text-[var(--text)]">
+                      {item.eventType || "Event"} · {roomLabel(item.room)}
+                    </div>
+                    <div className="text-[11px] tabular-nums text-[var(--text-muted)]">
+                      {blockTimeLabel(item)}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-[11px] tabular-nums truncate text-[var(--text-muted)]">
+                    {blockTimeLabel(item)}
+                  </div>
+                )}
               </div>
             );
           }
@@ -747,6 +919,8 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
             <div
               key={item.id}
               style={style}
+              role="button"
+              tabIndex={0}
               onClick={() =>
                 setSlotPopover({
                   id: item.id,
@@ -761,7 +935,24 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                   heightPx: item.heightPx,
                 })
               }
-              className="gcal-card cursor-pointer hover:ring-1 hover:ring-[var(--accent)]/50 transition-shadow"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setSlotPopover({
+                    id: item.id,
+                    courseId: item.courseId,
+                    courseName: item.courseName,
+                    title: item.title,
+                    group: item.group,
+                    room: item.room,
+                    startTime: item.startTime,
+                    endTime: item.endTime,
+                    topPx: item.topPx,
+                    heightPx: item.heightPx,
+                  });
+                }
+              }}
+              className={`gcal-card${compactClass} cursor-pointer hover:ring-1 hover:ring-[color-mix(in_srgb,var(--accent)_50%,transparent)] transition-shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]`}
             >
               <div className="text-[11px] font-bold truncate flex items-center gap-1.5 text-[var(--text)]">
                 <span
@@ -772,13 +963,21 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                   {item.courseName || courseDisplayName(item.courseId, coursesById)}
                 </span>
               </div>
-              <div className="text-[11px] truncate text-[var(--text)]">
-                {item.title}
-                {item.group ? ` (Grp ${item.group})` : ""} · {roomLabel(item.room)}
-              </div>
-              <div className="text-[11px] tabular-nums text-[var(--text-muted)]">
-                {formatCompactTime(item.startTime)} – {formatCompactTime(item.endTime)}
-              </div>
+              {!isCompact ? (
+                <>
+                  <div className="text-[11px] truncate text-[var(--text)]">
+                    {item.title}
+                    {item.group ? ` (Grp ${item.group})` : ""} · {roomLabel(item.room)}
+                  </div>
+                  <div className="text-[11px] tabular-nums text-[var(--text-muted)]">
+                    {blockTimeLabel(item)}
+                  </div>
+                </>
+              ) : (
+                <div className="text-[11px] tabular-nums truncate text-[var(--text-muted)]">
+                  {blockTimeLabel(item)} · {roomLabel(item.room)}
+                </div>
+              )}
             </div>
           );
         })}
@@ -803,7 +1002,7 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-bold text-[var(--text)]">
-                  {slotPopover.courseId || "—"} · {slotPopover.courseName || "—"}
+                  {courseDisplayName(slotPopover.courseId, coursesById)}
                 </span>
                 <button
                   type="button"
@@ -832,6 +1031,28 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                     <span>Group {slotPopover.group}</span>
                   </div>
                 )}
+              </div>
+              <div className="mt-3 pt-2 border-t border-[var(--surface-border)]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const pop = slotPopover;
+                    setSlotPopover(null);
+                    useAppStore.getState().openModal({
+                      id: "create-edit-event",
+                      props: {
+                        event: {
+                          title: `Study: ${courseDisplayName(pop.courseId, coursesById)}`,
+                          courseId: pop.courseId || undefined,
+                          dateIso,
+                        },
+                      },
+                    });
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--accent)_20%,transparent)] text-[var(--accent-ink)] font-semibold text-[11px] transition cursor-pointer"
+                >
+                  <span>+ Plan Study Prep</span>
+                </button>
               </div>
             </div>
           </>

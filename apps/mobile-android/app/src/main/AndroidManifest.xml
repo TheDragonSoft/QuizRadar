@@ -9,6 +9,8 @@
         android:icon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:usesCleartextTraffic="false"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
         android:theme="@style/Theme.QuizRadar">
 
         <activity
@@ -31,22 +33,26 @@
                     android:host="oauth" />
             </intent-filter>
 
-            <!-- Pairing deep link com.quizradar.app://pair -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:scheme="com.quizradar.app"
-                    android:host="pair" />
-            </intent-filter>
-
             <!-- Share-sheet ingest for announcement text / emails -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
+
+            <!-- App Shortcuts & Deep Links -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="quizradar"
+                    android:host="action" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
 
         <!-- 2x1 Glance Countdown Widget -->

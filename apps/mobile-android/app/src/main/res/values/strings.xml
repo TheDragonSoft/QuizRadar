@@ -1,4 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">QuizRadar</string>
+
+    <!-- App Shortcuts -->
+    <string name="shortcut_add_event_short">New Event</string>
+    <string name="shortcut_add_event_long">Add study or custom event</string>
+    <string name="shortcut_focus_short">Focus</string>
+    <string name="shortcut_focus_long">Start Pomodoro focus timer</string>
+
+    <!-- Navigation Tabs -->
+    <string name="nav_dashboard">Dashboard</string>
+    <string name="nav_tasks">Tasks</string>
+    <string name="nav_calendar">Calendar</string>
+    <string name="nav_focus">Focus</string>
+
+    <!-- Common Top Chrome Actions -->
+    <string name="action_scan">Scan sources</string>
+    <string name="action_search">Search quizzes, exams, topics, or courses</string>
+    <string name="action_account">Account &amp; Connections</string>
+    <string name="action_settings">Settings</string>
+
+    <!-- Setup Checklist -->
+    <string name="checklist_title">Setup Checklist</string>
+    <string name="checklist_add_courses">Add courses &amp; timetable</string>
+    <string name="checklist_add_courses_sub">Enables schedule-based exam resolution</string>
+    <string name="checklist_connect_sources">Connect Gmail or Teams</string>
+    <string name="checklist_connect_sources_sub">Scans course announcements for quizzes</string>
+    <string name="checklist_turn_on_reminders">Turn on exam reminders</string>
+    <string name="checklist_turn_on_reminders_sub">T-24h and same-day notifications</string>
+    <string name="checklist_home_widget">Home-Screen Widget</string>
+    <string name="checklist_home_widget_sub">2x1 countdown glance</string>
+
+    <!-- Content Descriptions & Accessibility -->
+    <string name="cd_close">Close</string>
+    <string name="cd_back">Back</string>
+    <string name="cd_dismiss">Dismiss</string>
+    <string name="cd_copy">Copy to clipboard</string>
+    <string name="cd_refresh">Refresh</string>
+    <string name="cd_play">Play</string>
+    <string name="cd_pause">Pause</string>
 </resources>

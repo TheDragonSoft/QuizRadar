@@ -105,7 +105,9 @@ describe("Web UI Views & Assessment Detail (Phase 09 Full Behavior)", () => {
           date: "2026-10-21",
           displayDay: "Today",
           isToday: true,
-          totalEstimatedHours: 2.0,
+          // The day's tasks carry their own estimates; the view sums the
+          // visible tasks, so the fixture must agree with them.
+          totalEstimatedHours: 1.0,
           tasks: [
             {
               id: "t-1",
@@ -158,6 +160,10 @@ describe("Web UI Views & Assessment Detail (Phase 09 Full Behavior)", () => {
         activeTypeFilter: "ALL",
         activeCourseFilterTasks: "ALL",
         activeModalAssessmentId: null,
+        // The global search is app-wide state — a test that sets it must not
+        // leak into the next one.
+        searchQuery: "",
+        openModals: [],
       });
     });
   });
@@ -190,12 +196,49 @@ describe("Web UI Views & Assessment Detail (Phase 09 Full Behavior)", () => {
           dateIso: "2026-10-22",
         },
       ];
+      // The core decides per conflict pair whether a study block covers it
+      // (`is_mitigated`). "Any study block exists" used to flip the whole
+      // banner to "Mitigated" and hide uncovered conflicts.
+      stateWithStudyBlocks.dashboard.conflictAlerts[0].isMitigated = true;
       useAppStore.setState({ data: stateWithStudyBlocks });
     });
 
     render(<ConflictBanner />);
     expect(screen.getByTestId("conflict-banner-mitigated")).toBeInTheDocument();
     expect(screen.getByText(/Protected/i)).toBeInTheDocument();
+  });
+
+  it("keeps the amber banner when one conflict pair is still uncovered", () => {
+    act(() => {
+      const mixed = JSON.parse(JSON.stringify(sampleState)) as GetStatePayload;
+      mixed.dashboard.conflictAlerts = [
+        {
+          ...mixed.dashboard.conflictAlerts[0],
+          isMitigated: true,
+        },
+        {
+          assessmentAId: "a-cse241-q2",
+          assessmentBId: "a-mat102-q2",
+          titleA: "CSE241 Quiz 2",
+          titleB: "MAT102 Quiz 2",
+          dateA: "2026-10-24",
+          dateB: "2026-10-24",
+          severity: "critical",
+          hoursBetween: 3,
+          message: "Critical same-day exam overload (3h gap)",
+          dismissed: false,
+          isMitigated: false,
+        },
+      ];
+      useAppStore.setState({ data: mixed });
+    });
+
+    render(<ConflictBanner />);
+    expect(screen.getByTestId("conflict-banner-unresolved")).toBeInTheDocument();
+    expect(screen.queryByTestId("conflict-banner-mitigated")).not.toBeInTheDocument();
+    // The uncovered pair is the one that is named.
+    expect(screen.getByText(/CSE241 Quiz 2/)).toBeInTheDocument();
+    expect(screen.getByText(/other conflict/i)).toBeInTheDocument();
   });
 
   it("dismisses conflict banner when dismiss button is clicked", () => {
@@ -304,11 +347,93 @@ describe("Web UI Views & Assessment Detail (Phase 09 Full Behavior)", () => {
     expect(screen.queryByText("100%")).not.toBeInTheDocument();
   });
 
-  // 2d. Phase-19: the "All" type chip maps to the ALL filter (was UPCOMING)
-  it("maps the 'All' type chip to the ALL filter", () => {
+  // 2d. The top-bar search filters the dashboard live (01 §4.8). The query
+  // used to live only inside the search input, so the calendar/dashboard
+  // never re-rendered.
+  it("filters the assessment list by the global search query and says so", () => {
+    const twoAssessments = JSON.parse(JSON.stringify(sampleState)) as GetStatePayload;
+    twoAssessments.assessments.push({
+      ...twoAssessments.assessments[0],
+      id: "a-mat102-q1",
+      courseId: "MAT102",
+      courseName: "Calculus II",
+      title: "Quiz 1: Derivatives",
+      topics: ["Limits"],
+    });
+
+    useAppStore.setState({ data: twoAssessments, searchQuery: "derivatives" });
+    render(<DashboardView />);
+
+    // The banner names the active filter - a silently filtered list reads as
+    // "that is all there is".
+    const banner = screen.getByTestId("dashboard-search-banner");
+    expect(banner).toHaveTextContent(/derivatives/i);
+
+    expect(screen.getByText("Quiz 1: Derivatives")).toBeInTheDocument();
+    expect(screen.queryByText("Quiz 1: Logic Gates")).not.toBeInTheDocument();
+  });
+
+  it("does not claim the study plan is empty when the search hides every card", () => {
+    useAppStore.setState({ data: sampleState, searchQuery: "nothing-matches-this" });
+    render(<DashboardView />);
+
+    // "You're all caught up" would be a lie: the plan is still pending, the
+    // search simply matched nothing.
+    expect(screen.getByTestId("study-empty-search")).toBeInTheDocument();
+    expect(screen.queryByText(copy.dashboard.studyAllClearTitle)).not.toBeInTheDocument();
+  });
+
+  // 2e. The pomodoro's "Mark Done" only renders when the modal knows WHICH
+  // topic it is working on. The store used to pass a `topicKey` the modal
+  // never read, so the control was dead in production.
+  it("opens the pomodoro with the topic index so its Mark Done control exists", () => {
+    useAppStore.setState({ data: sampleState, openModals: [] });
+    render(<DashboardView />);
+
+    fireEvent.click(screen.getByRole("button", { name: /2 topics/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /start a focus session for boolean algebra/i }),
+    );
+
+    const modal = useAppStore.getState().openModals.find((m) => m.id === "pomodoro");
+    expect(modal).toBeDefined();
+    expect(modal?.props).toMatchObject({
+      assessmentId: "a-cse241-q1",
+      topicIndex: 0,
+      topicTitle: "Boolean Algebra",
+    });
+  });
+
+  // 2c-bis. Round 7: the same rule applies to the "What Should I Study?"
+  // cards. The core sends progress_percent = 100 for a card with no topics
+  // (0/0 means "nothing pending"); rendering that as a mastery percentage
+  // fabricates progress the student never recorded.
+  it("withholds the readiness percentage on a recommendation card with no topics", () => {
+    const topicless = JSON.parse(JSON.stringify(sampleState)) as GetStatePayload;
+    topicless.dashboard.studyRecommendations = [
+      {
+        ...topicless.dashboard.studyRecommendations[0],
+        topics: [],
+        progressPercent: 100,
+      },
+    ];
+    useAppStore.setState({ data: topicless });
+
+    render(<DashboardView />);
+    const card = screen.getByTestId("rec-card-a-cse241-q1");
+    expect(card).toHaveTextContent(copy.common.noTopicsTracked);
+    expect(card.textContent).not.toContain("100%");
+  });
+
+  // 2d. The timeline's type select is the surviving type filter (the
+  // "Types of exams" KPI card with its All chip became the "Exams ahead"
+  // count); choosing "All Semesters" must map to the ALL filter.
+  it("maps the timeline type select's 'All Semesters' option to the ALL filter", () => {
     useAppStore.setState({ activeTypeFilter: "UPCOMING" });
     render(<DashboardView />);
-    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "ALL" },
+    });
     expect(useAppStore.getState().activeTypeFilter).toBe("ALL");
   });
 
@@ -355,9 +480,9 @@ describe("Web UI Views & Assessment Detail (Phase 09 Full Behavior)", () => {
 
     render(<TasksView />);
 
-    // Summary line with honest est hrs
+    // Summary line with honest est hrs (summed from the visible tasks)
     expect(
-      screen.getByText(/1 pending topics across 1 upcoming exams • Est. 2 hrs/i),
+      screen.getByText(/1 pending study steps across 1 upcoming exams • Est. 1 hrs/i),
     ).toBeInTheDocument();
 
     // Readiness card
@@ -380,7 +505,7 @@ describe("Web UI Views & Assessment Detail (Phase 09 Full Behavior)", () => {
     act(() => {
       useAppStore.setState({ activeCourseFilterTasks: "MAT102" });
     });
-    expect(screen.getByText(/0 pending topics across 0 upcoming exams/i)).toBeInTheDocument();
+    expect(screen.getByText(/0 pending study steps across 0 upcoming exams/i)).toBeInTheDocument();
     // Distinct honest copy for each section: readiness vs roadmap.
     expect(screen.getByText(copy.emptyStates.noUpcomingExams)).toBeInTheDocument();
     expect(screen.getByText(copy.emptyStates.noStudyTasksPending)).toBeInTheDocument();
@@ -392,6 +517,56 @@ describe("Web UI Views & Assessment Detail (Phase 09 Full Behavior)", () => {
     const card = screen.getByTestId("readiness-card-a-cse241-q1");
     expect(card).toHaveTextContent("Digital Design");
     expect(card.textContent).not.toContain("CSE241");
+  });
+
+  // 3d. Round 7: an exam with no tracked topics has no readiness number —
+  // the core's 0/0 = 100 ("nothing pending") must not be rendered as 100%.
+  it("withholds the readiness percentage on a readiness card with no topics", () => {
+    const topicless = JSON.parse(JSON.stringify(sampleState)) as GetStatePayload;
+    topicless.studyTasksPayload.readinessCards = [
+      {
+        ...topicless.studyTasksPayload.readinessCards[0],
+        readinessPercent: 100,
+        completedCount: 0,
+        totalCount: 0,
+      },
+    ];
+    useAppStore.setState({ data: topicless });
+
+    render(<TasksView />);
+    const card = screen.getByTestId("readiness-card-a-cse241-q1");
+    expect(card).toHaveTextContent(copy.common.noTopicsTracked);
+    expect(card.textContent).not.toContain("100%");
+    // The average must not be invented from the topicless card either.
+    expect(screen.queryByText(/avg readiness/i)).not.toBeInTheDocument();
+  });
+
+  // 3e. Round 7: the average readiness only counts exams that actually have
+  // topics — a topicless exam must not drag the average down or up.
+  it("averages readiness only over exams that track topics", () => {
+    const mixed = JSON.parse(JSON.stringify(sampleState)) as GetStatePayload;
+    mixed.studyTasksPayload.readinessCards = [
+      {
+        ...mixed.studyTasksPayload.readinessCards[0],
+        readinessPercent: 50,
+        completedCount: 1,
+        totalCount: 2,
+      },
+      {
+        ...mixed.studyTasksPayload.readinessCards[0],
+        assessmentId: "a-mat102-q1",
+        courseId: "MAT102",
+        readinessPercent: 100,
+        completedCount: 0,
+        totalCount: 0,
+      },
+    ];
+    useAppStore.setState({ data: mixed });
+
+    render(<TasksView />);
+    // The average is 50% (only the tracked exam), not 75% (both cards).
+    expect(screen.getByText(/50% avg readiness/i)).toBeInTheDocument();
+    expect(screen.queryByText(/75%/)).not.toBeInTheDocument();
   });
 
   // 4. Assessment Detail Modal: Facts, Grade Editing, What-If
@@ -410,6 +585,10 @@ describe("Web UI Views & Assessment Detail (Phase 09 Full Behavior)", () => {
     expect(screen.getByTestId("assessment-detail-modal")).toBeInTheDocument();
     expect(screen.getByText(/Room 301/i)).toBeInTheDocument();
     expect(screen.getByText(/Bring scientific calculator/i)).toBeInTheDocument();
+
+    // Round 7: the date is printed for humans, never as a raw storage date.
+    expect(screen.getByText("Fri, Oct 23, 2026")).toBeInTheDocument();
+    expect(screen.queryByText(/2026-10-23/)).not.toBeInTheDocument();
 
     // Grade Editor
     const scoreInput = screen.getByPlaceholderText(/e\.g\. 18\.5/i);

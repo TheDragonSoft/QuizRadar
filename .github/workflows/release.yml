@@ -132,8 +132,22 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      # `tooling/build-android-libs.mjs` (run by the Gradle `buildAndroidRustLibs`
+      # task) is a Node script, so the release job needs Node on PATH too.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          # The APK/AAB is a Kotlin shell around the Rust core (UniFFI): these
+          # targets are what `assembleRelease` cross-builds
+          # libquizradar_core.so with. Without them the released app would
+          # crash on launch (UnsatisfiedLinkError).
+          targets: aarch64-linux-android, x86_64-linux-android
       - uses: Swatinem/rust-cache@v2
+      - uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: "27.1.12297006"
 
       - name: Build native core cdylib for uniffi
         run: cargo build -p quizradar-core --features uniffi
@@ -162,6 +176,29 @@ jobs:
         run: |
           $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose apps/mobile-android/app/build/outputs/apk/release/app-release.apk
 
+      # The app cannot start without the native core - the release must never
+      # ship an APK/AAB whose Rust library is missing for a device ABI.
+      - name: Verify the native core ships in the release artifacts
+        run: |
+          # Without a keystore the APK is unsigned, so the file name differs.
+          APK=$(ls apps/mobile-android/app/build/outputs/apk/release/app-release*.apk | head -1)
+          echo "checking $APK"
+          unzip -l "$APK" \
+            | grep -E "lib/(arm64-v8a|x86_64)/libquizradar_core\.so"
+          unzip -l apps/mobile-android/app/build/outputs/bundle/release/app-release.aab \
+            | grep -E "base/lib/(arm64-v8a|x86_64)/libquizradar_core\.so"
+          # Only the ABIs the core is cross-built for may be advertised: a
+          # 32-bit device would install the release and then crash with an
+          # UnsatisfiedLinkError the moment the core is called.
+          for artifact in \
+            "$APK" \
+            apps/mobile-android/app/build/outputs/bundle/release/app-release.aab; do
+            if unzip -l "$artifact" | grep -E "lib/(armeabi|armeabi-v7a|mips|mips64|x86)/"; then
+              echo "::error::$artifact advertises ABIs the Rust core is not built for"
+              exit 1
+            fi
+          done
+
       - name: Cleanup Keystore File
         if: always()
         run: |
@@ -171,8 +208,10 @@ jobs:
         run: |
           mkdir -p android-dist
           VER=$(node -e 'console.log(require("./tooling/version.json").version)')
-          if [ -f apps/mobile-android/app/build/outputs/apk/release/app-release.apk ]; then
-            cp apps/mobile-android/app/build/outputs/apk/release/app-release.apk "android-dist/QuizRadar-v${VER}.apk"
+          # Unsigned local builds are named app-release-unsigned.apk.
+          APK=$(ls apps/mobile-android/app/build/outputs/apk/release/app-release*.apk | head -1)
+          if [ -n "$APK" ]; then
+            cp "$APK" "android-dist/QuizRadar-v${VER}.apk"
           fi
           if [ -f apps/mobile-android/app/build/outputs/bundle/release/app-release.aab ]; then
             cp apps/mobile-android/app/build/outputs/bundle/release/app-release.aab "android-dist/QuizRadar-v${VER}.aab"

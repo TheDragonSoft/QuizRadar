@@ -184,8 +184,9 @@ export function extractStructs(source, file) {
 
 /**
  * Every `pub enum` in `source`, keyed by enum name. A variant's wire name is
- * its serde `rename` when present, otherwise the variant name verbatim —
- * which is exactly serde's default enum representation.
+ * its serde `rename` when present, else the enum-level `rename_all` when
+ * present (`lowercase` etc.), otherwise the variant name verbatim — which is
+ * exactly serde's default enum representation.
  */
 export function extractEnums(source, file) {
   const lines = source.split(/\r?\n/);
@@ -200,6 +201,22 @@ export function extractEnums(source, file) {
     const end = findBlockEnd(lines, index);
     if (end < 0) {
       continue;
+    }
+
+    // serde `rename_all` on the enum: scan backwards over attributes/doc
+    // comments from the declaration, same as the struct path.
+    let enumRenameAll = null;
+    for (let back = index - 1; back >= 0; back -= 1) {
+      const trimmed = lines[back].trim();
+      if (trimmed === "" || trimmed.startsWith("//") || trimmed.startsWith("#[")) {
+        const attribute = RENAME_ALL_ATTR.exec(trimmed);
+        if (attribute) {
+          enumRenameAll = attribute[1];
+          break;
+        }
+        continue;
+      }
+      break;
     }
 
     const variants = [];
@@ -221,7 +238,11 @@ export function extractEnums(source, file) {
       if (!variant) {
         continue;
       }
-      variants.push({ name: variant[1], wireName: pendingRename ?? variant[1] });
+      let wireName = pendingRename ?? variant[1];
+      if (!pendingRename && enumRenameAll === "lowercase") {
+        wireName = wireName.toLowerCase();
+      }
+      variants.push({ name: variant[1], wireName });
       pendingRename = null;
     }
 

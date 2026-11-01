@@ -92,12 +92,12 @@ export function PracticeQuizModal({
     (!quiz?.generatedByAi && !quiz?.generated_by_ai);
 
   return (
-    <div className="relative w-full max-w-2xl rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-2xl transition-all max-h-[90vh] overflow-y-auto">
+    <div className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto">
       {/* Header */}
       <div className="flex items-start justify-between border-b border-[var(--border)] pb-4">
         <div>
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--accent-ink)]">
               <HelpCircle className="h-5 w-5" />
             </div>
             <h2 id="practice-quiz-title" className="text-xl font-bold text-[var(--text)]">
@@ -106,7 +106,9 @@ export function PracticeQuizModal({
           </div>
           {matchedAssessment && (
             <p className="mt-1 text-xs text-[var(--text-muted)]">
-              {matchedAssessment.courseId ? `[${matchedAssessment.courseId}] ` : ""}
+              {matchedAssessment.courseName || matchedAssessment.courseId
+                ? `${matchedAssessment.courseName || matchedAssessment.courseId} — `
+                : ""}
               {matchedAssessment.title}
             </p>
           )}
@@ -115,7 +117,7 @@ export function PracticeQuizModal({
           type="button"
           onClick={onClose}
           aria-label={copy.common.close}
-          className="rounded-lg p-1 text-[var(--text-muted)] hover:bg-[var(--border)]/30 hover:text-[var(--text)]"
+          className="rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
         >
           <X className="h-5 w-5" />
         </button>
@@ -126,11 +128,11 @@ export function PracticeQuizModal({
         <div className="mt-4 flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--page)] p-3">
           <div className="flex items-center gap-2.5">
             {isLocalFallback ? (
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
                 <BookOpen className="h-4 w-4" />
               </div>
             ) : (
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-500/10 text-purple-700 dark:text-purple-400">
                 <Sparkles className="h-4 w-4" />
               </div>
             )}
@@ -152,7 +154,7 @@ export function PracticeQuizModal({
           </div>
           {totalQuestions > 0 && (
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-[var(--accent)]">
+              <span className="text-xs font-bold tabular-nums text-[var(--accent-ink)]">
                 {copy.practice.score(score, totalQuestions)}
               </span>
               <button
@@ -160,7 +162,7 @@ export function PracticeQuizModal({
                 onClick={handleRestart}
                 aria-label={copy.practice.restart}
                 title={copy.practice.restart}
-                className="rounded-lg border border-[var(--border)] p-1 text-[var(--text-muted)] hover:bg-[var(--border)]/30 hover:text-[var(--text)]"
+                className="rounded-lg border border-[var(--border)] p-1 text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
               >
                 <RotateCcw className="h-4 w-4" />
               </button>
@@ -179,7 +181,7 @@ export function PracticeQuizModal({
         )}
 
         {error && (
-          <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-xs font-semibold text-red-600 dark:text-red-400">
+          <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-xs font-semibold text-red-700 dark:text-red-400">
             {error}
           </div>
         )}
@@ -208,8 +210,8 @@ export function PracticeQuizModal({
                       <span
                         className={`font-bold ${
                           selectedIdx === correctIdx
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : "text-red-600 dark:text-red-400"
+                            ? "text-emerald-700 dark:text-emerald-300"
+                            : "text-red-700 dark:text-red-300"
                         }`}
                       >
                         {selectedIdx === correctIdx
@@ -227,21 +229,25 @@ export function PracticeQuizModal({
                   <div className="space-y-2">
                     {q.options.map((opt, optIndex) => {
                       let btnStyle =
-                        "border-[var(--border)] hover:bg-[var(--border)]/30 text-[var(--text)]";
+                        "border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-[var(--text)]";
                       let indicator = null;
 
                       if (isAnswered) {
                         if (optIndex === correctIdx) {
                           btnStyle =
-                            "border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-semibold";
-                          indicator = <Check className="h-4 w-4 text-emerald-600 shrink-0" />;
+                            "border-emerald-600 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200 font-semibold";
+                          indicator = (
+                            <Check className="h-4 w-4 text-emerald-700 dark:text-emerald-300 shrink-0" />
+                          );
                         } else if (optIndex === selectedIdx) {
                           btnStyle =
-                            "border-red-500 bg-red-500/10 text-red-700 dark:text-red-300 font-semibold";
-                          indicator = <X className="h-4 w-4 text-red-600 shrink-0" />;
+                            "border-red-600 bg-red-500/10 text-red-800 dark:text-red-200 font-semibold";
+                          indicator = (
+                            <X className="h-4 w-4 text-red-700 dark:text-red-300 shrink-0" />
+                          );
                         } else {
                           btnStyle =
-                            "border-[var(--border)]/40 text-[var(--text-muted)] opacity-60";
+                            "border-[color-mix(in_srgb,var(--border)_60%,transparent)] bg-[var(--surface)] text-[var(--text-muted)]";
                         }
                       }
 
@@ -262,7 +268,7 @@ export function PracticeQuizModal({
 
                   {/* Explanation (revealed upon selection) */}
                   {isAnswered && q.explanation && (
-                    <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 text-xs text-[var(--text-muted)] animate-fadeIn">
+                    <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 text-xs text-[var(--text-muted)]">
                       <span className="font-semibold text-[var(--text)] block mb-1">
                         {copy.practice.explanationHeader}
                       </span>
@@ -281,7 +287,7 @@ export function PracticeQuizModal({
         <button
           type="button"
           onClick={onClose}
-          className="rounded-xl border border-[var(--border)] px-4 py-2 text-xs font-semibold text-[var(--text)] hover:bg-[var(--border)]/30 transition"
+          className="rounded-xl border border-[var(--border)] px-4 py-2 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] transition"
         >
           {copy.common.close}
         </button>

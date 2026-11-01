@@ -3,12 +3,14 @@
 //! parsers, merges with user-field preservation, and reports REAL per-source
 //! progress and outcomes — "not configured" is said, failures fail loudly,
 //! and an empty scan says exactly which sources ran and found nothing.
+//! Announcements outside the 60-day recency window (`01` §4.2) are skipped
+//! and counted in the notes — never dropped silently.
 
 use std::sync::Arc;
 
 use chrono::{FixedOffset, NaiveDate};
 
-use crate::parse::email::parse_emails_from_source;
+use crate::parse::email::{parse_emails_from_source, ScanStats, MAX_EMAIL_AGE_DAYS};
 use crate::sources::classroom::{scan_classroom, ClassroomScan};
 use crate::sources::feeds::{scan_feeds, FeedScan};
 use crate::sources::gmail::{scan_gmail, GmailScan};
@@ -183,6 +185,11 @@ pub async fn run_sync(
                 stats.fetched,
                 parse_stats.parsed
             ));
+            if let Some(note) = stale_skip_note(&parse_stats) {
+                // The recency window (`01` §4.2) dropped real messages — say
+                // so, never let them vanish silently.
+                notes.push(note);
+            }
             per_source.push(SourceRun {
                 found: gmail_assessment_count,
                 ..run
@@ -276,6 +283,18 @@ pub async fn run_sync(
         emails_cache,
         discovered_teams,
     })
+}
+
+/// The honest note for messages the recency window dropped. `None` when
+/// nothing was dropped — the scan stays quiet instead of padding the report.
+fn stale_skip_note(parse_stats: &ScanStats) -> Option<String> {
+    if parse_stats.skipped_stale == 0 {
+        return None;
+    }
+    Some(format!(
+        "Gmail: {} cached message(s) older than {MAX_EMAIL_AGE_DAYS} days were skipped (they are no longer part of the radar).",
+        parse_stats.skipped_stale
+    ))
 }
 
 async fn run_gmail_source(
@@ -549,6 +568,23 @@ mod tests {
     }
 
     const FEED_FIXTURE: &str = "BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:CSE241 Quiz 3\nDTSTART:20261103T100000Z\nUID:q3@registrar\nEND:VEVENT\nEND:VCALENDAR\n";
+
+    #[test]
+    fn stale_messages_are_reported_not_dropped_silently() {
+        let mut stats = ScanStats::default();
+        assert!(
+            stale_skip_note(&stats).is_none(),
+            "nothing was dropped → no note, no noise"
+        );
+
+        stats.skipped_stale = 3;
+        let note = stale_skip_note(&stats).expect("the skip is reported");
+        assert!(note.contains('3'), "the count is in the note: {note}");
+        assert!(
+            note.contains(&MAX_EMAIL_AGE_DAYS.to_string()),
+            "the window is named in the note: {note}"
+        );
+    }
 
     #[tokio::test]
     async fn zero_enabled_sources_is_truthful_not_theatre() {

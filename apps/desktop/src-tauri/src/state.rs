@@ -51,9 +51,11 @@ pub const GEMINI_KEY_FILENAME: &str = "gemini.key";
 pub const DEFAULT_MICROSOFT_CLIENT_ID: &str = "14d82eec-204b-4c2f-b7e8-296a70dab67e";
 
 /// Google OAuth client id of the maintainer-provided registration (project
-/// `gmail-summary-511914`). A client id is a public identifier, so it may ship.
+/// `quizradar-511922`, authorized for the dev origins `http://localhost:4317`
+/// and `http://127.0.0.1:4317`). A client id is a public identifier, so it may
+/// ship.
 pub const DEFAULT_GOOGLE_CLIENT_ID: &str =
-    "341760934836-60toi8rjgkid0gmc69tmt598teghbgv4.apps.googleusercontent.com";
+    "620389124802-98bn4r9kllknq8l820rts76840l4af7q.apps.googleusercontent.com";
 
 /// Client secret of the Google registration above.
 ///
@@ -68,16 +70,27 @@ pub const DEFAULT_GOOGLE_CLIENT_ID: &str =
 /// the logs or any error string. Runtime overrides (OS keyring entry
 /// `google_client_secret`, or `QUIZRADAR_GOOGLE_CLIENT_SECRET`) win, so the
 /// secret can be rotated without touching the source.
-pub const DEFAULT_GOOGLE_CLIENT_SECRET: &str = "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";
+pub const DEFAULT_GOOGLE_CLIENT_SECRET: &str = "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";
 
 pub const GOOGLE_CLIENT_ID_INVALID: &str = "The Google OAuth client ID in Settings is not usable. Copy it again from Google Cloud Console → APIs & Services → Credentials (it looks like 1234567890-abc.apps.googleusercontent.com and contains no spaces).";
 
 pub const MICROSOFT_CLIENT_ID_INVALID: &str = "The Microsoft application (client) ID in Settings is not usable. Copy it again from Azure portal → App registrations → your app → Overview (it is a GUID with no spaces).";
 
-#[derive(Debug, Clone)]
 pub struct CachedToken {
     pub token: String,
     pub expires_at: Instant,
+}
+
+// A derived `Debug` would print the bearer token into any future `{:?}` /
+// panic payload and therefore into `quizradar-boot.log` — the token must
+// never leave the process in a debug dump.
+impl std::fmt::Debug for CachedToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CachedToken")
+            .field("token", &"[redacted]")
+            .field("expires_at", &self.expires_at)
+            .finish()
+    }
 }
 
 impl CachedToken {

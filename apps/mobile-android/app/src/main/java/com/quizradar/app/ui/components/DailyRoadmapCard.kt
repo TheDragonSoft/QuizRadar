@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -22,6 +23,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -36,17 +41,19 @@ fun DailyRoadmapCard(
     onToggleTopic: (key: String, done: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val haptic = LocalHapticFeedback.current
     val isToday = dayGroup.isToday
     val borderColor =
         if (isToday) {
             MaterialTheme.colorScheme.primary
         } else {
-            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+            MaterialTheme.colorScheme.outlineVariant
         }
 
     val cardBg =
         if (isToday) {
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.04f)
+            MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.08f else 0.04f)
         } else {
             MaterialTheme.colorScheme.surface
         }
@@ -57,7 +64,7 @@ fun DailyRoadmapCard(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
                 .background(cardBg)
-                .border(if (isToday) 2.dp else 1.dp, borderColor, RoundedCornerShape(16.dp))
+                .border(if (isToday) 1.5.dp else 1.dp, borderColor, RoundedCornerShape(16.dp))
                 .padding(14.dp),
     ) {
         // Header: Day name + Today badge + Hours
@@ -76,13 +83,13 @@ fun DailyRoadmapCard(
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "TODAY",
-                        fontSize = 10.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
                         modifier =
                             Modifier
                                 .clip(RoundedCornerShape(4.dp))
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+                                .background(MaterialTheme.colorScheme.secondaryContainer)
                                 .padding(horizontal = 6.dp, vertical = 2.dp),
                     )
                 }
@@ -91,83 +98,106 @@ fun DailyRoadmapCard(
             if (dayGroup.totalEstimatedHours != null) {
                 Text(
                     text = "Est. ${dayGroup.totalEstimatedHours}h",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    style =
+                        TextStyle(
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFeatureSettings = "tnum",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
                 )
             }
         }
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Tasks in this day group
         dayGroup.tasks.forEach { task ->
             val isChecked = completedTopicsMap[task.key] == true
             val palette = CoursePalette.get(task.courseId)
+            val courseTextColor = CoursePalette.textOnSurface(task.courseId, isDark)
 
             Row(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .clickable { onToggleTopic(task.key, !isChecked) },
+                        .defaultMinSize(minHeight = 44.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onToggleTopic(task.key, !isChecked)
+                        }
+                        .padding(vertical = 6.dp),
                 verticalAlignment = Alignment.Top,
             ) {
                 Checkbox(
                     checked = isChecked,
-                    onCheckedChange = { done -> onToggleTopic(task.key, done) },
+                    onCheckedChange = { done ->
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onToggleTopic(task.key, done)
+                    },
                     colors =
                         CheckboxDefaults.colors(
                             checkedColor = palette.color,
-                            uncheckedColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                            uncheckedColor = MaterialTheme.colorScheme.outline,
                         ),
                     modifier = Modifier.size(24.dp),
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier =
                                 Modifier
-                                    .size(6.dp)
+                                    .size(7.dp)
                                     .clip(RoundedCornerShape(2.dp))
                                     .background(palette.color),
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(5.dp))
                         Text(
-                            text = "${task.courseId ?: "GENERAL"} • ${task.assessmentTitle}",
+                            text = "${task.courseName ?: task.courseId ?: "General"} • ${task.assessmentTitle}",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = palette.color,
+                            color = courseTextColor,
                         )
                         if (task.estimatedHours != null) {
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "${task.estimatedHours}h",
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                style =
+                                    TextStyle(
+                                        fontSize = 11.sp,
+                                        fontFeatureSettings = "tnum",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    ),
                             )
                         }
                     }
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = task.topic,
                         style =
                             MaterialTheme.typography.bodyMedium.copy(
                                 fontWeight = FontWeight.Medium,
-                                textDecoration = if (isChecked) TextDecoration.LineThrough else TextDecoration.None,
+                                textDecoration =
+                                    if (isChecked) {
+                                        TextDecoration.LineThrough
+                                    } else {
+                                        TextDecoration.None
+                                    },
                                 color =
                                     if (isChecked) {
-                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                        MaterialTheme.colorScheme.onSurfaceVariant
                                     } else {
                                         MaterialTheme.colorScheme.onSurface
                                     },
                             ),
                     )
                     if (task.aiReasoning.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = task.aiReasoning,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }

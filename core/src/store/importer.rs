@@ -22,7 +22,7 @@ use std::collections::HashMap;
 
 use crate::store::db::{Db, StoreError};
 use crate::store::repo::{
-    AssessmentRepo, CourseRepo, EventRepo, FeedRepo, GradeRepo, MetaRepo, TopicRepo,
+    AssessmentRepo, CourseRepo, EmptyReplace, EventRepo, FeedRepo, GradeRepo, MetaRepo, TopicRepo,
 };
 use crate::types::{
     Assessment, AssessmentType, CompletedTopics, CustomCalendarEvent, FeedConfig, GradeRecord,
@@ -75,7 +75,10 @@ pub const V4_SECRET_KEYS: &[&str] = &[
 
 /// What one import did. Counts are the honest summary a success toast may
 /// quote; `secrets_ignored` lists the v4 keys present-and-dropped.
+/// camelCase wire: the desktop command serializes this struct verbatim and
+/// the web contract (types.ts ImportReport) reads camelCase twins.
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ImportReport {
     pub assessments_imported: usize,
     pub courses_imported: usize,
@@ -85,6 +88,10 @@ pub struct ImportReport {
     pub custom_events_imported: usize,
     pub feeds_imported: usize,
     pub secrets_ignored: Vec<String>,
+    /// Partial-failure notices. The web ImportReport declares these; the v4
+    /// importer keeps them empty because every skip there is fatal.
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
 
 /// Parses + validates a v4 backup JSON string.
@@ -174,7 +181,14 @@ pub fn import_v4_backup_json(
         }
 
         // Radar replacement: v4's assessments arrive as the scanned snapshot.
-        AssessmentRepo::new(&tx).replace_all(&backup.assessments, updated_at)?;
+        // A restore is an explicit full replace — the user asked for this
+        // backup, so an empty backup legitimately clears the radar
+        // (`EmptyReplace::Allow`; a scan would refuse the same emptiness).
+        AssessmentRepo::new(&tx).replace_all(
+            &backup.assessments,
+            updated_at,
+            EmptyReplace::Allow,
+        )?;
 
         // Completed topics: additive, true-only (v4 map may contain false
         // entries — they are ignored; absence already means incomplete).
@@ -215,6 +229,9 @@ pub fn import_v4_backup_json(
             custom_events_imported: backup.custom_events.len(),
             feeds_imported: backup.feeds.len(),
             secrets_ignored: report_secrets,
+            // Every skip in this importer is a hard failure, so a returned
+            // report carries no partial-failure notices.
+            warnings: Vec::new(),
         })
     }
 }

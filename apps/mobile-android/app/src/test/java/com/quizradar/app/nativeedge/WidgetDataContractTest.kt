@@ -43,7 +43,9 @@ class WidgetDataContractTest {
 
         val state = WidgetState.fromAssessment(assessment, course)
         assertTrue(state.hasNextUp)
-        assertEquals("CS 101", state.courseCode)
+        // Course NAME wins over the raw id (honesty doctrine: raw ids are
+        // never rendered to the user).
+        assertEquals("Intro to Computer Science", state.courseCode)
         assertEquals("CS Final Exam", state.title)
         assertEquals("2026-10-25 · 10:00 AM", state.dateDisplay)
         assertEquals("TODAY", state.badgeText)

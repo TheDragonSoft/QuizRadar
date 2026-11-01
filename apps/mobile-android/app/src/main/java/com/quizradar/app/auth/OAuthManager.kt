@@ -49,6 +49,20 @@ class OAuthManager(
         pendingRedirectUri = redirectUri
     }
 
+    /**
+     * True when a real client id is in place.
+     *
+     * The open-source build ships placeholder ids: a Google Android client id
+     * must be registered for the app's package name + SHA-1, and an Azure app
+     * id must exist for the Teams channel. Starting the browser flow with a
+     * placeholder can only fail at the provider, so the UI checks this first
+     * and says the truth instead of opening a tab that dies on "client id not
+     * found".
+     */
+    fun isGoogleClientConfigured(): Boolean = googleClientId.isNotBlank() && googleClientId != DEFAULT_GOOGLE_CLIENT_ID
+
+    fun isMicrosoftClientConfigured(): Boolean = microsoftClientId.isNotBlank() && microsoftClientId != DEFAULT_MICROSOFT_CLIENT_ID
+
     fun startGoogleLogin(
         context: Context,
         engine: QuizRadarEngine,
@@ -110,9 +124,9 @@ class OAuthManager(
         }
 
         if (uri.host == "pair") {
-            val url = uri.getQueryParameter("url")
-            val pin = uri.getQueryParameter("pin")
-            return OAuthRedirectResult.Pairing(url, pin)
+            return OAuthRedirectResult.Error(
+                "Desktop LAN pairing is disabled in QuizRadar v5 zero-server mode. Use Backup Export / Import instead.",
+            )
         }
 
         if (uri.host != "oauth") {
@@ -167,7 +181,18 @@ class OAuthManager(
                     tokenEndpointOverride = tokenEndpointOverride,
                 )
             val tokens = JSONObject(exchangeJson)
+            // A blank access_token (provider error body with HTTP 200, or a
+            // mangled response) must fail the flow, not poison the token
+            // store with an unusable credential.
             val accessToken = tokens.optString("access_token")
+            if (accessToken.isBlank()) {
+                clearPendingState()
+                val hint =
+                    tokens.optString("error_description", "").ifBlank {
+                        tokens.optString("error", "no access_token in the response")
+                    }
+                return OAuthRedirectResult.Error("Token exchange failed: $hint")
+            }
             val refreshToken = tokens.optString("refresh_token").takeIf { it.isNotBlank() }
 
             if (provider == "google") {

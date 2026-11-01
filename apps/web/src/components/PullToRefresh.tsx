@@ -13,6 +13,7 @@ export const PullToRefresh: React.FC<PullToRefreshProps> = ({ children, threshol
   const [isPulling, setIsPulling] = useState(false);
   const startYRef = useRef(0);
   const pullDistanceRef = useRef(0);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const openModals = useAppStore((s) => s.openModals);
   const syncStatus = useAppStore((s) => s.syncStatus);
@@ -21,9 +22,24 @@ export const PullToRefresh: React.FC<PullToRefreshProps> = ({ children, threshol
   // Gating rule: when any modal is open, pull-to-refresh is disabled
   const isGated = openModals.length > 0 || syncStatus === "syncing";
 
+  // The app never scrolls the window — the scroll container is the <main>
+  // viewport INSIDE this wrapper (App.tsx). Checking window.scrollY was dead
+  // code: any downward drag anywhere fired a full scan on release. The guard
+  // must ask the real scroller whether it is at the top.
+  const scrollerAtTop = (): boolean => {
+    try {
+      const scroller = containerRef.current?.querySelector<HTMLElement>(":scope > main");
+      if (scroller) return scroller.scrollTop <= 5;
+    } catch {
+      // A selector engine without :scope support (jsdom) throws — fall back
+      // to the window scroll position instead of crashing the handler.
+    }
+    return typeof window === "undefined" || window.scrollY <= 5;
+  };
+
   const handleTouchStart = (e: React.TouchEvent) => {
     if (isGated) return;
-    if (typeof window !== "undefined" && window.scrollY > 5) return;
+    if (!scrollerAtTop()) return;
 
     startYRef.current = e.touches[0].clientY;
     pullDistanceRef.current = 0;
@@ -32,7 +48,7 @@ export const PullToRefresh: React.FC<PullToRefreshProps> = ({ children, threshol
 
   const handleTouchMove = (e: React.TouchEvent) => {
     if (!isPulling || isGated) return;
-    if (typeof window !== "undefined" && window.scrollY > 5) {
+    if (!scrollerAtTop()) {
       pullDistanceRef.current = 0;
       setPullDistance(0);
       setIsPulling(false);
@@ -71,6 +87,7 @@ export const PullToRefresh: React.FC<PullToRefreshProps> = ({ children, threshol
 
   return (
     <div
+      ref={containerRef}
       data-testid="pull-to-refresh-container"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}

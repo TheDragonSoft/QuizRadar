@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Calendar as CalendarIcon,
   CheckSquare,
@@ -7,19 +7,19 @@ import {
   Database,
   LayoutDashboard,
   Moon,
+  PanelLeft,
   RefreshCw,
-  Search,
   Settings,
   Sun,
-  Radar,
 } from "lucide-react";
+import { RadarMark } from "./BrandMarks";
+import { SearchDropdown } from "./SearchDropdown";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
 import type { UpdateCheckResult, View } from "../state/types";
 
 interface TopBarProps {
   onOpenSettings?: () => void;
-  onOpenSearch?: () => void;
   onOpenAuth?: () => void;
 }
 
@@ -55,25 +55,70 @@ const MONTH_NAMES = [
   "December",
 ] as const;
 
-export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenSearch, onOpenAuth }) => {
+export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenAuth }) => {
   const syncStatus = useAppStore((s) => s.syncStatus);
   const triggerSync = useAppStore((s) => s.triggerSync);
   const theme = useAppStore((s) => s.theme);
   const toggleTheme = useAppStore((s) => s.toggleTheme);
   const auth = useAppStore((s) => s.data.auth);
   const config = useAppStore((s) => s.data.config);
-  const searchQuery = useAppStore((s) => s.searchQuery);
   const openModal = useAppStore((s) => s.openModal);
   const googleLogin = useAppStore((s) => s.googleLogin);
   const checkUpdate = useAppStore((s) => s.checkUpdate);
+  const installUpdate = useAppStore((s) => s.installUpdate);
+  const addToast = useAppStore((s) => s.addToast);
   const currentView = useAppStore((s) => s.view);
   const setView = useAppStore((s) => s.setView);
+  const sidebarOpen = useAppStore((s) => s.sidebarOpen);
+  const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const currentWeekStart = useAppStore((s) => s.currentWeekStart);
   const shiftWeek = useAppStore((s) => s.shiftWeek);
   const jumpToToday = useAppStore((s) => s.jumpToToday);
 
   const [updateAvailable, setUpdateAvailable] = useState<UpdateCheckResult | null>(null);
   const [showUpdatePopover, setShowUpdatePopover] = useState(false);
+  const [updateInstalling, setUpdateInstalling] = useState(false);
+  const [updateProgressLabel, setUpdateProgressLabel] = useState<string | null>(null);
+  const [avatarError, setAvatarError] = useState(false);
+
+  const avatarUrl = auth.picture || config.userPicture || "";
+  useEffect(() => {
+    setAvatarError(false);
+  }, [avatarUrl]);
+
+  /**
+   * Download the pending update and hand over to the installer. The progress
+   * label comes from the desktop's byte counter: a percentage when the
+   * server announced a total, plain megabytes when it did not (never a
+   * made-up percentage).
+   */
+  async function handleInstallUpdate() {
+    if (updateInstalling) return;
+    setUpdateInstalling(true);
+    setUpdateProgressLabel(null);
+    setShowUpdatePopover(false);
+    let unlisten: (() => void) | null = null;
+    try {
+      const { listen } = await import("@tauri-apps/api/event");
+      unlisten = await listen<[number, number | null]>("update-progress", (event) => {
+        const [received, total] = event.payload;
+        setUpdateProgressLabel(
+          total && total > 0
+            ? `${Math.min(100, Math.round((received / total) * 100))}%`
+            : `${(received / (1024 * 1024)).toFixed(1)} MB`,
+        );
+      });
+      await installUpdate();
+      addToast({ message: copy.topBar.updateInstalled, type: "info", duration: 6000 });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      addToast({ message: copy.topBar.updateFailed(reason), type: "error", duration: 8000 });
+    } finally {
+      if (unlisten) unlisten();
+      setUpdateInstalling(false);
+      setUpdateProgressLabel(null);
+    }
+  }
 
   // Check for updates on mount and every hour
   useEffect(() => {
@@ -98,34 +143,6 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenSearch, on
       clearInterval(hourlyTimer);
     };
   }, [checkUpdate]);
-
-  const handleOpenSearchModal = useCallback(() => {
-    if (onOpenSearch) {
-      onOpenSearch();
-    } else {
-      openModal("search");
-    }
-  }, [onOpenSearch, openModal]);
-
-  // Keyboard shortcut: '/' focuses global search or opens search palette
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        (e.key === "/" || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k")) &&
-        !(
-          e.target instanceof HTMLInputElement ||
-          e.target instanceof HTMLTextAreaElement ||
-          (e.target as HTMLElement).isContentEditable
-        )
-      ) {
-        e.preventDefault();
-        handleOpenSearchModal();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleOpenSearchModal]);
 
   const syncLabel = {
     idle: copy.topBar.syncIdle,
@@ -174,24 +191,61 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenSearch, on
   return (
     <header
       data-testid="app-topbar"
-      className="sticky top-0 z-30 flex h-16 w-full items-center justify-between gap-2 border-b border-[var(--surface-border)] bg-[var(--surface)] px-3 transition-colors sm:px-4"
+      className="relative sticky top-0 z-30 flex h-16 w-full items-center justify-between gap-2 border-b border-[var(--surface-border)] bg-[var(--surface)] px-3 transition-colors sm:px-4"
     >
+      {/*
+       * Window-drag underlay: the drag region used to sit on the <header>
+       * itself, which makes some drag-region implementations swallow
+       * mousedown for the whole bar — the search input could never take
+       * focus from a click. The underlay only covers the empty surface;
+       * everything the user interacts with paints above it.
+       */}
+      <div data-tauri-drag-region className="absolute inset-0 -z-10" aria-hidden="true" />
+
       {/* Left cluster — brand, update pill, view switcher, calendar controls */}
       <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-        {/* Brand — v4 wordmark block (click returns to the dashboard) */}
-        <button
-          type="button"
-          onClick={() => setView("dashboard")}
-          aria-label={copy.brand.home}
-          className="flex shrink-0 cursor-pointer items-center gap-2 pr-1 sm:gap-2.5"
-        >
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)] text-white shadow-sm sm:h-9 sm:w-9">
-            <Radar className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
-          </div>
-          <span className="hidden text-base font-bold tracking-tight text-[var(--text)] sm:block sm:text-lg">
-            {copy.brand.name}
-          </span>
-        </button>
+        {/*
+         * Brand cluster. At lg+ the radar mark is the rail toggle: hover
+         * crossfades it into a PanelLeft glyph and a click collapses/expands
+         * the sidebar; the wordmark keeps v4's "return to dashboard" job.
+         * Below lg the rail is hidden by CSS, so the mark stays an honest
+         * plain brand-home button there.
+         */}
+        <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
+          <button
+            type="button"
+            data-testid="sidebar-toggle"
+            onClick={toggleSidebar}
+            aria-label={copy.topBar.sidebarToggleAria}
+            aria-pressed={sidebarOpen}
+            title={copy.topBar.sidebarToggleAria}
+            className="group relative hidden h-9 w-9 cursor-pointer items-center justify-center rounded-lg transition hover:bg-[var(--surface-hover)] active:scale-95 lg:flex"
+          >
+            <span className="absolute inset-0 flex items-center justify-center opacity-100 transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0">
+              <RadarMark animated className="h-8 w-8 sm:h-9 sm:w-9 shrink-0 drop-shadow-sm" />
+            </span>
+            <PanelLeft
+              className="h-4 w-4 text-[var(--text-muted)] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+              aria-hidden="true"
+            />
+          </button>
+          <button
+            type="button"
+            onClick={() => setView("dashboard")}
+            aria-label={copy.brand.home}
+            className="group flex shrink-0 cursor-pointer items-center gap-2 pr-1 sm:gap-2.5"
+          >
+            <span className="lg:hidden">
+              <RadarMark
+                animated
+                className="h-8 w-8 sm:h-9 sm:w-9 shrink-0 drop-shadow-sm transition-transform duration-200 group-hover:scale-105 group-active:scale-95"
+              />
+            </span>
+            <span className="hidden text-base font-bold tracking-tight text-[var(--text)] sm:block sm:text-lg">
+              {copy.brand.name}
+            </span>
+          </button>
+        </div>
 
         {/* Auto-updater pill — v4 sits it next to the brand */}
         {updateAvailable && (
@@ -200,13 +254,19 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenSearch, on
               type="button"
               data-testid="update-pill-btn"
               onClick={() => setShowUpdatePopover((v) => !v)}
-              className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 px-2.5 py-1 text-xs font-semibold text-white shadow-xs transition hover:from-blue-700 hover:to-indigo-800 active:scale-95"
+              className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 px-2.5 py-1 text-xs font-semibold text-white shadow-xs transition hover:from-blue-800 hover:to-indigo-900 active:scale-95"
             >
               <span className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-75" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-400" />
               </span>
-              <span>{copy.topBar.updateAvailable}</span>
+              <span>
+                {updateInstalling
+                  ? updateProgressLabel
+                    ? copy.topBar.updateProgress(updateProgressLabel)
+                    : copy.topBar.updateInstalling
+                  : copy.topBar.updateAvailable}
+              </span>
             </button>
 
             {showUpdatePopover && (
@@ -247,12 +307,12 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenSearch, on
                   <button
                     type="button"
                     onClick={() => {
-                      setShowUpdatePopover(false);
-                      handleSettingsClick();
+                      void handleInstallUpdate();
                     }}
-                    className="rounded-lg bg-[var(--accent)] px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm hover:bg-[var(--accent-hover)]"
+                    disabled={updateInstalling}
+                    className="rounded-lg bg-[var(--accent-fill)] px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm hover:bg-[var(--accent-fill-hover)] disabled:opacity-60"
                   >
-                    {copy.topBar.updateNextLaunch}
+                    {copy.topBar.updateInstall}
                   </button>
                 </div>
               </div>
@@ -279,7 +339,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenSearch, on
                 onClick={() => setView(item.id)}
                 className={`flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold transition ${
                   isActive
-                    ? "bg-[var(--surface)] text-[var(--accent)] shadow-2xs"
+                    ? "bg-[var(--surface)] text-[var(--accent-ink)] shadow-2xs"
                     : "text-[var(--text-muted)] hover:text-[var(--text)]"
                 }`}
               >
@@ -323,54 +383,30 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenSearch, on
                 <ChevronRight className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
-            <h2 className="hidden whitespace-nowrap text-sm font-semibold text-[var(--text)] 2xl:block">
-              {MONTH_NAMES[weekMonth]} {weekYear}
+            <h2 className="hidden whitespace-nowrap text-sm font-semibold text-[var(--text)] xl:block">
+              {MONTH_NAMES[(weekMonth ?? 1) - 1] ?? ""} {weekYear}
             </h2>
           </div>
         )}
       </div>
 
-      {/* Search Bar — v4 floating search shell. min-w-0 on both wrappers lets
+      {/* Search Bar — real input with its results attached underneath
+          (SearchDropdown), not a pop-out modal. min-w-0 on both wrappers lets
           it shrink below its placeholder's min-content width on narrow
           screens instead of pushing the action cluster off-canvas. */}
       <div className="flex min-w-0 flex-1 items-center justify-center px-1 sm:px-4">
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={handleOpenSearchModal}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              handleOpenSearchModal();
-            }
-          }}
-          className="relative flex h-10 w-full min-w-0 max-w-xl cursor-pointer items-center rounded-2xl border border-[var(--surface-border)] bg-[var(--page)] shadow-xs transition-colors hover:bg-[var(--surface-hover)] focus-within:border-[var(--accent)] focus-within:bg-[var(--surface)] focus-within:ring-2 focus-within:ring-[var(--accent)]/15"
-        >
-          <Search
-            className="pointer-events-none absolute left-3.5 h-4 w-4 shrink-0 text-[var(--text-muted)]"
-            aria-hidden="true"
-          />
-          <span className="w-full min-w-0 truncate py-2 pl-9 pr-10 text-[13px] font-medium text-[var(--text-muted)] sm:pr-16">
-            {searchQuery || copy.topBar.searchPlaceholder}
-          </span>
-          <kbd
-            className="pointer-events-none absolute right-2.5 hidden select-none items-center gap-0.5 rounded-lg border border-[var(--surface-border)] bg-[var(--surface)] px-2 py-0.5 text-[11px] font-semibold text-[var(--text-muted)] shadow-xs tabular-nums sm:flex"
-            aria-hidden="true"
-          >
-            {copy.topBar.searchShortcut}
-          </kbd>
-        </div>
+        <SearchDropdown />
       </div>
 
       {/* Action Controls — v4 order: Sync, Data & Backup, theme, Settings, account */}
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-        {/* Sync Button — v4 blue-tinted scan button */}
+        {/* Sync Button — primary blue-tinted scan CTA with WCAG AA >= 5.8:1 text */}
         <button
           type="button"
           onClick={handleSyncClick}
           disabled={syncStatus === "syncing"}
           aria-label={syncLabel}
-          className="flex h-9 items-center gap-1.5 rounded-lg border border-blue-200/60 bg-[#e8f0fe] px-3 text-xs font-semibold text-[#1a73e8] transition hover:bg-[#d2e3fc] active:scale-[0.98] disabled:opacity-60 dark:border-blue-800/60 dark:bg-blue-950/70 dark:text-blue-400 dark:hover:bg-blue-900/70"
+          className="flex h-9 items-center gap-1.5 rounded-lg border border-blue-200/80 bg-[#e8f0fe] px-3 text-xs font-semibold text-[#1557b0] transition hover:bg-[#d2e3fc] active:scale-[0.98] disabled:opacity-60 dark:border-blue-800/60 dark:bg-blue-950/70 dark:text-blue-300 dark:hover:bg-blue-900/70"
         >
           <RefreshCw
             className={`h-3.5 w-3.5 ${syncStatus === "syncing" ? "animate-spin" : ""}`}
@@ -379,15 +415,15 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenSearch, on
           <span className="hidden sm:inline">{syncLabel}</span>
         </button>
 
-        {/* On-device engine & local backup — v4 `#top-cloud-sync-btn` */}
+        {/* On-device engine & local backup — refined surface button with emerald accent icon */}
         <button
           type="button"
-          onClick={() => openModal({ id: "cloud-sync", size: "lg" })}
+          onClick={() => openModal({ id: "cloud-sync" })}
           title={copy.topBar.dataBackupTitle}
-          className="hidden h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-emerald-200/70 bg-emerald-50 px-2.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 active:scale-[0.98] md:flex sm:px-3 dark:border-emerald-800/60 dark:bg-emerald-950/60 dark:text-emerald-300 dark:hover:bg-emerald-900/60"
+          className="hidden h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--surface-border)] bg-[var(--surface)] px-2.5 text-xs font-semibold text-[var(--text)] transition hover:bg-[var(--surface-hover)] active:scale-[0.98] md:flex sm:px-3"
         >
           <Database
-            className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400"
+            className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-400"
             aria-hidden="true"
           />
           <span>{copy.topBar.dataBackup}</span>
@@ -412,7 +448,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenSearch, on
           type="button"
           onClick={handleSettingsClick}
           aria-label={copy.topBar.settingsAria}
-          className="group flex h-9 items-center gap-1.5 rounded-lg border border-[var(--surface-border)] px-2.5 text-xs font-semibold text-[var(--text)] transition hover:bg-[var(--surface-hover)] active:scale-95 sm:px-3"
+          className="group hidden h-9 items-center gap-1.5 rounded-lg border border-[var(--surface-border)] px-2.5 text-xs font-semibold text-[var(--text)] transition hover:bg-[var(--surface-hover)] active:scale-95 sm:flex sm:px-3"
         >
           <span className="settings-btn-stage">
             <Settings
@@ -423,22 +459,23 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenSearch, on
           <span className="hidden md:inline">{copy.topBar.settings}</span>
         </button>
 
-        {/* User Chip — v4 account pill */}
+        {/* User Chip — v4 account pill with graceful avatar fallback */}
         <button
           type="button"
           onClick={handleUserClick}
           aria-label={auth.authenticated ? `Account: ${displayName}` : copy.topBar.userSignIn}
           className="flex h-9 items-center gap-2 rounded-lg border border-[var(--surface-border)] px-1.5 pr-2.5 transition hover:bg-[var(--surface-hover)] active:scale-95 sm:pr-2.5"
         >
-          {auth.picture || config.userPicture ? (
+          {avatarUrl && !avatarError ? (
             <img
-              src={auth.picture || config.userPicture || ""}
+              src={avatarUrl}
               alt=""
+              onError={() => setAvatarError(true)}
               className="h-6 w-6 rounded-md object-cover"
               aria-hidden="true"
             />
           ) : (
-            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--accent)] text-xs font-semibold text-white">
+            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--accent-fill)] text-xs font-semibold text-white">
               {displayName.slice(0, 1).toUpperCase()}
             </span>
           )}

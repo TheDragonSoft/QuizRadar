@@ -9,7 +9,13 @@
  * (v4-final:static/icon.svg), inlined so the shell can tint/scale it without
  * an extra network request.
  */
-export function RadarMark({ className = "h-8 w-8" }: { className?: string }) {
+export function RadarMark({
+  className = "h-8 w-8",
+  animated = false,
+}: {
+  className?: string;
+  animated?: boolean;
+}) {
   return (
     <svg className={`${className} shrink-0`} viewBox="0 0 256 256" aria-hidden="true">
       <defs>
@@ -79,18 +85,26 @@ export function RadarMark({ className = "h-8 w-8" }: { className?: string }) {
         strokeWidth="4"
         fill="none"
       />
-      <path d="M128 136 L128 60 A76 76 0 0 1 198 106 Z" fill="url(#qrMarkSweep)" />
-      <line
-        x1="128"
-        y1="136"
-        x2="184"
-        y2="84"
-        stroke="#facc15"
-        strokeWidth="6"
-        strokeLinecap="round"
-      />
+
+      {/* Sweep cone + gold needle */}
+      <g className={animated ? "radar-sweep-hand" : undefined}>
+        <path d="M128 136 L128 60 A76 76 0 0 1 198 106 Z" fill="url(#qrMarkSweep)" />
+        <line
+          x1="128"
+          y1="136"
+          x2="184"
+          y2="84"
+          stroke="#facc15"
+          strokeWidth="6"
+          strokeLinecap="round"
+        />
+      </g>
+
+      {/* Center radar hub */}
       <circle cx="128" cy="136" r="10" fill="#ffffff" />
       <circle cx="128" cy="136" r="5" fill="#1d4ed8" />
+
+      {/* Detected exam blips */}
       <circle cx="174" cy="93" r="9" fill="#facc15" />
       <circle
         cx="174"
@@ -100,6 +114,7 @@ export function RadarMark({ className = "h-8 w-8" }: { className?: string }) {
         strokeOpacity="0.45"
         strokeWidth="3"
         fill="none"
+        className={animated ? "radar-blip-pulse" : undefined}
       />
       <circle cx="92" cy="112" r="6.5" fill="#34d399" />
       <circle cx="156" cy="166" r="6.5" fill="#f87171" />

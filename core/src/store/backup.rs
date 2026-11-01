@@ -38,9 +38,12 @@ pub const PAYLOAD_SCHEMA_VERSION: u32 = 1;
 /// refused to cut — a truncated push would parse as nothing and silently
 /// vanish, worse than an error). v5 keeps the *policy* on the Drive push:
 /// a payload over budget is refused loudly instead of partially written.
-/// Drive itself has no size cap; this knob stays at the v4 boundary and can
-/// be raised in one line if real semesters genuinely outgrow it.
-pub const REFUSE_TRUNCATE_BYTES: usize = 8_000;
+/// The 8 KB boundary itself belonged to v4's calendar-event fallback channel,
+/// not to whole-dataset pushes — a single real semester (topics, study plans,
+/// grades, stamps) is far bigger, so capping the Drive push at 8 KB made
+/// cloud backup dead on arrival. The budget is now a generous 32 MB: still a
+/// hard stop against runaway payloads, effectively "Drive's own limits".
+pub const REFUSE_TRUNCATE_BYTES: usize = 32_000_000;
 
 /// Refuses oversize payloads instead of truncating them. `Ok` also asserts
 /// the payload parses back — a push that could never be pulled is data loss
@@ -171,28 +174,21 @@ pub(crate) fn merge_backup_payload(
     payload: &BackupPayload,
     now: &str,
 ) -> Result<MergeReport, StoreError> {
+    // A pull must never silently mis-merge a payload written by a newer
+    // build (field-defaults would fabricate empty sections for shapes this
+    // build does not know).
+    if payload.schema_version > PAYLOAD_SCHEMA_VERSION {
+        return Err(StoreError::Validation(format!(
+            "This backup was written by a newer build (payload schema {}, this build understands {}). \
+             Update QuizRadar before pulling it.",
+            payload.schema_version, PAYLOAD_SCHEMA_VERSION
+        )));
+    }
     let mut report = MergeReport::default();
     {
         let tx = db.transaction()?;
         let topic_repo = TopicRepo::new(&tx);
         report.topics_merged = topic_repo.merge_additive(&payload.completed_topics, now)?;
-
-        let grade_repo = GradeRepo::new(&tx);
-        let grade_stamps = grade_repo.record_stamps()?;
-        for (id, record) in &payload.grades {
-            let local_newer = grade_stamps.get(id).is_some_and(|local| {
-                local.as_str()
-                    >= payload
-                        .record_stamps
-                        .grades
-                        .get(id)
-                        .map(String::as_str)
-                        .unwrap_or("")
-            });
-            if !local_newer && grade_repo.merge_upsert(id, record, now)? {
-                report.grades_merged += 1;
-            }
-        }
 
         let assessment_repo = AssessmentRepo::new(&tx);
         let local_stamps = assessment_repo.record_stamps()?;
@@ -213,6 +209,26 @@ pub(crate) fn merge_backup_payload(
             }
             assessment_repo.upsert(assessment, &remote_stamp)?;
             report.assessments_replaced += 1;
+        }
+
+        // Grades merge AFTER the assessments exist — `merge_upsert` refuses
+        // grade rows for assessments that exist nowhere, so a fresh-device
+        // restore must not merge grades first.
+        let grade_repo = GradeRepo::new(&tx);
+        let grade_stamps = grade_repo.record_stamps()?;
+        for (id, record) in &payload.grades {
+            let local_newer = grade_stamps.get(id).is_some_and(|local| {
+                local.as_str()
+                    >= payload
+                        .record_stamps
+                        .grades
+                        .get(id)
+                        .map(String::as_str)
+                        .unwrap_or("")
+            });
+            if !local_newer && grade_repo.merge_upsert(id, record, now)? {
+                report.grades_merged += 1;
+            }
         }
 
         let event_repo = EventRepo::new(&tx);
@@ -256,12 +272,18 @@ pub(crate) fn merge_backup_payload(
             report.feeds_upserted += 1;
         }
 
-        // Schedule: replace-if-newer on the dataset stamp (`None` local = a
-        // fresh device, which accepts any populated remote schedule).
+        // Schedule: replace-if-newer on the dataset stamp (`None`/empty local
+        // = a fresh device, which accepts any populated remote schedule).
+        // Equal stamps do NOT replace: an equal stamp carries no information
+        // that the remote row is newer, and overwriting on equality clobbers
+        // local edits made within the same stamp resolution.
         let meta = MetaRepo::new(&tx);
         let local_schedule_stamp = meta.schedule_updated_at()?.unwrap_or_default();
         let remote_schedule_stamp = payload.record_stamps.schedule.clone().unwrap_or_default();
-        if !payload.schedule.courses.is_empty() && remote_schedule_stamp >= local_schedule_stamp {
+        let local_schedule_fresh = local_schedule_stamp.is_empty();
+        if !payload.schedule.courses.is_empty()
+            && (local_schedule_fresh || remote_schedule_stamp > local_schedule_stamp)
+        {
             CourseRepo::new(&tx).save_all(&payload.schedule, &remote_schedule_stamp)?;
             meta.set_schedule_updated_at(&remote_schedule_stamp)?;
             match payload

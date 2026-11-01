@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
 import type { ModalInstance } from "../state/types";
-import { getModalComponent } from "./modalRegistry";
+import { getModalComponent, getModalMeta } from "./modalRegistry";
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -19,7 +19,6 @@ const MODAL_TITLE_IDS: Record<string, string> = {
   "assessment-detail": "assessment-detail-title",
   onboarding: "onboarding-wizard-title",
   settings: "settings-modal-title",
-  search: "search-palette-title",
   "practice-quiz": "practice-quiz-title",
   pomodoro: "pomodoro-modal-title",
   "schedule-preview": "schedule-preview-title",
@@ -93,6 +92,7 @@ const ModalLayer: React.FC<ModalLayerProps> = ({ modal, index, isTop, onClose })
   }, [isTop]);
 
   const Component = getModalComponent(modal.id);
+  const meta = getModalMeta(modal.id);
 
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target === e.currentTarget && modal.dismissible !== false) {
@@ -101,27 +101,44 @@ const ModalLayer: React.FC<ModalLayerProps> = ({ modal, index, isTop, onClose })
   };
 
   const zIndex = 50 + index * 5;
+  const resolvedSize = modal.size ?? meta?.size ?? "md";
+  const resolvedFlush = modal.flush ?? meta?.flush ?? false;
   const panelWidth =
-    modal.size === "lg" ? "max-w-2xl" : modal.size === "sm" ? "max-w-md" : "max-w-lg";
+    resolvedSize === "xl"
+      ? "max-w-3xl"
+      : resolvedSize === "lg"
+        ? "max-w-2xl"
+        : resolvedSize === "sm"
+          ? "max-w-md"
+          : "max-w-lg";
 
   return (
     <div
       role="presentation"
+      aria-hidden={!isTop}
       style={{ zIndex }}
       onClick={handleBackdropClick}
-      className="modal-backdrop fixed inset-0 flex items-center justify-center bg-slate-950/60 p-0 backdrop-blur-xs md:p-4"
+      className={
+        isTop
+          ? `modal-backdrop fixed inset-0 flex items-center justify-center ${
+              index === 0 ? "bg-slate-950/65 backdrop-blur-xs" : "bg-black/30"
+            } p-0 md:p-4`
+          : `fixed inset-0 flex items-center justify-center p-0 md:p-4 pointer-events-none transition-all duration-300`
+      }
     >
       <div
         ref={containerRef}
-        role="dialog"
-        aria-modal="true"
+        role={isTop ? "dialog" : undefined}
+        aria-modal={isTop ? "true" : undefined}
         aria-labelledby={MODAL_TITLE_IDS[modal.id]}
         tabIndex={-1}
         data-testid={`modal-${modal.id}`}
-        className={`modal-panel relative flex max-h-[92vh] w-full ${panelWidth} flex-col overflow-hidden rounded-t-[28px] border border-[var(--surface-border)] bg-[var(--surface)] shadow-2xl focus:outline-none md:max-h-[85vh] md:rounded-2xl ${
-          modal.flush ? "" : "p-6"
-        }`}
+        className={`modal-panel relative flex max-h-[92vh] w-full ${panelWidth} flex-col overflow-clip rounded-t-[28px] border border-[var(--surface-border)] bg-[var(--surface)] shadow-2xl focus:outline-none md:max-h-[85vh] md:rounded-2xl transition-all duration-300 ${
+          isTop ? "" : "scale-[0.96] -translate-y-2.5 opacity-60 brightness-90 pointer-events-none"
+        } ${resolvedFlush ? "" : "p-6"}`}
       >
+        {/* Mobile bottom sheet grab handle */}
+        <div className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-slate-300/80 dark:bg-slate-700/80 md:hidden" />
         {/* No default close button here: every registered modal draws its own
             single X in its header (v4 style). The stack used to add a second
             one, so every dialog showed two X buttons. */}

@@ -154,8 +154,21 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      # `tooling/build-android-libs.mjs` (run by the Gradle `buildAndroidRustLibs`
+      # task) is a Node script, so the Android job needs Node on PATH too.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          # The APK is a Kotlin shell around the Rust core (UniFFI): without
+          # these targets `assembleDebug` cannot cross-build
+          # libquizradar_core.so, and the APK would not even start.
+          targets: aarch64-linux-android, x86_64-linux-android
       - uses: Swatinem/rust-cache@v2
+      - uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: "27.1.12297006"
       - name: build native core cdylib for tests
         run: cargo build -p quizradar-core --features uniffi
       - uses: gradle/actions/setup-gradle@v4
@@ -168,6 +181,34 @@ jobs:
       - name: unit tests
         run: ./gradlew testDebugUnitTest
         working-directory: apps/mobile-android
+      - name: the debug APK must ship the native core
+        run: |
+          unzip -l apps/mobile-android/app/build/outputs/apk/debug/app-debug.apk \
+            | grep -E "lib/(arm64-v8a|x86_64)/libquizradar_core\.so"
+          # Only the ABIs the core is cross-built for may be advertised: a
+          # 32-bit device would install this APK and then crash with an
+          # UnsatisfiedLinkError the moment the core is called.
+          if unzip -l apps/mobile-android/app/build/outputs/apk/debug/app-debug.apk \
+            | grep -E "lib/(armeabi|armeabi-v7a|mips|mips64|x86)/"; then
+            echo "::error::the APK advertises ABIs the Rust core is not built for"
+            exit 1
+          fi
+      # The release build is the one that ships, and it has its own R8
+      # configuration (shrinking + obfuscation). A broken release ProGuard
+      # rule only shows up in a release build, so CI builds one too.
+      - name: assembleRelease
+        run: ./gradlew assembleRelease
+        working-directory: apps/mobile-android
+      - name: the release APK must ship the native core
+        run: |
+          APK=$(ls apps/mobile-android/app/build/outputs/apk/release/app-release*.apk | head -1)
+          unzip -l "$APK" \
+            | grep -E "lib/(arm64-v8a|x86_64)/libquizradar_core\.so"
+          if unzip -l "$APK" \
+            | grep -E "lib/(armeabi|armeabi-v7a|mips|mips64|x86)/"; then
+            echo "::error::the release APK advertises ABIs the Rust core is not built for"
+            exit 1
+          fi
 
   coverage:
     name: coverage (rust + web ratchet)

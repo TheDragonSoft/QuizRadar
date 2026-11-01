@@ -6,7 +6,6 @@
 
 use std::collections::HashMap;
 
-use chrono::Duration;
 use quizradar_core::plan::dashboard::{topic_key, DashboardSummary};
 use quizradar_core::plan::study_blocks::{block_date_for, block_id_for, study_block_candidates};
 use quizradar_core::plan::tasks::StudyTasksPayload;
@@ -17,7 +16,7 @@ use quizradar_core::types::{
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::keyring::{KEY_GOOGLE_REFRESH_TOKEN, KEY_MICROSOFT_REFRESH_TOKEN};
+use crate::keyring::{KEY_GEMINI_API_KEY, KEY_GOOGLE_REFRESH_TOKEN, KEY_MICROSOFT_REFRESH_TOKEN};
 use crate::state::AppState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +26,10 @@ pub struct DesktopConfig {
     pub sync_weekly_classes_to_gcal: bool,
     pub gemini_enabled: bool,
     pub onboarding_completed: bool,
+    /// The onboarding "academic rhythm" preset (`01` §4.1: the
+    /// track/rhythm chips are **persisted**). `None` means the user never
+    /// chose one — the UI shows that honestly instead of inventing a default.
+    pub academic_track: Option<String>,
     pub teams_enabled: bool,
     pub teams_client_id: Option<String>,
     pub teams_account_name: Option<String>,
@@ -79,6 +82,7 @@ pub struct ConfigUpdate {
     pub sync_weekly_classes_to_gcal: Option<bool>,
     pub gemini_enabled: Option<bool>,
     pub onboarding_completed: Option<bool>,
+    pub academic_track: Option<String>,
     pub teams_enabled: Option<bool>,
     pub teams_client_id: Option<String>,
     pub teams_account_name: Option<String>,
@@ -176,11 +180,11 @@ pub async fn build_full_state(state: &AppState) -> Result<GetStatePayload, Strin
             .get_config_bool("sync_weekly_classes_to_gcal".to_string(), false)
             .await
             .unwrap_or(false),
-        gemini_enabled: state
-            .keyring
-            .get_secret(crate::keyring::KEY_GEMINI_API_KEY)
-            .unwrap_or(None)
-            .is_some()
+        // `get_gemini_api_key` accepts the keyring value AND the documented
+        // private-install seeds (`QUIZRADAR_GEMINI_API_KEY`, `gemini.key`) —
+        // keyring-only presence reported AI as permanently off for seeded
+        // installs while the AI commands actually worked.
+        gemini_enabled: state.get_gemini_api_key().ok().flatten().is_some()
             && state
                 .store
                 .get_config_bool("gemini_enabled".to_string(), true)
@@ -191,6 +195,11 @@ pub async fn build_full_state(state: &AppState) -> Result<GetStatePayload, Strin
             .get_config_bool("onboarding_completed".to_string(), false)
             .await
             .unwrap_or(false),
+        academic_track: state
+            .store
+            .get_config_string("academic_track".to_string())
+            .await
+            .unwrap_or(None),
         teams_enabled: has_teams_auth
             && state
                 .store
@@ -248,7 +257,9 @@ pub async fn build_full_state(state: &AppState) -> Result<GetStatePayload, Strin
             .get_dismiss_conflict_banner()
             .await
             .unwrap_or(false),
-        synced_gcal_map: HashMap::new(),
+        // The real Calendar idempotency map: without it the UI's push report
+        // and the next push would both believe nothing was ever synced.
+        synced_gcal_map: state.store.synced_gcal_map().await.unwrap_or_default(),
         feeds: snapshot.feeds.clone(),
         custom_events: snapshot.custom_events.clone(),
         // The real sync stamps (`kv_meta`): written by the scan / Calendar
@@ -357,6 +368,22 @@ pub async fn update_config(
         state
             .store
             .set_config_bool("onboarding_completed".to_string(), v)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = update.academic_track {
+        // The track is a preset the user picked, not a free-text field: an
+        // unknown value is stored as-is (the UI falls back to "unknown"),
+        // but an empty one is not stored — "no choice" stays `None`.
+        let trimmed = v.trim().to_string();
+        let value = if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        };
+        state
+            .store
+            .set_config_string("academic_track".to_string(), value)
             .await
             .map_err(|e| e.to_string())?;
     }
@@ -492,6 +519,22 @@ pub async fn reset_database(state: State<'_, AppState>) -> Result<GetStatePayloa
         .await
         .map_err(|e| format!("Failed to reset database: {e}"))?;
     state.clear_memory_tokens().await;
+    // "Reset all local data" must also drop the OS-keyring secrets: wiping
+    // only the SQLite rows left the app signed in to Google/Teams with the
+    // Gemini key still stored - a reset that leaves the keys behind is not a
+    // reset. The bundled Google client-secret override is configuration, not
+    // user data, so it stays (the app falls back to its compiled default).
+    for key in [
+        KEY_GOOGLE_REFRESH_TOKEN,
+        KEY_MICROSOFT_REFRESH_TOKEN,
+        KEY_GEMINI_API_KEY,
+    ] {
+        if let Err(err) = state.keyring.delete_secret(key) {
+            // A keyring that refuses to delete must fail loudly - claiming a
+            // clean reset while the secret survives would be a lie.
+            return Err(format!("Failed to clear keyring entry {key}: {err}"));
+        }
+    }
     build_full_state(&state).await
 }
 
@@ -530,6 +573,10 @@ pub async fn toggle_topic(
     state: State<'_, AppState>,
     assessment_id: String,
     topic_idx: usize,
+    // The UI sends the value it optimistically applied; a read-modify-write
+    // here loses one of two overlapping toggles. `None` keeps the legacy
+    // invert behavior for callers that don't send it.
+    completed: Option<bool>,
 ) -> Result<GetStatePayload, String> {
     let today = state.today();
     let now = state.now_iso();
@@ -540,12 +587,17 @@ pub async fn toggle_topic(
         .map_err(|e| format!("Failed to read state: {e}"))?;
 
     let key = topic_key(&assessment_id, topic_idx);
-    let current_done = snapshot
-        .completed_topics
-        .get(&key)
-        .copied()
-        .unwrap_or(false);
-    let next_done = !current_done;
+    let next_done = match completed {
+        Some(explicit) => explicit,
+        None => {
+            let current_done = snapshot
+                .completed_topics
+                .get(&key)
+                .copied()
+                .unwrap_or(false);
+            !current_done
+        }
+    };
 
     state
         .store
@@ -645,7 +697,9 @@ pub async fn schedule_study_blocks(
         None => snapshot
             .assessments
             .iter()
-            .filter(|a| a.is_upcoming && a.days_until.is_some_and(|d| (0..=7).contains(&d)))
+            // The same seven-day window the "Next 7 days" KPI counts
+            // (today + six) - the old `0..=7` was eight days long.
+            .filter(|a| a.is_upcoming && a.days_until.is_some_and(|d| (0..=6).contains(&d)))
             .collect(),
     };
 
@@ -655,7 +709,11 @@ pub async fn schedule_study_blocks(
             continue;
         }
 
-        let exam_date = a.date.unwrap_or_else(|| today + Duration::days(1));
+        // Undated assessments are unschedulable: inventing "tomorrow" would
+        // fabricate an exam eve the radar itself says is unconfirmed.
+        let Some(exam_date) = a.date else {
+            continue;
+        };
         let block_date = block_date_for(exam_date);
         let candidates =
             study_block_candidates(&snapshot.schedule, &snapshot.custom_events, block_date);
@@ -674,10 +732,14 @@ pub async fn schedule_study_blocks(
                 color: Some("#10b981".to_string()),
             };
 
-            let _ = state
+            // A failed write must fail loudly - the UI reports what actually
+            // happened, so a swallowed error would claim a block that is not
+            // there.
+            state
                 .store
                 .upsert_custom_event(event, now.clone(), today)
-                .await;
+                .await
+                .map_err(|e| format!("Failed to save the study block: {e}"))?;
         }
     }
 

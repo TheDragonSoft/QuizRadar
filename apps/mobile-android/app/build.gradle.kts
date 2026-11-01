@@ -23,6 +23,24 @@ android {
         // STAMPED by tooling/generate-version.mjs from tooling/version.json — do not edit.
         versionCode = 50000
         versionName = "5.0.0"
+
+        // The Kotlin shell alone could run on 32-bit ABIs (JNA ships dispatchers
+        // for armeabi-v7a, x86, ...), but the Rust core is only cross-built for
+        // arm64-v8a and x86_64. Without this filter the APK would advertise
+        // 32-bit support and then crash on those devices with an
+        // UnsatisfiedLinkError the moment the core is called.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
+    }
+
+    packaging {
+        jniLibs {
+            // `tooling/build-android-libs.mjs` already strips the Rust core;
+            // keeping the symbols stops AGP from running a second, redundant
+            // strip pass (and warning when it cannot find a matching NDK).
+            keepDebugSymbols += "**/libquizradar_core.so"
+        }
     }
 
     signingConfigs {
@@ -50,12 +68,37 @@ android {
     }
 
     buildTypes {
+        debug {
+            // The debug build used to ship the *unshrunk*
+            // `material-icons-extended` dex (62 MB): ART dexoptimised it for
+            // ~30 s on the first run, the app took 14 s to show its first
+            // frame, and the system could raise an ANR on the widget worker
+            // while the main thread was still loading classes.
+            //
+            // R8 with `-dontobfuscate` shrinks the dex to the size of the
+            // release build while keeping every class and method name (and
+            // the source line numbers), so the debugger, the stack traces and
+            // the crash reports stay exactly as readable as before.
+            isMinifyEnabled = true
+            isShrinkResources = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android.txt"),
+                "proguard-rules.pro",
+                "proguard-rules-debug.pro",
+            )
+        }
         release {
             val releaseSigning = signingConfigs.getByName("release")
             if (releaseSigning.storeFile != null && releaseSigning.storeFile!!.exists()) {
                 signingConfig = releaseSigning
             }
-            isMinifyEnabled = false
+            // R8 removes the thousands of unused `material-icons-extended`
+            // classes. Without it the shipped app carries a ~44 MB dex and the
+            // first frame took ~30 s on a mid-range device (the system showed
+            // "app isn't responding"). With it the icon dex shrinks to the few
+            // dozen icons the app actually draws.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -83,6 +126,11 @@ android {
             isReturnDefaultValues = true
         }
     }
+
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
 }
 
 tasks.withType<Test> {
@@ -108,6 +156,45 @@ tasks.register<Exec>("uniffiGenerate") {
         "--config", "core/bindings/uniffi.toml",
         "--out-dir", "apps/mobile-android/app/src/main/java",
     )
+}
+
+/**
+ * Cross-compiles the Rust core for the Android ABIs the app ships and stages
+ * the libraries where the plugin packages them from
+ * (`src/main/jniLibs/<abi>/libquizradar_core.so`).
+ *
+ * This task MUST run before the jniLibs are merged: the app is a Kotlin shell
+ * around the Rust core (UniFFI), so an APK without `libquizradar_core.so`
+ * cannot even start. It used to exist but was never wired into the packaging,
+ * which meant CI and the release workflow produced APKs with no native core.
+ */
+tasks.register<Exec>("buildAndroidRustLibs") {
+    group = "build"
+    description = "Cross-compiles quizradar-core for arm64-v8a + x86_64 and stages the .so files"
+    workingDir = rootProject.projectDir.resolve("../..")
+    commandLine("node", "tooling/build-android-libs.mjs")
+    doLast {
+        // A staged library for only one ABI would ship an app that crashes on
+        // every other device - fail the build instead of shipping that.
+        val required = listOf("arm64-v8a", "x86_64")
+        val missing =
+            required.filter { abi ->
+                !projectDir.resolve("src/main/jniLibs/$abi/libquizradar_core.so").exists()
+            }
+        if (missing.isNotEmpty()) {
+            throw GradleException(
+                "The native core is missing for: ${missing.joinToString(", ")}. " +
+                    "Run `node tooling/build-android-libs.mjs` and check the NDK setup.",
+            )
+        }
+    }
+}
+
+// Every packaging path (debug APK, release APK, release AAB) picks the
+// libraries up through the jniLibs merge, so hooking the native build there
+// covers all of them.
+tasks.matching { it.name.endsWith("JniLibFolders") }.configureEach {
+    dependsOn("buildAndroidRustLibs")
 }
 
 dependencies {

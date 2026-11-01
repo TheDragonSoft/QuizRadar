@@ -1,6 +1,7 @@
 /**
  * In-memory IndexedDB mock for unit tests in Node/JSDOM environments.
  */
+import { resetIdbForTests } from "../pwadapters/idbStore";
 
 interface MockRequest<T = unknown> {
   result: T;
@@ -138,6 +139,7 @@ export function setupMockIndexedDb(): () => void {
   const globalScope = globalThis as unknown as { indexedDB?: unknown };
   const originalGlobalIdb = globalScope.indexedDB;
   globalScope.indexedDB = idb;
+  resetIdbForTests();
 
   const windowScope =
     typeof window !== "undefined" ? (window as unknown as { indexedDB?: unknown }) : null;
@@ -146,6 +148,7 @@ export function setupMockIndexedDb(): () => void {
   }
 
   return () => {
+    resetIdbForTests();
     globalScope.indexedDB = originalGlobalIdb;
     if (windowScope) {
       windowScope.indexedDB = originalGlobalIdb;

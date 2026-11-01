@@ -25,7 +25,6 @@ pub struct ExportBackupResult {
 pub async fn export_backup_file(
     app: AppHandle,
     state: State<'_, AppState>,
-    path: Option<String>,
 ) -> Result<ExportBackupResult, String> {
     let now = state.now_iso();
     let today = state.today();
@@ -36,20 +35,19 @@ pub async fn export_backup_file(
         .await
         .map_err(|e| format!("Failed to generate backup JSON: {e}"))?;
 
-    let target_path: Option<PathBuf> = match path {
-        Some(p) => Some(PathBuf::from(p)),
-        None => {
-            // Open native OS file-save dialog
-            let file_path = app
-                .dialog()
-                .file()
-                .set_file_name("quizradar-backup.json")
-                .add_filter("JSON Backup", &["json"])
-                .blocking_save_file();
-
-            file_path.and_then(|p| p.as_path().map(PathBuf::from))
-        }
-    };
+    // The destination comes ONLY from the native OS save dialog. The webview
+    // never supplies a path: an IPC-supplied path would let a compromised
+    // renderer overwrite any user-writable file with attacker-influenced JSON.
+    let target_path = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .set_file_name("quizradar-backup.json")
+            .add_filter("JSON Backup", &["json"])
+            .blocking_save_file()
+            .and_then(|p| p.as_path().map(PathBuf::from))
+    })
+    .await
+    .map_err(|e| format!("Save dialog failed: {e}"))?;
 
     match target_path {
         Some(dest) => {
@@ -73,7 +71,6 @@ pub async fn export_backup_file(
 pub async fn import_backup_file(
     app: AppHandle,
     state: State<'_, AppState>,
-    path: Option<String>,
     json_content: Option<String>,
 ) -> Result<ImportReport, String> {
     let now = state.now_iso();
@@ -82,17 +79,17 @@ pub async fn import_backup_file(
     let content = if let Some(text) = json_content {
         text
     } else {
-        let source_path: Option<PathBuf> = match path {
-            Some(p) => Some(PathBuf::from(p)),
-            None => {
-                let file_path = app
-                    .dialog()
-                    .file()
-                    .add_filter("JSON Backup", &["json"])
-                    .blocking_pick_file();
-                file_path.and_then(|p| p.as_path().map(PathBuf::from))
-            }
-        };
+        // Dialog-only file access: an IPC-supplied path would be an
+        // arbitrary-file read (and, via a crafted backup, a data wipe).
+        let source_path = tauri::async_runtime::spawn_blocking(move || {
+            app.dialog()
+                .file()
+                .add_filter("JSON Backup", &["json"])
+                .blocking_pick_file()
+                .and_then(|p| p.as_path().map(PathBuf::from))
+        })
+        .await
+        .map_err(|e| format!("Open dialog failed: {e}"))?;
 
         match source_path {
             Some(p) => fs::read_to_string(&p)

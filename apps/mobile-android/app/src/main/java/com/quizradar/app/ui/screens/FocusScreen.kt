@@ -1,13 +1,16 @@
 package com.quizradar.app.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,8 +19,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
@@ -32,12 +37,12 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,22 +51,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quizradar.app.model.AppSnapshotModel
+import com.quizradar.app.ui.PomodoroInterval
 import com.quizradar.app.ui.QuizRadarViewModel
-import kotlinx.coroutines.delay
 
 private enum class FocusMode {
     POMODORO,
     PRACTICE_QUIZ,
-}
-
-private enum class PomodoroInterval(val minutes: Int, val label: String) {
-    POMODORO(25, "Pomodoro"),
-    SHORT_BREAK(5, "Short Break"),
-    LONG_BREAK(15, "Long Break"),
 }
 
 @Composable
@@ -70,28 +73,30 @@ fun FocusScreen(
     viewModel: QuizRadarViewModel,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     var mode by remember { mutableStateOf(FocusMode.POMODORO) }
 
-    // Pomodoro timer state
-    var selectedInterval by remember { mutableStateOf(PomodoroInterval.POMODORO) }
-    var secondsLeft by remember(selectedInterval) { mutableIntStateOf(selectedInterval.minutes * 60) }
-    var isRunning by remember { mutableStateOf(false) }
+    // Pomodoro timer state from ViewModel (persists across tabs and app lifecycle)
+    val selectedInterval by viewModel.pomodoroInterval.collectAsState()
+    val secondsLeft by viewModel.pomodoroSecondsLeft.collectAsState()
+    val isRunning by viewModel.pomodoroIsRunning.collectAsState()
 
     val activePomodoroAssessmentId by viewModel.activePomodoroAssessmentId.collectAsState()
     val activePomodoroTopic by viewModel.activePomodoroTopic.collectAsState()
+    val activePomodoroTopicIndex by viewModel.activePomodoroTopicIndex.collectAsState()
 
     // Practice quiz state
+    val activePracticeId by viewModel.activePracticeAssessmentId.collectAsState()
     val practiceQuiz by viewModel.practiceQuiz.collectAsState()
+    val practiceQuizError by viewModel.practiceQuizError.collectAsState()
     val isPracticeLoading by viewModel.isPracticeLoading.collectAsState()
     val userAnswers = remember { mutableStateMapOf<String, Int>() }
 
-    // Pomodoro tick loop
-    LaunchedEffect(isRunning, secondsLeft) {
-        if (isRunning && secondsLeft > 0) {
-            delay(1000)
-            secondsLeft -= 1
-        } else if (isRunning && secondsLeft == 0) {
-            isRunning = false
+    // If AssessmentDetailSheet launched Practice Quiz, switch straight to PRACTICE_QUIZ tab
+    LaunchedEffect(activePracticeId) {
+        if (activePracticeId != null) {
+            mode = FocusMode.PRACTICE_QUIZ
         }
     }
 
@@ -101,7 +106,7 @@ fun FocusScreen(
                 .fillMaxSize()
                 .padding(horizontal = 16.dp),
     ) {
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Top Switcher: Pomodoro vs Practice Quiz
         Row(
@@ -110,15 +115,26 @@ fun FocusScreen(
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.surface)
-                    .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
+                    .border(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant,
+                        RoundedCornerShape(12.dp),
+                    )
                     .padding(4.dp),
         ) {
             Row(
                 modifier =
                     Modifier
                         .weight(1f)
+                        .defaultMinSize(minHeight = 44.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(if (mode == FocusMode.POMODORO) MaterialTheme.colorScheme.primary else Color.Transparent)
+                        .background(
+                            if (mode == FocusMode.POMODORO) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                Color.Transparent
+                            },
+                        )
                         .clickable { mode = FocusMode.POMODORO }
                         .padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.Center,
@@ -127,15 +143,25 @@ fun FocusScreen(
                 Icon(
                     imageVector = Icons.Outlined.Timer,
                     contentDescription = null,
-                    tint = if (mode == FocusMode.POMODORO) Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    tint =
+                        if (mode == FocusMode.POMODORO) {
+                            MaterialTheme.colorScheme.onPrimary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                     modifier = Modifier.size(16.dp),
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = "Pomodoro Timer",
                     fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (mode == FocusMode.POMODORO) Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    fontWeight = if (mode == FocusMode.POMODORO) FontWeight.Bold else FontWeight.SemiBold,
+                    color =
+                        if (mode == FocusMode.POMODORO) {
+                            MaterialTheme.colorScheme.onPrimary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                 )
             }
 
@@ -143,8 +169,15 @@ fun FocusScreen(
                 modifier =
                     Modifier
                         .weight(1f)
+                        .defaultMinSize(minHeight = 44.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(if (mode == FocusMode.PRACTICE_QUIZ) MaterialTheme.colorScheme.primary else Color.Transparent)
+                        .background(
+                            if (mode == FocusMode.PRACTICE_QUIZ) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                Color.Transparent
+                            },
+                        )
                         .clickable { mode = FocusMode.PRACTICE_QUIZ }
                         .padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.Center,
@@ -153,15 +186,25 @@ fun FocusScreen(
                 Icon(
                     imageVector = Icons.Outlined.Quiz,
                     contentDescription = null,
-                    tint = if (mode == FocusMode.PRACTICE_QUIZ) Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    tint =
+                        if (mode == FocusMode.PRACTICE_QUIZ) {
+                            MaterialTheme.colorScheme.onPrimary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                     modifier = Modifier.size(16.dp),
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = "Practice Quiz",
                     fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (mode == FocusMode.PRACTICE_QUIZ) Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    fontWeight = if (mode == FocusMode.PRACTICE_QUIZ) FontWeight.Bold else FontWeight.SemiBold,
+                    color =
+                        if (mode == FocusMode.PRACTICE_QUIZ) {
+                            MaterialTheme.colorScheme.onPrimary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                 )
             }
         }
@@ -169,165 +212,252 @@ fun FocusScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         if (mode == FocusMode.POMODORO) {
-            // Pomodoro Screen Content
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .padding(bottom = 88.dp)
+                        .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                // Interval Switcher Pills (25m / 5m / 15m)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
+                Column(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(MaterialTheme.colorScheme.surface)
+                            .border(
+                                1.dp,
+                                MaterialTheme.colorScheme.outlineVariant,
+                                RoundedCornerShape(20.dp),
+                            )
+                            .padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    PomodoroInterval.values().forEach { interval ->
-                        val isSelected = selectedInterval == interval
-                        Text(
-                            text = "${interval.label} (${interval.minutes}m)",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                            modifier =
-                                Modifier
-                                    .padding(horizontal = 4.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface)
-                                    .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        selectedInterval = interval
-                                        secondsLeft = interval.minutes * 60
-                                        isRunning = false
-                                    }
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(36.dp))
-
-                // Timer Display Circle
-                val totalSeconds = selectedInterval.minutes * 60
-                val progress = 1f - (secondsLeft.toFloat() / totalSeconds.toFloat())
-                val mins = secondsLeft / 60
-                val secs = secondsLeft % 60
-                val timeDisplay = String.format("%02d:%02d", mins, secs)
-
-                Box(
-                    modifier = Modifier.size(220.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator(
-                        progress = { progress },
-                        modifier = Modifier.fillMaxSize(),
-                        strokeWidth = 10.dp,
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                    )
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = timeDisplay,
-                            fontSize = 44.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(
-                            text =
-                                if (isRunning) {
-                                    "FOCUSING"
-                                } else if (secondsLeft == 0) {
-                                    "SESSION COMPLETE"
-                                } else {
-                                    "PAUSED"
-                                },
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color =
-                                if (isRunning) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface.copy(
-                                        alpha = 0.5f,
-                                    )
-                                },
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(28.dp))
-
-                // Play / Pause / Reset buttons
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Button(
-                        onClick = { isRunning = !isRunning },
-                        shape = CircleShape,
-                        colors =
-                            ButtonDefaults.buttonColors(
-                                containerColor = if (isRunning) Color(0xFFDC2626) else MaterialTheme.colorScheme.primary,
-                            ),
-                        modifier = Modifier.size(60.dp),
+                    // Interval Switcher Pills (25m / 5m / 15m)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Icon(
-                            imageVector = if (isRunning) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                            contentDescription = if (isRunning) "Pause" else "Play",
-                            modifier = Modifier.size(28.dp),
-                        )
+                        PomodoroInterval.values().forEach { interval ->
+                            val isSelected = selectedInterval == interval
+                            Box(
+                                modifier =
+                                    Modifier
+                                        .weight(1f)
+                                        .defaultMinSize(minHeight = 40.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (isSelected) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.surfaceVariant
+                                            },
+                                        )
+                                        .border(
+                                            1.dp,
+                                            if (isSelected) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.outlineVariant
+                                            },
+                                            RoundedCornerShape(8.dp),
+                                        )
+                                        .clickable { viewModel.selectPomodoroInterval(interval) }
+                                        .padding(horizontal = 6.dp, vertical = 8.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "${interval.label} (${interval.minutes}m)",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    color =
+                                        if (isSelected) {
+                                            MaterialTheme.colorScheme.onPrimary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                )
+                            }
+                        }
                     }
 
-                    OutlinedButton(
-                        onClick = {
-                            isRunning = false
-                            secondsLeft = selectedInterval.minutes * 60
-                        },
-                        shape = CircleShape,
-                        modifier = Modifier.size(48.dp),
+                    Spacer(modifier = Modifier.height(28.dp))
+
+                    // Timer Display Circle
+                    val totalSeconds = selectedInterval.minutes * 60
+                    val progress = 1f - (secondsLeft.toFloat() / totalSeconds.toFloat())
+                    val mins = secondsLeft / 60
+                    val secs = secondsLeft % 60
+                    val timeDisplay = String.format("%02d:%02d", mins, secs)
+
+                    Box(
+                        modifier = Modifier.size(216.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Refresh,
-                            contentDescription = "Reset",
-                            modifier = Modifier.size(20.dp),
+                        CircularProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier.fillMaxSize(),
+                            strokeWidth = 10.dp,
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
                         )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = timeDisplay,
+                                style =
+                                    TextStyle(
+                                        fontSize = 44.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontFeatureSettings = "tnum",
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    ),
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text =
+                                    if (isRunning) {
+                                        "Focusing"
+                                    } else if (secondsLeft == 0) {
+                                        "Session Complete"
+                                    } else {
+                                        "Ready to Focus"
+                                    },
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color =
+                                    if (isRunning) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                            )
+                        }
                     }
-                }
 
-                // Linked topic section
-                if (activePomodoroTopic != null) {
                     Spacer(modifier = Modifier.height(24.dp))
-                    Column(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(MaterialTheme.colorScheme.surface)
-                                .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
-                                .padding(14.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
+
+                    // Play / Pause / Reset buttons (zero horizontal padding squeeze!)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = "WORKING ON TOPIC",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = activePomodoroTopic!!,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
                         Button(
                             onClick = {
-                                if (activePomodoroAssessmentId != null) {
-                                    val key = "$activePomodoroAssessmentId::0"
-                                    viewModel.toggleTopic(key, true)
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                if (isRunning) {
+                                    viewModel.pausePomodoro()
+                                } else {
+                                    viewModel.startPomodoro(context.applicationContext)
                                 }
                             },
-                            shape = RoundedCornerShape(8.dp),
+                            shape = CircleShape,
+                            contentPadding = PaddingValues(0.dp),
+                            colors =
+                                ButtonDefaults.buttonColors(
+                                    containerColor =
+                                        if (isRunning) {
+                                            Color(0xFFDC2626)
+                                        } else {
+                                            MaterialTheme.colorScheme.primary
+                                        },
+                                    contentColor = Color.White,
+                                ),
+                            modifier = Modifier.size(60.dp),
                         ) {
-                            Icon(imageVector = Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "Mark Topic Done", fontSize = 12.sp)
+                            Icon(
+                                imageVector = if (isRunning) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                                contentDescription = if (isRunning) "Pause" else "Play",
+                                modifier = Modifier.size(28.dp),
+                            )
+                        }
+
+                        OutlinedIconButton(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.resetPomodoro()
+                            },
+                            shape = CircleShape,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                            modifier = Modifier.size(52.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Refresh,
+                                contentDescription = "Reset",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                    }
+
+                    // Linked topic section
+                    if (activePomodoroTopic != null) {
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Column(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .border(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.outlineVariant,
+                                        RoundedCornerShape(12.dp),
+                                    )
+                                    .padding(14.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                text = "WORKING ON TOPIC",
+                                fontSize = 11.sp,
+                                letterSpacing = 0.6.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = activePomodoroTopic!!,
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            // The completion key is "{assessment_id}::{topic_index}"
+                            // (`01` §3) - the index of the topic shown above,
+                            // never a hardcoded first topic.
+                            val topicKey =
+                                if (activePomodoroAssessmentId != null && activePomodoroTopicIndex != null) {
+                                    "$activePomodoroAssessmentId::$activePomodoroTopicIndex"
+                                } else {
+                                    null
+                                }
+                            Button(
+                                onClick = {
+                                    if (topicKey != null) {
+                                        viewModel.toggleTopic(topicKey, true)
+                                    }
+                                },
+                                enabled = topicKey != null,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.defaultMinSize(minHeight = 42.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Check,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(text = "Mark Topic Done", fontSize = 12.sp)
+                            }
+                            if (topicKey == null) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "This topic's completion key is unknown - reopen it from the assessment.",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
                         }
                     }
                 }
@@ -338,31 +468,90 @@ fun FocusScreen(
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 88.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                // Assessment Picker Header
                 item {
                     Text(
                         text = "SELECT EXAM TO PRACTICE",
                         fontSize = 11.sp,
+                        letterSpacing = 0.6.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        assessments.take(3).forEach { a ->
-                            Button(
-                                onClick = {
-                                    userAnswers.clear()
-                                    viewModel.openPracticeQuiz(a.id)
-                                },
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Text(text = a.courseId ?: a.title.take(8), fontSize = 11.sp, maxLines = 1)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    if (assessments.isEmpty()) {
+                        Box(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(MaterialTheme.colorScheme.surface)
+                                    .border(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.outlineVariant,
+                                        RoundedCornerShape(14.dp),
+                                    )
+                                    .padding(20.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "Add or import an assessment first to unlock practice quizzes.",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            assessments.take(3).forEach { a ->
+                                val isChosenExam = activePracticeId == a.id
+                                if (isChosenExam) {
+                                    Button(
+                                        onClick = {
+                                            userAnswers.clear()
+                                            viewModel.openPracticeQuiz(a.id)
+                                        },
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.weight(1f).defaultMinSize(minHeight = 44.dp),
+                                        colors =
+                                            ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.primary,
+                                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                                            ),
+                                    ) {
+                                        Text(
+                                            text = a.courseName ?: a.courseId ?: a.title.take(10),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                        )
+                                    }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = {
+                                            userAnswers.clear()
+                                            viewModel.openPracticeQuiz(a.id)
+                                        },
+                                        shape = RoundedCornerShape(10.dp),
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                                        modifier = Modifier.weight(1f).defaultMinSize(minHeight = 44.dp),
+                                        colors =
+                                            ButtonDefaults.outlinedButtonColors(
+                                                containerColor = MaterialTheme.colorScheme.surface,
+                                                contentColor = MaterialTheme.colorScheme.onSurface,
+                                            ),
+                                    ) {
+                                        Text(
+                                            text = a.courseName ?: a.courseId ?: a.title.take(10),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -370,7 +559,10 @@ fun FocusScreen(
 
                 if (isPracticeLoading) {
                     item {
-                        Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(32.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
                             CircularProgressIndicator()
                         }
                     }
@@ -382,10 +574,11 @@ fun FocusScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = quiz.assessmentTitle,
                                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSurface,
                                 )
                                 val badgeText =
                                     if (quiz.authoredLocally) {
@@ -396,39 +589,55 @@ fun FocusScreen(
                                 Text(
                                     text = badgeText,
                                     fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
                                 )
                             }
 
-                            // Score pill
                             val score =
                                 quiz.questions.count { q ->
                                     userAnswers[q.id] == q.correctIndex
                                 }
-                            Text(
-                                text = "Score: $score / ${quiz.questions.size}",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
+                            Box(
+                                modifier =
+                                    Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.secondaryContainer)
+                                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                            ) {
+                                Text(
+                                    text = "Score: $score / ${quiz.questions.size}",
+                                    style =
+                                        TextStyle(
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFeatureSettings = "tnum",
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        ),
+                                )
+                            }
                         }
                     }
 
                     // Question Cards
-                    itemsIndexed(quiz.questions) { qIdx, question ->
+                    itemsIndexed(quiz.questions, key = { qIdx, question -> question.id.ifBlank { qIdx.toString() } }) { qIdx, question ->
                         val selected = userAnswers[question.id]
                         Column(
                             modifier =
                                 Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .clip(RoundedCornerShape(14.dp))
                                     .background(MaterialTheme.colorScheme.surface)
-                                    .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
+                                    .border(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.outlineVariant,
+                                        RoundedCornerShape(14.dp),
+                                    )
                                     .padding(14.dp),
                         ) {
                             Text(
                                 text = "Q${qIdx + 1}: ${question.question}",
                                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface,
                             )
                             Spacer(modifier = Modifier.height(10.dp))
 
@@ -439,14 +648,14 @@ fun FocusScreen(
                                 val (optBg, optBorder) =
                                     if (selected != null) {
                                         if (isCorrect) {
-                                            Color(0xFF059669).copy(alpha = 0.15f) to Color(0xFF059669)
+                                            Color(0xFF059669).copy(alpha = 0.14f) to Color(0xFF059669)
                                         } else if (isChosen) {
-                                            Color(0xFFDC2626).copy(alpha = 0.15f) to Color(0xFFDC2626)
+                                            Color(0xFFDC2626).copy(alpha = 0.14f) to Color(0xFFDC2626)
                                         } else {
-                                            Color.Transparent to MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+                                            Color.Transparent to MaterialTheme.colorScheme.outlineVariant
                                         }
                                     } else {
-                                        Color.Transparent to MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)
+                                        Color.Transparent to MaterialTheme.colorScheme.outline
                                     }
 
                                 Row(
@@ -454,6 +663,7 @@ fun FocusScreen(
                                         Modifier
                                             .fillMaxWidth()
                                             .padding(vertical = 3.dp)
+                                            .defaultMinSize(minHeight = 44.dp)
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(optBg)
                                             .border(1.dp, optBorder, RoundedCornerShape(8.dp))
@@ -462,43 +672,48 @@ fun FocusScreen(
                                                     userAnswers[question.id] = optIdx
                                                 }
                                             }
-                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Text(
                                         text = "${('A'.code + optIdx).toChar()}.",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text(text = option, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                                    Text(
+                                        text = option,
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.weight(1f),
+                                    )
                                     if (selected != null) {
                                         if (isCorrect) {
                                             Icon(
                                                 imageVector = Icons.Outlined.Check,
                                                 contentDescription = "Correct",
                                                 tint = Color(0xFF059669),
-                                                modifier = Modifier.size(16.dp),
+                                                modifier = Modifier.size(18.dp),
                                             )
                                         } else if (isChosen) {
                                             Icon(
                                                 imageVector = Icons.Outlined.Close,
                                                 contentDescription = "Incorrect",
                                                 tint = Color(0xFFDC2626),
-                                                modifier = Modifier.size(16.dp),
+                                                modifier = Modifier.size(18.dp),
                                             )
                                         }
                                     }
                                 }
                             }
 
-                            // Explanation reveal if answered
                             if (selected != null && question.explanation != null) {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
                                     text = "Explanation: ${question.explanation}",
                                     fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
@@ -507,27 +722,76 @@ fun FocusScreen(
                     item {
                         OutlinedButton(
                             onClick = { userAnswers.clear() },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 46.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                         ) {
-                            Text("Restart Quiz")
+                            Text("Restart Quiz", fontWeight = FontWeight.SemiBold)
                         }
                     }
-                } else {
+                } else if (practiceQuizError != null) {
+                    // A failed generation is reported as a FAILURE with a
+                    // retry - never as the "select an exam" instruction,
+                    // which would blame the user for a broken generation.
+                    item {
+                        Column(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(MaterialTheme.colorScheme.surface)
+                                    .border(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.error.copy(alpha = 0.5f),
+                                        RoundedCornerShape(16.dp),
+                                    )
+                                    .padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                text = practiceQuizError!!,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    userAnswers.clear()
+                                    activePracticeId?.let { viewModel.openPracticeQuiz(it) }
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Retry", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                } else if (activePracticeId == null && assessments.isNotEmpty()) {
                     item {
                         Box(
                             modifier =
                                 Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(16.dp))
-                                    .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f), RoundedCornerShape(16.dp))
-                                    .padding(32.dp),
+                                    .background(MaterialTheme.colorScheme.surface)
+                                    .border(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.outlineVariant,
+                                        RoundedCornerShape(16.dp),
+                                    )
+                                    .padding(28.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
                                 text = "Select an exam above to generate 5 practice questions.",
                                 fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }

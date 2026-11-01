@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, RefreshCw, X, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, X, XCircle } from "lucide-react";
+import { RadarMark } from "./BrandMarks";
 import { copy } from "../copy";
 import { SYNC_PROGRESS_EVENT } from "../state/ipcEvents";
 import { useAppStore } from "../state/store";
@@ -96,20 +97,22 @@ export function ScanProgressModal({
   const outcome = scanning ? null : syncOutcome;
 
   return (
-    <div className="relative w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-2xl transition-all">
+    <div className="w-full">
       <div className="flex items-center justify-between border-b border-[var(--border)] pb-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]">
-            {scanning ? (
-              <RefreshCw className="h-5 w-5 animate-spin" />
-            ) : outcome?.status === "success" ? (
-              <CheckCircle2 className="h-5 w-5" />
-            ) : outcome?.status === "canceled" ? (
-              <AlertTriangle className="h-5 w-5" />
-            ) : (
-              <XCircle className="h-5 w-5" />
-            )}
-          </div>
+          {scanning ? (
+            <RadarMark animated className="h-10 w-10 shrink-0 drop-shadow-sm" />
+          ) : (
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--accent-ink)]">
+              {outcome?.status === "success" ? (
+                <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              ) : outcome?.status === "canceled" ? (
+                <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              ) : (
+                <XCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+              )}
+            </div>
+          )}
           <div>
             <h2 id="scan-progress-title" className="text-base font-bold text-[var(--text)]">
               {scanning
@@ -136,7 +139,7 @@ export function ScanProgressModal({
             type="button"
             onClick={onClose}
             aria-label={copy.common.close}
-            className="rounded-lg p-1 text-[var(--text-muted)] hover:bg-[var(--border)]/30 hover:text-[var(--text)]"
+            className="rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
           >
             <X className="h-5 w-5" />
           </button>
@@ -154,14 +157,14 @@ export function ScanProgressModal({
 
           {/* The bar shows a real ratio or nothing at all — it never invents
               a percentage for work that has not reported any count. */}
-          <div className="w-full overflow-hidden rounded-full bg-[var(--border)]/40 h-2">
+          <div className="w-full overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--border)_40%,transparent)] h-2">
             {percent !== null ? (
               <div
                 className="h-full bg-[var(--accent)] transition-all duration-300"
                 style={{ width: `${percent}%` }}
               />
             ) : (
-              <div className="h-full w-full animate-pulse bg-[var(--accent)]/30" />
+              <div className="h-full w-full animate-pulse bg-[color-mix(in_srgb,var(--accent)_30%,transparent)]" />
             )}
           </div>
 
@@ -178,13 +181,6 @@ export function ScanProgressModal({
               ))}
             </ul>
           )}
-
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-3 text-xs text-[var(--text-muted)] space-y-1">
-            <div className="font-semibold text-[var(--text)]">{copy.scan.doctrineTitle}</div>
-            <div>• {copy.scan.doctrineOnDevice}</div>
-            <div>• {copy.scan.doctrineNoServer}</div>
-            <div>• {copy.scan.doctrinePreserved}</div>
-          </div>
         </div>
       ) : outcome ? (
         <div className="mt-6 space-y-3">
@@ -210,7 +206,7 @@ export function ScanProgressModal({
             onClick={() => {
               void cancelSync();
             }}
-            className="rounded-xl border border-[var(--border)] px-4 py-2 text-xs font-semibold text-[var(--text)] hover:bg-[var(--border)]/30 transition"
+            className="rounded-xl border border-[var(--border)] px-4 py-2 text-xs font-semibold text-[var(--text)] hover:bg-[color-mix(in_srgb,var(--border)_30%,transparent)] transition"
           >
             {copy.common.cancel}
           </button>
@@ -218,7 +214,7 @@ export function ScanProgressModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl border border-[var(--border)] px-4 py-2 text-xs font-semibold text-[var(--text)] hover:bg-[var(--border)]/30 transition"
+            className="rounded-xl border border-[var(--border)] px-4 py-2 text-xs font-semibold text-[var(--text)] hover:bg-[color-mix(in_srgb,var(--border)_30%,transparent)] transition"
           >
             {copy.common.close}
           </button>

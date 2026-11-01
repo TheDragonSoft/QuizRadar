@@ -27,10 +27,14 @@ export function AppConfirmModal({
   const destructive = modalProps.destructive ?? false;
 
   const handleConfirm = () => {
+    // Close FIRST: an onConfirm that opens a nested app-confirm (the reset
+    // double-confirm) registers under the same id, and closing afterwards
+    // removes the nested dialog before it ever renders. Close-then-confirm
+    // pops this instance, so the nested one lands on a clean stack.
+    onClose();
     if (modalProps.onConfirm) {
       modalProps.onConfirm();
     }
-    onClose();
   };
 
   const handleCancel = () => {
@@ -41,15 +45,15 @@ export function AppConfirmModal({
   };
 
   return (
-    <div className="relative w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-2xl transition-all">
+    <div className="w-full">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           {destructive ? (
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-500/10 text-red-600 dark:text-red-400">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-500/10 text-red-700 dark:text-red-400">
               <AlertTriangle className="h-5 w-5" />
             </div>
           ) : (
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--accent-ink)]">
               <AlertTriangle className="h-5 w-5" />
             </div>
           )}
@@ -61,7 +65,7 @@ export function AppConfirmModal({
           type="button"
           onClick={handleCancel}
           aria-label={copy.common.close}
-          className="rounded-lg p-1 text-[var(--text-muted)] hover:bg-[var(--border)]/30 hover:text-[var(--text)]"
+          className="rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
         >
           <X className="h-5 w-5" />
         </button>
@@ -73,7 +77,7 @@ export function AppConfirmModal({
         <button
           type="button"
           onClick={handleCancel}
-          className="rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-semibold text-[var(--text)] transition hover:bg-[var(--border)]/30"
+          className="rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-semibold text-[var(--text)] transition hover:bg-[var(--surface-hover)]"
         >
           {cancelLabel}
         </button>
@@ -82,8 +86,8 @@ export function AppConfirmModal({
           onClick={handleConfirm}
           className={`rounded-xl px-4 py-2 text-sm font-semibold text-white transition ${
             destructive
-              ? "bg-red-600 hover:bg-red-700 shadow-sm shadow-red-500/20"
-              : "bg-[var(--accent)] hover:bg-[var(--accent-hover)] shadow-sm shadow-blue-500/20"
+              ? "bg-red-700 hover:bg-red-800 shadow-sm shadow-red-500/20"
+              : "bg-[var(--accent-fill)] hover:bg-[var(--accent-fill-hover)] shadow-sm shadow-blue-500/20"
           }`}
         >
           {confirmLabel}

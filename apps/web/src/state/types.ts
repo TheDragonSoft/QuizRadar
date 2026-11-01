@@ -246,6 +246,9 @@ export interface DesktopConfig {
   syncWeeklyClassesToGcal: boolean;
   geminiEnabled: boolean;
   onboardingCompleted: boolean;
+  /** The onboarding "academic rhythm" preset (`01` §4.1 — the track/rhythm
+   *  chips are persisted). `null` means the user never picked one. */
+  academicTrack?: string | null;
   teamsEnabled: boolean;
   teamsClientId?: string | null;
   teamsAccountName?: string | null;
@@ -285,6 +288,34 @@ export interface DesktopAuthProfile {
 export interface AiQuotaUsage {
   callsToday: number | null;
   perModel: Record<string, number>;
+  /**
+   * True when the tier counts calls in memory for this session instead of a
+   * persisted daily ledger (the browser companion). The UI must label such a
+   * counter as session-scoped — never as a daily quota.
+   */
+  sessionScope?: boolean;
+  /**
+   * True when the tier currently holds a usable AI key (browser companion:
+   * in memory for this session only). False means "AI is switched on but no key
+   * is in memory right now" - the UI should say so instead of waiting for a
+   * failed call to explain it.
+   */
+  keyInMemory?: boolean;
+}
+
+/**
+ * The core's `MergeReport` (core/src/store/backup.rs). It crosses the bridge
+ * in its raw snake_case shape — it is not a state payload, so the camelCase
+ * normalizer never touches it.
+ */
+export interface MergeReport {
+  assessments_replaced: number;
+  assessments_kept_newer: number;
+  topics_merged: number;
+  grades_merged: number;
+  events_upserted: number;
+  feeds_upserted: number;
+  schedule_replaced: boolean;
 }
 
 export interface GetStatePayload {
@@ -335,8 +366,8 @@ export interface ModalInstance {
    * Onboarding).
    */
   flush?: boolean;
-  /** Panel width (v4 used a 2xl-wide Settings sheet). */
-  size?: "sm" | "md" | "lg";
+  /** Panel width (v4 used a 2xl-wide Settings sheet, 3xl for Schedule Preview). */
+  size?: "sm" | "md" | "lg" | "xl";
 }
 
 export interface LayerToggles {
@@ -400,6 +431,8 @@ export interface ConfigUpdate {
   syncWeeklyClassesToGcal?: boolean;
   geminiEnabled?: boolean;
   onboardingCompleted?: boolean;
+  /** The onboarding academic-rhythm preset ("med" | "eng" | "biz"). */
+  academicTrack?: string;
   teamsEnabled?: boolean;
   teamsClientId?: string;
   teamsAccountName?: string;
@@ -428,6 +461,7 @@ export interface ImportReport {
   gradesImported: number;
   topicsImported: number;
   eventsImported: number;
+  customEventsImported?: number;
   feedsImported: number;
   secretsIgnored: string[];
   warnings: string[];

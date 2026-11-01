@@ -14,15 +14,19 @@
 //! unescaping is one honest pass, and UTC conversion takes the caller's
 //! [`FixedOffset`] so core stays pure — no hidden local clock ever enters a
 //! fixture test.
+//!
+//! A room may only be inherited from a slot that runs on the event's own
+//! weekday (the email path's rule): a Tuesday Moodle event never shows
+//! Monday's lecture room — it shows "—" instead.
 
-use chrono::{FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use chrono::{Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use serde::{Deserialize, Serialize};
 
-use crate::parse::email::{classify_ics_text, find_course_code, ScanStats};
+use crate::parse::email::{classify_ics_text, find_course_code, strip_html_tags, ScanStats};
 use crate::parse::merge::merge_key;
 use crate::parse::util::{
     build_display_time, compute_priority_score, day_name_for, days_until, infer_semester_from_date,
-    urgency_for,
+    urgency_for, weekday_index, weekday_to_index,
 };
 use crate::types::{Assessment, AssessmentSource, Course, ScheduleData};
 
@@ -292,8 +296,10 @@ pub fn parse_ical_datetime(value: &str) -> Option<IcsDateTime> {
     if trimmed.is_empty() {
         return None;
     }
-    let is_utc = trimmed.ends_with('Z');
-    let cleaned = trimmed.trim_end_matches('Z').trim();
+    // RFC 5545 string literals are case-insensitive: lowercase `z` (and the
+    // already-tolerated lowercase `t`) must read as UTC too.
+    let is_utc = trimmed.ends_with(['Z', 'z']);
+    let cleaned = trimmed.trim_end_matches(['Z', 'z']).trim();
 
     let separator = cleaned
         .char_indices()
@@ -415,13 +421,18 @@ pub(crate) fn match_course_with_how<'a>(
     })
 }
 
-/// First slot of the matched course whose room is genuinely known — v4 parity
-/// without the "E-Learning Lab / Online" default. No slot ⇒ `None` ("—").
-fn room_for_course(schedule: &ScheduleData, course_id: &str) -> Option<String> {
+/// The room of the matched course's slot that actually runs on the event's
+/// weekday — the same rule the email path uses (`parse::email`): a room may
+/// only be inherited from a slot whose weekday matches the event date, so a
+/// Tuesday Moodle event never shows Monday's lecture room. No matching slot
+/// ⇒ `None` ("—"), never another weekday's room.
+fn room_for_course(schedule: &ScheduleData, course_id: &str, date: NaiveDate) -> Option<String> {
+    let index = weekday_to_index(date.weekday());
     schedule
         .slots
         .iter()
-        .find(|slot| slot.course_id.eq_ignore_ascii_case(course_id))
+        .filter(|slot| slot.course_id.eq_ignore_ascii_case(course_id))
+        .find(|slot| weekday_index(&slot.day) == Some(index))
         .and_then(|slot| slot.room.clone())
         .filter(|room| !room.trim().is_empty())
 }
@@ -563,8 +574,10 @@ fn fallback_ics_study_plan(origin: &IcsOrigin) -> (String, f32) {
 }
 
 /// Honest inference note: what was read from the event and how the course
-/// was matched — same machine-checkable prefix as the email pipeline.
-fn build_ics_note(matched: Option<(&str, &str)>, is_utc: bool) -> String {
+/// was matched — same machine-checkable prefix as the email pipeline. The
+/// study hours are a flat local heuristic, so the note says so too: an
+/// estimate nobody stated must never read like a fact.
+fn build_ics_note(matched: Option<(&str, &str)>, is_utc: bool, hours: f32) -> String {
     let mut note = match matched {
         Some((code, how)) => format!(
             "Parsed from calendar event: date/time read from DTSTART; matched to {code} by {how}."
@@ -574,6 +587,9 @@ fn build_ics_note(matched: Option<(&str, &str)>, is_utc: bool) -> String {
     if is_utc {
         note.push_str(" UTC start converted to local time.");
     }
+    note.push_str(&format!(
+        " Study time is a flat {hours:.1} h local heuristic estimate — the calendar event states no duration."
+    ));
     note
 }
 
@@ -657,7 +673,6 @@ pub(crate) fn assessment_from_event(
     local: FixedOffset,
 ) -> Option<Assessment> {
     let context_lower = event_context(event);
-    let summary_lower = event.summary.to_ascii_lowercase();
 
     let dtstart = event.dtstart.as_ref()?;
 
@@ -681,12 +696,37 @@ pub(crate) fn assessment_from_event(
 
     // End time only when DTEND carries its own clock — v4 invented +90min
     // (and default "10:30" for date-only events); both deleted per `03`.
-    let end_time = event.dtend.as_ref().and_then(|end| end.time);
+    // A UTC DTEND converts through the same local offset as the DTSTART arm:
+    // converting only the start produced "00:00 – 23:59" spans on every
+    // UTC feed with timed ends.
+    let end_time = event
+        .dtend
+        .as_ref()
+        .and_then(|end| end.time)
+        .map(|elapsed| {
+            let utc_end = event.dtend.as_ref().is_some_and(|end| end.is_utc);
+            if utc_end {
+                let end_date = event
+                    .dtend
+                    .as_ref()
+                    .map(|end| end.date)
+                    .unwrap_or(dtstart.date);
+                let naive = NaiveDateTime::new(end_date, elapsed);
+                let converted = naive.and_utc().with_timezone(&local);
+                NaiveTime::from_hms_opt(converted.hour(), converted.minute(), 0).unwrap_or(elapsed)
+            } else {
+                elapsed
+            }
+        });
     let room = course_id
         .as_deref()
-        .and_then(|id| room_for_course(schedule, id));
+        .and_then(|id| room_for_course(schedule, id, date));
 
-    let assessment_type = classify_ics_text(&summary_lower, "");
+    // The type word often lives in the body only ("… final exam …"), so the
+    // description goes through the same classifier the email path uses —
+    // HTML stripped first, exactly like the announcement body there.
+    let description_text = strip_html_tags(&event.description);
+    let assessment_type = classify_ics_text(&event.summary, &description_text);
     let topics = extract_ics_topics(&event.description, &event.summary);
     let (plan, hours) = fallback_ics_study_plan(origin);
 
@@ -716,6 +756,7 @@ pub(crate) fn assessment_from_event(
         ai_inference_note: Some(build_ics_note(
             match_found.map(|found| (found.0.id.as_str(), found.1)),
             is_utc,
+            hours,
         )),
         ai_study_plan: Some(plan),
         estimated_study_hours: Some(hours),
@@ -1258,12 +1299,80 @@ BEGIN:VEVENT\r\nSUMMARY:CS101 Quiz 2\r\nDTSTART:20261019T100000Z\r\nEND:VEVENT";
             plan.contains("Moodle lecture slides"),
             "Moodle-origin plan wording"
         );
+        // The flat estimate has to be labeled in the note, too — an estimate
+        // nobody stated must not read like a fact.
+        let note = items[0].ai_inference_note.as_deref().unwrap_or_default();
+        assert!(
+            note.contains("Study time is a flat 3.0 h local heuristic estimate"),
+            "note was: {note}"
+        );
         let (feed_plan, feed_hours) = fallback_ics_study_plan(&IcsOrigin::Feed {
             name: "F".to_string(),
             feed_url: None,
         });
         assert_eq!(feed_hours, 3.0);
         assert!(feed_plan.contains("feed"));
+    }
+
+    #[test]
+    fn a_room_is_only_inherited_from_a_slot_on_the_events_weekday() {
+        // CS101 runs on Sunday (Room CT S1 9) and on Tuesday (Room CT S2 4).
+        let mut schedule = schedule();
+        schedule.slots.push(slot(
+            "slot-2",
+            "CS101",
+            "Tutorial",
+            "Tue",
+            2,
+            "Room CT S2 4",
+        ));
+        let ics = "BEGIN:VEVENT\r\nUID:sunday\r\nSUMMARY:CS101 Quiz 1\r\nDTSTART:20261018T100000\r\nEND:VEVENT\r\n\
+                   BEGIN:VEVENT\r\nUID:monday\r\nSUMMARY:CS101 Quiz 2\r\nDTSTART:20261019T100000\r\nEND:VEVENT\r\n\
+                   BEGIN:VEVENT\r\nUID:tuesday\r\nSUMMARY:CS101 Quiz 3\r\nDTSTART:20261020T100000\r\nEND:VEVENT";
+        let (items, _) = parse_ics_assessments(
+            ics,
+            &schedule,
+            &IcsOrigin::Moodle { portal_url: None },
+            date(2026, 10, 17),
+            FixedOffset::east_opt(0).unwrap(),
+        );
+
+        let sunday = items
+            .iter()
+            .find(|item| item.id == "moodle-sunday")
+            .unwrap();
+        assert_eq!(sunday.room.as_deref(), Some("Room CT S1 9"));
+        let monday = items
+            .iter()
+            .find(|item| item.id == "moodle-monday")
+            .unwrap();
+        assert_eq!(
+            monday.room, None,
+            "no CS101 slot runs on Monday — another weekday's room is not a fact"
+        );
+        let tuesday = items
+            .iter()
+            .find(|item| item.id == "moodle-tuesday")
+            .unwrap();
+        assert_eq!(tuesday.room.as_deref(), Some("Room CT S2 4"));
+    }
+
+    #[test]
+    fn the_event_description_can_carry_the_type() {
+        let ics = "BEGIN:VEVENT\r\nUID:typed\r\nSUMMARY:CS101 Session\r\nDESCRIPTION:The session is a Midterm Exam\r\nDTSTART:20261018T100000\r\nEND:VEVENT";
+        let (items, _) = parse_ics_assessments(
+            ics,
+            &schedule(),
+            &IcsOrigin::Moodle { portal_url: None },
+            date(2026, 10, 17),
+            FixedOffset::east_opt(0).unwrap(),
+        );
+        assert_eq!(items.len(), 1);
+        assert_eq!(
+            items[0].assessment_type,
+            AssessmentType::MidtermExam,
+            "the type word in the body counts — the email path reads it too"
+        );
     }
 
     #[test]

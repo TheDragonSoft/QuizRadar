@@ -9,12 +9,12 @@ import { DashboardView, TasksView, CalendarView, FocusView, HelpView } from "./v
 import { DevRig } from "./dev/DevRig";
 import { useAppStore, applyThemeToDocument, initDayRolloverWatchdog } from "./state/store";
 import { isTauriEnvironment } from "./state/rpc";
+import { copy } from "./copy";
 import type { View } from "./state/types";
 import { registerModal, type ModalComponent } from "./components/modalRegistry";
 import { AssessmentDetailModal } from "./components/AssessmentDetailModal";
 import { OnboardingWizardModal } from "./components/OnboardingWizardModal";
 import { SettingsModal } from "./components/SettingsModal";
-import { SearchPaletteModal } from "./components/SearchPaletteModal";
 import { PracticeQuizModal } from "./components/PracticeQuizModal";
 import { PomodoroModal } from "./components/PomodoroModal";
 import { SchedulePreviewModal } from "./components/SchedulePreviewModal";
@@ -25,20 +25,36 @@ import { CloudSyncModal } from "./components/CloudSyncModal";
 import { ScanProgressModal } from "./components/ScanProgressModal";
 import { AccountProfileModal } from "./components/AccountProfileModal";
 
-// Register all 13 spec modal components
-registerModal("assessment-detail", AssessmentDetailModal as unknown as ModalComponent);
-registerModal("onboarding", OnboardingWizardModal as unknown as ModalComponent);
-registerModal("settings", SettingsModal as unknown as ModalComponent);
-registerModal("search", SearchPaletteModal as unknown as ModalComponent);
-registerModal("practice-quiz", PracticeQuizModal as unknown as ModalComponent);
-registerModal("pomodoro", PomodoroModal as unknown as ModalComponent);
-registerModal("schedule-preview", SchedulePreviewModal as unknown as ModalComponent);
-registerModal("add-course", AddCourseModal as unknown as ModalComponent);
-registerModal("create-edit-event", CreateEditEventModal as unknown as ModalComponent);
-registerModal("app-confirm", AppConfirmModal as unknown as ModalComponent);
-registerModal("cloud-sync", CloudSyncModal as unknown as ModalComponent);
-registerModal("scan-progress", ScanProgressModal as unknown as ModalComponent);
-registerModal("account-profile", AccountProfileModal as unknown as ModalComponent);
+// Register all 13 spec modal components with canonical single-shell sizing & flush metadata
+registerModal("assessment-detail", AssessmentDetailModal as unknown as ModalComponent, {
+  size: "lg",
+  flush: true,
+});
+registerModal("onboarding", OnboardingWizardModal as unknown as ModalComponent, {
+  size: "xl",
+  flush: true,
+});
+registerModal("settings", SettingsModal as unknown as ModalComponent, {
+  size: "lg",
+  flush: true,
+});
+registerModal("practice-quiz", PracticeQuizModal as unknown as ModalComponent, { size: "lg" });
+registerModal("pomodoro", PomodoroModal as unknown as ModalComponent, { size: "sm" });
+registerModal("schedule-preview", SchedulePreviewModal as unknown as ModalComponent, {
+  size: "xl",
+});
+registerModal("add-course", AddCourseModal as unknown as ModalComponent, {
+  size: "md",
+  flush: true,
+});
+registerModal("create-edit-event", CreateEditEventModal as unknown as ModalComponent, {
+  size: "md",
+  flush: true,
+});
+registerModal("app-confirm", AppConfirmModal as unknown as ModalComponent, { size: "sm" });
+registerModal("cloud-sync", CloudSyncModal as unknown as ModalComponent, { size: "md" });
+registerModal("scan-progress", ScanProgressModal as unknown as ModalComponent, { size: "sm" });
+registerModal("account-profile", AccountProfileModal as unknown as ModalComponent, { size: "sm" });
 
 const VIEWS: Record<View, React.ComponentType> = {
   dashboard: DashboardView,
@@ -64,9 +80,13 @@ export default function App() {
     return url.pathname === "/dev" || url.searchParams.get("dev") === "true";
   });
 
-  // Startup initialization: theme + initial SWR load + day-rollover watchdog + route check
+  // Startup initialization: initial load + day-rollover watchdog + route check.
+  // Mount-only ON PURPOSE: keying this on `theme` re-ran the whole effect on
+  // every theme toggle — killing the watchdog (its init helper was one-shot)
+  // and stomping fresh in-memory data with the possibly-stale SWR cache.
+  // Theme application lives in its own effect below; `setTheme` already
+  // applies it immediately on toggle.
   useEffect(() => {
-    applyThemeToDocument(theme);
     loadInitialData();
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
@@ -78,7 +98,65 @@ export default function App() {
     return () => {
       stopWatchdog();
     };
-  }, [loadInitialData, theme]);
+  }, [loadInitialData]);
+
+  // Theme application whenever the mode changes (also covers first mount).
+  useEffect(() => {
+    applyThemeToDocument(theme);
+  }, [theme]);
+
+  // Single-letter navigation shortcuts (D/T/C/F/?/S) — the Help cheatsheet
+  // promises these, so they must actually exist. Ignored while typing, with
+  // modifier keys held, while a modal owns the surface, or while the inline
+  // search dropdown is open (it floats above the view; D/C under it would
+  // switch views and strand a stale panel).
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target && target.isContentEditable)
+      ) {
+        return;
+      }
+      if (document.getElementById("topbar-search-results")) return;
+      const { openModals, setView, openModal } = useAppStore.getState();
+      if (openModals.length > 0) return;
+      switch (e.key) {
+        case "d":
+        case "D":
+          setView("dashboard");
+          break;
+        case "t":
+        case "T":
+          setView("tasks");
+          break;
+        case "c":
+        case "C":
+          setView("calendar");
+          break;
+        case "f":
+        case "F":
+          setView("focus");
+          break;
+        case "?":
+          setView("help");
+          break;
+        case "s":
+        case "S":
+          openModal({ id: "settings", flush: true, size: "lg" });
+          break;
+        default:
+          return;
+      }
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   // First-run onboarding check — waits for the first real state load so a
   // returning user is never shown the wizard. It never stacks on top of
@@ -100,7 +178,7 @@ export default function App() {
       const dismissed = sessionStorage.getItem("quizradar_onboarding_dismissed");
       if (dismissed) return;
     }
-    openModal({ id: "onboarding", flush: true, size: "lg" });
+    openModal({ id: "onboarding", flush: true, size: "xl" });
   }, [hasLoaded, config.onboardingCompleted, openModal, openModals]);
 
   // Desktop auth bridge: the OAuth round trip finishes in the browser, so the
@@ -154,7 +232,8 @@ export default function App() {
 
       {/* Main Container: Sidebar + View Content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left Desktop Sidebar */}
+        {/* Left Desktop Sidebar — always mounted so the width collapse animates;
+            the rail hides itself below lg and collapses via sidebarOpen. */}
         <Sidebar />
 
         {/* View Content Area wrapped in touch PullToRefresh */}
@@ -169,10 +248,13 @@ export default function App() {
                 data-testid="offline-banner"
                 className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-600 dark:text-amber-400"
               >
-                Offline mode · Rendering verified local cache
+                {copy.common.offlineNotice}
               </div>
             )}
-            <div className="mx-auto max-w-6xl">
+            {/* Full-bleed content: the views own their width, the main
+                padding is the only margin (the old max-w-6xl cap stranded
+                half a 1920px window in empty background). */}
+            <div key={currentView} className="view-transition w-full">
               <ActiveViewComponent />
             </div>
           </main>

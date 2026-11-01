@@ -1,220 +1,155 @@
-# QuizRadar testing playbook
+# QuizRadar Testing Playbook — Reusable Cross-Platform Verification System
 
-_How this repo is tested so an agent (or a human) can verify a change end to end —
-written to be reusable as a template for other local-first apps. Established during
-the phase-18 audit (`docs/STATUS.md` → "Phase-18"); every command here is green on
-the commit that introduced it._
+_How this repo is verified end to end across **Web (PWA + WASM)**, **Desktop (Tauri 2 + WebView2)**,
+and **Mobile (Android Compose + UniFFI)** — designed as a turnkey, drop-in testing architecture
+for other local-first and multi-shell apps._
 
-The system has six layers, ordered from cheapest to most faithful. A change should
-clear the layers below it before a human ever sees it, and the **sweep** (layer 6)
-is the only one that replaces a human — it drives the real app like a user would.
+The system has **seven layers**, ordered from cheapest static invariants to live multi-surface
+visual & interactive sweeps. Every bug found in Layer 6 or 7 is locked down with a deterministic
+regression test in Layers 1–5 so it can never recur silently.
 
 | # | Layer | Catches | Speed |
 |---|-------|---------|-------|
-| 1 | Static gates | Style, types, stale generated files, secrets | seconds |
-| 2 | Unit + fixture tests | Logic regressions, honesty violations | seconds–minutes |
-| 3 | Property tests | Parser/planner panics and impossible outputs on arbitrary input | seconds |
-| 4 | Contract tests | Core↔UI shape drift (the #1 source of real bugs here) | seconds |
-| 5 | Visual regression | Pixel drift in the committed UI, both themes | ~1 min |
-| 6 | Live sweep (agent-driven) | Dead buttons, broken flows, honest-copy violations — anything mocks can't see | ~1–2 h |
+| 1 | Static & anti-pattern gates | Style, types, stale wire maps, secrets, banned copy/slop | seconds |
+| 2 | Unit + golden-fixture tests | Logic regressions, honesty violations, state rollbacks | seconds–1 min |
+| 3 | Property tests (`proptest`) | Parser/planner panics and impossible outputs on arbitrary input | seconds |
+| 4 | Cross-language contract tests | Core↔UI wire-shape drift (`serde` ↔ TypeScript ↔ UniFFI) | seconds |
+| 5 | Deterministic visual baselines | Pixel drift on first-run Light & Dark surfaces | ~1 min |
+| 6 | Automated Web + Tauri UI Sweep (`tooling/ui-sweep.mjs`) | Double modal chrome, stacked dialogs, WCAG contrast (`oklch` + gradients), tiny fonts, missing a11y labels, dead controls | ~90 s |
+| 7 | Android Emulator + ARTEMIS Closed-Loop Sweep | Edge-to-edge insets, M3 token drift, clipped icons, sheet interactions, Light/Dark device parity | ~3–5 min |
 
 ---
 
-## 1. Static gates (run everything, always)
+## 1. Static & Anti-Pattern Gates (Run Always)
 
 ```powershell
-pnpm lint                 # eslint (flat config) — tooling/.v4ref and scratch/ are ignored
-pnpm typecheck            # tsc per package
-pnpm format:check         # prettier
-node tooling/generate-version.mjs --check   # 5 version sinks in sync
+pnpm lint                                     # ESLint flat config across workspace
+pnpm typecheck                                # tsc --noEmit per package
+pnpm format:check                             # Prettier formatting gate
+node tooling/generate-version.mjs --check     # All 5 version sinks in lockstep
+node apps/web/src/contract/regenerate.mjs --check # Rust <-> TS wire map freshness
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-Rules that make these gates strong rather than decorative:
+Why these gates catch real defects instead of bikeshedding:
 
-- **Generated files verify themselves.** `rust-structs.json` (the Rust wire map)
-  fails the test suite if the Rust sources moved without regenerating
-  (`node apps/web/src/contract/regenerate.mjs` re-stamps it).
-- **The anti-pattern audit scans source text.** `src/audit/antipatterns.test.ts`
-  fails the build if a banned v4 demo string (`MATH101`, `Hall B-204`,
-  `auto_sync_gcal: true`, `?demo=`…) reappears anywhere in `apps/web/src`.
-- **Copy is contract-tested.** Every template function in `copy.ts` must appear
-  with sample arguments in `src/copy/conformance.test.ts`, and banned promises
-  ("guaranteed", "never miss"…) fail the build.
-- **Cross-tier event names are pinned.** `src/state/syncProgressContract.test.ts`
-  reads the Rust source and fails if the shell's event name drifts from the web
-  listener's.
+- **Self-verifying wire maps:** `apps/web/src/contract/regenerate.mjs` parses Rust `#[derive(Serialize, Deserialize)]` structs and fails CI if Rust fields change without updating TypeScript.
+- **Anti-pattern source scanner:** `apps/web/src/audit/antipatterns.test.ts` scans non-test source files and fails the build if fabricated demo strings, hardcoded secrets, or banned defaults (`auto_sync_gcal: true`) reappear.
+- **Copy conformance gate:** `apps/web/src/copy/conformance.test.ts` executes every template function in `copy.ts` and rejects dishonest promises or missing disclosure strings.
 
-## 2. Unit + fixture tests
+---
+
+## 2. Unit & Golden-Fixture Suites
 
 ```powershell
-pnpm test                 # vitest, jsdom — 200 tests / 24 files
-cargo test --workspace    # 241 core lib + fixtures + desktop suites
+pnpm test                 # Vitest + Testing Library (Web + Desktop IPC shape)
+cargo test --workspace    # Rust core golden fixtures + Tauri desktop unit tests
+# Android JVM + Robolectric Compose tests:
+$env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot"
+Set-Location apps\mobile-android ; .\gradlew.bat ktlintCheck testDebugUnitTest
 ```
 
-The web suite boots real components with Testing Library against a realistic
-store fixture; the core suite pins parser outputs against golden email/ICS
-fixtures (`core/tests/fixtures/`). Optimistic UI paths (topic toggles, grade
-saves) are tested with rollback assertions.
+- **Web (`apps/web/src/**/__tests__/`):** Exercises real Zustand store transitions, single-shell modal stacking (`UiSweepRegressions.test.tsx`), IndexedDB/WASM round-trips (`pwa.test.tsx`), and structural accessibility (`accessibility.test.tsx`).
+- **Core (`core/tests/`):** Verifies email/ICS parsing, timetable snapping, conflict clustering, and Drive merge preservation against golden JSON/ICS fixtures.
+- **Android (`apps/mobile-android/app/src/test/`):** Runs JNA-backed UniFFI smoke tests, Robolectric Compose navigation tests (`ComposeUiSmokeTest`), and honesty formatting checks (`HonestyFormattingTest`).
 
-## 3. Property tests (parsers and the planner)
+---
+
+## 3. Property Tests (Parsers & Planner)
 
 ```powershell
 cargo test -p quizradar-core --test property_email --test property_ics --test property_plan
 ```
 
-Each suite is **properties + deterministic controls**. The properties are
-machine-checked over arbitrary input; the controls keep them from passing
-vacuously:
+Machine-checked invariants across arbitrary generated inputs:
 
-- P1 never panics (arbitrary text/structs through the public API),
-- no-fabrication (a populated room/instructor/date is always derivable from the
-  input; missing facts stay `None`),
-- date/time sanity (parsed dates are real calendar days; broken input yields
-  `None`, never a fabricated default),
-- planner honesty (radar never shows the past; readiness 0..=100 with the
-  documented 0/0→100 semantic; roadmap tasks stay inside the 14-day horizon and
-  the ≤5 prep-day window; alerts pair only dated upcoming items with honest
-  4h/26h gaps; study blocks are free 90-min windows, and a dated-but-untimed
-  event blacks out its whole day).
+- **Never panics** on arbitrary UTF-8 strings, malformed `.ics` blocks, or degenerate schedules.
+- **Zero fabrication:** Missing room, instructor, or date always stays `None` (rendered as `"—"` in UI), never a invented hall or fallback timestamp.
+- **Planner bounds:** Radar never surfaces past items as upcoming; readiness stays within `0..=100`; study blocks are strictly conflict-free 90-minute windows.
 
-Proptest 1.12 notes: config goes in a per-block inner attribute
-(`#![proptest_config(…)]`), and text strategies come from
-`proptest::string::string_regex`.
+---
 
-## 4. Contract tests (Rust ↔ TypeScript)
+## 4. Cross-Language Contract Tests (Rust ↔ TypeScript)
 
 ```powershell
-pnpm vitest run src/contract
-node apps/web/src/contract/regenerate.mjs   # re-stamp when Rust structs change
+pnpm --dir apps/web vitest run src/contract
+node apps/web/src/contract/regenerate.mjs     # Re-stamp when Rust structs change
 ```
 
-`src/contract/` is the template for any Rust-core + web-UI app:
+Validates field presence, optionality parity, enum variants, and snake_case/camelCase boundary adapters so Core↔UI shape mismatches cannot ship.
 
-- `rustStructs.mjs` derives the wire format **from the Rust sources** (structs,
-  enums, serde renames, FFI exports) into `testdata/contract/rust-structs.json`;
-- `contractGuard.ts` validates any payload like serde would (missing required
-  fields, null in non-Option, enum labels, date/time shapes);
-- `contract.test.ts` asserts: freshness (1), fixtures deserialize (2), ≥13 drift
-  mutations are rejected with the right error codes (3), the TS mirror declares
-  every Rust field (4), optionality parity (5), the TS-only field set is exactly
-  the documented list (6), enum parity incl. the recorded urgency-casing
-  divergence (7), and the shape adapter actually fills the names the views read
-  (8).
+---
 
-**Why this layer exists:** the three worst user-visible bugs in this app's
-history were shape mismatches (classes failed to save, the calendar rendered
-empty, the conflict banner printed "undefined and undefined"). All three are now
-impossible to reintroduce silently.
-
-## 5. Visual regression (Playwright)
+## 5. Deterministic Visual Regression Baselines (Playwright)
 
 ```powershell
-pnpm --dir apps/web exec playwright test                       # compare
-pnpm --dir apps/web exec playwright test --update-snapshots=all # re-stamp
+pnpm --dir apps/web exec playwright test                       # Compare against baselines
+pnpm --dir apps/web exec playwright test --update-snapshots=all # Re-stamp intentional UI updates
 ```
 
-- Committed baselines live in `apps/web/e2e-baselines/` (dashboard, week
-  calendar, settings modal × light/dark) and capture the **genuine first-run
-  empty UI** — no injected fixtures (honesty doctrine).
-- Determinism: the clock is frozen (`page.clock.setFixedTime`) before the app
-  boots, timezone is pinned to UTC, fonts are awaited
-  (`document.fonts.status === "loaded"`), the theme is seeded via an init
-  script, and `NODE_OPTIONS=--dns-result-order=ipv4first` pins the dev server to
-  IPv4 on Windows.
-- Seeded/populated views are exercised in the **dev-only** store-handle flow
-  (below), never in committed baselines.
+- Baselines live in `apps/web/e2e-baselines/` (genuine first-run Light & Dark states).
+- Frozen clock (`page.clock.setFixedTime`), UTC timezone, `reducedMotion: "reduce"`, and awaited web fonts (`document.fonts.status === "loaded"`) eliminate flake.
 
-## 6. The live sweep (agent-driven exploratory pass)
+---
 
-The layer that finds what everything above cannot: **dead buttons, flows that
-silently do nothing, honesty violations in real copy, and state that renders
-differently on real data.** Run it on the debug build with real (or
-representative) data before every release.
+## 6. Automated Web + Desktop UI Sweep (`tooling/ui-sweep.mjs`)
 
-### Setup
+This single-command harness drives every view, sub-tab, responsive breakpoint (`1440×900` desktop + `390×844` mobile), Light & Dark theme, all 13 modals, stacked modal flows, and the live **Tauri 2 WebView2** binary — producing a 1:1 screenshot gallery and a machine-readable JSON audit report.
 
 ```powershell
-cargo tauri build --debug --no-bundle      # target\debug\quizradar-desktop.exe
-set WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333
-start "" target\debug\quizradar-desktop.exe
+# 1. Capture baseline BEFORE edits
+node tooling/ui-sweep.mjs --phase=before --out-dir=./screenshots/web/before --report=./audit-before.json
+
+# 2. Apply UI/UX & functional fixes, then capture AFTER
+node tooling/ui-sweep.mjs --phase=after  --out-dir=./screenshots/web/after  --report=./audit-after.json
 ```
 
-The CDP port is the sweep's superpower: the agent drives the **real app** with
-DOM-level clicks (reliable) while capturing console errors, and falls back to
-OS-level automation only for what CDP can't reach. It also allows reading the
-live store (`localStorage["quizradar_state_cache_v5"]`,
-`window.__TAURI_INTERNAL__.invoke("get_state")`) without touching user data.
+### Built-In Structural & Visual Invariants Checked on Every Screenshot
 
-### The coverage matrix (enumerate before you click)
+1. **`stacked-visible-dialogs` (Critical):** At most **one** `[role="dialog"]` inside `modal-stack-root` may be visible at any instant; parent modals in a LIFO stack must be hidden (`hidden` + `aria-hidden="true"`) until the top modal closes.
+2. **`double-modal-chrome` (Critical):** A modal component rendered inside `ModalStack`'s outer `.modal-panel` shell must never wrap itself in a second bordered/shadowed card ("window-inside-a-window"). Large bespoke layouts opt into `flush: true` in `modalRegistry.ts`.
+3. **`nested-scroll-containers` (High):** Prevents scroll-trapping double vertical scrollbars inside dialogs.
+4. **`contrast-low` (High/Medium):** Uses an offscreen `1×1` HTML5 `<canvas>` (`willReadFrequently: true`) to resolve **any CSS Color 4 value** (`oklch()`, `color-mix()`, `rgb()`) AND parses `linear-gradient(...)` color stops so text over gradients and translucent chips is audited against its worst-case background stop (`>= 4.5:1` body, `>= 3.0:1` large text).
+5. **`offscreen-x` (High):** Flags any visible element extending past `window.innerWidth` outside an intentional horizontal scroll container.
+6. **`tiny-font` (Medium):** Enforces `>= 11px` minimum computed font size across all visible text nodes.
+7. **`missing-a11y-name` (Medium):** Every visible `<button>`, `<input>`, and `<select>` must expose an accessible name (`aria-label`, `aria-labelledby`, `<label for="...">`, wrapping `<label>`, or text content).
 
-List every interactive element per surface, then strike them off:
+### Zero-PII Desktop Sandbox Protocol (Tauri 2 + WebView2 CDP)
 
-- **Top bar** — brand, view switcher (each view), calendar controls (Today,
-  prev/next), search field + `/` + Ctrl+K, Sync (overlay open → progress →
-  complete/Cancel), Data & Backup modal, theme toggle (both themes), Settings
-  (all tabs), account chip (signed out → sign in; signed in → profile).
-- **Sidebar** — Create Study Event, Focus, Help, mini-calendar (month nav, day
-  click → week jump), Exams-in-week list, My-calendars checkboxes, footer stamps.
-- **Dashboard** — hero actions (Study Plan / Calendar / Google Cal), KPI pills,
-  readiness bar, Sync Calendar, rec-card topics chip → checklist → optimistic
-  toggle (watch the readiness KPI move), card → detail modal, timeline rows,
-  type filter, source pills, empty states (first-run and all-clear).
-- **Tasks** — summary line, course filter, readiness cards, roadmap checkboxes.
-- **Calendar** — Today/prev/next, mini-cal jump, merged slot+exam card, plain
-  slot → popover, standalone exam card → detail, custom event → edit/delete,
-  layer checkboxes.
-- **Detail modal** — topic checkboxes, grade editor + what-if projection,
-  Export .ics (cancel the dialog), Start Focus Pomodoro, Practice Quiz,
-  close (X and Escape).
-- **All modals** — open each, exercise every input, Escape closes LIFO.
-- **Keyboard** — `/`, Ctrl+K, Escape (modal stack order).
-- **Themes** — repeat the critical surfaces in light and dark.
+Never attach automated sweeps to a developer's live `%LOCALAPPDATA%` database or OS credential store. `apps/desktop/src-tauri` honors two test-isolation environment variables used automatically by `tooling/ui-sweep.mjs`:
 
-### Protocol per finding
+- `QUIZRADAR_DATA_DIR=<temp-dir>` — redirects SQLite (`quizradar.db`) away from `%LOCALAPPDATA%\com.quizradar.app`.
+- `QUIZRADAR_EPHEMERAL_KEYRING=1` — switches `KeyringStore` to an in-memory map for the process lifetime so Windows Credential Manager / macOS Keychain / Secret Service are never read or mutated.
+- `WEBVIEW2_USER_DATA_FOLDER=<temp-dir>\wv2` + `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` — isolates browser storage and exposes CDP so Playwright inspects the real native Tauri window.
 
-1. Reproduce once, **screenshot the broken state** (the "before").
-2. Diagnose in code; distinguish real bugs from harness artifacts
-   (re-test dead-looking controls via CDP DOM clicks before calling them dead).
-3. Fix; add the regression test at the lowest layer that can express it
-   (unit → contract → visual → e2e).
-4. Re-verify on the rebuilt app; screenshot the fixed state (the "after").
-5. Log both paths in the review report.
+---
 
-Findings from the phase-18 sweep, for calibration: 2 dead-control false
-positives (harness artifacts — proven via CDP), 7 real defects across honesty
-copy, shape adaptation and a11y, and 1 parser fidelity fix — each with a
-regression test.
+## 7. Android Emulator + ARTEMIS Closed-Loop Sweep
 
-### Instrumentation the sweep relies on
+For Android (`apps/mobile-android`) or any native mobile target:
 
-- `window.__QUIZRADAR_STORE__` — **dev builds only** (`main.tsx`,
-  `import.meta.env.DEV`): lets the harness seed state and read the store.
-  The production bundle never exposes it.
-- The WebView2 data dir (`%LOCALAPPDATA%\com.quizradar.app`) holds the real
-  SQLite DB (`quizradar.db`) next to the WebView2 profile (`EBWebView/`).
-  When a rebuild seems to "not apply", clear **only**
-  `EBWebView/Default/{Cache,Code Cache,Service Worker,GPU*}` — never the DB —
-  and relaunch: the service worker/HTTP cache can pin a stale bundle.
-- A destructive UI action must be attributable: if a schedule/stamp changes
-  unexpectedly, `schedule_updated_at` and `last_gmail_sync` in `kv_meta` /
-  `config_kv` tell you **when** (read the DB read-only:
-  `python -c "import sqlite3; …"` with `mode=ro`), and the WAL keeps deleted
-  row bytes recoverable until checkpoint.
+1. **Cross-compile native core & assemble debug APK:**
+   ```powershell
+   $env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot"
+   Set-Location apps\mobile-android
+   .\gradlew.bat buildAndroidRustLibs assembleDebug
+   adb -s emulator-5554 install -r app\build\outputs\apk\debug\app-debug.apk
+   ```
+2. **Diagnose & observe with ARTEMIS MCP:**
+   - Call `mobile_diagnose` first if device state is unknown; confirm user device choice if multiple devices are attached.
+   - Use **ARTEMIS Flash** (`mobile_run_task` with `mode="flash"`) for deterministic UI navigation, file-picker backup imports, checkbox toggles, Pomodoro Start/Pause/Reset, Practice Quiz MCQ selection, and sheet openings; use `mobile_get_device_state` to inspect the live accessibility XML tree (`bounds`, `clickable`, `content-desc`).
+3. **Verify Android-specific visual invariants on every screen (Light & Dark):**
+   - `enableEdgeToEdge()` + `WindowCompat.getInsetsController` status/navigation bar icon legibility in both `cmd uimode night no` and `cmd uimode night yes`.
+   - Complete M3 `ColorScheme` mapping (`surfaceContainer`, `secondaryContainer`, `outlineVariant`) so default Material lavender (`#E8DEF8`) never leaks into `NavigationBar` or `ModalBottomSheet`.
+   - Icon buttons use `IconButton` / `OutlinedIconButton` (never `OutlinedButton(Modifier.size(48.dp))`, whose default `24.dp` horizontal padding crushes icons to `0dp` width).
+   - Clean up temporary `/sdcard/Download/*` seed files and reset `cmd uimode night no` when finished.
 
-### Honesty checks (run on real data)
+---
 
-- Undated items render **no countdown** (never "In 0d").
-- Missing room renders "—", never "Room —", "TBA" or a default hall.
-- Empty scan says what ran and found nothing; a canceled scan says canceled.
-- 0/0 readiness reads 100 (documented semantic), never a fake percentage of a
-  fake total.
-- Every optimistic update has a visible rollback on failure.
+## Porting This Testing System to Another App
 
-## Cadence
-
-- **Every commit:** layers 1–4 (CI runs them).
-- **Before every push to main:** layer 5.
-- **Before every release / after any UI phase:** layer 6 (full sweep), plus a
-  fresh look at the honesty checks.
+1. Copy `tooling/ui-sweep.mjs` and replace `SEED_DATA` + route/modal selectors with the target app's views and dialogs; keep `runDomAudit()` verbatim (it is framework-agnostic).
+2. Enforce a single outer modal container (`ModalStack` + `modalRegistry` `flush` flag) so child views never draw duplicate dialog borders or simultaneous stacked backdrops.
+3. Add `DATA_DIR` + `EPHEMERAL_KEYRING` env overrides to any desktop shell (Tauri / Electron) so CDP sweeps run in a clean temp directory with zero risk to user data.
+4. Pair every UI sweep with a 1:1 **Before & After** visual artifact (`carousel` slides + JSON issue counts) so human review takes minutes instead of hours.

@@ -91,15 +91,14 @@ class OAuthFlowTest {
         }
 
     @Test
-    fun testPairingDeepLinkExtractsUrlAndPin() =
+    fun testPairingDeepLinkReturnsDisabledError() =
         runBlocking {
             val uri = Uri.parse("com.quizradar.app://pair?url=http%3A%2F%2F192.168.1.15%3A8000&pin=482910")
             val result = oauthManager.handleRedirect(uri, engine)
 
-            assertTrue("Must yield Pairing result", result is OAuthRedirectResult.Pairing)
-            val pairing = result as OAuthRedirectResult.Pairing
-            assertEquals("http://192.168.1.15:8000", pairing.url)
-            assertEquals("482910", pairing.pin)
+            assertTrue("Must yield Error result", result is OAuthRedirectResult.Error)
+            val err = (result as OAuthRedirectResult.Error).error
+            assertTrue(err.contains("Desktop LAN pairing is disabled"))
         }
 
     @Test

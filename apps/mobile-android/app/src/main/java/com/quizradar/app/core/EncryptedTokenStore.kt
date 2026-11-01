@@ -15,14 +15,29 @@ class EncryptedTokenStore(context: Context) : TokenProvider {
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
 
+    // A device-to-device restore ships the encrypted prefs WITHOUT the
+    // Keystore master key — `create` then throws (AEADBadTagException family)
+    // at launch. That is a crash loop. The unreadable file is dropped and
+    // rebuilt empty: the user re-signs in, the app still starts.
     private val prefs: SharedPreferences =
-        EncryptedSharedPreferences.create(
-            context,
-            "quizradar_secure_tokens",
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
+        try {
+            EncryptedSharedPreferences.create(
+                context,
+                "quizradar_secure_tokens",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+        } catch (_: Exception) {
+            context.deleteSharedPreferences("quizradar_secure_tokens")
+            EncryptedSharedPreferences.create(
+                context,
+                "quizradar_secure_tokens",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+        }
 
     @Volatile
     private var memoryGoogleAccessToken: String? = null

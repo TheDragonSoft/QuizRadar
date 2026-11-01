@@ -58,7 +58,7 @@ export const ToastContainer: React.FC = () => {
     <div
       data-testid="toast-container"
       aria-live="polite"
-      className="pointer-events-none fixed bottom-20 right-4 z-50 flex flex-col gap-2 sm:bottom-6"
+      className="pointer-events-none fixed bottom-20 right-4 z-[120] flex flex-col gap-2 sm:bottom-6"
     >
       {toasts.map((toast) => (
         <ToastMessage key={toast.id} toast={toast} onDismiss={removeToast} />

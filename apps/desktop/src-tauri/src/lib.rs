@@ -37,19 +37,25 @@ pub fn run() -> tauri::Result<()> {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
-            // Register the `quizradar://` scheme with the OS so the browser
-            // page shown at the end of an OAuth round trip can hand control
-            // back to the app ("Open QuizRadar"). Best effort: on Windows the
-            // plugin writes HKCU\Software\Classes, on Linux a .desktop file,
-            // and on macOS the scheme comes from the bundle Info.plist.
-            if let Err(err) = app.deep_link().register_all() {
-                eprintln!("[deep-link] scheme registration failed: {err}");
+            let sandbox_data_dir = std::env::var("QUIZRADAR_DATA_DIR")
+                .ok()
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+                .map(PathBuf::from);
+
+            // Register the `quizradar://` scheme with the OS unless running inside an
+            // isolated test sandbox (`QUIZRADAR_DATA_DIR`).
+            if sandbox_data_dir.is_none() {
+                if let Err(err) = app.deep_link().register_all() {
+                    eprintln!("[deep-link] scheme registration failed: {err}");
+                }
             }
-            let data_dir = app
-                .path()
-                .app_local_data_dir()
-                .or_else(|_| app.path().app_data_dir())
-                .unwrap_or_else(|_| PathBuf::from("."));
+            let data_dir = sandbox_data_dir.unwrap_or_else(|| {
+                app.path()
+                    .app_local_data_dir()
+                    .or_else(|_| app.path().app_data_dir())
+                    .unwrap_or_else(|_| PathBuf::from("."))
+            });
 
             let _ = std::fs::create_dir_all(&data_dir);
             let db_path = data_dir.join("quizradar.db");
@@ -94,15 +100,13 @@ pub fn run() -> tauri::Result<()> {
             commands::microsoft_scanning_consent_start,
             commands::microsoft_logout,
             commands::logout,
-            commands::get_secret,
-            commands::set_secret,
-            commands::delete_secret,
             commands::extract_schedule,
             commands::optimize_tasks,
             commands::practice_generate,
             commands::validate_gemini_key,
             commands::ai_quota_usage,
             commands::check_update,
+            commands::download_and_install_update,
             commands::export_backup_file,
             commands::import_backup_file,
             commands::export_ics,

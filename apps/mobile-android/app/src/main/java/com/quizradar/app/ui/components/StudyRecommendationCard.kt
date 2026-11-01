@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -24,7 +25,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -41,15 +45,24 @@ fun StudyRecommendationCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val haptic = LocalHapticFeedback.current
     val palette = CoursePalette.get(recommendation.courseId)
+    val courseTextColor = CoursePalette.textOnSurface(recommendation.courseId, isDark)
 
-    val urgencyColor =
+    val (urgencyColor, urgencyBg) =
         when (recommendation.urgencyBadge) {
-            "TODAY" -> Color(0xFFDC2626)
-            "TOMORROW" -> Color(0xFFD97706)
-            "PAST" -> Color(0xFF64748B)
-            else -> MaterialTheme.colorScheme.primary
+            "TODAY" ->
+                (if (isDark) Color(0xFFFCA5A5) else Color(0xFFB91C1C)) to
+                    Color(0xFFDC2626).copy(alpha = if (isDark) 0.22f else 0.12f)
+            "TOMORROW" ->
+                (if (isDark) Color(0xFFFDE68A) else Color(0xFF92400E)) to
+                    Color(0xFFD97706).copy(alpha = if (isDark) 0.22f else 0.14f)
+            "PAST" ->
+                MaterialTheme.colorScheme.onSurfaceVariant to MaterialTheme.colorScheme.surfaceVariant
+            else ->
+                MaterialTheme.colorScheme.onSecondaryContainer to
+                    MaterialTheme.colorScheme.secondaryContainer
         }
 
     Column(
@@ -62,7 +75,6 @@ fun StudyRecommendationCard(
                 .clickable { onClick() }
                 .padding(16.dp),
     ) {
-        // Top row: Course code + Urgency Badge + Priority Rank
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -78,23 +90,24 @@ fun StudyRecommendationCard(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "#$index • ${recommendation.courseId ?: "GENERAL"}",
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                    color = palette.color,
+                    text = "#$index • ${recommendation.courseName ?: recommendation.courseId ?: "General"}",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = courseTextColor,
                 )
             }
 
             if (recommendation.urgencyBadge != null) {
                 Text(
                     text = recommendation.urgencyBadge,
-                    fontSize = 10.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = urgencyColor,
                     modifier =
                         Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background(urgencyColor.copy(alpha = 0.12f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                            .background(urgencyBg)
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
                 )
             }
         }
@@ -111,11 +124,10 @@ fun StudyRecommendationCard(
             Text(
                 text = recommendation.whyStudyNow,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
-        // Progress bar
         Spacer(modifier = Modifier.height(10.dp))
         val topics = recommendation.topics
         val totalTopics = topics.size
@@ -125,7 +137,7 @@ fun StudyRecommendationCard(
             } else {
                 topics.count { completedTopicsMap[it.key] == true }
             }
-        val progress = if (totalTopics == 0) 1f else completedCount.toFloat() / totalTopics.toFloat()
+        val progress = if (totalTopics == 0) 0f else completedCount.toFloat() / totalTopics.toFloat()
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -133,15 +145,28 @@ fun StudyRecommendationCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "$completedCount of $totalTopics topics mastered",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                text =
+                    if (totalTopics == 0) {
+                        "No syllabus topics tracked"
+                    } else {
+                        "$completedCount of $totalTopics topics mastered"
+                    },
+                style =
+                    TextStyle(
+                        fontSize = 11.sp,
+                        fontFeatureSettings = "tnum",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
             )
             Text(
-                text = "${(progress * 100).toInt()}%",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = palette.color,
+                text = if (totalTopics == 0) "—" else "${(progress * 100).toInt()}%",
+                style =
+                    TextStyle(
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFeatureSettings = "tnum",
+                        color = courseTextColor,
+                    ),
             )
         }
 
@@ -154,10 +179,9 @@ fun StudyRecommendationCard(
                     .height(6.dp)
                     .clip(RoundedCornerShape(3.dp)),
             color = palette.color,
-            trackColor = palette.background,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
         )
 
-        // Topic Checkboxes (Optimistic updates)
         if (topics.isNotEmpty()) {
             Spacer(modifier = Modifier.height(8.dp))
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -167,21 +191,25 @@ fun StudyRecommendationCard(
                         modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 2.dp)
+                                .defaultMinSize(minHeight = 40.dp)
+                                .clip(RoundedCornerShape(8.dp))
                                 .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     onToggleTopic(topicItem.key, !isChecked)
-                                },
+                                }
+                                .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Checkbox(
                             checked = isChecked,
                             onCheckedChange = { done ->
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onToggleTopic(topicItem.key, done)
                             },
                             colors =
                                 CheckboxDefaults.colors(
                                     checkedColor = palette.color,
-                                    uncheckedColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                                    uncheckedColor = MaterialTheme.colorScheme.outline,
                                 ),
                             modifier = Modifier.size(24.dp),
                         )
@@ -190,10 +218,15 @@ fun StudyRecommendationCard(
                             text = topicItem.topic,
                             style =
                                 MaterialTheme.typography.bodySmall.copy(
-                                    textDecoration = if (isChecked) TextDecoration.LineThrough else TextDecoration.None,
+                                    textDecoration =
+                                        if (isChecked) {
+                                            TextDecoration.LineThrough
+                                        } else {
+                                            TextDecoration.None
+                                        },
                                     color =
                                         if (isChecked) {
-                                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                            MaterialTheme.colorScheme.onSurfaceVariant
                                         } else {
                                             MaterialTheme.colorScheme.onSurface
                                         },

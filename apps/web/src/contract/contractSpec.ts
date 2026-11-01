@@ -91,9 +91,9 @@ export const RUST_ASSESSMENT_TYPES: string[] = RUST_CONTRACT.enumLabels.Assessme
 export const RUST_ASSESSMENT_SOURCE_LABELS: string[] = RUST_CONTRACT.enumLabels.AssessmentSource;
 
 /**
- * The urgency labels the core *emits* — serde's default enum representation
- * is the variant name verbatim, and `UrgencyLevel` carries no
- * `#[serde(rename_all = "lowercase")]`.
+ * The urgency labels the core *emits* — serde `rename_all = "lowercase"`
+ * (added when the emit/store shapes were unified), so the wire is the
+ * lower-case ladder.
  */
 export const RUST_URGENCY_EMIT_LABELS: string[] = RUST_CONTRACT.enums.UrgencyLevel.variants.map(
   (variant) => variant.wireName,
@@ -255,18 +255,7 @@ export interface KnownEnumDivergence {
  * live TypeScript types, so a fix on either side fails the suite until this
  * record is updated — a divergence can never rot silently.
  */
-export const KNOWN_ENUM_DIVERGENCES: KnownEnumDivergence[] = [
-  {
-    id: "urgency-level-casing",
-    rustEmit: ["Critical", "High", "Medium", "Upcoming", "Past"],
-    tsDeclared: ["critical", "high", "medium", "upcoming", "past"],
-    impact:
-      "serde emits the urgency variant name verbatim ('Critical'); the mirror declares the lower-case " +
-      "labels the core stores in SQLite and accepts on import. The dashboard renders the value with " +
-      "an `uppercase` CSS class, so the visible text is unchanged, but the value does not satisfy the " +
-      "declared `UrgencyLevel` union. Fix by lower-casing in the adapter or by declaring the wire case.",
-  },
-];
+export const KNOWN_ENUM_DIVERGENCES: KnownEnumDivergence[] = [];
 
 // ---------------------------------------------------------------------------
 // The TypeScript mirror — parsed, never hand-copied.

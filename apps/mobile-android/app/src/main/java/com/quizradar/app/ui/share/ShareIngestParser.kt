@@ -7,6 +7,8 @@ data class SharedEventDraft(
     val notes: String,
     val courseId: String? = null,
     val dateIso: LocalDate? = null,
+    val startTime: String? = null,
+    val endTime: String? = null,
 )
 
 /**

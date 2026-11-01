@@ -27,3 +27,7 @@ docs/
 prompts/
 AGENTS.md
 core/tests/fixtures/
+
+# The contract wire map is byte-compared by the freshness gate — regenerate.mjs
+# owns its exact bytes; prettier JSON reformatting breaks the comparison.
+apps/web/src/testdata/contract/rust-structs.json

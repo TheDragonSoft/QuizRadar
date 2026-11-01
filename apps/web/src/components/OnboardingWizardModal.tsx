@@ -12,10 +12,9 @@ import {
   Moon,
 } from "lucide-react";
 import { copy } from "../copy";
-import { isTauriEnvironment } from "../state/rpc";
 import { useAppStore } from "../state/store";
-import { COURSE_PALETTE_PRESETS } from "../lib/coursePalette";
-import { GoogleMark, MicrosoftMark } from "./BrandMarks";
+import { COURSE_PALETTE_PRESETS, courseAccessibleChip } from "../lib/coursePalette";
+import { GoogleMark, MicrosoftMark, RadarMark } from "./BrandMarks";
 import type { Course } from "../state/types";
 
 export function OnboardingWizardModal({
@@ -43,32 +42,15 @@ export function OnboardingWizardModal({
   const microsoftLogout = useAppStore((s) => s.microsoftLogout);
   const validateGeminiKey = useAppStore((s) => s.validateGeminiKey);
   const extractSchedule = useAppStore((s) => s.extractSchedule);
-  const importBackupFile = useAppStore((s) => s.importBackupFile);
   const openModal = useAppStore((s) => s.openModal);
   const addToast = useAppStore((s) => s.addToast);
 
   // Step 1: Profile & Rhythm State
   const [userName, setUserName] = useState(config.userName || auth.name || "");
   const [userEmail, setUserEmail] = useState(config.userEmail || auth.email || "");
-  const [selectedTrack, setSelectedTrack] = useState<string>("eng");
-  const [migrationSummary, setMigrationSummary] = useState<string | null>(null);
-
-  const handleImportV4File = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const report = await importBackupFile(undefined, text);
-      const summary = `Restored: ${report.coursesImported} courses, ${report.assessmentsImported} assessments, ${report.gradesImported} grades, ${report.topicsImported} completed topics.${report.secretsIgnored.length > 0 ? ` (${report.secretsIgnored.length} legacy secrets dropped)` : ""}`;
-      setMigrationSummary(summary);
-      addToast({ type: "success", message: summary });
-    } catch (err) {
-      addToast({
-        type: "error",
-        message: `Import failed: ${err instanceof Error ? err.message : String(err)}`,
-      });
-    }
-  };
+  // The rhythm preset is persisted (`01` §4.1): re-opening the wizard shows
+  // the choice that was saved, and "eng" is only the pre-answer default.
+  const [selectedTrack, setSelectedTrack] = useState<string>(config.academicTrack || "eng");
 
   // Step 2: Connections State
   const [geminiKey, setGeminiKey] = useState("");
@@ -174,6 +156,8 @@ export function OnboardingWizardModal({
         moodleEnabled: Boolean(moodleUrl.trim() || moodleIcalUrl.trim()),
         classroomEnabled,
         autoSyncGcal,
+        // The rhythm preset the user picked — persisted, not discarded.
+        academicTrack: selectedTrack,
         onboardingCompleted: true,
       });
 
@@ -191,25 +175,28 @@ export function OnboardingWizardModal({
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex h-[620px] max-h-[85vh] min-h-0 flex-1 flex-col">
       {/* v4 gradient header band */}
-      <div className="flex shrink-0 items-start justify-between gap-3 bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-5 sm:px-6">
-        <div>
-          <h2
-            id="onboarding-wizard-title"
-            className="text-lg font-black leading-tight tracking-tight text-white sm:text-2xl"
-          >
-            {copy.onboarding.title}
-          </h2>
-          <p className="mt-0.5 text-xs text-blue-100/85">{copy.onboarding.subtitle}</p>
+      <div className="flex shrink-0 items-center justify-between gap-3 bg-gradient-to-r from-blue-700 to-indigo-800 px-5 py-5 sm:px-6">
+        <div className="flex items-center gap-3">
+          <RadarMark animated className="h-10 w-10 shrink-0 drop-shadow-md" />
+          <div>
+            <h2
+              id="onboarding-wizard-title"
+              className="text-lg font-black leading-tight tracking-tight text-white sm:text-2xl"
+            >
+              {copy.onboarding.title}
+            </h2>
+            <p className="mt-0.5 text-xs text-blue-100">{copy.onboarding.subtitle}</p>
+          </div>
         </div>
         <button
           type="button"
           onClick={onClose}
           aria-label={copy.common.close}
-          className="-mr-1 -mt-1 shrink-0 rounded-xl p-2 text-white/90 transition hover:bg-white/15 active:scale-95"
+          className="-mr-1 shrink-0 rounded-xl p-2 text-white transition hover:bg-white/15 active:scale-95"
         >
-          <X className="h-5 w-5" />
+          <X className="h-5 w-5" aria-hidden="true" />
         </button>
       </div>
 
@@ -227,18 +214,20 @@ export function OnboardingWizardModal({
             aria-current={step === s.id ? "step" : undefined}
             className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-semibold transition ${
               step === s.id
-                ? "border-[var(--accent)] text-[var(--accent)]"
+                ? "border-[var(--accent-ink)] text-[var(--accent-ink)]"
                 : "border-transparent text-[var(--text-muted)] hover:text-[var(--text)]"
             }`}
           >
             <span
-              className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] ${
-                step >= s.id
-                  ? "bg-[var(--accent)]/10 text-[var(--accent)]"
-                  : "bg-[var(--surface-hover)] text-[var(--text-muted)]"
+              className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] tabular-nums font-bold ${
+                step === s.id
+                  ? "bg-[var(--accent-fill)] text-white shadow-xs"
+                  : step > s.id
+                    ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300"
+                    : "bg-[var(--surface-hover)] text-[var(--text-muted)]"
               }`}
             >
-              {s.id}
+              {step > s.id ? <Check className="h-3 w-3 stroke-[3]" /> : s.id}
             </span>
             <span>{s.label}</span>
           </button>
@@ -249,42 +238,17 @@ export function OnboardingWizardModal({
       <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
         {/* STEP 1: Profile, Track & Theme */}
         {step === 1 && (
-          <div className="mt-6 space-y-6">
-            {/* Coming from v4 card */}
-            <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h4 className="text-xs font-bold text-[var(--text)]">
-                    {copy.onboarding.comingFromV4Title}
-                  </h4>
-                  <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-                    {copy.onboarding.comingFromV4Subtitle}
-                  </p>
-                </div>
-                <label className="cursor-pointer shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-xs font-semibold text-[var(--text)] hover:border-[var(--accent)] transition">
-                  <Upload className="h-3.5 w-3.5" />
-                  <span>{copy.onboarding.importV4Action}</span>
-                  <input
-                    type="file"
-                    accept=".json"
-                    className="hidden"
-                    onChange={handleImportV4File}
-                  />
-                </label>
-              </div>
-              {migrationSummary && (
-                <div className="mt-3 p-2.5 rounded-lg bg-[var(--accent)]/10 text-xs text-[var(--text)] font-medium">
-                  {migrationSummary}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-4">
+          <div className="mt-4 space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1">
+                <label
+                  htmlFor="onboard-user-name"
+                  className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1"
+                >
                   {copy.onboarding.nameLabel}
                 </label>
                 <input
+                  id="onboard-user-name"
                   type="text"
                   value={userName}
                   onChange={(e) => setUserName(e.target.value)}
@@ -294,10 +258,14 @@ export function OnboardingWizardModal({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1">
+                <label
+                  htmlFor="onboard-user-email"
+                  className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1"
+                >
                   {copy.onboarding.emailLabel}
                 </label>
                 <input
+                  id="onboard-user-email"
                   type="email"
                   value={userEmail}
                   onChange={(e) => setUserEmail(e.target.value)}
@@ -312,17 +280,18 @@ export function OnboardingWizardModal({
 
             {/* Academic Rhythm Presets */}
             <div>
-              <label className="block text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider mb-2">
+              <div className="block text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider mb-2">
                 {copy.onboarding.tracksTitle}
-              </label>
+              </div>
               <div className="grid grid-cols-1 gap-2.5">
                 <button
                   type="button"
                   onClick={() => setSelectedTrack("med")}
+                  aria-pressed={selectedTrack === "med"}
                   className={`p-3 rounded-xl border text-left transition ${
                     selectedTrack === "med"
-                      ? "border-[var(--accent)] bg-[var(--accent)]/5 ring-1 ring-[var(--accent)]"
-                      : "border-[var(--border)] bg-[var(--page)] hover:border-[var(--accent)]/40"
+                      ? "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_5%,transparent)] ring-1 ring-[var(--accent)]"
+                      : "border-[var(--border)] bg-[var(--page)] hover:border-[color-mix(in_srgb,var(--accent)_40%,transparent)]"
                   }`}
                 >
                   <div className="text-xs font-bold text-[var(--text)]">
@@ -336,10 +305,11 @@ export function OnboardingWizardModal({
                 <button
                   type="button"
                   onClick={() => setSelectedTrack("eng")}
+                  aria-pressed={selectedTrack === "eng"}
                   className={`p-3 rounded-xl border text-left transition ${
                     selectedTrack === "eng"
-                      ? "border-[var(--accent)] bg-[var(--accent)]/5 ring-1 ring-[var(--accent)]"
-                      : "border-[var(--border)] bg-[var(--page)] hover:border-[var(--accent)]/40"
+                      ? "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_5%,transparent)] ring-1 ring-[var(--accent)]"
+                      : "border-[var(--border)] bg-[var(--page)] hover:border-[color-mix(in_srgb,var(--accent)_40%,transparent)]"
                   }`}
                 >
                   <div className="text-xs font-bold text-[var(--text)]">
@@ -353,10 +323,11 @@ export function OnboardingWizardModal({
                 <button
                   type="button"
                   onClick={() => setSelectedTrack("biz")}
+                  aria-pressed={selectedTrack === "biz"}
                   className={`p-3 rounded-xl border text-left transition ${
                     selectedTrack === "biz"
-                      ? "border-[var(--accent)] bg-[var(--accent)]/5 ring-1 ring-[var(--accent)]"
-                      : "border-[var(--border)] bg-[var(--page)] hover:border-[var(--accent)]/40"
+                      ? "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_5%,transparent)] ring-1 ring-[var(--accent)]"
+                      : "border-[var(--border)] bg-[var(--page)] hover:border-[color-mix(in_srgb,var(--accent)_40%,transparent)]"
                   }`}
                 >
                   <div className="text-xs font-bold text-[var(--text)]">
@@ -371,9 +342,9 @@ export function OnboardingWizardModal({
 
             {/* Visual Theme Choice — v4 sun/moon tiles */}
             <div>
-              <label className="mb-2 block text-xs font-bold text-[var(--text)]">
+              <div className="mb-2 block text-xs font-bold text-[var(--text)]">
                 Workspace Appearance
-              </label>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
@@ -385,7 +356,7 @@ export function OnboardingWizardModal({
                       : "border-[var(--border)] bg-[var(--surface)]"
                   }`}
                 >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-400/15 dark:text-amber-300">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300">
                     <Sun className="h-4 w-4" aria-hidden="true" />
                   </div>
                   <div>
@@ -446,7 +417,7 @@ export function OnboardingWizardModal({
                       </div>
                     </div>
                     {auth.authenticated ? (
-                      <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                      <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
                         {copy.onboarding.connectedBadge}
                       </span>
                     ) : (
@@ -457,8 +428,8 @@ export function OnboardingWizardModal({
                   </div>
 
                   <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
-                    Link your Gmail for automated assessment detection from course emails and
-                    two-way Google Calendar synchronization.
+                    Link your Gmail for automated assessment detection from course emails, and
+                    one-way push of your exams into Google Calendar.
                   </p>
 
                   {auth.authenticated ? (
@@ -501,7 +472,7 @@ export function OnboardingWizardModal({
                       </div>
                     </div>
                     {auth.hasTeamsAuth ? (
-                      <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                      <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
                         {copy.onboarding.connectedBadge}
                       </span>
                     ) : (
@@ -547,6 +518,7 @@ export function OnboardingWizardModal({
               </div>
               <input
                 type="url"
+                aria-label={copy.onboarding.moodleUrlLabel}
                 value={moodleUrl}
                 onChange={(e) => setMoodleUrl(e.target.value)}
                 placeholder={copy.onboarding.moodleUrlLabel}
@@ -554,6 +526,7 @@ export function OnboardingWizardModal({
               />
               <input
                 type="url"
+                aria-label={copy.onboarding.moodleIcalLabel}
                 value={moodleIcalUrl}
                 onChange={(e) => setMoodleIcalUrl(e.target.value)}
                 placeholder={copy.onboarding.moodleIcalLabel}
@@ -568,11 +541,11 @@ export function OnboardingWizardModal({
                   {copy.onboarding.geminiConnect}
                 </span>
                 {geminiValid ? (
-                  <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold">
+                  <span className="text-[11px] text-emerald-700 dark:text-emerald-300 font-bold">
                     Verified
                   </span>
                 ) : (
-                  <span className="text-[11px] text-purple-600 dark:text-purple-400 font-semibold">
+                  <span className="text-[11px] text-purple-700 dark:text-purple-300 font-semibold">
                     Optional
                   </span>
                 )}
@@ -587,6 +560,7 @@ export function OnboardingWizardModal({
               <div className="flex gap-2">
                 <input
                   type="password"
+                  aria-label="Gemini API key"
                   value={geminiKey}
                   onChange={(e) => setGeminiKey(e.target.value)}
                   placeholder={copy.ai.keyPlaceholder}
@@ -596,7 +570,7 @@ export function OnboardingWizardModal({
                   type="button"
                   disabled={geminiValidating || !geminiKey.trim()}
                   onClick={handleValidateGemini}
-                  className="rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-purple-700 disabled:opacity-50"
+                  className="rounded-lg bg-purple-700 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-purple-800 disabled:opacity-50"
                 >
                   {geminiValidating ? "Checking…" : "Validate"}
                 </button>
@@ -604,40 +578,37 @@ export function OnboardingWizardModal({
               <div className="text-[11px] text-[var(--text-muted)]">{copy.ai.quotaLimitNote}</div>
             </div>
 
-            {/* Timetable Image Upload Card — desktop only. The browser tier
-                has no vision-import command, so offering the upload there
-                would promise something the tier cannot do. */}
-            {isTauriEnvironment() ? (
-              <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--page)] p-4 text-center">
-                <Upload className="h-6 w-6 text-[var(--accent)] mx-auto mb-2" />
-                <div className="text-xs font-bold text-[var(--text)]">
-                  {copy.onboarding.timetableUpload}
-                </div>
-                <p className="text-[11px] text-[var(--text-muted)] mt-1 mb-3">
-                  {copy.onboarding.timetableUploadSub}
-                </p>
-                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-[var(--accent)] px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[var(--accent-hover)] transition">
-                  <span>
-                    {extractingTimetable
-                      ? copy.onboarding.timetableExtracting
-                      : copy.onboarding.timetableUploadButton}
-                  </span>
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    disabled={extractingTimetable}
-                    onChange={handleTimetableFile}
-                    className="hidden"
-                  />
-                </label>
+            {/* Timetable Image Upload Card — every tier can read a timetable
+                image now: the desktop shell runs the task through the Rust
+                core, the browser tier calls Gemini Vision directly with the
+                same prompt and the same drop rules. */}
+            <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--page)] p-4 text-center">
+              <Upload
+                className="h-6 w-6 text-[var(--accent-ink)] mx-auto mb-2"
+                aria-hidden="true"
+              />
+              <div className="text-xs font-bold text-[var(--text)]">
+                {copy.onboarding.timetableUpload}
               </div>
-            ) : (
-              <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--page)] p-4">
-                <p className="text-[11px] text-[var(--text-muted)]">
-                  {copy.onboarding.timetableUploadBrowserNote}
-                </p>
-              </div>
-            )}
+              <p className="text-[11px] text-[var(--text-muted)] mt-1 mb-3">
+                {copy.onboarding.timetableUploadSub}
+              </p>
+              <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[var(--accent-fill-hover)] transition">
+                <span>
+                  {extractingTimetable
+                    ? copy.onboarding.timetableExtracting
+                    : copy.onboarding.timetableUploadButton}
+                </span>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  aria-label={copy.onboarding.timetableUploadButton}
+                  disabled={extractingTimetable}
+                  onChange={handleTimetableFile}
+                  className="hidden"
+                />
+              </label>
+            </div>
 
             {/* Consents-First Auto GCal */}
             <label className="flex items-center gap-2 text-xs text-[var(--text)] cursor-pointer pt-2">
@@ -645,7 +616,7 @@ export function OnboardingWizardModal({
                 type="checkbox"
                 checked={autoSyncGcal}
                 onChange={(e) => setAutoSyncGcal(e.target.checked)}
-                className="h-4 w-4 rounded border-[var(--border)] text-[var(--accent)]"
+                className="h-4 w-4 rounded border-[var(--border)] accent-[var(--accent-fill)]"
               />
               <span>{copy.onboarding.autoGcalLabel}</span>
             </label>
@@ -654,7 +625,7 @@ export function OnboardingWizardModal({
 
         {/* STEP 3: Course Enrollment Grid & Finish */}
         {step === 3 && (
-          <div className="mt-6 space-y-6">
+          <div className="mt-4 space-y-6">
             <form
               onSubmit={handleAddCourse}
               className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4 space-y-3"
@@ -666,6 +637,7 @@ export function OnboardingWizardModal({
                 <input
                   type="text"
                   required
+                  aria-label="Course code"
                   value={newCode}
                   onChange={(e) => setNewCode(e.target.value)}
                   placeholder="Code (e.g. CSE241)"
@@ -674,6 +646,7 @@ export function OnboardingWizardModal({
                 <input
                   type="text"
                   required
+                  aria-label="Course name"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   placeholder="Name (e.g. Logic Design)"
@@ -697,7 +670,7 @@ export function OnboardingWizardModal({
                 </div>
                 <button
                   type="submit"
-                  className="flex min-h-6 items-center gap-1 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[var(--accent-hover)]"
+                  className="flex min-h-6 items-center gap-1 rounded-lg bg-[var(--accent-fill)] px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[var(--accent-fill-hover)]"
                 >
                   <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>Add</span>
@@ -715,37 +688,40 @@ export function OnboardingWizardModal({
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-                  {courses.map((c) => (
-                    <div
-                      key={c.id}
-                      className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--page)] p-2.5"
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span
-                          className="h-6 w-6 rounded-md flex items-center justify-center text-[11px] font-bold text-white shrink-0"
-                          style={{ backgroundColor: c.color || "var(--accent)" }}
-                        >
-                          {c.name.slice(0, 2).toUpperCase()}
-                        </span>
-                        <div className="min-w-0">
-                          <div className="text-xs font-bold text-[var(--text)] truncate">
-                            {c.name}
-                          </div>
-                          <div className="text-[11px] text-[var(--text-muted)] truncate">
-                            {c.id}
+                  {courses.map((c) => {
+                    const chip = courseAccessibleChip(c.color || "#1a73e8", theme === "dark");
+                    return (
+                      <div
+                        key={c.id}
+                        className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--page)] p-2.5"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className="h-6 w-6 rounded-md flex items-center justify-center text-[11px] font-bold text-white shrink-0"
+                            style={{ backgroundColor: chip.solidBg }}
+                          >
+                            {c.name.slice(0, 2).toUpperCase()}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-[var(--text)] truncate">
+                              {c.name}
+                            </div>
+                            <div className="text-[11px] text-[var(--text-muted)] truncate">
+                              {c.id}
+                            </div>
                           </div>
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => deleteCourse(c.id)}
+                          aria-label={`Delete course ${c.name}`}
+                          className="p-1.5 text-[var(--text-muted)] hover:text-red-600 rounded"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => deleteCourse(c.id)}
-                        aria-label={`Delete course ${c.name}`}
-                        className="p-1.5 text-[var(--text-muted)] hover:text-red-500 rounded"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -761,7 +737,7 @@ export function OnboardingWizardModal({
             onClick={() => setStep((s) => (s - 1) as 1 | 2 | 3)}
             className="flex items-center gap-1.5 rounded-xl border border-[var(--border)] px-3.5 py-2 text-xs font-semibold text-[var(--text)] transition hover:bg-[var(--surface-hover)]"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
             <span>{copy.onboarding.back}</span>
           </button>
         ) : (
@@ -776,19 +752,19 @@ export function OnboardingWizardModal({
           <button
             type="button"
             onClick={() => setStep((s) => (s + 1) as 1 | 2 | 3)}
-            className="flex items-center gap-1.5 rounded-xl bg-[var(--accent)] px-5 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[var(--accent-hover)] active:scale-[0.98]"
+            className="flex items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-5 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[var(--accent-fill-hover)] active:scale-[0.98]"
           >
             <span>{copy.onboarding.next}</span>
-            <ArrowRight className="h-4 w-4" />
+            <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </button>
         ) : (
           <button
             type="button"
             disabled={submittingFinish}
             onClick={handleFinish}
-            className="flex items-center gap-1.5 rounded-xl bg-[var(--accent)] px-5 py-2.5 text-xs font-bold text-white shadow-md shadow-blue-500/20 transition hover:bg-[var(--accent-hover)] disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-5 py-2.5 text-xs font-bold text-white shadow-md shadow-blue-500/20 transition hover:bg-[var(--accent-fill-hover)] disabled:opacity-50"
           >
-            <Check className="h-4 w-4" />
+            <Check className="h-4 w-4" aria-hidden="true" />
             <span>
               {submittingFinish ? copy.onboarding.finishSubmitting : copy.onboarding.finish}
             </span>

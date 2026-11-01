@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -28,6 +29,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -47,18 +51,26 @@ fun ConflictBanner(
 ) {
     if (alerts.isEmpty() || isDismissed) return
 
+    val haptic = LocalHapticFeedback.current
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val studyBlocks =
         customEvents.filter {
             it.id.startsWith("study-block-") || it.id.startsWith("study_block_")
         }
-    val hasStudyBlocks = studyBlocks.isNotEmpty()
+    // The core decides per conflict pair whether a study block already covers
+    // it (`is_mitigated`). "Any study block exists" used to flip the whole
+    // banner to "Mitigated" - a block for one cluster used to hide an
+    // uncovered conflict.
+    val mitigatedAlerts = alerts.filter { it.isMitigated }
+    val unresolvedAlerts = alerts.filter { !it.isMitigated }
 
-    if (hasStudyBlocks) {
+    if (unresolvedAlerts.isEmpty()) {
         // Mitigated State: Emerald Shield
-        val bg = Color(0xFF10B981).copy(alpha = 0.12f)
-        val border = Color(0xFF10B981).copy(alpha = 0.4f)
-        val textPrimary = Color(0xFF065F46)
-        val textSecondary = Color(0xFF047857)
+        val bg = if (isDark) Color(0xFF10B981).copy(alpha = 0.14f) else Color(0xFFECFDF5)
+        val border = if (isDark) Color(0xFF10B981).copy(alpha = 0.45f) else Color(0xFF6EE7B7)
+        val textPrimary = if (isDark) Color(0xFFA7F3D0) else Color(0xFF065F46)
+        val textSecondary = if (isDark) Color(0xFF6EE7B7) else Color(0xFF047857)
+        val iconTint = if (isDark) Color(0xFF34D399) else Color(0xFF059669)
 
         Column(
             modifier =
@@ -78,8 +90,8 @@ fun ConflictBanner(
                     Icon(
                         imageVector = Icons.Outlined.Shield,
                         contentDescription = "Shield",
-                        tint = Color(0xFF10B981),
-                        modifier = Modifier.size(24.dp),
+                        tint = iconTint,
+                        modifier = Modifier.size(22.dp),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
@@ -88,7 +100,13 @@ fun ConflictBanner(
                         color = textPrimary,
                     )
                 }
-                IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                IconButton(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onDismiss()
+                    },
+                    modifier = Modifier.size(40.dp),
+                ) {
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Dismiss",
@@ -108,9 +126,13 @@ fun ConflictBanner(
             Spacer(modifier = Modifier.height(10.dp))
             Button(
                 onClick = onViewCalendar,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669)),
+                colors =
+                    ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF047857),
+                        contentColor = Color.White,
+                    ),
                 shape = RoundedCornerShape(8.dp),
-                contentPadding = ButtonDefaults.ContentPadding,
+                modifier = Modifier.defaultMinSize(minHeight = 42.dp),
             ) {
                 Icon(
                     imageVector = Icons.Outlined.CalendarMonth,
@@ -123,10 +145,11 @@ fun ConflictBanner(
         }
     } else {
         // Unresolved State: Amber Alert
-        val bg = Color(0xFFF59E0B).copy(alpha = 0.12f)
-        val border = Color(0xFFF59E0B).copy(alpha = 0.4f)
-        val textPrimary = Color(0xFF92400E)
-        val textSecondary = Color(0xFFB45309)
+        val bg = if (isDark) Color(0xFFF59E0B).copy(alpha = 0.14f) else Color(0xFFFFFBEB)
+        val border = if (isDark) Color(0xFFF59E0B).copy(alpha = 0.45f) else Color(0xFFFCD34D)
+        val textPrimary = if (isDark) Color(0xFFFDE68A) else Color(0xFF78350F)
+        val textSecondary = if (isDark) Color(0xFFFCD34D) else Color(0xFF92400E)
+        val iconTint = if (isDark) Color(0xFFFBBF24) else Color(0xFFB45309)
 
         Column(
             modifier =
@@ -146,17 +169,23 @@ fun ConflictBanner(
                     Icon(
                         imageVector = Icons.Outlined.Warning,
                         contentDescription = "Warning",
-                        tint = Color(0xFFD97706),
-                        modifier = Modifier.size(24.dp),
+                        tint = iconTint,
+                        modifier = Modifier.size(22.dp),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Exam Overload & Clash Alert (${alerts.size})",
+                        text = "Exam Overload & Clash Alert (${unresolvedAlerts.size})",
                         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                         color = textPrimary,
                     )
                 }
-                IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                IconButton(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onDismiss()
+                    },
+                    modifier = Modifier.size(40.dp),
+                ) {
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Dismiss",
@@ -167,27 +196,38 @@ fun ConflictBanner(
             }
 
             Spacer(modifier = Modifier.height(6.dp))
-            alerts.forEach { alert ->
+            if (mitigatedAlerts.isNotEmpty()) {
+                Text(
+                    text =
+                        "${mitigatedAlerts.size} other conflict${if (mitigatedAlerts.size > 1) "s" else ""} already " +
+                            "${if (mitigatedAlerts.size > 1) "have" else "has"} study blocks booked.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = textSecondary,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+            }
+            unresolvedAlerts.forEach { alert ->
                 Row(
-                    modifier = Modifier.padding(vertical = 2.dp),
+                    modifier = Modifier.padding(vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    val isCrit = alert.severity == ConflictSeverity.CRITICAL
                     val severityBg =
-                        if (alert.severity == ConflictSeverity.CRITICAL) {
-                            Color(0xFFEF4444).copy(alpha = 0.2f)
+                        if (isCrit) {
+                            Color(0xFFEF4444).copy(alpha = if (isDark) 0.24f else 0.14f)
                         } else {
-                            Color(0xFFF59E0B).copy(alpha = 0.2f)
+                            Color(0xFFF59E0B).copy(alpha = if (isDark) 0.24f else 0.16f)
                         }
                     val severityColor =
-                        if (alert.severity == ConflictSeverity.CRITICAL) {
-                            Color(0xFFDC2626)
+                        if (isCrit) {
+                            if (isDark) Color(0xFFFCA5A5) else Color(0xFFB91C1C)
                         } else {
-                            Color(0xFFD97706)
+                            if (isDark) Color(0xFFFDE68A) else Color(0xFF92400E)
                         }
 
                     Text(
                         text = alert.severity.name,
-                        fontSize = 10.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = severityColor,
                         modifier =
@@ -206,12 +246,17 @@ fun ConflictBanner(
             }
 
             Spacer(modifier = Modifier.height(10.dp))
-            val firstAlert = alerts.firstOrNull()
+            val firstAlert = unresolvedAlerts.firstOrNull()
             if (firstAlert != null) {
                 Button(
                     onClick = { onScheduleStudyBlocks(firstAlert.assessmentIdA) },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFB45309),
+                            contentColor = Color.White,
+                        ),
                     shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.defaultMinSize(minHeight = 42.dp),
                 ) {
                     Text(
                         text = "Schedule Smart Study Blocks",

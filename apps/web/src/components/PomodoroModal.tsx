@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Play, Pause, RotateCcw, CheckCircle2, Bell, X } from "lucide-react";
+import { Play, Pause, RotateCcw, CheckCircle2, Timer, X } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
 import { stripCoursePrefix } from "../lib/calendarLanes";
@@ -124,17 +124,17 @@ export function PomodoroModal({
       toggleTopic(assessmentId, topicIndex);
       addToast({
         type: "success",
-        message: `Topic marked completed: ${topicTitle || "Study Topic"}`,
+        message: copy.pomodoro.topicMarkedDone(topicTitle || "Study Topic"),
       });
     }
   };
 
   return (
-    <div className="relative w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-2xl transition-all">
+    <div className="w-full">
       <div className="flex items-center justify-between border-b border-[var(--border)] pb-4">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]">
-            <Bell className="h-4 w-4" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--accent-ink)]">
+            <Timer className="h-4 w-4" />
           </div>
           <h2 id="pomodoro-modal-title" className="text-lg font-bold text-[var(--text)]">
             {copy.pomodoro.title}
@@ -144,7 +144,7 @@ export function PomodoroModal({
           type="button"
           onClick={onClose}
           aria-label={copy.common.close}
-          className="rounded-lg p-1 text-[var(--text-muted)] hover:bg-[var(--border)]/30 hover:text-[var(--text)]"
+          className="rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
         >
           <X className="h-5 w-5" />
         </button>
@@ -160,8 +160,10 @@ export function PomodoroModal({
             <div>
               {matchedAssessment && (
                 <span className="font-semibold text-[var(--text)]">
-                  {matchedAssessment.courseId ? `[${matchedAssessment.courseId}] ` : ""}
                   {stripCoursePrefix(matchedAssessment.title, matchedAssessment.courseId)}
+                  {matchedAssessment.courseName || matchedAssessment.courseId
+                    ? ` — ${matchedAssessment.courseName || matchedAssessment.courseId}`
+                    : ""}
                 </span>
               )}
               {topicTitle && (
@@ -174,7 +176,7 @@ export function PomodoroModal({
                 onClick={handleMarkTopicDone}
                 aria-label={copy.pomodoro.markTopicDone}
                 title={copy.pomodoro.markTopicDone}
-                className="flex items-center gap-1 rounded-lg bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
+                className="flex items-center gap-1 rounded-lg bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20"
               >
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 <span>Mark Done</span>
@@ -191,7 +193,7 @@ export function PomodoroModal({
           onClick={() => switchMode("pomodoro")}
           className={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition ${
             mode === "pomodoro"
-              ? "bg-[var(--surface)] text-[var(--accent)] shadow-sm"
+              ? "bg-[var(--surface)] text-[var(--accent-ink)] shadow-sm"
               : "text-[var(--text-muted)] hover:text-[var(--text)]"
           }`}
         >
@@ -202,7 +204,7 @@ export function PomodoroModal({
           onClick={() => switchMode("shortBreak")}
           className={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition ${
             mode === "shortBreak"
-              ? "bg-[var(--surface)] text-[var(--accent)] shadow-sm"
+              ? "bg-[var(--surface)] text-[var(--accent-ink)] shadow-sm"
               : "text-[var(--text-muted)] hover:text-[var(--text)]"
           }`}
         >
@@ -213,7 +215,7 @@ export function PomodoroModal({
           onClick={() => switchMode("longBreak")}
           className={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition ${
             mode === "longBreak"
-              ? "bg-[var(--surface)] text-[var(--accent)] shadow-sm"
+              ? "bg-[var(--surface)] text-[var(--accent-ink)] shadow-sm"
               : "text-[var(--text-muted)] hover:text-[var(--text)]"
           }`}
         >
@@ -222,15 +224,40 @@ export function PomodoroModal({
       </div>
 
       {/* Large Digital Timer Display & Circular Bar */}
-      <div className="mt-8 flex flex-col items-center justify-center">
-        <div className="text-6xl font-black tracking-tight text-[var(--text)] tabular-nums font-mono">
-          {formatTime(timeLeft)}
-        </div>
-        <div className="mt-4 w-full max-w-xs overflow-hidden rounded-full bg-[var(--border)]/40 h-2">
-          <div
-            className="h-full bg-[var(--accent)] transition-all duration-300"
-            style={{ width: `${progressPercent}%` }}
-          />
+      <div className="mt-6 flex flex-col items-center justify-center">
+        <div className="relative flex h-52 w-52 items-center justify-center">
+          <svg className="h-full w-full" viewBox="0 0 200 200">
+            <circle
+              cx="100"
+              cy="100"
+              r="84"
+              stroke="currentColor"
+              strokeWidth="8"
+              fill="none"
+              className="text-slate-200 dark:text-slate-800"
+            />
+            <circle
+              cx="100"
+              cy="100"
+              r="84"
+              stroke="var(--accent-fill)"
+              strokeWidth="8"
+              strokeLinecap="round"
+              fill="none"
+              strokeDasharray={527.8}
+              strokeDashoffset={527.8 * (1 - progressPercent / 100)}
+              transform="rotate(-90 100 100)"
+              className="transition-all duration-500 ease-out"
+            />
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <div className="text-4xl font-black tracking-tight text-[var(--text)] tabular-nums font-mono">
+              {formatTime(timeLeft)}
+            </div>
+            <div className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider mt-1">
+              {isRunning ? "FOCUSING" : "READY"}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -240,14 +267,14 @@ export function PomodoroModal({
           type="button"
           onClick={handleReset}
           aria-label={copy.pomodoro.reset}
-          className="flex h-11 w-11 items-center justify-center rounded-xl border border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--border)]/20 hover:text-[var(--text)] transition"
+          className="flex h-11 w-11 items-center justify-center rounded-xl border border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)] transition"
         >
           <RotateCcw className="h-5 w-5" />
         </button>
         <button
           type="button"
           onClick={() => setIsRunning(!isRunning)}
-          className="flex h-14 w-28 items-center justify-center gap-2 rounded-2xl bg-[var(--accent)] font-semibold text-white shadow-lg shadow-blue-500/20 hover:bg-[var(--accent-hover)] transition"
+          className="flex h-14 w-28 items-center justify-center gap-2 rounded-2xl bg-[var(--accent-fill)] font-semibold text-white shadow-lg shadow-blue-500/20 hover:bg-[var(--accent-fill-hover)] transition"
         >
           {isRunning ? (
             <>

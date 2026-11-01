@@ -5,9 +5,15 @@
 //! Secret Service on Linux). Secrets never touch the SQLite database, logs,
 //! or wire IPC payloads. Short-lived (1h) access tokens live in memory only.
 
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
 use keyring::Entry;
 
 pub const SERVICE_NAME: &str = "com.quizradar.app";
+/// When set to `"1"` or `"true"`, secrets stay in an isolated in-memory map
+/// so automated UI/E2E sweeps never read or mutate the host OS keyring.
+pub const ENV_EPHEMERAL_KEYRING: &str = "QUIZRADAR_EPHEMERAL_KEYRING";
 
 pub const KEY_GOOGLE_REFRESH_TOKEN: &str = "google_refresh_token";
 pub const KEY_MICROSOFT_REFRESH_TOKEN: &str = "microsoft_refresh_token";
@@ -16,54 +22,118 @@ pub const KEY_GEMINI_API_KEY: &str = "gemini_api_key";
 /// Account → Google client secret). Lives in the OS keyring, never in SQLite.
 pub const KEY_GOOGLE_CLIENT_SECRET: &str = "google_client_secret";
 
+#[derive(Debug, Clone)]
+enum KeyringBackend {
+    Os { service: String },
+    Ephemeral(Arc<Mutex<HashMap<String, String>>>),
+}
+
+impl Default for KeyringBackend {
+    fn default() -> Self {
+        Self::Os {
+            service: SERVICE_NAME.to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct KeyringStore {
-    service: String,
+    backend: KeyringBackend,
 }
 
 impl KeyringStore {
     #[must_use]
     pub fn new() -> Self {
+        let ephemeral = std::env::var(ENV_EPHEMERAL_KEYRING)
+            .ok()
+            .is_some_and(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true"));
+        if ephemeral {
+            Self::ephemeral()
+        } else {
+            Self {
+                backend: KeyringBackend::Os {
+                    service: SERVICE_NAME.to_string(),
+                },
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn ephemeral() -> Self {
         Self {
-            service: SERVICE_NAME.to_string(),
+            backend: KeyringBackend::Ephemeral(Arc::new(Mutex::new(HashMap::new()))),
         }
     }
 
     #[must_use]
     pub fn with_service(service: &str) -> Self {
         Self {
-            service: service.to_string(),
+            backend: KeyringBackend::Os {
+                service: service.to_string(),
+            },
         }
     }
 
-    /// Stores a secret securely in the OS keyring.
+    /// Stores a secret securely in the OS keyring (or ephemeral test map).
     pub fn set_secret(&self, key: &str, secret: &str) -> Result<(), String> {
-        let entry =
-            Entry::new(&self.service, key).map_err(|e| format!("keyring entry error: {e}"))?;
-        entry
-            .set_password(secret)
-            .map_err(|e| format!("keyring write error: {e}"))
+        match &self.backend {
+            KeyringBackend::Ephemeral(map) => {
+                let mut guard = map
+                    .lock()
+                    .map_err(|_| "ephemeral keyring poisoned".to_string())?;
+                guard.insert(key.to_string(), secret.to_string());
+                Ok(())
+            }
+            KeyringBackend::Os { service } => {
+                let entry =
+                    Entry::new(service, key).map_err(|e| format!("keyring entry error: {e}"))?;
+                entry
+                    .set_password(secret)
+                    .map_err(|e| format!("keyring write error: {e}"))
+            }
+        }
     }
 
     /// Retrieves a secret from the OS keyring, returning `Ok(None)` if absent.
     pub fn get_secret(&self, key: &str) -> Result<Option<String>, String> {
-        let entry =
-            Entry::new(&self.service, key).map_err(|e| format!("keyring entry error: {e}"))?;
-        match entry.get_password() {
-            Ok(pass) => Ok(Some(pass)),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(format!("keyring read error: {e}")),
+        match &self.backend {
+            KeyringBackend::Ephemeral(map) => {
+                let guard = map
+                    .lock()
+                    .map_err(|_| "ephemeral keyring poisoned".to_string())?;
+                Ok(guard.get(key).cloned())
+            }
+            KeyringBackend::Os { service } => {
+                let entry =
+                    Entry::new(service, key).map_err(|e| format!("keyring entry error: {e}"))?;
+                match entry.get_password() {
+                    Ok(pass) => Ok(Some(pass)),
+                    Err(keyring::Error::NoEntry) => Ok(None),
+                    Err(e) => Err(format!("keyring read error: {e}")),
+                }
+            }
         }
     }
 
     /// Deletes a secret from the OS keyring (idempotent: no error if already absent).
     pub fn delete_secret(&self, key: &str) -> Result<(), String> {
-        let entry =
-            Entry::new(&self.service, key).map_err(|e| format!("keyring entry error: {e}"))?;
-        match entry.delete_credential() {
-            Ok(_) => Ok(()),
-            Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(format!("keyring delete error: {e}")),
+        match &self.backend {
+            KeyringBackend::Ephemeral(map) => {
+                let mut guard = map
+                    .lock()
+                    .map_err(|_| "ephemeral keyring poisoned".to_string())?;
+                guard.remove(key);
+                Ok(())
+            }
+            KeyringBackend::Os { service } => {
+                let entry =
+                    Entry::new(service, key).map_err(|e| format!("keyring entry error: {e}"))?;
+                match entry.delete_credential() {
+                    Ok(_) => Ok(()),
+                    Err(keyring::Error::NoEntry) => Ok(()),
+                    Err(e) => Err(format!("keyring delete error: {e}")),
+                }
+            }
         }
     }
 }

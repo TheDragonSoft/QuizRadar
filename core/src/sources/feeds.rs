@@ -98,19 +98,30 @@ pub async fn scan_feeds(
     let mut selected: Vec<FeedConfig> = Vec::new();
     let mut seen_urls: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut duplicate_urls = 0usize;
+    let mut disabled = 0usize;
     for feed in feeds {
         let url = feed.url.trim().to_ascii_lowercase();
         if !seen_urls.insert(url) {
             duplicate_urls += 1;
             continue;
         }
+        // The Settings toggle is an OFF switch, not a label: a disabled feed
+        // must not be fetched (its token-bearing URL must not leave the
+        // device) and its items must not merge into the radar.
+        if !feed.enabled {
+            disabled += 1;
+            continue;
+        }
         if selected.len() < MAX_FEEDS {
             selected.push(feed.clone());
         }
     }
-    let overflow = feeds.len() - duplicate_urls - selected.len();
+    let overflow = feeds.len() - duplicate_urls - disabled - selected.len();
 
     let mut notes = Vec::new();
+    if disabled > 0 {
+        notes.push(format!("Feeds: {disabled} disabled feed(s) skipped."));
+    }
     if duplicate_urls > 0 {
         notes.push(format!(
             "Feeds: {duplicate_urls} duplicate URL(s) skipped (first occurrence wins)."

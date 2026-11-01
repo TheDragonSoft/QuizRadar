@@ -151,16 +151,20 @@ pub fn generate_study_blocks_for_exam(
     let assessment: Assessment = serde_json::from_str(&assessment_json)?;
     let schedule: ScheduleData = serde_json::from_str(&schedule_json)?;
     let events: Vec<CustomCalendarEvent> = serde_json::from_str(&events_json)?;
-    let today = parse_ref_date(&today_iso)?;
+    // Still parsed so a malformed reference date fails loudly; study blocks
+    // are anchored on the assessment's own date, so today is otherwise unused.
+    let _today = parse_ref_date(&today_iso)?;
 
     let block_id = block_id_for(&assessment.id);
     if events.iter().any(|e| e.id == block_id) {
         return Ok("[]".to_string());
     }
 
-    let exam_date = assessment
-        .date
-        .unwrap_or_else(|| today + chrono::Duration::days(1));
+    // Undated assessments are unschedulable (`types.rs`): inventing "tomorrow"
+    // fabricated an exam eve the radar explicitly says needs confirmation.
+    let Some(exam_date) = assessment.date else {
+        return Ok("[]".to_string());
+    };
     let block_date = block_date_for(exam_date);
     let candidates = study_block_candidates(&schedule, &events, block_date);
 
@@ -484,6 +488,13 @@ impl NativeStore {
         Ok(serde_json::to_string(&snapshot)?)
     }
 
+    /// Replaces the radar with `assessments_json`.
+    ///
+    /// This is an EXPLICIT, caller-driven write (the Android shell sets the
+    /// radar and resets it), NOT the scan path: an empty list really does
+    /// mean "the radar is empty now", so it is allowed to clear it. The scan
+    /// path goes through the store's `replace_assessments`, which refuses an
+    /// empty replace — a scan that found nothing must never wipe the radar.
     pub async fn replace_assessments(
         &self,
         assessments_json: String,
@@ -494,7 +505,7 @@ impl NativeStore {
         let ref_date = parse_ref_date(&ref_date_iso)?;
         let snapshot = self
             .inner
-            .replace_assessments(assessments, updated_at, ref_date)
+            .replace_assessments_allowing_empty(assessments, updated_at, ref_date)
             .await?;
         Ok(serde_json::to_string(&snapshot)?)
     }

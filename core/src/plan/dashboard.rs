@@ -5,10 +5,13 @@
 //! events and an injected reference date ("today"), this module produces:
 //! - `next_up` — the earliest *dated* upcoming assessment (undated drafts
 //!   cannot carry a countdown, so they never hold this slot)
-//! - `upcoming_this_week` — the 0–7 day window from the reference date
+//! - `upcoming_this_week` — the 7-day window from the reference date (today
+//!   plus the next six days; the KPI label says "Next 7 days")
 //! - `all_upcoming` — upcoming assessments in the canonical radar order
 //! - `exam_type_counts` / `sources_count` — pure tallies (sorted maps so the
-//!   serialization is stable)
+//!   serialization is stable). `exam_type_counts` counts the SAME seven-day
+//!   window as `upcoming_this_week` (the pills sit under that KPI);
+//!   `sources_count` tallies every upcoming assessment per source.
 //! - readiness % — completed topic checkmarks ÷ tracked topics, both from
 //!   real data (a dashboard with zero tracked topics means "nothing
 //!   pending"; the desktop v4 semantic — no synthetic activity stats, `03`
@@ -235,6 +238,15 @@ pub fn why_study_now(assessment: &Assessment, completed_topics: &CompletedTopics
             }
             text
         }
+        // The past arm MUST come first: `days <= 1` also matches negative
+        // countdowns, which used to render "… is tomorrow" for past exams.
+        Some(days) if days < 0 => {
+            let mut text = format!("{} already took place", assessment.title);
+            if let Some(start) = assessment.start_time {
+                text.push_str(&format!(" at {}", format_12h(start)));
+            }
+            text
+        }
         Some(days) if days <= 1 => {
             let mut text = format!(
                 "Immediate priority! {} is {}",
@@ -363,13 +375,20 @@ pub fn build_dashboard_summary(
     }
 
     let next_up = upcoming.iter().find(|a| a.date.is_some()).cloned();
+    // The "next 7 days" KPI (01 §4.3) covers SEVEN calendar days: today
+    // plus the next six. The old `0..=7` window was eight days long, so the
+    // count contradicted the label it was rendered under.
     let upcoming_this_week: Vec<Assessment> = upcoming
         .iter()
-        .filter(|a| matches!(a.days_until, Some(0..=7)))
+        .filter(|a| matches!(a.days_until, Some(0..=6)))
         .cloned()
         .collect();
 
-    let exam_type_counts = upcoming.iter().fold(
+    // The type pills sit UNDER the "Next 7 days" KPI card (01 §4.3), so they
+    // must count the same window the card counts. They used to tally every
+    // upcoming assessment, which made the pills contradict the headline
+    // number beside them.
+    let exam_type_counts = upcoming_this_week.iter().fold(
         BTreeMap::new(),
         |mut counts: BTreeMap<String, usize>, assessment| {
             *counts
@@ -632,6 +651,20 @@ mod tests {
     }
 
     #[test]
+    fn exam_type_counts_use_the_same_seven_day_window_as_the_kpi() {
+        // Day 6 is the last day of the "next 7 days" window; day 7 is not.
+        let inside = assessment_on("gmail-1", None, "Quiz 1", Some(day(6)), vec![]);
+        let outside = assessment_on("gmail-2", None, "Quiz 2", Some(day(7)), vec![]);
+        let summary =
+            build_dashboard_summary(&[inside, outside], &completed_map(&[]), &[], ref_date());
+        assert_eq!(summary.upcoming_this_week.len(), 1);
+        assert_eq!(summary.all_upcoming.len(), 2);
+        // The pills sit under the 7-day KPI, so they must not count the
+        // assessment the KPI does not show.
+        assert_eq!(summary.exam_type_counts.get("Class Quiz"), Some(&1));
+    }
+
+    #[test]
     fn exam_type_and_source_counts_are_pure_tallies() {
         let mut first = assessment_on("gmail-1", None, "Quiz 1", Some(day(1)), vec![]);
         first.source = AssessmentSource::Gmail;
@@ -830,11 +863,13 @@ mod tests {
     }
 
     #[test]
-    fn upcoming_window_is_exactly_0_to_7_days_inclusive() {
+    fn upcoming_window_is_exactly_seven_days_inclusive() {
         let blank = completed_map(&[]);
-        let edge7 = assessment_on("gmail-1", None, "Day 7", Some(day(7)), vec![]);
-        let edge8 = assessment_on("gmail-2", None, "Day 8", Some(day(8)), vec![]);
-        let summary = build_dashboard_summary(&[edge7, edge8], &blank, &[], ref_date());
+        let edge6 = assessment_on("gmail-1", None, "Day 6", Some(day(6)), vec![]);
+        let edge7 = assessment_on("gmail-2", None, "Day 7", Some(day(7)), vec![]);
+        let summary = build_dashboard_summary(&[edge6, edge7], &blank, &[], ref_date());
+        // Today + six more days = seven days, matching the "Next 7 days"
+        // label the KPI is rendered under.
         assert_eq!(summary.upcoming_this_week.len(), 1);
         assert_eq!(summary.upcoming_this_week[0].id, "gmail-1");
         assert_eq!(summary.all_upcoming.len(), 2);

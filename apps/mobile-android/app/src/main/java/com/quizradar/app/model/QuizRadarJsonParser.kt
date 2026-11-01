@@ -162,6 +162,7 @@ object QuizRadarJsonParser {
             eLearningUrl = optString(obj, "e_learning_url"),
             isGcalSynced = obj.optBoolean("gcal_synced", false),
             gcalEventId = optString(obj, "gcal_event_id"),
+            conflictWarning = optString(obj, "conflict_warning"),
         )
     }
 
@@ -380,6 +381,30 @@ object QuizRadarJsonParser {
         )
     }
 
+    /**
+     * The core computes the per-assessment conflict chip while it builds the
+     * dashboard summary, so the chip lands on `derived.dashboard.all_upcoming`
+     * - not on the stored radar list the timeline rows read. Copy that same
+     * value over (no second derivation, no new claim) so a clashing
+     * assessment really renders its conflict chip.
+     */
+    private fun withConflictWarnings(
+        assessments: List<AssessmentModel>,
+        dashboard: DashboardSummaryModel,
+    ): List<AssessmentModel> {
+        val warnings =
+            dashboard.allUpcoming
+                .mapNotNull { assessment ->
+                    val warning = assessment.conflictWarning?.trim()
+                    if (warning.isNullOrEmpty()) null else assessment.id to warning
+                }.toMap()
+        if (warnings.isEmpty()) return assessments
+        return assessments.map { assessment ->
+            val warning = warnings[assessment.id]
+            if (warning == null) assessment else assessment.copy(conflictWarning = warning)
+        }
+    }
+
     fun parseAppSnapshot(jsonStr: String): AppSnapshotModel {
         val root = JSONObject(jsonStr)
 
@@ -434,7 +459,7 @@ object QuizRadarJsonParser {
         val tasks = parseStudyTasksPayload(derived.getJSONObject("tasks"))
 
         return AppSnapshotModel(
-            assessments = assessments,
+            assessments = withConflictWarnings(assessments, dashboard),
             schedule = schedule,
             completedTopics = completedTopics,
             customEvents = customEvents,

@@ -7,9 +7,31 @@ import java.time.Instant
 import java.time.LocalDate
 
 class QuizRadarEngine(
-    val store: NativeStoreInterface,
-    val tokenProvider: TokenProvider,
+    private val storeProvider: () -> NativeStoreInterface,
+    private val tokenProviderProvider: () -> TokenProvider,
 ) : QuizRadarCore {
+    /**
+     * The native store and the Keystore-backed token store are BUILT LAZY.
+     *
+     * Both are expensive: opening the SQLite store pulls in the Rust core
+     * through JNA (dlopen + runtime start-up) and the token store creates an
+     * Android Keystore master key. Building them while the UI thread is
+     * starting up blocked the first frame for seconds and made the app look
+     * frozen (the system showed "app isn't responding").
+     *
+     * The first call now happens from a background dispatcher (see
+     * `QuizRadarViewModel.loadState`), so the cost lands off the main thread.
+     */
+    private val store: NativeStoreInterface by lazy(LazyThreadSafetyMode.SYNCHRONIZED, storeProvider)
+
+    val tokenProvider: TokenProvider by lazy(LazyThreadSafetyMode.SYNCHRONIZED, tokenProviderProvider)
+
+    /** Direct-construction seam for tests and for callers that already own both parts. */
+    constructor(
+        store: NativeStoreInterface,
+        tokenProvider: TokenProvider,
+    ) : this({ store }, { tokenProvider })
+
     override fun version(): String {
         return coreVersion()
     }
@@ -247,15 +269,37 @@ class QuizRadarEngine(
 
     companion object {
         /**
+         * Process-scoped cache: after an Activity recreation (rotation, theme
+         * change, dark-mode switch) the ViewModel survives and stays bound to
+         * the ORIGINAL engine, while a fresh `create` would hand OAuth and
+         * widget callers a SECOND store/token provider the UI never sees.
+         * Keyed by dbPath so tests with in-memory stores are unaffected.
+         *
+         * Workers (WorkManager background dispatcher) and the UI (main thread)
+         * both call create() — a plain HashMap would be an unsynchronized
+         * cross-thread read/write, so use a ConcurrentHashMap + computeIfAbsent.
+         */
+        private val cachedEngines = java.util.concurrent.ConcurrentHashMap<String, QuizRadarEngine>()
+
+        /**
          * Initialize QuizRadarEngine for the Android application context.
          * Opens native SQLite database in app-private files directory and sets up
-         * EncryptedSharedPreferences for credentials.
+         * EncryptedSharedPreferences for credentials. Returns the cached
+         * process-wide instance when one already exists for this database.
+         *
+         * The application context is used on purpose: the engine is cached for
+         * the whole process lifetime, so holding on to an Activity context
+         * would leak it (and its whole view tree) until the process dies.
          */
         fun create(context: Context): QuizRadarEngine {
-            val dbPath = context.filesDir.resolve("quizradar.db").absolutePath
-            val store = openNativeStore(dbPath)
-            val tokenProvider = EncryptedTokenStore(context)
-            return QuizRadarEngine(store, tokenProvider)
+            val appContext = context.applicationContext
+            val dbPath = appContext.filesDir.resolve("quizradar.db").absolutePath
+            return cachedEngines.computeIfAbsent(dbPath) {
+                QuizRadarEngine(
+                    storeProvider = { openNativeStore(dbPath) },
+                    tokenProviderProvider = { EncryptedTokenStore(appContext) },
+                )
+            }
         }
 
         /**

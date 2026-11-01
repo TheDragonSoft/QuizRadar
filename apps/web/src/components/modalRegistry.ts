@@ -7,10 +7,20 @@ export type ModalComponent = React.ComponentType<{
   onClose: () => void;
 }>;
 
-const modalRegistry = new Map<string, ModalComponent>();
+export interface ModalMeta {
+  size?: "sm" | "md" | "lg" | "xl";
+  flush?: boolean;
+}
 
-export function registerModal(id: string, component: ModalComponent) {
-  modalRegistry.set(id, component);
+interface ModalRegistration {
+  component: ModalComponent;
+  meta?: ModalMeta;
+}
+
+const modalRegistry = new Map<string, ModalRegistration>();
+
+export function registerModal(id: string, component: ModalComponent, meta?: ModalMeta) {
+  modalRegistry.set(id, { component, meta });
 }
 
 export function unregisterModal(id: string) {
@@ -18,5 +28,9 @@ export function unregisterModal(id: string) {
 }
 
 export function getModalComponent(id: string): ModalComponent | undefined {
-  return modalRegistry.get(id);
+  return modalRegistry.get(id)?.component;
+}
+
+export function getModalMeta(id: string): ModalMeta | undefined {
+  return modalRegistry.get(id)?.meta;
 }

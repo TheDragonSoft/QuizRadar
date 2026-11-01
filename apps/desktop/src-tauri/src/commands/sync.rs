@@ -70,10 +70,14 @@ pub struct DesktopGCalSyncReport {
     pub skipped_undated: usize,
     pub needs_scope: bool,
     pub message: String,
+    /// The assessment id → event id map after this push. The UI can show it;
+    /// the store persists it (see `run_gcal_sync_inner`).
+    pub synced_map: std::collections::HashMap<String, String>,
 }
 
 impl From<GCalSyncReport> for DesktopGCalSyncReport {
     fn from(r: GCalSyncReport) -> Self {
+        let synced_map = r.synced_map();
         Self {
             success: r.success,
             created: r.created,
@@ -83,6 +87,7 @@ impl From<GCalSyncReport> for DesktopGCalSyncReport {
             skipped_undated: r.skipped_undated,
             needs_scope: r.needs_scope,
             message: r.message,
+            synced_map,
         }
     }
 }
@@ -291,6 +296,23 @@ pub async fn run_sync_inner(
 }
 
 pub async fn run_gcal_sync_inner(state: &AppState) -> Result<DesktopGCalSyncReport, String> {
+    // Reuse the scan's in-flight guard: two overlapping pushes both load the
+    // same map and both POST the same assessments as new events.
+    if state
+        .sync_in_flight
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return Err("A sync operation is already in progress.".to_string());
+    }
+    struct FlightGuard(Arc<std::sync::atomic::AtomicBool>);
+    impl Drop for FlightGuard {
+        fn drop(&mut self) {
+            self.0.store(false, Ordering::Release);
+        }
+    }
+    let _guard = FlightGuard(Arc::clone(&state.sync_in_flight));
+
     let today = state.today();
     let snapshot = state
         .store
@@ -301,7 +323,14 @@ pub async fn run_gcal_sync_inner(state: &AppState) -> Result<DesktopGCalSyncRepo
     let provider = DesktopGoogleTokenProvider {
         state: state.clone(),
     };
-    let synced_map = std::collections::HashMap::new();
+    // The core's contract: a mapped id is a PUT (update), an unmapped id a
+    // POST (create). Starting every push from an empty map re-created every
+    // event in the user's calendar — the map must be loaded and re-persisted.
+    let synced_map = state
+        .store
+        .synced_gcal_map()
+        .await
+        .map_err(|e| format!("Failed to read the Calendar sync map: {e}"))?;
     let offset = state.local_offset();
     let offset_fn = move || offset;
 
@@ -316,8 +345,21 @@ pub async fn run_gcal_sync_inner(state: &AppState) -> Result<DesktopGCalSyncRepo
     .await;
 
     // The Calendar stamp is written only after a push that really reached
-    // Google Calendar — a "needs scope" or failed push stays unstamped.
-    if report.success {
+    // Google Calendar — a "needs scope" or failed push stays unstamped. The
+    // map MERGES with what was persisted: `report.synced_map()` holds only
+    // this run's pairs, and replacing wholesale (a) dropped assessments that
+    // were excluded from this run (a later date-edit would POST a duplicate)
+    // and (b) erased the entire map when nothing was pushable.
+    if report.success && (!report.synced.is_empty() || !report.failed_ids.is_empty()) {
+        let mut merged = synced_map;
+        for (assessment_id, event_id) in report.synced.iter() {
+            merged.insert(assessment_id.clone(), event_id.clone());
+        }
+        if let Err(e) = state.store.set_synced_gcal_map(merged).await {
+            return Err(format!(
+                "The calendar push finished, but the Calendar event map could not be saved: {e}"
+            ));
+        }
         if let Err(e) = state
             .store
             .set_last_gcal_sync(state.now_local_stamp())

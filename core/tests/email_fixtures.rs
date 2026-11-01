@@ -231,6 +231,14 @@ fn email_fixtures_match_golden() {
                 .unwrap() as usize,
             "{case_name}: skipped_duplicates"
         );
+        // The recency window's skips are counted, never hidden (the key is
+        // optional: cases without a stale message simply omit it).
+        if let Some(expected) = expected_stats.get("skipped_stale").and_then(|v| v.as_u64()) {
+            assert_eq!(
+                stats.skipped_stale, expected as usize,
+                "{case_name}: skipped_stale"
+            );
+        }
 
         let expected_items = expected
             .get("items")
@@ -248,8 +256,8 @@ fn email_fixtures_match_golden() {
         checked += 1;
     }
     assert!(
-        checked >= 11,
-        "expected at least 11 email fixture cases, ran {checked}"
+        checked >= 12,
+        "expected at least 12 email fixture cases, ran {checked}"
     );
 }
 

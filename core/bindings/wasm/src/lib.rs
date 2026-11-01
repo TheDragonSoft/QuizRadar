@@ -142,7 +142,10 @@ impl QuizRadarWasm {
         events_json: &str,
         today_iso: &str,
     ) -> Result<String, JsValue> {
-        let today = NaiveDate::parse_from_str(today_iso, "%Y-%m-%d")
+        // Still parsed so a malformed reference date fails loudly; study
+        // blocks anchor on the assessment's own date, so today is otherwise
+        // unused (undated assessments return no candidates at all).
+        let _today = NaiveDate::parse_from_str(today_iso, "%Y-%m-%d")
             .map_err(|e| JsValue::from_str(&format!("Invalid today_iso: {e}")))?;
         let assessment: Assessment = serde_json::from_str(assessment_json)
             .map_err(|e| JsValue::from_str(&format!("Invalid assessment JSON: {e}")))?;
@@ -157,9 +160,11 @@ impl QuizRadarWasm {
                 .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")));
         }
 
-        let exam_date = assessment
-            .date
-            .unwrap_or_else(|| today + chrono::Duration::days(1));
+        // Undated assessments are unschedulable — never fabricate "tomorrow".
+        let Some(exam_date) = assessment.date else {
+            return serde_json::to_string(&Vec::<CustomCalendarEvent>::new())
+                .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")));
+        };
         let block_date = block_date_for(exam_date);
         let candidates = study_block_candidates(&schedule, &events, block_date);
 

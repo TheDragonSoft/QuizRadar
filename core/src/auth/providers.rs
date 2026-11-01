@@ -5,9 +5,12 @@
 //! the authorization URLs are built from, which structurally fixes v4's
 //! never-requested `classroom.*` scope bug.
 //!
-//! PKCE-only public clients (`AGENTS.md` §3.2): **no `client_secret` field,
-//! parameter or function exists in this crate** — the exchange request
-//! builders below cannot express one, and tests assert that.
+//! PKCE-only public clients (`AGENTS.md` §3.2): a `client_secret` is never
+//! **stored** here and is never used for the public PKCE clients — the
+//! exchange request builders accept an optional one only so the desktop
+//! shell's confidential (Web-application) client can complete its token
+//! exchange, memory-only, opt-in from the caller. Tests assert the registry
+//! itself never touches one.
 
 use crate::auth::pkce::AuthError;
 

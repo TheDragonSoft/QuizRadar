@@ -118,7 +118,7 @@ data class WidgetState(
 
             return WidgetState(
                 hasNextUp = true,
-                courseCode = assessment.courseId ?: course?.id ?: "EXAM",
+                courseCode = assessment.courseName ?: assessment.courseId ?: course?.name ?: course?.id ?: "EXAM",
                 courseColorHex = courseColor,
                 title = assessment.title,
                 dateDisplay = "$datePart$timePart",
@@ -162,9 +162,17 @@ class QuizRadarWidget : GlanceAppWidget() {
         val state = QuizRadarWidgetStore.load(context)
 
         provideContent {
-            val bgDark = Color(0xFF0B0F19)
-            val textWhite = Color(0xFFFFFFFF)
-            val textSlate = Color(0xFF94A3B8)
+            // Day/night aware palette matching the desktop tokens — the widget
+            // used to be hard-coded dark-only, blinding on light home screens.
+            val isNight =
+                (
+                    context.resources.configuration.uiMode and
+                        android.content.res.Configuration.UI_MODE_NIGHT_MASK
+                ) ==
+                    android.content.res.Configuration.UI_MODE_NIGHT_YES
+            val bgDark = if (isNight) Color(0xFF0B0F19) else Color(0xFFF8FAFC)
+            val textWhite = if (isNight) Color(0xFFFFFFFF) else Color(0xFF0F172A)
+            val textSlate = if (isNight) Color(0xFF94A3B8) else Color(0xFF475569)
             val accentBlue = Color(0xFF1A73E8)
 
             val launchIntent =
@@ -255,7 +263,7 @@ class QuizRadarWidget : GlanceAppWidget() {
                                     style =
                                         TextStyle(
                                             color = ColorProvider(badgeColor),
-                                            fontSize = 10.sp,
+                                            fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
                                         ),
                                 )
@@ -288,7 +296,7 @@ class QuizRadarWidget : GlanceAppWidget() {
                                 style =
                                     TextStyle(
                                         color = ColorProvider(textSlate),
-                                        fontSize = 10.sp,
+                                        fontSize = 11.sp,
                                     ),
                                 maxLines = 1,
                             )
@@ -299,7 +307,7 @@ class QuizRadarWidget : GlanceAppWidget() {
                                     style =
                                         TextStyle(
                                             color = ColorProvider(textSlate),
-                                            fontSize = 10.sp,
+                                            fontSize = 11.sp,
                                         ),
                                     maxLines = 1,
                                 )

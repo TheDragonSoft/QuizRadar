@@ -236,6 +236,24 @@ pub fn build_study_tasks(
             assessment.topics.clone()
         };
         let total_count = topic_list.len();
+        // The READINESS card counts the assessment's REAL topics only. The
+        // scaffold steps above exist so a topicless announcement still gets
+        // a schedule, but counting them as "topics" would report a readiness
+        // % over a list the source never stated - and it would contradict
+        // the dashboard, which counts the same assessment's real topics
+        // (`01` §3: readiness % = completed topics ÷ total topics).
+        let real_completed = assessment
+            .topics
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| {
+                completed_topics
+                    .get(&topic_key(&assessment.id, *index))
+                    .copied()
+                    .unwrap_or(false)
+            })
+            .count();
+        let real_total = assessment.topics.len();
 
         // ≤5 prep days; an assessment landing today keeps one day group.
         let prep_days = (days.max(1) - 1).min(MAX_PREP_DAYS);
@@ -249,15 +267,12 @@ pub fn build_study_tasks(
             assessment.topics.len(),
         );
 
-        let mut completed_count = 0usize;
         let mut first_uncompleted: Option<String> = None;
 
         for (index, topic) in topic_list.iter().enumerate() {
             let key = topic_key(&assessment.id, index);
             let completed = completed_topics.get(&key).copied().unwrap_or(false);
-            if completed {
-                completed_count += 1;
-            } else if first_uncompleted.is_none() {
+            if !completed && first_uncompleted.is_none() {
                 first_uncompleted = Some(topic.clone());
             }
 
@@ -297,13 +312,21 @@ pub fn build_study_tasks(
             date: assessment.date.unwrap_or_default(),
             display_date: assessment.display_time.clone(),
             days_until: days,
-            readiness_percent: readiness_percent(completed_count, total_count),
-            completed_count,
-            total_count,
+            readiness_percent: readiness_percent(real_completed, real_total),
+            completed_count: real_completed,
+            total_count: real_total,
             priority_score: priority,
             color: assessment.color.clone(),
-            recommended_focus: first_uncompleted
-                .unwrap_or_else(|| "All topics mastered! Complete mock revision.".to_string()),
+            // With no real topic there is nothing to be "next" on - the card
+            // says so instead of claiming mastery over scaffold steps. The
+            // note must not repeat the card's own "No syllabus topics
+            // tracked" label, so it says what to DO instead.
+            recommended_focus: if real_total == 0 {
+                "Add topics in the assessment detail to track readiness.".to_string()
+            } else {
+                first_uncompleted
+                    .unwrap_or_else(|| "All topics mastered! Complete mock revision.".to_string())
+            },
         });
     }
 
@@ -623,14 +646,21 @@ mod tests {
             &CompletedTopics::new(),
             ref_date(),
         );
+        // The planner still schedules the generic scaffold steps, so the
+        // roadmap is not empty for an announcement that named no topic.
         assert_eq!(payload.total_tasks, 3);
+        // ...but the READINESS card counts only the assessment's real
+        // topics. There are none, so there is no topic count and no
+        // percentage to report - never "0/3 topics" over invented steps.
         let card = &payload.readiness_cards[0];
-        assert_eq!(card.total_count, 3);
+        assert_eq!(card.total_count, 0);
+        assert_eq!(card.completed_count, 0);
         assert_eq!(
             card.recommended_focus,
-            "Core Lecture Concepts & Slides Review"
+            "Add topics in the assessment detail to track readiness."
         );
-        // Now complete every fallback topic: the focus line switches.
+        // Now complete every scaffold step: the plan is fully ticked, but
+        // the card still refuses to invent a readiness percentage.
         let mut done = CompletedTopics::new();
         for index in 0..3 {
             done.insert(topic_key("gmail-1", index), true);
@@ -638,10 +668,47 @@ mod tests {
         let payload = build_study_tasks(&[bare], &done, ref_date());
         assert_eq!(
             payload.readiness_cards[0].recommended_focus,
-            "All topics mastered! Complete mock revision."
+            "Add topics in the assessment detail to track readiness."
         );
-        assert_eq!(payload.readiness_cards[0].readiness_percent, 100);
+        assert_eq!(payload.readiness_cards[0].total_count, 0);
         assert_eq!(payload.pending_tasks, 0);
+    }
+
+    #[test]
+    fn a_topicless_assessment_never_counts_scaffold_steps_as_real_topics() {
+        let bare = assessment_on("gmail-1", None, "No topics posted", Some(day(2)), vec![]);
+        let mut done = CompletedTopics::new();
+        done.insert(topic_key("gmail-1", 0), true);
+        let payload = build_study_tasks(&[bare], &done, ref_date());
+        let card = &payload.readiness_cards[0];
+        // The scaffold step is ticked in the plan, yet the readiness card
+        // still reports "nothing tracked" - the two lists are different.
+        assert_eq!(payload.completed_tasks, 1);
+        assert_eq!(card.completed_count, 0);
+        assert_eq!(card.total_count, 0);
+        assert_eq!(
+            card.readiness_percent, 100,
+            "0/0 is the core's no-topics semantic"
+        );
+    }
+
+    #[test]
+    fn a_real_topic_list_still_drives_the_readiness_card() {
+        let quiz = assessment_on(
+            "gmail-1",
+            None,
+            "Quiz",
+            Some(day(3)),
+            vec!["Alpha", "Beta", "Gamma"],
+        );
+        let mut done = CompletedTopics::new();
+        done.insert(topic_key("gmail-1", 1), true);
+        let payload = build_study_tasks(&[quiz], &done, ref_date());
+        let card = &payload.readiness_cards[0];
+        assert_eq!(card.completed_count, 1);
+        assert_eq!(card.total_count, 3);
+        assert_eq!(card.readiness_percent, 33);
+        assert_eq!(card.recommended_focus, "Alpha");
     }
 
     #[test]

@@ -1,0 +1,17 @@
+{
+  "ref_date": "2026-10-17",
+  "emails": [
+    {
+      "id": "ann-09",
+      "subject": "CSE241 quiz 3 review",
+      "from": "Course Coord <coord@univ.edu>",
+      "date": "Mon, 03 Aug 2026 09:00:00 +0000",
+      "snippet": null,
+      "body": "Dear students,\n\nCSE241 quiz 3 is scheduled for 12 October 2026. It will review the OOP chapters of September.\n\nCourse Coord"
+    }
+  ],
+  "expected": {
+    "stats": { "scanned": 1, "candidates": 0, "parsed": 0, "skipped_duplicates": 0, "skipped_stale": 1 },
+    "items": []
+  }
+}

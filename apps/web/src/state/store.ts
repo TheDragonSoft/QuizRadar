@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { copy } from "../copy";
+import { getModalMeta } from "../components/modalRegistry";
 import { rpc } from "./rpc";
 import { loadCachedState, saveCachedState } from "./swr";
 import { applyOptimistic } from "./optimistic";
@@ -61,6 +62,16 @@ export function getWeekStart(dateStr: string): string {
 }
 
 export const THEME_STORAGE_KEY = "quizradar-theme";
+export const SIDEBAR_STORAGE_KEY = "quizradar-sidebar-open";
+
+function getInitialSidebarOpen(): boolean {
+  if (typeof window === "undefined" || !window.localStorage) return true;
+  try {
+    return window.localStorage.getItem(SIDEBAR_STORAGE_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
 
 function getInitialTheme(): ThemeMode {
   if (typeof window === "undefined" || !window.localStorage) return "light";
@@ -79,12 +90,6 @@ function getInitialTheme(): ThemeMode {
 export function applyThemeToDocument(theme: ThemeMode): void {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
-  root.classList.add("theme-transition");
-  if (theme === "dark") {
-    root.classList.add("dark");
-  } else {
-    root.classList.remove("dark");
-  }
   try {
     if (typeof window !== "undefined" && window.localStorage) {
       window.localStorage.setItem(THEME_STORAGE_KEY, theme);
@@ -92,10 +97,70 @@ export function applyThemeToDocument(theme: ThemeMode): void {
   } catch {
     // ignore
   }
-  setTimeout(() => {
-    root.classList.remove("theme-transition");
-  }, 200);
+
+  // A store-driven change re-runs App's theme effect, which calls this again
+  // with the already-applied class — skipping here prevents two View
+  // Transitions being queued back-to-back for one click.
+  if (root.classList.contains("dark") === (theme === "dark")) {
+    return;
+  }
+
+  const flip = () => {
+    if (theme === "dark") {
+      root.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+    }
+    // The installed PWA's status bar follows the theme (01 §4.8). The meta tag
+    // used to stay dark in light mode because nothing ever touched it.
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) {
+      meta.setAttribute("content", theme === "dark" ? "#0b0f19" : "#f8fafc");
+    }
+  };
+
+  // Preferred path: the View Transitions API crossfades two composited
+  // snapshots on the GPU — one animation for the whole page, so large
+  // surfaces never pay the per-element style/paint tax that made the old
+  // universal `transition` class feel laggy.
+  const doc = document as Document & {
+    startViewTransition?: (update: () => void) => unknown;
+  };
+  const prefersReduced =
+    typeof window !== "undefined" &&
+    Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
+
+  if (!prefersReduced && typeof doc.startViewTransition === "function") {
+    // Name the hero only for this transition: an unconditional
+    // view-transition-name would make every other View Transition (settings
+    // tab switches, ...) snapshot the hero and replay its scene animation.
+    root.classList.add("hero-scene-transition");
+    const vt = doc.startViewTransition(flip) as { finished?: Promise<unknown> } | undefined;
+    const cleanup = () => root.classList.remove("hero-scene-transition");
+    const finished = vt?.finished;
+    if (finished && typeof finished.then === "function") {
+      finished.then(cleanup, cleanup); // finished rejects when skipped
+    } else {
+      setTimeout(cleanup, 0);
+    }
+    return;
+  }
+
+  // Fallback (no View Transitions / reduced motion): the 150ms color
+  // transition class, or an instant cut when reduced motion is on.
+  if (!prefersReduced) {
+    root.classList.add("theme-transition");
+  }
+  flip();
+  if (!prefersReduced) {
+    setTimeout(() => {
+      root.classList.remove("theme-transition");
+    }, 200);
+  }
 }
+
+/** Auto-idle timer for the sync outcome banner — cleared at every new scan. */
+let syncIdleTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const initialFullState: GetStatePayload = {
   config: {
@@ -171,6 +236,8 @@ export interface AppStoreState {
   // UI state
   view: View;
   theme: ThemeMode;
+  /** Desktop rail visibility (the brand icon's hover toggle). */
+  sidebarOpen: boolean;
   searchQuery: string;
   selectedCourseIds: string[] | null; // null = all courses selected
   layers: LayerToggles;
@@ -206,6 +273,7 @@ export interface AppStoreState {
   setView: (view: View) => void;
   setTheme: (theme: ThemeMode) => void;
   toggleTheme: () => void;
+  toggleSidebar: () => void;
   setSearchQuery: (query: string) => void;
   toggleCourseFilter: (courseId: string) => void;
   selectAllCourses: () => void;
@@ -265,12 +333,22 @@ export interface AppStoreState {
   extractSchedule: (image: string) => Promise<DesktopExtractedTimetable>;
   practiceGenerate: (assessmentId: string) => Promise<PracticeQuizPayload>;
   checkUpdate: () => Promise<UpdateCheckResult>;
+  /** Downloads and installs the pending update (desktop only). */
+  installUpdate: () => Promise<void>;
   exportBackupFile: (path?: string) => Promise<ExportBackupResult>;
   importBackupFile: (path?: string, jsonContent?: string) => Promise<ImportReport>;
-  resetDatabase: () => Promise<void>;
+  resetDatabase: () => Promise<boolean>;
 
   openPracticeQuiz: (assessmentId: string) => void;
-  openPomodoro: (props?: { assessmentId?: string; topicKey?: string; topicTitle?: string }) => void;
+  // `topicIndex` (not `topicKey`): the modal's "Mark Done" toggles the topic
+  // by its index in the assessment's topic list - the same index the topic
+  // checkboxes use. The two names drifted apart and the button never
+  // rendered in production.
+  openPomodoro: (props?: {
+    assessmentId?: string;
+    topicIndex?: number;
+    topicTitle?: string;
+  }) => void;
   openCourseModal: (course?: Course) => void;
   openEventModal: (event?: CustomCalendarEvent) => void;
   openSchedulePreview: (extracted: DesktopExtractedTimetable) => void;
@@ -283,6 +361,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
 
   view: "dashboard",
   theme: getInitialTheme(),
+  sidebarOpen: getInitialSidebarOpen(),
   searchQuery: "",
   selectedCourseIds: null,
   layers: { exams: true, classes: true },
@@ -339,6 +418,8 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
 
   setView: (view) => set({ view }),
 
+  // applyThemeToDocument is owned by App's theme effect (runs on state
+  // change) — calling it here too queued two View Transitions per click.
   setTheme: (theme) => {
     applyThemeToDocument(theme);
     set({ theme });
@@ -348,6 +429,18 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     const next = get().theme === "light" ? "dark" : "light";
     applyThemeToDocument(next);
     set({ theme: next });
+  },
+
+  toggleSidebar: () => {
+    const sidebarOpen = !get().sidebarOpen;
+    set({ sidebarOpen });
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.setItem(SIDEBAR_STORAGE_KEY, sidebarOpen ? "1" : "0");
+      }
+    } catch {
+      // ignore
+    }
   },
 
   setSearchQuery: (searchQuery) => set({ searchQuery }),
@@ -388,10 +481,11 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       typeof modal === "string"
         ? { id: modal, dismissible: true }
         : { dismissible: true, ...modal };
-    // The settings panel always opens at its full width. Without this, a
-    // re-open (e.g. after a failed sign-in) replaced the instance with the
-    // default size and the dialog visibly shrank.
-    if (instance.id === "settings") {
+    const meta = getModalMeta(instance.id);
+    if (meta) {
+      if (instance.size === undefined && meta.size !== undefined) instance.size = meta.size;
+      if (instance.flush === undefined && meta.flush !== undefined) instance.flush = meta.flush;
+    } else if (instance.id === "settings") {
       if (instance.size === undefined) instance.size = "lg";
       if (instance.flush === undefined) instance.flush = true;
     }
@@ -428,6 +522,10 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   },
 
   addToast: (toast) => {
+    // Deduplicate identical active toast messages
+    if (get().toasts.some((t) => t.message === toast.message)) {
+      return;
+    }
     const id = toast.id || `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const fullToast: ToastItem = {
       id,
@@ -437,7 +535,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     };
 
     set((state) => ({
-      toasts: [...state.toasts, fullToast],
+      toasts: [...state.toasts.slice(-4), fullToast],
     }));
 
     if (fullToast.duration && fullToast.duration > 0) {
@@ -487,6 +585,12 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         aiQuota: {
           callsToday: usage?.callsToday ?? null,
           perModel: usage?.perModel ?? {},
+          // The scope flags must survive the copy: a tier that counts calls
+          // in memory for this session must never be shown as a daily
+          // ledger, and a tier without a key in memory must say so instead
+          // of waiting for a failed call to explain it.
+          sessionScope: usage?.sessionScope === true,
+          keyInMemory: usage?.keyInMemory,
         },
       });
     } catch {
@@ -495,6 +599,15 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   },
 
   triggerSync: async () => {
+    // Re-entrancy guard: overlapping scans overwrite each other's outcome and
+    // orphan the older request's abort controller.
+    if (get().syncStatus === "syncing") return;
+    // A stale auto-idle timer from the previous scan must never cut the new
+    // scan's success/error display short.
+    if (syncIdleTimer !== null) {
+      clearTimeout(syncIdleTimer);
+      syncIdleTimer = null;
+    }
     set({
       syncStatus: "syncing",
       syncProgressMessage: copy.topBar.syncScanning,
@@ -520,7 +633,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         type: "success",
         message: copy.topBar.syncSyncedSummary(outcome.totalNew, outcome.totalUpdated),
       });
-      setTimeout(() => {
+      syncIdleTimer = setTimeout(() => {
         if (get().syncStatus === "success") {
           set({ syncStatus: "idle" });
         }
@@ -560,7 +673,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         type: "error",
         message: `${copy.topBar.syncFailed}: ${msg}`,
       });
-      setTimeout(() => {
+      syncIdleTimer = setTimeout(() => {
         if (get().syncStatus === "error") {
           set({ syncStatus: "idle" });
         }
@@ -583,6 +696,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   toggleTopic: async (assessmentId, topicIdx) => {
     const prevData = get().data;
     const addToast = get().addToast;
+    let intendedCompleted = false;
 
     await applyOptimistic(
       // 1. Synchronous optimistic update
@@ -600,6 +714,11 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
             item.completed = !item.completed;
             toggledDone = item.completed;
           }
+          // The card's own percentage must move with the checkbox instead of
+          // waiting for the server round-trip.
+          const recDone = rec.topics.filter((t) => t.completed).length;
+          rec.progressPercent =
+            rec.topics.length > 0 ? Math.round((recDone / rec.topics.length) * 100) : 100;
         }
 
         // In study tasks payload days
@@ -626,12 +745,16 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
             card.totalCount > 0 ? Math.round((card.completedCount / card.totalCount) * 100) : 100;
         }
 
-        // Global readiness & counts
+        // Global readiness & counts. The dashboard KPI counts EVERY upcoming
+        // assessment's topics (core `build_dashboard_summary`), while the
+        // readiness cards only cover the 14-day study horizon - summing the
+        // cards made the KPI jump to a different population after a toggle.
+        intendedCompleted = toggledDone;
         let totalCompleted = 0;
         let totalTopics = 0;
-        nextData.studyTasksPayload.readinessCards.forEach((c) => {
-          totalCompleted += c.completedCount;
-          totalTopics += c.totalCount;
+        nextData.dashboard.studyRecommendations.forEach((rec) => {
+          totalTopics += rec.topics.length;
+          totalCompleted += rec.topics.filter((t) => t.completed).length;
         });
         nextData.dashboard.completedTopicsCount = totalCompleted;
         nextData.dashboard.totalTopicsCount = totalTopics;
@@ -640,13 +763,21 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
 
         set({ data: nextData });
       },
-      // 2. Network call
+      // 2. Network call — the intended value travels with the request so the
+      // adapter never does a racy read-modify-write for it.
       async () => {
-        return await rpc<GetStatePayload>("toggle_topic", { assessmentId, topicIdx });
+        return await rpc<GetStatePayload>("toggle_topic", {
+          assessmentId,
+          topicIdx,
+          completed: intendedCompleted,
+        });
       },
-      // 3. Rollback
+      // 3. Rollback — the stale snapshot is only an instant patch; a refresh
+      // then restores server truth so a concurrent confirmed update (e.g. a
+      // grade saved while this toggle was in flight) is never clobbered.
       () => {
         set({ data: prevData });
+        void get().refreshState();
       },
       {
         addToast,
@@ -684,9 +815,11 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
           weightagePercent: change.weightagePercent,
         });
       },
-      // 3. Rollback
+      // 3. Rollback — the stale snapshot is only an instant patch; a refresh
+      // then restores server truth (see toggleTopic).
       () => {
         set({ data: prevData });
+        void get().refreshState();
       },
       {
         addToast,
@@ -715,9 +848,10 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       async () => {
         return await rpc<GetStatePayload>("dismiss_conflicts", {});
       },
-      // 3. Rollback
+      // 3. Rollback — refresh for server truth (see toggleTopic).
       () => {
         set({ data: prevData });
+        void get().refreshState();
       },
       {
         addToast,
@@ -733,12 +867,49 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
 
   scheduleStudyBlocks: async (assessmentId) => {
     try {
+      const before = get().data.config.customEvents ?? [];
+      const beforeIds = new Set(before.map((event) => event.id));
       const freshState = await rpc<GetStatePayload>("schedule_study_blocks", { assessmentId });
       saveCachedState(freshState);
       set({ data: freshState });
+
+      // Report what actually happened. The old toast claimed success even
+      // when no block was written (no free window, no confirmed date, or the
+      // block already existed).
+      const created = (freshState.config.customEvents ?? []).filter(
+        (event) =>
+          !beforeIds.has(event.id) &&
+          (event.eventType === "Study Session" || event.id.startsWith("study-block-")),
+      ).length;
+
+      if (created > 0) {
+        get().addToast({
+          type: "success",
+          message: copy.dashboard.conflictBanner.blocksCreated(created),
+        });
+        return;
+      }
+
+      // Nothing was written — say WHY, using the assessments the action
+      // targeted (an assessment without a confirmed date cannot get a block).
+      const assessments = get().data.assessments ?? [];
+      const targets = assessmentId
+        ? assessments.filter((a) => a.id === assessmentId)
+        : assessments.filter(
+            (a) =>
+              a.isUpcoming &&
+              a.daysUntil !== null &&
+              a.daysUntil !== undefined &&
+              a.daysUntil >= 0 &&
+              a.daysUntil <= 6,
+          );
+      const undated = targets.filter((a) => !a.dateIso).length;
       get().addToast({
-        type: "success",
-        message: "Smart study preparation blocks added to your timetable",
+        type: "warning",
+        message:
+          undated > 0
+            ? copy.dashboard.conflictBanner.blocksSkippedUndated(undated)
+            : copy.dashboard.conflictBanner.blocksNoWindow,
       });
     } catch (err) {
       get().addToast({
@@ -751,9 +922,11 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   exportIcs: async (assessmentId) => {
     try {
       let icsContent: string;
+      let degraded = false;
       try {
         icsContent = await rpc<string>("export_ics", { assessmentId });
       } catch {
+        degraded = true;
         const assessments = assessmentId
           ? get().data.assessments.filter((a) => a.id === assessmentId)
           : get().data.assessments;
@@ -765,7 +938,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
             [
               "BEGIN:VEVENT",
               `UID:quizradar-${a.id}@quizradar.local`,
-              `SUMMARY:${a.courseId ? `[${a.courseId}] ` : ""}${a.title}`,
+              `SUMMARY:${a.courseName || a.courseId ? `${a.courseName || a.courseId}: ` : ""}${a.title}`,
               a.dateIso ? `DTSTART;VALUE=DATE:${a.dateIso.replace(/-/g, "")}` : "",
               "END:VEVENT",
             ]
@@ -789,7 +962,11 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       }
       get().addToast({
         type: "success",
-        message: "Calendar file (.ics) downloaded successfully",
+        // The degraded fallback (no times, no undated items) is an honest
+        // downgrade the user must know about, not a silent success.
+        message: degraded
+          ? "Calendar file exported from local cache — full export unavailable right now."
+          : "Calendar file (.ics) downloaded successfully",
       });
     } catch (err) {
       get().addToast({
@@ -1033,12 +1210,19 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   },
 
   googleLogout: async () => {
-    await rpc("google_logout");
-    await get().refreshState();
-    get().addToast({
-      type: "info",
-      message: "Google account disconnected and tokens wiped",
-    });
+    try {
+      await rpc("google_logout");
+      await get().refreshState();
+      get().addToast({
+        type: "info",
+        message: "Google account disconnected and tokens wiped",
+      });
+    } catch (err) {
+      get().addToast({
+        type: "error",
+        message: `Failed to disconnect Google: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
   },
 
   microsoftLogin: async () => {
@@ -1106,12 +1290,19 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   },
 
   microsoftLogout: async () => {
-    await rpc("microsoft_logout");
-    await get().refreshState();
-    get().addToast({
-      type: "info",
-      message: "Microsoft account disconnected and tokens wiped",
-    });
+    try {
+      await rpc("microsoft_logout");
+      await get().refreshState();
+      get().addToast({
+        type: "info",
+        message: "Microsoft account disconnected and tokens wiped",
+      });
+    } catch (err) {
+      get().addToast({
+        type: "error",
+        message: `Failed to disconnect Microsoft: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
   },
 
   /**
@@ -1179,7 +1370,11 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   },
 
   extractSchedule: async (image) => {
-    return await rpc<DesktopExtractedTimetable>("extract_schedule", { image });
+    const extracted = await rpc<DesktopExtractedTimetable>("extract_schedule", { image });
+    // One AI call happened: refresh the counter so the usage line shows the
+    // call that just ran instead of a stale number.
+    void get().refreshAiQuota();
+    return extracted;
   },
 
   practiceGenerate: async (assessmentId) => {
@@ -1190,8 +1385,14 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     return await rpc<UpdateCheckResult>("check_update");
   },
 
+  installUpdate: async () => {
+    await rpc<void>("download_and_install_update");
+  },
+
   exportBackupFile: async (path) => {
-    const res = await rpc<ExportBackupResult>("export_backup_file", { path });
+    const raw = await rpc<ExportBackupResult | string>("export_backup_file", { path });
+    const res: ExportBackupResult =
+      typeof raw === "string" ? { saved: false, path: null, json: raw } : raw;
     // If browser fallback without saved file path:
     if (!res.saved && res.json && typeof window !== "undefined") {
       const blob = new Blob([res.json], { type: "application/json" });
@@ -1214,9 +1415,25 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   },
 
   resetDatabase: async () => {
-    const fresh = await rpc<GetStatePayload>("reset_database");
-    saveCachedState(fresh);
-    set({ data: fresh });
+    try {
+      const fresh = await rpc<GetStatePayload>("reset_database");
+      saveCachedState(fresh);
+      set({ data: fresh });
+      // The session flag suppresses the first-run wizard — a wipe must let
+      // it return, or a "fresh database" never re-onboards this session.
+      try {
+        sessionStorage.removeItem("quizradar_onboarding_dismissed");
+      } catch {
+        // ignore
+      }
+      return true;
+    } catch (err) {
+      get().addToast({
+        type: "error",
+        message: `Reset failed — your data is untouched: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      return false;
+    }
   },
 
   openPracticeQuiz: (assessmentId) => {
@@ -1255,13 +1472,16 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   },
 }));
 
-// Day-rollover watchdog initialization helper
-let watchdogStarted = false;
+// Day-rollover watchdog initialization helper.
+//
+// Deliberately re-entrant: every call starts a fresh watchdog and returns a
+// disposer that fully stops it (the old module-level `watchdogStarted` flag
+// meant a StrictMode mount→cleanup→mount or an effect re-run permanently
+// killed rollover detection — countdowns then went stale at midnight).
 export function initDayRolloverWatchdog(): () => void {
-  if (watchdogStarted || typeof window === "undefined") {
+  if (typeof window === "undefined") {
     return () => {};
   }
-  watchdogStarted = true;
   return startDayRolloverWatchdog((newDate) => {
     useAppStore.getState().refreshState();
     useAppStore.getState().addToast({

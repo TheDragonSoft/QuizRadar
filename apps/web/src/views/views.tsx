@@ -1,10 +1,11 @@
 import React from "react";
-import { Calendar, CheckSquare, Timer } from "lucide-react";
+import { Calendar, CheckSquare } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
 import { DashboardView as FullDashboardView } from "./DashboardView";
 import { TasksView as FullTasksView } from "./TasksView";
 import { CalendarView as FullCalendarView } from "./CalendarView";
+import { FocusView as FullFocusView } from "./FocusView";
 
 /**
  * The dashboard renders v4's full layout at all times — the first-run empty
@@ -83,20 +84,8 @@ export const CalendarView: React.FC = () => {
 
 export const FocusView: React.FC = () => {
   return (
-    <section data-testid="view-focus" className="view-transition space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight text-[var(--text)]">{copy.nav.focus}</h1>
-
-      <div
-        data-testid="empty-focus"
-        className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--surface-border)] bg-[var(--surface)] p-12 text-center"
-      >
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--page)] text-[var(--text-muted)]">
-          <Timer className="h-6 w-6" aria-hidden="true" />
-        </div>
-        <p className="mt-4 text-sm font-medium text-[var(--text)]">
-          {copy.emptyStates.noFocusTaskSelected}
-        </p>
-      </div>
+    <section data-testid="view-focus" className="view-transition">
+      <FullFocusView />
     </section>
   );
 };

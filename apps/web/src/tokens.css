@@ -10,10 +10,14 @@
   /* Accent — Google-blue family */
   --accent: #1a73e8;
   --accent-hover: #1557b0;
+  --accent-fill: #1a73e8;
+  --accent-fill-hover: #1557b0;
+  --accent-ink: #1557b0;
 
   /* Surfaces (v4 `--surface-bg` / `--panel-bg` / `--border-subtle`) */
   --page: #f8fafc;
   --surface: #ffffff;
+  --surface-elevated: #ffffff;
   --surface-border: #e2e8f0; /* slate-200 */
   --border-strong: #cbd5e1; /* slate-300 */
   --surface-hover: #f1f5f9; /* slate-100 */
@@ -51,11 +55,15 @@
 }
 
 .dark {
-  /* v4 dark accents lift the base family */
+  /* v4 dark accents lift the base family; --accent-fill stays WCAG AA >= 5.1:1 with white */
   --accent: #3b82f6;
   --accent-hover: #60a5fa;
+  --accent-fill: #2563eb;
+  --accent-fill-hover: #1d4ed8;
+  --accent-ink: #60a5fa;
   --page: #0b0f19;
   --surface: #111827; /* slate-900 */
+  --surface-elevated: #162033;
   --surface-border: #1e293b; /* slate-800 */
   --border-strong: #334155; /* slate-700 */
   --surface-hover: #1e293b; /* slate-800 */
@@ -65,6 +73,9 @@
   /* Aliases: component layers were authored against v4's border names. */
   --border: var(--surface-border);
   --border-subtle: var(--surface-border);
+
+  /* Exam-glow red shadow in dark mode (v4 `.has-exam-glow`) */
+  --exam-glow: 0 0 16px rgba(239, 68, 68, 0.45), 0 0 4px rgba(239, 68, 68, 0.65);
 
   color-scheme: dark;
 }
@@ -79,6 +90,75 @@ html.theme-transition *::after {
     border-color 150ms ease,
     color 150ms ease !important;
   transition-delay: 0 !important;
+}
+
+/* View Transitions API path (the store flips `.dark` inside
+   startViewTransition): one composited crossfade for the whole page, quick
+   enough to feel instant but long enough to read as a fade. */
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 200ms;
+    animation-timing-function: ease;
+  }
+}
+
+/* Hero day→night: the card snapshots as its own layer ONLY on a theme switch
+   (the store puts .hero-scene-transition on <html> around the theme's
+   startViewTransition), so the sun (day snapshot) fades while the starfield
+   (night snapshot) rises — a scene change, not just a color fade. The gate
+   matters: an unconditional view-transition-name makes EVERY View Transition
+   (settings tab switches, ...) snapshot the hero and replay its scene-in
+   animation, which reads as the banner "popping out" behind the modal. */
+html.hero-scene-transition .hero-view-transition {
+  view-transition-name: dashboard-hero;
+}
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-old(dashboard-hero) {
+    animation: hero-scene-out 360ms ease both;
+  }
+  ::view-transition-new(dashboard-hero) {
+    animation: hero-scene-in 480ms 120ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+@keyframes hero-scene-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes hero-scene-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.99);
+  }
+}
+
+/* Settings tabs: the panel morphs its bounds between tab heights. */
+[data-testid="modal-settings"] {
+  view-transition-name: settings-panel;
+}
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-group(settings-panel) {
+    animation-duration: 280ms;
+  }
+  ::view-transition-old(settings-panel),
+  ::view-transition-new(settings-panel) {
+    animation-duration: 200ms;
+  }
+}
+@keyframes settingsTabIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.settings-tab-enter {
+  animation: settingsTabIn 220ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .settings-tab-enter {
+    animation: none;
+  }
 }
 
 /* Reduced-motion respect */

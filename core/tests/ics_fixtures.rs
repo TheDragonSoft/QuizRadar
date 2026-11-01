@@ -110,9 +110,10 @@ fn moodle_export_fixture_with_portal() {
         "10:00"
     );
     assert_eq!(
-        midterm.room.as_deref(),
-        Some("Lab A"),
-        "v4 first-known-room parity"
+        midterm.room, None,
+        "2026-10-19 is a Monday and CSE241 has no Monday slot — the \
+         Sunday lab's room is another weekday's fact, so it stays '—' \
+         (same rule as the email path; v4's first-known-room was fiction)"
     );
     assert_eq!(
         midterm.elearning_url.as_deref(),

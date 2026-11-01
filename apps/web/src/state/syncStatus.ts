@@ -70,7 +70,13 @@ export function computeSyncStatusSummary(
   auth?: Partial<DesktopAuthProfile> | null,
 ): SyncStatusSummary {
   const activeCount = computeActiveSourceCount(config, auth);
-  const lastSyncTimestamp = config?.lastGmailSync || config?.lastGcalSync || null;
+  // Two stamps exist (Gmail scan vs Calendar push) — show the NEWEST one,
+  // not always Gmail's.
+  const stamps = [config?.lastGmailSync, config?.lastGcalSync].filter((s): s is string =>
+    Boolean(s && s.trim()),
+  );
+  stamps.sort((a, b) => b.localeCompare(a));
+  const lastSyncTimestamp = stamps[0] ?? null;
   const lastSyncedText = formatLastSynced(lastSyncTimestamp);
 
   if (activeCount > 0) {

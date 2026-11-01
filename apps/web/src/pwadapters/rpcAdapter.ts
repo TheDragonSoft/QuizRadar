@@ -5,6 +5,7 @@
  */
 
 import { APP_VERSION } from "../generated/version";
+import { getLocalDateString } from "../state/watchdog";
 import type {
   Assessment,
   Course,
@@ -40,15 +41,24 @@ import {
   type IdbGradeRecord,
 } from "./idbStore";
 import { getWasmEngine } from "./wasmBridge";
+import { toRustEvent } from "../state/ipcShape";
 import {
   DEFAULT_BROWSER_GOOGLE_CLIENT_ID,
+  getMemoryGeminiKey,
   getMemoryGoogleToken,
   getMemoryMsToken,
+  hasMemoryGeminiKey,
   scanBrowserFeeds,
+  setMemoryGeminiKey,
   setMemoryGoogleToken,
   setMemoryMsToken,
   validateGeminiKeyBrowser,
 } from "./browserSources";
+import {
+  extractTimetableBrowser,
+  getBrowserAiSessionCalls,
+  getBrowserAiSessionPerModel,
+} from "./browserAi";
 
 /**
  * The desktop IPC contract speaks camelCase, but the browser tier persists
@@ -62,6 +72,7 @@ const CONFIG_KEY_MAP: Record<string, string> = {
   syncWeeklyClassesToGcal: "sync_weekly_classes_to_gcal",
   geminiEnabled: "gemini_enabled",
   onboardingCompleted: "onboarding_completed",
+  academicTrack: "academic_track",
   teamsEnabled: "teams_enabled",
   teamsClientId: "teams_client_id",
   teamsAccountName: "teams_account_name",
@@ -173,14 +184,19 @@ export async function buildFullState(refDate?: string): Promise<GetStatePayload>
   const feeds = await loadFeeds();
   const allConfig = await loadAllConfig();
 
-  const todayIso = refDate || new Date().toISOString().split("T")[0];
+  const todayIso = refDate || getLocalDateString();
 
-  // Merge grades onto assessments and normalize to Rust shape
+  // Merge grades onto assessments and normalize to Rust shape. A grade
+  // RECORD is authoritative when it exists — `??` would treat an explicit
+  // clear (null) as absent and resurrect the value embedded on the
+  // assessment by an imported backup.
   const assessmentsWithGrades = rawAssessments.map((a) => {
     const g = grades[a.id];
-    const achieved = g?.achieved_score ?? a.achievedScore ?? a.achieved_score;
-    const max = g?.max_score ?? a.maxScore ?? a.max_score;
-    const weight = g?.weightage_percent ?? a.weightagePercent ?? a.weightage_percent;
+    const pick = (record?: number | null, embedded?: number | null): number | null =>
+      g ? (record ?? null) : (embedded ?? null);
+    const achieved = pick(g?.achieved_score, a.achievedScore ?? a.achieved_score);
+    const max = pick(g?.max_score, a.maxScore ?? a.max_score);
+    const weight = pick(g?.weightage_percent, a.weightagePercent ?? a.weightage_percent);
     return toRustAssessment({
       ...a,
       achieved_score: achieved,
@@ -219,6 +235,7 @@ export async function buildFullState(refDate?: string): Promise<GetStatePayload>
     syncWeeklyClassesToGcal: false,
     geminiEnabled: Boolean(allConfig.gemini_enabled),
     onboardingCompleted: Boolean(allConfig.onboarding_completed),
+    academicTrack: (allConfig.academic_track as string) || null,
     teamsEnabled: Boolean(allConfig.teams_enabled),
     teamsClientId: (allConfig.teams_client_id as string) || null,
     teamsAccountName: (allConfig.teams_account_name as string) || null,
@@ -241,7 +258,7 @@ export async function buildFullState(refDate?: string): Promise<GetStatePayload>
   };
 
   const auth: DesktopAuthProfile = {
-    authenticated: Boolean(getMemoryGoogleToken() || allConfig.user_email),
+    authenticated: Boolean(getMemoryGoogleToken()),
     email: (allConfig.user_email as string) || null,
     name: (allConfig.user_name as string) || null,
     picture: (allConfig.user_picture as string) || null,
@@ -297,18 +314,18 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
       const course = (args?.course || args) as Course;
       const slots = ((args?.slots || []) as ScheduleSlot[]) ?? [];
       await upsertCourse(course);
-      // The browser tier used to drop the timetable slots here, so a saved
-      // class never showed up in the week calendar.
-      if (slots.length > 0) {
-        const existing = await loadScheduleData();
-        const otherCourses = existing.courses.filter((c) => c.id !== course.id);
-        const otherSlots = existing.slots.filter((s) => s.courseId !== course.id);
-        await saveScheduleData({
-          semester: existing.semester,
-          courses: [...otherCourses, course],
-          slots: [...otherSlots, ...slots],
-        });
-      }
+      // Always rewrite this course's slot set — including the empty list, or
+      // a class edited down to zero slots would keep its stale times in the
+      // week calendar forever (the desktop tier passes the empty array
+      // through to the core, so the tiers diverged here).
+      const existing = await loadScheduleData();
+      const otherCourses = existing.courses.filter((c) => c.id !== course.id);
+      const otherSlots = existing.slots.filter((s) => s.courseId !== course.id);
+      await saveScheduleData({
+        semester: existing.semester,
+        courses: [...otherCourses, course],
+        slots: [...otherSlots, ...slots],
+      });
       return (await buildFullState()) as T;
     }
 
@@ -341,26 +358,43 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
     case "toggle_topic": {
       // The desktop shell toggles by (assessment id, topic index) and derives
       // the `"{assessment_id}::{topic_index}"` key itself; the browser tier
-      // used to expect a pre-built key that the UI never sent.
+      // used to expect a pre-built key that the UI never sent. The intended
+      // value comes from the caller when present: a read-modify-write here
+      // loses one of two overlapping toggles.
       const assessmentId = (args?.assessmentId as string) || "";
       const topicIdx = Number(args?.topicIdx ?? 0);
       const topicKey =
         (args?.topicKey as string) ||
         `${assessmentId}::${Number.isFinite(topicIdx) ? topicIdx : 0}`;
-      const done = await loadTopicsDone();
-      const next = args?.completed !== undefined ? Boolean(args.completed) : !done[topicKey];
+      let next: boolean;
+      if (args?.completed !== undefined) {
+        next = Boolean(args.completed);
+      } else {
+        const done = await loadTopicsDone();
+        next = !done[topicKey];
+      }
       await setTopicDone(topicKey, next);
       return (await buildFullState()) as T;
     }
 
     case "save_grade": {
       const assessmentId = (args?.assessmentId as string) || "";
+      const existing = (await loadGrades())[assessmentId];
+      // Omitted fields are "keep" (desktop `FieldUpdate::Keep` semantics) —
+      // mapping an absent field to null would wipe a previously saved value
+      // embedded in the record every time a partial caller saved.
       await saveGrade({
         assessment_id: assessmentId,
-        achieved_score: args?.achievedScore !== undefined ? (args.achievedScore as number) : null,
-        max_score: args?.maxScore !== undefined ? (args.maxScore as number) : null,
+        achieved_score:
+          args?.achievedScore !== undefined
+            ? (args.achievedScore as number)
+            : (existing?.achieved_score ?? null),
+        max_score:
+          args?.maxScore !== undefined ? (args.maxScore as number) : (existing?.max_score ?? null),
         weightage_percent:
-          args?.weightagePercent !== undefined ? (args.weightagePercent as number) : null,
+          args?.weightagePercent !== undefined
+            ? (args.weightagePercent as number)
+            : (existing?.weightage_percent ?? null),
       });
       return (await buildFullState()) as T;
     }
@@ -375,15 +409,20 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
       const assessments = await loadAssessments();
       const schedule = await loadScheduleData();
       const events = await loadCustomEvents();
-      const todayIso = new Date().toISOString().split("T")[0];
+      const todayIso = getLocalDateString();
       const targetId = args?.assessmentId as string | undefined;
 
       const targets = targetId
         ? assessments.filter((a) => a.id === targetId)
-        : assessments.filter(
-            (a) =>
-              a.isUpcoming && a.daysUntil !== null && a.daysUntil !== undefined && a.daysUntil <= 7,
-          );
+        : // Raw IDB records may be snake_case-only (scan output persists the
+          // Rust serde shape) — read both twins or the filter silently
+          // matches nothing after the first scan.
+          assessments.filter((a) => {
+            const raw = a as unknown as Record<string, unknown>;
+            const upcoming = raw.is_upcoming ?? a.isUpcoming;
+            const days = raw.days_until ?? a.daysUntil;
+            return Boolean(upcoming) && typeof days === "number" && days >= 0 && days <= 6;
+          });
 
       for (const a of targets) {
         const blocksJson = wasm.generate_study_blocks(
@@ -421,52 +460,226 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
 
       const backup = {
         schema_version: 1,
-        exported_at: new Date().toISOString(),
+        generated_at: new Date().toISOString(),
         tier: "pwa",
         schedule: toRustSchedulePayload(schedule),
         assessments: assessments.map(toRustAssessment),
-        topics_done: topicsDone,
+        completed_topics: topicsDone,
         grades,
-        events: events.map((ev) => ({
-          ...ev,
-          course_id: ev.courseId ?? null,
-          event_type: ev.eventType ?? null,
-          date_iso: ev.dateIso ?? null,
-          start_time: ev.startTime ?? null,
-          end_time: ev.endTime ?? null,
-        })),
+        custom_events: events.map((ev) => {
+          const r = ev as unknown as Record<string, unknown>;
+          // Study blocks generated in-browser persist snake-only; read both
+          // twins or their dates/times AND course/type export as null.
+          return {
+            id: ev.id,
+            title: ev.title,
+            course_id: r.course_id ?? ev.courseId ?? null,
+            event_type: r.event_type ?? ev.eventType ?? null,
+            date: r.date_iso ?? ev.dateIso ?? null,
+            date_iso: r.date_iso ?? ev.dateIso ?? null,
+            start_time: r.start_time ?? ev.startTime ?? null,
+            end_time: r.end_time ?? ev.endTime ?? null,
+            room: r.room ?? ev.room ?? null,
+            notes: r.notes ?? ev.notes ?? null,
+            color: r.color ?? ev.color ?? null,
+          };
+        }),
         feeds,
-        config,
+        user_email: (config.user_email as string) || null,
+        user_name: (config.user_name as string) || null,
+        user_picture: (config.user_picture as string) || null,
+        onboarding_completed: Boolean(config.onboarding_completed),
+        auto_sync_gcal: false,
+        sync_weekly_classes_to_gcal: false,
+        gemini_enabled: Boolean(config.gemini_enabled),
+        teams_enabled: Boolean(config.teams_enabled),
+        moodle_enabled: Boolean(config.moodle_enabled),
+        classroom_enabled: Boolean(config.classroom_enabled),
+        moodle_url: (config.moodle_url as string) || null,
+        dismiss_conflict_banner: Boolean(config.dismiss_conflict_banner),
+        last_gmail_sync: (config.last_gmail_sync as string) || null,
+        last_gcal_sync: null,
+        synced_gcal_map: {},
       };
 
       return JSON.stringify(backup, null, 2) as T;
     }
 
     case "import_backup_file": {
-      const content = (args?.content as string) || "";
-      const parsed = JSON.parse(content);
-      if (parsed.schedule) {
-        await saveScheduleData(parsed.schedule);
+      const content = ((args?.jsonContent as string) ?? (args?.content as string) ?? "").trim();
+      if (!content) {
+        throw new Error("Backup JSON content is empty.");
       }
-      if (Array.isArray(parsed.assessments)) {
-        await saveAssessments(parsed.assessments);
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = JSON.parse(content) as Record<string, unknown>;
+      } catch {
+        throw new Error("This backup file is not valid JSON — nothing was imported.");
       }
+      const rawSchedule = parsed.schedule as Record<string, unknown> | undefined;
+      if (!Array.isArray(parsed.assessments) || !Array.isArray(rawSchedule?.courses)) {
+        throw new Error("This file is not a QuizRadar backup (missing assessments or schedule).");
+      }
+
+      const secretsIgnored = Object.keys(parsed).filter((key) =>
+        /(?:_token|_api_key|pairing_pin|teams_client_id|moodle_ical_url)$/i.test(key),
+      );
+
+      const normalizedCourses: Course[] = (
+        rawSchedule.courses as Array<Record<string, unknown>>
+      ).map((c) => ({
+        id: String(c.id ?? ""),
+        name: String(c.name ?? c.id ?? ""),
+        color: String(c.color ?? "#1a73e8"),
+        bg: (c.bg as string | null) ?? null,
+        border: (c.border as string | null) ?? null,
+      }));
+      const rawSlots = Array.isArray(rawSchedule.slots)
+        ? (rawSchedule.slots as Array<Record<string, unknown>>)
+        : [];
+      const normalizedSlots: ScheduleSlot[] = rawSlots.map((s, idx) => ({
+        id: String(s.id ?? `slot-${idx}`),
+        day: String(s.day ?? "Sun"),
+        dayIndex: Number(s.dayIndex ?? s.day_index ?? 0),
+        courseId: String(s.courseId ?? s.course_id ?? ""),
+        courseName: String(s.courseName ?? s.course_name ?? ""),
+        type: String(s.type ?? "Lecture"),
+        group: (s.group as string | null) ?? null,
+        room: (s.room as string | null) ?? null,
+        startTime: String(s.startTime ?? s.start_time ?? "09:00"),
+        endTime: String(s.endTime ?? s.end_time ?? "10:30"),
+        displayTime: String(s.displayTime ?? s.display_time ?? ""),
+        hasQuiz: Boolean(s.hasQuiz ?? s.has_quiz ?? false),
+        quizTitle: (s.quizTitle ?? s.quiz_title ?? null) as string | null,
+      }));
+
+      await saveScheduleData({
+        semester: (rawSchedule.semester as string | null) ?? null,
+        courses: normalizedCourses,
+        slots: normalizedSlots,
+      });
+
+      const normalizedAssessments = (parsed.assessments as Array<Record<string, unknown>>).map(
+        toJsAssessment,
+      );
+      await saveAssessments(normalizedAssessments);
+
+      let topicsImported = 0;
+      const warnings: string[] = [];
+      const rawTopics = (parsed.completed_topics ?? parsed.topics_done) as
+        Record<string, boolean> | undefined;
+      if (rawTopics && typeof rawTopics === "object") {
+        for (const [key, done] of Object.entries(rawTopics)) {
+          if (done) {
+            await setTopicDone(key, true);
+            topicsImported += 1;
+          }
+        }
+      }
+
+      let gradesImported = 0;
       if (parsed.grades && typeof parsed.grades === "object") {
-        for (const g of Object.values(parsed.grades)) {
-          await saveGrade(g as IdbGradeRecord);
+        for (const [mapId, rawG] of Object.entries(parsed.grades as Record<string, unknown>)) {
+          const g = rawG as Record<string, unknown>;
+          const assessmentId = String(g.assessment_id ?? g.assessmentId ?? mapId);
+          await saveGrade({
+            assessment_id: assessmentId,
+            achieved_score:
+              g.achieved_score !== undefined
+                ? (g.achieved_score as number | null)
+                : ((g.achievedScore as number | null) ?? null),
+            max_score:
+              g.max_score !== undefined
+                ? (g.max_score as number | null)
+                : ((g.maxScore as number | null) ?? null),
+            weightage_percent:
+              g.weightage_percent !== undefined
+                ? (g.weightage_percent as number | null)
+                : ((g.weightagePercent as number | null) ?? null),
+          } as IdbGradeRecord);
+          gradesImported += 1;
         }
       }
-      if (Array.isArray(parsed.events)) {
-        for (const ev of parsed.events) {
-          await upsertCustomEvent(ev);
-        }
+
+      let eventsImported = 0;
+      const rawEvents = Array.isArray(parsed.custom_events)
+        ? (parsed.custom_events as Array<Record<string, unknown>>)
+        : Array.isArray(parsed.events)
+          ? (parsed.events as Array<Record<string, unknown>>)
+          : [];
+      for (const ev of rawEvents) {
+        await upsertCustomEvent(
+          toRustEvent({
+            id: String(ev.id ?? `evt-${eventsImported}`),
+            title: String(ev.title ?? ""),
+            courseId: (ev.courseId ?? ev.course_id ?? null) as string | null,
+            eventType: (ev.eventType ?? ev.event_type ?? "Custom") as string | null,
+            dateIso: (ev.dateIso ?? ev.date_iso ?? ev.date ?? null) as string | null,
+            startTime: (ev.startTime ?? ev.start_time ?? null) as string | null,
+            endTime: (ev.endTime ?? ev.end_time ?? null) as string | null,
+            room: (ev.room ?? null) as string | null,
+            notes: (ev.notes ?? null) as string | null,
+            color: (ev.color ?? "#db2777") as string | null,
+          }),
+        );
+        eventsImported += 1;
       }
+
+      let feedsImported = 0;
       if (Array.isArray(parsed.feeds)) {
-        for (const f of parsed.feeds) {
+        for (const f of parsed.feeds as FeedConfig[]) {
+          // A feed without an id would throw a DataError mid-import, after
+          // the destructive schedule/assessment replacement is committed —
+          // skip malformed entries into the honest warnings list instead.
+          if (!f || typeof f.id !== "string" || !f.id.trim()) {
+            warnings.push("A feed entry without an id was skipped.");
+            continue;
+          }
           await upsertFeed(f);
+          feedsImported += 1;
         }
       }
-      return (await buildFullState()) as T;
+
+      // Restore non-secret profile & preference flags; auto_sync_gcal stays false.
+      // Every key the export writes must round-trip here, or a cross-device
+      // import silently leaves feature toggles off.
+      const configRestores: string[] = [
+        "user_email",
+        "user_name",
+        "user_picture",
+        "onboarding_completed",
+        "moodle_url",
+        "dismiss_conflict_banner",
+        // `gemini_enabled` is deliberately NOT restored: the API key never
+        // travels with a backup, so a restored profile would claim AI is on
+        // with no key behind it. The core importer forces it off for the
+        // same reason.
+        "teams_enabled",
+        "moodle_enabled",
+        "classroom_enabled",
+        "last_gmail_sync",
+      ];
+      for (const key of configRestores) {
+        if (parsed[key] !== undefined) {
+          await setConfigValue(key, parsed[key]);
+        }
+      }
+      // The backup carries no Gemini key, so AI must be off after a restore
+      // until the user enters one again (the core importer does the same).
+      await setConfigValue("gemini_enabled", false);
+
+      return {
+        assessmentsImported: normalizedAssessments.length,
+        coursesImported: normalizedCourses.length,
+        slotsImported: normalizedSlots.length,
+        topicsImported,
+        gradesImported,
+        eventsImported,
+        customEventsImported: eventsImported,
+        feedsImported,
+        secretsIgnored,
+        warnings,
+      } as T;
     }
 
     case "reset_database": {
@@ -516,17 +729,45 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
       } as T;
     }
 
+    case "download_and_install_update": {
+      // Honest degradation: the browser tier is updated by the Service
+      // Worker, and there is no installer to hand over to.
+      throw new Error(
+        "Installing an update is only available in the desktop app — the browser tier updates itself through the Service Worker.",
+      );
+    }
+
     case "validate_gemini_key": {
       const key = (args?.key as string) || "";
       const result = await validateGeminiKeyBrowser(key);
+      // A validated key is held in memory for this session only (AGENTS §8:
+      // PWA secrets live in memory). Every AI feature in this tier — the
+      // timetable vision import included — reads it from there.
+      if (result.valid) {
+        setMemoryGeminiKey(key.trim());
+      }
       return result as T;
     }
 
+    case "extract_schedule": {
+      // Timetable vision import (Gemini Flash). The desktop shell runs the
+      // same task through the Rust core; the browser tier calls Gemini
+      // directly with the same prompt, model ladder and drop rules.
+      const image = (args?.image as string) || "";
+      return (await extractTimetableBrowser(image, getMemoryGeminiKey())) as T;
+    }
+
     case "ai_quota_usage": {
-      // The browser companion keeps no quota ledger: the key is only checked
-      // against the model list, and practice quizzes run on-device. Reporting
-      // "not tracked" is honest; a zero would read as "you used nothing".
-      return { callsToday: null, perModel: {} } as T;
+      // The browser companion keeps no daily ledger: it counts COMPLETED
+      // calls in memory for this session (the counter resets on reload), so
+      // the UI labels it "this session" instead of pretending it is a daily
+      // quota.
+      return {
+        callsToday: getBrowserAiSessionCalls(),
+        perModel: getBrowserAiSessionPerModel(),
+        sessionScope: true,
+        keyInMemory: hasMemoryGeminiKey(),
+      } as T;
     }
 
     case "google_login_start":
@@ -556,7 +797,7 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
       const existing = await loadAssessments();
       const schedule = await loadScheduleData();
       const feeds = await loadFeeds();
-      const todayIso = new Date().toISOString().split("T")[0];
+      const todayIso = getLocalDateString();
 
       // The browser tier can abort its scan too: `cancel_sync` aborts this
       // controller, which drops the in-flight feed request.

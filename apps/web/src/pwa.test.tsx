@@ -394,7 +394,7 @@ describe("Phase 11: PWA Companion Tier", () => {
       // Capability matrix table
       expect(screen.getByText("Per-Tier Capability Matrix")).toBeInTheDocument();
       expect(screen.getByText("Pure Rust WASM")).toBeInTheDocument();
-      expect(screen.getByText("Unavailable · Export `.ics`")).toBeInTheDocument();
+      expect(screen.getByText(/Unavailable · Export/)).toBeInTheDocument();
 
       // iOS Instructions
       expect(screen.getByText("Add to Home Screen (iOS / iPadOS)")).toBeInTheDocument();

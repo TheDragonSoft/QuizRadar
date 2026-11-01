@@ -34,13 +34,39 @@ object CoursePalette {
             "#3949ab",
         )
 
+    private val LIGHT_TEXT_PRESETS =
+        listOf(
+            Color(0xFF1557B0),
+            Color(0xFF0B7A43),
+            Color(0xFFB45309),
+            Color(0xFFB91C1C),
+            Color(0xFF7E22CE),
+            Color(0xFF0E7490),
+            Color(0xFFC2410C),
+            Color(0xFF3730A3),
+        )
+
+    private val DARK_TEXT_PRESETS =
+        listOf(
+            Color(0xFF60A5FA),
+            Color(0xFF34D399),
+            Color(0xFFFBBF24),
+            Color(0xFFF87171),
+            Color(0xFFC084FC),
+            Color(0xFF22D3EE),
+            Color(0xFFFCA5A5),
+            Color(0xFF818CF8),
+        )
+
     private fun hashCourseId(id: String): Int {
         var hash = -0x7ee3623b // 0x811c9dc5 as signed int
         for (char in id) {
             hash = hash xor char.code
             hash *= 0x01000193
         }
-        return kotlin.math.abs(hash)
+        // floorMod, not abs(): for the one id whose FNV hash is Int.MIN_VALUE,
+        // abs() returns the negative value and the palette index crashes.
+        return Math.floorMod(hash, PRESETS.size)
     }
 
     data class CourseColors(
@@ -51,13 +77,22 @@ object CoursePalette {
 
     fun get(courseId: String?): CourseColors {
         val id = courseId?.trim()?.ifEmpty { null } ?: "GENERAL"
-        val index = hashCourseId(id) % PRESETS.size
+        val index = hashCourseId(id).mod(PRESETS.size)
         val primary = PRESETS[index]
         return CourseColors(
             color = primary,
             background = primary.copy(alpha = 0.12f),
             border = primary.copy(alpha = 0.35f),
         )
+    }
+
+    fun textOnSurface(
+        courseId: String?,
+        darkTheme: Boolean,
+    ): Color {
+        val id = courseId?.trim()?.ifEmpty { null } ?: "GENERAL"
+        val index = hashCourseId(id) % PRESETS.size
+        return if (darkTheme) DARK_TEXT_PRESETS[index] else LIGHT_TEXT_PRESETS[index]
     }
 
     fun getHex(courseId: String?): String {

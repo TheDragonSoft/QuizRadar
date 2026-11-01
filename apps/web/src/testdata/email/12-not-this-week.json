@@ -1,0 +1,41 @@
+{
+  "ref_date": "2026-10-17",
+  "emails": [
+    {
+      "id": "ann-12",
+      "subject": "CSE241 quiz 1",
+      "from": "Sec Head <sec@univ.edu>",
+      "date": "Sat, 17 Oct 2026 07:00:00 +0000",
+      "snippet": null,
+      "body": "Dear students,\n\nThe CSE241 tutorial quiz 1 is not this week.\n\nGood luck,\nYour instructors"
+    }
+  ],
+  "expected": {
+    "stats": { "scanned": 1, "candidates": 1, "parsed": 1, "skipped_duplicates": 0 },
+    "items": [
+      {
+        "id": "ann-12",
+        "course": "CSE241",
+        "course_name": "Object-Oriented Programming",
+        "title": "Quiz 1: CSE241",
+        "type": "Class Quiz",
+        "date": "2026-10-27",
+        "day_name": "Tuesday",
+        "start_time": "11:00",
+        "end_time": "12:00",
+        "room": null,
+        "group": "Sec 1",
+        "instructor": "Sec Head",
+        "days_until": 10,
+        "upcoming": true,
+        "urgency": "medium",
+        "url": null,
+        "warning_count": 0,
+        "topics_count": 1,
+        "hours": 2.5,
+        "note_startswith": "Estimated (local heuristic):",
+        "note_contains": "inferred from wording (\"not this week\")"
+      }
+    ]
+  }
+}

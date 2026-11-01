@@ -62,4 +62,44 @@ describe("AI quota usage (honest counter)", () => {
 
     expect(useAppStore.getState().aiQuota?.callsToday).toBeNull();
   });
+
+  it("keeps the session scope, so a session counter is never shown as a daily ledger", async () => {
+    setRpcMockHandler(((fn: string) => {
+      if (fn === "ai_quota_usage") {
+        return Promise.resolve({
+          callsToday: 2,
+          perModel: { "gemini-3.5-flash": 2 },
+          sessionScope: true,
+          keyInMemory: true,
+        });
+      }
+      return null;
+    }) as never);
+
+    await useAppStore.getState().refreshAiQuota();
+
+    const quota = useAppStore.getState().aiQuota;
+    expect(quota?.sessionScope).toBe(true);
+    expect(quota?.keyInMemory).toBe(true);
+  });
+
+  it("keeps the 'no key in memory' signal the browser tier reports", async () => {
+    setRpcMockHandler(((fn: string) => {
+      if (fn === "ai_quota_usage") {
+        return Promise.resolve({
+          callsToday: 0,
+          perModel: {},
+          sessionScope: true,
+          keyInMemory: false,
+        });
+      }
+      return null;
+    }) as never);
+
+    await useAppStore.getState().refreshAiQuota();
+
+    const quota = useAppStore.getState().aiQuota;
+    expect(quota?.sessionScope).toBe(true);
+    expect(quota?.keyInMemory).toBe(false);
+  });
 });

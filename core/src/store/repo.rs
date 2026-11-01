@@ -360,6 +360,23 @@ impl<'a> CourseRepo<'a> {
     /// Replaces every slot belonging to `course_id` and inserts `slots`
     /// (assigned ids when absent: `slot-N` from the schedule's max counter —
     /// v4 upsert parity without the renumbering collision).
+    /// Highest `slot-N` number among the incoming payload's explicit ids, so
+    /// a blank-id slot in the same payload cannot collide with (and silently
+    /// overwrite via INSERT OR REPLACE) an explicit `slot-1…N` from an
+    /// import/AI schedule.
+    fn next_slot_number_seed(slots: &[ScheduleSlot]) -> u64 {
+        let mut max = 0u64;
+        for slot in slots {
+            let id = slot.id.trim();
+            if let Some(rest) = id.strip_prefix("slot-") {
+                if let Ok(n) = rest.parse::<u64>() {
+                    max = max.max(n);
+                }
+            }
+        }
+        max + 1
+    }
+
     pub fn replace_course_slots(
         &self,
         course_id: &str,
@@ -367,7 +384,9 @@ impl<'a> CourseRepo<'a> {
         updated_at: &str,
     ) -> Result<(), StoreError> {
         let courses = self.list()?;
-        let mut next = self.next_slot_number()?;
+        let mut next = self
+            .next_slot_number()?
+            .max(Self::next_slot_number_seed(slots));
         self.conn.execute(
             "DELETE FROM slots WHERE course_id = ?1 COLLATE NOCASE",
             [course_id.trim()],
@@ -392,7 +411,9 @@ impl<'a> CourseRepo<'a> {
         for course in &schedule.courses {
             self.upsert(course)?;
         }
-        let mut next = self.next_slot_number()?;
+        let mut next = self
+            .next_slot_number()?
+            .max(Self::next_slot_number_seed(&schedule.slots));
         for mut slot in schedule.slots.iter().cloned() {
             if slot.id.trim().is_empty() {
                 slot.id = format!("slot-{next}");
@@ -487,6 +508,25 @@ fn row_to_slot(row: &rusqlite::Row<'_>) -> rusqlite::Result<ScheduleSlot> {
 // AssessmentRepo
 // ---------------------------------------------------------------------------
 
+/// What an empty incoming set means for a whole-radar replace.
+///
+/// The store never deletes every assessment row on its own: an empty scan is
+/// "0 found", not "the radar is empty now" — only a caller that explicitly
+/// declares the latter may clear the radar. (The latent radar wipe — a
+/// failed scan emptying the dashboard — was guarded by the desktop shell
+/// only; the guard belongs here.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EmptyReplace {
+    /// Refuse the empty replace and fail loudly (the safe default for a
+    /// scan: a scan that found nothing must not wipe existing assessments).
+    #[default]
+    Refuse,
+    /// Allow the empty replace — the caller explicitly declared that this
+    /// really found nothing (a user-requested full reset, a restore of an
+    /// empty backup).
+    Allow,
+}
+
 /// Assessments: rows are stored exactly as the parser/importer produced them
 /// (scan-time snapshot); the derived-countdown fields get re-stamped at read
 /// time by `plan::refresh_assessment`, matching v4's day-rollover behavior.
@@ -580,7 +620,19 @@ impl<'a> AssessmentRepo<'a> {
     /// `gcal_synced` state + topic keys) — preserved by id, and by
     /// `parse::merge_key` when a reannounced item reappears under a new id
     /// (same source-label/course/title).
-    pub fn replace_all(&self, incoming: &[Assessment], updated_at: &str) -> Result<(), StoreError> {
+    ///
+    /// `empty` decides what an empty incoming set means. The default
+    /// ([`EmptyReplace::Refuse`]) fails loudly: a scan that found nothing
+    /// must never wipe the radar (that was the latent radar wipe — only the
+    /// desktop shell guarded against it). A caller that really means "there
+    /// is nothing left" (an explicit reset, a restore of an empty backup)
+    /// says so with [`EmptyReplace::Allow`].
+    pub fn replace_all(
+        &self,
+        incoming: &[Assessment],
+        updated_at: &str,
+        empty: EmptyReplace,
+    ) -> Result<(), StoreError> {
         let previous = self.list()?;
         let mut by_key: HashMap<String, &Assessment> = HashMap::new();
         for assessment in &previous {
@@ -609,10 +661,23 @@ impl<'a> AssessmentRepo<'a> {
 
         // v4 deleted everything not freshly scanned; the same honest rule
         // removes rows for sources the user disabled or feeds they removed.
-        // Empty scans delete everything (an empty scan says "0 found").
+        // An EMPTY scan does not: it says "0 found", and "0 found" must not
+        // read as "delete the radar" — that decision belongs to the caller,
+        // which has to opt in explicitly.
         if ids.is_empty() {
-            self.conn.execute("DELETE FROM assessments", [])?;
-            return Ok(());
+            return match empty {
+                EmptyReplace::Refuse => Err(StoreError::Validation(
+                    "Refusing to clear the whole radar from an empty scan — \
+                     a scan that found nothing must not wipe existing assessments. \
+                     Pass EmptyReplace::Allow when the caller explicitly means \
+                     \"there is nothing left\"."
+                        .to_string(),
+                )),
+                EmptyReplace::Allow => {
+                    self.conn.execute("DELETE FROM assessments", [])?;
+                    Ok(())
+                }
+            };
         }
         let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
         let sql = format!("DELETE FROM assessments WHERE id NOT IN ({placeholders})");
@@ -980,10 +1045,13 @@ impl<'a> GradeRepo<'a> {
         self.write(id, &record, updated_at)
     }
 
-    /// Backup merge upsert (`04` §4.6 “grades upsert”): each non-null remote
+    /// Backup merge upsert (`04` §4.6 "grades upsert"): each non-null remote
     /// field fills the local record; the other device cannot erase a local
     /// grade its data does not carry — additive, never subtractive. Returns
-    /// whether anything changed.
+    /// whether anything changed. The merged record passes the same
+    /// existence + `validate()` guards as a local write: a corrupt/hostile
+    /// cloud payload must not plant `achieved: -5` or grade rows for
+    /// assessments that exist nowhere.
     pub fn merge_upsert(
         &self,
         assessment_id: &str,
@@ -994,6 +1062,14 @@ impl<'a> GradeRepo<'a> {
             return Ok(false);
         }
         let id = assessment_id.trim();
+        let exists: i64 = self.conn.query_row(
+            "SELECT count(*) FROM assessments WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )?;
+        if exists == 0 {
+            return Ok(false);
+        }
         let local = self.get(id)?.unwrap_or_default();
         let merged = GradeRecord {
             achieved_score: remote.achieved_score.or(local.achieved_score),
@@ -1003,6 +1079,7 @@ impl<'a> GradeRepo<'a> {
         if merged == local {
             return Ok(false);
         }
+        self.validate(&merged, id)?;
         self.write_raw(id, &merged, updated_at)?;
         self.sync_assessment_columns(id, &merged)?;
         Ok(true)
@@ -1611,15 +1688,54 @@ pub mod ops {
 
     /// Scan-pipeline entry (phase 05): the fresh radar replaces the old one
     /// while user-owned fields survive reannouncement.
+    ///
+    /// An empty incoming set is REFUSED (loudly): a scan that found nothing
+    /// must not wipe the radar. Callers that really mean "clear the radar"
+    /// use [`replace_assessments_allowing_empty`].
     pub fn replace_assessments(
         db: &Db,
         assessments: &[Assessment],
         updated_at: &str,
         reference_date: NaiveDate,
     ) -> Result<AppSnapshot, StoreError> {
+        replace_assessments_with(
+            db,
+            assessments,
+            EmptyReplace::Refuse,
+            updated_at,
+            reference_date,
+        )
+    }
+
+    /// Explicit full replace: the caller declares that an empty result
+    /// really means "nothing is left" (a user-requested reset, a restore of
+    /// an empty backup) — only then may the radar be cleared.
+    pub fn replace_assessments_allowing_empty(
+        db: &Db,
+        assessments: &[Assessment],
+        updated_at: &str,
+        reference_date: NaiveDate,
+    ) -> Result<AppSnapshot, StoreError> {
+        replace_assessments_with(
+            db,
+            assessments,
+            EmptyReplace::Allow,
+            updated_at,
+            reference_date,
+        )
+    }
+
+    /// Shared body of the two replace entry points.
+    fn replace_assessments_with(
+        db: &Db,
+        assessments: &[Assessment],
+        empty: EmptyReplace,
+        updated_at: &str,
+        reference_date: NaiveDate,
+    ) -> Result<AppSnapshot, StoreError> {
         {
             let tx = db.transaction()?;
-            AssessmentRepo::new(&tx).replace_all(assessments, updated_at)?;
+            AssessmentRepo::new(&tx).replace_all(assessments, updated_at, empty)?;
             tx.commit()?;
         }
         read_snapshot(db.conn(), reference_date)
@@ -2123,22 +2239,37 @@ mod tests {
         )
         .unwrap();
 
-        // Empty scan deletes everything — never keeps ghosts.
-        ops::replace_assessments(&db, &[], "s2", ref_date()).unwrap();
+        // An empty scan does NOT delete everything: it fails loudly and the
+        // radar stays exactly as it was (the latent radar wipe).
+        let err = ops::replace_assessments(&db, &[], "s2", ref_date()).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Refusing to clear the whole radar"),
+            "{err}"
+        );
+        assert_eq!(
+            AssessmentRepo::new(db.conn()).list().unwrap().len(),
+            1,
+            "the existing assessment survives the refused empty scan"
+        );
+
+        // An explicit full replace — the caller says "there really is
+        // nothing left" — does clear the radar.
+        ops::replace_assessments_allowing_empty(&db, &[], "s3", ref_date()).unwrap();
         assert!(AssessmentRepo::new(db.conn()).list().unwrap().is_empty());
 
         // A new scan with only "b" removes stale "a"-like rows.
         ops::replace_assessments(
             &db,
             &[assessment("a", None, "A", "2026-11-05")],
-            "s3",
+            "s4",
             ref_date(),
         )
         .unwrap();
         ops::replace_assessments(
             &db,
             &[assessment("b", None, "B", "2026-11-06")],
-            "s4",
+            "s5",
             ref_date(),
         )
         .unwrap();
@@ -2147,6 +2278,40 @@ mod tests {
             list.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(),
             vec!["b"]
         );
+    }
+
+    #[test]
+    fn empty_replace_needs_an_explicit_opt_in() {
+        let db = mem_db();
+        ops::replace_assessments(
+            &db,
+            &[assessment("a", None, "A", "2026-11-05")],
+            "s1",
+            ref_date(),
+        )
+        .unwrap();
+
+        // The default is the safe one: refuse.
+        assert_eq!(EmptyReplace::default(), EmptyReplace::Refuse);
+        let err = AssessmentRepo::new(db.conn())
+            .replace_all(&[], "s2", EmptyReplace::Refuse)
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Refusing to clear the whole radar"),
+            "{err}"
+        );
+        assert_eq!(
+            AssessmentRepo::new(db.conn()).list().unwrap().len(),
+            1,
+            "nothing was deleted by the refused replace"
+        );
+
+        // The explicit opt-in clears the radar.
+        AssessmentRepo::new(db.conn())
+            .replace_all(&[], "s3", EmptyReplace::Allow)
+            .unwrap();
+        assert!(AssessmentRepo::new(db.conn()).list().unwrap().is_empty());
     }
 
     #[test]

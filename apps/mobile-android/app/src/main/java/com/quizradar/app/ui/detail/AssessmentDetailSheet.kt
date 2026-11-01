@@ -2,17 +2,23 @@ package com.quizradar.app.ui.detail
 
 import android.content.Intent
 import android.provider.CalendarContract
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +40,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Slider
@@ -43,19 +50,28 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quizradar.app.model.AssessmentModel
+import com.quizradar.app.ui.GradeSaveResult
+import com.quizradar.app.ui.extractTimePart
+import com.quizradar.app.ui.formatIsoDateForDisplay
 import com.quizradar.app.ui.theme.CoursePalette
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,16 +82,19 @@ fun AssessmentDetailSheet(
     sheetState: SheetState,
     onDismiss: () -> Unit,
     onToggleTopic: (key: String, done: Boolean) -> Unit,
-    onSaveGrade: (achieved: Double?, max: Double?, weight: Double?) -> Unit,
+    onSaveGrade: suspend (achieved: Double?, max: Double?, weight: Double?) -> GradeSaveResult,
     onExportIcs: () -> String,
     onOpenPractice: () -> Unit,
     onOpenPomodoro: (topicTitle: String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val palette = CoursePalette.get(assessment.courseId)
+    val courseTextColor = CoursePalette.textOnSurface(assessment.courseId, isDark)
 
-    // Grade edit inputs
     var scoreInput by remember(assessment.id) {
         mutableStateOf(assessment.achievedScore?.toString() ?: "")
     }
@@ -86,12 +105,18 @@ fun AssessmentDetailSheet(
         mutableStateOf(assessment.weightagePercent?.toString() ?: "")
     }
     var gradeError by remember(assessment.id) { mutableStateOf<String?>(null) }
-    var gradeSavedNotice by remember(assessment.id) { mutableStateOf(false) }
+    // The outcome of the LAST write attempt. "Grade Saved!" is shown for a
+    // confirmed write only - a failed write renders its reason instead.
+    var gradeSaveResult by remember(assessment.id) { mutableStateOf<GradeSaveResult?>(null) }
+    var isSavingGrade by remember(assessment.id) { mutableStateOf(false) }
 
-    // What-if score slider/input (default 85% or existing score %)
     var whatIfScore by remember(assessment.id) {
         val initial =
-            if (assessment.achievedScore != null && assessment.maxScore != null && assessment.maxScore > 0) {
+            if (
+                assessment.achievedScore != null &&
+                assessment.maxScore != null &&
+                assessment.maxScore > 0
+            ) {
                 ((assessment.achievedScore / assessment.maxScore) * 100.0)
             } else {
                 85.0
@@ -101,11 +126,13 @@ fun AssessmentDetailSheet(
 
     val whatIf = WhatIfCalculator.calculate(assessment, allAssessments, whatIfScore)
 
+    val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface,
-        modifier = modifier,
+        modifier = modifier.padding(top = statusBarPadding),
     ) {
         Column(
             modifier =
@@ -120,7 +147,10 @@ fun AssessmentDetailSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f),
+                ) {
                     Box(
                         modifier =
                             Modifier
@@ -130,20 +160,20 @@ fun AssessmentDetailSheet(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = assessment.courseId ?: "GENERAL",
+                        text = assessment.courseId ?: "General",
                         style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                        color = palette.color,
+                        color = courseTextColor,
                     )
                     if (assessment.courseName != null) {
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "• ${assessment.courseName}",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
-                IconButton(onClick = onDismiss) {
+                IconButton(onClick = onDismiss, modifier = Modifier.size(44.dp)) {
                     Icon(imageVector = Icons.Default.Close, contentDescription = "Close")
                 }
             }
@@ -166,7 +196,7 @@ fun AssessmentDetailSheet(
                     text = assessment.assessmentType,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
-                    color = palette.color,
+                    color = courseTextColor,
                     modifier =
                         Modifier
                             .clip(RoundedCornerShape(6.dp))
@@ -177,11 +207,11 @@ fun AssessmentDetailSheet(
                     text = assessment.source,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier =
                         Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
                             .padding(horizontal = 8.dp, vertical = 3.dp),
                 )
                 if (assessment.daysUntil != null) {
@@ -191,15 +221,21 @@ fun AssessmentDetailSheet(
                             1 -> "TOMORROW"
                             else -> if (assessment.daysUntil < 0) "PAST" else "IN ${assessment.daysUntil} DAYS"
                         }
-                    val urgencyColor =
+                    val (urgencyColor, urgencyBg) =
                         when (assessment.daysUntil) {
-                            0 -> Color(0xFFDC2626)
-                            1 -> Color(0xFFD97706)
+                            0 ->
+                                (if (isDark) Color(0xFFFCA5A5) else Color(0xFFB91C1C)) to
+                                    Color(0xFFDC2626).copy(alpha = if (isDark) 0.22f else 0.12f)
+                            1 ->
+                                (if (isDark) Color(0xFFFDE68A) else Color(0xFF92400E)) to
+                                    Color(0xFFD97706).copy(alpha = if (isDark) 0.22f else 0.14f)
                             else ->
                                 if (assessment.daysUntil < 0) {
-                                    Color(0xFF64748B)
+                                    MaterialTheme.colorScheme.onSurfaceVariant to
+                                        MaterialTheme.colorScheme.surfaceVariant
                                 } else {
-                                    MaterialTheme.colorScheme.primary
+                                    MaterialTheme.colorScheme.onSecondaryContainer to
+                                        MaterialTheme.colorScheme.secondaryContainer
                                 }
                         }
                     Text(
@@ -210,7 +246,7 @@ fun AssessmentDetailSheet(
                         modifier =
                             Modifier
                                 .clip(RoundedCornerShape(6.dp))
-                                .background(urgencyColor.copy(alpha = 0.12f))
+                                .background(urgencyBg)
                                 .padding(horizontal = 8.dp, vertical = 3.dp),
                     )
                 }
@@ -223,56 +259,101 @@ fun AssessmentDetailSheet(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                        .border(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant,
+                            RoundedCornerShape(12.dp),
+                        )
                         .padding(12.dp),
             ) {
                 Text(
                     text = "FACTS",
-                    fontSize = 10.sp,
+                    fontSize = 11.sp,
+                    letterSpacing = 0.6.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(modifier = Modifier.height(6.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(text = "Date", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
                         Text(
-                            text = assessment.dateIso?.toString() ?: "Undated",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
+                            text = "Date",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text =
+                                formatIsoDateForDisplay(assessment.dateIso?.toString())
+                                    ?: assessment.dateIso?.toString()
+                                    ?: "Undated",
+                            style =
+                                TextStyle(
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontFeatureSettings = "tnum",
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                ),
                         )
                     }
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(text = "Time", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
                         Text(
-                            text = assessment.displayTime ?: "—",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
+                            text = "Time",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            // The core's `display_time` repeats the date the
+                            // Date field already shows - only the time part
+                            // belongs under "Time".
+                            text = extractTimePart(assessment.displayTime) ?: "—",
+                            style =
+                                TextStyle(
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontFeatureSettings = "tnum",
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                ),
                         )
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(text = "Room", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                        Text(
+                            text = "Room",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         Text(
                             text = assessment.room ?: "—",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                     }
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(text = "Instructor", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                        Text(
+                            text = "Instructor",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         Text(
                             text = assessment.instructor ?: "—",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                     }
                 }
             }
 
-            // Warnings
             if (assessment.warnings.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -280,7 +361,7 @@ fun AssessmentDetailSheet(
                         Text(
                             text = "⚠ $warning",
                             fontSize = 11.sp,
-                            color = Color(0xFFD97706),
+                            color = if (isDark) Color(0xFFFDE68A) else Color(0xFF92400E),
                             modifier = Modifier.padding(vertical = 2.dp),
                         )
                     }
@@ -292,8 +373,9 @@ fun AssessmentDetailSheet(
             Text(
                 text = "TOPICS & READINESS",
                 fontSize = 11.sp,
+                letterSpacing = 0.6.sp,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(modifier = Modifier.height(6.dp))
 
@@ -301,7 +383,7 @@ fun AssessmentDetailSheet(
                 Text(
                     text = "No topics listed for this assessment.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
                 assessment.topics.forEachIndexed { index, topic ->
@@ -311,17 +393,25 @@ fun AssessmentDetailSheet(
                         modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 2.dp)
-                                .clickable { onToggleTopic(key, !isChecked) },
+                                .defaultMinSize(minHeight = 40.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onToggleTopic(key, !isChecked)
+                                }
+                                .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Checkbox(
                             checked = isChecked,
-                            onCheckedChange = { done -> onToggleTopic(key, done) },
+                            onCheckedChange = { done ->
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onToggleTopic(key, done)
+                            },
                             colors =
                                 CheckboxDefaults.colors(
                                     checkedColor = palette.color,
-                                    uncheckedColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                                    uncheckedColor = MaterialTheme.colorScheme.outline,
                                 ),
                             modifier = Modifier.size(24.dp),
                         )
@@ -330,35 +420,62 @@ fun AssessmentDetailSheet(
                             text = topic,
                             style =
                                 MaterialTheme.typography.bodySmall.copy(
-                                    textDecoration = if (isChecked) TextDecoration.LineThrough else TextDecoration.None,
+                                    textDecoration =
+                                        if (isChecked) {
+                                            TextDecoration.LineThrough
+                                        } else {
+                                            TextDecoration.None
+                                        },
                                     color =
                                         if (isChecked) {
-                                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                            MaterialTheme.colorScheme.onSurfaceVariant
                                         } else {
                                             MaterialTheme.colorScheme.onSurface
                                         },
                                 ),
+                            modifier = Modifier.weight(1f),
                         )
+                        // Focus timer on THIS topic - the timer carries the
+                        // topic's index, so "Mark Topic Done" later marks the
+                        // topic shown here, not the first one.
+                        IconButton(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onOpenPomodoro(topic)
+                            },
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Timer,
+                                contentDescription = "Focus timer for $topic",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
                     }
                 }
             }
 
-            // Grade Editor (Explicit-null-clears semantics)
+            // Grade Editor
             Spacer(modifier = Modifier.height(18.dp))
             Text(
                 text = "GRADE RECORD",
                 fontSize = 11.sp,
+                letterSpacing = 0.6.sp,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(modifier = Modifier.height(8.dp))
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 OutlinedTextField(
                     value = scoreInput,
                     onValueChange = {
                         scoreInput = it
-                        gradeSavedNotice = false
+                        gradeSaveResult = null
                     },
                     label = { Text("Score", fontSize = 11.sp) },
                     placeholder = { Text("e.g. 18", fontSize = 11.sp) },
@@ -370,7 +487,7 @@ fun AssessmentDetailSheet(
                     value = maxInput,
                     onValueChange = {
                         maxInput = it
-                        gradeSavedNotice = false
+                        gradeSaveResult = null
                     },
                     label = { Text("Max", fontSize = 11.sp) },
                     placeholder = { Text("e.g. 20", fontSize = 11.sp) },
@@ -382,7 +499,7 @@ fun AssessmentDetailSheet(
                     value = weightInput,
                     onValueChange = {
                         weightInput = it
-                        gradeSavedNotice = false
+                        gradeSaveResult = null
                     },
                     label = { Text("Weight %", fontSize = 11.sp) },
                     placeholder = { Text("e.g. 15", fontSize = 11.sp) },
@@ -394,7 +511,19 @@ fun AssessmentDetailSheet(
 
             if (gradeError != null) {
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(text = gradeError!!, fontSize = 11.sp, color = Color(0xFFDC2626))
+                Text(text = gradeError!!, fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+            }
+
+            // A write that failed says so, in the same error language as the
+            // validation messages above - never a silent no-op.
+            val failedSave = gradeSaveResult as? GradeSaveResult.Failed
+            if (failedSave != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Grade not saved: ${failedSave.message}",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -426,15 +555,35 @@ fun AssessmentDetailSheet(
                     }
 
                     gradeError = null
-                    onSaveGrade(score, max, weight)
-                    gradeSavedNotice = true
+                    gradeSaveResult = null
+                    isSavingGrade = true
+                    scope.launch {
+                        // The ViewModel reports what the write really did:
+                        // only a confirmed write may say "Grade Saved!".
+                        val result = onSaveGrade(score, max, weight)
+                        gradeSaveResult = result
+                        isSavingGrade = false
+                    }
                 },
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.fillMaxWidth(),
+                enabled = !isSavingGrade,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 46.dp),
             ) {
-                Icon(imageVector = Icons.Outlined.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                Icon(
+                    imageVector = Icons.Outlined.Save,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                )
                 Spacer(modifier = Modifier.width(6.dp))
-                Text(text = if (gradeSavedNotice) "Grade Saved!" else "Save Grade Record")
+                Text(
+                    text =
+                        when {
+                            isSavingGrade -> "Saving…"
+                            gradeSaveResult is GradeSaveResult.Saved -> "Grade Saved!"
+                            else -> "Save Grade Record"
+                        },
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
 
             // What-If Projector
@@ -444,7 +593,12 @@ fun AssessmentDetailSheet(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                        .border(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant,
+                            RoundedCornerShape(12.dp),
+                        )
                         .padding(12.dp),
             ) {
                 Row(
@@ -455,20 +609,25 @@ fun AssessmentDetailSheet(
                     Text(
                         text = "WHAT-IF PROJECTOR",
                         fontSize = 11.sp,
+                        letterSpacing = 0.6.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     val projColor =
                         when (whatIf.colorState) {
-                            ScoreColorState.GREEN -> Color(0xFF059669)
-                            ScoreColorState.AMBER -> Color(0xFFD97706)
-                            ScoreColorState.ROSE -> Color(0xFFDC2626)
+                            ScoreColorState.GREEN -> if (isDark) Color(0xFF34D399) else Color(0xFF047857)
+                            ScoreColorState.AMBER -> if (isDark) Color(0xFFFBBF24) else Color(0xFFB45309)
+                            ScoreColorState.ROSE -> if (isDark) Color(0xFFF87171) else Color(0xFFB91C1C)
                         }
                     Text(
                         text = "Projected Avg: ${whatIf.projectedAvg}%",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = projColor,
+                        style =
+                            TextStyle(
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFeatureSettings = "tnum",
+                                color = projColor,
+                            ),
                     )
                 }
 
@@ -476,7 +635,7 @@ fun AssessmentDetailSheet(
                 Text(
                     text = "If you score ${whatIfScore.toInt()}% on this assessment:",
                     fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
                 Slider(
@@ -488,41 +647,59 @@ fun AssessmentDetailSheet(
 
                 Text(
                     text = "Note: Assumes equal weight across recorded course assessments.",
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
-            // Action Buttons: Google Calendar / Share .ics / Practice Quiz / Focus Timer
+            // Action Buttons: Share .ics / Calendar / Practice Quiz / Focus Timer
             Spacer(modifier = Modifier.height(20.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
                     onClick = {
                         val icsContent = onExportIcs()
                         val shareIntent =
                             Intent(Intent.ACTION_SEND).apply {
                                 type = "text/calendar"
-                                putExtra(Intent.EXTRA_SUBJECT, "${assessment.courseId}: ${assessment.title}")
+                                putExtra(
+                                    Intent.EXTRA_SUBJECT,
+                                    "${assessment.courseId ?: "Exam"}: ${assessment.title}",
+                                )
                                 putExtra(Intent.EXTRA_TEXT, icsContent)
                             }
-                        context.startActivity(Intent.createChooser(shareIntent, "Export Calendar (.ics)"))
+                        context.startActivity(
+                            Intent.createChooser(shareIntent, "Export Calendar (.ics)"),
+                        )
                     },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                    modifier = Modifier.weight(1f).defaultMinSize(minHeight = 44.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 ) {
-                    Icon(imageVector = Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(text = "Export .ics", fontSize = 11.sp)
+                    Icon(
+                        imageVector = Icons.Outlined.Share,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(text = "Export .ics", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
 
-                Button(
+                OutlinedButton(
                     onClick = {
                         val intent =
                             Intent(Intent.ACTION_INSERT).apply {
                                 data = CalendarContract.Events.CONTENT_URI
-                                putExtra(CalendarContract.Events.TITLE, "[${assessment.courseId}] ${assessment.title}")
-                                putExtra(CalendarContract.Events.DESCRIPTION, "QuizRadar exam radar item")
+                                putExtra(
+                                    CalendarContract.Events.TITLE,
+                                    "[${assessment.courseId ?: "Exam"}] ${assessment.title}",
+                                )
+                                putExtra(
+                                    CalendarContract.Events.DESCRIPTION,
+                                    "QuizRadar exam radar item",
+                                )
                                 if (assessment.room != null) {
                                     putExtra(CalendarContract.Events.EVENT_LOCATION, assessment.room)
                                 }
@@ -532,37 +709,61 @@ fun AssessmentDetailSheet(
                         } catch (_: Exception) {
                         }
                     },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.weight(1f).defaultMinSize(minHeight = 44.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 ) {
-                    Icon(imageVector = Icons.Outlined.Event, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(text = "Calendar", fontSize = 11.sp)
+                    Icon(
+                        imageVector = Icons.Outlined.Event,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(text = "Calendar", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Button(
                     onClick = onOpenPractice,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = palette.color),
+                    modifier = Modifier.weight(1f).defaultMinSize(minHeight = 44.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                        ),
                 ) {
-                    Icon(imageVector = Icons.Outlined.Quiz, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(text = "Practice Quiz", fontSize = 11.sp)
+                    Icon(
+                        imageVector = Icons.Outlined.Quiz,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(text = "Practice Quiz", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
 
                 Button(
                     onClick = { onOpenPomodoro(assessment.topics.firstOrNull()) },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5)),
+                    modifier = Modifier.weight(1f).defaultMinSize(minHeight = 44.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF4338CA),
+                            contentColor = Color.White,
+                        ),
                 ) {
-                    Icon(imageVector = Icons.Outlined.Timer, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(text = "Focus Timer", fontSize = 11.sp)
+                    Icon(
+                        imageVector = Icons.Outlined.Timer,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(text = "Focus Timer", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
 

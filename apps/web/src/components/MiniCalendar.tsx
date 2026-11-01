@@ -131,7 +131,7 @@ export const MiniCalendar: React.FC<MiniCalendarProps> = ({
             <div
               key={rowStartIso}
               className={`grid grid-cols-7 items-center py-0.5 ${
-                isSelectedWeek ? "rounded-full bg-[var(--accent)]/10 dark:bg-blue-950/70" : ""
+                isSelectedWeek ? "rounded-full bg-blue-100 dark:bg-blue-950/70" : ""
               }`}
             >
               {row.map((cell) => {
@@ -147,12 +147,12 @@ export const MiniCalendar: React.FC<MiniCalendarProps> = ({
                     aria-current={isSelected ? "date" : undefined}
                     className={`relative mx-auto flex h-6 w-6 cursor-pointer items-center justify-center rounded-full text-[11px] tabular-nums transition ${
                       isSelected
-                        ? "bg-[var(--accent)] font-bold text-white"
+                        ? "bg-[var(--accent-fill)] font-bold text-white"
                         : isToday
-                          ? "border border-[var(--accent)] font-bold text-[var(--accent)] hover:bg-[var(--surface-hover)]"
+                          ? "border border-[var(--accent)] font-bold text-[var(--accent-ink)] hover:bg-[var(--surface-hover)]"
                           : cell.inMonth
                             ? "font-medium text-[var(--text)] hover:bg-[var(--surface-hover)]"
-                            : "text-[var(--text-muted)] opacity-50 hover:bg-[var(--surface-hover)]"
+                            : "text-[var(--text-muted)] hover:bg-[var(--surface-hover)]"
                     }`}
                   >
                     <span>{cell.day}</span>

@@ -44,7 +44,7 @@ pub enum StoreError {
 }
 
 /// The schema this build ships. Written by [`Db::apply_migrations`].
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 pub(crate) const INITIAL_SCHEMA_SQL: &str = "
 CREATE TABLE courses (
@@ -180,7 +180,18 @@ CREATE TABLE kv_meta (
 /// Ordered migration steps. Each entry upgrades a database *at* the previous
 /// version to the recorded one; `m1_upgrades_into(m2)` semantics. Never edit
 /// an applied schema — append a new `(version, sql)` step.
-pub const MIGRATIONS: &[(u32, &str)] = &[(1, INITIAL_SCHEMA_SQL)];
+pub const MIGRATIONS: &[(u32, &str)] = &[
+    (1, INITIAL_SCHEMA_SQL),
+    // Source provenance: which scan last saw an announcement, and the scan
+    // in which the source stopped reporting it (the announcement was
+    // cancelled upstream). Both are nullable text; an existing database
+    // simply has no provenance until the next scan reports the item.
+    (
+        2,
+        "ALTER TABLE assessments ADD COLUMN last_seen_source_run TEXT;
+         ALTER TABLE assessments ADD COLUMN retired_source_run TEXT;",
+    ),
+];
 
 /// One SQLite handle. Cheap to share behind a mutex (see
 /// [`super::Store`], the async facade); [`repo`] repositories borrow it.

@@ -28,6 +28,19 @@ data class ScheduleDataModel(
     val slots: List<ScheduleSlotModel> = emptyList(),
 )
 
+/**
+ * The result of one AI timetable-image extraction (`01` §4.1).
+ *
+ * The dropped counts are part of the payload on purpose: rows the model got
+ * wrong are counted, never repaired into existence, and the preview shows
+ * them so the user knows the image was only partly readable.
+ */
+data class ExtractedTimetableModel(
+    val schedule: ScheduleDataModel = ScheduleDataModel(),
+    val droppedCourses: Int = 0,
+    val droppedSlots: Int = 0,
+)
+
 data class CustomEventModel(
     val id: String,
     val title: String,

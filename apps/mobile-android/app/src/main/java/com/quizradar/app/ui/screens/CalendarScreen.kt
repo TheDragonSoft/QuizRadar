@@ -22,10 +22,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -41,6 +37,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -54,6 +52,7 @@ import com.quizradar.app.ui.calendar.CalendarLanes
 import com.quizradar.app.ui.calendar.END_HOUR
 import com.quizradar.app.ui.calendar.HOUR_HEIGHT_DP
 import com.quizradar.app.ui.calendar.START_HOUR
+import com.quizradar.app.ui.icons.Icons
 import com.quizradar.app.ui.theme.CoursePalette
 import com.quizradar.app.ui.theme.CustomEventPink
 import java.time.LocalDate
@@ -515,7 +514,17 @@ fun CalendarScreen(
                                             .fillMaxWidth()
                                             .offset(y = (h * HOUR_HEIGHT_DP).dp)
                                             .height(HOUR_HEIGHT_DP.dp)
-                                            .clickable {
+                                            // The grid is the screen: 14 slots per
+                                            // day column, and every one of them is a
+                                            // tap target. Without a name, a screen
+                                            // reader announced a wall of
+                                            // "button"s and the user could not
+                                            // tell WHICH hour they were on.
+                                            .semantics {
+                                                contentDescription =
+                                                    "$dayName ${String.format("%02d:00", hourSlot)}, " +
+                                                    "double tap to schedule a study block"
+                                            }.clickable {
                                                 val startStr = String.format("%02d:00", hourSlot)
                                                 val endStr = String.format("%02d:00", (hourSlot + 1).coerceAtMost(23))
                                                 viewModel.openCreateEventDraft(

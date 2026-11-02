@@ -1,6 +1,7 @@
 package com.quizradar.app.core
 
 import android.content.Context
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -9,6 +10,30 @@ import java.time.LocalDate
 class QuizRadarEngine(
     private val storeProvider: () -> NativeStoreInterface,
     private val tokenProviderProvider: () -> TokenProvider,
+    /**
+     * The dispatcher every native store call runs on.
+     *
+     * A single-threaded view of the IO pool: the store calls stay serialized
+     * (the SQLite connection is not safe to use from several threads at once)
+     * but they never run on the main thread. Opening the store pulls in the
+     * Rust core through JNA (dlopen + runtime start-up) and the token store
+     * creates an Android Keystore master key - both are slow enough to trip
+     * the ANR watchdog when they happen on the UI thread.
+     *
+     * The dispatcher belongs to the ENGINE, not to the ViewModel: every
+     * caller (the UI, the Glance widget, the reminder worker, the share
+     * intent) then inherits "no native call on the main thread" for free.
+     */
+    override val coreDispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1),
+    /**
+     * The dispatcher for the calls that talk to the network (the OAuth token
+     * exchange and the Gemini timetable extraction).
+     *
+     * It is deliberately NOT the serialized store dispatcher: a Gemini
+     * round-trip can take a minute, and it must not block every other core
+     * call for that minute.
+     */
+    private val networkDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : QuizRadarCore {
     /**
      * The native store and the Keystore-backed token store are BUILT LAZY.
@@ -19,8 +44,8 @@ class QuizRadarEngine(
      * starting up blocked the first frame for seconds and made the app look
      * frozen (the system showed "app isn't responding").
      *
-     * The first call now happens from a background dispatcher (see
-     * `QuizRadarViewModel.loadState`), so the cost lands off the main thread.
+     * The first call now happens from [coreDispatcher] (every suspend method
+     * below runs on it), so the cost lands off the main thread.
      */
     private val store: NativeStoreInterface by lazy(LazyThreadSafetyMode.SYNCHRONIZED, storeProvider)
 
@@ -30,23 +55,36 @@ class QuizRadarEngine(
     constructor(
         store: NativeStoreInterface,
         tokenProvider: TokenProvider,
-    ) : this({ store }, { tokenProvider })
+        coreDispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1),
+    ) : this({ store }, { tokenProvider }, coreDispatcher)
 
-    override fun version(): String {
-        return coreVersion()
+    /**
+     * Runs one native store call on [coreDispatcher].
+     *
+     * This is the single place where the "no native call on the main thread"
+     * rule is enforced, so a new core method cannot forget it.
+     */
+    private suspend fun <T> onCore(block: suspend () -> T): T = withContext(coreDispatcher) { block() }
+
+    override suspend fun version(): String {
+        return onCore { coreVersion() }
+    }
+
+    override fun geminiApiKey(): String? {
+        return tokenProvider.getGeminiApiKey()
     }
 
     private fun nowIso(): String = Instant.now().toString()
 
     override suspend fun getState(refDate: LocalDate): String {
-        return store.getState(refDate.toString())
+        return onCore { store.getState(refDate.toString()) }
     }
 
     override suspend fun saveSchedule(
         scheduleJson: String,
         refDate: LocalDate,
     ): String {
-        return store.saveSchedule(scheduleJson, nowIso(), refDate.toString())
+        return onCore { store.saveSchedule(scheduleJson, nowIso(), refDate.toString()) }
     }
 
     override suspend fun upsertCourse(
@@ -54,21 +92,21 @@ class QuizRadarEngine(
         slotsJson: String,
         refDate: LocalDate,
     ): String {
-        return store.upsertCourse(courseJson, slotsJson, nowIso(), refDate.toString())
+        return onCore { store.upsertCourse(courseJson, slotsJson, nowIso(), refDate.toString()) }
     }
 
     override suspend fun deleteCourse(
         code: String,
         refDate: LocalDate,
     ): String {
-        return store.deleteCourse(code, nowIso(), refDate.toString())
+        return onCore { store.deleteCourse(code, nowIso(), refDate.toString()) }
     }
 
     override suspend fun replaceAssessments(
         assessmentsJson: String,
         refDate: LocalDate,
     ): String {
-        return store.replaceAssessments(assessmentsJson, nowIso(), refDate.toString())
+        return onCore { store.replaceAssessments(assessmentsJson, nowIso(), refDate.toString()) }
     }
 
     override suspend fun toggleTopic(
@@ -76,7 +114,7 @@ class QuizRadarEngine(
         done: Boolean,
         refDate: LocalDate,
     ): String {
-        return store.toggleTopic(topicKey, done, nowIso(), refDate.toString())
+        return onCore { store.toggleTopic(topicKey, done, nowIso(), refDate.toString()) }
     }
 
     override suspend fun updateGrade(
@@ -89,67 +127,82 @@ class QuizRadarEngine(
         clearWeightage: Boolean,
         refDate: LocalDate,
     ): String {
-        return store.updateGrade(
-            assessmentId,
-            achieved,
-            max,
-            weightage,
-            clearAchieved,
-            clearMax,
-            clearWeightage,
-            nowIso(),
-            refDate.toString(),
-        )
+        return onCore {
+            store.updateGrade(
+                assessmentId,
+                achieved,
+                max,
+                weightage,
+                clearAchieved,
+                clearMax,
+                clearWeightage,
+                nowIso(),
+                refDate.toString(),
+            )
+        }
     }
 
     override suspend fun upsertCustomEvent(
         eventJson: String,
         refDate: LocalDate,
     ): String {
-        return store.upsertCustomEvent(eventJson, nowIso(), refDate.toString())
+        return onCore { store.upsertCustomEvent(eventJson, nowIso(), refDate.toString()) }
     }
 
     override suspend fun deleteCustomEvent(
         id: String,
         refDate: LocalDate,
     ): String {
-        return store.deleteCustomEvent(id, nowIso(), refDate.toString())
+        return onCore { store.deleteCustomEvent(id, nowIso(), refDate.toString()) }
     }
 
     override suspend fun setConfigString(
         key: String,
         value: String?,
     ) {
-        store.setConfigString(key, value)
+        onCore { store.setConfigString(key, value) }
     }
 
     override suspend fun getConfigString(key: String): String? {
-        return store.getConfigString(key)
+        return onCore { store.getConfigString(key) }
     }
 
     override suspend fun setConfigBool(
         key: String,
         value: Boolean,
     ) {
-        store.setConfigBool(key, value)
+        onCore { store.setConfigBool(key, value) }
     }
 
     override suspend fun getConfigBool(
         key: String,
         default: Boolean,
     ): Boolean {
-        return store.getConfigBool(key, default)
+        return onCore { store.getConfigBool(key, default) }
     }
 
     override suspend fun exportBackup(refDate: LocalDate): String {
-        return store.exportBackup(nowIso(), refDate.toString())
+        return onCore { store.exportBackup(nowIso(), refDate.toString()) }
     }
 
     override suspend fun importBackup(
         backupJson: String,
         refDate: LocalDate,
     ): String {
-        return store.importBackup(backupJson, nowIso(), refDate.toString())
+        return onCore { store.importBackup(backupJson, nowIso(), refDate.toString()) }
+    }
+
+    override suspend fun extractTimetableFromImage(
+        imageB64: String,
+        mime: String,
+        apiKey: String,
+    ): String {
+        // A network round-trip to Gemini: it runs on the network dispatcher,
+        // not on the single threaded store dispatcher (it would block every
+        // other core call for up to a minute) and never on the main thread.
+        return withContext(networkDispatcher) {
+            store.extractTimetableFromImage(imageB64, mime, apiKey)
+        }
     }
 
     override fun parseEmail(
@@ -208,11 +261,11 @@ class QuizRadarEngine(
         return generateStudyBlocksForExam(assessmentJson, scheduleJson, eventsJson, today.toString())
     }
 
-    override fun exportIcs(
+    override suspend fun exportIcs(
         assessmentsJson: String,
         assessmentId: String?,
     ): String {
-        return exportIcsCalendar(assessmentsJson, assessmentId)
+        return onCore { exportIcsCalendar(assessmentsJson, assessmentId) }
     }
 
     override fun generatePracticeQuiz(assessmentJson: String): String {
@@ -248,7 +301,7 @@ class QuizRadarEngine(
         codeVerifier: String,
         tokenEndpointOverride: String?,
     ): String {
-        return withContext(Dispatchers.IO) {
+        return withContext(networkDispatcher) {
             com.quizradar.app.core.exchangeOauthCode(
                 provider = provider,
                 clientId = clientId,
@@ -304,10 +357,18 @@ class QuizRadarEngine(
 
         /**
          * Initialize an in-memory QuizRadarEngine for unit testing and Robolectric.
+         *
+         * The dispatcher is injectable so a test can hand in the test
+         * dispatcher: a real background dispatcher would race the test
+         * scheduler and make `advanceUntilIdle()` return before the core
+         * call had finished.
          */
-        fun createInMemory(tokenProvider: TokenProvider = MemoryTokenStore()): QuizRadarEngine {
+        fun createInMemory(
+            tokenProvider: TokenProvider = MemoryTokenStore(),
+            coreDispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1),
+        ): QuizRadarEngine {
             val store = openInMemoryNativeStore()
-            return QuizRadarEngine(store, tokenProvider)
+            return QuizRadarEngine(store, tokenProvider, coreDispatcher)
         }
     }
 }

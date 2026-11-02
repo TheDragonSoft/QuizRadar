@@ -2,6 +2,7 @@ package com.quizradar.app.ui
 
 import com.quizradar.app.core.QuizRadarEngine
 import com.quizradar.app.model.QuizRadarJsonParser
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -16,7 +17,7 @@ class QuizRadarJsonParserTest {
     @Test
     fun parseAppSnapshot_parses_core_snapshot_successfully() =
         runTest {
-            val engine = QuizRadarEngine.createInMemory()
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = Dispatchers.Unconfined)
             val refDate = LocalDate.parse("2026-10-25")
 
             val json = engine.getState(refDate)
@@ -32,7 +33,7 @@ class QuizRadarJsonParserTest {
 
     @Test
     fun parsePracticeQuiz_parses_generated_mcqs() {
-        val engine = QuizRadarEngine.createInMemory()
+        val engine = QuizRadarEngine.createInMemory(coreDispatcher = Dispatchers.Unconfined)
         val assessmentJson =
             """
             {
@@ -60,7 +61,7 @@ class QuizRadarJsonParserTest {
     @Test
     fun parseAppSnapshot_carriesTheCoreConflictChipOntoTheRadarList() =
         runTest {
-            val engine = QuizRadarEngine.createInMemory()
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = Dispatchers.Unconfined)
             val refDate = LocalDate.parse("2026-10-25")
 
             // Two dated assessments on the same day: the core detects the

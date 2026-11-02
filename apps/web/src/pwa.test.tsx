@@ -221,6 +221,111 @@ describe("Phase 11: PWA Companion Tier", () => {
       expect(updatedQuiz1.max_score).toBe(100);
       expect(updatedQuiz1.weightage_percent).toBe(10);
     });
+
+    it("retires what a feed no longer reports, and keeps what it still reports", async () => {
+      const wasm = await getWasmEngine();
+      const previousRun = "registrar-2026-11-01T09:00:00Z";
+      const thisRun = "registrar-2026-11-02T09:00:00Z";
+
+      const existing: Assessment[] = [
+        {
+          id: "feed-registrar-cse241_quiz_1",
+          title: "CSE241 Quiz 1",
+          assessmentType: "Quiz",
+          dateIso: "2026-11-20",
+          isUpcoming: true,
+          urgencyLevel: "high",
+          priorityScore: 80,
+          topics: [],
+          warnings: [],
+          source: "Registrar",
+          lastSeenSourceRun: previousRun,
+        },
+        {
+          id: "feed-registrar-cse241_quiz_2",
+          title: "CSE241 Quiz 2",
+          assessmentType: "Quiz",
+          dateIso: "2026-12-01",
+          isUpcoming: true,
+          urgencyLevel: "medium",
+          priorityScore: 50,
+          topics: [],
+          warnings: [],
+          source: "Registrar",
+          lastSeenSourceRun: previousRun,
+        },
+      ];
+
+      // The feed still carries Quiz 2; Quiz 1 is no longer announced.
+      const incoming: Assessment[] = [
+        {
+          id: "feed-registrar-cse241_quiz_2",
+          title: "CSE241 Quiz 2",
+          assessmentType: "Quiz",
+          dateIso: "2026-12-01",
+          isUpcoming: true,
+          urgencyLevel: "medium",
+          priorityScore: 50,
+          topics: [],
+          warnings: [],
+          source: "Registrar",
+        },
+      ];
+
+      const result = JSON.parse(
+        wasm.merge_scan(
+          JSON.stringify(existing.map(toRustAssessment)),
+          JSON.stringify(incoming.map(toRustAssessment)),
+          JSON.stringify([{ name: "Registrar", run_id: thisRun }]),
+          "2026-11-02",
+        ),
+      );
+
+      expect(result.retired).toBe(1);
+
+      const retired = result.merged.find(
+        (a: Record<string, unknown>) => a.id === "feed-registrar-cse241_quiz_1",
+      );
+      expect(retired.is_upcoming).toBe(false);
+      expect(retired.retired_source_run).toBe(thisRun);
+      expect(String(retired.warnings)).toContain("did not report this announcement again");
+
+      const stillLive = result.merged.find(
+        (a: Record<string, unknown>) => a.id === "feed-registrar-cse241_quiz_2",
+      );
+      expect(stillLive.is_upcoming).toBe(true);
+      expect(stillLive.retired_source_run).toBeNull();
+      expect(stillLive.last_seen_source_run).toBe(thisRun);
+    });
+
+    it("retires nothing when the feed did not run", async () => {
+      const wasm = await getWasmEngine();
+      const existing: Assessment[] = [
+        {
+          id: "feed-registrar-cse241_quiz_1",
+          title: "CSE241 Quiz 1",
+          assessmentType: "Quiz",
+          dateIso: "2026-11-20",
+          isUpcoming: true,
+          urgencyLevel: "high",
+          priorityScore: 80,
+          topics: [],
+          warnings: [],
+          source: "Registrar",
+          lastSeenSourceRun: "registrar-2026-11-01T09:00:00Z",
+        },
+      ];
+
+      // The feed failed: it reported nothing, so it cannot claim that an
+      // announcement vanished.
+      const result = JSON.parse(
+        wasm.merge_scan(JSON.stringify(existing.map(toRustAssessment)), "[]", "[]", "2026-11-02"),
+      );
+
+      expect(result.retired).toBe(0);
+      expect(result.merged[0].is_upcoming).toBe(true);
+      expect(result.merged[0].retired_source_run).toBeNull();
+    });
   });
 
   describe("2. Browser RPC Adapter & Honest Degradation", () => {

@@ -24,13 +24,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.outlined.Event
-import androidx.compose.material.icons.outlined.Quiz
-import androidx.compose.material.icons.outlined.Save
-import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -70,6 +63,7 @@ import com.quizradar.app.model.AssessmentModel
 import com.quizradar.app.ui.GradeSaveResult
 import com.quizradar.app.ui.extractTimePart
 import com.quizradar.app.ui.formatIsoDateForDisplay
+import com.quizradar.app.ui.icons.Icons
 import com.quizradar.app.ui.theme.CoursePalette
 import kotlinx.coroutines.launch
 
@@ -83,7 +77,14 @@ fun AssessmentDetailSheet(
     onDismiss: () -> Unit,
     onToggleTopic: (key: String, done: Boolean) -> Unit,
     onSaveGrade: suspend (achieved: Double?, max: Double?, weight: Double?) -> GradeSaveResult,
-    onExportIcs: () -> String,
+    /**
+     * Serializes the calendar into an `.ics` document.
+     *
+     * `suspend` because the native call blocks: it used to run straight on
+     * the UI thread from this button, which froze the app on a large
+     * timetable.
+     */
+    onExportIcs: suspend () -> String,
     onOpenPractice: () -> Unit,
     onOpenPomodoro: (topicTitle: String?) -> Unit,
     modifier: Modifier = Modifier,
@@ -124,7 +125,13 @@ fun AssessmentDetailSheet(
         mutableDoubleStateOf(initial)
     }
 
-    val whatIf = WhatIfCalculator.calculate(assessment, allAssessments, whatIfScore)
+    // The calculator is pure, but it is re-run on every recomposition of
+    // this sheet - and the what-if slider changes its input on every drag
+    // frame. Remembering it keeps the drag cheap.
+    val whatIf =
+        remember(assessment, allAssessments, whatIfScore) {
+            WhatIfCalculator.calculate(assessment, allAssessments, whatIfScore)
+        }
 
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
@@ -660,19 +667,24 @@ fun AssessmentDetailSheet(
             ) {
                 OutlinedButton(
                     onClick = {
-                        val icsContent = onExportIcs()
-                        val shareIntent =
-                            Intent(Intent.ACTION_SEND).apply {
-                                type = "text/calendar"
-                                putExtra(
-                                    Intent.EXTRA_SUBJECT,
-                                    "${assessment.courseId ?: "Exam"}: ${assessment.title}",
-                                )
-                                putExtra(Intent.EXTRA_TEXT, icsContent)
-                            }
-                        context.startActivity(
-                            Intent.createChooser(shareIntent, "Export Calendar (.ics)"),
-                        )
+                        // The export runs off the main thread (the engine
+                        // owns the dispatcher), so the share sheet opens
+                        // once the document is ready.
+                        scope.launch {
+                            val icsContent = onExportIcs()
+                            val shareIntent =
+                                Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/calendar"
+                                    putExtra(
+                                        Intent.EXTRA_SUBJECT,
+                                        "${assessment.courseId ?: "Exam"}: ${assessment.title}",
+                                    )
+                                    putExtra(Intent.EXTRA_TEXT, icsContent)
+                                }
+                            context.startActivity(
+                                Intent.createChooser(shareIntent, "Export Calendar (.ics)"),
+                            )
+                        }
                     },
                     modifier = Modifier.weight(1f).defaultMinSize(minHeight = 44.dp),
                     shape = RoundedCornerShape(10.dp),

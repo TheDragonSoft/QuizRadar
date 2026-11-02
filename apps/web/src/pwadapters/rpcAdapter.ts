@@ -110,6 +110,8 @@ export function toRustAssessment(a: Assessment | Record<string, unknown>): Recor
     achieved_score: rec.achieved_score ?? rec.achievedScore ?? null,
     max_score: rec.max_score ?? rec.maxScore ?? null,
     weightage_percent: rec.weightage_percent ?? rec.weightagePercent ?? null,
+    last_seen_source_run: rec.last_seen_source_run ?? rec.lastSeenSourceRun ?? null,
+    retired_source_run: rec.retired_source_run ?? rec.retiredSourceRun ?? null,
   };
 }
 
@@ -131,6 +133,8 @@ export function toJsAssessment(a: Record<string, unknown>): Assessment {
     achievedScore: (a.achieved_score ?? a.achievedScore ?? null) as number | null,
     maxScore: (a.max_score ?? a.maxScore ?? null) as number | null,
     weightagePercent: (a.weightage_percent ?? a.weightagePercent ?? null) as number | null,
+    lastSeenSourceRun: (a.last_seen_source_run ?? a.lastSeenSourceRun ?? null) as string | null,
+    retiredSourceRun: (a.retired_source_run ?? a.retiredSourceRun ?? null) as string | null,
   };
 }
 
@@ -815,13 +819,16 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
         throw new Error("Scan canceled - your data was left untouched.");
       }
 
-      const mergeJson = wasm.merge_sync(
+      const mergeJson = wasm.merge_scan(
         JSON.stringify(existing.map(toRustAssessment)),
         JSON.stringify(feedResult.assessments.map(toRustAssessment)),
+        JSON.stringify(feedResult.sourceRuns.map((run) => ({ name: run.name, run_id: run.runId }))),
+        todayIso,
       );
-      const { merged, counts } = JSON.parse(mergeJson) as {
+      const { merged, counts, retired } = JSON.parse(mergeJson) as {
         merged: Assessment[];
         counts: { added: number; updated: number; unchanged: number };
+        retired: number;
       };
 
       await saveAssessments(merged);
@@ -832,11 +839,18 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
         await setConfigValue("last_gmail_sync", lastSyncedStamp());
       }
 
+      const notes = [...feedResult.errors];
+      if (retired > 0) {
+        notes.push(
+          `${retired} announcement(s) that were on the radar are no longer reported by their source and were retired — they are kept in the store with the reason, and they no longer ask for study time.`,
+        );
+      }
+
       return {
         success: true,
         totalNew: counts.added,
         totalUpdated: counts.updated,
-        notes: feedResult.errors,
+        notes,
         errors: feedResult.errors,
       } as T;
     }

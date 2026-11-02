@@ -8,6 +8,7 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.quizradar.app.MainActivity
+import com.quizradar.app.R
 import com.quizradar.app.model.AssessmentModel
 
 /**
@@ -84,7 +85,7 @@ object NotificationHelper {
         val body = "${assessment.courseName ?: assessment.courseId ?: "Exam"}$timeStr$roomStr"
 
         return NotificationCompat.Builder(context, CHANNEL_EXAMS)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -113,7 +114,7 @@ object NotificationHelper {
 
         val title = "Today's Schedule: $classesCount classes, $examsCount upcoming"
         return NotificationCompat.Builder(context, CHANNEL_DIGEST)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle(title)
             .setContentText(summary)
             .setStyle(NotificationCompat.BigTextStyle().bigText(summary))
@@ -128,15 +129,7 @@ object NotificationHelper {
         // Android 13+: posting without POST_NOTIFICATIONS throws
         // SecurityException — a "test my notifications" button must never
         // crash the app it is testing.
-        if (
-            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
-            androidx.core.content.ContextCompat.checkSelfPermission(
-                context,
-                android.Manifest.permission.POST_NOTIFICATIONS,
-            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
-            return
-        }
+        if (!canPostNotifications(context)) return
         val intent =
             Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -151,7 +144,7 @@ object NotificationHelper {
 
         val notification =
             NotificationCompat.Builder(context, CHANNEL_EXAMS)
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setSmallIcon(R.drawable.ic_launcher_monochrome)
                 .setContentTitle("QuizRadar Notification Test")
                 .setContentText("Notifications and reminder sound channels are operating properly.")
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -169,9 +162,13 @@ object NotificationHelper {
     fun sendTimerCompleteNotification(
         context: Context,
         isBreak: Boolean,
-    ) {
+    ): Boolean {
         val notificationManager =
             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        // Android 13+: posting without POST_NOTIFICATIONS throws
+        // SecurityException. The caller swallows it, so the "your timer
+        // finished" chime used to disappear with no word to the user.
+        if (!canPostNotifications(context)) return false
         val title = if (isBreak) "Break Finished!" else "Focus Session Complete!"
         val body =
             if (isBreak) {
@@ -193,7 +190,7 @@ object NotificationHelper {
 
         val notification =
             NotificationCompat.Builder(context, CHANNEL_FOCUS)
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setSmallIcon(R.drawable.ic_launcher_monochrome)
                 .setContentTitle(title)
                 .setContentText(body)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -201,6 +198,28 @@ object NotificationHelper {
                 .setAutoCancel(true)
                 .build()
 
-        notificationManager.notify(7788, notification)
+        return try {
+            notificationManager.notify(7788, notification)
+            true
+        } catch (_: SecurityException) {
+            // The permission was revoked between the check and the post.
+            false
+        }
     }
+
+    /**
+     * Whether the app may post notifications right now.
+     *
+     * Before Android 13 the permission does not exist, so the answer is
+     * always yes.
+     */
+    fun canPostNotifications(context: Context): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.POST_NOTIFICATIONS,
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
 }

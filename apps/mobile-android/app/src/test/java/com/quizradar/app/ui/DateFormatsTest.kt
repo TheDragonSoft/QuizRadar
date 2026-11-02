@@ -37,4 +37,20 @@ class DateFormatsTest {
         assertNull(extractTimePart(""))
         assertNull(extractTimePart(null))
     }
+
+    @Test
+    fun finds_the_clock_in_both_display_shapes() {
+        // The core's shape: the clock is in the parentheses.
+        assertEquals("9:30 AM - 10:30 AM", extractClockPart("Sunday, 01 November 2026 (9:30 AM - 10:30 AM)"))
+        // A resolved assessment can also carry a bare clock.
+        assertEquals("10:00 AM", extractClockPart("10:00 AM"))
+        assertEquals("14:00", extractClockPart("14:00"))
+    }
+
+    @Test
+    fun a_display_string_without_a_clock_has_no_clock_part() {
+        assertNull(extractClockPart("Sunday, 01 November 2026"))
+        assertNull(extractClockPart(""))
+        assertNull(extractClockPart(null))
+    }
 }

@@ -540,7 +540,8 @@ const ASSESSMENT_COLS: &str =
      urgency_level, priority_score, topics, warnings, ai_inference_note, ai_study_plan, \
      estimated_study_hours, elearning_url, google_cal_url, gcal_synced, gcal_event_id, \
      color, bg, border, semester, email_subject, email_sent_date, source, source_icon, \
-     weightage_percent, achieved_score, max_score, conflict_warning, updated_at";
+     weightage_percent, achieved_score, max_score, conflict_warning, last_seen_source_run, \
+     retired_source_run, updated_at";
 
 const INSERT_ASSESSMENT: &str = "
 INSERT OR REPLACE INTO assessments (
@@ -549,12 +550,13 @@ INSERT OR REPLACE INTO assessments (
     urgency_level, priority_score, topics, warnings, ai_inference_note, ai_study_plan,
     estimated_study_hours, elearning_url, google_cal_url, gcal_synced, gcal_event_id,
     color, bg, border, semester, email_subject, email_sent_date, source, source_icon,
-    weightage_percent, achieved_score, max_score, conflict_warning, updated_at
+    weightage_percent, achieved_score, max_score, conflict_warning, last_seen_source_run,
+    retired_source_run, updated_at
 ) VALUES (
     ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
     ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26,
     ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34,
-    ?35, ?36, ?37, ?38, ?39
+    ?35, ?36, ?37, ?38, ?39, ?40, ?41
 )";
 
 impl<'a> AssessmentRepo<'a> {
@@ -749,6 +751,8 @@ fn row_to_assessment(row: &rusqlite::Row<'_>) -> rusqlite::Result<Assessment> {
         achieved_score: row.get(35)?,
         max_score: row.get(36)?,
         conflict_warning: row.get(37)?,
+        last_seen_source_run: row.get(38)?,
+        retired_source_run: row.get(39)?,
     })
 }
 
@@ -800,6 +804,8 @@ fn write_assessment_row(
             a.achieved_score,
             a.max_score,
             a.conflict_warning,
+            a.last_seen_source_run,
+            a.retired_source_run,
             updated_at,
         ],
     )?;
@@ -1987,6 +1993,8 @@ mod tests {
             achieved_score: None,
             max_score: None,
             conflict_warning: None,
+            last_seen_source_run: None,
+            retired_source_run: None,
         }
     }
 

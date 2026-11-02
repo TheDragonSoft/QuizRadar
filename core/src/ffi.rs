@@ -137,7 +137,13 @@ pub fn detect_schedule_conflicts(
 ) -> Result<String, QuizRadarFfiError> {
     let assessments: Vec<Assessment> = serde_json::from_str(&assessments_json)?;
     let events: Vec<CustomCalendarEvent> = serde_json::from_str(&events_json)?;
-    let conflicts = detect_conflicts(&assessments, &events);
+    // A retired item (its source stopped announcing it) raises no conflict:
+    // it is not on the radar any more.
+    let live: Vec<Assessment> = assessments
+        .into_iter()
+        .filter(|assessment| assessment.retired_source_run.is_none())
+        .collect();
+    let conflicts = detect_conflicts(&live, &events);
     Ok(serde_json::to_string(&conflicts)?)
 }
 
@@ -654,5 +660,54 @@ impl NativeStore {
             .import_v4_backup(backup_json, updated_at, ref_date)
             .await?;
         Ok(serde_json::to_string(&report)?)
+    }
+
+    /// The timetable vision import (`01` §4.1, `05` §4 task b).
+    ///
+    /// The shell owns the picker and the key; the core owns the prompt, the
+    /// validation and the drop rules — so the desktop shell, the browser tier
+    /// and Android all run the SAME extraction instead of three copies of it.
+    ///
+    /// The key is the user's own BYOK key: it travels in the `x-goog-api-key`
+    /// header only, is never written to the store and never reaches an error
+    /// string (the provider redacts it). The usage counter is the
+    /// store-backed Pacific-day ledger, so an Android import is counted
+    /// exactly like a desktop one.
+    ///
+    /// The response is JSON: `{"schedule": …, "dropped_courses": n,
+    /// "dropped_slots": n}`. The dropped counts are honest — rows the model
+    /// got wrong are counted, never repaired into existence.
+    pub async fn extract_timetable_from_image(
+        &self,
+        image_b64: String,
+        mime: String,
+        api_key: String,
+    ) -> Result<String, QuizRadarFfiError> {
+        let key = api_key.trim();
+        if key.is_empty() {
+            return Err(QuizRadarFfiError::Validation {
+                msg: crate::ai::provider::AiError::NoKey.to_string(),
+            });
+        }
+        let kv: std::sync::Arc<dyn crate::ai::provider::QuotaKv> =
+            std::sync::Arc::new(self.inner.quota_kv());
+        let ledger = std::sync::Arc::new(crate::ai::provider::QuotaLedger::new(kv, None));
+        let provider = crate::ai::gemini::GeminiProvider::production(
+            Some(key.to_string()),
+            std::sync::Arc::new(chrono::Utc::now),
+            Some(ledger),
+        )
+        .map_err(|e| QuizRadarFfiError::Validation { msg: e })?;
+
+        let extracted = crate::ai::tasks::extract_timetable(&provider, &image_b64, &mime)
+            .await
+            .map_err(|e| QuizRadarFfiError::Validation { msg: e.reason() })?;
+
+        let payload = serde_json::json!({
+            "schedule": extracted.schedule,
+            "dropped_courses": extracted.dropped_courses,
+            "dropped_slots": extracted.dropped_slots,
+        });
+        Ok(serde_json::to_string(&payload)?)
     }
 }

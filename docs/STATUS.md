@@ -1399,3 +1399,156 @@ emulator instead of trusting the build output.
   **PWA offline** and **manual assessment CRUD** stay open from Round 7 - they
   are design decisions, not bugs, and are listed above.
 
+## Round 9 - the five ideas, the Android audit, and what it found (2026-11-01)
+
+### The ideas the maintainer approved (Pair Phone deliberately excluded)
+
+The maintainer approved every idea from the readiness sweep **except Pair
+Phone (QR / PIN)**, which was explicitly left alone: it was never started.
+
+1. **A `staging` build type** (Android) - a release build in every way that
+   shows up at runtime: not debuggable, R8 + resource shrinking, signed with
+   the release key, `versionNameSuffix = "-staging"`. It exists because a
+   debuggable build is never compiled ahead of time by ART, so the debug
+   build could not reproduce the shipped app's start-up time (~13.6 s vs
+   2.8 s on the same emulator).
+2. **A local vector icon set** - the app's ~45 Material glyphs moved in-tree
+   and `material-icons-extended` dropped from the dependency graph.
+3. **The dispatcher moved into the engine** - `QuizRadarEngine` now owns the
+   serialized `Dispatchers.IO.limitedParallelism(1)` dispatcher, so every
+   caller (UI, Glance widget, reminder worker, share intent) inherits "no
+   native call on the main thread" for free.
+4. **Source provenance in the radar** - every assessment carries the run id
+   that last saw it, so an announcement a source stops reporting is retired
+   with a stated reason instead of sitting on the radar forever. Shipped in
+   the core, exposed to the browser tier through the WASM `merge_scan`, and
+   covered by core, desktop-integration and web tests.
+5. **PWA precache of the engine + the last snapshot** - the service worker
+   precaches the WASM engine and the local snapshot so the PWA can start
+   offline.
+
+### The Android audit (`impeccable`, native reference) - 8 / 20
+
+A full read of every Kotlin file in the Android shell, scored over the five
+native dimensions (accessibility, performance, appearance/theming, platform
+conformance, adaptivity):
+
+| Dimension | Score | Headline finding |
+|---|---|---|
+| Accessibility (TalkBack) | 1 / 4 | The calendar grid is 42-98 **unlabeled** clickable boxes |
+| Performance | 2 / 4 | Two blocking JNA -> Rust FFI calls on the UI thread |
+| Appearance & theming | 2 / 4 | A real light+dark scheme, bypassed by ~150 raw hex literals |
+| Platform conformance | 2 / 4 | Material chrome, but no predictive back and hand-rolled insets |
+| Adaptivity | 1 / 4 | No window-size classes: a phone layout stretched across a tablet |
+
+The verdict: *"Material-3-shaped shell, web-dashboard interior"*. The frame
+(drawer, top bar, bottom bar, FAB, sheets) is genuinely native; the content
+layer (segmented bars, KPI tiles, status pills, the hero) is hand-drawn and
+bypasses Material's colour roles and semantics contract.
+
+### Systemic patterns the audit exposed
+
+1. **Chrome is Material, content is web** - the root cause of the theming,
+   contrast and semantics findings at once.
+2. **Insets are computed by hand** - one `statusBarPadding` is copied into
+   the drawer and six sheets and fights Material's own inset handling.
+3. **Blocking FFI leaks onto the UI thread** - the engine is async, but two
+   non-suspend escapes (`version()`, `exportIcs()`) bypass it.
+4. **Accessibility is opt-in per component** - and `lint { abortOnError =
+   false }` means `ContentDescription` / `TouchTargetSizeCheck` /
+   `TextContrastCheck` can never fail the build.
+5. **Every user-visible string is a Kotlin literal** - `res/values/strings.xml`
+   is dead code and `supportsRtl` is cosmetic.
+
+## Round 9 (continued) - the Android logo now matches the desktop, and the onboarding bug it exposed (2026-11-02)
+
+### The logo request
+
+The maintainer reported that the Android app did not use the same logo as the
+desktop. It was right: the desktop and the browser tier ship the v4 radar
+squircle (`v4-final:static/icon.svg`, inlined as `RadarMark` in
+`apps/web/src/components/BrandMarks.tsx`), while the Android app drew a
+different, monochrome radar `ImageVector` tinted with the theme primary.
+
+### What shipped
+
+- **`ui/components/QuizRadarLogo.kt`** - rewritten as a `Canvas` composable that
+  draws the exact v4 artwork in the 256x256 design space: the gradient
+  squircle, the hairline, the two binder tabs, the three rings (the middle one
+  dashed via `PathEffect.dashPathEffect`, which an `ImageVector` cannot
+  express), the gradient sweep sector, the gold needle, the hub and the three
+  exam blips. The geometry now lives in one place, `RadarMarkGeometry`, and the
+  palette in `RadarMarkColors`.
+- **`ui/AppScaffold.kt`** - both call sites (the drawer brand row and the top
+  bar's navigation icon) use `QuizRadarLogo`; the `IconButton` carries a
+  `contentDescription` because a `Canvas` has no semantics of its own.
+- **The adaptive launcher icon** - `res/drawable/ic_launcher_foreground.xml`
+  carries the same artwork scaled by 72/256 into the safe zone the launcher
+  never crops; new `res/drawable/ic_launcher_background.xml` carries the
+  desktop's three-stop diagonal gradient; `mipmap-anydpi-v26/ic_launcher.xml`
+  points at both; `ic_launcher_monochrome.xml` was rewritten to the same
+  structure so the themed icon still reads as the radar. The unused
+  `ic_launcher_background` colour was removed from `values/colors.xml`.
+  (One deliberate difference: a VectorDrawable cannot carry a dash pattern, so
+  the launcher's middle ring is solid - at launcher size the dashes are a
+  fraction of a pixel.)
+- **`RadarMarkTest.kt`** (new, 5 tests) - pins the launcher's foreground,
+  background, monochrome layer and the in-app palette to `RadarMarkGeometry`,
+  so the phone and the desktop cannot drift apart again. It caught a real
+  defect on first run: the binder tabs were written as malformed arcs and
+  rendered as bowties.
+
+### The bug found while verifying on the emulator
+
+Driving the app on `emulator-5554` showed the onboarding wizard re-appearing
+after it had been skipped, on an empty timetable. Root cause:
+`QuizRadarViewModel.loadState()` probed `onboarding_completed` with
+`getConfigString`, but `completeOnboarding()` / `reRunOnboarding()` /
+sign-out **write it as a bool**, and the store's `get_string` returns `None`
+for a JSON `bool` row (`core/src/store/repo.rs`). The probe therefore always
+returned null and the code fell through to `courses.isNotEmpty()` - false on a
+fresh install - so the wizard came back on every launch. The web tier reads
+the same key as a bool (`rpcAdapter.ts`), so only the Android shell was wrong.
+Fixed by reading the key with `getConfigBool("onboarding_completed",
+courses.isNotEmpty())`, which is exactly the intended "explicitly set wins,
+otherwise has-courses" semantics. Covered by a new
+`QuizRadarViewModelTest` case that fails before the fix.
+
+Also corrected: the `debug` build type's comment in `app/build.gradle.kts`
+claimed R8 shrinks the debug dex to release size. AGP disables code
+optimization for any `debuggable` build, so the debug dex stays ~11.2 MB
+against release's ~3.5 MB and is not AOT-compiled at install - which is why a
+cold start of the debug build alone ANRs on a slow emulator. The comment now
+says so and points at `staging` for start-up measurements.
+
+### Gates (all green, 2026-11-02)
+
+- core + desktop: `cargo fmt --all --check`, `cargo clippy --workspace
+  --all-targets -- -D warnings`, `cargo test --workspace` (268 + fixtures +
+  properties + smoke + v4 round-trip), `cargo test -p quizradar-desktop`
+  (23 unit + 9 integration) - all exit 0.
+- web: typecheck / tests / lint / `format:check` / `build` / `build:sw` /
+  contract `--check` - see the Round 9 gate list above (unchanged this round).
+- Android (JDK 21 Temurin, NDK 27.1): `ktlintCheck` clean, `testDebugUnitTest`
+  **83/83** (was 82 + the new onboarding regression test + 5 radar-mark tests),
+  `assembleDebug` + `assembleStaging` + `assembleRelease` + `bundleRelease`
+  BUILD SUCCESSFUL.
+- Verified live on `emulator-5554` only (the user's phone `00313361U002891`
+  was not touched): the radar squircle renders in the top bar and in the
+  drawer brand row, the launcher icon in the app drawer shows the same mark,
+  the drawer opens from the logo, the hero sheen spans the whole banner above
+  the Overview/Assessments/Study bar, Settings shows **AI Course Import** with
+  honest copy, and a cold start of the staging build lands on the Dashboard in
+  **1.37 s** (`am start -W`, `LaunchState: COLD`) with the onboarding fix in -
+  no ANR, no `FATAL EXCEPTION`.
+
+### Still open (deliberately not faked)
+
+- **Pair Phone (QR / PIN)** - explicitly excluded by the maintainer, not started.
+- Predictive back, hand-rolled insets, `WindowSizeClass`/navigation rail,
+  `imePadding`, string localisation (`res/values/strings.xml` is still dead
+  code), Material-role surfaces in the content layer, and
+  `lint { abortOnError = false }` (accessibility lint can never fail the
+  build) - the audit's systemic list above.
+- Moodle REST, the radar-only-grows merge, manual assessment CRUD from Round 7.
+

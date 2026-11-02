@@ -24,6 +24,7 @@ pub mod test_support;
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU32, Ordering};
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::PoisonError;
 #[cfg(not(target_arch = "wasm32"))]
@@ -31,6 +32,7 @@ use std::time::Duration;
 
 use crate::auth::providers::ProviderCapability;
 use crate::types::Assessment;
+use chrono::{DateTime, NaiveDate, Utc};
 
 // ---------------------------------------------------------------------------
 // Token supply (the platform's half of the auth story)
@@ -206,6 +208,13 @@ pub struct SourceRun {
     pub status: SourceStatus,
     pub found: usize,
     pub notes: Vec<String>,
+    /// The id of THIS run of this source, e.g. `"gmail-2026-11-01T09:12:00Z"`.
+    ///
+    /// It is `Some` only when the source actually RAN and therefore knows
+    /// what it currently carries. A skipped or failed source has no run id:
+    /// it saw nothing, so it cannot claim that an item it did not report has
+    /// disappeared.
+    pub run_id: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -272,6 +281,10 @@ fn scanned_content_differs(current: &Assessment, incoming: &Assessment) -> bool 
         item.weightage_percent = None;
         item.gcal_synced = false;
         item.gcal_event_id = None;
+        // The provenance stamp changes on EVERY scan by design - it records
+        // which run last saw the announcement. It is not a content change,
+        // so an announcement nobody touched still counts as unchanged.
+        item.last_seen_source_run = None;
     }
     a != b
 }
@@ -313,8 +326,353 @@ pub fn merge_preserving_user_fields(
     (merged, counts)
 }
 
+/// A per-process counter for source runs.
+///
+/// Two runs of the same source in the SAME SECOND must still be told apart:
+/// "the same run id" means "the same scan", and two scans are never the same
+/// scan - a second run that reports nothing is exactly the evidence a
+/// retirement is made of.
+static RUN_SEQUENCE: AtomicU32 = AtomicU32::new(0);
+
+/// The id of one source run: a stable slug of the source name, the moment of
+/// the run and a sequence number.
+///
+/// The moment is passed IN (never read from the clock here) so the WASM tier
+/// can build the same ids from the browser's clock - one id format, one
+/// implementation, every tier.
+#[must_use]
+pub fn source_run_id(name: &str, at: DateTime<Utc>) -> String {
+    let slug: String = name
+        .chars()
+        .map(|character| {
+            if character.is_alphanumeric() {
+                character.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let sequence = RUN_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    format!("{slug}-{}-{sequence}", at.format("%Y-%m-%dT%H:%M:%SZ"))
+}
+
+/// Retires the items an authoritative source no longer carries.
+///
+/// WHO may retire: only a source whose scan is a complete picture of what it
+/// currently announces - a subscribed `.ics` calendar or the student's Moodle
+/// calendar. The caller decides that and passes those runs here. An
+/// announcement STREAM (Gmail is a sliding window of recent mail, Teams and
+/// Classroom are listings that age) is NOT authoritative: an announcement
+/// that aged out of the window was never cancelled, so those sources never
+/// appear in `ran_sources`.
+///
+/// WHAT is retired: an item that this source reported in an EARLIER run and
+/// that this run does not report. Such an item is RETIRED, not deleted: it
+/// keeps its date, its grades and its warnings and gains the reason - but it
+/// is no longer upcoming, because there is nothing left to prepare for.
+///
+/// What is deliberately NOT touched:
+/// - items of sources that were skipped or failed (they saw nothing, so they
+///   cannot claim that an item vanished);
+/// - items that no run has ever reported (imports, or items from before
+///   provenance existed) - a scan cannot honestly retire an item it never
+///   saw;
+/// - items whose date has already passed: the event happened, it was not
+///   cancelled - the planner already takes it off the radar.
+pub fn retire_unseen_items(
+    merged: &mut [Assessment],
+    ran_sources: &[(String, String)],
+    reference_date: NaiveDate,
+) -> usize {
+    let mut retired = 0usize;
+    for item in merged.iter_mut() {
+        if item.retired_source_run.is_some() {
+            continue;
+        }
+        let source_key = item.source.provenance_key();
+        let Some((_, run_id)) = ran_sources.iter().find(|(key, _)| *key == source_key) else {
+            continue;
+        };
+        let Some(last_seen) = item.last_seen_source_run.as_deref() else {
+            continue;
+        };
+        if last_seen == run_id {
+            // Reported by THIS run - it is still live.
+            continue;
+        }
+        if let Some(date) = item.date {
+            if date < reference_date {
+                // The event already happened. It was not cancelled, so it is
+                // not retired - the planner takes it off the radar instead.
+                continue;
+            }
+        }
+        item.retired_source_run = Some(run_id.clone());
+        item.is_upcoming = false;
+        item.warnings.push(format!(
+            "The latest {} scan did not report this announcement again - it was last reported by source run {last_seen}.",
+            item.source.as_str()
+        ));
+        retired += 1;
+    }
+    retired
+}
+
 /// Recovers a poisoned mutex honestly (same doctrine as the store facade).
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn recover<T>(poisoned: PoisonError<T>) -> T {
     poisoned.into_inner()
+}
+
+#[cfg(test)]
+mod retirement_tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use super::*;
+    use crate::types::{AssessmentSource, AssessmentType, CompletedTopics, UrgencyLevel};
+    use chrono::NaiveDate;
+
+    /// The day the test scan runs on - before the item's date, so the item is
+    /// still ahead of the student.
+    fn reference_date() -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 10, 25).unwrap()
+    }
+
+    fn item(id: &str, source: AssessmentSource, last_seen: Option<&str>) -> Assessment {
+        Assessment {
+            id: id.to_string(),
+            course_id: Some("CS101".to_string()),
+            course_name: None,
+            title: "Quiz 1".to_string(),
+            assessment_type: AssessmentType::ClassQuiz,
+            date: NaiveDate::from_ymd_opt(2026, 10, 30),
+            day_name: None,
+            start_time: None,
+            end_time: None,
+            display_time: None,
+            room: None,
+            group: None,
+            instructor: None,
+            is_upcoming: true,
+            days_until: None,
+            urgency_level: UrgencyLevel::Upcoming,
+            priority_score: 0,
+            topics: vec!["Algorithms".to_string()],
+            warnings: Vec::new(),
+            ai_inference_note: None,
+            ai_study_plan: None,
+            estimated_study_hours: None,
+            elearning_url: None,
+            google_cal_url: None,
+            gcal_synced: false,
+            gcal_event_id: None,
+            color: None,
+            bg: None,
+            border: None,
+            semester: None,
+            email_subject: None,
+            email_sent_date: None,
+            source,
+            source_icon: None,
+            weightage_percent: None,
+            achieved_score: None,
+            max_score: None,
+            conflict_warning: None,
+            last_seen_source_run: last_seen.map(str::to_string),
+            retired_source_run: None,
+        }
+    }
+
+    /// One authoritative source that RAN: its provenance key and its run id.
+    fn ran(key: &str, run_id: &str) -> (String, String) {
+        (key.to_string(), run_id.to_string())
+    }
+
+    #[test]
+    fn an_item_the_source_no_longer_reports_is_retired_with_the_reason() {
+        let mut items = vec![item(
+            "feed-1",
+            AssessmentSource::Feed("Registrar".to_string()),
+            Some("registrar-2026-10-25T09:00:00Z"),
+        )];
+        let retired = retire_unseen_items(
+            &mut items,
+            &[ran("feed:registrar", "registrar-2026-11-01T09:00:00Z")],
+            reference_date(),
+        );
+        assert_eq!(retired, 1);
+        assert_eq!(
+            items[0].retired_source_run.as_deref(),
+            Some("registrar-2026-11-01T09:00:00Z")
+        );
+        assert!(!items[0].is_upcoming);
+        assert!(
+            items[0]
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("did not report this announcement again")),
+            "the reason must be visible: {:?}",
+            items[0].warnings
+        );
+        // The provenance of the LAST run that saw it is kept.
+        assert_eq!(
+            items[0].last_seen_source_run.as_deref(),
+            Some("registrar-2026-10-25T09:00:00Z")
+        );
+    }
+
+    #[test]
+    fn an_item_the_source_still_reports_stays_live() {
+        let mut items = vec![item(
+            "feed-1",
+            AssessmentSource::Feed("Registrar".to_string()),
+            Some("registrar-2026-11-01T09:00:00Z"),
+        )];
+        let retired = retire_unseen_items(
+            &mut items,
+            &[ran("feed:registrar", "registrar-2026-11-01T09:00:00Z")],
+            reference_date(),
+        );
+        assert_eq!(retired, 0);
+        assert!(items[0].retired_source_run.is_none());
+        assert!(items[0].is_upcoming);
+    }
+
+    #[test]
+    fn a_source_that_did_not_run_never_retires_anything() {
+        let mut items = vec![item(
+            "feed-1",
+            AssessmentSource::Feed("Registrar".to_string()),
+            Some("registrar-2026-10-25T09:00:00Z"),
+        )];
+        // Only the Library feed ran: the Registrar feed saw nothing, so its
+        // item stays untouched.
+        let retired = retire_unseen_items(
+            &mut items,
+            &[ran("feed:library", "library-2026-11-01T09:00:00Z")],
+            reference_date(),
+        );
+        assert_eq!(retired, 0);
+        assert!(items[0].retired_source_run.is_none());
+        assert!(items[0].is_upcoming);
+    }
+
+    #[test]
+    fn one_feed_never_retires_another_feeds_announcements() {
+        let mut items = vec![item(
+            "feed-registrar-1",
+            AssessmentSource::Feed("Registrar".to_string()),
+            Some("registrar-2026-10-25T09:00:00Z"),
+        )];
+        // The Library feed ran fine; the Registrar feed failed. Only the
+        // feed that RAN may retire - and only its own items.
+        let retired = retire_unseen_items(
+            &mut items,
+            &[ran("feed:library", "library-2026-11-01T09:00:00Z")],
+            reference_date(),
+        );
+        assert_eq!(retired, 0);
+        assert!(items[0].retired_source_run.is_none());
+    }
+
+    #[test]
+    fn an_item_no_run_ever_reported_is_never_retired() {
+        let mut items = vec![item(
+            "feed-imported",
+            AssessmentSource::Feed("Registrar".to_string()),
+            None,
+        )];
+        let retired = retire_unseen_items(
+            &mut items,
+            &[ran("feed:registrar", "registrar-2026-11-01T09:00:00Z")],
+            reference_date(),
+        );
+        assert_eq!(retired, 0);
+        assert!(items[0].retired_source_run.is_none());
+        assert!(items[0].is_upcoming);
+    }
+
+    #[test]
+    fn an_item_is_retired_only_once() {
+        let mut items = vec![item(
+            "feed-1",
+            AssessmentSource::Feed("Registrar".to_string()),
+            Some("registrar-2026-10-25T09:00:00Z"),
+        )];
+        let sources = [ran("feed:registrar", "registrar-2026-11-01T09:00:00Z")];
+        assert_eq!(
+            retire_unseen_items(&mut items, &sources, reference_date()),
+            1
+        );
+        let warnings = items[0].warnings.len();
+        assert_eq!(
+            retire_unseen_items(&mut items, &sources, reference_date()),
+            0
+        );
+        assert_eq!(items[0].warnings.len(), warnings);
+    }
+
+    #[test]
+    fn an_item_that_already_happened_is_not_retired() {
+        let mut items = vec![item(
+            "feed-1",
+            AssessmentSource::Feed("Registrar".to_string()),
+            Some("registrar-2026-10-25T09:00:00Z"),
+        )];
+        // The quiz was on 2026-10-30; the scan runs on 2026-11-01. The feed
+        // no longer lists it because it is over - not because it was
+        // cancelled.
+        let retired = retire_unseen_items(
+            &mut items,
+            &[ran("feed:registrar", "registrar-2026-11-01T09:00:00Z")],
+            NaiveDate::from_ymd_opt(2026, 11, 1).unwrap(),
+        );
+        assert_eq!(retired, 0);
+        assert!(items[0].retired_source_run.is_none());
+    }
+
+    #[test]
+    fn a_retired_item_leaves_the_radar_and_asks_for_no_study_time() {
+        use crate::plan::dashboard::radar_order;
+        use crate::plan::tasks::build_study_tasks;
+
+        let reference_date = reference_date();
+        let mut items = vec![item(
+            "feed-1",
+            AssessmentSource::Feed("Registrar".to_string()),
+            Some("registrar-2026-10-25T09:00:00Z"),
+        )];
+        retire_unseen_items(
+            &mut items,
+            &[ran("feed:registrar", "registrar-2026-11-01T09:00:00Z")],
+            reference_date,
+        );
+
+        assert!(
+            radar_order(&items, reference_date).is_empty(),
+            "a retired announcement must not sit on the radar"
+        );
+        let tasks = build_study_tasks(&items, &CompletedTopics::new(), reference_date);
+        assert!(
+            tasks.readiness_cards.is_empty(),
+            "a retired announcement must not ask for study time"
+        );
+    }
+
+    #[test]
+    fn the_run_id_is_the_source_slug_plus_the_moment_of_the_run() {
+        let at = DateTime::parse_from_rfc3339("2026-11-01T09:12:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let first = source_run_id("Uni Registrar", at);
+        let second = source_run_id("Uni Registrar", at);
+        assert!(
+            first.starts_with("uni-registrar-2026-11-01T09:12:00Z-"),
+            "unexpected run id: {first}"
+        );
+        assert_ne!(
+            first, second,
+            "two runs in the same second must never share an id"
+        );
+    }
 }

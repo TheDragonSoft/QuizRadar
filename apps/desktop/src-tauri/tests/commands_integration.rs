@@ -21,7 +21,7 @@ use quizradar_desktop_lib::commands::state::build_full_state;
 use quizradar_desktop_lib::commands::sync::{run_sync_inner, SCAN_CANCELED_MESSAGE};
 use quizradar_desktop_lib::keyring::KeyringStore;
 use quizradar_desktop_lib::state::AppState;
-use wiremock::matchers::method;
+use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Creates a test AppState with an in-memory SQLite store and unique test keyring service.
@@ -80,6 +80,8 @@ fn sample_test_assessment(
         achieved_score: None,
         max_score: None,
         conflict_warning: None,
+        last_seen_source_run: None,
+        retired_source_run: None,
     }
 }
 
@@ -361,6 +363,91 @@ async fn test_scan_that_fetched_something_stamps_last_synced() {
     assert!(
         stamp.chars().nth(4) == Some('-') && stamp.chars().nth(10) == Some(' '),
         "unexpected stamp format: {stamp}"
+    );
+    let _ = now;
+}
+
+/// A calendar export that lists nothing: the source RAN and reported no
+/// events.
+fn empty_ics_fixture() -> String {
+    "BEGIN:VCALENDAR\nEND:VCALENDAR\n".to_string()
+}
+
+/// An announcement the calendar stops listing is RETIRED, not deleted: it
+/// stays in the store with the reason, but it leaves the radar and asks for
+/// no study time any more.
+#[tokio::test]
+async fn test_an_announcement_the_calendar_stops_reporting_is_retired() {
+    let state = test_app_state("sync_retire").await;
+    let today = state.today();
+    let now = state.now_iso();
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/moodle.ics"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(ics_fixture(today)))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/moodle-empty.ics"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(empty_ics_fixture()))
+        .mount(&server)
+        .await;
+    configure_local_moodle_feed(&state, &server, today).await;
+
+    // 1. The first scan reports the announcement.
+    let first = run_sync_inner(None, &state).await.expect("first scan runs");
+    assert!(first.success);
+    assert!(first.total_new >= 1);
+    let snapshot = state.store.load_state(today).await.unwrap();
+    let live = snapshot
+        .assessments
+        .iter()
+        .find(|assessment| assessment.title.contains("Quiz 3"))
+        .expect("the fixture announcement is on the radar");
+    assert!(live.is_upcoming);
+    assert!(
+        live.last_seen_source_run.is_some(),
+        "the scan must record which run reported the announcement"
+    );
+    let first_run = live.last_seen_source_run.clone();
+
+    // 2. The calendar no longer lists it.
+    state
+        .store
+        .set_config_string(
+            "moodle_ical_url".to_string(),
+            Some(format!("{}/moodle-empty.ics", server.uri())),
+        )
+        .await
+        .expect("point the feed at the empty calendar");
+    let second = run_sync_inner(None, &state)
+        .await
+        .expect("second scan runs");
+    assert!(second.success);
+    assert!(
+        second.notes.iter().any(|note| note.contains("retired")),
+        "the scan must say what it retired: {:?}",
+        second.notes
+    );
+
+    // 3. The announcement is kept - with the reason - but it is off the radar.
+    let snapshot = state.store.load_state(today).await.unwrap();
+    let retired = snapshot
+        .assessments
+        .iter()
+        .find(|assessment| assessment.title.contains("Quiz 3"))
+        .expect("the retired announcement is still in the store");
+    assert!(!retired.is_upcoming);
+    assert!(retired.retired_source_run.is_some());
+    assert_ne!(retired.retired_source_run, first_run);
+    assert!(
+        retired
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("did not report this announcement again")),
+        "the retirement must carry its reason: {:?}",
+        retired.warnings
     );
     let _ = now;
 }

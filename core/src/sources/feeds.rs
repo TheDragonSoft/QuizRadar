@@ -3,13 +3,13 @@
 //! Reuses the shared ICS pipeline — any RFC 5545 VEVENT feed parses exactly
 //! like the Moodle export, matched against the student's courses/slots.
 
-use chrono::{FixedOffset, NaiveDate};
+use chrono::{FixedOffset, NaiveDate, Utc};
 use futures::StreamExt;
 
 use crate::parse::email::ScanStats;
 use crate::parse::ics::{parse_ics_assessments, validate_feed_url, IcsOrigin};
-use crate::sources::{net_err, Progress};
-use crate::types::{Assessment, FeedConfig, ScheduleData};
+use crate::sources::{net_err, source_run_id, Progress};
+use crate::types::{Assessment, AssessmentSource, FeedConfig, ScheduleData};
 
 /// Upper bound on feeds per sync so one config can never fan out unboundedly
 /// (the store's FeedRepo already caps persistence at 10 — belt and braces).
@@ -23,6 +23,9 @@ pub struct FeedRun {
     pub name: String,
     pub found: usize,
     pub error: Option<String>,
+    /// The id of this feed's run. Every item this feed reported carries it,
+    /// so a later scan can tell what the feed stopped reporting.
+    pub run_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -30,6 +33,14 @@ pub struct FeedScan {
     pub assessments: Vec<Assessment>,
     pub runs: Vec<FeedRun>,
     pub notes: Vec<String>,
+    /// The feeds that RAN and may therefore retire what they stop
+    /// reporting: their provenance key and their run id.
+    ///
+    /// A feed is its OWN source: one feed failing (or a feed being deleted)
+    /// must never retire another feed's announcements. A feed whose label is
+    /// shared with another feed is left out — the two cannot be told apart
+    /// later, so neither may retire anything.
+    pub authoritative: Vec<(String, String)>,
 }
 
 /// Downloads + parses one feed. `name` is the user's label and becomes every
@@ -134,14 +145,31 @@ pub async fn scan_feeds(
     }
 
     progress.emit("fetching", selected.len(), 0);
+
+    // Two feeds that share a label cannot be told apart later (an item only
+    // carries its source label), so neither of them may retire anything.
+    let mut label_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    for feed in &selected {
+        *label_counts
+            .entry(feed.name.trim().to_ascii_lowercase())
+            .or_insert(0) += 1;
+    }
     let outcomes: Vec<(Vec<Assessment>, FeedRun)> = futures::stream::iter(selected)
         .map(|feed| async move {
             match fetch_feed(client, &feed.url, &feed.name, schedule, ref_date, local).await {
-                Ok((assessments, _stats)) => {
+                Ok((mut assessments, _stats)) => {
+                    // Provenance: this run of THIS feed is what last reported
+                    // these items.
+                    let run_id = source_run_id(&feed.name, Utc::now());
+                    for assessment in &mut assessments {
+                        assessment.last_seen_source_run = Some(run_id.clone());
+                    }
                     let run = FeedRun {
                         name: feed.name.clone(),
                         found: assessments.len(),
                         error: None,
+                        run_id: Some(run_id),
                     };
                     (assessments, run)
                 }
@@ -150,6 +178,9 @@ pub async fn scan_feeds(
                         name: feed.name.clone(),
                         found: 0,
                         error: Some(error),
+                        // A feed that failed saw nothing, so it has no run id
+                        // and cannot claim that an item vanished.
+                        run_id: None,
                     };
                     (Vec::new(), run)
                 }
@@ -167,12 +198,33 @@ pub async fn scan_feeds(
     }
     runs.sort_by(|a, b| a.name.cmp(&b.name));
 
+    let mut authoritative: Vec<(String, String)> = Vec::new();
+    for run in &runs {
+        if run.error.is_some() {
+            continue;
+        }
+        let Some(run_id) = run.run_id.clone() else {
+            continue;
+        };
+        let label = run.name.trim().to_ascii_lowercase();
+        if label_counts.get(&label).copied().unwrap_or(0) > 1 {
+            // The label is shared: the two feeds' items cannot be told apart,
+            // so neither may retire anything.
+            continue;
+        }
+        authoritative.push((
+            AssessmentSource::Feed(run.name.clone()).provenance_key(),
+            run_id,
+        ));
+    }
+
     let found_total = runs.iter().map(|run| run.found).sum();
     progress.emit("done", found_total, runs.len());
     Ok(FeedScan {
         assessments: all_assessments,
         runs,
         notes,
+        authoritative,
     })
 }
 

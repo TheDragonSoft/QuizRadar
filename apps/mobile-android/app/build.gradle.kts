@@ -69,16 +69,25 @@ android {
 
     buildTypes {
         debug {
-            // The debug build used to ship the *unshrunk*
-            // `material-icons-extended` dex (62 MB): ART dexoptimised it for
-            // ~30 s on the first run, the app took 14 s to show its first
-            // frame, and the system could raise an ANR on the widget worker
-            // while the main thread was still loading classes.
+            // The debug build used to ship the *unshrunk* icon dex (62 MB):
+            // ART dexoptimised it for ~30 s on the first run, the app took
+            // 14 s to show its first frame, and the system could raise an ANR
+            // on the widget worker while the main thread was still loading
+            // classes.
             //
-            // R8 with `-dontobfuscate` shrinks the dex to the size of the
-            // release build while keeping every class and method name (and
-            // the source line numbers), so the debugger, the stack traces and
-            // the crash reports stay exactly as readable as before.
+            // `isMinifyEnabled = true` below does NOT shrink the debug dex:
+            // AGP turns code optimization and obfuscation off for any
+            // `debuggable` build (Gradle prints exactly that warning at
+            // configuration time), so the debug dex stays ~11 MB against the
+            // release build's ~3.5 MB and cannot be AOT-compiled at install -
+            // which is why a cold start of the DEBUG build alone can ANR on a
+            // slow emulator while the shipped (staging/release) build starts
+            // in ~1 s. Measure start-up on `staging`, not on `debug`.
+            //
+            // The rules files still keep every class and method name (and
+            // the source line numbers) for the builds where R8 does run, so
+            // the debugger, the stack traces and the crash reports stay
+            // exactly as readable as before.
             isMinifyEnabled = true
             isShrinkResources = false
             proguardFiles(
@@ -92,17 +101,39 @@ android {
             if (releaseSigning.storeFile != null && releaseSigning.storeFile!!.exists()) {
                 signingConfig = releaseSigning
             }
-            // R8 removes the thousands of unused `material-icons-extended`
-            // classes. Without it the shipped app carries a ~44 MB dex and the
-            // first frame took ~30 s on a mid-range device (the system showed
-            // "app isn't responding"). With it the icon dex shrinks to the few
-            // dozen icons the app actually draws.
+            // R8 removes the unused classes. Without it the shipped app
+            // carried a ~44 MB icon dex and the first frame took ~30 s on a
+            // mid-range device (the system showed "app isn't responding").
+            // The icons now live in-tree, so the dex only carries the glyphs
+            // the app actually draws.
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+        }
+        // A "staging" build is a release build in every way that shows up at
+        // runtime: not debuggable, R8 + resource shrinking, signed with the
+        // release key. It exists because the debug build is still a DEBUGGABLE
+        // build (the ART/JVM runtime keeps the app's code unmapped and
+        // unshrunk), so a developer could not reproduce the start-up speed of
+        // the shipped app - the difference showed up as "the app is slow on my
+        // phone but fast in the store".
+        //
+        // The application id is deliberately the SAME as release: staging is
+        // signed with the release key, so it installs over (and is replaced
+        // by) the release build, and the OAuth redirect scheme, the Glance
+        // widget and the notification channels all keep working exactly as
+        // they do in production.
+        create("staging") {
+            initWith(getByName("release"))
+            matchingFallbacks += listOf("release")
+            isDebuggable = false
+            // The visible suffix makes it obvious which build is installed
+            // (Settings -> About). The base version still comes from the
+            // version generator - nothing here hardcodes a version literal.
+            versionNameSuffix = "-staging"
         }
     }
 
@@ -202,7 +233,11 @@ dependencies {
     implementation(composeBom)
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
+    // The icons live in-tree (`app/src/main/java/com/quizradar/app/ui/icons/
+    // Icons.kt`). The `material-icons-extended` artifact alone was ~10 MB of
+    // dex for the 46 glyphs this app draws, so it is not a dependency any
+    // more. (`material-icons-core` still arrives with material3, but the
+    // local `Icons` object shadows it.)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")

@@ -17,7 +17,8 @@ use crate::sources::gmail::{scan_gmail, GmailScan};
 use crate::sources::moodle::{scan_moodle, MoodleIcalConfig, MoodleRestConfig, MoodleScan};
 use crate::sources::teams::{scan_teams, TeamsAiDiscovery, TeamsDiscovery};
 use crate::sources::{
-    http_client, merge_preserving_user_fields, Progress, SourceRun, SourceStatus, TokenProvider,
+    http_client, merge_preserving_user_fields, retire_unseen_items, source_run_id, Progress,
+    SourceRun, SourceStatus, TokenProvider,
 };
 use crate::types::{Assessment, AssessmentSource, CachedEmail, FeedConfig, ScheduleData};
 
@@ -168,12 +169,14 @@ pub async fn run_sync(
                 notes: scan_notes,
             } = gmail_scan;
             emails_cache = cache;
-            let (assessments, parse_stats) = parse_emails_from_source(
+            let (mut assessments, parse_stats) = parse_emails_from_source(
                 &emails_cache,
                 &input.schedule,
                 input.reference_date,
                 AssessmentSource::Gmail,
             );
+            // Provenance: this run of Gmail is what last reported these items.
+            stamp_source_run(&mut assessments, run.run_id.as_deref());
             let gmail_assessment_count = assessments.len();
             scanned.extend(assessments);
             notes.extend(scan_notes);
@@ -216,7 +219,9 @@ pub async fn run_sync(
                 )
             };
             notes.push(courses_note);
-            scanned.extend(discovery.assessments.clone());
+            let mut teams_assessments = discovery.assessments.clone();
+            stamp_source_run(&mut teams_assessments, run.run_id.as_deref());
+            scanned.extend(teams_assessments);
             let found = discovery.assessments.len();
             discovered_teams = Some(discovery);
             per_source.push(SourceRun { found, ..run });
@@ -224,26 +229,81 @@ pub async fn run_sync(
         (run, None) => per_source.push(run),
     }
 
-    for (_source, scan) in [
-        ("moodle", moodle),
-        ("classroom", classroom),
-        ("feeds", feeds),
-    ] {
-        match scan {
-            Ok((run, assessments, scan_notes)) => {
-                notes.extend(scan_notes);
-                per_source.push(SourceRun {
-                    found: assessments.len(),
-                    ..run
-                });
-                scanned.extend(assessments);
+    // The sources whose scan is a COMPLETE picture of what they currently
+    // announce: a calendar export (Moodle, and every subscribed .ics feed).
+    //
+    // An announcement STREAM is not: Gmail is a sliding window of recent
+    // mail, so an announcement that aged out of the window was never
+    // cancelled. Those sources never appear here, so they can never retire
+    // anything.
+    let mut authoritative: Vec<(String, String)> = Vec::new();
+
+    // Moodle: a calendar export, so it MAY retire what it stops reporting -
+    // but only when every configured channel answered. A half-answered
+    // source is not a complete picture of what it announces.
+    match moodle {
+        Ok((run, mut assessments, scan_notes, channels_complete)) => {
+            notes.extend(scan_notes);
+            stamp_source_run(&mut assessments, run.run_id.as_deref());
+            if channels_complete {
+                if let Some(run_id) = run.run_id.clone() {
+                    authoritative.push((AssessmentSource::Moodle.provenance_key(), run_id));
+                }
             }
-            Err(run) => per_source.push(run),
+            per_source.push(SourceRun {
+                found: assessments.len(),
+                ..run
+            });
+            scanned.extend(assessments);
         }
+        Err(run) => per_source.push(run),
+    }
+
+    // Classroom: an announcement stream, not a calendar export - it never
+    // retires anything.
+    match classroom {
+        Ok((run, mut assessments, scan_notes)) => {
+            notes.extend(scan_notes);
+            stamp_source_run(&mut assessments, run.run_id.as_deref());
+            per_source.push(SourceRun {
+                found: assessments.len(),
+                ..run
+            });
+            scanned.extend(assessments);
+        }
+        Err(run) => per_source.push(run),
+    }
+
+    // Feeds: every feed is its own source, with its own run id. The items
+    // are stamped per feed inside the feed scan; here only the feeds that
+    // RAN are collected as authoritative.
+    match feeds {
+        Ok((run, assessments, scan_notes, feed_authoritative)) => {
+            notes.extend(scan_notes);
+            per_source.push(SourceRun {
+                found: assessments.len(),
+                ..run
+            });
+            scanned.extend(assessments);
+            authoritative.extend(feed_authoritative);
+        }
+        Err(run) => per_source.push(run),
     }
 
     // --- Merge with the existing radar (user fields preserved, honest counts)
-    let (assessments, counts) = merge_preserving_user_fields(&input.existing_assessments, scanned);
+    let (mut assessments, counts) =
+        merge_preserving_user_fields(&input.existing_assessments, scanned);
+
+    // --- Retire what the authoritative sources no longer carry -----------
+    // Only a source that RAN can retire anything: it is the only one that
+    // knows what it currently has. A skipped or failed source saw nothing,
+    // so its items stay exactly where they are.
+    let retired = retire_unseen_items(&mut assessments, &authoritative, input.reference_date);
+    if retired > 0 {
+        notes.push(format!(
+            "{retired} announcement(s) that were on the radar are no longer reported by their source and were retired — they are kept in the store with the reason, and they no longer ask for study time."
+        ));
+    }
 
     // --- Honest summary (03 §B3: the sources that RAN are named) ---
     let ran: Vec<&SourceRun> = per_source
@@ -371,7 +431,7 @@ async fn run_moodle_source(
     input: &SyncInput,
     client: &reqwest::Client,
     progress: &(dyn Fn(crate::sources::SourceProgress) + Send + Sync),
-) -> Result<(SourceRun, Vec<Assessment>, Vec<String>), SourceRun> {
+) -> Result<(SourceRun, Vec<Assessment>, Vec<String>, bool), SourceRun> {
     let progress = Progress::new("Moodle", progress);
     if !config.moodle_enabled {
         return Err(skipped_run("Moodle", "not enabled on this device"));
@@ -390,7 +450,11 @@ async fn run_moodle_source(
     )
     .await
     {
-        Ok(MoodleScan { assessments, notes }) => Ok((ran_run("Moodle"), assessments, notes)),
+        Ok(MoodleScan {
+            assessments,
+            notes,
+            channels_complete,
+        }) => Ok((ran_run("Moodle"), assessments, notes, channels_complete)),
         Err(error) => Err(failed_run("Moodle", &error)),
     }
 }
@@ -440,12 +504,21 @@ async fn run_classroom_source(
     }
 }
 
+#[allow(clippy::type_complexity)]
 async fn run_feeds_source(
     config: &SyncConfig,
     input: &SyncInput,
     client: &reqwest::Client,
     progress: &(dyn Fn(crate::sources::SourceProgress) + Send + Sync),
-) -> Result<(SourceRun, Vec<Assessment>, Vec<String>), SourceRun> {
+) -> Result<
+    (
+        SourceRun,
+        Vec<Assessment>,
+        Vec<String>,
+        Vec<(String, String)>,
+    ),
+    SourceRun,
+> {
     let progress = Progress::new("Calendar feeds", progress);
     if config.feeds.is_empty() {
         return Err(skipped_run("Calendar feeds", "no feeds configured"));
@@ -464,6 +537,7 @@ async fn run_feeds_source(
             assessments,
             runs,
             notes: mut_notes,
+            authoritative,
         }) => {
             let mut notes = mut_notes;
             for run in &runs {
@@ -487,7 +561,7 @@ async fn run_feeds_source(
                 runs.iter().filter(|run| run.found > 0).count(),
                 runs.len()
             ));
-            Ok((ran_run("Calendar feeds"), assessments, notes))
+            Ok((ran_run("Calendar feeds"), assessments, notes, authoritative))
         }
         Err(error) => Err(failed_run("Calendar feeds", &error)),
     }
@@ -499,6 +573,7 @@ fn ran_run(name: &str) -> SourceRun {
         status: SourceStatus::Ran,
         found: 0,
         notes: Vec::new(),
+        run_id: Some(source_run_id(name, chrono::Utc::now())),
     }
 }
 
@@ -510,6 +585,9 @@ fn skipped_run(name: &str, reason: &str) -> SourceRun {
         },
         found: 0,
         notes: Vec::new(),
+        // A skipped source saw nothing, so it has no run id and cannot claim
+        // that an item it did not report has disappeared.
+        run_id: None,
     }
 }
 
@@ -521,6 +599,18 @@ fn failed_run(name: &str, error: &str) -> SourceRun {
         },
         found: 0,
         notes: Vec::new(),
+        // A failed source saw nothing either - same rule as a skipped one.
+        run_id: None,
+    }
+}
+
+/// Stamps the source-run provenance onto the items one run reported.
+fn stamp_source_run(assessments: &mut [Assessment], run_id: Option<&str>) {
+    let Some(run_id) = run_id else {
+        return;
+    };
+    for assessment in assessments {
+        assessment.last_seen_source_run = Some(run_id.to_string());
     }
 }
 
@@ -761,6 +851,8 @@ mod tests {
             achieved_score: Some(8.0),
             max_score: Some(10.0),
             conflict_warning: None,
+            last_seen_source_run: None,
+            retired_source_run: None,
         }];
 
         // Same content (user fields ignored) → unchanged; user fields survive.

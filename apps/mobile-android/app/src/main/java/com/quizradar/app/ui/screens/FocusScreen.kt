@@ -23,14 +23,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Pause
-import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.Quiz
-import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -61,6 +53,7 @@ import androidx.compose.ui.unit.sp
 import com.quizradar.app.model.AppSnapshotModel
 import com.quizradar.app.ui.PomodoroInterval
 import com.quizradar.app.ui.QuizRadarViewModel
+import com.quizradar.app.ui.icons.Icons
 
 private enum class FocusMode {
     POMODORO,

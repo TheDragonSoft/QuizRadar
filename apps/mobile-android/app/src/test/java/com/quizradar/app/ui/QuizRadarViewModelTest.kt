@@ -39,6 +39,24 @@ private class FailingGradeCore(
     ): String = throw IllegalStateException("store write rejected")
 }
 
+/**
+ * A core that answers the AI timetable import with a canned payload - the
+ * test must never reach the network.
+ */
+private class FakeTimetableImportCore(
+    delegate: QuizRadarCore,
+    private val apiKey: String?,
+    private val response: String,
+) : QuizRadarCore by delegate {
+    override fun geminiApiKey(): String? = apiKey
+
+    override suspend fun extractTimetableFromImage(
+        imageB64: String,
+        mime: String,
+        apiKey: String,
+    ): String = response
+}
+
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 class QuizRadarViewModelTest {
@@ -58,7 +76,7 @@ class QuizRadarViewModelTest {
     @Test
     fun loadState_reaches_ready_state_and_allows_filter_changes() =
         runTest {
-            val engine = QuizRadarEngine.createInMemory()
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
             val viewModel = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
 
             advanceUntilIdle()
@@ -79,9 +97,34 @@ class QuizRadarViewModelTest {
         }
 
     @Test
+    fun `the onboarding flag written as a bool survives a reload`() =
+        runTest {
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
+
+            // A fresh store with an empty timetable is a first run: the wizard shows.
+            val first = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
+            advanceUntilIdle()
+            assertEquals(false, first.onboardingCompleted.value)
+
+            first.completeOnboarding()
+            advanceUntilIdle()
+
+            // completeOnboarding writes the key as a BOOL. Probing it through the
+            // string getter used to return null for a bool row, which fell through
+            // to "has courses" - and an empty timetable then re-showed the wizard on
+            // every single launch.
+            val second = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
+            advanceUntilIdle()
+            assertTrue(
+                "the bool-written onboarding flag must be honoured on the next load",
+                second.onboardingCompleted.value,
+            )
+        }
+
+    @Test
     fun optimistic_topic_toggle_updates_state_immediately_and_persists() =
         runTest {
-            val engine = QuizRadarEngine.createInMemory()
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
 
             // Seed course and assessment
             val courseJson = """{ "id": "CS101", "name": "Intro to CS", "color": "#1a73e8" }"""
@@ -125,7 +168,7 @@ class QuizRadarViewModelTest {
     @Test
     fun grade_editor_supports_explicit_null_clears() =
         runTest {
-            val engine = QuizRadarEngine.createInMemory()
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
 
             val courseJson = """{ "id": "CS101", "name": "Intro to CS", "color": "#1a73e8" }"""
             engine.upsertCourse(courseJson, "[]", testDate)
@@ -172,7 +215,7 @@ class QuizRadarViewModelTest {
     @Test
     fun dismiss_conflicts_updates_flag() =
         runTest {
-            val engine = QuizRadarEngine.createInMemory()
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
             val viewModel = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
             advanceUntilIdle()
 
@@ -183,9 +226,90 @@ class QuizRadarViewModelTest {
         }
 
     @Test
+    fun ai_course_import_without_a_gemini_key_fails_loudly() =
+        runTest {
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
+            val core = FakeTimetableImportCore(engine, apiKey = null, response = "{}")
+            val viewModel = QuizRadarViewModel(core, clockDate = { testDate }, coreDispatcher = testDispatcher)
+            advanceUntilIdle()
+
+            viewModel.importTimetableFromImage(byteArrayOf(1, 2, 3), "image/png")
+            advanceUntilIdle()
+
+            val state = viewModel.timetableImportState.value
+            assertTrue(
+                "the import must fail with the key hint, not silently do nothing",
+                state is TimetableImportState.Failed &&
+                    (state as TimetableImportState.Failed).message.contains("Gemini API key"),
+            )
+        }
+
+    @Test
+    fun ai_course_import_previews_what_gemini_found_and_saves_it_on_apply() =
+        runTest {
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
+            val response =
+                """
+                {
+                  "schedule": {
+                    "semester": "Fall 2026",
+                    "courses": [
+                      { "id": "CS101", "name": "Intro to CS", "color": "#1a73e8" }
+                    ],
+                    "slots": [
+                      {
+                        "id": "slot-1",
+                        "day": "Monday",
+                        "day_index": 1,
+                        "course_id": "CS101",
+                        "course_name": "Intro to CS",
+                        "type": "Lecture",
+                        "group": null,
+                        "room": "B-204",
+                        "start_time": "09:00",
+                        "end_time": "10:30",
+                        "display_time": "09:00-10:30",
+                        "has_quiz": false,
+                        "quiz_title": null
+                      }
+                    ]
+                  },
+                  "dropped_courses": 1,
+                  "dropped_slots": 2
+                }
+                """.trimIndent()
+            val core = FakeTimetableImportCore(engine, apiKey = "test-key", response = response)
+            val viewModel = QuizRadarViewModel(core, clockDate = { testDate }, coreDispatcher = testDispatcher)
+            advanceUntilIdle()
+
+            viewModel.importTimetableFromImage(byteArrayOf(1, 2, 3), "image/png")
+            advanceUntilIdle()
+
+            val preview = viewModel.timetableImportState.value as TimetableImportState.Preview
+            assertEquals(1, preview.extracted.schedule.courses.size)
+            assertEquals(1, preview.extracted.schedule.slots.size)
+            assertEquals("B-204", preview.extracted.schedule.slots.first().room)
+            // The dropped rows are counted, never repaired.
+            assertEquals(1, preview.extracted.droppedCourses)
+            assertEquals(2, preview.extracted.droppedSlots)
+
+            // Nothing is written before the user applies the preview.
+            assertTrue((viewModel.uiState.value as UiState.Ready).snapshot.schedule.courses.isEmpty())
+
+            viewModel.applyImportedTimetable(preview.extracted)
+            advanceUntilIdle()
+
+            val saved = (viewModel.uiState.value as UiState.Ready).snapshot.schedule
+            assertEquals(1, saved.courses.size)
+            assertEquals("CS101", saved.courses.first().id)
+            assertEquals(1, saved.slots.size)
+            assertEquals("B-204", saved.slots.first().room)
+        }
+
+    @Test
     fun week_navigation_and_jump_to_today() =
         runTest {
-            val engine = QuizRadarEngine.createInMemory()
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
             val viewModel = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
             advanceUntilIdle()
 
@@ -202,7 +326,7 @@ class QuizRadarViewModelTest {
     @Test
     fun course_upsert_and_delete_updates_schedule_state() =
         runTest {
-            val engine = QuizRadarEngine.createInMemory()
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
             val viewModel = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
             advanceUntilIdle()
 
@@ -240,7 +364,7 @@ class QuizRadarViewModelTest {
     @Test
     fun profile_settings_and_source_toggles() =
         runTest {
-            val engine = QuizRadarEngine.createInMemory()
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
             val viewModel = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
             advanceUntilIdle()
 
@@ -262,7 +386,7 @@ class QuizRadarViewModelTest {
     @Test
     fun ai_and_notification_settings_flow() =
         runTest {
-            val engine = QuizRadarEngine.createInMemory()
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
             val viewModel = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
             advanceUntilIdle()
 
@@ -288,7 +412,7 @@ class QuizRadarViewModelTest {
     @Test
     fun reset_all_data_clears_database_and_tokens() =
         runTest {
-            val engine = QuizRadarEngine.createInMemory()
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
             val viewModel = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
             advanceUntilIdle()
 
@@ -316,7 +440,7 @@ class QuizRadarViewModelTest {
     @Test
     fun selectTab_updates_selected_tab_state() =
         runTest {
-            val engine = QuizRadarEngine.createInMemory()
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
             val viewModel = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
             advanceUntilIdle()
 
@@ -330,7 +454,7 @@ class QuizRadarViewModelTest {
     @Test
     fun mutations_trigger_onStateMutated_callback() =
         runTest {
-            val engine = QuizRadarEngine.createInMemory()
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
             var mutatedCount = 0
             val viewModel =
                 QuizRadarViewModel(
@@ -368,7 +492,7 @@ class QuizRadarViewModelTest {
     @Test
     fun day_rollover_on_resume_recomputes_today_derived_data() =
         runTest {
-            val engine = QuizRadarEngine.createInMemory()
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
             // 2026-10-31 (Sat) -> 2026-11-01 (Sun) straddles a week boundary, so
             // the week-follow branch below is actually exercised (not vacuous).
             var today = LocalDate.parse("2026-10-31")
@@ -431,7 +555,7 @@ class QuizRadarViewModelTest {
     @Test
     fun day_rollover_preserves_user_navigated_week() =
         runTest {
-            val engine = QuizRadarEngine.createInMemory()
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
             var today = LocalDate.parse("2026-10-30")
             val viewModel = QuizRadarViewModel(engine, clockDate = { today }, coreDispatcher = testDispatcher)
             advanceUntilIdle()
@@ -456,7 +580,7 @@ class QuizRadarViewModelTest {
     @Test
     fun saveGrade_reportsSavedOnlyAfterTheWriteSucceeded() =
         runTest {
-            val engine = QuizRadarEngine.createInMemory()
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
             engine.replaceAssessments(
                 """
                 [
@@ -486,7 +610,7 @@ class QuizRadarViewModelTest {
     @Test
     fun saveGrade_reportsTheFailureInsteadOfSwallowingIt() =
         runTest {
-            val engine = QuizRadarEngine.createInMemory()
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
             engine.replaceAssessments(
                 """
                 [
@@ -523,7 +647,7 @@ class QuizRadarViewModelTest {
     @Test
     fun openPomodoro_carriesTheIndexOfTheTopicOnScreen() =
         runTest {
-            val engine = QuizRadarEngine.createInMemory()
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
             engine.replaceAssessments(
                 """
                 [
@@ -565,7 +689,7 @@ class QuizRadarViewModelTest {
     @Test
     fun openPracticeQuiz_reportsAFailureInsteadOfAnEmptyState() =
         runTest {
-            val engine = QuizRadarEngine.createInMemory()
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
             val viewModel = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
             advanceUntilIdle()
 
@@ -589,7 +713,7 @@ class QuizRadarViewModelTest {
     @Test
     fun disconnect_wipesTheAccountIdentityWithTheTokens() =
         runTest {
-            val engine = QuizRadarEngine.createInMemory()
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
             val viewModel = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
             advanceUntilIdle()
 

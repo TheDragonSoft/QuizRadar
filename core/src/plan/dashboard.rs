@@ -147,7 +147,7 @@ pub fn refresh_assessment(assessment: &Assessment, reference_date: NaiveDate) ->
     refreshed.is_upcoming = match days_i64 {
         Some(days) => days >= 0,
         None => true,
-    };
+    } && assessment.retired_source_run.is_none();
     refreshed.urgency_level = urgency_for(days_i64);
     refreshed.priority_score = compute_priority_score(
         days_i64,

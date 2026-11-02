@@ -2,9 +2,7 @@ package com.quizradar.app.ui
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onFirst
-import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -26,7 +24,7 @@ class ComposeUiSmokeTest {
     @Test
     fun appScaffold_renders_tabs_and_supports_navigation() {
         val testDate = LocalDate.parse("2026-10-25")
-        val engine = QuizRadarEngine.createInMemory()
+        val engine = QuizRadarEngine.createInMemory(coreDispatcher = Dispatchers.Unconfined)
 
         runBlocking {
             engine.upsertCourse(
@@ -64,29 +62,31 @@ class ComposeUiSmokeTest {
         // Wait for idle state
         composeTestRule.waitForIdle()
 
-        // 1. Verify 4 bottom navigation tabs are displayed
-        composeTestRule.onAllNodesWithText("Dashboard").onFirst().assertIsDisplayed()
-        composeTestRule.onAllNodesWithText("Tasks").onFirst().assertIsDisplayed()
-        composeTestRule.onAllNodesWithText("Calendar").onFirst().assertIsDisplayed()
-        composeTestRule.onAllNodesWithText("Focus").onFirst().assertIsDisplayed()
+        // 1. Verify 4 bottom navigation tabs are displayed.
+        // The drawer carries the same labels, so the bottom bar is addressed
+        // by its test tag instead of by text order.
+        composeTestRule.onNodeWithTag("bottom-nav-Dashboard").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("bottom-nav-Tasks").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("bottom-nav-Calendar").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("bottom-nav-Focus").assertIsDisplayed()
 
         // 2. Click Tasks tab
-        composeTestRule.onAllNodesWithText("Tasks").onLast().performClick()
+        composeTestRule.onNodeWithTag("bottom-nav-Tasks").performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("Daily Study Roadmap").assertIsDisplayed()
 
         // 3. Click Calendar tab
-        composeTestRule.onAllNodesWithText("Calendar").onLast().performClick()
+        composeTestRule.onNodeWithTag("bottom-nav-Calendar").performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("Today").assertIsDisplayed()
 
         // 4. Click Focus tab
-        composeTestRule.onAllNodesWithText("Focus").onLast().performClick()
+        composeTestRule.onNodeWithTag("bottom-nav-Focus").performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("Pomodoro Timer").assertIsDisplayed()
 
         // 5. Navigate back to Dashboard
-        composeTestRule.onAllNodesWithText("Dashboard").onLast().performClick()
+        composeTestRule.onNodeWithTag("bottom-nav-Dashboard").performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("Study").assertIsDisplayed()
     }
@@ -94,7 +94,7 @@ class ComposeUiSmokeTest {
     @Test
     fun settingsScreen_renders_all_sections_and_honesty_disclosures() {
         val testDate = LocalDate.parse("2026-10-25")
-        val engine = QuizRadarEngine.createInMemory()
+        val engine = QuizRadarEngine.createInMemory(coreDispatcher = Dispatchers.Unconfined)
         val viewModel = QuizRadarViewModel(engine, coreDispatcher = Dispatchers.Main.immediate) { testDate }
 
         runBlocking {
@@ -146,7 +146,7 @@ class ComposeUiSmokeTest {
     @Test
     fun onboardingWizard_renders_and_supports_advancing_and_finishing() {
         val testDate = LocalDate.parse("2026-10-25")
-        val engine = QuizRadarEngine.createInMemory()
+        val engine = QuizRadarEngine.createInMemory(coreDispatcher = Dispatchers.Unconfined)
         val viewModel = QuizRadarViewModel(engine, coreDispatcher = Dispatchers.Main.immediate) { testDate }
 
         composeTestRule.setContent {
@@ -181,13 +181,13 @@ class ComposeUiSmokeTest {
         composeTestRule.waitForIdle()
 
         // 6. Verify Dashboard is rendered
-        composeTestRule.onAllNodesWithText("Dashboard").onFirst().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("bottom-nav-Dashboard").assertIsDisplayed()
     }
 
     @Test
     fun dashboard_renders_setup_checklist_and_handles_dismiss() {
         val testDate = LocalDate.parse("2026-10-25")
-        val engine = QuizRadarEngine.createInMemory()
+        val engine = QuizRadarEngine.createInMemory(coreDispatcher = Dispatchers.Unconfined)
 
         runBlocking {
             engine.upsertCourse(

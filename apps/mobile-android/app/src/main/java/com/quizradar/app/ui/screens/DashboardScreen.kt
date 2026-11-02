@@ -27,15 +27,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.CalendarToday
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.Checklist
-import androidx.compose.material.icons.outlined.Dashboard
-import androidx.compose.material.icons.outlined.RadioButtonUnchecked
-import androidx.compose.material.icons.outlined.School
-import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -70,6 +61,7 @@ import com.quizradar.app.ui.components.NextUpHeroCard
 import com.quizradar.app.ui.components.SetupChecklistCard
 import com.quizradar.app.ui.components.StudyRecommendationCard
 import com.quizradar.app.ui.components.TimelineAssessmentRow
+import com.quizradar.app.ui.icons.Icons
 
 internal fun formatReadinessDisplay(
     totalTopicsCount: Int,
@@ -218,7 +210,19 @@ fun DashboardScreen(
         ) {
             item { Spacer(modifier = Modifier.height(6.dp)) }
 
-            // Sub-Tab Bar (Study / Assessments / Overview)
+            // Next Up hero — the desktop radar card (gradient + starfield sky).
+            // It sits ABOVE the sub-tab bar: the banner is the one thing that
+            // is always true, whatever tab is open.
+            item {
+                val nextUp = dash.nextUp
+                NextUpHeroCard(
+                    assessment = nextUp,
+                    isDark = isDark,
+                    onOpen = nextUp?.let { a -> { viewModel.openAssessmentDetail(a.id) } },
+                )
+            }
+
+            // Sub-Tab Bar (Overview / Assessments / Study)
             item {
                 Row(
                     modifier =
@@ -235,9 +239,9 @@ fun DashboardScreen(
                 ) {
                     val tabs =
                         listOf(
-                            DashboardSubTab.STUDY to ("Study" to Icons.Outlined.AutoAwesome),
-                            DashboardSubTab.ASSESSMENTS to ("Assessments" to Icons.Outlined.Checklist),
                             DashboardSubTab.OVERVIEW to ("Overview" to Icons.Outlined.Dashboard),
+                            DashboardSubTab.ASSESSMENTS to ("Assessments" to Icons.Outlined.Checklist),
+                            DashboardSubTab.STUDY to ("Study" to Icons.Outlined.AutoAwesome),
                         )
 
                     tabs.forEach { (tab, labelIcon) ->
@@ -298,16 +302,6 @@ fun DashboardScreen(
                     onScheduleStudyBlocks = { id -> viewModel.scheduleStudyBlocks(id) },
                     onViewCalendar = onViewCalendar,
                     onDismiss = { viewModel.dismissConflicts() },
-                )
-            }
-
-            // Next Up hero — the desktop radar card (gradient + starfield sky)
-            item {
-                val nextUp = dash.nextUp
-                NextUpHeroCard(
-                    assessment = nextUp,
-                    isDark = isDark,
-                    onOpen = nextUp?.let { a -> { viewModel.openAssessmentDetail(a.id) } },
                 )
             }
 

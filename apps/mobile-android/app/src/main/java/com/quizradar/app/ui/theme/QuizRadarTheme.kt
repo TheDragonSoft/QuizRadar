@@ -88,6 +88,46 @@ private val DarkColors: ColorScheme =
  */
 val CustomEventPink = Color(0xFFDB2777)
 
+/**
+ * The status colours Material 3 has no role for.
+ *
+ * The app shows connected accounts, completed setup steps, "tomorrow"
+ * badges and scores. These lived as raw hex literals copied into a dozen
+ * screens, and the light-only green measured 3.2:1 on the dark surface -
+ * below the 4.5:1 that WCAG AA asks of text. They live HERE, in the token
+ * layer, with a light and a dark variant, so a screen picks the colour that
+ * matches the theme it is drawn in.
+ *
+ * The ratios below are the sRGB relative luminance of these exact values:
+ * - [onSuccessContainerLight] on [successContainerLight]: 4.6:1
+ * - [onSuccessContainerDark] on [successContainerDark]: 6.4:1
+ * - [successLight] on white: 5.6:1, [successDark] on the dark surface: 9.3:1
+ * - [warningBadge] with white text: 5.0:1 (the old amber was 2.7:1)
+ */
+object StatusColors {
+    /** "Connected / done / good" text and icons. */
+    val successLight = Color(0xFF047857)
+    val successDark = Color(0xFF34D399)
+
+    /** The mint "connected" pill: its container and the content on it. */
+    val successContainerLight = Color(0xFFDCFCE7)
+    val successContainerDark = Color(0xFF064E3B)
+    val onSuccessContainerLight = Color(0xFF15803D)
+    val onSuccessContainerDark = Color(0xFF6EE7B7)
+
+    /** The amber "tomorrow" badge. White text sits on it. */
+    val warningBadge = Color(0xFFB45309)
+
+    /** The success colour for the theme that is on screen. */
+    fun success(isDark: Boolean): Color = if (isDark) successDark else successLight
+
+    /** The connected-pill container for the theme that is on screen. */
+    fun successContainer(isDark: Boolean): Color = if (isDark) successContainerDark else successContainerLight
+
+    /** The content colour for the connected pill. */
+    fun onSuccessContainer(isDark: Boolean): Color = if (isDark) onSuccessContainerDark else onSuccessContainerLight
+}
+
 @Composable
 @Suppress("standard:function-naming")
 fun QuizRadarTheme(

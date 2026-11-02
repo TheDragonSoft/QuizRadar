@@ -435,6 +435,21 @@ impl AssessmentSource {
             Self::Custom | Self::Feed(_) => "custom-",
         }
     }
+
+    /// The provenance key of this source: the identity a source run reports
+    /// under.
+    ///
+    /// A generic feed carries the user's own label, so EVERY feed is its own
+    /// source: one feed failing (or being deleted) must never retire another
+    /// feed's announcements. The key is trimmed and lowercased, so the same
+    /// feed is recognised across scans and across tiers.
+    #[must_use]
+    pub fn provenance_key(&self) -> String {
+        match self {
+            Self::Feed(label) => format!("feed:{}", label.trim().to_ascii_lowercase()),
+            other => other.as_str().trim().to_ascii_lowercase(),
+        }
+    }
 }
 
 /// The radar item (`02` §3.3): a quiz/exam/assignment resolved from a source
@@ -545,6 +560,25 @@ pub struct Assessment {
     /// 48h — `None` when clean (set by the planner, phase 03).
     #[serde(default)]
     pub conflict_warning: Option<String>,
+    /// The source run that last reported this item, e.g.
+    /// `"gmail-2026-11-01T09:12:00Z"`.
+    ///
+    /// This is PROVENANCE: it answers "which scan last saw this
+    /// announcement?". `None` means no source run has ever reported the item
+    /// (it came from an import, or from before provenance existed) — such an
+    /// item is never retired by a scan, because a scan cannot honestly claim
+    /// that an item it never saw has vanished.
+    #[serde(default)]
+    pub last_seen_source_run: Option<String>,
+    /// The source run in which the announcing source stopped reporting this
+    /// item (the announcement was cancelled or edited upstream).
+    ///
+    /// A retired item stays in the store WITH this reason — it is not
+    /// silently deleted — but it is no longer upcoming: it leaves the radar,
+    /// the study plan and the conflict checks, because there is nothing left
+    /// to prepare for.
+    #[serde(default)]
+    pub retired_source_run: Option<String>,
 }
 
 /// The v4 default authorship of an assessment with no `source` field

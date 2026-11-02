@@ -200,6 +200,9 @@ pub fn build_study_tasks(
 ) -> StudyTasksPayload {
     let mut horizon: Vec<(&Assessment, i64)> = assessments
         .iter()
+        // A retired item (the source no longer announces it) asks for no
+        // study time: there is nothing left to prepare for.
+        .filter(|assessment| assessment.retired_source_run.is_none())
         .filter_map(|assessment| {
             let days = (assessment.date? - reference_date).num_days();
             (0..=HORIZON_DAYS)

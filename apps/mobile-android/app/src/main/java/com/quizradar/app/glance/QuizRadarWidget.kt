@@ -31,6 +31,8 @@ import com.quizradar.app.core.QuizRadarEngine
 import com.quizradar.app.model.AssessmentModel
 import com.quizradar.app.model.CourseModel
 import com.quizradar.app.model.QuizRadarJsonParser
+import com.quizradar.app.ui.extractClockPart
+import com.quizradar.app.ui.formatIsoDateForDisplay
 import com.quizradar.app.ui.theme.CoursePalette
 import org.json.JSONObject
 
@@ -113,8 +115,13 @@ data class WidgetState(
                     else -> "#1a73e8" // blue
                 }
             val courseColor = CoursePalette.getHex(assessment.courseId)
-            val timePart = assessment.displayTime?.let { " · $it" } ?: ""
-            val datePart = assessment.dateIso ?: "Undated"
+            // The widget used to print the raw storage date ("2026-03-14")
+            // and the whole `display_time` string, so the date appeared
+            // twice - once as an ISO dump and once inside the display
+            // string. The app's own helpers give the friendly date and the
+            // clock part alone.
+            val timePart = extractClockPart(assessment.displayTime)?.let { " · $it" } ?: ""
+            val datePart = formatIsoDateForDisplay(assessment.dateIso?.toString()) ?: "Undated"
 
             return WidgetState(
                 hasNextUp = true,

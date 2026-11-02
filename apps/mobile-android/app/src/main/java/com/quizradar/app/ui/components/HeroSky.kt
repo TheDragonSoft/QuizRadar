@@ -138,8 +138,17 @@ private fun DrawScope.drawSheen(progress: Float) {
 /**
  * The sky overlay: fill its parent. `dark` picks the scene — sun + dim stars
  * for day, brighter pulsing stars for night — plus the sheen sweep on top of
- * both. The twinkle/glow/sheen honor the system animator scale automatically
- * (Compose infinite transitions snap when animations are disabled).
+ * both.
+ *
+ * Reduced motion: every motion here is a Compose `infiniteRepeatable`, and
+ * Compose's own infinite-animation policy consults the system animator
+ * duration scale. With "Remove animations" on, the scale is 0, the policy
+ * runs the transition once instead of looping, and the sky settles on a
+ * static frame — no endless invalidation. (Verified against compose-ui
+ * 1.7.6: `androidx.compose.ui.platform.InfiniteAnimationPolicy` +
+ * `MotionDurationScaleImpl`.) The app therefore needs no second mechanism,
+ * and the Settings copy "Reduced motion follows system accessibility
+ * settings" is accurate.
  */
 @Composable
 fun HeroSky(

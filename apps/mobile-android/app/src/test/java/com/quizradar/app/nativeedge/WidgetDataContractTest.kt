@@ -47,7 +47,9 @@ class WidgetDataContractTest {
         // never rendered to the user).
         assertEquals("Intro to Computer Science", state.courseCode)
         assertEquals("CS Final Exam", state.title)
-        assertEquals("2026-10-25 · 10:00 AM", state.dateDisplay)
+        // The widget prints the date the way the rest of the app prints it -
+        // never the raw storage date ("2026-10-25").
+        assertEquals("Sun, Oct 25, 2026 · 10:00 AM", state.dateDisplay)
         assertEquals("TODAY", state.badgeText)
         assertEquals("#ef4444", state.badgeColorHex) // Urgent red for TODAY
         assertEquals("—", state.room) // Never "Hall B-204"

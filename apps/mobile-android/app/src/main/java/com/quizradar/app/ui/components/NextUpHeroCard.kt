@@ -13,10 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Place
-import androidx.compose.material.icons.filled.SquareFoot
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quizradar.app.model.AssessmentModel
 import com.quizradar.app.ui.formatIsoDateForDisplay
+import com.quizradar.app.ui.icons.Icons
 
 private data class HeroPalette(
     val gradient: Brush,
@@ -91,13 +88,17 @@ fun NextUpHeroCard(
                     } else {
                         Modifier
                     },
-                )
-                .padding(18.dp),
+                ),
     ) {
+        // The sky is a match-parent layer BEHIND the content, so the sheen
+        // sweep covers the whole banner. The card's padding used to live on
+        // the Box itself, which shrank this canvas to the inner content
+        // rectangle - the glimmer was clipped to a smaller box floating
+        // inside the banner.
         HeroSky(dark = isDark, modifier = Modifier.matchParentSize())
 
         if (assessment == null) {
-            Column {
+            Column(modifier = Modifier.padding(18.dp)) {
                 Text(
                     text = "No Upcoming Assessments Scheduled",
                     fontSize = 18.sp,
@@ -115,7 +116,7 @@ fun NextUpHeroCard(
             return@Box
         }
 
-        Column {
+        Column(modifier = Modifier.padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (countdownLabel(assessment.daysUntil).isNotEmpty()) {
                     Row(

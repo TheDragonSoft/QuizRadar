@@ -2,7 +2,7 @@
 //! Exposes parsers, derivations, conflict detection, study blocks, ICS export,
 //! practice MCQ generator, and merge logic to web browsers via wasm-bindgen.
 
-use chrono::{FixedOffset, NaiveDate};
+use chrono::{DateTime, FixedOffset, NaiveDate, Utc};
 use quizradar_core::cal::ics::{export_ics_all, export_ics_single};
 use quizradar_core::parse::email::parse_email_announcement;
 use quizradar_core::parse::ics::{parse_ics_assessments, IcsOrigin};
@@ -10,11 +10,19 @@ use quizradar_core::plan::conflicts::detect_conflicts;
 use quizradar_core::plan::dashboard::{build_dashboard_summary, radar_order};
 use quizradar_core::plan::study_blocks::{block_date_for, block_id_for, study_block_candidates};
 use quizradar_core::plan::tasks::build_study_tasks;
-use quizradar_core::sources::merge_preserving_user_fields;
+use quizradar_core::sources::{merge_preserving_user_fields, retire_unseen_items, source_run_id};
 use quizradar_core::types::{
-    Assessment, CachedEmail, CompletedTopics, CustomCalendarEvent, ScheduleData,
+    Assessment, AssessmentSource, CachedEmail, CompletedTopics, CustomCalendarEvent, ScheduleData,
 };
 use wasm_bindgen::prelude::*;
+
+/// One source run the browser reported: the source's name and the id of the
+/// run that fetched it.
+#[derive(Debug, serde::Deserialize)]
+struct BrowserSourceRun {
+    name: String,
+    run_id: String,
+}
 
 #[wasm_bindgen]
 pub struct QuizRadarWasm;
@@ -65,6 +73,110 @@ impl QuizRadarWasm {
         let (assessments, _stats) =
             parse_ics_assessments(content, &schedule, &origin, date, offset);
         serde_json::to_string(&assessments)
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+    }
+
+    /// Parses a subscribed `.ics` calendar feed the way the desktop does.
+    ///
+    /// The items carry the FEED's own label as their source (never "Moodle"),
+    /// so a browser scan and a desktop scan agree on what an item is - and on
+    /// which feed it came from.
+    ///
+    /// The feed URL is deliberately NOT passed on: it can embed a personal
+    /// token, and the browser tier never copies such a URL into a stored
+    /// item. The event's own link is used when the feed provides one.
+    pub fn parse_ics_feed(
+        &self,
+        content: &str,
+        schedule_json: &str,
+        ref_date_iso: &str,
+        feed_name: &str,
+    ) -> Result<String, JsValue> {
+        let schedule: ScheduleData = serde_json::from_str(schedule_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid schedule JSON: {e}")))?;
+        let date = NaiveDate::parse_from_str(ref_date_iso, "%Y-%m-%d")
+            .map_err(|e| JsValue::from_str(&format!("Invalid ref_date: {e}")))?;
+        let origin = IcsOrigin::Feed {
+            name: feed_name.to_string(),
+            feed_url: None,
+        };
+        let offset =
+            FixedOffset::east_opt(0).ok_or_else(|| JsValue::from_str("Invalid UTC offset"))?;
+        let (assessments, _stats) =
+            parse_ics_assessments(content, &schedule, &origin, date, offset);
+        serde_json::to_string(&assessments)
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+    }
+
+    /// The id of one source run: `"<source-slug>-<utc timestamp>"`.
+    ///
+    /// The browser passes the moment of the run in (`at_iso`) - the id
+    /// FORMAT lives here, so every tier stamps provenance the same way.
+    pub fn source_run_id(&self, name: &str, at_iso: &str) -> Result<String, JsValue> {
+        let at = DateTime::parse_from_rfc3339(at_iso)
+            .map_err(|e| JsValue::from_str(&format!("Invalid run timestamp: {e}")))?
+            .with_timezone(&Utc);
+        Ok(source_run_id(name, at))
+    }
+
+    /// Merges one browser scan into the radar and retires what the scan no
+    /// longer reports.
+    ///
+    /// `source_runs_json` is the list of the sources that RAN in this scan:
+    /// `[{"name": "Registrar", "run_id": "registrar-2026-11-01T09:12:00Z"}]`.
+    /// Every item such a source reported carries its run id, so a later scan
+    /// can tell what the source stopped reporting - and retire it honestly.
+    ///
+    /// A source that is NOT in the list (it failed, or it was skipped) may
+    /// retire nothing: it never saw what the radar holds.
+    pub fn merge_scan(
+        &self,
+        existing_json: &str,
+        incoming_json: &str,
+        source_runs_json: &str,
+        ref_date_iso: &str,
+    ) -> Result<String, JsValue> {
+        let existing: Vec<Assessment> = serde_json::from_str(existing_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid existing assessments JSON: {e}")))?;
+        let mut incoming: Vec<Assessment> = serde_json::from_str(incoming_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid incoming assessments JSON: {e}")))?;
+        let runs: Vec<BrowserSourceRun> = serde_json::from_str(source_runs_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid source runs JSON: {e}")))?;
+        let date = NaiveDate::parse_from_str(ref_date_iso, "%Y-%m-%d")
+            .map_err(|e| JsValue::from_str(&format!("Invalid ref_date: {e}")))?;
+
+        // The browser tier scans calendar feeds, and every feed is its own
+        // source: one feed failing must never retire another feed's items.
+        let authoritative: Vec<(String, String)> = runs
+            .iter()
+            .map(|run| {
+                (
+                    AssessmentSource::Feed(run.name.clone()).provenance_key(),
+                    run.run_id.clone(),
+                )
+            })
+            .collect();
+
+        // Provenance: the run that reported an item is what last saw it.
+        for item in &mut incoming {
+            let item_key = item.source.provenance_key();
+            if let Some((_, run_id)) = authoritative.iter().find(|(key, _)| *key == item_key) {
+                item.last_seen_source_run = Some(run_id.clone());
+            }
+        }
+
+        let (mut merged, counts) = merge_preserving_user_fields(&existing, incoming);
+        let retired = retire_unseen_items(&mut merged, &authoritative, date);
+        let result = serde_json::json!({
+            "merged": merged,
+            "counts": {
+                "added": counts.added,
+                "updated": counts.updated,
+                "unchanged": counts.unchanged
+            },
+            "retired": retired
+        });
+        serde_json::to_string(&result)
             .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
     }
 

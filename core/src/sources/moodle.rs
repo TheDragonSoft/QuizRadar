@@ -45,6 +45,12 @@ pub struct MoodleRestConfig {
 pub struct MoodleScan {
     pub assessments: Vec<Assessment>,
     pub notes: Vec<String>,
+    /// True when every CONFIGURED channel answered.
+    ///
+    /// A half-answered source is not a complete picture of what it
+    /// announces, so it must not retire anything: the items of the channel
+    /// that failed are missing from this scan, not cancelled.
+    pub channels_complete: bool,
 }
 
 /// Combined scan: both configured channels run concurrently; a single failed
@@ -117,6 +123,7 @@ pub async fn scan_moodle(
         // Nothing survived: fail the source loudly instead of "0 found" theatre.
         return Err(failures.join("; "));
     }
+    let channels_complete = failures.is_empty();
     for failure in failures {
         notes.push(failure);
     }
@@ -132,6 +139,7 @@ pub async fn scan_moodle(
     Ok(MoodleScan {
         assessments: items,
         notes,
+        channels_complete,
     })
 }
 
@@ -550,6 +558,58 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(scan.assessments.len(), 1);
+        assert!(
+            scan.channels_complete,
+            "both channels answered, so the scan is a complete picture"
+        );
+    }
+
+    /// A half-answered source is not a complete picture: the items of the
+    /// channel that failed are missing from the scan, not cancelled — so the
+    /// scan must not be allowed to retire them.
+    #[tokio::test]
+    async fn a_failed_moodle_channel_makes_the_scan_incomplete() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(ICS_FIXTURE))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("boom"))
+            .mount(&server)
+            .await;
+
+        let client = http_client().unwrap();
+        let progress = Progress::new("Moodle", &|_| {});
+        let scan = scan_moodle(
+            &client,
+            Some(&MoodleIcalConfig {
+                ical_url: format!("{}/export.ics", server.uri()),
+                portal_url: None,
+            }),
+            Some(&MoodleRestConfig {
+                base_url: server.uri(),
+                wstoken: "t".to_string(),
+            }),
+            &schedule(),
+            ref_date(),
+            utc(),
+            &progress,
+        )
+        .await
+        .unwrap();
+        assert_eq!(scan.assessments.len(), 1);
+        assert!(
+            !scan.channels_complete,
+            "a failed channel means the scan is not a complete picture"
+        );
+        assert!(
+            scan.notes
+                .iter()
+                .any(|note| note.contains("REST API failed")),
+            "the failure is reported: {:?}",
+            scan.notes
+        );
     }
 
     #[test]

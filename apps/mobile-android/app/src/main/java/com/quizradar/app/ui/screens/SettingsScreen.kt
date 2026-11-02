@@ -25,27 +25,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.outlined.AccountCircle
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.Email
-import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.Palette
-import androidx.compose.material.icons.outlined.RssFeed
-import androidx.compose.material.icons.outlined.School
-import androidx.compose.material.icons.outlined.Storage
-import androidx.compose.material.icons.outlined.UploadFile
-import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -75,12 +54,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -96,8 +77,18 @@ import com.quizradar.app.model.ScheduleSlotModel
 import com.quizradar.app.notifications.NotificationHelper
 import com.quizradar.app.ui.ACADEMIC_TRACKS
 import com.quizradar.app.ui.QuizRadarViewModel
+import com.quizradar.app.ui.TimetableImportState
 import com.quizradar.app.ui.academicTrackLabel
+import com.quizradar.app.ui.components.TimetableImportErrorDialog
+import com.quizradar.app.ui.components.TimetableImportPreviewDialog
+import com.quizradar.app.ui.components.TimetableImportWorkingDialog
 import com.quizradar.app.ui.detail.CourseEditorSheet
+import com.quizradar.app.ui.icons.Icons
+import com.quizradar.app.ui.readScaledImage
+import com.quizradar.app.ui.theme.StatusColors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -113,12 +104,19 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
+    // Status greens need a theme-aware variant: the old #047857 measured
+    // 3.21:1 on the dark background, below the 4.5:1 body text needs.
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
     // ViewModel StateFlows
     val userName by viewModel.userName.collectAsState()
     val userEmail by viewModel.userEmail.collectAsState()
     val geminiApiKey by viewModel.geminiApiKey.collectAsState()
     val geminiEnabled by viewModel.geminiEnabled.collectAsState()
+    // The core version is a native call: it is read once off the main
+    // thread and published here, so this screen never makes one while it
+    // composes.
+    val coreVersion by viewModel.coreVersion.collectAsState()
     val gmailEnabled by viewModel.gmailEnabled.collectAsState()
     val classroomEnabled by viewModel.classroomEnabled.collectAsState()
     val teamsEnabled by viewModel.teamsEnabled.collectAsState()
@@ -130,6 +128,7 @@ fun SettingsScreen(
     val syncWeeklyClassesToGcal by viewModel.syncWeeklyClassesToGcal.collectAsState()
     val theme by viewModel.theme.collectAsState()
     val academicTrack by viewModel.academicTrack.collectAsState()
+    val timetableImportState by viewModel.timetableImportState.collectAsState()
 
     // Dialog & Sheet States
     var showEditProfileDialog by rememberSaveable { mutableStateOf(false) }
@@ -198,6 +197,31 @@ fun SettingsScreen(
                 viewModel.showToast("Notification permission granted")
             } else {
                 viewModel.showToast("Notification permission denied")
+            }
+        }
+
+    // AI timetable-image import (`01` §4.1): the user picks a screenshot,
+    // Gemini reads it and the preview shows what was found BEFORE anything is
+    // saved. The photo-picker contract needs no storage permission.
+    val imageImportScope = rememberCoroutineScope()
+    val timetableImageLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.PickVisualMedia(),
+        ) { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            imageImportScope.launch {
+                val image =
+                    try {
+                        withContext(Dispatchers.IO) { readScaledImage(context, uri) }
+                    } catch (e: Exception) {
+                        viewModel.showToast("Could not read the image: ${e.message}")
+                        null
+                    }
+                if (image == null || image.bytes.isEmpty()) {
+                    viewModel.showToast("That image could not be read - pick another one.")
+                } else {
+                    viewModel.importTimetableFromImage(image.bytes, image.mime)
+                }
             }
         }
 
@@ -550,6 +574,44 @@ fun SettingsScreen(
                     ) {
                         Text("Re-run Timetable Onboarding")
                     }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // AI course import (`01` §4.1): the Android app reads a
+                    // timetable screenshot with Gemini, exactly like the
+                    // desktop shell and the web companion do.
+                    Text(
+                        text = "AI Course Import",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text =
+                            "Pick a timetable screenshot. Gemini reads it on your phone and you " +
+                                "review the courses and class slots before anything is saved. " +
+                                "Needs a Gemini API key (see the AI section below).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            timetableImageLauncher.launch(
+                                androidx.activity.result.PickVisualMediaRequest(
+                                    ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                ),
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                    ) {
+                        Icon(Icons.Outlined.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Import Timetable from Image (AI)", fontSize = 12.sp)
+                    }
                 }
             }
 
@@ -809,7 +871,7 @@ fun SettingsScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color =
                                 if (status.contains("valid", ignoreCase = true)) {
-                                    Color(0xFF047857)
+                                    StatusColors.success(isDark)
                                 } else {
                                     MaterialTheme.colorScheme.error
                                 },
@@ -1168,7 +1230,7 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text(
-                        text = "QuizRadar v${viewModel.getCoreVersion()}",
+                        text = if (coreVersion.isBlank()) "QuizRadar" else "QuizRadar v$coreVersion",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
@@ -1413,6 +1475,23 @@ fun SettingsScreen(
         )
     }
 
+    // AI timetable import: the running / preview / failure states.
+    when (val importState = timetableImportState) {
+        is TimetableImportState.Working -> TimetableImportWorkingDialog()
+        is TimetableImportState.Preview ->
+            TimetableImportPreviewDialog(
+                extracted = importState.extracted,
+                onApply = { viewModel.applyImportedTimetable(importState.extracted) },
+                onDismiss = { viewModel.dismissTimetableImport() },
+            )
+        is TimetableImportState.Failed ->
+            TimetableImportErrorDialog(
+                message = importState.message,
+                onDismiss = { viewModel.dismissTimetableImport() },
+            )
+        else -> {}
+    }
+
     // Course Editor Sheet
     if (isCourseSheetOpen) {
         CourseEditorSheet(
@@ -1463,11 +1542,15 @@ private fun StatusPill(
     connected: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    // The pill used to be a light mint chip with a 3.0:1 green in EVERY
+    // theme - a light-mode pill punched into the dark screen, and below the
+    // 4.5:1 that 11sp text needs. The token now has a dark variant.
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     Surface(
         shape = RoundedCornerShape(12.dp),
         color =
             if (connected) {
-                Color(0xFFDCFCE7)
+                StatusColors.successContainer(isDark)
             } else {
                 MaterialTheme.colorScheme.surfaceVariant
             },
@@ -1483,7 +1566,11 @@ private fun StatusPill(
                         .size(6.dp)
                         .clip(CircleShape)
                         .background(
-                            if (connected) Color(0xFF16A34A) else Color(0xFF9CA3AF),
+                            if (connected) {
+                                StatusColors.onSuccessContainer(isDark)
+                            } else {
+                                Color(0xFF9CA3AF)
+                            },
                         ),
             )
             Spacer(modifier = Modifier.width(5.dp))
@@ -1493,7 +1580,7 @@ private fun StatusPill(
                 fontWeight = FontWeight.SemiBold,
                 color =
                     if (connected) {
-                        Color(0xFF15803D)
+                        StatusColors.onSuccessContainer(isDark)
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },

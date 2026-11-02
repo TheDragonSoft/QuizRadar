@@ -1398,6 +1398,8 @@ pub fn parse_email_announcement_from_source(
         achieved_score: None,
         max_score: None,
         conflict_warning: None,
+        last_seen_source_run: None,
+        retired_source_run: None,
     }
 }
 

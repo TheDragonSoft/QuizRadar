@@ -785,6 +785,8 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -813,6 +815,8 @@ internal interface UniffiLib : Library {
     fun uniffi_quizradar_core_fn_method_nativestore_delete_custom_event(`ptr`: Pointer,`id`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_export_backup(`ptr`: Pointer,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
+    ): Long
+    fun uniffi_quizradar_core_fn_method_nativestore_extract_timetable_from_image(`ptr`: Pointer,`imageB64`: RustBuffer.ByValue,`mime`: RustBuffer.ByValue,`apiKey`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_get_config_bool(`ptr`: Pointer,`key`: RustBuffer.ByValue,`default`: Byte,
     ): Long
@@ -1024,6 +1028,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_export_backup(
     ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_extract_timetable_from_image(
+    ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_get_config_bool(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_get_config_string(
@@ -1123,6 +1129,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_export_backup() != 28902.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_extract_timetable_from_image() != 29147.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_get_config_bool() != 11697.toShort()) {
@@ -1547,6 +1556,25 @@ public interface NativeStoreInterface {
     
     suspend fun `exportBackup`(`updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
     
+    /**
+     * The timetable vision import (`01` §4.1, `05` §4 task b).
+     *
+     * The shell owns the picker and the key; the core owns the prompt, the
+     * validation and the drop rules — so the desktop shell, the browser tier
+     * and Android all run the SAME extraction instead of three copies of it.
+     *
+     * The key is the user's own BYOK key: it travels in the `x-goog-api-key`
+     * header only, is never written to the store and never reaches an error
+     * string (the provider redacts it). The usage counter is the
+     * store-backed Pacific-day ledger, so an Android import is counted
+     * exactly like a desktop one.
+     *
+     * The response is JSON: `{"schedule": …, "dropped_courses": n,
+     * "dropped_slots": n}`. The dropped counts are honest — rows the model
+     * got wrong are counted, never repaired into existence.
+     */
+    suspend fun `extractTimetableFromImage`(`imageB64`: kotlin.String, `mime`: kotlin.String, `apiKey`: kotlin.String): kotlin.String
+    
     suspend fun `getConfigBool`(`key`: kotlin.String, `default`: kotlin.Boolean): kotlin.Boolean
     
     suspend fun `getConfigString`(`key`: kotlin.String): kotlin.String?
@@ -1718,6 +1746,44 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
             UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_export_backup(
                 thisPtr,
                 FfiConverterString.lower(`updatedAt`),FfiConverterString.lower(`refDateIso`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * The timetable vision import (`01` §4.1, `05` §4 task b).
+     *
+     * The shell owns the picker and the key; the core owns the prompt, the
+     * validation and the drop rules — so the desktop shell, the browser tier
+     * and Android all run the SAME extraction instead of three copies of it.
+     *
+     * The key is the user's own BYOK key: it travels in the `x-goog-api-key`
+     * header only, is never written to the store and never reaches an error
+     * string (the provider redacts it). The usage counter is the
+     * store-backed Pacific-day ledger, so an Android import is counted
+     * exactly like a desktop one.
+     *
+     * The response is JSON: `{"schedule": …, "dropped_courses": n,
+     * "dropped_slots": n}`. The dropped counts are honest — rows the model
+     * got wrong are counted, never repaired into existence.
+     */
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `extractTimetableFromImage`(`imageB64`: kotlin.String, `mime`: kotlin.String, `apiKey`: kotlin.String) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_extract_timetable_from_image(
+                thisPtr,
+                FfiConverterString.lower(`imageB64`),FfiConverterString.lower(`mime`),FfiConverterString.lower(`apiKey`),
             )
         },
         { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },

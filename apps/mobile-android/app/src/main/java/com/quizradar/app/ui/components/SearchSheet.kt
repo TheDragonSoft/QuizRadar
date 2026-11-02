@@ -21,9 +21,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -53,7 +50,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quizradar.app.model.AppSnapshotModel
 import com.quizradar.app.model.AssessmentModel
+import com.quizradar.app.ui.icons.Icons
 import com.quizradar.app.ui.theme.CoursePalette
+import com.quizradar.app.ui.theme.StatusColors
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
@@ -333,7 +332,9 @@ private fun SearchResultRow(
                         val urgencyBg =
                             when {
                                 days == 0 -> MaterialTheme.colorScheme.error
-                                days == 1 -> Color(0xFFEA8600)
+                                // The old amber measured 2.7:1 with the white
+                                // text on it - unreadable. This one is 5.0:1.
+                                days == 1 -> StatusColors.warningBadge
                                 else -> MaterialTheme.colorScheme.surfaceVariant
                             }
                         val urgencyText =

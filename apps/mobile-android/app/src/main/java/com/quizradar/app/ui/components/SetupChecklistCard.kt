@@ -16,14 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.Email
-import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.School
-import androidx.compose.material.icons.outlined.Widgets
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -39,7 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -48,6 +40,8 @@ import androidx.compose.ui.unit.sp
 import com.quizradar.app.glance.QuizRadarWidgetReceiver
 import com.quizradar.app.model.AppSnapshotModel
 import com.quizradar.app.ui.QuizRadarViewModel
+import com.quizradar.app.ui.icons.Icons
+import com.quizradar.app.ui.theme.StatusColors
 
 @Composable
 fun SetupChecklistCard(
@@ -211,6 +205,10 @@ private fun ChecklistItemRow(
     onAction: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // The mint "done" circle needs a theme-aware pair: the light green
+    // measured 3.0:1 on the mint chip, and the chip itself was a light-mode
+    // circle punched into the dark screen.
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -227,7 +225,7 @@ private fun ChecklistItemRow(
                         .clip(CircleShape)
                         .background(
                             if (isDone) {
-                                Color(0xFFDCFCE7)
+                                StatusColors.successContainer(isDark)
                             } else {
                                 MaterialTheme.colorScheme.surfaceVariant
                             },
@@ -237,7 +235,12 @@ private fun ChecklistItemRow(
                 Icon(
                     imageVector = if (isDone) Icons.Outlined.Check else icon,
                     contentDescription = null,
-                    tint = if (isDone) Color(0xFF16A34A) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint =
+                        if (isDone) {
+                            StatusColors.onSuccessContainer(isDark)
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                     modifier = Modifier.size(15.dp),
                 )
             }
@@ -261,7 +264,7 @@ private fun ChecklistItemRow(
             Icon(
                 imageVector = Icons.Outlined.CheckCircle,
                 contentDescription = "Completed",
-                tint = Color(0xFF16A34A),
+                tint = StatusColors.success(isDark),
                 modifier = Modifier.size(20.dp),
             )
         } else {

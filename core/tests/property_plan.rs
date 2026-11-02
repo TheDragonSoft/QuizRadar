@@ -124,6 +124,8 @@ fn assessment(
         achieved_score: None,
         max_score: None,
         conflict_warning: None,
+        last_seen_source_run: None,
+        retired_source_run: None,
     }
 }
 

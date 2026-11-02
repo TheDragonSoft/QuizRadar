@@ -1,21 +1,106 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The radar artwork of the QuizRadar mark, as the foreground layer of the
+     adaptive launcher icon.
+
+     The geometry is the v4 `static/icon.svg` scaled by 72/256 and centred on
+     the 108dp canvas, so it sits inside the 72dp safe zone the launcher
+     never crops. The blue squircle behind it is the background layer
+     (`ic_launcher_background.xml`).
+
+     One deliberate difference from the in-app mark: the middle ring is
+     solid here, because a VectorDrawable cannot carry a dash pattern - and
+     at launcher size the dashes would be a fraction of a pixel anyway. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
+    <!-- The two calendar binder tabs on the top edge.
+
+         A VectorDrawable has no <rect rx>, so each tab is written as a
+         capsule: a top semicircle, a straight side, a bottom semicircle.
+         The numbers are the v4 tabs (x=78 and x=162, y=28, 16x26, rx=8)
+         scaled by 72/256 and centred on the 108dp canvas. -->
     <path
-        android:pathData="M54,54 m-24,0 a24,24 0 1,1 48,0 a24,24 0 1,1 -48,0"
-        android:strokeColor="#1A73E8"
-        android:strokeWidth="6"
-        android:fillColor="#00000000" />
+        android:pathData="M39.9375,28.125 A2.25,2.25 0 0 1 44.4375,28.125 L44.4375,30.9375 A2.25,2.25 0 0 1 39.9375,30.9375 Z"
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.9" />
     <path
-        android:pathData="M54,54 m-6,0 a6,6 0 1,1 12,0 a6,6 0 1,1 -12,0"
-        android:fillColor="#1A73E8" />
+        android:pathData="M63.5625,28.125 A2.25,2.25 0 0 1 68.0625,28.125 L68.0625,30.9375 A2.25,2.25 0 0 1 63.5625,30.9375 Z"
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.9" />
+
+    <!-- The three radar rings. -->
     <path
-        android:pathData="M54,54 L70,34"
-        android:strokeColor="#1A73E8"
-        android:strokeWidth="4"
-        android:strokeLineCap="round"
-        android:fillColor="#00000000" />
+        android:pathData="M54,56.25 m-21.375,0 a21.375,21.375 0 1,1 42.75,0 a21.375,21.375 0 1,1 -42.75,0"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.22"
+        android:strokeWidth="1.40625" />
+    <path
+        android:pathData="M54,56.25 m-14.0625,0 a14.0625,14.0625 0 1,1 28.125,0 a14.0625,14.0625 0 1,1 -28.125,0"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.32"
+        android:strokeWidth="1.125" />
+    <path
+        android:pathData="M54,56.25 m-6.75,0 a6.75,6.75 0 1,1 13.5,0 a6.75,6.75 0 1,1 -13.5,0"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.45"
+        android:strokeWidth="1.125" />
+
+    <!-- The sweep sector. -->
+    <path android:pathData="M54,56.25 L54,34.875 A21.375,21.375 0 0 1 73.6875,47.8125 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="54"
+                android:startY="28.125"
+                android:endX="77.0625"
+                android:endY="54">
+                <item
+                    android:color="#8060A5FA"
+                    android:offset="0" />
+                <item
+                    android:color="#0038BDF8"
+                    android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- The gold needle. -->
+    <path
+        android:pathData="M54,56.25 L69.75,41.625"
+        android:fillColor="#00000000"
+        android:strokeColor="#FACC15"
+        android:strokeWidth="1.6875"
+        android:strokeLineCap="round" />
+
+    <!-- The hub. -->
+    <path
+        android:pathData="M54,56.25 m-2.8125,0 a2.8125,2.8125 0 1,1 5.625,0 a2.8125,2.8125 0 1,1 -5.625,0"
+        android:fillColor="#FFFFFF" />
+    <path
+        android:pathData="M54,56.25 m-1.40625,0 a1.40625,1.40625 0 1,1 2.8125,0 a1.40625,1.40625 0 1,1 -2.8125,0"
+        android:fillColor="#1D4ED8" />
+
+    <!-- The detected exam blips. -->
+    <path
+        android:pathData="M66.9375,44.15625 m-2.53125,0 a2.53125,2.53125 0 1,1 5.0625,0 a2.53125,2.53125 0 1,1 -5.0625,0"
+        android:fillColor="#FACC15" />
+    <path
+        android:pathData="M66.9375,44.15625 m-4.21875,0 a4.21875,4.21875 0 1,1 8.4375,0 a4.21875,4.21875 0 1,1 -8.4375,0"
+        android:fillColor="#00000000"
+        android:strokeColor="#FACC15"
+        android:strokeAlpha="0.45"
+        android:strokeWidth="0.84375" />
+    <path
+        android:pathData="M43.875,49.5 m-1.828125,0 a1.828125,1.828125 0 1,1 3.65625,0 a1.828125,1.828125 0 1,1 -3.65625,0"
+        android:fillColor="#34D399" />
+    <path
+        android:pathData="M61.875,64.6875 m-1.828125,0 a1.828125,1.828125 0 1,1 3.65625,0 a1.828125,1.828125 0 1,1 -3.65625,0"
+        android:fillColor="#F87171" />
 </vector>

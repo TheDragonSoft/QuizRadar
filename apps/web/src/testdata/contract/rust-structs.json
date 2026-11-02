@@ -11,13 +11,13 @@
     "core/src/types.rs"
   ],
   "sourceHashes": {
-    "core/src/types.rs": "8160e69fe8d91f9dbc6582aff2ceff1458d48e6fde578f73a2fdbcfbd11b1bbe",
-    "core/src/plan/dashboard.rs": "66435dc70a5ad60f1cb101248f00448dba9fad568f6b8c54bbe3507cac4498f3",
-    "core/src/plan/tasks.rs": "76b0644a6bfd0cc8794d9c496d5eea4be67f787629885b373fac64e6f3b438e8",
+    "core/src/types.rs": "483f2be664ef03f3c4afa2cd2aafa6dda70a0c2fcc6decf195a8a1813dd5c5d2",
+    "core/src/plan/dashboard.rs": "a1987bb714d422593c3120207fdd08005e5402602889a160de05351312a3af89",
+    "core/src/plan/tasks.rs": "556c2a8013cc405e177f0568af6f73a98312c56245d772e61c4027600d73fc91",
     "core/src/plan/conflicts.rs": "a953cf743da6a8fc45b43bc6c2dfd716c6842a65a2d4311b08c56a19e8729e74",
     "apps/desktop/src-tauri/src/commands/state.rs": "537d6c73b3dcf31faae548e74e6d703deda0f137fc647411b7a1a590cf34f2ce",
-    "core/src/store/repo.rs": "fc6934c0a6cc86a4822aa676cebcd61e15939566bdf668950b1dc865368805d4",
-    "core/src/ffi.rs": "7e62ef3a5ef3fd80f417d57fa12b22851e73150aff806126f160a049c80b0b36"
+    "core/src/store/repo.rs": "17857f530c6a94602fa4b083dd60982c6de133cf8513ab293f309868a7a10f24",
+    "core/src/ffi.rs": "24b8b1c8c5f0c6cd209c35f0bb515fe4ef956526b06d8acc3c024c1de7bdd9e2"
   },
   "structs": {
     "CachedEmail": {
@@ -436,6 +436,18 @@
         {
           "rustName": "conflict_warning",
           "wireName": "conflict_warning",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "last_seen_source_run",
+          "wireName": "last_seen_source_run",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "retired_source_run",
+          "wireName": "retired_source_run",
           "rustType": "Option<String>",
           "optional": true
         }
@@ -1901,6 +1913,15 @@
         "backup_json: String",
         "updated_at: String",
         "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.extract_timetable_from_image": {
+      "parameters": [
+        "&self",
+        "image_b64: String",
+        "mime: String",
+        "api_key: String"
       ],
       "returns": "Result<String, QuizRadarFfiError>"
     }

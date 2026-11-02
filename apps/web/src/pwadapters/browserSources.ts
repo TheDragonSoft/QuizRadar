@@ -424,6 +424,15 @@ export interface BrowserScanResult {
   errors: string[];
   /** How many enabled feeds were actually fetched (a failed fetch is not one). */
   fetched: number;
+  /**
+   * The feeds that RAN in this scan, with the id of their run.
+   *
+   * A feed is its own source: one feed failing (or being deleted) must
+   * never retire another feed's announcements. The run id is what lets a
+   * later scan tell what a feed stopped reporting - the core decides what
+   * that means.
+   */
+  sourceRuns: { name: string; runId: string }[];
 }
 
 /**
@@ -442,6 +451,7 @@ export async function scanBrowserFeeds(
   const wasm = await getWasmEngine();
   const found: Assessment[] = [];
   const errors: string[] = [];
+  const sourceRuns: { name: string; runId: string }[] = [];
   let fetched = 0;
 
   for (const feed of feeds) {
@@ -454,11 +464,18 @@ export async function scanBrowserFeeds(
         continue;
       }
       const text = await resp.text();
+      // The feed's OWN label becomes each item's source, exactly as on the
+      // desktop - so a browser scan and a desktop scan agree on what an
+      // item is and which feed it came from.
       const parsed = JSON.parse(
-        wasm.parse_ics(text, JSON.stringify(schedule), todayIso),
+        wasm.parse_ics_feed(text, JSON.stringify(schedule), todayIso, feed.name),
       ) as Assessment[];
       found.push(...parsed);
       fetched += 1;
+      sourceRuns.push({
+        name: feed.name,
+        runId: wasm.source_run_id(feed.name, new Date().toISOString()),
+      });
     } catch (err) {
       if (signal?.aborted) break;
       const msg = err instanceof Error ? err.message : String(err);
@@ -468,7 +485,7 @@ export async function scanBrowserFeeds(
     }
   }
 
-  return { assessments: found, errors, fetched };
+  return { assessments: found, errors, fetched, sourceRuns };
 }
 
 /**

@@ -1,5 +1,6 @@
 package com.quizradar.app.core
 
+import kotlinx.coroutines.CoroutineDispatcher
 import java.time.LocalDate
 
 /**
@@ -7,7 +8,36 @@ import java.time.LocalDate
  * Calls Rust core over UniFFI with zero server dependencies.
  */
 interface QuizRadarCore {
-    fun version(): String
+    /**
+     * The dispatcher this core runs its native calls on.
+     *
+     * The core opens a SQLite store through JNA and reads the Keystore-backed
+     * token store; both are slow enough to trip the ANR watchdog on the main
+     * thread. The dispatcher lives HERE, in the core, so that every caller -
+     * the ViewModel, the Glance widget, the reminder worker, the share
+     * intent - inherits "never touch the native core on the main thread"
+     * instead of having to remember it.
+     */
+    val coreDispatcher: CoroutineDispatcher
+
+    /**
+     * The core version string.
+     *
+     * This is a JNA -> Rust round trip, and the FIRST one loads the native
+     * library (dlopen + runtime start-up) - slow enough to trip the ANR
+     * watchdog on the main thread. It is `suspend` so every caller gets it
+     * off the UI thread for free; the audit found it being called inline
+     * during composition.
+     */
+    suspend fun version(): String
+
+    /**
+     * The user's own Gemini (BYOK) key, or `null` when there is none.
+     *
+     * The key lives in the Keystore-backed token store; reading it is slow,
+     * so callers must do it off the main thread.
+     */
+    fun geminiApiKey(): String?
 
     suspend fun getState(refDate: LocalDate = LocalDate.now()): String
 
@@ -83,6 +113,20 @@ interface QuizRadarCore {
         refDate: LocalDate = LocalDate.now(),
     ): String
 
+    /**
+     * The AI timetable-image extraction (`01` §4.1).
+     *
+     * The image is base64 (no data-URL prefix) and the key is the user's own
+     * BYOK Gemini key; both travel into the Rust core, which owns the prompt,
+     * the validation and the drop rules. The key never leaves the device
+     * except in the `x-goog-api-key` header of the Gemini request.
+     */
+    suspend fun extractTimetableFromImage(
+        imageB64: String,
+        mime: String,
+        apiKey: String,
+    ): String
+
     fun parseEmail(
         emailJson: String,
         scheduleJson: String,
@@ -125,7 +169,14 @@ interface QuizRadarCore {
         today: LocalDate = LocalDate.now(),
     ): String
 
-    fun exportIcs(
+    /**
+     * Serializes the calendar into an `.ics` document.
+     *
+     * `suspend` for the same reason as [version]: the native call is
+     * blocking, and the audit found the button handler running it on the
+     * UI thread.
+     */
+    suspend fun exportIcs(
         assessmentsJson: String,
         assessmentId: String? = null,
     ): String

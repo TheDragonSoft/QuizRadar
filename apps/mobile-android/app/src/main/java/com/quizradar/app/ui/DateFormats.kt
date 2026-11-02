@@ -39,3 +39,23 @@ fun extractTimePart(displayTime: String?): String? {
     val inside = displayTime.substring(open + 1, close).trim()
     return inside.ifEmpty { null }
 }
+
+/**
+ * The clock part of an assessment's `display_time`, for the surfaces that
+ * print the date separately (the home-screen widget).
+ *
+ * The core's `display_time` is `"Sunday, 01 November 2026 (9:30 AM - 10:30 AM)"`
+ * - the clock is in the parentheses - but a resolved assessment can also carry
+ * a bare clock ("10:00 AM"). Both are a time; a date-only display string has
+ * no clock in it and gets no time at all.
+ */
+fun extractClockPart(displayTime: String?): String? {
+    if (displayTime.isNullOrBlank()) return null
+    extractTimePart(displayTime)?.let { return it }
+    val bare = displayTime.trim()
+    return if (CLOCK_PATTERN.matches(bare)) bare else null
+}
+
+/** "9:30", "9:30 AM", "14:00", "9:30 AM - 10:30 AM" - and nothing else. */
+private val CLOCK_PATTERN =
+    Regex("""^\d{1,2}:\d{2}(\s?[APap]\.?[Mm]\.?)?(\s*[-–]\s*\d{1,2}:\d{2}(\s?[APap]\.?[Mm]\.?)?)?$""")

@@ -56,6 +56,24 @@ enum class DashboardSubTab {
     OVERVIEW,
 }
 
+/**
+ * The AI timetable-image import (`01` §4.1).
+ *
+ * The states are honest about what happened: [Working] while Gemini reads
+ * the image, [Preview] with what it actually found (including the dropped
+ * rows), [Failed] with the reason. There is no "imported" state that does
+ * not say how many courses were saved.
+ */
+sealed interface TimetableImportState {
+    object Idle : TimetableImportState
+
+    object Working : TimetableImportState
+
+    data class Preview(val extracted: com.quizradar.app.model.ExtractedTimetableModel) : TimetableImportState
+
+    data class Failed(val message: String) : TimetableImportState
+}
+
 enum class PomodoroInterval(val minutes: Int, val label: String) {
     POMODORO(25, "Pomodoro"),
     SHORT_BREAK(5, "Short Break"),
@@ -68,15 +86,14 @@ class QuizRadarViewModel(
     /**
      * The dispatcher the core reads/writes run on.
      *
-     * A single-threaded view of the IO pool: the store calls are serialized
-     * (they used to be serialized by the main dispatcher) but never on the
-     * main thread, so a slow native/Keystore call cannot freeze the UI.
-     *
-     * It is injectable so the unit tests can hand in the test dispatcher -
-     * a real background dispatcher would race the test scheduler and make
+     * It is the CORE's dispatcher (see `QuizRadarEngine.coreDispatcher`): the
+     * engine owns it so that every caller - not just this ViewModel - keeps
+     * the native store and the Keystore off the main thread. It stays
+     * injectable so the unit tests can hand in the test dispatcher - a real
+     * background dispatcher would race the test scheduler and make
      * `advanceUntilIdle()` return before the load had finished.
      */
-    private val coreDispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1),
+    private val coreDispatcher: CoroutineDispatcher = core.coreDispatcher,
     private val clockDate: () -> LocalDate = { LocalDate.now() },
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<UiState>(UiState.Loading)
@@ -95,7 +112,12 @@ class QuizRadarViewModel(
     private val _isConflictDismissed = MutableStateFlow(false)
     val isConflictDismissed: StateFlow<Boolean> = _isConflictDismissed.asStateFlow()
 
-    private val _dashboardSubTab = MutableStateFlow(DashboardSubTab.STUDY)
+    /**
+     * The dashboard opens on OVERVIEW: the radar banner is above the bar and
+     * the first thing the bar can show is the summary (what is due, how ready
+     * you are), not an empty study list.
+     */
+    private val _dashboardSubTab = MutableStateFlow(DashboardSubTab.OVERVIEW)
     val dashboardSubTab: StateFlow<DashboardSubTab> = _dashboardSubTab.asStateFlow()
 
     private val _activeSourceFilter = MutableStateFlow("ALL")
@@ -130,6 +152,13 @@ class QuizRadarViewModel(
 
     private val _isPracticeLoading = MutableStateFlow(false)
     val isPracticeLoading: StateFlow<Boolean> = _isPracticeLoading.asStateFlow()
+
+    /**
+     * The AI timetable-image import (`01` §4.1). `null` means no import is
+     * running; the UI shows the picker, the spinner or the preview from it.
+     */
+    private val _timetableImportState = MutableStateFlow<TimetableImportState>(TimetableImportState.Idle)
+    val timetableImportState: StateFlow<TimetableImportState> = _timetableImportState.asStateFlow()
 
     /**
      * Which accounts are connected.
@@ -298,14 +327,30 @@ class QuizRadarViewModel(
                     _pomodoroIsRunning.value = false
                     val isBreak = _pomodoroInterval.value != PomodoroInterval.POMODORO
                     if (context != null) {
-                        try {
-                            NotificationHelper.sendTimerCompleteNotification(context, isBreak)
-                        } catch (_: Exception) {
-                        }
+                        val posted =
+                            try {
+                                NotificationHelper.sendTimerCompleteNotification(context, isBreak)
+                            } catch (_: Exception) {
+                                false
+                            }
+                        showToast(
+                            when {
+                                // The notification could not be posted (Android 13+
+                                // without POST_NOTIFICATIONS). Say so instead of
+                                // pretending the chime happened.
+                                !posted ->
+                                    "Timer finished, but notifications are off - " +
+                                        "allow them in Settings to hear the chime."
+
+                                isBreak -> "Break complete! Ready to study?"
+                                else -> "Pomodoro complete! Great focus session."
+                            },
+                        )
+                    } else {
+                        showToast(
+                            if (isBreak) "Break complete! Ready to study?" else "Pomodoro complete! Great focus session.",
+                        )
                     }
-                    showToast(
-                        if (isBreak) "Break complete! Ready to study?" else "Pomodoro complete! Great focus session.",
-                    )
                 }
             }
     }
@@ -335,10 +380,6 @@ class QuizRadarViewModel(
 
     fun clearToast() {
         _toastMessage.value = null
-    }
-
-    init {
-        loadState()
     }
 
     fun loadState() {
@@ -374,13 +415,19 @@ class QuizRadarViewModel(
                     _theme.value = core.getConfigString("theme") ?: "system"
                     _academicTrack.value = core.getConfigString("academic_track")
 
-                    val onboardingCompletedConfig = core.getConfigString("onboarding_completed")
+                    // `onboarding_completed` is WRITTEN as a bool (completeOnboarding,
+                    // reRunOnboarding, sign-out), and a bool row is not readable
+                    // through getConfigString - a JSON `true` has no string form.
+                    // Probing it that way always returned null, so the flag fell
+                    // through to "has courses" and a fresh install with an empty
+                    // timetable re-showed the wizard on every launch. Read it as
+                    // the bool it is, and only when it was never set at all fall
+                    // back to "has courses".
                     val isDone =
-                        if (onboardingCompletedConfig != null) {
-                            core.getConfigBool("onboarding_completed", false)
-                        } else {
-                            snapshot.schedule.courses.isNotEmpty()
-                        }
+                        core.getConfigBool(
+                            "onboarding_completed",
+                            snapshot.schedule.courses.isNotEmpty(),
+                        )
                     _onboardingCompleted.value = isDone
                     _onboardingStep.value =
                         core.getConfigString("onboarding_step")?.toIntOrNull()?.coerceIn(1, 4) ?: 1
@@ -388,7 +435,10 @@ class QuizRadarViewModel(
                         core.getConfigBool("dismiss_setup_checklist", false)
 
                     val engine = core as? QuizRadarEngine
-                    _geminiApiKey.value = engine?.tokenProvider?.getGeminiApiKey() ?: ""
+                    _geminiApiKey.value = core.geminiApiKey() ?: ""
+                    // The version is a native call too - read it here, on the
+                    // core dispatcher, instead of from the UI.
+                    _coreVersion.value = core.version()
                     refreshAccountFlags(engine)
 
                     _uiState.value = UiState.Ready(snapshot)
@@ -856,7 +906,16 @@ class QuizRadarViewModel(
         }
     }
 
-    fun exportIcs(assessmentId: String?): String {
+    /**
+     * Serializes the calendar into an `.ics` document.
+     *
+     * `suspend`: the native call blocks (it serializes every assessment and
+     * builds the calendar), and the audit found the "Export .ics" button
+     * running it straight on the UI thread - a freeze on a large timetable.
+     * The engine routes the call through its own dispatcher, so it never
+     * touches the main thread.
+     */
+    suspend fun exportIcs(assessmentId: String?): String {
         val current = (_uiState.value as? UiState.Ready)?.snapshot ?: return ""
         val arr = JSONArray()
         current.assessments.forEach { a ->
@@ -1123,22 +1182,195 @@ class QuizRadarViewModel(
     }
 
     fun setGeminiEnabled(enabled: Boolean) {
+        // A native config write per keystroke is a native store write per
+        // keystroke. The flag only changes when the key goes from empty to
+        // filled (or back), so the write happens once, not on every letter.
+        if (_geminiEnabled.value == enabled) return
         _geminiEnabled.value = enabled
         persistConfig("gemini_enabled", enabled)
     }
 
-    fun saveGeminiApiKey(key: String) {
-        val trimmed = key.trim()
-        _geminiApiKey.value = trimmed
-        val engine = core as? QuizRadarEngine
-        showToast(if (trimmed.isEmpty()) "Gemini key removed" else "Gemini key saved")
+    /**
+     * Reads a timetable image with Gemini and previews what it found.
+     *
+     * The image and the user's own BYOK key go straight into the Rust core,
+     * which owns the prompt, the validation and the drop rules — the same
+     * code the desktop shell and the browser tier run. The key is read from
+     * the Keystore-backed token store OFF the main thread, and it never
+     * reaches a log line or an error string.
+     *
+     * Nothing is written to the timetable here: the user sees the preview
+     * first and applies it deliberately.
+     */
+    fun importTimetableFromImage(
+        imageBytes: ByteArray,
+        mime: String,
+    ) {
+        if (imageBytes.isEmpty()) {
+            _timetableImportState.value =
+                TimetableImportState.Failed("The picked image was empty - choose another file.")
+            return
+        }
+        _timetableImportState.value = TimetableImportState.Working
         viewModelScope.launch {
-            // Keystore write - off the main thread (see disconnectGoogle).
-            withContext(coreDispatcher) {
-                engine?.tokenProvider?.setGeminiApiKey(trimmed.ifEmpty { null })
+            try {
+                val key =
+                    withContext(coreDispatcher) {
+                        core.geminiApiKey().orEmpty()
+                    }
+                if (key.isBlank()) {
+                    _timetableImportState.value =
+                        TimetableImportState.Failed(
+                            "AI course import needs a Gemini API key. Add your own key in " +
+                                "Settings -> AI (Gemini BYOK) and try again.",
+                        )
+                    return@launch
+                }
+                val encoded =
+                    withContext(coreDispatcher) {
+                        // Base64 of a photo-sized buffer is megabytes of
+                        // garbage: encoding it on the main thread is a
+                        // frame-dropping stall (and an ANR on a big image).
+                        // It runs on the CORE dispatcher - off the main thread
+                        // in the app, and on the test scheduler in the tests
+                        // (a hard-coded Dispatchers.Default would race the
+                        // test clock and leave the import stuck on "working").
+                        android.util.Base64.encodeToString(imageBytes, android.util.Base64.NO_WRAP)
+                    }
+                val json = core.extractTimetableFromImage(encoded, mime, key)
+                val extracted = QuizRadarJsonParser.parseExtractedTimetable(json)
+                if (extracted.schedule.courses.isEmpty()) {
+                    _timetableImportState.value =
+                        TimetableImportState.Failed(
+                            "Gemini could not read a single course from that image. " +
+                                "Try a sharper screenshot of the whole timetable.",
+                        )
+                } else {
+                    _timetableImportState.value = TimetableImportState.Preview(extracted)
+                }
+            } catch (e: Exception) {
+                _timetableImportState.value =
+                    TimetableImportState.Failed(
+                        "AI course import failed: " +
+                            (e.message?.takeIf { it.isNotBlank() } ?: "unknown error"),
+                    )
             }
         }
     }
+
+    /**
+     * Writes the previewed courses and their class slots into the timetable.
+     *
+     * Each course is upserted with its own slots, so an import never drops a
+     * course that is already enrolled. The toast states what was actually
+     * saved - and the preview's dropped-row count stays visible in the
+     * summary, because rows the model could not read were NOT imported.
+     */
+    fun applyImportedTimetable(extracted: com.quizradar.app.model.ExtractedTimetableModel) {
+        viewModelScope.launch {
+            try {
+                val refDate = clockDate()
+                var savedCourses = 0
+                var savedSlots = 0
+                for (course in extracted.schedule.courses) {
+                    val courseSlots =
+                        extracted.schedule.slots.filter { slot ->
+                            slot.courseId.equals(course.id, ignoreCase = true)
+                        }
+                    val courseJson =
+                        JSONObject().apply {
+                            put("id", course.id.trim())
+                            put("name", course.name.trim())
+                            put("color", course.color ?: "#1a73e8")
+                        }.toString()
+                    val slotsJson =
+                        JSONArray().apply {
+                            courseSlots.forEachIndexed { index, slot ->
+                                put(
+                                    JSONObject().apply {
+                                        put(
+                                            "id",
+                                            slot.id.ifBlank { "slot-${course.id}-${index + 1}" },
+                                        )
+                                        put("day", slot.day)
+                                        put("course_id", course.id.trim())
+                                        put("course_name", course.name.trim())
+                                        put("type", slot.type.ifBlank { "Lecture" })
+                                        put("start_time", slot.startTime)
+                                        put("end_time", slot.endTime)
+                                        put(
+                                            "display_time",
+                                            slot.displayTime ?: "${slot.startTime}-${slot.endTime}",
+                                        )
+                                        if (!slot.room.isNullOrBlank()) put("room", slot.room.trim())
+                                        if (!slot.group.isNullOrBlank()) put("group", slot.group.trim())
+                                    },
+                                )
+                            }
+                        }.toString()
+                    val updatedJson = callCore { core.upsertCourse(courseJson, slotsJson, refDate) }
+                    val snapshot = QuizRadarJsonParser.parseAppSnapshot(updatedJson)
+                    _uiState.value = UiState.Ready(snapshot)
+                    savedCourses += 1
+                    savedSlots += courseSlots.size
+                }
+                lastLoadedDate = refDate
+                onStateMutated?.invoke()
+                _timetableImportState.value = TimetableImportState.Idle
+                showToast("Imported $savedCourses courses and $savedSlots class slots")
+            } catch (e: Exception) {
+                _timetableImportState.value =
+                    TimetableImportState.Failed(
+                        "Could not save the imported timetable: " +
+                            (e.message?.takeIf { it.isNotBlank() } ?: "unknown error"),
+                    )
+            }
+        }
+    }
+
+    /** Closes the import preview (or clears the error) without saving anything. */
+    fun dismissTimetableImport() {
+        _timetableImportState.value = TimetableImportState.Idle
+    }
+
+    /**
+     * Persists the user's own Gemini (BYOK) key.
+     *
+     * The key lives in the Keystore-backed token store, so a write is slow
+     * and must not happen on the main thread. The write is DEBOUNCED: the
+     * text field reports every keystroke, and a 30-character key would
+     * otherwise queue 30 Keystore round trips and 30 "key saved" toasts,
+     * each of which interrupts a screen reader.
+     *
+     * @param announce show the confirmation toast (the explicit Save action
+     *   does; a keystroke does not).
+     */
+    fun saveGeminiApiKey(
+        key: String,
+        announce: Boolean = true,
+    ) {
+        val trimmed = key.trim()
+        _geminiApiKey.value = trimmed
+        val engine = core as? QuizRadarEngine
+        geminiKeySaveAnnounce = geminiKeySaveAnnounce || announce
+        geminiKeySaveJob?.cancel()
+        geminiKeySaveJob =
+            viewModelScope.launch {
+                delay(350)
+                val announceNow = geminiKeySaveAnnounce
+                geminiKeySaveAnnounce = false
+                // Keystore write - off the main thread (see disconnectGoogle).
+                withContext(coreDispatcher) {
+                    engine?.tokenProvider?.setGeminiApiKey(trimmed.ifEmpty { null })
+                }
+                if (announceNow) {
+                    showToast(if (trimmed.isEmpty()) "Gemini key removed" else "Gemini key saved")
+                }
+            }
+    }
+
+    private var geminiKeySaveJob: Job? = null
+    private var geminiKeySaveAnnounce = false
 
     fun validateGeminiKey(
         key: String,
@@ -1288,7 +1520,36 @@ class QuizRadarViewModel(
         persistConfig("dismiss_setup_checklist", true)
     }
 
-    fun getCoreVersion(): String = core.version()
+    /**
+     * The core version, read ONCE off the main thread.
+     *
+     * The audit found this being called inline during composition: a JNA ->
+     * Rust round trip on the UI thread, on every recomposition of the About
+     * card. The value is loaded with the rest of the state and published
+     * here, so the UI only ever reads a cached string.
+     *
+     * It is declared with the other state flows (see the block above `init`)
+     * so that it exists before the first load can publish into it.
+     */
+    private val _coreVersion = MutableStateFlow("")
+    val coreVersion: StateFlow<String> = _coreVersion.asStateFlow()
+
+    /** The cached core version - never a native call. */
+    fun getCoreVersion(): String = _coreVersion.value
+
+    /**
+     * The first load.
+     *
+     * This init block sits at the END of the class on purpose: Kotlin runs
+     * property initializers and init blocks in declaration order, so a load
+     * that starts here can only touch state flows that already exist. When
+     * this block ran in the middle of the class, the background load could
+     * publish into a flow that had not been created yet - a NullPointerException
+     * on a field the compiler happily calls "initialized".
+     */
+    init {
+        loadState()
+    }
 
     companion object {
         fun getWeekStart(date: LocalDate): LocalDate {
@@ -1303,7 +1564,7 @@ class QuizRadarViewModel(
             core: QuizRadarCore,
             onStateMutated: (() -> Unit)? = null,
             clockDate: () -> LocalDate = { LocalDate.now() },
-            coreDispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1),
+            coreDispatcher: CoroutineDispatcher = core.coreDispatcher,
         ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")

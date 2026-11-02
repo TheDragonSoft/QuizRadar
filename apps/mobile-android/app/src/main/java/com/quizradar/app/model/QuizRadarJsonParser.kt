@@ -102,6 +102,20 @@ object QuizRadarJsonParser {
         )
     }
 
+    /**
+     * The AI timetable-image extraction payload:
+     * `{"schedule": {…}, "dropped_courses": n, "dropped_slots": n}`.
+     */
+    fun parseExtractedTimetable(jsonStr: String): ExtractedTimetableModel {
+        val root = JSONObject(jsonStr)
+        val schedule = parseSchedule(root.optJSONObject("schedule"))
+        return ExtractedTimetableModel(
+            schedule = schedule,
+            droppedCourses = root.optInt("dropped_courses", 0),
+            droppedSlots = root.optInt("dropped_slots", 0),
+        )
+    }
+
     fun parseCustomEvent(obj: JSONObject): CustomEventModel {
         return CustomEventModel(
             id = obj.getString("id"),

@@ -64,6 +64,8 @@ const KEY_ALIASES: ReadonlyArray<readonly [string, string]> = [
   ["emailSentDate", "email_sent_date"],
   ["sourceIcon", "source_icon"],
   ["conflictWarning", "conflict_warning"],
+  ["lastSeenSourceRun", "last_seen_source_run"],
+  ["retiredSourceRun", "retired_source_run"],
   // Dashboard summary
   ["referenceDate", "reference_date"],
   ["nextUp", "next_up"],

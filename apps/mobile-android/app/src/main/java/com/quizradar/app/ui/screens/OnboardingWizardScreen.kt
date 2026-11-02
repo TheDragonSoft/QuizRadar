@@ -30,21 +30,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.Email
-import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.School
-import androidx.compose.material.icons.outlined.Shield
-import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -75,7 +60,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -89,6 +76,8 @@ import com.quizradar.app.model.AppSnapshotModel
 import com.quizradar.app.ui.ACADEMIC_TRACKS
 import com.quizradar.app.ui.QuizRadarViewModel
 import com.quizradar.app.ui.detail.CourseEditorSheet
+import com.quizradar.app.ui.icons.Icons
+import com.quizradar.app.ui.theme.StatusColors
 
 // The three presets the spec names (`01` §4.1: Medicine / Business / Sciences)
 // live in one shared list (`com.quizradar.app.ui.ACADEMIC_TRACKS`) so the
@@ -137,14 +126,12 @@ fun OnboardingWizardScreen(
             true
         }
 
-    // Predictive back handler: navigate back a step before exiting
-    BackHandler(enabled = true) {
-        if (currentStep > 1) {
-            viewModel.setOnboardingStep(currentStep - 1)
-        } else {
-            viewModel.completeOnboarding()
-            onComplete()
-        }
+    // Back navigates one step back. On the FIRST step there is nowhere to go
+    // back to: the old code silently completed the wizard, which dropped the
+    // user into an app that had just been marked "set up" without a single
+    // answer given. Back must never do that.
+    BackHandler(enabled = currentStep > 1) {
+        viewModel.setOnboardingStep(currentStep - 1)
     }
 
     Scaffold(
@@ -616,8 +603,9 @@ private fun Step2Timetable(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text =
-                        "Timetable image import runs in the desktop app and the web companion. " +
-                            "Add your courses and weekly class slots manually here.",
+                        "Timetable image import works on this phone: open Settings -> Courses & " +
+                            "Timetable -> AI Course Import and pick a screenshot. You can also add " +
+                            "your courses and weekly class slots manually here.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -700,15 +688,19 @@ private fun Step3Sources(
                         }
                     }
                     if (isGoogleConnected) {
+                        // The "Connected" chip was a light mint pill in
+                        // every theme - a light-mode chip punched into the
+                        // dark screen. The token carries both variants.
+                        val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
                         Surface(
                             shape = RoundedCornerShape(10.dp),
-                            color = Color(0xFFDCFCE7),
+                            color = StatusColors.successContainer(isDark),
                         ) {
                             Text(
                                 text = "Connected",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF15803D),
+                                color = StatusColors.onSuccessContainer(isDark),
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             )
                         }
@@ -756,15 +748,16 @@ private fun Step3Sources(
                         }
                     }
                     if (isMicrosoftConnected) {
+                        val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
                         Surface(
                             shape = RoundedCornerShape(10.dp),
-                            color = Color(0xFFDCFCE7),
+                            color = StatusColors.successContainer(isDark),
                         ) {
                             Text(
                                 text = "Connected",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF15803D),
+                                color = StatusColors.onSuccessContainer(isDark),
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             )
                         }
@@ -800,7 +793,13 @@ private fun Step3Sources(
                     value = keyInput,
                     onValueChange = {
                         keyInput = it
-                        viewModel.saveGeminiApiKey(it)
+                        // The key is persisted (debounced, off the main
+                        // thread) but NOT announced per keystroke: a 30
+                        // character key used to queue 30 Keystore writes and
+                        // 30 "key saved" toasts, each interrupting a screen
+                        // reader. The confirmation comes when the field
+                        // loses focus.
+                        viewModel.saveGeminiApiKey(it, announce = false)
                         viewModel.setGeminiEnabled(it.isNotBlank())
                     },
                     label = { Text("API Key (BYOK)") },
@@ -815,7 +814,16 @@ private fun Step3Sources(
                             )
                         }
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            // One confirmation, when the user is done with
+                            // the field - not one per letter.
+                            .onFocusChanged { focusState ->
+                                if (!focusState.isFocused) {
+                                    viewModel.saveGeminiApiKey(keyInput)
+                                }
+                            },
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
@@ -912,7 +920,10 @@ private fun Step4Reminders(
                         Icon(
                             imageVector = Icons.Outlined.CheckCircle,
                             contentDescription = "Permission granted",
-                            tint = Color(0xFF16A34A),
+                            tint =
+                                StatusColors.success(
+                                    MaterialTheme.colorScheme.background.luminance() < 0.5f,
+                                ),
                             modifier = Modifier.size(24.dp),
                         )
                     } else {

@@ -1,21 +1,58 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The themed-icon layer: the same radar squircle, in the one colour the
+     launcher tints it with.
+
+     It carries the mark's structure - the squircle's outline, the two binder
+     tabs, the three rings, the needle and the hub - so the app still reads
+     as QuizRadar when the launcher replaces the colours with the user's
+     theme. The geometry is the v4 `static/icon.svg` scaled by 72/256 and
+     centred on the 108dp canvas, exactly like `ic_launcher_foreground.xml`. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
+    <!-- The squircle's outline. -->
     <path
-        android:pathData="M54,54 m-24,0 a24,24 0 1,1 48,0 a24,24 0 1,1 -48,0"
+        android:pathData="M37.125,21.375 H70.875 A15.75,15.75 0 0 1 86.625,37.125 V70.875 A15.75,15.75 0 0 1 70.875,86.625 H37.125 A15.75,15.75 0 0 1 21.375,70.875 V37.125 A15.75,15.75 0 0 1 37.125,21.375 Z"
         android:strokeColor="#000000"
-        android:strokeWidth="6"
+        android:strokeWidth="1.6875"
         android:fillColor="#00000000" />
+
+    <!-- The two calendar binder tabs. -->
     <path
-        android:pathData="M54,54 m-6,0 a6,6 0 1,1 12,0 a6,6 0 1,1 -12,0"
+        android:pathData="M39.9375,28.125 A2.25,2.25 0 0 1 44.4375,28.125 L44.4375,30.9375 A2.25,2.25 0 0 1 39.9375,30.9375 Z"
         android:fillColor="#000000" />
     <path
-        android:pathData="M54,54 L70,34"
+        android:pathData="M63.5625,28.125 A2.25,2.25 0 0 1 68.0625,28.125 L68.0625,30.9375 A2.25,2.25 0 0 1 63.5625,30.9375 Z"
+        android:fillColor="#000000" />
+
+    <!-- The three radar rings. -->
+    <path
+        android:pathData="M54,56.25 m-21.375,0 a21.375,21.375 0 1,1 42.75,0 a21.375,21.375 0 1,1 -42.75,0"
+        android:fillColor="#00000000"
         android:strokeColor="#000000"
-        android:strokeWidth="4"
+        android:strokeWidth="1.40625" />
+    <path
+        android:pathData="M54,56.25 m-14.0625,0 a14.0625,14.0625 0 1,1 28.125,0 a14.0625,14.0625 0 1,1 -28.125,0"
+        android:fillColor="#00000000"
+        android:strokeColor="#000000"
+        android:strokeWidth="1.125" />
+    <path
+        android:pathData="M54,56.25 m-6.75,0 a6.75,6.75 0 1,1 13.5,0 a6.75,6.75 0 1,1 -13.5,0"
+        android:fillColor="#00000000"
+        android:strokeColor="#000000"
+        android:strokeWidth="1.125" />
+
+    <!-- The needle and the hub. -->
+    <path
+        android:pathData="M54,56.25 L69.75,41.625"
+        android:strokeColor="#000000"
+        android:strokeWidth="1.6875"
         android:strokeLineCap="round"
         android:fillColor="#00000000" />
+    <path
+        android:pathData="M54,56.25 m-2.8125,0 a2.8125,2.8125 0 1,1 5.625,0 a2.8125,2.8125 0 1,1 -5.625,0"
+        android:fillColor="#000000" />
 </vector>

@@ -16,20 +16,11 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AccountCircle
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Email
-import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -41,9 +32,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.quizradar.app.ui.icons.Icons
+import com.quizradar.app.ui.theme.StatusColors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,11 +50,15 @@ fun AccountSheet(
     onDisconnectGoogle: () -> Unit,
     onStartMicrosoftLogin: () -> Unit,
     onDisconnectMicrosoft: () -> Unit,
-    onImportBackup: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    // The "connected" green needs a dark-theme variant: the light one
+    // measured 3.2:1 on the dark sheet surface - below the 4.5:1 that text
+    // needs.
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val connectedColor = StatusColors.success(isDark)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -74,50 +72,35 @@ fun AccountSheet(
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp, vertical = 8.dp),
         ) {
-            // Header: Profile Avatar, Title, Close Button
+            // Header: Profile Avatar + Title. The sheet is dismissed by
+            // dragging it down (the sheet's own drag handle), so the close
+            // button and the "Local-first" subtitle were redundant chrome.
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier =
-                            Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primaryContainer),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.AccountCircle,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(32.dp),
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Column {
-                        Text(
-                            text = "Student Profile",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(
-                            text = "Local-first (Zero-server mode)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                IconButton(onClick = onDismiss) {
+                Box(
+                    modifier =
+                        Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center,
+                ) {
                     Icon(
-                        imageVector = Icons.Outlined.Close,
-                        contentDescription = "Close account dialog",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        imageVector = Icons.Outlined.AccountCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(32.dp),
                     )
                 }
+                Spacer(modifier = Modifier.width(14.dp))
+                Text(
+                    text = "Student Profile",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
             }
 
             Spacer(modifier = Modifier.height(18.dp))
@@ -201,7 +184,7 @@ fun AccountSheet(
                                 style = MaterialTheme.typography.bodySmall,
                                 color =
                                     if (isGoogleConnected) {
-                                        Color(0xFF047857)
+                                        connectedColor
                                     } else {
                                         MaterialTheme.colorScheme.onSurfaceVariant
                                     },
@@ -270,7 +253,7 @@ fun AccountSheet(
                                 style = MaterialTheme.typography.bodySmall,
                                 color =
                                     if (isMicrosoftConnected) {
-                                        Color(0xFF047857)
+                                        connectedColor
                                     } else {
                                         MaterialTheme.colorScheme.onSurfaceVariant
                                     },
@@ -300,44 +283,23 @@ fun AccountSheet(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Action row: Import Backup & Full Settings
-            Row(
+            // Import Backup moved to Settings -> Data Management; this sheet
+            // keeps the one action that belongs to an account sheet.
+            FilledTonalButton(
+                onClick = {
+                    onOpenSettings()
+                    onDismiss()
+                },
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                shape = RoundedCornerShape(10.dp),
             ) {
-                OutlinedButton(
-                    onClick = {
-                        onImportBackup()
-                        onDismiss()
-                    },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.UploadFile,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Import Backup", fontSize = 12.sp)
-                }
-
-                FilledTonalButton(
-                    onClick = {
-                        onOpenSettings()
-                        onDismiss()
-                    },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Settings,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Settings", fontSize = 12.sp)
-                }
+                Icon(
+                    imageVector = Icons.Outlined.Settings,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Open Settings", fontSize = 12.sp)
             }
 
             Spacer(modifier = Modifier.height(18.dp))

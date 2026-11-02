@@ -74,6 +74,13 @@ export interface Assessment {
   achievedScore?: number | null;
   maxScore?: number | null;
   conflictWarning?: string | null;
+  /**
+   * Provenance: the source run that last reported this announcement, and
+   * the run in which the source stopped reporting it (the announcement was
+   * retired - kept in the store with the reason, but no longer upcoming).
+   */
+  lastSeenSourceRun?: string | null;
+  retiredSourceRun?: string | null;
   // Rust snake_case aliases for WASM interoperability
   course_id?: string | null;
   course_name?: string | null;
@@ -90,6 +97,8 @@ export interface Assessment {
   weightage_percent?: number | null;
   achieved_score?: number | null;
   max_score?: number | null;
+  last_seen_source_run?: string | null;
+  retired_source_run?: string | null;
 }
 
 export interface TopicCheckItem {

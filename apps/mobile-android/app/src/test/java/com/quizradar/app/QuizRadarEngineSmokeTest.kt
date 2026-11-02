@@ -2,6 +2,7 @@ package com.quizradar.app
 
 import com.quizradar.app.core.MemoryTokenStore
 import com.quizradar.app.core.QuizRadarEngine
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -11,11 +12,12 @@ import java.time.LocalDate
 
 class QuizRadarEngineSmokeTest {
     @Test
-    fun coreVersion_matches_app_version() {
-        val engine = QuizRadarEngine.createInMemory()
-        val version = engine.version()
-        assertEquals(BuildConfig.VERSION_NAME, version)
-    }
+    fun coreVersion_matches_app_version() =
+        runTest {
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = Dispatchers.Unconfined)
+            val version = engine.version()
+            assertEquals(BuildConfig.VERSION_NAME, version)
+        }
 
     @Test
     fun tokenProvider_manages_secrets_without_exposure() {
@@ -40,7 +42,7 @@ class QuizRadarEngineSmokeTest {
     @Test
     fun inMemoryStore_roundtrips_state_and_schedule() =
         runTest {
-            val engine = QuizRadarEngine.createInMemory()
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = Dispatchers.Unconfined)
             val refDate = LocalDate.parse("2026-10-25")
 
             val stateJson = engine.getState(refDate)
@@ -74,65 +76,66 @@ class QuizRadarEngineSmokeTest {
         }
 
     @Test
-    fun pureDerivations_run_through_uniffi() {
-        val engine = QuizRadarEngine.createInMemory()
+    fun pureDerivations_run_through_uniffi() =
+        runTest {
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = Dispatchers.Unconfined)
 
-        val assessmentsJson =
-            """
-            [
-                {
-                    "id": "quiz-1",
-                    "title": "Quiz 1",
-                    "course_id": "CS101",
-                    "course_name": "Intro to CS",
-                    "assessment_type": "Class Quiz",
-                    "date_iso": "2026-10-30",
-                    "day_name": "Friday",
-                    "start_time": "09:00",
-                    "end_time": "10:00",
-                    "display_time": "09:00 – 10:00",
-                    "room": "Hall 1",
-                    "is_upcoming": true,
-                    "days_until": 5,
-                    "urgency_level": "high",
-                    "priority_score": 85,
-                    "topics": ["Algorithms", "Data Structures"],
-                    "warnings": [],
-                    "source": "Gmail"
-                }
-            ]
-            """.trimIndent()
-
-        val ics = engine.exportIcs(assessmentsJson, "quiz-1")
-        assertTrue("ICS export must have VCALENDAR header", ics.contains("BEGIN:VCALENDAR"))
-        assertTrue("ICS export must have summary", ics.contains("SUMMARY:[CS101] Quiz 1"))
-
-        val practice =
-            engine.generatePracticeQuiz(
+            val assessmentsJson =
                 """
-                {
-                    "id": "quiz-1",
-                    "title": "Quiz 1",
-                    "course_id": "CS101",
-                    "course_name": "Intro to CS",
-                    "assessment_type": "Class Quiz",
-                    "date_iso": "2026-10-30",
-                    "day_name": "Friday",
-                    "start_time": "09:00",
-                    "end_time": "10:00",
-                    "display_time": "09:00 – 10:00",
-                    "room": "Hall 1",
-                    "is_upcoming": true,
-                    "days_until": 5,
-                    "urgency_level": "high",
-                    "priority_score": 85,
-                    "topics": ["Binary Search", "Sorting"],
-                    "warnings": [],
-                    "source": "Gmail"
-                }
-                """.trimIndent(),
-            )
-        assertNotNull(practice)
-        assertTrue("Practice quiz must contain questions", practice.contains("questions"))
-    }
+                [
+                    {
+                        "id": "quiz-1",
+                        "title": "Quiz 1",
+                        "course_id": "CS101",
+                        "course_name": "Intro to CS",
+                        "assessment_type": "Class Quiz",
+                        "date_iso": "2026-10-30",
+                        "day_name": "Friday",
+                        "start_time": "09:00",
+                        "end_time": "10:00",
+                        "display_time": "09:00 – 10:00",
+                        "room": "Hall 1",
+                        "is_upcoming": true,
+                        "days_until": 5,
+                        "urgency_level": "high",
+                        "priority_score": 85,
+                        "topics": ["Algorithms", "Data Structures"],
+                        "warnings": [],
+                        "source": "Gmail"
+                    }
+                ]
+                """.trimIndent()
+
+            val ics = engine.exportIcs(assessmentsJson, "quiz-1")
+            assertTrue("ICS export must have VCALENDAR header", ics.contains("BEGIN:VCALENDAR"))
+            assertTrue("ICS export must have summary", ics.contains("SUMMARY:[CS101] Quiz 1"))
+
+            val practice =
+                engine.generatePracticeQuiz(
+                    """
+                    {
+                        "id": "quiz-1",
+                        "title": "Quiz 1",
+                        "course_id": "CS101",
+                        "course_name": "Intro to CS",
+                        "assessment_type": "Class Quiz",
+                        "date_iso": "2026-10-30",
+                        "day_name": "Friday",
+                        "start_time": "09:00",
+                        "end_time": "10:00",
+                        "display_time": "09:00 – 10:00",
+                        "room": "Hall 1",
+                        "is_upcoming": true,
+                        "days_until": 5,
+                        "urgency_level": "high",
+                        "priority_score": 85,
+                        "topics": ["Binary Search", "Sorting"],
+                        "warnings": [],
+                        "source": "Gmail"
+                    }
+                    """.trimIndent(),
+                )
+            assertNotNull(practice)
+            assertTrue("Practice quiz must contain questions", practice.contains("questions"))
+        }
 }

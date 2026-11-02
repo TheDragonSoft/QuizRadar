@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,6 +55,7 @@ import com.quizradar.app.model.AppSnapshotModel
 import com.quizradar.app.ui.PomodoroInterval
 import com.quizradar.app.ui.QuizRadarViewModel
 import com.quizradar.app.ui.icons.Icons
+import com.quizradar.app.ui.theme.StatusColors
 
 private enum class FocusMode {
     POMODORO,
@@ -68,6 +70,7 @@ fun FocusScreen(
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
+    val isDark = isSystemInDarkTheme()
     var mode by remember { mutableStateOf(FocusMode.POMODORO) }
 
     // Pomodoro timer state from ViewModel (persists across tabs and app lifecycle)
@@ -352,11 +355,20 @@ fun FocusScreen(
                                 ButtonDefaults.buttonColors(
                                     containerColor =
                                         if (isRunning) {
-                                            Color(0xFFDC2626)
+                                            // error/onError are the scheme's own pair:
+                                            // #D93025/white in light (4.8:1), #F87171/#450A0A
+                                            // in dark (5.9:1) - a fixed hex + white measured
+                                            // only 2.8:1 on the dark error red.
+                                            MaterialTheme.colorScheme.error
                                         } else {
                                             MaterialTheme.colorScheme.primary
                                         },
-                                    contentColor = Color.White,
+                                    contentColor =
+                                        if (isRunning) {
+                                            MaterialTheme.colorScheme.onError
+                                        } else {
+                                            MaterialTheme.colorScheme.onPrimary
+                                        },
                                 ),
                             modifier = Modifier.size(60.dp),
                         ) {
@@ -641,9 +653,9 @@ fun FocusScreen(
                                 val (optBg, optBorder) =
                                     if (selected != null) {
                                         if (isCorrect) {
-                                            Color(0xFF059669).copy(alpha = 0.14f) to Color(0xFF059669)
+                                            StatusColors.success(isDark).copy(alpha = 0.14f) to StatusColors.success(isDark)
                                         } else if (isChosen) {
-                                            Color(0xFFDC2626).copy(alpha = 0.14f) to Color(0xFFDC2626)
+                                            MaterialTheme.colorScheme.error.copy(alpha = 0.14f) to MaterialTheme.colorScheme.error
                                         } else {
                                             Color.Transparent to MaterialTheme.colorScheme.outlineVariant
                                         }
@@ -686,14 +698,14 @@ fun FocusScreen(
                                             Icon(
                                                 imageVector = Icons.Outlined.Check,
                                                 contentDescription = "Correct",
-                                                tint = Color(0xFF059669),
+                                                tint = StatusColors.success(isDark),
                                                 modifier = Modifier.size(18.dp),
                                             )
                                         } else if (isChosen) {
                                             Icon(
                                                 imageVector = Icons.Outlined.Close,
                                                 contentDescription = "Incorrect",
-                                                tint = Color(0xFFDC2626),
+                                                tint = MaterialTheme.colorScheme.error,
                                                 modifier = Modifier.size(18.dp),
                                             )
                                         }

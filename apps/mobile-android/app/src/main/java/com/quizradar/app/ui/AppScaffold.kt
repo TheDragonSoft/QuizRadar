@@ -18,10 +18,12 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -39,6 +41,9 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -61,6 +66,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -122,6 +128,10 @@ fun AppScaffold(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    // Material adaptive guidance: bottom navigation on compact widths (< 600dp),
+    // a navigation rail on expanded. In multi-window the activity configuration
+    // already reflects the window, so no window-size-class artifact is needed.
+    val isExpanded = LocalConfiguration.current.screenWidthDp >= 600
 
     var isSearchOpen by rememberSaveable { mutableStateOf(false) }
     var isAccountOpen by rememberSaveable { mutableStateOf(false) }
@@ -312,374 +322,450 @@ fun AppScaffold(
             }
         },
     ) {
-        Scaffold(
-            containerColor = MaterialTheme.colorScheme.background,
-            snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-            topBar = {
-                Column {
-                    TopAppBar(
-                        colors =
-                            TopAppBarDefaults.topAppBarColors(
-                                containerColor = MaterialTheme.colorScheme.surface,
-                                titleContentColor = MaterialTheme.colorScheme.onSurface,
-                            ),
-                        navigationIcon = {
-                            // The app's own mark doubles as the drawer button.
-                            // It is the same radar squircle the desktop and the
-                            // browser tier ship - not a monochrome stand-in.
-                            IconButton(
-                                onClick = { scope.launch { drawerState.open() } },
-                                modifier =
-                                    Modifier
-                                        .size(48.dp)
-                                        // The mark is a Canvas, so it carries no
-                                        // label of its own: the button has to.
-                                        .semantics { contentDescription = "Open navigation menu" },
-                            ) {
-                                QuizRadarLogo(
-                                    modifier = Modifier.size(26.dp),
-                                )
-                            }
-                        },
-                        title = {
-                            Text(
-                                text = selectedTab,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                        },
-                        actions = {
-                            // Refresh Button with active progress indicator. The
-                            // Android shell reads the on-device store; it does not
-                            // poll Gmail or Teams, so the copy must not claim a
-                            // scan it never performs (AGENTS §3 honesty).
-                            IconButton(
-                                onClick = {
-                                    viewModel.refreshState()
-                                    viewModel.showToast("Refreshing on-device data...")
-                                },
-                                enabled = !isRefreshing,
-                                modifier = Modifier.size(48.dp),
-                            ) {
-                                if (isRefreshing) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(20.dp),
-                                        strokeWidth = 2.dp,
-                                        color = MaterialTheme.colorScheme.primary,
-                                    )
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Sync,
-                                        contentDescription = "Refresh on-device data",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-
-                            // Search Button
-                            IconButton(
-                                onClick = { isSearchOpen = true },
-                                modifier = Modifier.size(48.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Search,
-                                    contentDescription = "Search assessments and topics",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-
-                            // Profile / Avatar Button
-                            val hasAccounts = viewModel.isGoogleConnected() || viewModel.isMicrosoftConnected()
-                            IconButton(
-                                onClick = { isAccountOpen = true },
-                                modifier =
-                                    Modifier
-                                        .size(48.dp)
-                                        // The green dot is the only sign that an
-                                        // account is connected. A screen reader
-                                        // must hear it too - state by colour
-                                        // alone is invisible to one.
-                                        .semantics {
-                                            stateDescription =
-                                                if (hasAccounts) "Connected" else "Not connected"
-                                        },
-                            ) {
-                                Box(contentAlignment = Alignment.TopEnd) {
-                                    Box(
-                                        modifier =
-                                            Modifier
-                                                .size(32.dp)
-                                                .clip(CircleShape)
-                                                .background(MaterialTheme.colorScheme.primaryContainer),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.Person,
-                                            contentDescription = "Account and sources",
-                                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                            modifier = Modifier.size(20.dp),
-                                        )
-                                    }
-                                    if (hasAccounts) {
-                                        Box(
-                                            modifier =
-                                                Modifier
-                                                    .size(9.dp)
-                                                    .clip(CircleShape)
-                                                    .background(
-                                                        StatusColors.success(
-                                                            MaterialTheme.colorScheme.background.luminance() < 0.5f,
-                                                        ),
-                                                    ),
-                                        )
-                                    }
-                                }
-                            }
-                        },
-                    )
-                    HorizontalDivider(
-                        thickness = 1.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                    )
-                }
-            },
-            floatingActionButton = {
-                if (selectedTab == "Dashboard" || selectedTab == "Calendar") {
-                    FloatingActionButton(
-                        onClick = { isAddMenuOpen = true },
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                        shape = RoundedCornerShape(16.dp),
+        Row(modifier = Modifier.fillMaxSize()) {
+            if (isExpanded) {
+                // Expanded window (>= 600dp): primary destinations move from the
+                // bottom bar to a navigation rail, and the brand mark heads it.
+                NavigationRail(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    modifier =
+                        Modifier
+                            .padding(top = statusBarPadding)
+                            .navigationBarsPadding(),
+                ) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    IconButton(
+                        onClick = { scope.launch { drawerState.open() } },
+                        modifier =
+                            Modifier
+                                .size(48.dp)
+                                .semantics { contentDescription = "Open navigation menu" },
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Add,
-                            contentDescription = "Add event or assessment",
+                        QuizRadarLogo(modifier = Modifier.size(26.dp))
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TABS.forEach { tab ->
+                        NavigationRailItem(
+                            selected = selectedTab == tab.label,
+                            onClick = { viewModel.selectTab(tab.label) },
+                            icon = { Icon(tab.icon, contentDescription = tab.label) },
+                            label = {
+                                Text(
+                                    text = tab.label,
+                                    fontSize = 11.sp,
+                                    fontWeight =
+                                        if (selectedTab == tab.label) {
+                                            FontWeight.Bold
+                                        } else {
+                                            FontWeight.Medium
+                                        },
+                                )
+                            },
+                            // Distinct tag from the bottom bar so a test can tell
+                            // the rail apart from the (hidden) bottom nav.
+                            modifier = Modifier.testTag("rail-nav-${tab.label}"),
+                            colors =
+                                NavigationRailItemDefaults.colors(
+                                    selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    selectedTextColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
                         )
                     }
                 }
-            },
-            bottomBar = {
-                Column {
-                    HorizontalDivider(
-                        thickness = 1.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                    )
-                    NavigationBar(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        tonalElevation = 0.dp,
-                    ) {
-                        TABS.forEach { tab ->
-                            NavigationBarItem(
-                                selected = selectedTab == tab.label,
-                                onClick = { viewModel.selectTab(tab.label) },
-                                icon = { Icon(tab.icon, contentDescription = tab.label) },
-                                // The drawer carries the SAME destination
-                                // labels, so a test that looks the tab up by
-                                // text can no longer tell the bottom bar from
-                                // the (off-screen) drawer sheet. The tag makes
-                                // the two unambiguous.
-                                modifier = Modifier.testTag("bottom-nav-${tab.label}"),
-                                label = {
-                                    Text(
-                                        text = tab.label,
-                                        fontSize = 11.sp,
-                                        fontWeight =
-                                            if (selectedTab == tab.label) {
-                                                FontWeight.Bold
-                                            } else {
-                                                FontWeight.Medium
-                                            },
-                                    )
-                                },
-                                colors =
-                                    NavigationBarItemDefaults.colors(
-                                        selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                        selectedTextColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                        indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
-                                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    ),
-                            )
-                        }
-                    }
-                }
-            },
-        ) { innerPadding ->
-            Box(
-                modifier =
-                    Modifier
-                        .padding(innerPadding)
-                        .fillMaxSize(),
-            ) {
-                when (val state = uiState) {
-                    is UiState.Loading -> {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator()
-                        }
-                    }
-
-                    is UiState.Error -> {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "Error: ${state.message}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                    }
-
-                    is UiState.Ready -> {
-                        AnimatedContent(
-                            targetState = selectedTab,
-                            transitionSpec = {
-                                fadeIn(animationSpec = tween(180)) togetherWith
-                                    fadeOut(animationSpec = tween(150))
+            }
+            Scaffold(
+                containerColor = MaterialTheme.colorScheme.background,
+                snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+                topBar = {
+                    Column {
+                        TopAppBar(
+                            colors =
+                                TopAppBarDefaults.topAppBarColors(
+                                    containerColor = MaterialTheme.colorScheme.surface,
+                                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                                ),
+                            navigationIcon = {
+                                // On expanded widths the mark sits in the rail header,
+                                // so the top bar does not show it twice.
+                                if (!isExpanded) {
+                                    // The app's own mark doubles as the drawer button.
+                                    // It is the same radar squircle the desktop and the
+                                    // browser tier ship - not a monochrome stand-in.
+                                    IconButton(
+                                        onClick = { scope.launch { drawerState.open() } },
+                                        modifier =
+                                            Modifier
+                                                .size(48.dp)
+                                                // The mark is a Canvas, so it carries no
+                                                // label of its own: the button has to.
+                                                .semantics { contentDescription = "Open navigation menu" },
+                                    ) {
+                                        QuizRadarLogo(
+                                            modifier = Modifier.size(26.dp),
+                                        )
+                                    }
+                                }
                             },
-                            label = "tab_crossfade",
-                        ) { currentTab ->
-                            when (currentTab) {
-                                "Dashboard" ->
-                                    DashboardScreen(
+                            title = {
+                                Text(
+                                    text = selectedTab,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            },
+                            actions = {
+                                // Refresh Button with active progress indicator. The
+                                // Android shell reads the on-device store; it does not
+                                // poll Gmail or Teams, so the copy must not claim a
+                                // scan it never performs (AGENTS §3 honesty).
+                                IconButton(
+                                    onClick = {
+                                        viewModel.refreshState()
+                                        viewModel.showToast("Refreshing on-device data...")
+                                    },
+                                    enabled = !isRefreshing,
+                                    modifier = Modifier.size(48.dp),
+                                ) {
+                                    if (isRefreshing) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(20.dp),
+                                            strokeWidth = 2.dp,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Sync,
+                                            contentDescription = "Refresh on-device data",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+
+                                // Search Button
+                                IconButton(
+                                    onClick = { isSearchOpen = true },
+                                    modifier = Modifier.size(48.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Search,
+                                        contentDescription = "Search assessments and topics",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+
+                                // Profile / Avatar Button
+                                val hasAccounts = viewModel.isGoogleConnected() || viewModel.isMicrosoftConnected()
+                                IconButton(
+                                    onClick = { isAccountOpen = true },
+                                    modifier =
+                                        Modifier
+                                            .size(48.dp)
+                                            // The green dot is the only sign that an
+                                            // account is connected. A screen reader
+                                            // must hear it too - state by colour
+                                            // alone is invisible to one.
+                                            .semantics {
+                                                stateDescription =
+                                                    if (hasAccounts) "Connected" else "Not connected"
+                                            },
+                                ) {
+                                    Box(contentAlignment = Alignment.TopEnd) {
+                                        Box(
+                                            modifier =
+                                                Modifier
+                                                    .size(32.dp)
+                                                    .clip(CircleShape)
+                                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Person,
+                                                contentDescription = "Account and sources",
+                                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                modifier = Modifier.size(20.dp),
+                                            )
+                                        }
+                                        if (hasAccounts) {
+                                            Box(
+                                                modifier =
+                                                    Modifier
+                                                        .size(9.dp)
+                                                        .clip(CircleShape)
+                                                        .background(
+                                                            StatusColors.success(
+                                                                MaterialTheme.colorScheme.background.luminance() < 0.5f,
+                                                            ),
+                                                        ),
+                                            )
+                                        }
+                                    }
+                                }
+                            },
+                        )
+                        HorizontalDivider(
+                            thickness = 1.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                        )
+                    }
+                },
+                floatingActionButton = {
+                    if (selectedTab == "Dashboard" || selectedTab == "Calendar") {
+                        FloatingActionButton(
+                            onClick = { isAddMenuOpen = true },
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                            shape = RoundedCornerShape(16.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Add,
+                                contentDescription = "Add event or assessment",
+                            )
+                        }
+                    }
+                },
+                bottomBar = {
+                    if (!isExpanded) {
+                        Column {
+                            HorizontalDivider(
+                                thickness = 1.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant,
+                            )
+                            NavigationBar(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                tonalElevation = 0.dp,
+                            ) {
+                                TABS.forEach { tab ->
+                                    NavigationBarItem(
+                                        selected = selectedTab == tab.label,
+                                        onClick = { viewModel.selectTab(tab.label) },
+                                        icon = { Icon(tab.icon, contentDescription = tab.label) },
+                                        // The drawer carries the SAME destination
+                                        // labels, so a test that looks the tab up by
+                                        // text can no longer tell the bottom bar from
+                                        // the (off-screen) drawer sheet. The tag makes
+                                        // the two unambiguous.
+                                        modifier = Modifier.testTag("bottom-nav-${tab.label}"),
+                                        label = {
+                                            Text(
+                                                text = tab.label,
+                                                fontSize = 11.sp,
+                                                fontWeight =
+                                                    if (selectedTab == tab.label) {
+                                                        FontWeight.Bold
+                                                    } else {
+                                                        FontWeight.Medium
+                                                    },
+                                            )
+                                        },
+                                        colors =
+                                            NavigationBarItemDefaults.colors(
+                                                selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                selectedTextColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            ),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+            ) { innerPadding ->
+                Box(
+                    modifier =
+                        Modifier
+                            .padding(innerPadding)
+                            .fillMaxSize(),
+                    // On expanded widths the content column is centered and capped
+                    // at a readable max width instead of stretching edge to edge.
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    Box(
+                        modifier =
+                            if (isExpanded) {
+                                Modifier
+                                    .widthIn(max = 840.dp)
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 24.dp)
+                            } else {
+                                Modifier.fillMaxSize()
+                            },
+                    ) {
+                        when (val state = uiState) {
+                            is UiState.Loading -> {
+                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator()
+                                }
+                            }
+
+                            is UiState.Error -> {
+                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = "Error: ${state.message}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                            }
+
+                            is UiState.Ready -> {
+                                AnimatedContent(
+                                    targetState = selectedTab,
+                                    transitionSpec = {
+                                        fadeIn(animationSpec = tween(180)) togetherWith
+                                            fadeOut(animationSpec = tween(150))
+                                    },
+                                    label = "tab_crossfade",
+                                ) { currentTab ->
+                                    when (currentTab) {
+                                        "Dashboard" ->
+                                            DashboardScreen(
+                                                snapshot = state.snapshot,
+                                                viewModel = viewModel,
+                                                onViewCalendar = { viewModel.selectTab("Calendar") },
+                                                onOpenAccount = { isAccountOpen = true },
+                                                onAddCourse = { isNewCourseOpen = true },
+                                                onImportBackup = { backupPickerLauncher.launch("application/json") },
+                                                onAddEvent = { isAddMenuOpen = true },
+                                            )
+
+                                        "Tasks" ->
+                                            TasksScreen(
+                                                snapshot = state.snapshot,
+                                                viewModel = viewModel,
+                                            )
+
+                                        "Calendar" ->
+                                            CalendarScreen(
+                                                snapshot = state.snapshot,
+                                                viewModel = viewModel,
+                                            )
+
+                                        "Focus" ->
+                                            FocusScreen(
+                                                snapshot = state.snapshot,
+                                                viewModel = viewModel,
+                                            )
+                                    }
+                                }
+
+                                // Search Sheet
+                                if (isSearchOpen) {
+                                    SearchSheet(
                                         snapshot = state.snapshot,
-                                        viewModel = viewModel,
-                                        onViewCalendar = { viewModel.selectTab("Calendar") },
-                                        onOpenAccount = { isAccountOpen = true },
-                                        onAddCourse = { isNewCourseOpen = true },
+                                        sheetState = searchSheetState,
+                                        onDismiss = { isSearchOpen = false },
+                                        onSelectAssessment = { id ->
+                                            viewModel.openAssessmentDetail(id)
+                                        },
+                                    )
+                                }
+
+                                // Account & Connections Sheet
+                                if (isAccountOpen) {
+                                    AccountSheet(
+                                        isGoogleConnected = viewModel.isGoogleConnected(),
+                                        isMicrosoftConnected = viewModel.isMicrosoftConnected(),
+                                        sheetState = accountSheetState,
+                                        onDismiss = { isAccountOpen = false },
+                                        onStartGoogleLogin = onStartGoogleLogin,
+                                        onDisconnectGoogle = { viewModel.disconnectGoogle() },
+                                        onStartMicrosoftLogin = onStartMicrosoftLogin,
+                                        onDisconnectMicrosoft = { viewModel.disconnectMicrosoft() },
+                                        onOpenSettings = {
+                                            isAccountOpen = false
+                                            isSettingsOpen = true
+                                            onOpenSettings()
+                                        },
+                                    )
+                                }
+
+                                // Add Menu Sheet (triggered by Floating Action Button)
+                                if (isAddMenuOpen) {
+                                    AddActionMenuSheet(
+                                        sheetState = addMenuSheetState,
+                                        onDismiss = { isAddMenuOpen = false },
+                                        onNewCustomEvent = {
+                                            viewModel.openCreateEventDraft(
+                                                SharedEventDraft(
+                                                    title = "",
+                                                    courseId = null,
+                                                    dateIso = LocalDate.now(),
+                                                    notes = "",
+                                                ),
+                                            )
+                                        },
+                                        onNewCourse = {
+                                            isNewCourseOpen = true
+                                        },
                                         onImportBackup = { backupPickerLauncher.launch("application/json") },
-                                        onAddEvent = { isAddMenuOpen = true },
                                     )
+                                }
 
-                                "Tasks" ->
-                                    TasksScreen(
-                                        snapshot = state.snapshot,
-                                        viewModel = viewModel,
+                                // New Course Sheet (from Add Menu)
+                                if (isNewCourseOpen) {
+                                    CourseEditorSheet(
+                                        course = null,
+                                        initialSlots = emptyList(),
+                                        sheetState = newCourseSheetState,
+                                        onDismiss = { isNewCourseOpen = false },
+                                        onSave = { newCourse, slots ->
+                                            viewModel.upsertCourse(newCourse, slots)
+                                            isNewCourseOpen = false
+                                        },
                                     )
+                                }
 
-                                "Calendar" ->
-                                    CalendarScreen(
-                                        snapshot = state.snapshot,
-                                        viewModel = viewModel,
-                                    )
+                                // Active Assessment Detail Sheet
+                                val selectedAssessment =
+                                    activeDetailId?.let { id ->
+                                        state.snapshot.assessments.find { it.id == id }
+                                    }
 
-                                "Focus" ->
-                                    FocusScreen(
-                                        snapshot = state.snapshot,
-                                        viewModel = viewModel,
+                                if (selectedAssessment != null) {
+                                    AssessmentDetailSheet(
+                                        assessment = selectedAssessment,
+                                        allAssessments = state.snapshot.assessments,
+                                        completedTopicsMap = state.snapshot.completedTopics,
+                                        sheetState = detailSheetState,
+                                        onDismiss = { viewModel.closeAssessmentDetail() },
+                                        onToggleTopic = { key, done -> viewModel.toggleTopic(key, done) },
+                                        onSaveGrade = { achieved, max, weight ->
+                                            viewModel.saveGrade(selectedAssessment.id, achieved, max, weight)
+                                        },
+                                        onExportIcs = {
+                                            viewModel.exportIcs(selectedAssessment.id)
+                                        },
+                                        onOpenPractice = {
+                                            viewModel.closeAssessmentDetail()
+                                            viewModel.openPracticeQuiz(selectedAssessment.id)
+                                            viewModel.selectTab("Focus")
+                                        },
+                                        onOpenPomodoro = { topicTitle ->
+                                            viewModel.closeAssessmentDetail()
+                                            viewModel.openPomodoro(selectedAssessment.id, topicTitle)
+                                            viewModel.selectTab("Focus")
+                                        },
                                     )
+                                }
+
+                                // Create/Edit Event Sheet (from draft)
+                                if (activeDraft != null) {
+                                    CreateEventSheet(
+                                        draft = activeDraft,
+                                        onSave = { event ->
+                                            viewModel.addCustomEvent(event)
+                                            viewModel.dismissCreateEventDraft()
+                                        },
+                                        onDismiss = { viewModel.dismissCreateEventDraft() },
+                                    )
+                                }
                             }
-                        }
-
-                        // Search Sheet
-                        if (isSearchOpen) {
-                            SearchSheet(
-                                snapshot = state.snapshot,
-                                sheetState = searchSheetState,
-                                onDismiss = { isSearchOpen = false },
-                                onSelectAssessment = { id ->
-                                    viewModel.openAssessmentDetail(id)
-                                },
-                            )
-                        }
-
-                        // Account & Connections Sheet
-                        if (isAccountOpen) {
-                            AccountSheet(
-                                isGoogleConnected = viewModel.isGoogleConnected(),
-                                isMicrosoftConnected = viewModel.isMicrosoftConnected(),
-                                sheetState = accountSheetState,
-                                onDismiss = { isAccountOpen = false },
-                                onStartGoogleLogin = onStartGoogleLogin,
-                                onDisconnectGoogle = { viewModel.disconnectGoogle() },
-                                onStartMicrosoftLogin = onStartMicrosoftLogin,
-                                onDisconnectMicrosoft = { viewModel.disconnectMicrosoft() },
-                                onOpenSettings = {
-                                    isAccountOpen = false
-                                    isSettingsOpen = true
-                                    onOpenSettings()
-                                },
-                            )
-                        }
-
-                        // Add Menu Sheet (triggered by Floating Action Button)
-                        if (isAddMenuOpen) {
-                            AddActionMenuSheet(
-                                sheetState = addMenuSheetState,
-                                onDismiss = { isAddMenuOpen = false },
-                                onNewCustomEvent = {
-                                    viewModel.openCreateEventDraft(
-                                        SharedEventDraft(
-                                            title = "",
-                                            courseId = null,
-                                            dateIso = LocalDate.now(),
-                                            notes = "",
-                                        ),
-                                    )
-                                },
-                                onNewCourse = {
-                                    isNewCourseOpen = true
-                                },
-                                onImportBackup = { backupPickerLauncher.launch("application/json") },
-                            )
-                        }
-
-                        // New Course Sheet (from Add Menu)
-                        if (isNewCourseOpen) {
-                            CourseEditorSheet(
-                                course = null,
-                                initialSlots = emptyList(),
-                                sheetState = newCourseSheetState,
-                                onDismiss = { isNewCourseOpen = false },
-                                onSave = { newCourse, slots ->
-                                    viewModel.upsertCourse(newCourse, slots)
-                                    isNewCourseOpen = false
-                                },
-                            )
-                        }
-
-                        // Active Assessment Detail Sheet
-                        val selectedAssessment =
-                            activeDetailId?.let { id ->
-                                state.snapshot.assessments.find { it.id == id }
-                            }
-
-                        if (selectedAssessment != null) {
-                            AssessmentDetailSheet(
-                                assessment = selectedAssessment,
-                                allAssessments = state.snapshot.assessments,
-                                completedTopicsMap = state.snapshot.completedTopics,
-                                sheetState = detailSheetState,
-                                onDismiss = { viewModel.closeAssessmentDetail() },
-                                onToggleTopic = { key, done -> viewModel.toggleTopic(key, done) },
-                                onSaveGrade = { achieved, max, weight ->
-                                    viewModel.saveGrade(selectedAssessment.id, achieved, max, weight)
-                                },
-                                onExportIcs = {
-                                    viewModel.exportIcs(selectedAssessment.id)
-                                },
-                                onOpenPractice = {
-                                    viewModel.closeAssessmentDetail()
-                                    viewModel.openPracticeQuiz(selectedAssessment.id)
-                                    viewModel.selectTab("Focus")
-                                },
-                                onOpenPomodoro = { topicTitle ->
-                                    viewModel.closeAssessmentDetail()
-                                    viewModel.openPomodoro(selectedAssessment.id, topicTitle)
-                                    viewModel.selectTab("Focus")
-                                },
-                            )
-                        }
-
-                        // Create/Edit Event Sheet (from draft)
-                        if (activeDraft != null) {
-                            CreateEventSheet(
-                                draft = activeDraft,
-                                onSave = { event ->
-                                    viewModel.addCustomEvent(event)
-                                    viewModel.dismissCreateEventDraft()
-                                },
-                                onDismiss = { viewModel.dismissCreateEventDraft() },
-                            )
                         }
                     }
                 }

@@ -11,6 +11,7 @@
         android:usesCleartextTraffic="false"
         android:allowBackup="false"
         android:fullBackupContent="false"
+        android:enableOnBackInvokedCallback="true"
         android:theme="@style/Theme.QuizRadar">
 
         <activity

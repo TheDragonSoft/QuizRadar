@@ -3,6 +3,7 @@ package com.quizradar.app.ui.detail
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -167,9 +168,11 @@ fun CourseEditorSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(modifier = Modifier.height(8.dp))
+            // 48dp swatches with 8dp gaps (Material touch-target rule); eight of
+            // them no longer fit side by side on a phone, so the row scrolls.
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 CoursePalette.HEX_PRESETS.forEach { hex ->
                     val colorInt =
@@ -182,7 +185,7 @@ fun CourseEditorSheet(
                     Box(
                         modifier =
                             Modifier
-                                .size(36.dp)
+                                .size(48.dp)
                                 .clip(CircleShape)
                                 .background(Color(colorInt))
                                 .border(
@@ -203,7 +206,7 @@ fun CourseEditorSheet(
                                 imageVector = Icons.Outlined.Check,
                                 contentDescription = "Selected",
                                 tint = Color.White,
-                                modifier = Modifier.size(20.dp),
+                                modifier = Modifier.size(24.dp),
                             )
                         }
                     }

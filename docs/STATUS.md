@@ -1545,10 +1545,75 @@ says so and points at `staging` for start-up measurements.
 ### Still open (deliberately not faked)
 
 - **Pair Phone (QR / PIN)** - explicitly excluded by the maintainer, not started.
-- Predictive back, hand-rolled insets, `WindowSizeClass`/navigation rail,
-  `imePadding`, string localisation (`res/values/strings.xml` is still dead
-  code), Material-role surfaces in the content layer, and
-  `lint { abortOnError = false }` (accessibility lint can never fail the
-  build) - the audit's systemic list above.
+- Hand-rolled insets, `imePadding`, string localisation
+  (`res/values/strings.xml` is still dead code), Material-role surfaces in
+  the content layer, and `lint { abortOnError = false }` (accessibility lint
+  can never fail the build). Predictive back and the expanded-width
+  navigation rail were fixed in Round 10 below.
 - Moodle REST, the radar-only-grows merge, manual assessment CRUD from Round 7.
+
+## Round 10 - impeccable native audit of the Android app, all findings fixed (2026-11-03)
+
+The `$impeccable audit` (native, `audit.native.md` skeleton, scored against
+`android.md`) ran over all 43 Kotlin files under
+`apps/mobile-android/app/src/main/java/com/quizradar/app/` plus live captures
+on `emulator-5554` only (light/dark, font_scale 1.3, `wm size 1600x2560`
+~= 609dp). **Score: 15/20 (Good)** - Accessibility 3, Performance 4,
+Appearance & Theming 3, Platform Conformance 3, Adaptivity 2.
+Platform Conformance Verdict: PASS (native M3 app, not a ported website).
+Findings: 0 P0 / 1 P1 / 3 P2 / 2 P3 - all fixed in this round:
+
+1. **[P1] Dark-mode "TODAY" chip contrast** - `SearchSheet.kt` painted the
+   urgency chip `Color.White` on `colorScheme.error`; in dark the error red is
+   `#F87171`, so white on it measured **2.8:1** (WCAG AA needs 4.5:1). Now
+   `colorScheme.onError` (5.9:1 in dark, 4.8:1 in light); the TOMORROW chip
+   keeps white on the fixed `warningBadge` amber (5.0:1 in both).
+   `FocusScreen.kt` no longer hardcodes `#059669`/`#DC2626` + `Color.White`:
+   the stop button uses `colorScheme.error`/`onError`, the quiz correct /
+   incorrect options and icons use `StatusColors.success(isDark)` /
+   `colorScheme.error`.
+2. **[P2] Sub-48dp touch targets** - raised to 48.dp: the checklist dismiss
+   (`SetupChecklistCard.kt`, was 32), two `ConflictBanner.kt` dismisses (40),
+   the calendar week prev/next (`CalendarScreen.kt`, 40), both sheet close
+   buttons (`AssessmentDetailSheet.kt`/`CreateEventSheet.kt`, 44), the
+   per-topic focus-timer button (`AssessmentDetailSheet.kt`, 36), and the
+   course-color swatches (`CourseEditorSheet.kt`, 36 -> 48 with 8dp gaps in a
+   horizontally scrollable row). A source-scan test now fails the build if any
+   `IconButton` parameter list shrinks below 48dp.
+3. **[P2] Expanded-width layout** - `AppScaffold.kt` reads
+   `LocalConfiguration.current.screenWidthDp` (no new dependency); at
+   >= 600dp the four destinations move from the bottom bar to a
+   `NavigationRail` headed by the radar mark (the top-bar logo hides so it
+   isn't shown twice), and the content column is centered with a 840dp max
+   width + 24dp gutters. Verified live: at `wm size 1600x2560` the rail items
+   sit at x~31-178px stacked vertically and no bottom bar renders; after
+   `wm size reset` the bottom bar returns.
+4. **[P2] Predictive back** - `android:enableOnBackInvokedCallback="true"`
+   added to the manifest; the existing layered `BackHandler` is unchanged.
+   Pinned by `ManifestConformanceTest` (also pins `adjustResize`,
+   `usesCleartextTraffic="false"`, `allowBackup="false"`).
+5. **[P3] Two 10.sp labels** - urgency chip (`SearchSheet.kt`) and calendar
+   room text (`CalendarScreen.kt`) bumped to 11.sp.
+6. Tests: `ManifestConformanceTest` (3) + `AccessibilityConformanceTest`
+   (IconButton 48dp source scan + WCAG contrast math on `StatusColors`)
+   - 5 new tests.
+
+### Gates (all green, 2026-11-03, JDK 21 Temurin)
+
+- `JAVA_HOME` must point at JDK 21 (the machine default is now Java 25, which
+  Gradle 8.11.1 rejects with `What went wrong: 25.0.3`); the gate script sets
+  `JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot`.
+- `:app:ktlintFormat` + `:app:ktlintCheck` clean; `:app:testDebugUnitTest`
+  **89/89** (was 84 + 5 new); `:app:assembleDebug` + `:app:assembleStaging`
+  BUILD SUCCESSFUL.
+- Live on `emulator-5554` (never the user's phone): compact 411dp shows the
+  bottom bar with zero clickable nodes under 48dp (programmatic UI-dump
+  check); expanded 609dp shows the left rail, the 48dp logo button in the
+  rail header, no bottom bar, no sub-48dp clickables, content capped with
+  margins; size reset restores the bottom bar. Cold start of the DEBUG apk
+  ~4.0-4.6 s (the known debuggable-build artifact - measure on `staging`,
+  previously 0.7-1.4 s COLD). Emulator restored afterwards (1080x2424,
+  font 1.0, night no).
+- No new dependencies (adaptivity uses `LocalConfiguration`, already in
+  compose-ui).
 

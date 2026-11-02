@@ -180,7 +180,8 @@ fun AssessmentDetailSheet(
                         )
                     }
                 }
-                IconButton(onClick = onDismiss, modifier = Modifier.size(44.dp)) {
+                // 48dp minimum touch target (Material a11y guideline).
+                IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
                     Icon(imageVector = Icons.Default.Close, contentDescription = "Close")
                 }
             }
@@ -450,7 +451,8 @@ fun AssessmentDetailSheet(
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onOpenPomodoro(topic)
                             },
-                            modifier = Modifier.size(36.dp),
+                            // 48dp minimum touch target (Material a11y guideline).
+                            modifier = Modifier.size(48.dp),
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.Timer,

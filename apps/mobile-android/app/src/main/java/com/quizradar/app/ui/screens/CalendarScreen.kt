@@ -245,7 +245,9 @@ fun CalendarScreen(
                     Spacer(modifier = Modifier.width(2.dp))
                     IconButton(
                         onClick = { viewModel.shiftWeek(-1) },
-                        modifier = Modifier.size(40.dp),
+                        // 48dp minimum touch target (Material a11y guideline);
+                        // the arrow icon inside stays 18dp.
+                        modifier = Modifier.size(48.dp),
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -255,7 +257,7 @@ fun CalendarScreen(
                     }
                     IconButton(
                         onClick = { viewModel.shiftWeek(1) },
-                        modifier = Modifier.size(40.dp),
+                        modifier = Modifier.size(48.dp),
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowForward,
@@ -651,7 +653,7 @@ fun CalendarScreen(
                                         if (block.room != null && block.heightPx >= 42) {
                                             Text(
                                                 text = block.room,
-                                                fontSize = 10.sp,
+                                                fontSize = 11.sp,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,

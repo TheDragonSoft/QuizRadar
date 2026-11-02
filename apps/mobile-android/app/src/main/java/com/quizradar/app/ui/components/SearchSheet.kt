@@ -339,7 +339,14 @@ private fun SearchResultRow(
                             }
                         val urgencyText =
                             when {
-                                days in 0..1 -> Color.White
+                                // error/onError is the scheme's own pair: #D93025 with white
+                                // in light (4.8:1), #F87171 with #450A0A in dark (5.9:1).
+                                // A fixed white on the dark error red measured 2.8:1 - the
+                                // TODAY chip was unreadable in dark mode.
+                                days == 0 -> MaterialTheme.colorScheme.onError
+                                // warningBadge is a fixed dark amber in BOTH themes:
+                                // white on it is 5.0:1 either way.
+                                days == 1 -> Color.White
                                 else -> MaterialTheme.colorScheme.onSurfaceVariant
                             }
                         Box(
@@ -351,7 +358,7 @@ private fun SearchResultRow(
                         ) {
                             Text(
                                 text = urgencyLabel,
-                                fontSize = 10.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = urgencyText,
                             )

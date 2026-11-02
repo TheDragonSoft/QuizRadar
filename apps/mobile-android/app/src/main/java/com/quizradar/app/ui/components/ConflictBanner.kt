@@ -101,7 +101,8 @@ fun ConflictBanner(
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         onDismiss()
                     },
-                    modifier = Modifier.size(40.dp),
+                    // 48dp minimum touch target (Material a11y guideline).
+                    modifier = Modifier.size(48.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
@@ -180,7 +181,7 @@ fun ConflictBanner(
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         onDismiss()
                     },
-                    modifier = Modifier.size(40.dp),
+                    modifier = Modifier.size(48.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,

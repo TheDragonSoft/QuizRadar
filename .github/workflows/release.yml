@@ -293,6 +293,18 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+      # The web build compiles the WASM core (build-wasm.mjs): it needs the
+      # wasm32 target and the version-pinned wasm-bindgen CLI, exactly like
+      # the ci.yml web job and the desktop matrix.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: install wasm-bindgen-cli (version pinned by Cargo.lock)
+        run: |
+          WASM_BINDGEN_VERSION="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep '^version' | head -1 | cut -d'"' -f2)"
+          echo "wasm-bindgen-cli ${WASM_BINDGEN_VERSION}"
+          cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build Web Bundle

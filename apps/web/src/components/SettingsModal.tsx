@@ -856,16 +856,56 @@ export function SettingsModal({
                       className="h-4 w-4 rounded border-[var(--border)] accent-[var(--accent-fill)]"
                     />
                   </label>
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    Pushes the fresh radar to Google Calendar after every scan that found something.
+                    A scan that fetched nothing, or a Calendar scope refusal, is reported in the
+                    scan notes — never silently skipped.
+                  </p>
+                </div>
+              </div>
 
-                  <label className="flex items-center justify-between text-xs font-semibold text-[var(--text)] cursor-pointer">
-                    <span>{copy.settings.gcalClassesPush}</span>
+              {/* University Sources Section — spec `01` §4.9: each source is
+                  a user control. Gmail follows the Google account itself; the
+                  Teams and Classroom toggles exclude one source from scans
+                  without disconnecting the account. */}
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">
+                  University Sources
+                </h3>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-[var(--text)]">
+                      Microsoft Teams
+                      <span className="ml-1.5 font-normal text-[var(--text-muted)]">
+                        {config.teamsAccountName ? "connected" : "not connected"}
+                      </span>
+                    </span>
                     <input
                       type="checkbox"
-                      checked={config.syncWeeklyClassesToGcal}
-                      onChange={(e) => updateConfig({ syncWeeklyClassesToGcal: e.target.checked })}
+                      checked={config.teamsEnabled}
+                      onChange={(e) => updateConfig({ teamsEnabled: e.target.checked })}
                       className="h-4 w-4 rounded border-[var(--border)] accent-[var(--accent-fill)]"
                     />
-                  </label>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-[var(--text)]">
+                      Google Classroom
+                      <span className="ml-1.5 font-normal text-[var(--text-muted)]">
+                        follows the Google account
+                      </span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={config.classroomEnabled}
+                      onChange={(e) => updateConfig({ classroomEnabled: e.target.checked })}
+                      className="h-4 w-4 rounded border-[var(--border)] accent-[var(--accent-fill)]"
+                    />
+                  </div>
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    Gmail scans run whenever the Google account is connected. These toggles exclude
+                    a source from the next scan; an excluded source never retires its earlier
+                    announcements.
+                  </p>
                 </div>
               </div>
 

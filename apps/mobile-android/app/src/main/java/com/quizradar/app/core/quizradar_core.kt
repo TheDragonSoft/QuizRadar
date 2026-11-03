@@ -661,6 +661,56 @@ internal open class UniffiForeignFutureStructVoid(
 internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
     fun callback(`callbackData`: Long,`result`: UniffiForeignFutureStructVoid.UniffiByValue,)
 }
+internal interface UniffiCallbackInterfaceFfiSyncProgressListenerMethod0 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`source`: RustBuffer.ByValue,`stage`: RustBuffer.ByValue,`found`: Int,`done`: Int,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
+}
+internal interface UniffiCallbackInterfaceFfiTokenProviderMethod0 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`capability`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,)
+}
+@Structure.FieldOrder("onProgress", "uniffiFree")
+internal open class UniffiVTableCallbackInterfaceFfiSyncProgressListener(
+    @JvmField internal var `onProgress`: UniffiCallbackInterfaceFfiSyncProgressListenerMethod0? = null,
+    @JvmField internal var `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+) : Structure() {
+    class UniffiByValue(
+        `onProgress`: UniffiCallbackInterfaceFfiSyncProgressListenerMethod0? = null,
+        `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+    ): UniffiVTableCallbackInterfaceFfiSyncProgressListener(`onProgress`,`uniffiFree`,), Structure.ByValue
+
+   internal fun uniffiSetValue(other: UniffiVTableCallbackInterfaceFfiSyncProgressListener) {
+        `onProgress` = other.`onProgress`
+        `uniffiFree` = other.`uniffiFree`
+    }
+
+}
+@Structure.FieldOrder("bearerToken", "uniffiFree")
+internal open class UniffiVTableCallbackInterfaceFfiTokenProvider(
+    @JvmField internal var `bearerToken`: UniffiCallbackInterfaceFfiTokenProviderMethod0? = null,
+    @JvmField internal var `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+) : Structure() {
+    class UniffiByValue(
+        `bearerToken`: UniffiCallbackInterfaceFfiTokenProviderMethod0? = null,
+        `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+    ): UniffiVTableCallbackInterfaceFfiTokenProvider(`bearerToken`,`uniffiFree`,), Structure.ByValue
+
+   internal fun uniffiSetValue(other: UniffiVTableCallbackInterfaceFfiTokenProvider) {
+        `bearerToken` = other.`bearerToken`
+        `uniffiFree` = other.`uniffiFree`
+    }
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -797,6 +847,8 @@ internal interface UniffiLib : Library {
             .also { lib: UniffiLib ->
                 uniffiCheckContractApiVersion(lib)
                 uniffiCheckApiChecksums(lib)
+                uniffiCallbackInterfaceFfiSyncProgressListener.register(lib)
+                uniffiCallbackInterfaceFfiTokenProvider.register(lib)
                 }
         }
         
@@ -826,7 +878,15 @@ internal interface UniffiLib : Library {
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_import_backup(`ptr`: Pointer,`backupJson`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
+    fun uniffi_quizradar_core_fn_method_nativestore_pull_native_drive_backup(`ptr`: Pointer,`todayIso`: RustBuffer.ByValue,`nowIso`: RustBuffer.ByValue,`tokens`: Long,
+    ): Long
+    fun uniffi_quizradar_core_fn_method_nativestore_push_native_drive_backup(`ptr`: Pointer,`deviceId`: RustBuffer.ByValue,`nowIso`: RustBuffer.ByValue,`localStamp`: RustBuffer.ByValue,`tokens`: Long,
+    ): Long
+    fun uniffi_quizradar_core_fn_method_nativestore_push_native_gcal(`ptr`: Pointer,`todayIso`: RustBuffer.ByValue,`offsetSeconds`: Int,`localStamp`: RustBuffer.ByValue,`tokens`: Long,`gcalBaseUrl`: RustBuffer.ByValue,
+    ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_replace_assessments(`ptr`: Pointer,`assessmentsJson`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
+    ): Long
+    fun uniffi_quizradar_core_fn_method_nativestore_run_native_sync(`ptr`: Pointer,`syncConfig`: RustBuffer.ByValue,`todayIso`: RustBuffer.ByValue,`offsetSeconds`: Int,`nowIso`: RustBuffer.ByValue,`localStamp`: RustBuffer.ByValue,`progress`: Long,`googleTokens`: RustBuffer.ByValue,`microsoftTokens`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_save_schedule(`ptr`: Pointer,`scheduleJson`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
@@ -842,6 +902,10 @@ internal interface UniffiLib : Library {
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_upsert_custom_event(`ptr`: Pointer,`eventJson`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
+    fun uniffi_quizradar_core_fn_init_callback_vtable_ffisyncprogresslistener(`vtable`: UniffiVTableCallbackInterfaceFfiSyncProgressListener,
+    ): Unit
+    fun uniffi_quizradar_core_fn_init_callback_vtable_ffitokenprovider(`vtable`: UniffiVTableCallbackInterfaceFfiTokenProvider,
+    ): Unit
     fun uniffi_quizradar_core_fn_func_build_google_auth_url(`clientId`: RustBuffer.ByValue,`redirectUri`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_build_microsoft_auth_url(`clientId`: RustBuffer.ByValue,`redirectUri`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1038,7 +1102,15 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_import_backup(
     ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_pull_native_drive_backup(
+    ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_push_native_drive_backup(
+    ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_push_native_gcal(
+    ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_replace_assessments(
+    ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_run_native_sync(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_save_schedule(
     ): Short
@@ -1053,6 +1125,10 @@ internal interface UniffiLib : Library {
     fun uniffi_quizradar_core_checksum_method_nativestore_upsert_course(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_upsert_custom_event(
+    ): Short
+    fun uniffi_quizradar_core_checksum_method_ffisyncprogresslistener_on_progress(
+    ): Short
+    fun uniffi_quizradar_core_checksum_method_ffitokenprovider_bearer_token(
     ): Short
     fun ffi_quizradar_core_uniffi_contract_version(
     ): Int
@@ -1131,7 +1207,7 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_export_backup() != 28902.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_quizradar_core_checksum_method_nativestore_extract_timetable_from_image() != 29147.toShort()) {
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_extract_timetable_from_image() != 30659.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_get_config_bool() != 11697.toShort()) {
@@ -1146,7 +1222,19 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_import_backup() != 57877.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_pull_native_drive_backup() != 57802.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_push_native_drive_backup() != 5671.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_push_native_gcal() != 22022.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_replace_assessments() != 34727.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_run_native_sync() != 53676.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_save_schedule() != 30730.toShort()) {
@@ -1168,6 +1256,12 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_upsert_custom_event() != 31932.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_method_ffisyncprogresslistener_on_progress() != 21119.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_method_ffitokenprovider_bearer_token() != 31504.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
 }
@@ -1256,6 +1350,29 @@ inline fun <T : Disposable?, R> T.use(block: (T) -> R) =
  * @suppress
  * */
 object NoPointer
+
+/**
+ * @suppress
+ */
+public object FfiConverterUInt: FfiConverter<UInt, Int> {
+    override fun lift(value: Int): UInt {
+        return value.toUInt()
+    }
+
+    override fun read(buf: ByteBuffer): UInt {
+        return lift(buf.getInt())
+    }
+
+    override fun lower(value: UInt): Int {
+        return value.toInt()
+    }
+
+    override fun allocationSize(value: UInt) = 4UL
+
+    override fun write(value: UInt, buf: ByteBuffer) {
+        buf.putInt(value.toInt())
+    }
+}
 
 /**
  * @suppress
@@ -1572,6 +1689,13 @@ public interface NativeStoreInterface {
      * The response is JSON: `{"schedule": …, "dropped_courses": n,
      * "dropped_slots": n}`. The dropped counts are honest — rows the model
      * got wrong are counted, never repaired into existence.
+     *
+     * The `async_runtime = "tokio"` attribute is load-bearing: UniFFI 0.28
+     * polls exported async methods on the foreign thread, where no tokio
+     * reactor exists — the Gemini HTTP request would panic there. The
+     * attribute runs the future on the bundled async-compat global runtime
+     * instead. Same reason every async method that touches the network
+     * carries it.
      */
     suspend fun `extractTimetableFromImage`(`imageB64`: kotlin.String, `mime`: kotlin.String, `apiKey`: kotlin.String): kotlin.String
     
@@ -1584,6 +1708,43 @@ public interface NativeStoreInterface {
     suspend fun `importBackup`(`backupJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
     
     /**
+     * Pulls the Drive-appDataFolder backup and merges it additively
+     * (topics true-only, grades upsert-fill, remote wins only when strictly
+     * newer, schedule replace-if-newer). Returns JSON:
+     * `{"found": bool, "mergeReport": {...}|null}` — `found: false` is the
+     * honest "no backup exists yet" state, never a fabricated success.
+     */
+    suspend fun `pullNativeDriveBackup`(`todayIso`: kotlin.String, `nowIso`: kotlin.String, `tokens`: FfiTokenProvider): kotlin.String
+    
+    /**
+     * Pushes the data-only Drive-appDataFolder backup (`04` §4.6). The
+     * payload is built from THIS store and is token-free by construction
+     * (the payload type structurally cannot carry credentials); the access
+     * token arrives only through `tokens` and lives only in request headers.
+     * Returns JSON: `{"created": bool, "fileId": string|null}`.
+     * `deviceId` identifies the pushing device in the payload (e.g.
+     * `"quizradar-android"`).
+     */
+    suspend fun `pushNativeDriveBackup`(`deviceId`: kotlin.String, `nowIso`: kotlin.String, `localStamp`: kotlin.String, `tokens`: FfiTokenProvider): kotlin.String
+    
+    /**
+     * Pushes every dated upcoming assessment to the user's primary Google
+     * Calendar — the Android twin of the desktop `run_gcal_sync` command.
+     *
+     * Idempotency: the persisted `synced_gcal_map` is loaded, used (mapped
+     * id = PUT, unmapped = POST, 404 on PUT = re-create) and re-persisted
+     * with this run's pairs; the "Last synced" stamp is written only after a
+     * push that really reached Google Calendar. Scope refusals (401/403)
+     * surface as `needsScope` and mark NOTHING as synced. Returns JSON:
+     * `{"success", "created", "updated", "totalPushable", "failedIds": [...],
+     * "skippedUndated", "needsScope", "message", "syncedMap": {...}}`.
+     *
+     * `gcalBaseUrl`: override of the API root for recorded-fixture tests
+     * only — production passes `None` (the real Google Calendar endpoint).
+     */
+    suspend fun `pushNativeGcal`(`todayIso`: kotlin.String, `offsetSeconds`: kotlin.Int, `localStamp`: kotlin.String, `tokens`: FfiTokenProvider, `gcalBaseUrl`: kotlin.String?): kotlin.String
+    
+    /**
      * Replaces the radar with `assessments_json`.
      *
      * This is an EXPLICIT, caller-driven write (the Android shell sets the
@@ -1593,6 +1754,42 @@ public interface NativeStoreInterface {
      * empty replace — a scan that found nothing must never wipe the radar.
      */
     suspend fun `replaceAssessments`(`assessmentsJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
+    
+    /**
+     * Runs the full source scan (Gmail/Teams/Moodle/Classroom/.ics feeds)
+     * and persists the merged radar — the Android twin of the desktop
+     * `run_sync` command.
+     *
+     * What it does, in order (identical to the desktop orchestration):
+     * 1. loads schedule + existing radar + feeds from this store,
+     * 2. runs every source enabled in `sync_config` concurrently — tokens
+     * arrive only through the callback interfaces, only for sources that
+     * are enabled AND signed in,
+     * 3. merges with user-field preservation (grades, gcal flags survive),
+     * applies retire-unseen semantics for authoritative sources,
+     * 4. persists the merged radar through the store (an empty scan NEVER
+     * wipes the radar), and stamps "Last synced" ONLY when at least one
+     * source actually ran,
+     * 5. returns the honest report as JSON:
+     * `{"success": true, "totalNew": n, "totalUpdated": n,
+     * "notes": [...], "discoveredTeams": [Course...],
+     * "perSource": [{"name", "status": "ran"|"skipped"|"failed",
+     * "detail": skip-reason-or-error|null, "found": n,
+     * "runId": id|null}, ...]}`.
+     *
+     * `discoveredTeams` are COURSE DISCOVERIES ONLY — adopting them into the
+     * schedule is always the user's explicit decision (use `upsertCourse`).
+     *
+     * Clock injection (core owns no wall clock): `todayIso` is the device's
+     * local date `YYYY-MM-DD`, `offsetSeconds` its UTC offset, `nowIso` the
+     * UTC RFC3339 stamp for row mutations, `localStamp` the human-readable
+     * "Last synced" stamp (desktop uses `yyyy-MM-dd HH:mm`).
+     *
+     * Single-flight: a second overlapping scan/push returns an error. There
+     * is no mid-scan cancel API — a dropped call still finishes its persist
+     * atomically, so the radar is never half-updated.
+     */
+    suspend fun `runNativeSync`(`syncConfig`: FfiSyncConfig, `todayIso`: kotlin.String, `offsetSeconds`: kotlin.Int, `nowIso`: kotlin.String, `localStamp`: kotlin.String, `progress`: FfiSyncProgressListener, `googleTokens`: FfiTokenProvider?, `microsoftTokens`: FfiTokenProvider?): kotlin.String
     
     suspend fun `saveSchedule`(`scheduleJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
     
@@ -1775,6 +1972,13 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
      * The response is JSON: `{"schedule": …, "dropped_courses": n,
      * "dropped_slots": n}`. The dropped counts are honest — rows the model
      * got wrong are counted, never repaired into existence.
+     *
+     * The `async_runtime = "tokio"` attribute is load-bearing: UniFFI 0.28
+     * polls exported async methods on the foreign thread, where no tokio
+     * reactor exists — the Gemini HTTP request would panic there. The
+     * attribute runs the future on the bundled async-compat global runtime
+     * instead. Same reason every async method that touches the network
+     * carries it.
      */
     @Throws(QuizRadarFfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
@@ -1882,6 +2086,100 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
 
     
     /**
+     * Pulls the Drive-appDataFolder backup and merges it additively
+     * (topics true-only, grades upsert-fill, remote wins only when strictly
+     * newer, schedule replace-if-newer). Returns JSON:
+     * `{"found": bool, "mergeReport": {...}|null}` — `found: false` is the
+     * honest "no backup exists yet" state, never a fabricated success.
+     */
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `pullNativeDriveBackup`(`todayIso`: kotlin.String, `nowIso`: kotlin.String, `tokens`: FfiTokenProvider) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_pull_native_drive_backup(
+                thisPtr,
+                FfiConverterString.lower(`todayIso`),FfiConverterString.lower(`nowIso`),FfiConverterTypeFfiTokenProvider.lower(`tokens`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * Pushes the data-only Drive-appDataFolder backup (`04` §4.6). The
+     * payload is built from THIS store and is token-free by construction
+     * (the payload type structurally cannot carry credentials); the access
+     * token arrives only through `tokens` and lives only in request headers.
+     * Returns JSON: `{"created": bool, "fileId": string|null}`.
+     * `deviceId` identifies the pushing device in the payload (e.g.
+     * `"quizradar-android"`).
+     */
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `pushNativeDriveBackup`(`deviceId`: kotlin.String, `nowIso`: kotlin.String, `localStamp`: kotlin.String, `tokens`: FfiTokenProvider) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_push_native_drive_backup(
+                thisPtr,
+                FfiConverterString.lower(`deviceId`),FfiConverterString.lower(`nowIso`),FfiConverterString.lower(`localStamp`),FfiConverterTypeFfiTokenProvider.lower(`tokens`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * Pushes every dated upcoming assessment to the user's primary Google
+     * Calendar — the Android twin of the desktop `run_gcal_sync` command.
+     *
+     * Idempotency: the persisted `synced_gcal_map` is loaded, used (mapped
+     * id = PUT, unmapped = POST, 404 on PUT = re-create) and re-persisted
+     * with this run's pairs; the "Last synced" stamp is written only after a
+     * push that really reached Google Calendar. Scope refusals (401/403)
+     * surface as `needsScope` and mark NOTHING as synced. Returns JSON:
+     * `{"success", "created", "updated", "totalPushable", "failedIds": [...],
+     * "skippedUndated", "needsScope", "message", "syncedMap": {...}}`.
+     *
+     * `gcalBaseUrl`: override of the API root for recorded-fixture tests
+     * only — production passes `None` (the real Google Calendar endpoint).
+     */
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `pushNativeGcal`(`todayIso`: kotlin.String, `offsetSeconds`: kotlin.Int, `localStamp`: kotlin.String, `tokens`: FfiTokenProvider, `gcalBaseUrl`: kotlin.String?) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_push_native_gcal(
+                thisPtr,
+                FfiConverterString.lower(`todayIso`),FfiConverterInt.lower(`offsetSeconds`),FfiConverterString.lower(`localStamp`),FfiConverterTypeFfiTokenProvider.lower(`tokens`),FfiConverterOptionalString.lower(`gcalBaseUrl`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
+    /**
      * Replaces the radar with `assessments_json`.
      *
      * This is an EXPLICIT, caller-driven write (the Android shell sets the
@@ -1898,6 +2196,61 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
             UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_replace_assessments(
                 thisPtr,
                 FfiConverterString.lower(`assessmentsJson`),FfiConverterString.lower(`updatedAt`),FfiConverterString.lower(`refDateIso`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * Runs the full source scan (Gmail/Teams/Moodle/Classroom/.ics feeds)
+     * and persists the merged radar — the Android twin of the desktop
+     * `run_sync` command.
+     *
+     * What it does, in order (identical to the desktop orchestration):
+     * 1. loads schedule + existing radar + feeds from this store,
+     * 2. runs every source enabled in `sync_config` concurrently — tokens
+     * arrive only through the callback interfaces, only for sources that
+     * are enabled AND signed in,
+     * 3. merges with user-field preservation (grades, gcal flags survive),
+     * applies retire-unseen semantics for authoritative sources,
+     * 4. persists the merged radar through the store (an empty scan NEVER
+     * wipes the radar), and stamps "Last synced" ONLY when at least one
+     * source actually ran,
+     * 5. returns the honest report as JSON:
+     * `{"success": true, "totalNew": n, "totalUpdated": n,
+     * "notes": [...], "discoveredTeams": [Course...],
+     * "perSource": [{"name", "status": "ran"|"skipped"|"failed",
+     * "detail": skip-reason-or-error|null, "found": n,
+     * "runId": id|null}, ...]}`.
+     *
+     * `discoveredTeams` are COURSE DISCOVERIES ONLY — adopting them into the
+     * schedule is always the user's explicit decision (use `upsertCourse`).
+     *
+     * Clock injection (core owns no wall clock): `todayIso` is the device's
+     * local date `YYYY-MM-DD`, `offsetSeconds` its UTC offset, `nowIso` the
+     * UTC RFC3339 stamp for row mutations, `localStamp` the human-readable
+     * "Last synced" stamp (desktop uses `yyyy-MM-dd HH:mm`).
+     *
+     * Single-flight: a second overlapping scan/push returns an error. There
+     * is no mid-scan cancel API — a dropped call still finishes its persist
+     * atomically, so the radar is never half-updated.
+     */
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `runNativeSync`(`syncConfig`: FfiSyncConfig, `todayIso`: kotlin.String, `offsetSeconds`: kotlin.Int, `nowIso`: kotlin.String, `localStamp`: kotlin.String, `progress`: FfiSyncProgressListener, `googleTokens`: FfiTokenProvider?, `microsoftTokens`: FfiTokenProvider?) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_run_native_sync(
+                thisPtr,
+                FfiConverterTypeFfiSyncConfig.lower(`syncConfig`),FfiConverterString.lower(`todayIso`),FfiConverterInt.lower(`offsetSeconds`),FfiConverterString.lower(`nowIso`),FfiConverterString.lower(`localStamp`),FfiConverterTypeFfiSyncProgressListener.lower(`progress`),FfiConverterOptionalTypeFfiTokenProvider.lower(`googleTokens`),FfiConverterOptionalTypeFfiTokenProvider.lower(`microsoftTokens`),
             )
         },
         { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
@@ -2097,6 +2450,123 @@ public object FfiConverterTypeNativeStore: FfiConverter<NativeStore, Pointer> {
 
 
 
+/**
+ * Per-run scan toggles (the caller's controls, `01` §4.1). Feeds are NOT
+ * here: they live in the store and are loaded per run.
+ *
+ * Desktop derivation the Android shell should mirror (see
+ * `run_native_sync` KDoc): `gmail_enabled` = signed in to Google;
+ * `teams_enabled` = signed in to Microsoft AND the Teams toggle;
+ * `classroom_enabled` = signed in to Google AND the Classroom toggle
+ * (default: follow the Google account); `moodle_enabled` = the Moodle
+ * toggle (default off).
+ */
+data class FfiSyncConfig (
+    var `gmailEnabled`: kotlin.Boolean, 
+    var `teamsEnabled`: kotlin.Boolean, 
+    var `moodleEnabled`: kotlin.Boolean, 
+    var `classroomEnabled`: kotlin.Boolean, 
+    /**
+     * Moodle iCal channel URL. Empty/None = channel off.
+     */
+    var `moodleIcalUrl`: kotlin.String?, 
+    /**
+     * Moodle REST base URL — only used together with `moodle_rest_token`
+     * (a half-configured pair is reported, not half-run).
+     */
+    var `moodleRestUrl`: kotlin.String?, 
+    /**
+     * Per-call Moodle web-service token. Runtime plumbing only: the core
+     * never stores it, logs it, or puts it in an error string.
+     */
+    var `moodleRestToken`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiSyncConfig: FfiConverterRustBuffer<FfiSyncConfig> {
+    override fun read(buf: ByteBuffer): FfiSyncConfig {
+        return FfiSyncConfig(
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiSyncConfig) = (
+            FfiConverterBoolean.allocationSize(value.`gmailEnabled`) +
+            FfiConverterBoolean.allocationSize(value.`teamsEnabled`) +
+            FfiConverterBoolean.allocationSize(value.`moodleEnabled`) +
+            FfiConverterBoolean.allocationSize(value.`classroomEnabled`) +
+            FfiConverterOptionalString.allocationSize(value.`moodleIcalUrl`) +
+            FfiConverterOptionalString.allocationSize(value.`moodleRestUrl`) +
+            FfiConverterOptionalString.allocationSize(value.`moodleRestToken`)
+    )
+
+    override fun write(value: FfiSyncConfig, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`gmailEnabled`, buf)
+            FfiConverterBoolean.write(value.`teamsEnabled`, buf)
+            FfiConverterBoolean.write(value.`moodleEnabled`, buf)
+            FfiConverterBoolean.write(value.`classroomEnabled`, buf)
+            FfiConverterOptionalString.write(value.`moodleIcalUrl`, buf)
+            FfiConverterOptionalString.write(value.`moodleRestUrl`, buf)
+            FfiConverterOptionalString.write(value.`moodleRestToken`, buf)
+    }
+}
+
+
+
+/**
+ * FFI mirror of [`ProviderCapability`] (`auth::providers`): tells the shell
+ * WHICH capability a token is needed for, so it can serve/refresh the right
+ * grant. One variant per capability — no stringly-typed plumbing.
+ */
+
+enum class FfiProviderCapability {
+    
+    GOOGLE_GMAIL_READ,
+    GOOGLE_USER_PROFILE,
+    GOOGLE_CALENDAR_EVENTS,
+    GOOGLE_DRIVE_APPDATA,
+    GOOGLE_CLASSROOM_READ,
+    MICROSOFT_OFFLINE_ACCESS,
+    MICROSOFT_USER_PROFILE,
+    MICROSOFT_MAIL_READ,
+    MICROSOFT_CALENDARS_READ,
+    MICROSOFT_SIGN_IN;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiProviderCapability: FfiConverterRustBuffer<FfiProviderCapability> {
+    override fun read(buf: ByteBuffer) = try {
+        FfiProviderCapability.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: FfiProviderCapability) = 4UL
+
+    override fun write(value: FfiProviderCapability, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
 
 
 sealed class QuizRadarFfiException: kotlin.Exception() {
@@ -2220,6 +2690,177 @@ public object FfiConverterTypeQuizRadarFfiError : FfiConverterRustBuffer<QuizRad
 
 
 
+
+/**
+ * Real per-source progress pulses for the scan overlay (`03` §B3: no staged
+ * fiction). `stage` is one of the machine-checkable labels the core emits:
+ * `"connecting"`, `"searching"`, `"fetching"`, `"parsing"`, `"done"`,
+ * `"skipped"`, `"failed"`. `found` counts items discovered so far, `done`
+ * counts units of work completed. A source that was never enabled emits NO
+ * pulses — never render a stage the core did not report.
+ */
+public interface FfiSyncProgressListener {
+    
+    fun `onProgress`(`source`: kotlin.String, `stage`: kotlin.String, `found`: kotlin.UInt, `done`: kotlin.UInt)
+    
+    companion object
+}
+
+// Magic number for the Rust proxy to call using the same mechanism as every other method,
+// to free the callback once it's dropped by Rust.
+internal const val IDX_CALLBACK_FREE = 0
+// Callback return codes
+internal const val UNIFFI_CALLBACK_SUCCESS = 0
+internal const val UNIFFI_CALLBACK_ERROR = 1
+internal const val UNIFFI_CALLBACK_UNEXPECTED_ERROR = 2
+
+/**
+ * @suppress
+ */
+public abstract class FfiConverterCallbackInterface<CallbackInterface: Any>: FfiConverter<CallbackInterface, Long> {
+    internal val handleMap = UniffiHandleMap<CallbackInterface>()
+
+    internal fun drop(handle: Long) {
+        handleMap.remove(handle)
+    }
+
+    override fun lift(value: Long): CallbackInterface {
+        return handleMap.get(value)
+    }
+
+    override fun read(buf: ByteBuffer) = lift(buf.getLong())
+
+    override fun lower(value: CallbackInterface) = handleMap.insert(value)
+
+    override fun allocationSize(value: CallbackInterface) = 8UL
+
+    override fun write(value: CallbackInterface, buf: ByteBuffer) {
+        buf.putLong(lower(value))
+    }
+}
+
+// Put the implementation in an object so we don't pollute the top-level namespace
+internal object uniffiCallbackInterfaceFfiSyncProgressListener {
+    internal object `onProgress`: UniffiCallbackInterfaceFfiSyncProgressListenerMethod0 {
+        override fun callback(`uniffiHandle`: Long,`source`: RustBuffer.ByValue,`stage`: RustBuffer.ByValue,`found`: Int,`done`: Int,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeFfiSyncProgressListener.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`onProgress`(
+                    FfiConverterString.lift(`source`),
+                    FfiConverterString.lift(`stage`),
+                    FfiConverterUInt.lift(`found`),
+                    FfiConverterUInt.lift(`done`),
+                )
+            }
+            val writeReturn = { _: Unit -> Unit }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+
+    internal object uniffiFree: UniffiCallbackInterfaceFree {
+        override fun callback(handle: Long) {
+            FfiConverterTypeFfiSyncProgressListener.handleMap.remove(handle)
+        }
+    }
+
+    internal var vtable = UniffiVTableCallbackInterfaceFfiSyncProgressListener.UniffiByValue(
+        `onProgress`,
+        uniffiFree,
+    )
+
+    // Registers the foreign callback with the Rust side.
+    // This method is generated for each callback interface.
+    internal fun register(lib: UniffiLib) {
+        lib.uniffi_quizradar_core_fn_init_callback_vtable_ffisyncprogresslistener(vtable)
+    }
+}
+
+/**
+ * The ffiConverter which transforms the Callbacks in to handles to pass to Rust.
+ *
+ * @suppress
+ */
+public object FfiConverterTypeFfiSyncProgressListener: FfiConverterCallbackInterface<FfiSyncProgressListener>()
+
+
+
+
+
+/**
+ * The shell's bearer supply (the platform half of the auth story, `04` §4.3).
+ *
+ * Implement this over EncryptedSharedPreferences (refresh tokens) + in-memory
+ * access tokens. Called synchronously from the Rust scan/push engine — the
+ * implementation MAY block briefly (e.g. a silent refresh round-trip) but
+ * must not call back into the core. Called again after a 401: return a
+ * freshly refreshed token if possible, or the same one (the 401 then
+ * surfaces honestly as a per-source failure).
+ *
+ * Secrecy: the token travels ONLY in this return value, is never persisted
+ * by the core, and never appears in a core error string. Return `None` when
+ * no usable token exists for the capability — sources report that honestly
+ * instead of pretending.
+ */
+public interface FfiTokenProvider {
+    
+    /**
+     * Current access token for `capability`, or `None` when unavailable.
+     */
+    fun `bearerToken`(`capability`: FfiProviderCapability): kotlin.String?
+    
+    companion object
+}
+
+
+
+// Put the implementation in an object so we don't pollute the top-level namespace
+internal object uniffiCallbackInterfaceFfiTokenProvider {
+    internal object `bearerToken`: UniffiCallbackInterfaceFfiTokenProviderMethod0 {
+        override fun callback(`uniffiHandle`: Long,`capability`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeFfiTokenProvider.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`bearerToken`(
+                    FfiConverterTypeFfiProviderCapability.lift(`capability`),
+                )
+            }
+            val writeReturn = { value: kotlin.String? -> uniffiOutReturn.setValue(FfiConverterOptionalString.lower(value)) }
+            uniffiTraitInterfaceCallWithError(
+                uniffiCallStatus,
+                makeCall,
+                writeReturn,
+                { e: QuizRadarFfiException -> FfiConverterTypeQuizRadarFfiError.lower(e) }
+            )
+        }
+    }
+
+    internal object uniffiFree: UniffiCallbackInterfaceFree {
+        override fun callback(handle: Long) {
+            FfiConverterTypeFfiTokenProvider.handleMap.remove(handle)
+        }
+    }
+
+    internal var vtable = UniffiVTableCallbackInterfaceFfiTokenProvider.UniffiByValue(
+        `bearerToken`,
+        uniffiFree,
+    )
+
+    // Registers the foreign callback with the Rust side.
+    // This method is generated for each callback interface.
+    internal fun register(lib: UniffiLib) {
+        lib.uniffi_quizradar_core_fn_init_callback_vtable_ffitokenprovider(vtable)
+    }
+}
+
+/**
+ * The ffiConverter which transforms the Callbacks in to handles to pass to Rust.
+ *
+ * @suppress
+ */
+public object FfiConverterTypeFfiTokenProvider: FfiConverterCallbackInterface<FfiTokenProvider>()
+
+
+
+
 /**
  * @suppress
  */
@@ -2277,6 +2918,38 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
         } else {
             buf.put(1)
             FfiConverterString.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeFfiTokenProvider: FfiConverterRustBuffer<FfiTokenProvider?> {
+    override fun read(buf: ByteBuffer): FfiTokenProvider? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeFfiTokenProvider.read(buf)
+    }
+
+    override fun allocationSize(value: FfiTokenProvider?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeFfiTokenProvider.allocationSize(value)
+        }
+    }
+
+    override fun write(value: FfiTokenProvider?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeFfiTokenProvider.write(value, buf)
         }
     }
 }

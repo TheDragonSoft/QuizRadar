@@ -245,3 +245,66 @@ data class PracticeQuizModel(
     val generatedByAi: Boolean = false,
     val questions: List<PracticeQuestionModel> = emptyList(),
 )
+
+/**
+ * One per-source row of the scan report (`runNativeSync` in `core/ffi.rs`).
+ *
+ * `status` is exactly what the core reports - "ran", "skipped" or "failed" -
+ * and `detail` carries the skip reason or the error string verbatim. The UI
+ * must not translate a skipped source into a success.
+ */
+data class SyncSourceReportModel(
+    val name: String,
+    val status: String,
+    val detail: String? = null,
+    val found: Int = 0,
+    val runId: String? = null,
+)
+
+/**
+ * The honest outcome of one on-device scan run: what each source did, what
+ * was found, and the core's own truthful notes. An empty scan says so.
+ */
+data class SyncReportModel(
+    val success: Boolean = false,
+    val totalNew: Int = 0,
+    val totalUpdated: Int = 0,
+    val notes: List<String> = emptyList(),
+    val perSource: List<SyncSourceReportModel> = emptyList(),
+    val discoveredTeamsCount: Int = 0,
+)
+
+/**
+ * The Google Calendar push report (`pushNativeGcal`). `needsScope` marks a
+ * 401/403 refusal - nothing was marked as synced.
+ */
+data class GcalPushReportModel(
+    val success: Boolean = false,
+    val created: Int = 0,
+    val updated: Int = 0,
+    val totalPushable: Int = 0,
+    val failedIds: List<String> = emptyList(),
+    val skippedUndated: Int = 0,
+    val needsScope: Boolean = false,
+    val message: String? = null,
+)
+
+/** The additive-merge counters the Drive restore reports (`backup.rs`). */
+data class DriveBackupMergeReportModel(
+    val assessmentsReplaced: Int = 0,
+    val assessmentsKeptNewer: Int = 0,
+    val topicsMerged: Int = 0,
+    val gradesMerged: Int = 0,
+    val eventsUpserted: Int = 0,
+    val feedsUpserted: Int = 0,
+    val scheduleReplaced: Boolean = false,
+)
+
+/**
+ * The Drive restore outcome: `found: false` is the honest "no backup exists
+ * yet" state, never a fabricated success.
+ */
+data class DriveBackupResultModel(
+    val found: Boolean = false,
+    val mergeReport: DriveBackupMergeReportModel? = null,
+)

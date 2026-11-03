@@ -320,6 +320,100 @@ class QuizRadarEngine(
         return com.quizradar.app.core.notificationIdFor(assessmentId, kind)
     }
 
+    /**
+     * The OAuth client ids the token callback uses for silent refreshes.
+     *
+     * `bearerToken` is a SYNCHRONOUS UniFFI callback - it cannot suspend to
+     * read the config store - so the shell caches the ids here whenever it
+     * loads config (the ViewModel's loadState, the background worker before
+     * its run). Empty by default: a refresh without a client id returns null
+     * and the core reports the source honestly.
+     */
+    @Volatile
+    var oauthClientIds: OAuthClientIds = OAuthClientIds.EMPTY
+
+    /**
+     * The Google half of the core's token callback.
+     *
+     * Built per call (not stored): it wraps the process-wide token store, and
+     * the served-token TTL state must not outlive the run it was built for.
+     */
+    fun googleFfiTokens(): EngineFfiTokens = EngineFfiTokens(tokenProvider, google = true, clientIds = oauthClientIds)
+
+    fun microsoftFfiTokens(): EngineFfiTokens = EngineFfiTokens(tokenProvider, google = false, clientIds = oauthClientIds)
+
+    /**
+     * Runs the full on-device source scan (Gmail/Teams/Moodle/Classroom/.ics
+     * feeds) and persists the merged radar - the same Rust orchestration the
+     * desktop shell calls. The report JSON is parsed by the ViewModel layer.
+     *
+     * Tokens reach the core only through the [EngineFfiTokens] callbacks, and
+     * only for the providers this config actually enables - a source that is
+     * disabled or not signed in never sees a token provider at all.
+     *
+     * Runs on the serialized store dispatcher like every other native call;
+     * the core enforces single-flight itself (an overlapping run errors).
+     */
+    suspend fun runNativeSync(
+        syncConfig: FfiSyncConfig,
+        progress: FfiSyncProgressListener,
+    ): String {
+        return onCore {
+            val googleTokens = if (syncConfig.gmailEnabled || syncConfig.classroomEnabled) googleFfiTokens() else null
+            val microsoftTokens = if (syncConfig.teamsEnabled) microsoftFfiTokens() else null
+            store.runNativeSync(
+                syncConfig,
+                todayIso(),
+                zoneOffsetSeconds(),
+                nowIso(),
+                localStamp(),
+                progress,
+                googleTokens,
+                microsoftTokens,
+            )
+        }
+    }
+
+    /**
+     * Pushes every dated upcoming assessment to the user's primary Google
+     * Calendar. Returns the report JSON (`created`/`updated`/`needsScope`…).
+     */
+    suspend fun pushGcal(tokens: FfiTokenProvider = googleFfiTokens()): String {
+        return onCore {
+            store.pushNativeGcal(todayIso(), zoneOffsetSeconds(), localStamp(), tokens, null)
+        }
+    }
+
+    /**
+     * Pushes the data-only Drive-appDataFolder backup. `deviceId` marks the
+     * pushing device inside the payload; it must be stable per device.
+     */
+    suspend fun pushDriveBackup(
+        deviceId: String,
+        tokens: FfiTokenProvider = googleFfiTokens(),
+    ): String {
+        return onCore {
+            store.pushNativeDriveBackup(deviceId, nowIso(), localStamp(), tokens)
+        }
+    }
+
+    /**
+     * Pulls and additively merges the Drive backup. Returns
+     * `{"found": bool, "mergeReport": {...}|null}`.
+     */
+    suspend fun pullDriveBackup(tokens: FfiTokenProvider = googleFfiTokens()): String {
+        return onCore {
+            store.pullNativeDriveBackup(todayIso(), nowIso(), tokens)
+        }
+    }
+
+    private fun todayIso(): String = LocalDate.now().toString()
+
+    private fun localStamp(): String =
+        java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+
+    private fun zoneOffsetSeconds(): Int = java.time.ZoneOffset.systemDefault().rules.getOffset(java.time.Instant.now()).totalSeconds
+
     companion object {
         /**
          * Process-scoped cache: after an Activity recreation (rotation, theme

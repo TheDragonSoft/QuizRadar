@@ -59,3 +59,50 @@ fun extractClockPart(displayTime: String?): String? {
 /** "9:30", "9:30 AM", "14:00", "9:30 AM - 10:30 AM" - and nothing else. */
 private val CLOCK_PATTERN =
     Regex("""^\d{1,2}:\d{2}(\s?[APap]\.?[Mm]\.?)?(\s*[-–]\s*\d{1,2}:\d{2}(\s?[APap]\.?[Mm]\.?)?)?$""")
+
+/**
+ * The epoch-millis "begin time" for a Calendar-provider intent
+ * (`CalendarContract.EXTRA_EVENT_BEGIN_TIME`), in LOCAL time:
+ * local midnight of the assessment date, or the assessment's own start time
+ * when it has one. `null` when there is no usable date - the caller then
+ * omits the extra instead of inventing today.
+ *
+ * A "H:mm" 24h clock is the format the core stores; an AM/PM display string
+ * is parsed best-effort. Anything unparsable falls back to local midnight.
+ */
+fun calendarEventBeginTimeMillis(
+    dateIso: String?,
+    startTime: String?,
+): Long? {
+    if (dateIso.isNullOrBlank()) return null
+    val date =
+        try {
+            LocalDate.parse(dateIso.trim())
+        } catch (_: DateTimeParseException) {
+            return null
+        }
+    val time =
+        startTime
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { raw ->
+                val normalized = raw.uppercase().replace(".", "")
+                try {
+                    java.time.LocalTime.parse(normalized, DateTimeFormatter.ofPattern("H:mm"))
+                } catch (_: DateTimeParseException) {
+                    try {
+                        java.time.LocalTime.parse(
+                            normalized,
+                            DateTimeFormatter.ofPattern("h:mm a", java.util.Locale.ENGLISH),
+                        )
+                    } catch (_: DateTimeParseException) {
+                        null
+                    }
+                }
+            }
+    return date
+        .atTime(time ?: java.time.LocalTime.MIDNIGHT)
+        .atZone(java.time.ZoneId.systemDefault())
+        .toInstant()
+        .toEpochMilli()
+}

@@ -50,6 +50,7 @@ fun SetupChecklistCard(
     hasNotificationPermission: Boolean,
     onAddCourse: () -> Unit,
     onConnectSources: () -> Unit,
+    onOpenSettings: () -> Unit = {},
     onRequestNotificationPermission: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
@@ -122,14 +123,32 @@ fun SetupChecklistCard(
                 modifier = Modifier.padding(vertical = 8.dp),
             )
 
-            // Item 2: Connect Sources
+            // Item 2: Connect Sources. Honest about the OAuth requirement: the
+            // scan itself runs ON this device, but sign-in needs the user's
+            // own OAuth client id first - without one, no scan can run and
+            // this step must say so (and lead to Settings -> Sources) instead
+            // of pretending a Connect tap will start one.
+            val oauthConfigured = viewModel.oauthClientConfigured
             ChecklistItemRow(
                 title = "Connect Gmail or Teams",
-                desc = "Scans course announcements for quizzes",
+                desc =
+                    if (sourcesDone) {
+                        "Signed in - scans course announcements on this device"
+                    } else if (oauthConfigured) {
+                        "Sign in and QuizRadar scans course announcements for quizzes on this device"
+                    } else {
+                        "Add an OAuth client ID in Settings -> Sources, then sign in - " +
+                            "scans run on this device once connected"
+                    },
                 icon = Icons.Outlined.Email,
                 isDone = sourcesDone,
-                actionLabel = "Connect",
-                onAction = onConnectSources,
+                actionLabel = if (oauthConfigured) "Connect" else "Open Settings",
+                onAction =
+                    if (oauthConfigured) {
+                        onConnectSources
+                    } else {
+                        onOpenSettings
+                    },
             )
 
             HorizontalDivider(

@@ -510,4 +510,77 @@ object QuizRadarJsonParser {
             questions = questions,
         )
     }
+
+    /**
+     * The scan report `runNativeSync` returns. Every field is optional-tolerant:
+     * a core that grows a new key must not break the shell, and a missing
+     * count is 0 - which is what the core reports for an empty scan anyway.
+     */
+    fun parseSyncReport(jsonStr: String): SyncReportModel {
+        val root = JSONObject(jsonStr)
+        val perSourceArr = root.optJSONArray("perSource")
+        val perSource = ArrayList<SyncSourceReportModel>()
+        if (perSourceArr != null) {
+            for (i in 0 until perSourceArr.length()) {
+                val src = perSourceArr.getJSONObject(i)
+                perSource.add(
+                    SyncSourceReportModel(
+                        name = src.optString("name", ""),
+                        status = src.optString("status", "skipped"),
+                        detail = optString(src, "detail"),
+                        found = src.optInt("found", 0),
+                        runId = optString(src, "runId"),
+                    ),
+                )
+            }
+        }
+        val teamsArr = root.optJSONArray("discoveredTeams")
+        return SyncReportModel(
+            success = root.optBoolean("success", false),
+            totalNew = root.optInt("totalNew", 0),
+            totalUpdated = root.optInt("totalUpdated", 0),
+            notes = toStringList(root.optJSONArray("notes")),
+            perSource = perSource,
+            discoveredTeamsCount = teamsArr?.length() ?: 0,
+        )
+    }
+
+    /** The Google Calendar push report `pushNativeGcal` returns. */
+    fun parseGcalPushReport(jsonStr: String): GcalPushReportModel {
+        val root = JSONObject(jsonStr)
+        return GcalPushReportModel(
+            success = root.optBoolean("success", false),
+            created = root.optInt("created", 0),
+            updated = root.optInt("updated", 0),
+            totalPushable = root.optInt("totalPushable", 0),
+            failedIds = toStringList(root.optJSONArray("failedIds")),
+            skippedUndated = root.optInt("skippedUndated", 0),
+            needsScope = root.optBoolean("needsScope", false),
+            message = optString(root, "message"),
+        )
+    }
+
+    /** The Drive restore outcome `pullNativeDriveBackup` returns. */
+    fun parseDriveBackupResult(jsonStr: String): DriveBackupResultModel {
+        val root = JSONObject(jsonStr)
+        val mergeObj = root.optJSONObject("mergeReport")
+        val mergeReport =
+            if (mergeObj == null || root.isNull("mergeReport")) {
+                null
+            } else {
+                DriveBackupMergeReportModel(
+                    assessmentsReplaced = mergeObj.optInt("assessments_replaced", 0),
+                    assessmentsKeptNewer = mergeObj.optInt("assessments_kept_newer", 0),
+                    topicsMerged = mergeObj.optInt("topics_merged", 0),
+                    gradesMerged = mergeObj.optInt("grades_merged", 0),
+                    eventsUpserted = mergeObj.optInt("events_upserted", 0),
+                    feedsUpserted = mergeObj.optInt("feeds_upserted", 0),
+                    scheduleReplaced = mergeObj.optBoolean("schedule_replaced", false),
+                )
+            }
+        return DriveBackupResultModel(
+            found = root.optBoolean("found", false),
+            mergeReport = mergeReport,
+        )
+    }
 }

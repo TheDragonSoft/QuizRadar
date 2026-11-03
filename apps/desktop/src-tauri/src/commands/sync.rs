@@ -185,6 +185,7 @@ pub async fn run_sync_inner(
     // the user turned off must not run. A toggle the user never touched falls
     // back to "on when the account is connected" — Classroom and Teams follow
     // their account, Moodle follows an entered URL.
+    let google_connected = google_provider.is_some();
     let teams_toggle = state
         .store
         .get_config_bool("teams_enabled".to_string(), true)
@@ -281,6 +282,46 @@ pub async fn run_sync_inner(
         }
     }
 
+    // `01` §4.1: the onboarding checkbox / Settings toggle opts every scan
+    // into pushing the fresh radar to Google Calendar. It runs only when the
+    // user turned it on, Google is connected, and this scan actually fetched
+    // something; every outcome lands in the notes — never silently.
+    let auto_push = state
+        .store
+        .get_config_bool("auto_sync_gcal".to_string(), false)
+        .await
+        .unwrap_or(false);
+    if auto_push && google_connected && fetched_anything {
+        match run_gcal_push_inner(state).await {
+            Ok(r) if r.success => notes.push(format!(
+                "Auto-push to Google Calendar: {} created, {} updated{}.",
+                r.created,
+                r.updated,
+                if r.skipped_undated > 0 {
+                    format!(", {} undated drafts skipped", r.skipped_undated)
+                } else {
+                    String::new()
+                }
+            )),
+            Ok(r) if r.needs_scope => notes.push(
+                "Auto-push to Google Calendar did not run: the Calendar scope needs \
+                 re-consent — push once from an assessment's detail panel to grant it."
+                    .to_string(),
+            ),
+            Ok(r) => notes.push(format!(
+                "Auto-push to Google Calendar failed: {}",
+                r.message
+            )),
+            Err(e) => notes.push(format!("Auto-push to Google Calendar failed: {e}")),
+        }
+    } else if auto_push && fetched_anything && !google_connected {
+        notes.push(
+            "Auto-push to Google Calendar is on, but no Google account is connected — \
+             sign in first, then push."
+                .to_string(),
+        );
+    }
+
     let discovered_teams = report
         .discovered_teams
         .map(|d| d.courses)
@@ -313,6 +354,14 @@ pub async fn run_gcal_sync_inner(state: &AppState) -> Result<DesktopGCalSyncRepo
     }
     let _guard = FlightGuard(Arc::clone(&state.sync_in_flight));
 
+    run_gcal_push_inner(state).await
+}
+
+/// The Calendar push body, shared by the manual push command and the scan's
+/// post-scan auto-push (`01` §4.1). Callers own the in-flight guard — taking
+/// it here would deadlock the auto-push, which runs while a scan still holds
+/// the guard.
+async fn run_gcal_push_inner(state: &AppState) -> Result<DesktopGCalSyncReport, String> {
     let today = state.today();
     let snapshot = state
         .store

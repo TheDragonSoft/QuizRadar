@@ -651,7 +651,10 @@ private fun Step3Sources(
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "Where professors publish quiz and exam dates. Fully skippable; you can connect later.",
+            text =
+                "Sign in and QuizRadar scans Gmail, Classroom and Teams announcements ON THIS DEVICE " +
+                    "and pins quiz and exam dates to your timetable. Tokens never leave your phone. " +
+                    "Sign-in needs your own OAuth client ID (Settings -> Sources). Fully skippable.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -681,7 +684,7 @@ private fun Step3Sources(
                         Column {
                             Text("Google Workspace", fontWeight = FontWeight.Bold)
                             Text(
-                                "Gmail & Classroom (read-only)",
+                                "Gmail & Classroom (read-only) - scanned on this device once connected",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -741,7 +744,7 @@ private fun Step3Sources(
                         Column {
                             Text("Microsoft Teams", fontWeight = FontWeight.Bold)
                             Text(
-                                "Channel announcements (read-only)",
+                                "Channel announcements (read-only) - scanned on this device once connected",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

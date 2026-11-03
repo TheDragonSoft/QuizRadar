@@ -17,6 +17,7 @@ use quizradar_core::sources::SourceProgress;
 use quizradar_core::store::repo::{FieldUpdate, GradeChange};
 use quizradar_core::store::Store;
 use quizradar_core::types::{Assessment, AssessmentSource, AssessmentType, UrgencyLevel};
+use quizradar_desktop_lib::commands::ai::practice_generate_inner;
 use quizradar_desktop_lib::commands::state::build_full_state;
 use quizradar_desktop_lib::commands::sync::{run_sync_inner, SCAN_CANCELED_MESSAGE};
 use quizradar_desktop_lib::keyring::KeyringStore;
@@ -510,6 +511,75 @@ async fn test_cancel_aborts_the_scan_and_leaves_the_data_untouched() {
         state.store.get_last_gmail_sync().await.unwrap().is_none(),
         "an aborted scan must not stamp 'Last synced'"
     );
+}
+
+/// `01` §4.1 auto-push: opted in, but no Google account connected. The scan
+/// must say the push did not happen — never silently skip it.
+#[tokio::test]
+async fn test_auto_gcal_push_without_a_connection_is_reported_not_silent() {
+    let state = test_app_state("sync_auto_push_offline").await;
+    let today = state.today();
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(ics_fixture(today)))
+        .mount(&server)
+        .await;
+    configure_local_moodle_feed(&state, &server, today).await;
+    state
+        .store
+        .set_config_bool("auto_sync_gcal".to_string(), true)
+        .await
+        .expect("the user opted into the calendar auto-push");
+
+    let result = run_sync_inner(None, &state).await.expect("scan runs");
+    assert!(result.success);
+    assert!(
+        result
+            .notes
+            .iter()
+            .any(|n| n.contains("Auto-push to Google Calendar is on, but no Google account")),
+        "the skipped auto-push must be stated in the scan notes, got: {:?}",
+        result.notes
+    );
+}
+
+/// `05` §5.1 consent boundary: with the AI toggle off, a practice-quiz request
+/// must not leave the device even when a key is available — the honest
+/// on-device fallback answers instead, labeled `authored_locally`.
+#[tokio::test]
+async fn test_ai_consent_off_keeps_practice_quiz_on_device() {
+    let state = test_app_state("ai_consent_off").await;
+    let today = state.today();
+    let now = state.now_iso();
+
+    let assessment = sample_test_assessment(
+        "assess-quiz-1",
+        "Class Quiz",
+        Some("CS101"),
+        AssessmentType::ClassQuiz,
+        Some(today + chrono::Duration::days(3)),
+        vec!["Sorting".to_string(), "Big-O".to_string()],
+    );
+    state
+        .store
+        .replace_assessments(vec![assessment], now, today)
+        .await
+        .expect("insert assessment");
+    state
+        .store
+        .set_config_bool("gemini_enabled".to_string(), false)
+        .await
+        .expect("the user turned AI off");
+
+    let payload = practice_generate_inner(&state, "assess-quiz-1")
+        .await
+        .expect("the local fallback answers regardless of the toggle");
+    assert!(
+        payload.authored_locally,
+        "with consent off the quiz must be the on-device fallback, never a Gemini call"
+    );
+    assert!(!payload.questions.is_empty());
 }
 
 #[test]

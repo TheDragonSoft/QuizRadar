@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.quizradar.app.core.OAuthClientIds
 import com.quizradar.app.core.QuizRadarCore
 import com.quizradar.app.core.QuizRadarEngine
 import com.quizradar.app.model.AppSnapshotModel
@@ -20,6 +21,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -78,6 +80,49 @@ enum class PomodoroInterval(val minutes: Int, val label: String) {
     POMODORO(25, "Pomodoro"),
     SHORT_BREAK(5, "Short Break"),
     LONG_BREAK(15, "Long Break"),
+}
+
+/**
+ * One live row of the scan overlay: the per-source pulse the core reports
+ * (`FfiSyncProgressListener.onProgress`). `stage` is the core's own stage
+ * label - the shell renders it verbatim instead of inventing stages.
+ */
+data class ScanSourceProgress(
+    val name: String,
+    val stage: String,
+    val found: Int,
+    val done: Int,
+)
+
+/**
+ * Config key for the per-device id the Drive backup payload carries.
+ * Generated once, persisted in the store's config table, never synced.
+ */
+private const val DEVICE_ID_CONFIG_KEY = "device_id"
+
+/**
+ * The honest one-line summary of a scan report: real counts, real per-source
+ * outcomes, the core's own notes. A scan that found nothing says exactly
+ * that; a skipped-only run is not dressed up as success.
+ */
+internal fun buildScanSummary(report: com.quizradar.app.model.SyncReportModel): String {
+    val counts = "${report.totalNew} new · ${report.totalUpdated} updated"
+    val failed = report.perSource.filter { it.status == "failed" }
+    val ran = report.perSource.filter { it.status == "ran" }
+    val parts = mutableListOf(counts)
+    if (ran.isNotEmpty()) parts.add("ran: ${ran.joinToString(", ") { it.name }}")
+    failed.forEach { failure ->
+        parts.add("${failure.name} failed: ${failure.detail ?: "unknown error"}")
+    }
+    val skipped = report.perSource.filter { it.status == "skipped" }
+    if (skipped.isNotEmpty() && ran.isEmpty() && failed.isEmpty()) {
+        parts.add(
+            "all sources skipped: " +
+                skipped.joinToString(", ") { "${it.name} (${it.detail ?: "no reason given"})" },
+        )
+    }
+    report.notes.forEach { parts.add(it) }
+    return parts.joinToString(" · ")
 }
 
 class QuizRadarViewModel(
@@ -239,8 +284,49 @@ class QuizRadarViewModel(
     private val _autoSyncGcal = MutableStateFlow(false)
     val autoSyncGcal: StateFlow<Boolean> = _autoSyncGcal.asStateFlow()
 
-    private val _syncWeeklyClassesToGcal = MutableStateFlow(false)
-    val syncWeeklyClassesToGcal: StateFlow<Boolean> = _syncWeeklyClassesToGcal.asStateFlow()
+    /**
+     * Live scan state. `isScanning` gates re-entry (the core enforces
+     * single-flight itself, but the UI must not even try), `scanProgress`
+     * carries the honest per-source rows while running, and `lastScanReport`
+     * keeps the last completed report so the dashboard can show what each
+     * source actually did. There is NO cancel: the core has no mid-scan
+     * cancel API, so the UI must not fake one.
+     */
+    private val _isScanning = MutableStateFlow(false)
+    val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
+
+    private val _scanProgress = MutableStateFlow<List<ScanSourceProgress>>(emptyList())
+    val scanProgress: StateFlow<List<ScanSourceProgress>> = _scanProgress.asStateFlow()
+
+    private val _lastScanReport = MutableStateFlow<com.quizradar.app.model.SyncReportModel?>(null)
+    val lastScanReport: StateFlow<com.quizradar.app.model.SyncReportModel?> = _lastScanReport.asStateFlow()
+
+    /** The "Last synced" stamp, written by the core only when a source ran. */
+    private val _lastSyncedStamp = MutableStateFlow<String?>(null)
+    val lastSyncedStamp: StateFlow<String?> = _lastSyncedStamp.asStateFlow()
+
+    /**
+     * The user's own OAuth client ids (Settings -> Sources). Empty = the
+     * honest "not configured" state: sign-in stays refused and the copy says
+     * what is missing instead of pretending a scan could run.
+     */
+    private val _googleClientId = MutableStateFlow("")
+    val googleClientId: StateFlow<String> = _googleClientId.asStateFlow()
+
+    private val _teamsClientId = MutableStateFlow("")
+    val teamsClientId: StateFlow<String> = _teamsClientId.asStateFlow()
+
+    /** True when at least one OAuth client id is configured (either provider). */
+    val oauthClientConfigured: Boolean
+        get() = _googleClientId.value.isNotBlank() || _teamsClientId.value.isNotBlank()
+
+    /**
+     * Background periodic scan (explicit opt-in, default OFF). The gate the
+     * worker re-checks at run time is the persisted config key; this flow
+     * only mirrors it for the Settings switch.
+     */
+    private val _backgroundScanEnabled = MutableStateFlow(false)
+    val backgroundScanEnabled: StateFlow<Boolean> = _backgroundScanEnabled.asStateFlow()
 
     private val _theme = MutableStateFlow("system")
     val theme: StateFlow<String> = _theme.asStateFlow()
@@ -410,10 +496,23 @@ class QuizRadarViewModel(
                     _notifyMorningDigest.value = core.getConfigBool("notify_morning_digest", false)
                     _notifyMorningTime.value = core.getConfigString("notify_morning_time") ?: "08:00"
                     _autoSyncGcal.value = core.getConfigBool("auto_sync_gcal", false)
-                    _syncWeeklyClassesToGcal.value =
-                        core.getConfigBool("sync_weekly_classes_to_gcal", false)
+                    // The user's own OAuth client ids (Settings -> Sources) and
+                    // the background-scan opt-in. The ids are ALSO cached on
+                    // the engine: the core's token callback is synchronous and
+                    // cannot read the store itself.
+                    _googleClientId.value = core.getConfigString("google_client_id") ?: ""
+                    _teamsClientId.value = core.getConfigString("teams_client_id") ?: ""
+                    (core as? QuizRadarEngine)?.oauthClientIds =
+                        OAuthClientIds(
+                            google = { _googleClientId.value },
+                            microsoft = { _teamsClientId.value },
+                        )
+                    _backgroundScanEnabled.value = core.getConfigBool("background_scan_enabled", false)
                     _theme.value = core.getConfigString("theme") ?: "system"
                     _academicTrack.value = core.getConfigString("academic_track")
+                    // The "Last synced" stamp the core writes ONLY after a scan
+                    // in which a source really ran (`core/src/ffi.rs`).
+                    _lastSyncedStamp.value = core.getConfigString("last_gmail_sync")
 
                     // `onboarding_completed` is WRITTEN as a bool (completeOnboarding,
                     // reRunOnboarding, sign-out), and a bool row is not readable
@@ -841,7 +940,19 @@ class QuizRadarViewModel(
         }
     }
 
-    fun addCustomEvent(event: CustomEventModel) {
+    /**
+     * Saves a custom event and reports the outcome.
+     *
+     * The write failure used to be swallowed (`catch (_: Exception) {}`): the
+     * sheet dismissed, the draft vanished and the event was simply gone. Now
+     * the failure surfaces as a toast and the DRAFT STAYS OPEN - the user can
+     * retry or copy their text out. `onResult(false)` lets the caller keep
+     * the sheet up; the draft state is only cleared after a real success.
+     */
+    fun addCustomEvent(
+        event: CustomEventModel,
+        onResult: (Boolean) -> Unit = {},
+    ) {
         viewModelScope.launch {
             try {
                 val refDate = clockDate()
@@ -864,12 +975,22 @@ class QuizRadarViewModel(
                 lastLoadedDate = refDate
                 _activeCreateEventDraft.value = null
                 onStateMutated?.invoke()
-            } catch (_: Exception) {
+                onResult(true)
+            } catch (e: Exception) {
+                showToast(
+                    "Could not save the event: " +
+                        (e.message?.takeIf { it.isNotBlank() } ?: "unknown error"),
+                )
+                onResult(false)
             }
         }
     }
 
-    fun deleteCustomEvent(id: String) {
+    /** Deletes a custom event; a failed delete is a loud failure, not silence. */
+    fun deleteCustomEvent(
+        id: String,
+        onResult: (Boolean) -> Unit = {},
+    ) {
         viewModelScope.launch {
             try {
                 val refDate = clockDate()
@@ -878,7 +999,13 @@ class QuizRadarViewModel(
                 _uiState.value = UiState.Ready(snapshot)
                 lastLoadedDate = refDate
                 onStateMutated?.invoke()
-            } catch (_: Exception) {
+                onResult(true)
+            } catch (e: Exception) {
+                showToast(
+                    "Could not delete the event: " +
+                        (e.message?.takeIf { it.isNotBlank() } ?: "unknown error"),
+                )
+                onResult(false)
             }
         }
     }
@@ -1181,6 +1308,313 @@ class QuizRadarViewModel(
         }
     }
 
+    // =========================================================================
+    // Real on-device scanning (UniFFI runNativeSync)
+    // =========================================================================
+
+    /**
+     * The sync config this device would run RIGHT NOW, derived exactly like
+     * the desktop (see [deriveSyncConfig]).
+     */
+    private suspend fun currentSyncConfig(): com.quizradar.app.core.FfiSyncConfig? {
+        val snapshot = (_uiState.value as? UiState.Ready)?.snapshot
+        val moodleConfigured =
+            !(core.getConfigString("moodle_ical_url").isNullOrBlank()) ||
+                !(core.getConfigString("moodle_rest_url").isNullOrBlank())
+        val config =
+            deriveSyncConfig(
+                googleConnected = _googleConnected.value,
+                microsoftConnected = _microsoftConnected.value,
+                gmailToggle = _gmailEnabled.value,
+                classroomToggle = _classroomEnabled.value,
+                teamsToggle = _teamsEnabled.value,
+                moodleEnabled = core.getConfigBool("moodle_enabled", false) && moodleConfigured,
+                moodleIcalUrl = core.getConfigString("moodle_ical_url"),
+                moodleRestUrl = core.getConfigString("moodle_rest_url"),
+                // No Moodle token storage exists on this shell (no UI for it);
+                // a half-configured channel is reported by the core, not half-run.
+                moodleRestToken = null,
+            )
+        val feedsEnabled = snapshot?.feeds?.any { it.enabled } ?: false
+        if (
+            !hasConfiguredSource(
+                googleConnected = _googleConnected.value,
+                microsoftConnected = _microsoftConnected.value,
+                gmailToggle = _gmailEnabled.value,
+                classroomToggle = _classroomEnabled.value,
+                teamsToggle = _teamsEnabled.value,
+                moodleConfigured = moodleConfigured,
+                feedsEnabled = feedsEnabled,
+            )
+        ) {
+            return null
+        }
+        return config
+    }
+
+    /**
+     * The sync config for one scan, derived exactly like the desktop: a
+     * source is enabled only when its account is signed in AND its toggle
+     * allows it (a classroom toggle that was never set follows the account =
+     * on), and Moodle carries its own channel config. Pure and `internal` so
+     * the unit tests can pin the defaults.
+     */
+    internal fun deriveSyncConfig(
+        googleConnected: Boolean,
+        microsoftConnected: Boolean,
+        gmailToggle: Boolean,
+        classroomToggle: Boolean,
+        teamsToggle: Boolean,
+        moodleEnabled: Boolean,
+        moodleIcalUrl: String?,
+        moodleRestUrl: String?,
+        moodleRestToken: String?,
+    ): com.quizradar.app.core.FfiSyncConfig =
+        com.quizradar.app.core.FfiSyncConfig(
+            gmailEnabled = googleConnected && gmailToggle,
+            teamsEnabled = microsoftConnected && teamsToggle,
+            moodleEnabled = moodleEnabled,
+            classroomEnabled = googleConnected && classroomToggle,
+            moodleIcalUrl = moodleIcalUrl?.trim()?.takeIf { it.isNotEmpty() },
+            moodleRestUrl = moodleRestUrl?.trim()?.takeIf { it.isNotEmpty() },
+            moodleRestToken = moodleRestToken?.trim()?.takeIf { it.isNotEmpty() },
+        )
+
+    /**
+     * True when a scan would have something to do: a signed-in account with
+     * at least one OAuth source toggled on, a configured Moodle channel, or
+     * an enabled .ics feed. When this is false the UI shows the honest
+     * "No sources connected" state instead of spinning forever.
+     */
+    internal fun hasConfiguredSource(
+        googleConnected: Boolean,
+        microsoftConnected: Boolean,
+        gmailToggle: Boolean,
+        classroomToggle: Boolean,
+        teamsToggle: Boolean,
+        moodleConfigured: Boolean,
+        feedsEnabled: Boolean,
+    ): Boolean =
+        (googleConnected && (gmailToggle || classroomToggle)) ||
+            (microsoftConnected && teamsToggle) ||
+            moodleConfigured ||
+            feedsEnabled
+
+    /**
+     * Runs the real on-device scan: Gmail/Teams/Classroom/Moodle/.ics feeds
+     * through the Rust core, live per-source progress, honest report.
+     *
+     * Honesty rules implemented here (AGENTS §3):
+     * - re-entry is a no-op (the core is single-flight),
+     * - zero configured sources is a no-op with a truthful message - never a
+     *   spinner,
+     * - there is NO cancel button: the core has no mid-scan cancel API,
+     * - a failed source is shown as failed with its real detail string,
+     * - a scan that found nothing says so.
+     */
+    fun runScan() {
+        if (_isScanning.value) return
+        val engine = core as? QuizRadarEngine
+        if (engine == null) {
+            showToast("Scanning needs the native core - it is not available in this process.")
+            return
+        }
+        viewModelScope.launch {
+            // Claim the slot ON the main thread before anything suspends: two
+            // rapid pulls can both pass a later check, and the core's
+            // single-flight would only fail the second run with an error.
+            if (_isScanning.value) return@launch
+            _isScanning.value = true
+            _scanProgress.value = emptyList()
+            try {
+                val syncConfig =
+                    try {
+                        currentSyncConfig()
+                    } catch (e: Exception) {
+                        showToast("Could not read the source configuration: ${e.message}")
+                        return@launch
+                    }
+                if (syncConfig == null) {
+                    showToast("No announcement sources connected - sign in or add a calendar feed first.")
+                    return@launch
+                }
+
+                val listener =
+                    object : com.quizradar.app.core.FfiSyncProgressListener {
+                        override fun onProgress(
+                            source: String,
+                            stage: String,
+                            found: UInt,
+                            done: UInt,
+                        ) {
+                            _scanProgress.update { current ->
+                                val row = ScanSourceProgress(source, stage, found.toInt(), done.toInt())
+                                val existing = current.indexOfFirst { it.name == source }
+                                if (existing >= 0) current.mapIndexed { i, r -> if (i == existing) row else r } else current + row
+                            }
+                        }
+                    }
+                val reportJson = engine.runNativeSync(syncConfig, listener)
+                val report = QuizRadarJsonParser.parseSyncReport(reportJson)
+                _lastScanReport.value = report
+                _lastSyncedStamp.value = core.getConfigString("last_gmail_sync")
+                refreshState()
+                var summary = buildScanSummary(report)
+                if (
+                    report.success &&
+                    report.totalNew + report.totalUpdated > 0 &&
+                    _googleConnected.value &&
+                    _autoSyncGcal.value
+                ) {
+                    // The auto-push the Settings toggle promises: after a scan
+                    // that actually discovered/updated items, push them. The
+                    // push's real outcome joins the summary.
+                    val pushMessage = pushGcalInternal()
+                    if (pushMessage != null) summary += "\n$pushMessage"
+                }
+                showToast(summary)
+            } catch (e: Exception) {
+                // The core throws on store/parse failures - fail loudly, keep
+                // the previous report (it is still the last REAL outcome).
+                showToast("Scan failed: ${e.message ?: "unknown error"}")
+            } finally {
+                _isScanning.value = false
+            }
+        }
+    }
+
+    /**
+     * The "Push now to Google Calendar" action (Settings -> Sources). Returns
+     * the honest one-line outcome, or null when the push could not even start
+     * (the toast in that case is the failure).
+     */
+    fun pushGcalNow() {
+        viewModelScope.launch {
+            val message = pushGcalInternal()
+            if (message != null) showToast(message)
+        }
+    }
+
+    private suspend fun pushGcalInternal(): String? {
+        val engine = core as? QuizRadarEngine
+        if (engine == null) {
+            return "Google Calendar push failed: the native core is not available."
+        }
+        if (!_googleConnected.value) {
+            return "Google Calendar push skipped: no Google account is signed in."
+        }
+        return try {
+            val report = QuizRadarJsonParser.parseGcalPushReport(engine.pushGcal())
+            when {
+                report.needsScope ->
+                    "Calendar push refused by Google (scope missing) - reconnect Google, " +
+                        "nothing was marked as synced."
+                !report.success ->
+                    "Calendar push failed: ${report.message ?: "Google returned an error"}."
+                else -> {
+                    // The calendar push stamps `last_gcal_sync` (the scan
+                    // stamps `last_gmail_sync`) - read the one this run wrote.
+                    _lastSyncedStamp.value = core.getConfigString("last_gcal_sync")
+                    refreshState()
+                    "Calendar push: ${report.created} created · ${report.updated} updated" +
+                        (if (report.skippedUndated > 0) " · ${report.skippedUndated} undated skipped" else "") +
+                        (if (report.failedIds.isNotEmpty()) " · ${report.failedIds.size} failed" else "")
+                }
+            }
+        } catch (e: Exception) {
+            "Calendar push failed: ${e.message ?: "unknown error"}"
+        }
+    }
+
+    /**
+     * The Drive backup push (Settings -> Data Management): explicit user
+     * action, data-only payload, honest outcome.
+     */
+    fun pushDriveBackupNow() {
+        viewModelScope.launch {
+            val engine = core as? QuizRadarEngine
+            if (engine == null) {
+                showToast("Drive backup failed: the native core is not available.")
+                return@launch
+            }
+            if (!_googleConnected.value) {
+                showToast("Drive backup skipped: no Google account is signed in.")
+                return@launch
+            }
+            try {
+                val deviceId = ensureDeviceId()
+                engine.pushDriveBackup(deviceId)
+                showToast("Backed up to Google Drive (app data folder).")
+            } catch (e: Exception) {
+                showToast("Drive backup failed: ${e.message ?: "unknown error"}")
+            }
+        }
+    }
+
+    /**
+     * The Drive restore (Settings -> Data Management): pulls the backup and
+     * merges additively. "No backup found" is the honest empty state.
+     */
+    fun restoreDriveBackupNow() {
+        viewModelScope.launch {
+            val engine = core as? QuizRadarEngine
+            if (engine == null) {
+                showToast("Restore failed: the native core is not available.")
+                return@launch
+            }
+            if (!_googleConnected.value) {
+                showToast("Restore skipped: no Google account is signed in.")
+                return@launch
+            }
+            try {
+                val result = QuizRadarJsonParser.parseDriveBackupResult(engine.pullDriveBackup())
+                if (!result.found || result.mergeReport == null) {
+                    showToast("No backup found in your Drive app data folder.")
+                    return@launch
+                }
+                val merged = result.mergeReport
+                loadState()
+                showToast(
+                    "Restored from Drive: ${merged.assessmentsReplaced} assessments · " +
+                        "${merged.topicsMerged} topics · ${merged.gradesMerged} grades · " +
+                        "${merged.eventsUpserted} events updated",
+                )
+            } catch (e: Exception) {
+                showToast("Restore failed: ${e.message ?: "unknown error"}")
+            }
+        }
+    }
+
+    /**
+     * The stable per-device id the backup payload carries. Generated once and
+     * persisted in the store's config table - a random UUID, nothing derived
+     * from hardware or account identifiers.
+     */
+    private suspend fun ensureDeviceId(): String {
+        val existing = core.getConfigString(DEVICE_ID_CONFIG_KEY)
+        if (!existing.isNullOrBlank()) return existing
+        val fresh = java.util.UUID.randomUUID().toString()
+        core.setConfigString(DEVICE_ID_CONFIG_KEY, fresh)
+        return fresh
+    }
+
+    fun setGoogleClientId(id: String) {
+        val trimmed = id.trim()
+        _googleClientId.value = trimmed
+        persistConfig("google_client_id", trimmed.ifEmpty { null })
+    }
+
+    fun setTeamsClientId(id: String) {
+        val trimmed = id.trim()
+        _teamsClientId.value = trimmed
+        persistConfig("teams_client_id", trimmed.ifEmpty { null })
+    }
+
+    fun setBackgroundScanEnabled(enabled: Boolean) {
+        _backgroundScanEnabled.value = enabled
+        persistConfig("background_scan_enabled", enabled)
+    }
+
     fun setGeminiEnabled(enabled: Boolean) {
         // A native config write per keystroke is a native store write per
         // keystroke. The flag only changes when the key goes from empty to
@@ -1429,11 +1863,6 @@ class QuizRadarViewModel(
         persistConfig("auto_sync_gcal", enabled)
     }
 
-    fun setSyncWeeklyClassesToGcal(enabled: Boolean) {
-        _syncWeeklyClassesToGcal.value = enabled
-        persistConfig("sync_weekly_classes_to_gcal", enabled)
-    }
-
     fun setTheme(themeVal: String) {
         _theme.value = themeVal
         persistConfig("theme", themeVal)
@@ -1469,7 +1898,10 @@ class QuizRadarViewModel(
                 val engine = core as? QuizRadarEngine
                 // Every step of the reset is a native store write (and the
                 // token wipe is a Keystore write) - it all runs on the core
-                // dispatcher, never on the main thread.
+                // dispatcher, never on the main thread. The dismissed-banner /
+                // checklist flags are cleared too: the confirm dialog promises
+                // "all data" and a lingering dismissal flag would quietly keep
+                // those UI pieces hidden after the reset.
                 callCore {
                     core.saveSchedule("""{"courses":[],"slots":[]}""", refDate)
                     core.replaceAssessments("[]", refDate)
@@ -1481,6 +1913,8 @@ class QuizRadarViewModel(
                     core.setConfigBool("auto_sync_gcal", false)
                     core.setConfigBool("gemini_enabled", false)
                     core.setConfigBool("onboarding_completed", false)
+                    core.setConfigBool("dismiss_conflict_banner", false)
+                    core.setConfigBool("dismiss_setup_checklist", false)
                     engine?.tokenProvider?.clearAll()
                 }
                 loadState()

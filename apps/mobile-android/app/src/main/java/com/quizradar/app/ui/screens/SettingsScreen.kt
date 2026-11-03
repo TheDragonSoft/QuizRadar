@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -46,9 +47,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -71,6 +74,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.quizradar.app.core.BackgroundScanWorker
 import com.quizradar.app.model.AppSnapshotModel
 import com.quizradar.app.model.CourseModel
 import com.quizradar.app.model.ScheduleSlotModel
@@ -125,10 +129,12 @@ fun SettingsScreen(
     val notifyMorningDigest by viewModel.notifyMorningDigest.collectAsState()
     val notifyMorningTime by viewModel.notifyMorningTime.collectAsState()
     val autoSyncGcal by viewModel.autoSyncGcal.collectAsState()
-    val syncWeeklyClassesToGcal by viewModel.syncWeeklyClassesToGcal.collectAsState()
     val theme by viewModel.theme.collectAsState()
     val academicTrack by viewModel.academicTrack.collectAsState()
     val timetableImportState by viewModel.timetableImportState.collectAsState()
+    val googleClientId by viewModel.googleClientId.collectAsState()
+    val teamsClientId by viewModel.teamsClientId.collectAsState()
+    val backgroundScanEnabled by viewModel.backgroundScanEnabled.collectAsState()
 
     // Dialog & Sheet States
     var showEditProfileDialog by rememberSaveable { mutableStateOf(false) }
@@ -137,6 +143,13 @@ fun SettingsScreen(
     var showAddFeedDialog by rememberSaveable { mutableStateOf(false) }
     var showResetConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var resetInputText by rememberSaveable { mutableStateOf("") }
+    // Digest time picker (M3 TimePicker in a dialog) - the "at $time" copy
+    // used to display a value nothing could ever change.
+    var showDigestTimePicker by rememberSaveable { mutableStateOf(false) }
+    // BYO OAuth client ids (Settings -> Sources). The drafts re-key when the
+    // persisted value changes, like the Gemini key field.
+    var googleClientIdInput by remember(googleClientId) { mutableStateOf(googleClientId) }
+    var teamsClientIdInput by remember(teamsClientId) { mutableStateOf(teamsClientId) }
 
     // Course Editor Sheet State
     var editingCourse by remember { mutableStateOf<CourseModel?>(null) }
@@ -767,6 +780,118 @@ fun SettingsScreen(
                             }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // The REAL Google Calendar push (Settings action). Visible
+                    // only when a Google account is signed in - the button
+                    // would otherwise only ever produce an honest "skipped".
+                    if (viewModel.isGoogleConnected()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Google Calendar push", fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "Push every dated upcoming assessment to your primary calendar",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = { viewModel.pushGcalNow() },
+                                shape = RoundedCornerShape(8.dp),
+                            ) {
+                                Text("Push now", fontSize = 12.sp)
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    // Background periodic scan: explicit opt-in, default OFF.
+                    // The worker re-checks this toggle from the store at run
+                    // time and posts no notifications on its own.
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Background scan (every 6 hours)", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "Scan your connected sources periodically, even when the app is closed. " +
+                                    "Off by default; a scan that finds nothing never notifies you.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = backgroundScanEnabled,
+                            onCheckedChange = { enabled ->
+                                viewModel.setBackgroundScanEnabled(enabled)
+                                BackgroundScanWorker.reschedule(context, enabled)
+                            },
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // BYO OAuth client ids. The open-source build ships
+                    // placeholders: Google sign-in needs the user's own
+                    // "Android" OAuth client registered for THIS package name
+                    // and their signing SHA-1; Microsoft needs an Azure app
+                    // with the custom-scheme redirect. Honest, actionable copy
+                    // instead of a sign-in button that can only fail.
+                    Text(
+                        text = "OAuth client IDs (bring your own)",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text =
+                            "Google: create an \"Android\" OAuth client for package com.quizradar.app with your " +
+                                "signing SHA-1. Microsoft: register an Azure app with the redirect " +
+                                "com.quizradar.app://oauth/microsoft. Sign-in is refused until an ID is set here.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = googleClientIdInput,
+                        onValueChange = { googleClientIdInput = it },
+                        label = { Text("Google client ID") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = teamsClientIdInput,
+                        onValueChange = { teamsClientIdInput = it },
+                        label = { Text("Microsoft (Azure) client ID") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.setGoogleClientId(googleClientIdInput)
+                            viewModel.setTeamsClientId(teamsClientIdInput)
+                            viewModel.showToast("OAuth client IDs saved")
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                    ) {
+                        Text("Save Client IDs")
+                    }
                 }
             }
 
@@ -1004,7 +1129,9 @@ fun SettingsScreen(
 
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(vertical = 8.dp))
 
-                    // Morning Digest Switch & Time
+                    // Morning Digest Switch & Time. The time is now SETTABLE:
+                    // the row used to display "at 08:00" while nothing could
+                    // ever change the value.
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1022,6 +1149,13 @@ fun SettingsScreen(
                             checked = notifyMorningDigest,
                             onCheckedChange = { viewModel.setNotifyMorningDigest(it) },
                         )
+                    }
+
+                    TextButton(
+                        onClick = { showDigestTimePicker = true },
+                        modifier = Modifier.defaultMinSize(minHeight = 44.dp),
+                    ) {
+                        Text("Set digest time ($notifyMorningTime)")
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
@@ -1052,6 +1186,12 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
+                    // The auto-push toggle is REAL: after a scan that discovered
+                    // or updated items (and with Google signed in), the shell
+                    // pushes them and reports the push outcome in the scan
+                    // summary. The former "Sync Weekly Classes" row was removed
+                    // entirely - no feature backed it, and a switch that does
+                    // nothing is banned.
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1060,7 +1200,7 @@ fun SettingsScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Auto-push to Google Calendar", fontWeight = FontWeight.SemiBold)
                             Text(
-                                "Push discovered assessments to your primary Google Calendar (off by default)",
+                                "After a scan with new or updated items, push them to your primary Google Calendar (off by default)",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -1073,24 +1213,13 @@ fun SettingsScreen(
 
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(vertical = 8.dp))
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Sync Weekly Classes to Calendar", fontWeight = FontWeight.SemiBold)
-                            Text(
-                                "Create recurring weekly class events in Google Calendar",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(
-                            checked = syncWeeklyClassesToGcal,
-                            onCheckedChange = { viewModel.setSyncWeeklyClassesToGcal(it) },
-                        )
-                    }
+                    Text(
+                        text =
+                            "A one-off push is available in Sources -> Google Calendar push. " +
+                                "Scope refusals surface as errors - nothing is marked as synced.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
 
@@ -1190,6 +1319,48 @@ fun SettingsScreen(
                             Icon(Icons.Outlined.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Import Backup", fontSize = 12.sp)
+                        }
+                    }
+
+                    // Google Drive backup (data-only, app-data folder, explicit
+                    // user action - never a background sync). The payload is
+                    // built by the Rust core and structurally cannot carry
+                    // tokens. "No backup found" is the honest empty state.
+                    if (viewModel.isGoogleConnected()) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text =
+                                "Google Drive backup: a data-only copy in your Drive app-data folder. " +
+                                    "Tokens and credentials are never included.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            OutlinedButton(
+                                onClick = { viewModel.pushDriveBackupNow() },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp),
+                            ) {
+                                Icon(Icons.Outlined.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Back up to Drive", fontSize = 12.sp)
+                            }
+
+                            OutlinedButton(
+                                onClick = { viewModel.restoreDriveBackupNow() },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp),
+                            ) {
+                                Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Restore from Drive", fontSize = 12.sp)
+                            }
                         }
                     }
 
@@ -1413,6 +1584,40 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showAddFeedDialog = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
+    // Digest time picker dialog: the M3 TimePicker, 24h (the persisted value
+    // is a 24h "HH:mm" string and the reminder worker parses it as such).
+    if (showDigestTimePicker) {
+        val timeParts = notifyMorningTime.split(":")
+        val timePickerState =
+            rememberTimePickerState(
+                initialHour = timeParts.getOrNull(0)?.toIntOrNull()?.coerceIn(0, 23) ?: 8,
+                initialMinute = timeParts.getOrNull(1)?.toIntOrNull()?.coerceIn(0, 59) ?: 0,
+                is24Hour = true,
+            )
+        AlertDialog(
+            onDismissRequest = { showDigestTimePicker = false },
+            title = { Text("Digest time") },
+            text = { TimePicker(state = timePickerState) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.setNotifyMorningTime(
+                            String.format(java.util.Locale.US, "%02d:%02d", timePickerState.hour, timePickerState.minute),
+                        )
+                        showDigestTimePicker = false
+                    },
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDigestTimePicker = false }) {
                     Text("Cancel")
                 }
             },

@@ -34,7 +34,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+      - name: install wasm-bindgen-cli (version pinned by Cargo.lock)
+        run: |
+          WASM_BINDGEN_VERSION="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep '^version' | head -1 | cut -d'"' -f2)"
+          echo "wasm-bindgen-cli ${WASM_BINDGEN_VERSION}"
+          cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked
+      # The WASM artifact must exist before `tsc` runs: `wasmBridge.ts` imports
+      # the generated `public/wasm/quizradar_wasm.js` (same ordering as ci.yml).
+      - name: Build Web WASM Bundle
+        run: pnpm --dir apps/web build:wasm
       - name: Rust format check
         run: cargo fmt --all --check
       - name: Clippy check
@@ -147,9 +157,13 @@ jobs:
           # crash on launch (UnsatisfiedLinkError).
           targets: aarch64-linux-android, x86_64-linux-android
       - uses: Swatinem/rust-cache@v2
-      - uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: "27.1.12297006"
+      # `nttld/setup-ndk@v1` 404s on r27b (its bundled manifest predates the
+      # release); the runner's sdkmanager has it, and
+      # `tooling/build-android-libs.mjs` locates the NDK via ANDROID_NDK_HOME.
+      - name: install NDK r27b
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.1.12297006" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.1.12297006" >> "$GITHUB_ENV"
 
       - name: Build native core cdylib for uniffi
         run: cargo build -p quizradar-core --features uniffi

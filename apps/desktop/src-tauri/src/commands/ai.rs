@@ -115,12 +115,33 @@ pub async fn ai_quota_usage(state: State<'_, AppState>) -> Result<AiQuotaUsage, 
     })
 }
 
+/// The device's AI consent flag (`05` §5.1). The Settings toggle promises
+/// "Turn off to stay fully local", so the off state is enforced HERE at the
+/// command boundary — the UI hiding AI entry points alone would still let a
+/// scripted IPC call send topics or timetable images to Gemini. Default
+/// mirrors the state reader (`state.rs`): a desktop user who seeded their own
+/// key has opted in; the v4 importer and the PWA force it off explicitly.
+async fn gemini_consent(state: &AppState) -> Result<bool, String> {
+    state
+        .store
+        .get_config_bool("gemini_enabled".to_string(), true)
+        .await
+        .map_err(|e| format!("Failed to read the AI consent toggle: {e}"))
+}
+
 #[tauri::command]
 pub async fn extract_schedule(
     app: AppHandle,
     state: State<'_, AppState>,
     image: String,
 ) -> Result<DesktopExtractedTimetable, String> {
+    if !gemini_consent(&state).await? {
+        return Err(
+            "AI features are turned off in Settings, so this request cannot leave the device. \
+             Turn Gemini back on to import a timetable image."
+                .to_string(),
+        );
+    }
     let key = state.get_gemini_api_key()?.ok_or_else(|| {
         "No Gemini API key found. Add one in Settings, or set QUIZRADAR_GEMINI_API_KEY / place a \
          gemini.key file next to the app."
@@ -156,6 +177,13 @@ pub async fn extract_schedule(
 
 #[tauri::command]
 pub async fn optimize_tasks(state: State<'_, AppState>) -> Result<StudyTasksPayload, String> {
+    if !gemini_consent(&state).await? {
+        return Err(
+            "AI features are turned off in Settings, so the study plan stays deterministic. \
+             Turn Gemini back on to optimize the roadmap."
+                .to_string(),
+        );
+    }
     let key = state.get_gemini_api_key()?.ok_or_else(|| {
         "No Gemini API key found. Add one in Settings, or set QUIZRADAR_GEMINI_API_KEY / place a \
          gemini.key file next to the app."
@@ -192,6 +220,14 @@ pub async fn practice_generate(
     state: State<'_, AppState>,
     assessment_id: String,
 ) -> Result<PracticeQuizPayload, String> {
+    practice_generate_inner(&state, &assessment_id).await
+}
+
+/// Testable body of `practice_generate` (consent boundary + fallback ladder).
+pub async fn practice_generate_inner(
+    state: &AppState,
+    assessment_id: &str,
+) -> Result<PracticeQuizPayload, String> {
     let today = state.today();
     let snapshot = state
         .store
@@ -206,15 +242,19 @@ pub async fn practice_generate(
         .cloned()
         .ok_or_else(|| format!("Assessment with ID {assessment_id} not found"))?;
 
-    // Try AI generation if key is present
-    if let Ok(Some(key)) = state.get_gemini_api_key() {
-        let clock = Arc::new(chrono::Utc::now);
-        let ledger = Arc::new(QuotaLedger::new(Arc::new(state.store.quota_kv()), None));
-        if let Ok(provider) =
-            GeminiProvider::production(Some(key), clock, Some(Arc::clone(&ledger)))
-        {
-            if let Ok(quiz) = generate_practice(&provider, &assessment).await {
-                return Ok(quiz);
+    // Try AI generation only when the user's consent toggle allows it; with
+    // consent off (or no key) the honest on-device fallback below runs — the
+    // quiz is still generated, just labeled `authored_locally`.
+    if gemini_consent(state).await.unwrap_or(false) {
+        if let Ok(Some(key)) = state.get_gemini_api_key() {
+            let clock = Arc::new(chrono::Utc::now);
+            let ledger = Arc::new(QuotaLedger::new(Arc::new(state.store.quota_kv()), None));
+            if let Ok(provider) =
+                GeminiProvider::production(Some(key), clock, Some(Arc::clone(&ledger)))
+            {
+                if let Ok(quiz) = generate_practice(&provider, &assessment).await {
+                    return Ok(quiz);
+                }
             }
         }
     }

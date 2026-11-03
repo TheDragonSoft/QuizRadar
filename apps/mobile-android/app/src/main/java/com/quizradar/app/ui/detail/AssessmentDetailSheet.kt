@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quizradar.app.model.AssessmentModel
 import com.quizradar.app.ui.GradeSaveResult
+import com.quizradar.app.ui.calendarEventBeginTimeMillis
 import com.quizradar.app.ui.extractTimePart
 import com.quizradar.app.ui.formatIsoDateForDisplay
 import com.quizradar.app.ui.icons.Icons
@@ -714,6 +715,20 @@ fun AssessmentDetailSheet(
                                     CalendarContract.Events.DESCRIPTION,
                                     "QuizRadar exam radar item",
                                 )
+                                // The begin time used to be missing entirely -
+                                // the calendar app opened on a blank event.
+                                // Local midnight of the assessment date (or its
+                                // own start time), and omitted when no date is
+                                // known - never a fabricated default.
+                                calendarEventBeginTimeMillis(
+                                    assessment.dateIso?.toString(),
+                                    assessment.startTime,
+                                )?.let { beginMillis ->
+                                    putExtra(
+                                        CalendarContract.EXTRA_EVENT_BEGIN_TIME,
+                                        beginMillis,
+                                    )
+                                }
                                 if (assessment.room != null) {
                                     putExtra(CalendarContract.Events.EVENT_LOCATION, assessment.room)
                                 }

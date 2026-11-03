@@ -2,6 +2,7 @@ package com.quizradar.app.ui
 
 import com.quizradar.app.core.QuizRadarCore
 import com.quizradar.app.core.QuizRadarEngine
+import com.quizradar.app.model.QuizRadarJsonParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -37,6 +38,24 @@ private class FailingGradeCore(
         clearWeightage: Boolean,
         refDate: LocalDate,
     ): String = throw IllegalStateException("store write rejected")
+}
+
+/**
+ * A core whose custom-event writes always fail - the sheet must keep the
+ * draft open and say why, never silently drop the user's text.
+ */
+private class FailingCustomEventCore(
+    delegate: QuizRadarCore,
+) : QuizRadarCore by delegate {
+    override suspend fun upsertCustomEvent(
+        eventJson: String,
+        refDate: LocalDate,
+    ): String = throw IllegalStateException("event write rejected")
+
+    override suspend fun deleteCustomEvent(
+        id: String,
+        refDate: LocalDate,
+    ): String = throw IllegalStateException("event delete rejected")
 }
 
 /**
@@ -731,5 +750,352 @@ class QuizRadarViewModelTest {
             assertNull(engine.tokenProvider.getGoogleRefreshToken())
             assertNull(engine.getConfigString("user_email"))
             assertNull(engine.getConfigString("user_name"))
+        }
+
+    // =========================================================================
+    // Real on-device scanning
+    // =========================================================================
+
+    @Test
+    fun deriveSyncConfig_followsTheDesktopToggleSemantics() =
+        runTest {
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
+            val viewModel = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
+            advanceUntilIdle()
+
+            // Signed-in Google with default toggles: Gmail + Classroom run.
+            val connected =
+                viewModel.deriveSyncConfig(
+                    googleConnected = true,
+                    microsoftConnected = true,
+                    gmailToggle = true,
+                    classroomToggle = true,
+                    teamsToggle = true,
+                    moodleEnabled = false,
+                    moodleIcalUrl = null,
+                    moodleRestUrl = null,
+                    moodleRestToken = null,
+                )
+            assertTrue(connected.gmailEnabled)
+            assertTrue(connected.classroomEnabled)
+            assertTrue(connected.teamsEnabled)
+            assertTrue("Moodle defaults to off", !connected.moodleEnabled)
+            assertNull(connected.moodleIcalUrl)
+
+            // A signed-OUT account disables its sources even when the toggles are on.
+            val signedOut =
+                viewModel.deriveSyncConfig(
+                    googleConnected = false,
+                    microsoftConnected = false,
+                    gmailToggle = true,
+                    classroomToggle = true,
+                    teamsToggle = true,
+                    moodleEnabled = false,
+                    moodleIcalUrl = null,
+                    moodleRestUrl = null,
+                    moodleRestToken = null,
+                )
+            assertTrue(!signedOut.gmailEnabled)
+            assertTrue(!signedOut.classroomEnabled)
+            assertTrue(!signedOut.teamsEnabled)
+
+            // A source toggle can switch its source off while the account is connected.
+            val gmailOff =
+                viewModel.deriveSyncConfig(
+                    googleConnected = true,
+                    microsoftConnected = true,
+                    gmailToggle = false,
+                    classroomToggle = true,
+                    teamsToggle = false,
+                    moodleEnabled = false,
+                    moodleIcalUrl = null,
+                    moodleRestUrl = null,
+                    moodleRestToken = null,
+                )
+            assertTrue(!gmailOff.gmailEnabled)
+            assertTrue(gmailOff.classroomEnabled)
+            assertTrue(!gmailOff.teamsEnabled)
+
+            // Moodle runs only when its own toggle is on AND a channel is configured.
+            val moodle =
+                viewModel.deriveSyncConfig(
+                    googleConnected = false,
+                    microsoftConnected = false,
+                    gmailToggle = false,
+                    classroomToggle = false,
+                    teamsToggle = false,
+                    moodleEnabled = true,
+                    moodleIcalUrl = "  https://moodle.uni.edu/calendar/export.php  ",
+                    moodleRestUrl = null,
+                    moodleRestToken = null,
+                )
+            assertTrue(moodle.moodleEnabled)
+            assertEquals("https://moodle.uni.edu/calendar/export.php", moodle.moodleIcalUrl)
+            assertNull("a blank token must never be sent", moodle.moodleRestToken)
+        }
+
+    @Test
+    fun hasConfiguredSource_isHonestAboutZeroSources() =
+        runTest {
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
+            val viewModel = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
+            advanceUntilIdle()
+
+            // Nothing connected, nothing configured: no scan.
+            assertTrue(
+                !viewModel.hasConfiguredSource(
+                    googleConnected = false,
+                    microsoftConnected = false,
+                    gmailToggle = true,
+                    classroomToggle = true,
+                    teamsToggle = true,
+                    moodleConfigured = false,
+                    feedsEnabled = false,
+                ),
+            )
+            // A connected account with toggles on: scan.
+            assertTrue(
+                viewModel.hasConfiguredSource(
+                    googleConnected = true,
+                    microsoftConnected = false,
+                    gmailToggle = true,
+                    classroomToggle = true,
+                    teamsToggle = true,
+                    moodleConfigured = false,
+                    feedsEnabled = false,
+                ),
+            )
+            // Feeds alone are a real source.
+            assertTrue(
+                viewModel.hasConfiguredSource(
+                    googleConnected = false,
+                    microsoftConnected = false,
+                    gmailToggle = true,
+                    classroomToggle = true,
+                    teamsToggle = true,
+                    moodleConfigured = false,
+                    feedsEnabled = true,
+                ),
+            )
+            // A connected account with every OAuth toggle off and no feeds: no scan.
+            assertTrue(
+                !viewModel.hasConfiguredSource(
+                    googleConnected = true,
+                    microsoftConnected = false,
+                    gmailToggle = false,
+                    classroomToggle = false,
+                    teamsToggle = false,
+                    moodleConfigured = false,
+                    feedsEnabled = false,
+                ),
+            )
+        }
+
+    @Test
+    fun runScan_withoutSources_isAnHonestNoOp() =
+        runTest {
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
+            val viewModel = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
+            advanceUntilIdle()
+
+            viewModel.runScan()
+            advanceUntilIdle()
+
+            assertTrue("the scan must not spin", !viewModel.isScanning.value)
+            assertEquals(
+                "the empty state must say what is missing",
+                "No announcement sources connected - sign in or add a calendar feed first.",
+                viewModel.toastMessage.value,
+            )
+            assertNull("no report exists when nothing ran", viewModel.lastScanReport.value)
+        }
+
+    @Test
+    fun engine_scanWithEverySourceDisabled_reportsAllSkippedAndNeverStamps() =
+        runTest {
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
+            val config =
+                com.quizradar.app.core.FfiSyncConfig(
+                    gmailEnabled = false,
+                    teamsEnabled = false,
+                    moodleEnabled = false,
+                    classroomEnabled = false,
+                    moodleIcalUrl = null,
+                    moodleRestUrl = null,
+                    moodleRestToken = null,
+                )
+            val reportJson =
+                engine.runNativeSync(
+                    config,
+                    object : com.quizradar.app.core.FfiSyncProgressListener {
+                        override fun onProgress(
+                            source: String,
+                            stage: String,
+                            found: UInt,
+                            done: UInt,
+                        ) {
+                        }
+                    },
+                )
+            val report = QuizRadarJsonParser.parseSyncReport(reportJson)
+
+            assertTrue("a no-op scan still succeeds honestly", report.success)
+            assertEquals(0, report.totalNew)
+            assertEquals(0, report.totalUpdated)
+            assertTrue(
+                "every source must be reported skipped, not silently absent",
+                report.perSource.isNotEmpty() && report.perSource.all { it.status == "skipped" },
+            )
+            assertNull(
+                "'Last synced' reflects real fetches only - a skipped scan stamps nothing",
+                engine.getConfigString("last_gmail_sync"),
+            )
+        }
+
+    @Test
+    fun buildScanSummary_reportsCountsFailuresAndNotes() {
+        val report =
+            com.quizradar.app.model.SyncReportModel(
+                success = true,
+                totalNew = 3,
+                totalUpdated = 2,
+                notes = listOf("4 announcements outside the 60-day window were skipped"),
+                perSource =
+                    listOf(
+                        com.quizradar.app.model.SyncSourceReportModel("Gmail", "ran", found = 5),
+                        com.quizradar.app.model.SyncSourceReportModel("Teams", "failed", detail = "HTTP 401"),
+                    ),
+            )
+
+        val summary = buildScanSummary(report)
+
+        assertTrue(summary.contains("3 new · 2 updated"))
+        assertTrue(summary.contains("ran: Gmail"))
+        assertTrue("a failed source is named with its real error", summary.contains("Teams failed: HTTP 401"))
+        assertTrue(summary.contains("4 announcements outside the 60-day window were skipped"))
+    }
+
+    @Test
+    fun buildScanSummary_doesNotDressUpAnAllSkippedScanAsSuccess() {
+        val report =
+            com.quizradar.app.model.SyncReportModel(
+                success = true,
+                totalNew = 0,
+                totalUpdated = 0,
+                perSource =
+                    listOf(
+                        com.quizradar.app.model.SyncSourceReportModel("Gmail", "skipped", detail = "no token"),
+                        com.quizradar.app.model.SyncSourceReportModel("Teams", "skipped", detail = "not signed in"),
+                    ),
+            )
+
+        val summary = buildScanSummary(report)
+
+        assertTrue(summary.contains("0 new · 0 updated"))
+        assertTrue(
+            "the summary must say WHY nothing ran",
+            summary.contains("all sources skipped"),
+        )
+        assertTrue(summary.contains("no token"))
+    }
+
+    // =========================================================================
+    // Custom-event failure honesty
+    // =========================================================================
+
+    @Test
+    fun addCustomEvent_reportsTheFailureAndKeepsTheDraftOpen() =
+        runTest {
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
+            val viewModel =
+                QuizRadarViewModel(
+                    FailingCustomEventCore(engine),
+                    clockDate = { testDate },
+                    coreDispatcher = testDispatcher,
+                )
+            advanceUntilIdle()
+
+            val draft =
+                com.quizradar.app.ui.share.SharedEventDraft(
+                    title = "Group study",
+                    courseId = null,
+                    dateIso = testDate,
+                    notes = "chapter 4",
+                )
+            viewModel.openCreateEventDraft(draft)
+            var saved = true
+            viewModel.addCustomEvent(
+                com.quizradar.app.model.CustomEventModel(
+                    id = "custom-1",
+                    title = "Group study",
+                    dateIso = testDate,
+                ),
+            ) { success -> saved = success }
+            advanceUntilIdle()
+
+            assertTrue("the caller must hear that the save failed", !saved)
+            assertTrue(
+                "the failure must be surfaced (got \"${viewModel.toastMessage.value}\")",
+                viewModel.toastMessage.value?.contains("Could not save the event") == true,
+            )
+            assertTrue(
+                "the draft must stay open - the user's text is not thrown away",
+                viewModel.activeCreateEventDraft.value != null,
+            )
+        }
+
+    @Test
+    fun deleteCustomEvent_reportsTheFailureInsteadOfSwallowingIt() =
+        runTest {
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
+            val viewModel =
+                QuizRadarViewModel(
+                    FailingCustomEventCore(engine),
+                    clockDate = { testDate },
+                    coreDispatcher = testDispatcher,
+                )
+            advanceUntilIdle()
+
+            var deleted = true
+            viewModel.deleteCustomEvent("custom-1") { success -> deleted = success }
+            advanceUntilIdle()
+
+            assertTrue(!deleted)
+            assertTrue(
+                viewModel.toastMessage.value?.contains("Could not delete the event") == true,
+            )
+        }
+
+    @Test
+    fun resetAllData_clearsTheDismissedBannerAndChecklistFlags() =
+        runTest {
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
+            val viewModel = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
+            advanceUntilIdle()
+
+            viewModel.dismissConflicts()
+            viewModel.dismissSetupChecklist()
+            advanceUntilIdle()
+            assertTrue(viewModel.isConflictDismissed.value)
+            assertTrue(viewModel.isSetupChecklistDismissed.value)
+
+            viewModel.resetAllData { }
+            advanceUntilIdle()
+
+            assertTrue(
+                "the confirm dialog promises a full reset - the dismissed flags must not survive",
+                !viewModel.isConflictDismissed.value,
+            )
+            assertTrue(
+                !viewModel.isSetupChecklistDismissed.value,
+            )
+            assertEquals(
+                false,
+                engine.getConfigBool("dismiss_conflict_banner", default = true),
+            )
+            assertEquals(
+                false,
+                engine.getConfigBool("dismiss_setup_checklist", default = true),
+            )
         }
 }

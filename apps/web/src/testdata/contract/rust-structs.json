@@ -16,8 +16,8 @@
     "core/src/plan/tasks.rs": "556c2a8013cc405e177f0568af6f73a98312c56245d772e61c4027600d73fc91",
     "core/src/plan/conflicts.rs": "a953cf743da6a8fc45b43bc6c2dfd716c6842a65a2d4311b08c56a19e8729e74",
     "apps/desktop/src-tauri/src/commands/state.rs": "537d6c73b3dcf31faae548e74e6d703deda0f137fc647411b7a1a590cf34f2ce",
-    "core/src/store/repo.rs": "17857f530c6a94602fa4b083dd60982c6de133cf8513ab293f309868a7a10f24",
-    "core/src/ffi.rs": "24b8b1c8c5f0c6cd209c35f0bb515fe4ef956526b06d8acc3c024c1de7bdd9e2"
+    "core/src/store/repo.rs": "5aa07b83f4f255934d3ff10d1bfd18b5dcad094b0cad2695850255d99575f8df",
+    "core/src/ffi.rs": "bc5cd5a410787673eb67ca56c3fa39ec6c879ebc2a413c8c4fa5a8a6e3863d93"
   },
   "structs": {
     "CachedEmail": {
@@ -1922,6 +1922,50 @@
         "image_b64: String",
         "mime: String",
         "api_key: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.run_native_sync": {
+      "parameters": [
+        "&self",
+        "sync_config: FfiSyncConfig",
+        "today_iso: String",
+        "offset_seconds: i32",
+        "now_iso: String",
+        "local_stamp: String",
+        "progress: Box<dyn FfiSyncProgressListener>",
+        "google_tokens: Option<Box<dyn FfiTokenProvider>>",
+        "microsoft_tokens: Option<Box<dyn FfiTokenProvider>>"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.push_native_gcal": {
+      "parameters": [
+        "&self",
+        "today_iso: String",
+        "offset_seconds: i32",
+        "local_stamp: String",
+        "tokens: Box<dyn FfiTokenProvider>",
+        "gcal_base_url: Option<String>"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.push_native_drive_backup": {
+      "parameters": [
+        "&self",
+        "device_id: String",
+        "now_iso: String",
+        "local_stamp: String",
+        "tokens: Box<dyn FfiTokenProvider>"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.pull_native_drive_backup": {
+      "parameters": [
+        "&self",
+        "today_iso: String",
+        "now_iso: String",
+        "tokens: Box<dyn FfiTokenProvider>"
       ],
       "returns": "Result<String, QuizRadarFfiError>"
     }

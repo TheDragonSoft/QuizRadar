@@ -53,4 +53,44 @@ class DateFormatsTest {
         assertNull(extractClockPart(""))
         assertNull(extractClockPart(null))
     }
+
+    @Test
+    fun calendar_begin_time_is_local_midnight_of_the_assessment_date() {
+        val expected =
+            java.time.LocalDate
+                .parse("2026-10-30")
+                .atStartOfDay(java.time.ZoneId.systemDefault())
+                .toInstant()
+                .toEpochMilli()
+        assertEquals(
+            expected,
+            calendarEventBeginTimeMillis("2026-10-30", null),
+        )
+        // A date with no start time and a date with an unparsable time both
+        // land on local midnight - never on "today".
+        assertEquals(expected, calendarEventBeginTimeMillis("2026-10-30", ""))
+        assertEquals(expected, calendarEventBeginTimeMillis("2026-10-30", "not-a-time"))
+    }
+
+    @Test
+    fun calendar_begin_time_uses_the_assessment_start_time_when_present() {
+        val expected =
+            java.time.LocalDate
+                .parse("2026-10-30")
+                .atTime(9, 30)
+                .atZone(java.time.ZoneId.systemDefault())
+                .toInstant()
+                .toEpochMilli()
+        assertEquals(expected, calendarEventBeginTimeMillis("2026-10-30", "9:30"))
+        assertEquals(expected, calendarEventBeginTimeMillis("2026-10-30", "09:30"))
+    }
+
+    @Test
+    fun calendar_begin_time_is_omitted_when_no_date_is_known() {
+        // No date: the intent carries no begin-time extra at all (the caller
+        // checks for null) instead of inventing today's date.
+        assertNull(calendarEventBeginTimeMillis(null, "9:30"))
+        assertNull(calendarEventBeginTimeMillis("", "9:30"))
+        assertNull(calendarEventBeginTimeMillis("not-a-date", "9:30"))
+    }
 }

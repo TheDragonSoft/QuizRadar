@@ -324,6 +324,8 @@ mod tests {
         let dir = std::env::temp_dir().join("quizradar_p04_db_tests");
         std::fs::create_dir_all(&dir).unwrap();
         let name = format!("migrate_{}.db", std::process::id());
+        // A recycled process id may have left an old file behind.
+        let _ = std::fs::remove_file(dir.join(&name));
         {
             let db = temporary_file_db(&dir, &name);
             assert_eq!(db.schema_version().unwrap(), SCHEMA_VERSION);
@@ -341,6 +343,9 @@ mod tests {
         let dir = std::env::temp_dir().join("quizradar_p04_db_tests");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join(format!("legacy_{}.db", std::process::id()));
+        // A recycled process id may have left an old file behind; re-zeros of
+        // a stale schema would make migration 1 collide with existing tables.
+        let _ = std::fs::remove_file(&path);
         {
             let conn = Connection::open(&path).unwrap();
             conn.pragma_update(None, "user_version", 0).unwrap();

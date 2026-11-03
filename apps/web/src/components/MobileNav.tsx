@@ -1,5 +1,5 @@
 import React from "react";
-import { Calendar, CheckSquare, LayoutDashboard, Timer } from "lucide-react";
+import { Calendar, CheckSquare, LayoutDashboard, LifeBuoy, Timer } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
 import type { View } from "../state/types";
@@ -13,6 +13,11 @@ const NAV_DESTINATIONS: ReadonlyArray<{
   { id: "tasks", label: copy.nav.tasks, icon: CheckSquare },
   { id: "calendar", label: copy.nav.calendar, icon: Calendar },
   { id: "focus", label: copy.nav.focus, icon: Timer },
+  // The sidebar (and its Help entry) is hidden below 1024px, so without this
+  // destination the tier-parity page is unreachable at all on phones and in
+  // the 960-1023px desktop window band — the keyboard-only `?` shortcut was
+  // the only way in.
+  { id: "help", label: copy.nav.help, icon: LifeBuoy },
 ];
 
 export const MobileNav: React.FC = () => {

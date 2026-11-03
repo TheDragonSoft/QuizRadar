@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -120,6 +121,7 @@ fun AppScaffold(
     val activeDraft by viewModel.activeCreateEventDraft.collectAsState()
     val toastMessage by viewModel.toastMessage.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val isScanning by viewModel.isScanning.collectAsState()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     // The app's own mark in the top-left corner opens the navigation drawer.
@@ -418,19 +420,17 @@ fun AppScaffold(
                                 )
                             },
                             actions = {
-                                // Refresh Button with active progress indicator. The
-                                // Android shell reads the on-device store; it does not
-                                // poll Gmail or Teams, so the copy must not claim a
-                                // scan it never performs (AGENTS §3 honesty).
+                                // Sync button = the REAL scan (Gmail/Teams/
+                                // Classroom/feeds on this device, via the Rust
+                                // core). It no-ops honestly when no source is
+                                // configured, and shows live progress while the
+                                // core reports its per-source pulses.
                                 IconButton(
-                                    onClick = {
-                                        viewModel.refreshState()
-                                        viewModel.showToast("Refreshing on-device data...")
-                                    },
-                                    enabled = !isRefreshing,
+                                    onClick = { viewModel.runScan() },
+                                    enabled = !isRefreshing && !isScanning,
                                     modifier = Modifier.size(48.dp),
                                 ) {
-                                    if (isRefreshing) {
+                                    if (isRefreshing || isScanning) {
                                         CircularProgressIndicator(
                                             modifier = Modifier.size(20.dp),
                                             strokeWidth = 2.dp,
@@ -439,7 +439,7 @@ fun AppScaffold(
                                     } else {
                                         Icon(
                                             imageVector = Icons.Outlined.Sync,
-                                            contentDescription = "Refresh on-device data",
+                                            contentDescription = "Scan announcement sources now",
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
@@ -604,12 +604,30 @@ fun AppScaffold(
                             }
 
                             is UiState.Error -> {
-                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = "Error: ${state.message}",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.error,
-                                    )
+                                // The bare error text used to dead-end: no way
+                                // forward but killing the app. A Retry re-runs
+                                // the load (the failure may have been a cold
+                                // native-core start or a transient IO error).
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(
+                                            text = "Error: ${state.message}",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.error,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                            modifier = Modifier.padding(horizontal = 24.dp),
+                                        )
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Button(
+                                            onClick = { viewModel.loadState() },
+                                            shape = RoundedCornerShape(10.dp),
+                                        ) {
+                                            Text("Retry")
+                                        }
+                                    }
                                 }
                             }
 
@@ -632,6 +650,7 @@ fun AppScaffold(
                                                 onAddCourse = { isNewCourseOpen = true },
                                                 onImportBackup = { backupPickerLauncher.launch("application/json") },
                                                 onAddEvent = { isAddMenuOpen = true },
+                                                onOpenSettings = { isSettingsOpen = true },
                                             )
 
                                         "Tasks" ->
@@ -754,13 +773,17 @@ fun AppScaffold(
                                     )
                                 }
 
-                                // Create/Edit Event Sheet (from draft)
+                                // Create/Edit Event Sheet (from draft). The
+                                // sheet closes only when the save REALLY
+                                // succeeded: addCustomEvent clears the draft on
+                                // success (which removes the sheet) and keeps
+                                // it open on failure with a toast saying why -
+                                // the user's text is never thrown away.
                                 if (activeDraft != null) {
                                     CreateEventSheet(
                                         draft = activeDraft,
                                         onSave = { event ->
                                             viewModel.addCustomEvent(event)
-                                            viewModel.dismissCreateEventDraft()
                                         },
                                         onDismiss = { viewModel.dismissCreateEventDraft() },
                                     )

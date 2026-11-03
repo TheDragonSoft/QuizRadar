@@ -37,7 +37,7 @@ export const HelpView: React.FC = () => {
     },
     {
       q: "Can I export my exam dates to Google Calendar or Outlook?",
-      a: "Yes. You can perform 2-way synchronization with Google Calendar directly from Desktop, or export universal standard .ics calendar files from any assessment detail modal.",
+      a: "Yes. The desktop app pushes your dated assessments to Google Calendar (one-way, always — QuizRadar never imports events back into itself), and any tier can export universal standard .ics calendar files from an assessment detail modal.",
     },
   ];
 
@@ -200,11 +200,13 @@ export const HelpView: React.FC = () => {
               <tr>
                 <td className="py-3 px-4 font-medium">Auto Background Scans</td>
                 <td className="py-3 px-4 text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5 font-medium">
-                  <CheckCircle className="h-3.5 w-3.5" aria-hidden="true" /> Full (OS loopback)
+                  <CheckCircle className="h-3.5 w-3.5" aria-hidden="true" /> Manual scan button
+                  (loopback is OAuth-only)
                 </td>
                 <td className="py-3 px-4 text-emerald-700 dark:text-emerald-400 font-medium">
                   <span className="flex items-center gap-1.5">
-                    <CheckCircle className="h-3.5 w-3.5" aria-hidden="true" /> WorkManager daemon
+                    <CheckCircle className="h-3.5 w-3.5" aria-hidden="true" /> Opt-in WorkManager
+                    scan (6h, default off)
                   </span>
                 </td>
                 <td className="py-3 px-4 text-[var(--text-muted)]">

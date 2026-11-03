@@ -168,8 +168,10 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenAuth }) =>
       return;
     }
     // Signed out: the chip IS the sign-in button, so it signs in (it must not
-    // dump the user on a settings page). Signed in: it opens the profile.
-    if (auth.authenticated) {
+    // dump the user on a settings page). Signed in — with Google OR with
+    // Microsoft only — it opens the profile; a Microsoft-only user must not
+    // be pushed into a Google sign-in they may never want.
+    if (auth.authenticated || auth.hasTeamsAuth) {
       openModal({ id: "account-profile" });
       return;
     }

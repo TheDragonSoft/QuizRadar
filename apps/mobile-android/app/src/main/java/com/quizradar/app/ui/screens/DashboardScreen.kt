@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -78,16 +79,22 @@ internal fun formatReadinessDisplay(
 
 /**
  * The "Connected Sources" KPI counts the sources this device is really
- * connected to - the ICS feeds the user added. The source labels on the
- * upcoming items say where the DATA came from (a backup import, a desktop
- * scan), which is not a live connection; presenting them as "connected
- * sources" claimed accounts the phone does not have.
+ * connected to: the signed-in accounts (which let the on-device Gmail/
+ * Classroom/Teams scans run) plus the enabled .ics feeds. The source labels
+ * on the upcoming items say where the DATA came from (a backup import), which
+ * is not a live connection; presenting them as "connected sources" claimed
+ * accounts the phone does not have.
+ *
+ * `lastSynced` is the stamp the Rust core writes ONLY after a scan in which a
+ * source really ran - shown verbatim, never fabricated for an empty scan.
  */
 internal fun formatSourcesDisplay(
     feeds: List<FeedConfigModel>,
     sourcesCount: Map<String, Int>,
+    accountsConnected: Int = 0,
+    lastSynced: String? = null,
 ): Pair<String, String> {
-    val connected = feeds.count { it.enabled }
+    val connected = feeds.count { it.enabled } + accountsConnected
     val headline =
         when (connected) {
             0 -> "No sources connected"
@@ -95,16 +102,34 @@ internal fun formatSourcesDisplay(
             else -> "$connected sources connected"
         }
     val base =
-        when (connected) {
-            0 -> "On-device engine ready — import backup or add events"
+        when {
+            connected == 0 -> "On-device engine ready — import backup or add events"
+            accountsConnected > 0 -> {
+                val feedCount = feeds.count { it.enabled }
+                buildString {
+                    append(
+                        if (accountsConnected == 1) "1 account" else "$accountsConnected accounts",
+                    )
+                    if (feedCount > 0) {
+                        append(" + $feedCount .ics feed${if (feedCount > 1) "s" else ""}")
+                    }
+                    append(" scan on this device")
+                }
+            }
             else -> "ICS feed${if (connected > 1) "s" else ""} fetched on this device"
         }
     val radarSources = sourcesCount.filter { it.value > 0 }.keys.sorted()
-    val subtitle =
+    val withRadar =
         if (radarSources.isEmpty()) {
             base
         } else {
             "$base — your radar holds items from ${radarSources.joinToString(", ")}"
+        }
+    val subtitle =
+        if (lastSynced.isNullOrBlank()) {
+            withRadar
+        } else {
+            "$withRadar · Last synced $lastSynced"
         }
     return headline to subtitle
 }
@@ -119,12 +144,17 @@ fun DashboardScreen(
     onAddCourse: () -> Unit = {},
     onImportBackup: () -> Unit = {},
     onAddEvent: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
     val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val isScanning by viewModel.isScanning.collectAsState()
+    val scanProgress by viewModel.scanProgress.collectAsState()
+    val lastScanReport by viewModel.lastScanReport.collectAsState()
+    val lastSyncedStamp by viewModel.lastSyncedStamp.collectAsState()
     val isConflictDismissed by viewModel.isConflictDismissed.collectAsState()
     val isSetupChecklistDismissed by viewModel.isSetupChecklistDismissed.collectAsState()
     val notifyExam24h by viewModel.notifyExam24h.collectAsState()
@@ -191,13 +221,16 @@ fun DashboardScreen(
             completedTopicsCount = dash.completedTopicsCount,
             readinessPercent = dash.readinessPercent,
         )
+    val accountsConnected =
+        (if (viewModel.isGoogleConnected()) 1 else 0) +
+            (if (viewModel.isMicrosoftConnected()) 1 else 0)
     val (sourcesHeadline, sourcesSubtitle) =
-        formatSourcesDisplay(snapshot.feeds, dash.sourcesCount)
-    val hasActiveSources = snapshot.feeds.any { it.enabled }
+        formatSourcesDisplay(snapshot.feeds, dash.sourcesCount, accountsConnected, lastSyncedStamp)
+    val hasActiveSources = snapshot.feeds.any { it.enabled } || accountsConnected > 0
 
     PullToRefreshBox(
-        isRefreshing = isRefreshing,
-        onRefresh = { viewModel.refreshState() },
+        isRefreshing = isRefreshing || isScanning,
+        onRefresh = { viewModel.runScan() },
         modifier = modifier.fillMaxSize(),
     ) {
         LazyColumn(
@@ -314,12 +347,28 @@ fun DashboardScreen(
                         hasNotificationPermission = hasNotificationPermission,
                         onAddCourse = onAddCourse,
                         onConnectSources = onOpenAccount,
+                        onOpenSettings = onOpenSettings,
                         onRequestNotificationPermission = {
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                             }
                         },
                         onDismiss = { viewModel.dismissSetupChecklist() },
+                    )
+                }
+            }
+
+            // Live scan card: the per-source progress the Rust core reports
+            // while running, and the honest per-source outcomes of the last
+            // completed run afterwards. No Cancel affordance - the core has no
+            // mid-scan cancel, and a fake one would be a lie.
+            if (isScanning || lastScanReport != null) {
+                item {
+                    ScanSourcesCard(
+                        isScanning = isScanning,
+                        progress = scanProgress,
+                        report = lastScanReport,
+                        onScanNow = { viewModel.runScan() },
                     )
                 }
             }
@@ -641,12 +690,12 @@ fun DashboardScreen(
                             EmptyDashboardStateCard(
                                 title = "No assessments discovered yet",
                                 desc =
-                                    "Your courses are enrolled. Connect an announcement source on the " +
-                                        "desktop app (or import a backup) to fill your radar, or add an " +
-                                        "event manually.",
+                                    "Your courses are enrolled. Sign in to Gmail or Teams (or add an " +
+                                        ".ics feed) and pull down to scan - announcements are read on " +
+                                        "this device. You can also add an event manually.",
                                 icon = Icons.Outlined.Checklist,
-                                primaryButtonLabel = "Refresh",
-                                onPrimaryClick = { viewModel.refreshState() },
+                                primaryButtonLabel = "Scan now",
+                                onPrimaryClick = { viewModel.runScan() },
                                 secondaryButtonLabel = "Add Event",
                                 onSecondaryClick = onAddEvent,
                             )
@@ -763,12 +812,12 @@ fun DashboardScreen(
                             EmptyDashboardStateCard(
                                 title = "No assessments discovered yet",
                                 desc =
-                                    "Your courses are enrolled. Connect an announcement source on the " +
-                                        "desktop app (or import a backup) to fill your radar, or add an " +
-                                        "event manually.",
+                                    "Your courses are enrolled. Sign in to Gmail or Teams (or add an " +
+                                        ".ics feed) and pull down to scan - announcements are read on " +
+                                        "this device. You can also add an event manually.",
                                 icon = Icons.Outlined.Checklist,
-                                primaryButtonLabel = "Refresh",
-                                onPrimaryClick = { viewModel.refreshState() },
+                                primaryButtonLabel = "Scan now",
+                                onPrimaryClick = { viewModel.runScan() },
                                 secondaryButtonLabel = "Add Event",
                                 onSecondaryClick = onAddEvent,
                             )
@@ -878,6 +927,135 @@ private fun EmptyDashboardStateCard(
                 ) {
                     Text(primaryButtonLabel, fontSize = 12.sp)
                 }
+            }
+        }
+    }
+}
+
+/**
+ * The live scan card. While the core runs, it shows the REAL per-source
+ * pulses (source, stage, found/done counts). Between runs it shows the last
+ * report's per-source outcomes - Ran / Skipped (reason) / Failed (error)
+ * verbatim, and the honest new/updated counts. There is deliberately no
+ * Cancel button: the core exposes no mid-scan cancel, and faking one would
+ * violate the honesty doctrine.
+ */
+@Composable
+private fun ScanSourcesCard(
+    isScanning: Boolean,
+    progress: List<com.quizradar.app.ui.ScanSourceProgress>,
+    report: com.quizradar.app.model.SyncReportModel?,
+    onScanNow: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
+                .padding(16.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = if (isScanning) "Scanning sources…" else "Last scan result",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (isScanning) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            } else {
+                Text(
+                    text =
+                        buildString {
+                            if (report != null) {
+                                append("${report.totalNew} new · ${report.totalUpdated} updated")
+                            }
+                        },
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        val rows: List<Pair<String, String>> =
+            if (isScanning) {
+                progress.map { row ->
+                    val counts =
+                        if (row.done > 0 || row.found > 0) "${row.done}/${row.found}" else ""
+                    row.name to
+                        listOf(row.stage, counts)
+                            .filter { it.isNotBlank() }
+                            .joinToString(" · ")
+                }
+            } else {
+                report?.perSource.orEmpty().map { row ->
+                    val status =
+                        when (row.status) {
+                            "ran" -> "ran · found ${row.found}"
+                            "failed" -> "failed${row.detail?.let { ": $it" } ?: ""}"
+                            else -> "skipped${row.detail?.let { ": $it" } ?: ""}"
+                        }
+                    row.name to status
+                }
+            }
+
+        if (rows.isEmpty()) {
+            Text(
+                text =
+                    if (isScanning) {
+                        "Waiting for the first source to report…"
+                    } else {
+                        "No scan has run yet on this device."
+                    },
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            rows.forEach { (name, status) ->
+                Row(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = name,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = status,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+
+        if (!isScanning) {
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onScanNow,
+                modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 44.dp),
+                shape = RoundedCornerShape(10.dp),
+            ) {
+                Text("Scan now", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }

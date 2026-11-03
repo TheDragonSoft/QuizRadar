@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -507,54 +508,78 @@ fun FocusScreen(
                             )
                         }
                     } else {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            assessments.take(3).forEach { a ->
-                                val isChosenExam = activePracticeId == a.id
-                                if (isChosenExam) {
-                                    Button(
-                                        onClick = {
-                                            userAnswers.clear()
-                                            viewModel.openPracticeQuiz(a.id)
-                                        },
-                                        shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.weight(1f).defaultMinSize(minHeight = 44.dp),
-                                        colors =
-                                            ButtonDefaults.buttonColors(
-                                                containerColor = MaterialTheme.colorScheme.primary,
-                                                contentColor = MaterialTheme.colorScheme.onPrimary,
-                                            ),
-                                    ) {
-                                        Text(
-                                            text = a.courseName ?: a.courseId ?: a.title.take(10),
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 1,
-                                        )
-                                    }
-                                } else {
-                                    OutlinedButton(
-                                        onClick = {
-                                            userAnswers.clear()
-                                            viewModel.openPracticeQuiz(a.id)
-                                        },
-                                        shape = RoundedCornerShape(10.dp),
-                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                                        modifier = Modifier.weight(1f).defaultMinSize(minHeight = 44.dp),
-                                        colors =
-                                            ButtonDefaults.outlinedButtonColors(
-                                                containerColor = MaterialTheme.colorScheme.surface,
-                                                contentColor = MaterialTheme.colorScheme.onSurface,
-                                            ),
-                                    ) {
-                                        Text(
-                                            text = a.courseName ?: a.courseId ?: a.title.take(10),
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            maxLines = 1,
-                                        )
+                        // The picker used to show only the FIRST THREE
+                        // assessments - everything after that was unreachable.
+                        // It is now a horizontally scrollable row of every
+                        // DATED assessment, soonest first; an undated item has
+                        // no exam day to practice towards and stays out.
+                        val datedAssessments =
+                            assessments
+                                .filter { it.dateIso != null }
+                                .sortedBy { it.dateIso }
+                        if (datedAssessments.isEmpty()) {
+                            Text(
+                                text =
+                                    "No dated assessments to practice yet - a scan or an event " +
+                                        "with a confirmed date unlocks practice quizzes.",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            Row(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                datedAssessments.forEach { a ->
+                                    val isChosenExam = activePracticeId == a.id
+                                    val label = a.courseName ?: a.courseId ?: a.title.take(10)
+                                    val dateSuffix = a.dateIso?.let { " · $it" } ?: ""
+                                    if (isChosenExam) {
+                                        Button(
+                                            onClick = {
+                                                userAnswers.clear()
+                                                viewModel.openPracticeQuiz(a.id)
+                                            },
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.defaultMinSize(minHeight = 44.dp),
+                                            colors =
+                                                ButtonDefaults.buttonColors(
+                                                    containerColor = MaterialTheme.colorScheme.primary,
+                                                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                                                ),
+                                        ) {
+                                            Text(
+                                                text = label + dateSuffix,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                            )
+                                        }
+                                    } else {
+                                        OutlinedButton(
+                                            onClick = {
+                                                userAnswers.clear()
+                                                viewModel.openPracticeQuiz(a.id)
+                                            },
+                                            shape = RoundedCornerShape(10.dp),
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                                            modifier = Modifier.defaultMinSize(minHeight = 44.dp),
+                                            colors =
+                                                ButtonDefaults.outlinedButtonColors(
+                                                    containerColor = MaterialTheme.colorScheme.surface,
+                                                    contentColor = MaterialTheme.colorScheme.onSurface,
+                                                ),
+                                        ) {
+                                            Text(
+                                                text = label + dateSuffix,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1,
+                                            )
+                                        }
                                     }
                                 }
                             }

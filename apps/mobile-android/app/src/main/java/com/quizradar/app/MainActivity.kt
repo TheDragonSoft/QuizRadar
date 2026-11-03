@@ -16,6 +16,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import com.quizradar.app.auth.OAuthManager
 import com.quizradar.app.auth.OAuthRedirectResult
+import com.quizradar.app.core.BackgroundScanWorker
 import com.quizradar.app.core.QuizRadarEngine
 import com.quizradar.app.glance.QuizRadarWidget
 import com.quizradar.app.glance.WidgetUpdateWorker
@@ -57,6 +58,25 @@ class MainActivity : ComponentActivity() {
         NotificationHelper.createNotificationChannels(this)
         WidgetUpdateWorker.schedule(this)
         ExamReminderWorker.schedule(this)
+        // The background scan is an explicit opt-in (default OFF): the toggle
+        // is read from the store (a native call - off the main thread) and the
+        // periodic job is only enqueued when it is actually enabled.
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                BackgroundScanWorker.rescheduleFromConfig(applicationContext, engine)
+            } catch (_: Exception) {
+            }
+        }
+
+        // The user's own OAuth client ids (Settings -> Sources) flow into the
+        // manager as they load: BYO ids win over the placeholders, and the
+        // honest sign-in refusal turns into a real flow once an id exists.
+        lifecycleScope.launch {
+            viewModel.googleClientId.collect { oauthManager.googleClientId = it }
+        }
+        lifecycleScope.launch {
+            viewModel.teamsClientId.collect { oauthManager.microsoftClientId = it }
+        }
 
         handleIncomingIntent(intent)
 
@@ -81,13 +101,15 @@ class MainActivity : ComponentActivity() {
                         viewModel = viewModel,
                         onStartGoogleLogin = {
                             if (!oauthManager.isGoogleClientConfigured()) {
-                                // The open-source build ships a placeholder Google
-                                // client id: the provider would only say "client id
-                                // not found". Say so instead of opening a dead tab.
+                                // Google needs the USER'S OWN Android OAuth client
+                                // (package com.quizradar.app + their signing SHA-1);
+                                // the shipped placeholder would only die at the
+                                // provider with "client id not found". Say what to
+                                // do instead of opening a dead tab.
                                 viewModel.showToast(
-                                    "Google sign-in is not configured in this build yet " +
-                                        "(placeholder client id). Use backup import, or build " +
-                                        "with a registered Android OAuth client.",
+                                    "Google sign-in needs your own OAuth client id - add it " +
+                                        "in Settings -> Sources (an Android client for package " +
+                                        "com.quizradar.app with your signing SHA-1).",
                                 )
                             } else {
                                 oauthManager.startGoogleLogin(this@MainActivity, engine)
@@ -96,9 +118,9 @@ class MainActivity : ComponentActivity() {
                         onStartMicrosoftLogin = {
                             if (!oauthManager.isMicrosoftClientConfigured()) {
                                 viewModel.showToast(
-                                    "Microsoft sign-in is not configured in this build yet " +
-                                        "(placeholder client id). Use backup import, or build " +
-                                        "with a registered Azure app id.",
+                                    "Microsoft sign-in needs your own Azure app id - add it in " +
+                                        "Settings -> Sources (register the com.quizradar.app://" +
+                                        "oauth/microsoft redirect).",
                                 )
                             } else {
                                 oauthManager.startMicrosoftLogin(this@MainActivity, engine)

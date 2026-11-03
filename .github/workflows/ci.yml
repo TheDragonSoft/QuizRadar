@@ -109,6 +109,12 @@ jobs:
             libssl-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev
+      # The WASM artifact must exist before `tsc` runs: `wasmBridge.ts` imports
+      # the generated `public/wasm/quizradar_wasm.js`, which only a fresh
+      # checkout has after this step (locally it lingers from a previous build,
+      # which is why this ordering bug never surfaced on a dev machine).
+      - name: wasm build
+        run: pnpm --dir apps/web build:wasm
       - name: eslint
         run: pnpm lint
       - name: prettier
@@ -117,8 +123,6 @@ jobs:
         run: pnpm typecheck
       - name: vitest
         run: pnpm test
-      - name: wasm build
-        run: pnpm --dir apps/web build:wasm
 
   desktop:
     name: desktop (tauri shell tests)
@@ -166,9 +170,13 @@ jobs:
           # libquizradar_core.so, and the APK would not even start.
           targets: aarch64-linux-android, x86_64-linux-android
       - uses: Swatinem/rust-cache@v2
-      - uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: "27.1.12297006"
+      # `nttld/setup-ndk@v1` 404s on r27b (its bundled version manifest predates
+      # the release), so install the NDK with the runner's own sdkmanager —
+      # `tooling/build-android-libs.mjs` locates it via ANDROID_NDK_HOME.
+      - name: install NDK r27b
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.1.12297006" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.1.12297006" >> "$GITHUB_ENV"
       - name: build native core cdylib for tests
         run: cargo build -p quizradar-core --features uniffi
       - uses: gradle/actions/setup-gradle@v4

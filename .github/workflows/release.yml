@@ -157,7 +157,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Setup Android Release Keystore
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        # The `secrets` context is not available inside `if:` expressions on
+        # GitHub Actions (workflow startup fails) — route it through env.
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        if: env.ANDROID_KEYSTORE_BASE64 != ''
         run: |
           echo "::add-mask::${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
           echo "::add-mask::${{ secrets.ANDROID_KEY_PASSWORD }}"
@@ -174,7 +178,9 @@ jobs:
           ./gradlew assembleRelease bundleRelease
 
       - name: Verify Signed APK with apksigner
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        if: env.ANDROID_KEYSTORE_BASE64 != ''
         run: |
           $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose apps/mobile-android/app/build/outputs/apk/release/app-release.apk
 

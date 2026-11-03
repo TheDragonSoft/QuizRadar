@@ -1,4 +1,6 @@
 name: Release
+# v5 release pipeline (phase 15): a v* tag push builds desktop+android+PWA and
+# publishes the GitHub Release with the signed updater manifest.
 
 on:
   push:

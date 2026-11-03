@@ -19,7 +19,7 @@ _Agents update this file after every phase. Prompts are defined in `prompts/READ
 - [x] 13 android: Compose UI parity (views + detail/pomodoro/practice) (`prompts/p13-android-ui.md`) — shipped: Material 3 Compose UI parity for Android across Dashboard, Tasks, Calendar, and Focus screens, matching `01` §4.3–§4.6 and mobile modifiers `[M]`. Dashboard features 3 sub-tabs (Overview/Assessments/Study), KPI cards row (7-day count + type breakdown pills, readiness %, sync/accounts KPI with active sources count), ConflictBanner (unresolved vs mitigated states, auto-schedule 90-min evening blocks via core, dismiss persistence), "What Should I Study?" recommendation cards with optimistic topic toggles, and timeline rows with source icon, conflict chip, score chip, urgency pill, and honest room "—". Pull-to-refresh via `PullToRefreshBox` respecting opened sheets. Tasks screen features summary metrics line, course filter dropdown, readiness card grid with color thresholds and average badge, and Daily Study Roadmap day cards ("Today" ring/pulse) with topic checkboxes. Calendar screen features clamped 3-day sliding window (<600dp) and 7-day tablet window (08:00–21:00), pure greedy lane-overlap interval packing algorithm (`CalendarLanes.kt`), 4 block kinds (merged slot+exam with exam-glow, plain class slot, standalone assessment, custom event pink with inline delete/sheet), and tap-to-inspect opening the assessment detail sheet. Assessment Detail M3 `ModalBottomSheet` features course-color header bar, facts grid (room "—" when null, never "Hall B-204"), warnings, topics checklist with optimistic checkmarks, grade editor with Keep/Clear/Set explicit-null-clears semantics (`clearAchieved`/`clearMax`/`clearWeightage`), live what-if projection arithmetic (`WhatIfCalculator.kt`) with honest equal-weight disclosure note, and Google Calendar intent + RFC 5545 `.ics` share actions (`Intent.ACTION_SEND`). Focus screen features 25/5/15 Pomodoro timer (countdown, play/pause/reset, topic-done hook) and 5-MCQ practice quiz generated via core with local fallback provenance badges. M3 bottom navigation with 4 destinations (Dashboard, Tasks, Calendar, Focus) with `BackHandler` closing sheets before navigating or exiting. 20 Android unit and Robolectric UI tests green; ktlint and debug APK assemble clean.
 - [x] 14 android: native edge (PKCE custom-scheme OAuth, Glance widget, share ingest, notifications) (`prompts/p14-android-native.md`) — shipped: Full native Android capability parity replacing v4's `LocalOAuthServer`/FGS with standard RFC 8252 custom-scheme PKCE OAuth (`com.quizradar.app://oauth/google` and `com.quizradar.app://oauth/microsoft`) via Chrome Custom Tabs and core token exchange (refresh tokens in `EncryptedSharedPreferences`, access tokens in memory, zero loopback servers, zero FGS `specialUse`). Jetpack Glance 2x1 countdown widget (`QuizRadarWidget` + `QuizRadarWidgetReceiver`) displaying course color, title, date, and dynamic urgency badges ("TODAY", "TOMORROW", "IN X DAYS"), updated immediately on state changes and every 30 minutes via `WidgetUpdateWorker`. Share-sheet ingest (`ACTION_SEND` text/plain) with Gmail `subject\n\ntext` split (`ShareIngestParser`) routing directly into M3 `CreateEventSheet` and saving to core store. First-party notifications (`ExamReminderWorker` + `NotificationHelper`) managing high-importance `quizradar_exam_reminders` (T-24h and same-day alerts) and `quizradar_morning_digest` with deterministic FNV-1a IDs and ≤48 nearest policy. Predictive back handling across sheets and dashboard tabs. 40 Android unit and Robolectric tests green; ktlint and assembleDebug clean.
 - [x] 15 release pipeline (signed tauri updater, release APK/AAB, PWA deploy, notes) (`prompts/p15-release-ci.md`) — shipped: Monolithic version truth enforced via `tooling/version.json` with `generate-version.mjs --apply` stamping 5 sinks (`apps/web/package.json`, `apps/desktop/src-tauri/tauri.conf.json`, `Cargo.toml`, `apps/mobile-android/app/build.gradle.kts`, `apps/web/src/generated/version.ts`) and verified by `core/build.rs` compile-time passthrough assertion. Release CI pipeline `.github/workflows/release.yml` with least-privilege permissions, multi-platform desktop matrix (Windows NSIS + portable zip, macOS DMG, Linux deb/AppImage), signed Tauri 2 updater artifacts (`latest.json` generator via `tooling/generate-updater-manifest.mjs`), honest updater error handling ("Update check unavailable — github link down" on network/404 errors), Android release signing with real keystore via Gradle `signingConfigs` and `apksigner` verification, PWA deployment to GitHub Pages with relative assets and dynamic service worker URL, and automated markdown release notes from git history via `tooling/generate-changelog.mjs`. 4 version pipeline tests, 3 updater command tests, and Android release signing verified.
-- [x] 16 migration UX + docs honesty pass + v1.0 cut (`prompts/p16-polish-migration.md`) — shipped: First-run "Coming from v4?" migration card on all shells (OnboardingWizardModal on Desktop/Web/PWA with native file picker, DashboardScreen on Android with ActivityResultContracts.GetContent() picker) reading v4 backup JSON, restoring courses/assessments/grades/topics, dropping legacy secrets, and reporting honest counts via `importBackupFile`/`QuizRadarViewModel.importBackup`; comprehensive docs honesty pass with root `README.md` rewritten against v5 reality, `docs/architecture-v5.md` public brief, `LICENSE` (MIT), `CONTRIBUTING.md`, `SECURITY.md`, and `PRIVACY.md` (zero-server data locality + verbatim BYOK Gemini consent copy); dogfood matrix executed across Journeys A, B, and C with pass status recorded; anti-checklist audit confirming 0% occurrence of v4 antipatterns (`Hall B-204`, demo palettes, `auto_sync_gcal: true`, `teams_token` in Drive payload, classroom 403 apology path, 4.5k body truncation, `LocalOAuthServer.java`, `specialUse` FGS); version 5.0.0 stamped across all 5 sinks and CHANGELOG.md generated. Full test suites green across Rust, Web, and Android.
+- [x] 16 migration UX + docs honesty pass + v1.0 cut (`prompts/p16-polish-migration.md`) — shipped: v4-backup import on all shells — Android via a first-run "Coming from v4?" card on `DashboardScreen` (`ActivityResultContracts.GetContent()` picker); desktop/web via Settings → Integrations → Import Backup and the Cloud Sync modal (a `fix(release)` correction: the earlier claim of a migration card inside `OnboardingWizardModal` was wrong — the wizard has no migration step; the import flow itself exists and is wired). Restores courses/assessments/grades/topics, drops legacy secrets, and reports honest counts via `importBackupFile`/`QuizRadarViewModel.importBackup`; comprehensive docs honesty pass with root `README.md` rewritten against v5 reality, `docs/architecture-v5.md` public brief, `LICENSE` (MIT), `CONTRIBUTING.md`, `SECURITY.md`, and `PRIVACY.md` (zero-server data locality + verbatim BYOK Gemini consent copy); dogfood matrix executed across Journeys A, B, and C with pass status recorded; anti-checklist audit confirming 0% occurrence of v4 antipatterns (`Hall B-204`, demo palettes, `auto_sync_gcal: true`, `teams_token` in Drive payload, classroom 403 apology path, 4.5k body truncation, `LocalOAuthServer.java`, `specialUse` FGS); version 5.0.0 stamped across all 5 sinks and CHANGELOG.md generated. Full test suites green across Rust, Web, and Android.
 - [x] 18 post-ship audit completion: full testing stack + v4 dashboard port + live UI sweep (`docs/TESTING-PLAYBOOK.md` is the reusable protocol) — shipped: Rust↔TS contract tests (`apps/web/src/contract/` — `regenerate.mjs` derives the wire map from the Rust sources, `contractGuard.ts` validates payloads, 41-test suite with freshness gate + 13 drift mutations), proptest property suites for email/ICS/planner (`core/tests/property_email.rs`, `property_ics.rs`, `property_plan.rs`), axe-core accessibility audits (`apps/web/src/audit/axe.test.tsx`), v4-antipattern source scan + copy-conformance tests, Playwright visual regression with committed baselines (`apps/web/e2e/`, `apps/web/e2e-baselines/`, clock frozen at 2026-10-29T12:00:00Z + UTC, light & dark projects), dev-only store handle `window.__QUIZRADAR_STORE__`, the v4 dashboard ported exactly from `v4-final:static/app.js` + the user's v4 screenshots (`DashboardView` rewrite, baselines regenerated), and a full live sweep of the running desktop app (every button/toggle/input exercised via CDP; 8 real defects fixed, each with a regression test and before/after screenshots). See "Post-ship audit fixes #8".
 - [x] 19 cross-platform `/impeccable` UI polish, single-shell modal architecture & 7-layer reusable testing harness (`tooling/ui-sweep.mjs` + `docs/TESTING-PLAYBOOK.md`) — shipped: eliminated stacked/nested "double windows" in `ModalStack.tsx` + `modalRegistry.ts` (`flush: true` single-shell panels across all 13 modals, underlying layers `hidden`/`aria-hidden` while a child modal is on top, LIFO `Escape` restoration); fixed 12 functional & honesty bugs across Web/PWA/Desktop (`TopBar` 1-based month index fix, `All Clear` `openEventModal()`, PWA `user_email` no-fake-auth, full 6-variant `AssessmentType` filter, interactive `FocusView` Pomodoro + Practice Quiz hub, `.ics` feed enable/disable ARIA switches, browser JSON backup export/import round-trip, tier-aware OAuth copy, sandboxed `QUIZRADAR_DATA_DIR` + `QUIZRADAR_EPHEMERAL_KEYRING` in `apps/desktop/src-tauri`); resolved `240 → 0` Web/Desktop DOM/WCAG AA contrast/sub-11px typography issues (`--accent-ink` / `--accent-fill` split, dark-aware `coursePalette.ts`); upgraded Android Compose M3 UI (`MainActivity.kt` edge-to-edge, lavender-free `QuizRadarTheme.kt`, `AppScaffold.kt` `TopAppBar` with `+` `New Event` & `Import Backup`, honest `"—"` readiness & `"No sources connected"` on empty `DashboardScreen.kt`, fixed clipped Reset `OutlinedIconButton` & single-line interval pills on `FocusScreen.kt`, `tnum` tabular numerals); verified `51` Web/Desktop + `14` Android 1:1 Before & After screenshots (`0` DOM issues, `12/12` functional checks, `220` Vitest tests, `44` Android unit tests, Playwright baselines refreshed).
 - [x] 20 android-mobile UX polish: first-run wizard, setup checklist, settings & course editor, timer lifecycle & calendar interactivity (`android-ux-polish-plan.md` Phases B, C, D, E) — shipped:
@@ -1034,11 +1034,11 @@ When cutting a new release:
 - ~~Android local build requires JDK 21 + Android SDK~~ — resolved during phase 01: Temurin JDK 21 installed via winget; platform 35 + working cmdline-tools installed into the local SDK. CI still uses ubuntu + temurin 21 (`ci.yml`).
 - `pnpm core:watch` requires `cargo-watch` (not installed locally; optional dev nicety — plain `pnpm core:test` always works).
 - ~~`cargo tauri dev` opens a real window on this machine; the headless shell cannot visually confirm the placeholder rendering~~ — **resolved** in the post-ship audit passes: `pnpm --dir apps/desktop dev` was run and the real desktop window was inspected directly (scan overlay, Cancel, sidebar sync footer, connected-sources card). See "Post-ship audit fixes #7 → Live verification".
-- **Pair Phone (QR / PIN) is not implemented in any shell** (`04` §4.6 asks for device pairing). The build refuses the pairing deep link with "Desktop LAN pairing is disabled in QuizRadar v5 zero-server mode" and points at Backup Export/Import. Implementing it needs a transport decision that does not create a server - not a code gap.
+- **Pair Phone (QR / PIN) is not implemented in any shell** (`04` §4.6 asks for device pairing). A `quizradar://pair` deep link currently opens/focuses the desktop app silently (the `deep-link` event has no listener in the UI); there is no refusal message — a `fix(release)` correction removed the earlier claim that such a string existed, after a source grep found none. Backup Export/Import is the data path. Implementing pairing needs a transport decision that does not create a server - not a code gap.
 - **Moodle REST API needs a per-university app token.** The REST channel exists in the core, but only the iCal channel works out of the box for a student.
-- **The radar only grows.** A scan merges fresh results into the existing radar (user-owned fields are preserved), so a cancelled announcement or an item from a source the user later disabled stays visible. Removing them needs per-source provenance ("this source ran and did not report it again"); a partial fetch must never delete a real announcement.
-- **PWA offline start is incomplete.** The service worker precaches the app shell but not the WASM engine or the user's IndexedDB snapshot, so a cold offline start cannot derive the radar.
-- **No user-facing "add an assessment by hand" flow** in the desktop/web shells (only custom calendar events). The core's CRUD exists.
+- ~~**The radar only grows.**~~ **Resolved in Round 9 (idea 4):** per-source provenance shipped — every assessment carries the run id that last saw it, and `retire_unseen_items` retires an announcement the source stopped reporting, with a stated reason; a source that did not run never retires anything.
+- ~~**PWA offline start is incomplete.**~~ **Resolved in Round 9 (idea 5):** the service worker precaches the WASM engine and the local snapshot, so a cold offline start can derive the radar.
+- **No user-facing "add an assessment by hand" flow** in the desktop/web shells (only custom calendar events). The core's CRUD exists. Still open at the v5.0.0 tag; documented as post-release work.
 
 ## New dependencies (with rationale, per §7 DoD)
 
@@ -1248,10 +1248,9 @@ This round is the "what is left for the app to be ready" pass: the spec's accept
 
 ### Still open (deliberately not faked in this round)
 
-- **Pair Phone (QR / PIN)**: absent from all three shells. `04` §4.6 wants device pairing; the current build refuses the pairing deep link with "Desktop LAN pairing is disabled in QuizRadar v5 zero-server mode" and points at Backup Export/Import. A real implementation needs a transport decision that does not create a server.
+- **Pair Phone (QR / PIN)**: absent from all three shells. `04` §4.6 wants device pairing; a `quizradar://pair` deep link currently opens/focuses the desktop app silently — no refusal message exists (corrected from the earlier claim that one did; a source grep found none). A real implementation needs a transport decision that does not create a server.
 - **Moodle REST API**: the REST channel exists in the core but needs a registered Moodle app token per university; only the iCal channel works out of the box.
-- **The radar only grows**: a scan merges the fresh results into the existing radar (user-owned fields are preserved), so an announcement the university cancels, or an item from a source the user later disables, stays in the radar. Dropping it needs per-source provenance ("this source RAN and did not report it again") - a deliberate design decision, not a bug fix, because a partial fetch must never delete a real announcement.
-- **PWA offline**: the service worker precaches the app shell but not the WASM engine or the user's IndexedDB snapshot, so a cold offline start cannot derive the radar.
+- ~~**The radar only grows**~~ — resolved in Round 9 (idea 4, per-source provenance). ~~**PWA offline**~~ — resolved in Round 9 (idea 5, engine+snapshot precache).
 - **Manual assessment CRUD**: the desktop/web still has no user-facing "add an assessment by hand" flow (only custom calendar events); the core's CRUD exists.
 
 ## Round 8 - the APK shipped without the Rust core, and the app ANR'd on launch (2026-11-01)
@@ -1616,4 +1615,156 @@ Findings: 0 P0 / 1 P1 / 3 P2 / 2 P3 - all fixed in this round:
   font 1.0, night no).
 - No new dependencies (adaptivity uses `LocalConfiguration`, already in
   compose-ui).
+
+## Round 11 - v5.0.0 release-prep: completeness audits, on-device Android scanning, honesty debt, signing, CI repairs (2026-11-03)
+
+The release-prep session: two parallel completeness audits (Windows desktop,
+Android) against `01` §4-§5, then every finding triaged into fixes, a
+maintainer decision (Android ships REAL scanning, not companion copy), fresh
+signing material, and the CI pipeline repaired end-to-end. Nothing below is
+committed as "done" without its gate result.
+
+### Release state entering the round (verified, not assumed)
+
+- `main` fast-forwarded to the phase(20) tip and pushed (`2931870..c2f3eeb`);
+  the junk `$null` file deleted; `core.autocrlf` CRLF checkout damage repaired
+  with a universal `* text=auto eol=lf` in `.gitattributes` (prettier's 74
+  phantom "style issues" were line endings, not content).
+- Version sinks re-synced at 5.0.0 (versionCode 50000);
+  `tooling/generate-version.mjs --check` green; CHANGELOG regenerated.
+- **GitHub had zero secrets** - fresh ones generated this round (below).
+
+### The two audits (verdicts)
+
+- **Windows desktop: no P0.** IPC surface complete + contract-tested; updater
+  wired end-to-end (endpoint + signed `latest.json`); OAuth/keyring solid;
+  honest scan overlay with real cancellation; backup/restore/reset; 3-step
+  onboarding. Findings were honesty debt (below), not missing features.
+- **Android: one tier decision + bugs.** The app could not scan at all
+  (`run_sync` unreachable over UniFFI, OAuth refused placeholder client ids)
+  while Settings/onboarding/checklist/Help advertised scanning, GCal push and
+  Drive backup - a direct honesty-doctrine violation. The maintainer chose
+  **wire on-device scanning now**; the Help matrix cells are now true.
+
+### Android: real on-device scanning (the maintainer decision, implemented)
+
+- **Core/UniFFI** (`core/src/ffi.rs`): `FfiTokenProvider` callback interface
+  (capability-typed, honest null = no token), `FfiSyncProgressListener`,
+  typed `FfiSyncConfig` record, and `NativeStore` methods
+  `runNativeSync` / `pushNativeGcal` / `pushNativeDriveBackup` /
+  `pullNativeDriveBackup` - each porting the desktop command orchestration
+  (snapshot → `sources::sync::run_sync` → atomic merge → stamps-only-if-fetched,
+  gcal map merge + needsScope honesty, data-only Drive payload). Every
+  network-touching method carries `#[uniffi::method(async_runtime = "tokio")]`
+  - without it UniFFI 0.28 polls exported asyncs on the JNI thread with no
+  tokio reactor and reqwest panics on-device (also applied to the pre-existing
+  `extract_timetable_from_image`, which had this latent crash). 10 new FFI
+  tests (zero-sources truthfulness, wiremock feeds run, retirement with
+  reason, gcal idempotency via `server.verify()`, 403 needsScope persists
+  nothing, drive honest failures). Zero new dependencies.
+- **Android shell**: `EngineFfiTokens` (in-memory access tokens, lazy blocking
+  HTTPS refresh grant, rotation persisted, honest nulls);
+  `QuizRadarViewModel.runScan()` deriving `FfiSyncConfig` exactly like the
+  desktop (toggles + follows-account defaults), live per-source progress rows,
+  honest toast summary from the real report (counts, failures with the real
+  error, "all sources skipped"), snapshot refresh after; pull-to-refresh
+  triggers the scan; `ScanSourcesCard` shows real pulses + the last report's
+  Ran/Skipped/Failed rows - **no Cancel button** (the core has no mid-scan
+  cancel API; faking one is banned). Settings: real "Push now" GCal with the
+  real report, `auto_sync_gcal` now actually pushes after a productive scan,
+  the dead `sync_weekly_classes_to_gcal` row deleted, Drive back up/restore in
+  Data Management, BYO OAuth client-id fields (package `com.quizradar.app` +
+  SHA-1 guidance), opt-in 6-hour `BackgroundScanWorker` (default **OFF**,
+  re-checked at run time, no notification spam). Onboarding/checklist copy now
+  states what scanning really requires. Six known bugs fixed (silent
+  custom-event save failures → toast + draft kept; calendar intent missing
+  `EXTRA_EVENT_BEGIN_TIME`; dead-end error screen → Retry; `resetAllData`
+  not clearing dismiss flags; digest hour not editable; practice picker
+  truncated to 3). 25 new Android tests, **113/113** green, ktlint clean,
+  `assembleDebug` green (native core cross-built for arm64-v8a + x86_64).
+
+### Desktop honesty debt (audit findings, all fixed)
+
+- **Post-scan auto-push** (`commands/sync.rs`): the `auto_sync_gcal` toggle and
+  the onboarding checkbox were stored but never read - `run_sync_inner` now
+  runs the calendar push after a productive scan (every outcome - created/
+  updated counts, needs-scope, failure, not-signed-in - lands in the sync
+  notes; the push body was factored out of the guarded command so the
+  auto-push cannot deadlock the in-flight guard).
+- **AI consent enforced at the command boundary** (`commands/ai.rs`): with
+  `gemini_enabled` off, `practice_generate` returns the honest on-device
+  fallback (`authored_locally`) and `extract_schedule`/`optimize_tasks`
+  refuse with clear copy - the Settings toggle's "Turn off to stay fully
+  local" promise is now true even against scripted IPC calls.
+- **Teams/Classroom source toggles** added to Settings → Integrations (the
+  desktop spec §4.9 toggles that existed only in the engine); the dead
+  weekly-classes toggle row removed; Microsoft-only users no longer get pushed
+  a Google sign-in chip; the Help page is reachable in MobileNav (it was
+  keyboard-only below 1024px); Help fabrications fixed (2-way GCal sync →
+  one-way push; "Full (OS loopback)" background scans → manual scan); a
+  boot-failure MessageBox surfaces `SchemaTooNew` in release builds (it was
+  only ever written to `%TEMP%`).
+- Two regression tests added (auto-push honest skip note; consent-off quiz
+  stays on-device). STATUS corrections: the pairing-refusal string claimed in
+  Rounds 7/9 never existed (grep-verified) and the v4 migration card was in
+  Settings/Cloud Sync, not the onboarding wizard - both passages now say what
+  is actually in the code. `optimize_tasks` remains dead IPC - deliberately
+  left (documented post-release work, not silently dropped).
+
+### CI pipeline repairs (each verified against the real failure)
+
+- **release.yml startup_failure**: GitHub rejects the `secrets` context inside
+  `if:` conditionals - every push produced a run named after the file path
+  with zero jobs. Routed through step `env:` and verified by probe push (the
+  run now parses as "Release"; no startup failure on the next push).
+- **NDK 404**: `nttld/setup-ndk@v1` 404s on r27b (manifest predates it);
+  replaced with `sdkmanager "ndk;27.1.12297006"` + `ANDROID_NDK_HOME` (both
+  workflows), which is exactly how `tooling/build-android-libs.mjs` resolves
+  the NDK.
+- **Web typecheck ordered before the wasm build** in both workflows:
+  `wasmBridge.ts` imports the generated `public/wasm/quizradar_wasm.js`, which
+  only existed on dev machines - release.yml's `validate` job also gained the
+  wasm toolchain steps.
+- **Linux-only compile break**: `tauri-plugin-deep-link` 2.6.2 constructs
+  `rust-ini::ParseOption` missing two fields added in rust-ini 0.21.3 (E0063,
+  Linux-only, invisible to Windows gates); upstream fixed it in 2.6.3
+  (`46397767`), lockfile updated. One flaky store test fixed (temp DB keyed by
+  recycled pid; a stale legacy file made migration 1 collide).
+- Contract wire map regenerated (37 ffi exports); `settings-modal-light.png`
+  baseline regenerated for the new Sources section (5/5 e2e green).
+
+### Release signing (runbook §1, done for real)
+
+- Fresh Tauri updater minisign keypair + Android release keystore (RSA 2048,
+  10,000 days) generated with random passwords into
+  `C:\Users\ANXOMXR\quizradar-release-keys\` (outside the repo;
+  `SECRETS-README.txt` inside - the maintainer stores these in a password
+  manager). All six GitHub Actions secrets set via `gh secret set`
+  (`TAURI_SIGNING_PRIVATE_KEY(+PASSWORD)`, `ANDROID_KEYSTORE_BASE64/
+  PASSWORD/ALIAS/KEY_PASSWORD`); the new public key is stamped into
+  `tauri.conf.json` (safe to publish - it verifies, it never signs). The
+  plaintext `gh-tmp` staging files were deleted after upload.
+
+### Gates (all green, 2026-11-03)
+
+- Rust: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
+  -- -D warnings`, `cargo test --workspace` - 278 lib + 80 integration, 0
+  failures.
+- Web: prettier + eslint clean, typecheck clean, vitest **285/285**, Playwright
+  e2e **5/5** (settings baseline re-stamped).
+- Android: `ktlintCheck` clean, `testDebugUnitTest` **113/113**,
+  `assembleDebug` green (JDK 21 required locally).
+- `node tooling/generate-version.mjs --check` green at 5.0.0.
+
+### Still open (deliberately not faked this round)
+
+- Pair Phone (QR/PIN) - excluded by the maintainer; Moodle REST per-university
+  tokens; manual assessment CRUD on desktop/web; `optimize_tasks` wiring;
+  desktop Gmail cache table, port-80 listener reuse, update_config transaction;
+  Android token refresh UI, i18n `strings.xml`, lint `abortOnError=false`.
+- The Android OAuth client ids are BYO: Google requires an "Android" client
+  with the app package + SHA-1, Microsoft an Azure app with the
+  `com.quizradar.app://oauth/microsoft` redirect - without them the app
+  refuses auth honestly and scanning has no tokens to run.
+
 

@@ -351,6 +351,14 @@ jobs:
           path: release-assets
           merge-multiple: true
 
+      # The desktop upload globs preserved their bundle subdirectories
+      # (nsis/, dmg/, macos/, deb/, appimage/); sha256sum * and the updater
+      # manifest generator both expect every file at the top level.
+      - name: Flatten downloaded artifacts into release-assets/
+        run: |
+          find release-assets -mindepth 2 -type f -exec mv {} release-assets/ \;
+          ls -la release-assets
+
       - name: Generate SHA256SUMS.txt
         run: |
           cd release-assets

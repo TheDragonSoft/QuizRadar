@@ -100,8 +100,17 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform.target }}
+          targets: ${{ matrix.platform.target }}, wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+      # `cargo tauri build` runs the web bundle's beforeBuildCommand, whose
+      # build-wasm.mjs needs the wasm32 target AND the version-pinned
+      # wasm-bindgen CLI on PATH (the ci.yml web job installs the same pair).
+      - name: install wasm-bindgen-cli (version pinned by Cargo.lock)
+        shell: bash
+        run: |
+          WASM_BINDGEN_VERSION="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep '^version' | head -1 | cut -d'"' -f2)"
+          echo "wasm-bindgen-cli ${WASM_BINDGEN_VERSION}"
+          cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked
 
       - name: Install Linux system libraries
         if: runner.os == 'Linux'

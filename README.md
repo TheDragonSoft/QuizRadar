@@ -14,17 +14,17 @@
 
 All official builds are published on the [GitHub Releases](https://github.com/TheDragonSoft/QuizRadar/releases) page and produced by signed CI builds (`SHA256SUMS.txt` verifies every artifact).
 
-| Platform | Artifact | Notes |
-| --- | --- | --- |
-| **Windows** | `QuizRadar_5.0.0_x64-setup.exe` (NSIS) or `QuizRadar-Portable-win-x64.zip` | In-app auto-updater (minisign-signed `latest.json`) |
-| **macOS** | `.dmg` (Apple Silicon) | |
-| **Linux** | `.deb` / `.AppImage` (x64) | |
-| **Android** | `QuizRadar-v5.0.0.apk` / `.aab` | arm64-v8a + x86_64; see **Android sign-in setup** below |
+| Platform                | Artifact                                                                        | Notes                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| **Windows**             | `QuizRadar_5.0.0_x64-setup.exe` (NSIS) or `QuizRadar-Portable-win-x64.zip`      | In-app auto-updater (minisign-signed `latest.json`)                                    |
+| **macOS**               | `.dmg` (Apple Silicon)                                                          |                                                                                        |
+| **Linux**               | `.deb` / `.AppImage` (x64)                                                      |                                                                                        |
+| **Android**             | `QuizRadar-v5.0.0.apk` / `.aab`                                                 | arm64-v8a + x86_64; see **Android sign-in setup** below                                |
 | **Web Companion (PWA)** | [thedragonsoft.github.io/QuizRadar](https://thedragonsoft.github.io/QuizRadar/) | Install from your browser ("Add to Home Screen"); runs fully offline after first visit |
 
 ### Android sign-in setup (bring your own OAuth client)
 
-QuizRadar ships **no embedded Android OAuth client** â€” Android Google accounts require *your* Google Cloud OAuth client, because Google binds Android clients to a package name + signing certificate:
+QuizRadar ships **no embedded Android OAuth client** â€” Android Google accounts require _your_ Google Cloud OAuth client, because Google binds Android clients to a package name + signing certificate:
 
 1. In [Google Cloud Console â†’ Credentials](https://console.cloud.google.com/apis/credentials), create an **OAuth client ID** of type **Android** with package name `com.quizradar.app` and the SHA-1 of the certificate you installed the APK with.
 2. Create a **Web application** client for Microsoft/Azure (or reuse one) and add the redirect `com.quizradar.app://oauth/microsoft`.
@@ -36,20 +36,20 @@ Without a client id the app refuses sign-in with an honest message instead of pr
 
 ## 2. Screenshots
 
-| Desktop (Windows / macOS / Linux) | Android |
-| --- | --- |
-| ![Desktop dashboard](docs/screenshots/desktop-dashboard-light.png) | ![Android dashboard](docs/screenshots/android-dashboard.png) |
+| Desktop (Windows / macOS / Linux)                                          | Android                                                         |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| ![Desktop dashboard](docs/screenshots/desktop-dashboard-light.png)         | ![Android dashboard](docs/screenshots/android-dashboard.png)    |
 | ![Desktop week calendar](docs/screenshots/desktop-week-calendar-light.png) | ![Android week calendar](docs/screenshots/android-calendar.png) |
-| ![Desktop settings](docs/screenshots/desktop-settings-light.png) | ![Android study roadmap](docs/screenshots/android-tasks.png) |
+| ![Desktop settings](docs/screenshots/desktop-settings-light.png)           | ![Android study roadmap](docs/screenshots/android-tasks.png)    |
 
 <details>
 <summary>More (dark mode, onboarding, focus timer)</summary>
 
-| | |
-| --- | --- |
-| ![Desktop dashboard dark](docs/screenshots/desktop-dashboard-dark.png) | ![Android dashboard dark](docs/screenshots/android-dashboard-dark.png) |
-| ![Android onboarding](docs/screenshots/android-onboarding.png) | ![Android focus timer](docs/screenshots/android-focus.png) |
-| ![Desktop week calendar dark](docs/screenshots/desktop-week-calendar-dark.png) | ![Android settings](docs/screenshots/android-settings.png) |
+|                                                                                |                                                                        |
+| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| ![Desktop dashboard dark](docs/screenshots/desktop-dashboard-dark.png)         | ![Android dashboard dark](docs/screenshots/android-dashboard-dark.png) |
+| ![Android onboarding](docs/screenshots/android-onboarding.png)                 | ![Android focus timer](docs/screenshots/android-focus.png)             |
+| ![Desktop week calendar dark](docs/screenshots/desktop-week-calendar-dark.png) | ![Android settings](docs/screenshots/android-settings.png)             |
 
 </details>
 
@@ -57,11 +57,11 @@ Without a client id the app refuses sign-in with an honest message instead of pr
 
 ## 3. Platform Matrix
 
-| Platform                      | Tier      | Shell Architecture                          | Auth & Storage                                                        | Native Edge Features                                                                                            |
-| ----------------------------- | --------- | ------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| **Desktop** (Win, Mac, Linux) | Primary   | **Tauri 2** (In-Process IPC) + **React 19** | Loopback PKCE OAuth; OS Keyring (`keyring-rs`); SQLite                | Signed Auto-Updater (`tauri-plugin-updater`), native menus, system file dialogs                                 |
+| Platform                      | Tier      | Shell Architecture                          | Auth & Storage                                                                        | Native Edge Features                                                                                                                                                                        |
+| ----------------------------- | --------- | ------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Desktop** (Win, Mac, Linux) | Primary   | **Tauri 2** (In-Process IPC) + **React 19** | Loopback PKCE OAuth; OS Keyring (`keyring-rs`); SQLite                                | Signed Auto-Updater (`tauri-plugin-updater`), native menus, system file dialogs                                                                                                             |
 | **Android** (Phone & Tablet)  | Native    | **Kotlin 2.x** + **Jetpack Compose M3**     | Custom-scheme PKCE OAuth (BYO client id); `EncryptedSharedPreferences`; UniFFI SQLite | **On-device announcement scanning**, optional 6-hour background scan, Glance 2x1 AppWidget, T-24/digest notifications, `ACTION_SEND` share-sheet ingest, Google Calendar push, Drive backup |
-| **Web Companion** (PWA)       | Companion | **React 19** + **WebAssembly Core**         | In-memory ephemeral GIS tokens (1-hour lifespan); IndexedDB SQLite    | Service Worker offline caching (engine + snapshot precached), responsive mobile & desktop web layouts           |
+| **Web Companion** (PWA)       | Companion | **React 19** + **WebAssembly Core**         | In-memory ephemeral GIS tokens (1-hour lifespan); IndexedDB SQLite                    | Service Worker offline caching (engine + snapshot precached), responsive mobile & desktop web layouts                                                                                       |
 
 > **Note on PWA Limits:** The Web Companion PWA runs entirely in-browser without a backend server. It uses ephemeral 1-hour Google Identity Services tokens (no persistent refresh tokens), performs manual scans only, and pushes calendar data via `.ics` export instead of the Google Calendar API. For background scans and direct Calendar push, use the Desktop or Android app.
 

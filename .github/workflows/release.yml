@@ -127,7 +127,7 @@ jobs:
         run: cargo install tauri-cli --version "^2.0.0" --locked
 
       - name: Build Web Bundle
-        run: pnpm --filter quizradar-web build
+        run: pnpm --filter @quizradar/web build
 
       - name: Build Tauri Desktop Application & Updater
         env:
@@ -296,7 +296,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build Web Bundle
-        run: pnpm --filter quizradar-web build
+        run: pnpm --filter @quizradar/web build
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload Pages Artifact

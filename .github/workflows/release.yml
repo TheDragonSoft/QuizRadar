@@ -36,6 +36,22 @@ jobs:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+      # `cargo clippy --workspace` compiles the Tauri desktop shell, which on
+      # Linux needs the same system libraries ci.yml's rust job installs —
+      # without them glib-sys/webkit2gtk-sys fail their pkg-config probes.
+      - name: Install Tauri Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
       - name: install wasm-bindgen-cli (version pinned by Cargo.lock)
         run: |
           WASM_BINDGEN_VERSION="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep '^version' | head -1 | cut -d'"' -f2)"

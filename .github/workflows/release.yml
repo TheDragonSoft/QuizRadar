@@ -81,12 +81,17 @@ jobs:
           - name: Windows (x64)
             os: windows-latest
             target: x86_64-pc-windows-msvc
+            # NSIS installer only — `all` would also build an MSI, whose WiX
+            # download is an extra moving part the release never needed.
+            bundles: nsis
           - name: macOS (Apple Silicon)
             os: macos-latest
             target: aarch64-apple-darwin
+            bundles: dmg,app
           - name: Linux (x64)
             os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
+            bundles: deb,appimage
 
     steps:
       - uses: actions/checkout@v4
@@ -129,7 +134,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          cargo tauri build --target ${{ matrix.platform.target }}
+          cargo tauri build --target ${{ matrix.platform.target }} --bundles ${{ matrix.platform.bundles }}
 
       - name: Stage Windows Portable ZIP
         if: runner.os == 'Windows'

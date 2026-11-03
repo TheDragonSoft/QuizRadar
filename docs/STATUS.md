@@ -1767,4 +1767,89 @@ committed as "done" without its gate result.
   `com.quizradar.app://oauth/microsoft` redirect - without them the app
   refuses auth honestly and scanning has no tokens to run.
 
+## Round 12 - going public: branding, screenshots, Pages, and the real release cut (2026-11-03/04)
+
+Continued straight from Round 11 with the maintainer's go-ahead on three
+decisions: **wire on-device Android scanning** (done in Round 11), **make the
+repository public**, and **ship the release with fresh signing keys**.
+
+### Repository & the GitHub front page
+
+- The repo was **private**, which silently broke three things: GitHub Pages
+  (plan-gated for private repos), public release downloads, and the desktop
+  auto-updater endpoint (unauthenticated `latest.json` fetches 404). The
+  maintainer chose public; `gh repo edit --visibility public` flipped it and
+  **Pages was enabled** (`build_type: workflow`) - the first run's
+  "Deploy PWA to GitHub Pages" failure was exactly this missing setting, not
+  a build error.
+- Repo metadata updated: description (v5 reality, no more v4-era "axum"
+  topic), homepage pointing at the PWA, 16 topics (rust/tauri/kotlin/
+  jetpack-compose/pwa/wasm/uniffi/local-first/zero-server/...).
+- README rewritten: Install & Downloads (artifact table per platform +
+  **Android BYO-OAuth client setup** as an explicit first-class step), a
+  Screenshots section (below), honest "one-way Google Calendar push" wording
+  (the old text claimed 2-way sync), NDK/JDK-21/wasm-bindgen prerequisites,
+  CI badge.
+
+### Branding
+
+- `tauri.conf.json` bundle gains `publisher` / `copyright` / `homepage` /
+  `licenseFile` / `category` - the NSIS installer and Add/Remove Programs
+  entries previously showed an unknown publisher.
+- The PWA manifest's absolute `start_url: "/"`, `scope: "/"` and `/icons/*`
+  paths never resolve under the Pages `/QuizRadar/` base (vite copies
+  `public/` verbatim; `base: "./"` fixes assets but not manifest URLs) -
+  all moved to relative paths; `index.html` was already correct.
+- Android label/adaptive/themed icon and desktop icon set verified in place
+  from Rounds 9-10.
+
+### Screenshots (12, from the shipped UI - nothing mocked)
+
+- Desktop: the five Playwright baselines regenerated this round (dashboard
+  light/dark, week calendar light/dark, settings) copied into
+  `docs/screenshots/`.
+- Android (emulator-5554): onboarding wizard, populated dashboard (light and
+  dark), tasks roadmap, calendar, focus, settings - seeded through the app's
+  OWN v4-restore flow (a crafted backup JSON via the SAF picker) after a
+  `pm clear`, so every shot is the real app rendering real data paths. The
+  first import accidentally picked an older dogfood backup left in Download
+  (the dashboard showed courses the seed never contained) - resolved with a
+  uniquely-named seed and removing the stale files.
+
+### The release cut (v5.0.0) - every failure found, fixed, and re-cut
+
+1. `release.yml` `validate` failed on Linux: workspace clippy compiles the
+   Tauri desktop shell, which needs the same system libraries ci.yml's rust
+   job installs - added the apt block. Tag moved (nothing had published).
+2. Desktop matrix failed: `cargo tauri build` runs the web bundle's
+   beforeBuildCommand, whose `build-wasm.mjs` needs the **wasm32 target and
+   the pinned wasm-bindgen CLI** - the desktop matrix installed neither (the
+   error: `'wasm-bindgen' is not recognized`). Added to the matrix with
+   `shell: bash`.
+3. Android failed at `:app:packageRelease`: "Failed to read key ... Given
+   final block not properly padded" - a PKCS12 keystore encrypts its key
+   entry with the STORE password (keytool silently ignores a distinct
+   `-keypass` at generation), so the separate `ANDROID_KEY_PASSWORD` secret
+   could never work. Re-set to the keystore password, byte-exact (PowerShell
+   pipes append a trailing newline; `cmd /c "gh secret set ... < file"` does
+   not). `SECRETS-README.txt` documents the constraint.
+4. The v5.0.0 tag was moved twice (to `67384bc`, then the final fix commit)
+   before any release published - no artifacts, release, or `latest.json`
+   existed yet, so the moves re-ran the pipeline rather than mutating one.
+
+### Gates (2026-11-04)
+
+- CI green on every commit since the fixes (6/6 jobs, including the
+  previously-red android NDK, web wasm-ordering, and desktop Linux paths).
+- Release pipeline re-cut on the final tag; artifact verification recorded
+  below when the run settles.
+
+### Still open (unchanged from Round 11)
+
+- Pair Phone (QR/PIN) - excluded by the maintainer; Moodle REST per-university
+  tokens; manual assessment CRUD on desktop/web; `optimize_tasks` wiring;
+  desktop Gmail cache table, port-80 listener reuse, update_config transaction;
+  Android token refresh UI, i18n `strings.xml`, lint `abortOnError=false`.
+
+
 

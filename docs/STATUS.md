@@ -1896,5 +1896,107 @@ repository public**, and **ship the release with fresh signing keys**.
   desktop Gmail cache table, port-80 listener reuse, update_config transaction;
   Android token refresh UI, i18n `strings.xml`, lint `abortOnError=false`.
 
+## Round 13 - content-addressed topic keys, academic-rhythm wiring, settings-page redesign (2026-11-05)
+
+Three maintainer-approved fixes from the post-release issue triage, landed
+across commits `cdf0728` + `be9ae0b` (a concurrent session on Android OAuth
+client-id UX swept the shared working tree into those commits; the messages
+document the absorption - all gates below were run against the exact landed
+bytes).
+
+### 1. Topic completion is content-addressed (the silent data-corruption fix)
+
+- `topic_key(assessment_id, index)` → `topic_key_for_text(assessment_id,
+  topic_text)`: `"{id}::h{fnv1a64 of trimmed/lowercased/whitespace-collapsed
+  text}"`. THE regression the change exists for: a rescan that REORDERS an
+  announcement's topic list used to reattach the user's checkmarks to
+  whatever moved into that index (readiness %, "What Should I Study?", the
+  roadmap, Android Focus all inherited the lie). Completion now follows the
+  topic's own text; a reworded topic loses its check (documented), and
+  identical normalized topics inside one assessment share one key.
+- SQLite migration 3 (`SCHEMA_VERSION 2→3`): a one-shot Rust step rewrites
+  positional `topics_done` rows through each assessment's CURRENT topic
+  list, drops unresolvable rows (the positional scheme had already lost
+  them - it just stops carrying the dead entries), and records
+  `{remapped, dropped}` in `kv_meta.topic_key_migration_v3`.
+- The same legacy remap runs at both merge boundaries: the v4 importer
+  (against the imported assessments) and the Drive/local backup merge
+  (against the payload's own assessments). Legacy shape detection is
+  structural (`::` + decimal suffix vs the `h`-prefixed hash), so old keys
+  are recognized unambiguously.
+- Shell plumbing: desktop `toggle_topic` resolves idx→text→key from the
+  store (out-of-range = honest error, never a dangling key); the PWA
+  adapter builds keys via a new wasm `topic_key()` export and runs a
+  one-shot IndexedDB twin of migration 3 (`migrate_topic_keys()` on the
+  wasm bridge, marker-stamped, single transaction); UniFFI gained the same
+  `topicKey()` free fn and Kotlin's two build sites (`AssessmentDetailSheet`,
+  `FocusScreen`) use it. No UI index assumptions changed anywhere.
+- Regression tests: reorder-safety, normalization boundaries, legacy parse,
+  remap-with-drops, the SQLite migration on a real v2-shaped file, the v4
+  fixture (all entries in-range, zero count drift), the Drive merge, and
+  the desktop integration round-trip.
+
+### 2. The onboarding "Academic Rhythm" preset now does something
+
+- `01` §4.1 promised persisted track chips; nothing consumed the value.
+  `academic_track` (`med|eng|biz`) now parameterizes the deterministic
+  planner's prep-day ceiling in `build_study_tasks`: **med spreads prep
+  across 7 days before each exam, eng keeps v4's 5 (default), biz
+  concentrates on 3**. Unknown/unset values behave exactly like eng.
+- Read once per snapshot in `ops::read_snapshot` (config_kv → every
+  store-backed shell inherits it, including Android's native-store path);
+  the wasm `derive_tasks` and UniFFI `deriveStudyTasks` surfaces take the
+  track as a parameter; the PWA adapter passes the stored config value.
+- The choice is DISCLOSED, not magic: the onboarding step and the Settings
+  card both state exactly what the preset changes (`copy.onboarding.trackEffect`).
+- Android note: the direct `deriveStudyTasks` engine wrapper defaults to
+  `""` (eng) until the ViewModel passes the config value - the main data
+  path (native store snapshot) already applies the rhythm.
+
+### 3. Settings is a full-screen page (the 3-tab modal is gone)
+
+- The modal had become the app's heaviest surface (1159 lines, 9 sections,
+  localStorage tab restoration, 3 separate audit rounds found defects in
+  it). It is now `views/SettingsView.tsx`: one scrollable page, an anchored
+  side rail on wide screens (Account / Courses / Integrations), sticky chip
+  nav on mobile - every handler ported verbatim, only the chrome changed.
+- New store API: `openSettings(section?)` switches to the `settings` VIEW
+  and scrolls to the section anchor (`pendingSettingsSection` consumed by
+  the view). All former `openModal({id:"settings"})` callers migrated:
+  TopBar cog, `S` shortcut, AccountProfileModal, Dashboard empty-states,
+  Calendar empty-state, and both OAuth client-id failure paths.
+- Deleted: `SettingsModal.tsx`, its registry entry, the ModalStack title-id
+  entry, the `settings` modal-meta fallback. Reset no longer navigates away
+  (the freshly emptied page IS the honest evidence).
+- E2E: `settings-modal.spec.ts` → `settings-page.spec.ts` (opens via the
+  real top-bar control, asserts all three sections attached + a working
+  rail anchor, baseline `settings-page-light.png` re-stamped). Unit tests:
+  flows re-target the view (plus a new disclosure test), the chrome test
+  asserts `openSettings`, and the single-shell LIFO regression test uses
+  `account-profile` as its base layer (settings is no longer a modal).
+- Before/after shots: `docs/screenshots/settings-redo/` (before-account +
+  before-integrations modal, after top-of-page + after account page).
+
+### Gates (2026-11-05, on the landed bytes)
+
+- Rust: `cargo fmt --all --check` clean, `cargo clippy --workspace
+  --all-targets -- -D warnings` clean, `cargo test --workspace` green (284
+  core lib + integration suites, 0 failures).
+- Web: typecheck clean, eslint clean, prettier clean, vitest **286/286**
+  (31 files), Playwright e2e **5 passed / 1 light-only skip** with the
+  settings baseline re-stamped; contract wire map regenerated (38 ffi
+  exports) and its freshness gate green.
+- Android: `ktlintCheck` clean, `testDebugUnitTest` green,
+  `assembleDebug` green (JDK 21).
+
+### Still open (additions)
+
+- Android ViewModel does not yet pass `academicTrack` into the direct
+  `deriveStudyTasks` engine call (the native-store path applies it).
+- The web tier's SWR localStorage cache can briefly carry pre-migration
+  topic keys on the very first boot after this update; they resolve as
+  uncompleted until the first state refresh (the IndexedDB store itself is
+  migrated synchronously on first RPC).
+
 
 

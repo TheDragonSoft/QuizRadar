@@ -120,7 +120,10 @@ pub fn parse_legacy_topic_key(key: &str) -> Option<(String, usize)> {
         return None;
     }
     // Legacy suffixes are pure decimal; content keys carry the `h` prefix.
-    index.parse::<usize>().ok().map(|parsed| (assessment_id.to_string(), parsed))
+    index
+        .parse::<usize>()
+        .ok()
+        .map(|parsed| (assessment_id.to_string(), parsed))
 }
 
 /// Rewrites legacy positional keys in a `completed_topics` map into
@@ -639,16 +642,30 @@ mod tests {
     #[test]
     fn topic_key_is_assessment_id_hash_of_normalized_text() {
         let key = topic_key_for_text("gmail-3", "Sensor Stack");
-        assert!(key.starts_with("gmail-3::h"), "content-addressed shape: {key}");
-        assert_eq!(key.len(), "gmail-3::h".len() + 16, "64-bit hash as 16 hex chars");
+        assert!(
+            key.starts_with("gmail-3::h"),
+            "content-addressed shape: {key}"
+        );
+        assert_eq!(
+            key.len(),
+            "gmail-3::h".len() + 16,
+            "64-bit hash as 16 hex chars"
+        );
         assert_eq!(
             topic_key_for_text("gmail-3", "Sensor Stack"),
             key,
             "deterministic across calls"
         );
         // The legacy positional shape is recognized (and only that shape).
-        assert_eq!(parse_legacy_topic_key("gmail-3::2"), Some(("gmail-3".into(), 2)));
-        assert_eq!(parse_legacy_topic_key(&key), None, "content keys are not legacy");
+        assert_eq!(
+            parse_legacy_topic_key("gmail-3::2"),
+            Some(("gmail-3".into(), 2))
+        );
+        assert_eq!(
+            parse_legacy_topic_key(&key),
+            None,
+            "content keys are not legacy"
+        );
         assert_eq!(parse_legacy_topic_key("no-separator"), None);
     }
 
@@ -1063,10 +1080,10 @@ mod tests {
         );
         // v4/pre-migration shape: indexes into the ORIGINAL topic order.
         let legacy: CompletedTopics = [
-            ("gmail-1::1", true),  // "Memory Map" → must survive
-            ("gmail-1::2", false), // false entries pass through as false
-            ("gmail-1::9", true),  // out of range → dropped
-            ("gone::0", true),     // unknown assessment → dropped
+            ("gmail-1::1", true),                 // "Memory Map" → must survive
+            ("gmail-1::2", false),                // false entries pass through as false
+            ("gmail-1::9", true),                 // out of range → dropped
+            ("gone::0", true),                    // unknown assessment → dropped
             ("gmail-1::h0badbeef0badbeef", true), // already content key → untouched
         ]
         .into_iter()
@@ -1075,7 +1092,10 @@ mod tests {
 
         let (remapped, moved, dropped) = remap_legacy_topic_keys(&legacy, &[assessment]);
 
-        assert_eq!(moved, 2, "the two in-range legacy keys; the content key passes through uncounted");
+        assert_eq!(
+            moved, 2,
+            "the two in-range legacy keys; the content key passes through uncounted"
+        );
         assert_eq!(dropped, 2);
         assert_eq!(
             remapped.get(&topic_key_for_text("gmail-1", "Memory Map")),

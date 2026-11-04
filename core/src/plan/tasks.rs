@@ -826,8 +826,14 @@ mod tests {
     fn unknown_track_configs_fall_back_to_eng() {
         assert_eq!(AcademicTrack::from_config(None), AcademicTrack::Eng);
         assert_eq!(AcademicTrack::from_config(Some("")), AcademicTrack::Eng);
-        assert_eq!(AcademicTrack::from_config(Some("weird")), AcademicTrack::Eng);
-        assert_eq!(AcademicTrack::from_config(Some(" MED ")), AcademicTrack::Med);
+        assert_eq!(
+            AcademicTrack::from_config(Some("weird")),
+            AcademicTrack::Eng
+        );
+        assert_eq!(
+            AcademicTrack::from_config(Some(" MED ")),
+            AcademicTrack::Med
+        );
         assert_eq!(AcademicTrack::from_config(Some("biz")), AcademicTrack::Biz);
     }
 }

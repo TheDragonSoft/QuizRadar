@@ -18,6 +18,7 @@ export function AccountProfileModal({
   const microsoftLogin = useAppStore((s) => s.microsoftLogin);
   const microsoftLogout = useAppStore((s) => s.microsoftLogout);
   const openModal = useAppStore((s) => s.openModal);
+  const openSettings = useAppStore((s) => s.openSettings);
   const [imgBroken, setImgBroken] = useState(false);
 
   const displayName = auth.name || config.userName || "Student User";
@@ -26,7 +27,7 @@ export function AccountProfileModal({
 
   const handleOpenSettings = () => {
     onClose();
-    openModal({ id: "settings", props: { initialTab: "account" }, flush: true, size: "lg" });
+    openSettings("account");
   };
 
   // Sign-out wipes tokens — destructive enough to earn a confirmation step.

@@ -510,7 +510,9 @@ mod tests {
             Some(&true)
         );
         assert!(
-            topics.keys().all(|key| crate::plan::dashboard::parse_legacy_topic_key(key).is_none()),
+            topics
+                .keys()
+                .all(|key| crate::plan::dashboard::parse_legacy_topic_key(key).is_none()),
             "no positional key survives the import: {topics:?}"
         );
     }

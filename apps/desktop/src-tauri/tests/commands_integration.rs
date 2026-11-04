@@ -12,7 +12,7 @@
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use quizradar_core::plan::dashboard::topic_key;
+use quizradar_core::plan::dashboard::topic_key_for_text;
 use quizradar_core::sources::SourceProgress;
 use quizradar_core::store::repo::{FieldUpdate, GradeChange};
 use quizradar_core::store::Store;
@@ -210,7 +210,10 @@ async fn test_topic_toggle_round_trip() {
         .await
         .expect("insert assessment");
 
-    let key = topic_key("assess-topic-1", 0);
+    // Topic 0 of the assessment is "Limits" - the completion key is
+    // content-addressed from the topic TEXT, never a positional index
+    // (`01` §3), so a rescan that reorders topics cannot move the checkmark.
+    let key = topic_key_for_text("assess-topic-1", "Limits");
 
     // Initial state: not completed
     let snapshot0 = state.store.load_state(today).await.unwrap();

@@ -660,7 +660,12 @@ fn control_roadmap_horizon_cutoffs() {
         AssessmentType::ClassQuiz,
         None,
     )];
-    let payload = build_study_tasks(&undated, &CompletedTopics::new(), ref_date(), AcademicTrack::Eng);
+    let payload = build_study_tasks(
+        &undated,
+        &CompletedTopics::new(),
+        ref_date(),
+        AcademicTrack::Eng,
+    );
     assert!(
         payload.days.iter().all(|day| day.tasks.is_empty()),
         "an undated draft produces no tasks"
@@ -679,7 +684,12 @@ fn control_roadmap_horizon_cutoffs() {
         AssessmentType::ClassQuiz,
         None,
     )];
-    let payload = build_study_tasks(&too_far, &CompletedTopics::new(), ref_date(), AcademicTrack::Eng);
+    let payload = build_study_tasks(
+        &too_far,
+        &CompletedTopics::new(),
+        ref_date(),
+        AcademicTrack::Eng,
+    );
     assert!(
         payload.days.iter().all(|day| day.tasks.is_empty()),
         "beyond 14 days there is no roadmap"
@@ -695,7 +705,12 @@ fn control_roadmap_horizon_cutoffs() {
         AssessmentType::ClassQuiz,
         None,
     )];
-    let payload = build_study_tasks(&soon, &CompletedTopics::new(), ref_date(), AcademicTrack::Eng);
+    let payload = build_study_tasks(
+        &soon,
+        &CompletedTopics::new(),
+        ref_date(),
+        AcademicTrack::Eng,
+    );
     let tasks: Vec<_> = payload.days.iter().flat_map(|day| &day.tasks).collect();
     assert_eq!(tasks.len(), 2, "one checkbox per real topic");
     for task in &tasks {
@@ -714,7 +729,12 @@ fn control_roadmap_horizon_cutoffs() {
         AssessmentType::ClassQuiz,
         None,
     )];
-    let payload = build_study_tasks(&topicless, &CompletedTopics::new(), ref_date(), AcademicTrack::Eng);
+    let payload = build_study_tasks(
+        &topicless,
+        &CompletedTopics::new(),
+        ref_date(),
+        AcademicTrack::Eng,
+    );
     let tasks: Vec<_> = payload.days.iter().flat_map(|day| &day.tasks).collect();
     assert_eq!(tasks.len(), 3, "the 3 fallback framework topics");
 }

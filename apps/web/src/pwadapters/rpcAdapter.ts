@@ -434,9 +434,7 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
       const assessments = await loadAssessments();
       const topicText = assessments
         .filter((a) => String((a as unknown as Record<string, unknown>).id ?? "") === assessmentId)
-        .flatMap((a) => (Array.isArray(a.topics) ? a.topics : []))[topicIdx] as
-        | string
-        | undefined;
+        .flatMap((a) => (Array.isArray(a.topics) ? a.topics : []))[topicIdx] as string | undefined;
       if (typeof topicText !== "string" || topicText === "") {
         throw new Error(
           `Topic ${topicIdx + 1} no longer exists for this assessment — refresh and try again.`,

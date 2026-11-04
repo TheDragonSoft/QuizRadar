@@ -336,7 +336,13 @@ export interface GetStatePayload {
   studyTasksPayload: StudyTasksPayload;
 }
 
-export type View = "dashboard" | "tasks" | "calendar" | "focus" | "help";
+export type View = "dashboard" | "tasks" | "calendar" | "focus" | "help" | "settings";
+
+/**
+ * The Settings page's scrollable sections (the old three-tab modal, promoted
+ * to a full-screen page — one scrollable surface with an anchored side rail).
+ */
+export type SettingsSection = "account" | "courses" | "integrations";
 
 export type ThemeMode = "light" | "dark";
 

@@ -438,6 +438,10 @@ export const copy = {
 
   settings: {
     title: "Settings",
+    pageSubtitle: "Your account, courses, sources and local data — all on this device.",
+    sectionAccountSub: "Sign-in, academic rhythm and the Gemini key",
+    sectionCoursesSub: "Enrollment, timetable import and per-course slots",
+    sectionIntegrationsSub: "Calendar push, sources, feeds, backup and updates",
     tabAccount: "Account",
     tabCourses: "Courses",
     tabIntegrations: "Integrations",

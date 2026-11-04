@@ -47,7 +47,9 @@ describe("UI Sweep Regressions & Single-Shell Modal Invariants", () => {
     render(<ModalStack />);
 
     act(() => {
-      useAppStore.getState().openModal("settings");
+      // Settings left the modal stack (it is a full-screen view now), so the
+      // base layer here is the account-profile modal.
+      useAppStore.getState().openModal("account-profile");
       useAppStore.getState().openModal("add-course");
     });
 
@@ -60,11 +62,11 @@ describe("UI Sweep Regressions & Single-Shell Modal Invariants", () => {
     expect(visibleDialogs).toHaveLength(1);
     expect(screen.getByTestId("modal-add-course")).toBeVisible();
 
-    // LIFO Escape pops AddCourseModal and reveals SettingsModal again
+    // LIFO Escape pops AddCourseModal and reveals AccountProfileModal again
     fireEvent.keyDown(window, { key: "Escape" });
     expect(useAppStore.getState().openModals).toHaveLength(1);
-    expect(useAppStore.getState().openModals[0].id).toBe("settings");
-    expect(screen.getByTestId("modal-settings")).toBeVisible();
+    expect(useAppStore.getState().openModals[0].id).toBe("account-profile");
+    expect(screen.getByTestId("modal-account-profile")).toBeVisible();
   });
 
   it("does not fabricate auth.authenticated=true from a local user_email profile anchor", async () => {

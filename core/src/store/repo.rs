@@ -136,8 +136,13 @@ pub fn read_snapshot(
     );
     // The declared academic rhythm lives in config_kv; the store reads it
     // here so every shell's snapshot carries the same roadmap shape.
-    let track = AcademicTrack::from_config(ConfigRepo::new(conn).get_string("academic_track")?.as_deref());
-    let tasks = plan::tasks::build_study_tasks(&refreshed, &completed_topics, reference_date, track);
+    let track = AcademicTrack::from_config(
+        ConfigRepo::new(conn)
+            .get_string("academic_track")?
+            .as_deref(),
+    );
+    let tasks =
+        plan::tasks::build_study_tasks(&refreshed, &completed_topics, reference_date, track);
 
     Ok(AppSnapshot {
         assessments: refreshed,

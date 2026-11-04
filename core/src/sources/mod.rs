@@ -652,7 +652,12 @@ mod retirement_tests {
             radar_order(&items, reference_date).is_empty(),
             "a retired announcement must not sit on the radar"
         );
-        let tasks = build_study_tasks(&items, &CompletedTopics::new(), reference_date, crate::types::AcademicTrack::Eng);
+        let tasks = build_study_tasks(
+            &items,
+            &CompletedTopics::new(),
+            reference_date,
+            crate::types::AcademicTrack::Eng,
+        );
         assert!(
             tasks.readiness_cards.is_empty(),
             "a retired announcement must not ask for study time"

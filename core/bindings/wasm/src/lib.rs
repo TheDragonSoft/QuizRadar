@@ -12,8 +12,8 @@ use quizradar_core::plan::study_blocks::{block_date_for, block_id_for, study_blo
 use quizradar_core::plan::tasks::build_study_tasks;
 use quizradar_core::sources::{merge_preserving_user_fields, retire_unseen_items, source_run_id};
 use quizradar_core::types::{
-    AcademicTrack, Assessment, AssessmentSource, CachedEmail, CompletedTopics,
-    CustomCalendarEvent, ScheduleData,
+    AcademicTrack, Assessment, AssessmentSource, CachedEmail, CompletedTopics, CustomCalendarEvent,
+    ScheduleData,
 };
 use wasm_bindgen::prelude::*;
 
@@ -309,7 +309,8 @@ impl QuizRadarWasm {
                 })),
             }
         }
-        let result = serde_json::json!({ "entries": out, "remapped": remapped, "dropped": dropped });
+        let result =
+            serde_json::json!({ "entries": out, "remapped": remapped, "dropped": dropped });
         serde_json::to_string(&result)
             .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
     }

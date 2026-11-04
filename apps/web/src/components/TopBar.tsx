@@ -158,7 +158,8 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenAuth }) =>
     if (onOpenSettings) {
       onOpenSettings();
     } else {
-      openModal({ id: "settings", flush: true, size: "lg" });
+      // Settings is a full-screen view now (the old cramped modal is gone).
+      setView("settings");
     }
   };
 

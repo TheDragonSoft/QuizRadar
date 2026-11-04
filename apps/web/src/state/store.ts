@@ -19,6 +19,7 @@ import type {
   PracticeQuizPayload,
   ScheduleData,
   ScheduleSlot,
+  SettingsSection,
   SyncOutcome,
   SyncStatus,
   ThemeMode,
@@ -235,6 +236,11 @@ export interface AppStoreState {
 
   // UI state
   view: View;
+  /**
+   * Section a settings opener asked for (Account/Courses/Integrations).
+   * `SettingsView` scrolls to it and clears it; `null` = land at the top.
+   */
+  pendingSettingsSection: SettingsSection | null;
   theme: ThemeMode;
   /** Desktop rail visibility (the brand icon's hover toggle). */
   sidebarOpen: boolean;
@@ -271,6 +277,12 @@ export interface AppStoreState {
 
   // Actions
   setView: (view: View) => void;
+  /**
+   * Opens Settings as a full-screen view (the old modal is gone). An
+   * optional section scrolls the page to that anchor — the callers that
+   * used to open the modal with `initialTab`.
+   */
+  openSettings: (section?: SettingsSection) => void;
   setTheme: (theme: ThemeMode) => void;
   toggleTheme: () => void;
   toggleSidebar: () => void;
@@ -360,6 +372,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   hasLoaded: false,
 
   view: "dashboard",
+  pendingSettingsSection: null,
   theme: getInitialTheme(),
   sidebarOpen: getInitialSidebarOpen(),
   searchQuery: "",
@@ -417,6 +430,8 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   },
 
   setView: (view) => set({ view }),
+
+  openSettings: (section) => set({ view: "settings", pendingSettingsSection: section ?? null }),
 
   // applyThemeToDocument is owned by App's theme effect (runs on state
   // change) — calling it here too queued two View Transitions per click.
@@ -485,9 +500,6 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     if (meta) {
       if (instance.size === undefined && meta.size !== undefined) instance.size = meta.size;
       if (instance.flush === undefined && meta.flush !== undefined) instance.flush = meta.flush;
-    } else if (instance.id === "settings") {
-      if (instance.size === undefined) instance.size = "lg";
-      if (instance.flush === undefined) instance.flush = true;
     }
     set((state) => ({
       openModals: [...state.openModals.filter((m) => m.id !== instance.id), instance],
@@ -1194,7 +1206,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       // A missing/invalid OAuth client id is a setup problem, not a crash:
       // open the exact settings screen that fixes it and keep the toast short.
       if (isClientIdSetupError(message)) {
-        get().openModal({ id: "settings", props: { initialTab: "account" } });
+        get().openSettings("account");
         get().addToast({
           type: "error",
           message: "Google sign-in needs a usable client ID — Settings → Account is now open.",
@@ -1273,7 +1285,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (isClientIdSetupError(message)) {
-        get().openModal({ id: "settings", props: { initialTab: "account" } });
+        get().openSettings("account");
         get().addToast({
           type: "error",
           message:

@@ -684,14 +684,20 @@ mod tests {
             topic_repo
                 .all()
                 .unwrap()
-                .get(&crate::plan::dashboard::topic_key_for_text("a1", "Number systems")),
+                .get(&crate::plan::dashboard::topic_key_for_text(
+                    "a1",
+                    "Number systems"
+                )),
             Some(&true)
         );
         assert_eq!(
             topic_repo
                 .all()
                 .unwrap()
-                .get(&crate::plan::dashboard::topic_key_for_text("a1", "Karnaugh maps")),
+                .get(&crate::plan::dashboard::topic_key_for_text(
+                    "a1",
+                    "Karnaugh maps"
+                )),
             None,
             "a `false` entry merges as absence (true-only store)"
         );

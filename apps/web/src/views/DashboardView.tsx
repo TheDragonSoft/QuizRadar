@@ -204,6 +204,7 @@ export const DashboardView: React.FC = () => {
   const triggerSync = useAppStore((s) => s.triggerSync);
   const runGcalSync = useAppStore((s) => s.runGcalSync);
   const openModal = useAppStore((s) => s.openModal);
+  const openSettings = useAppStore((s) => s.openSettings);
   const openEventModal = useAppStore((s) => s.openEventModal);
 
   const [mobileTab, setMobileTab] = useState<MobileDashboardTab>("study");
@@ -316,7 +317,7 @@ export const DashboardView: React.FC = () => {
         assessment={nextUp}
         onOpenDetail={() => nextUp && openAssessmentDetail(nextUp.id)}
         onOpenCalendar={() => setView("calendar")}
-        onConnect={() => openModal({ id: "settings", props: { initialTab: "account" } })}
+        onConnect={() => openSettings("account")}
         onSync={() => void triggerSync()}
       />
 
@@ -614,7 +615,7 @@ export const DashboardView: React.FC = () => {
             ) : (
               <FirstRunEmpty
                 onAddCourse={() => openModal("add-course")}
-                onConnect={() => openModal({ id: "settings", props: { initialTab: "account" } })}
+                onConnect={() => openSettings("account")}
               />
             )}
           </div>
@@ -723,9 +724,7 @@ export const DashboardView: React.FC = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={() =>
-                        openModal({ id: "settings", props: { initialTab: "account" } })
-                      }
+                      onClick={() => openSettings("account")}
                       className="cursor-pointer rounded-lg border border-slate-300 px-3 py-1.5 text-[11px] font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
                     >
                       {copy.dashboard.connectAccount}

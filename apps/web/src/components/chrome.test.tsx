@@ -253,22 +253,21 @@ describe("Web UI Foundation & Chrome Components", () => {
     expect(useAppStore.getState().openModals).toHaveLength(0);
   });
 
-  // 12. The settings panel keeps one width across re-opens
-  it("opens the settings panel at the same size every time", () => {
+  // 12. Settings is a full-screen view — openSettings switches to it and can
+  //     target a section; no modal is stacked.
+  it("opens settings as the settings view with an optional section", () => {
     act(() => {
-      useAppStore.getState().openModal({ id: "settings", props: { initialTab: "account" } });
+      useAppStore.getState().openSettings("account");
     });
-    const first = useAppStore.getState().openModals[0];
+    expect(useAppStore.getState().view).toBe("settings");
+    expect(useAppStore.getState().pendingSettingsSection).toBe("account");
+    expect(useAppStore.getState().openModals).toHaveLength(0);
 
     act(() => {
-      useAppStore.getState().openModal({ id: "settings", props: { initialTab: "account" } });
+      useAppStore.getState().openSettings();
     });
-    const second = useAppStore.getState().openModals[0];
-
-    expect(first.size).toBe("lg");
-    expect(first.flush).toBe(true);
-    expect(second.size).toBe(first.size);
-    expect(second.flush).toBe(first.flush);
+    expect(useAppStore.getState().view).toBe("settings");
+    expect(useAppStore.getState().pendingSettingsSection).toBeNull();
   });
 
   // 13. SWR cache loads local snapshot immediately on startup

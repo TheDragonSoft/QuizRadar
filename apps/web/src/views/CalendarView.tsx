@@ -136,7 +136,7 @@ export const CalendarView: React.FC = () => {
   const setSelectedCalendarDate = useAppStore((s) => s.setSelectedCalendarDate);
   const openAssessmentDetail = useAppStore((s) => s.openAssessmentDetail);
   const openEventModal = useAppStore((s) => s.openEventModal);
-  const openModal = useAppStore((s) => s.openModal);
+  const openSettings = useAppStore((s) => s.openSettings);
   const refreshState = useAppStore((s) => s.refreshState);
   const addToast = useAppStore((s) => s.addToast);
   const searchQuery = useAppStore((s) => s.searchQuery);
@@ -340,7 +340,7 @@ export const CalendarView: React.FC = () => {
             <div className="flex items-center gap-2 shrink-0">
               <button
                 type="button"
-                onClick={() => openModal({ id: "settings", props: { initialTab: "courses" } })}
+                onClick={() => openSettings("courses")}
                 className="rounded-xl bg-[var(--accent-fill)] px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-[var(--accent-fill-hover)] transition cursor-pointer active:scale-95"
               >
                 + Add Course

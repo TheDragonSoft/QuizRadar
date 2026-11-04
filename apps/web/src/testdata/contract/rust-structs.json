@@ -12,11 +12,11 @@
   ],
   "sourceHashes": {
     "core/src/types.rs": "e5dbb598f29b5f6de391dc579b0cb4080c488cb511d436c520d3ad98d8af6c6e",
-    "core/src/plan/dashboard.rs": "e5c94bc56e4ae5e97c297f8ec2728e395f2db7bf66da03cfc6043645547fb6eb",
-    "core/src/plan/tasks.rs": "ffc089ca111dba716a6cc9364e428e3b543cea1d23956030f940da60e8a41c7d",
+    "core/src/plan/dashboard.rs": "7843b341f5c2a41dbd98950d1190d63714614f33f7505a60044136773d340948",
+    "core/src/plan/tasks.rs": "31ea4c52e13256d2c518ba77be664030d6b1414a6d36f57978d78cd3cb4cb4d2",
     "core/src/plan/conflicts.rs": "a953cf743da6a8fc45b43bc6c2dfd716c6842a65a2d4311b08c56a19e8729e74",
     "apps/desktop/src-tauri/src/commands/state.rs": "cc0a9e43c5254a35700bc5ed9f3ed7e04be17b75800b5f63172a5faca533dc3e",
-    "core/src/store/repo.rs": "e0e924c2d90fa2de71c5de066b67a319afefa671251dc4d58fece31d711c247e",
+    "core/src/store/repo.rs": "1929531cba321fb7c997eb10f4414a1de1cdf014f72ab744e9f5a24eff75c1cb",
     "core/src/ffi.rs": "484e4700f38e3dfcc188f084e96dcf0d613f5b0e89ad4637d2b0054c052c08be"
   },
   "structs": {

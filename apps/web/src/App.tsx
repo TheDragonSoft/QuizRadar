@@ -6,6 +6,7 @@ import { ModalStack } from "./components/ModalStack";
 import { ToastContainer } from "./components/Toast";
 import { PullToRefresh } from "./components/PullToRefresh";
 import { DashboardView, TasksView, CalendarView, FocusView, HelpView } from "./views/views";
+import { SettingsView } from "./views/SettingsView";
 import { DevRig } from "./dev/DevRig";
 import { useAppStore, applyThemeToDocument, initDayRolloverWatchdog } from "./state/store";
 import { isTauriEnvironment } from "./state/rpc";
@@ -14,7 +15,6 @@ import type { View } from "./state/types";
 import { registerModal, type ModalComponent } from "./components/modalRegistry";
 import { AssessmentDetailModal } from "./components/AssessmentDetailModal";
 import { OnboardingWizardModal } from "./components/OnboardingWizardModal";
-import { SettingsModal } from "./components/SettingsModal";
 import { PracticeQuizModal } from "./components/PracticeQuizModal";
 import { PomodoroModal } from "./components/PomodoroModal";
 import { SchedulePreviewModal } from "./components/SchedulePreviewModal";
@@ -25,17 +25,15 @@ import { CloudSyncModal } from "./components/CloudSyncModal";
 import { ScanProgressModal } from "./components/ScanProgressModal";
 import { AccountProfileModal } from "./components/AccountProfileModal";
 
-// Register all 13 spec modal components with canonical single-shell sizing & flush metadata
+// Register the spec modal components with canonical single-shell sizing & flush
+// metadata. (Settings is NOT one of them anymore: it is a full-screen view —
+// the modal could not hold its nine sections without cramped tabs.)
 registerModal("assessment-detail", AssessmentDetailModal as unknown as ModalComponent, {
   size: "lg",
   flush: true,
 });
 registerModal("onboarding", OnboardingWizardModal as unknown as ModalComponent, {
   size: "xl",
-  flush: true,
-});
-registerModal("settings", SettingsModal as unknown as ModalComponent, {
-  size: "lg",
   flush: true,
 });
 registerModal("practice-quiz", PracticeQuizModal as unknown as ModalComponent, { size: "lg" });
@@ -62,6 +60,7 @@ const VIEWS: Record<View, React.ComponentType> = {
   calendar: CalendarView,
   focus: FocusView,
   help: HelpView,
+  settings: SettingsView,
 };
 
 export default function App() {
@@ -123,7 +122,7 @@ export default function App() {
         return;
       }
       if (document.getElementById("topbar-search-results")) return;
-      const { openModals, setView, openModal } = useAppStore.getState();
+      const { openModals, setView } = useAppStore.getState();
       if (openModals.length > 0) return;
       switch (e.key) {
         case "d":
@@ -147,7 +146,7 @@ export default function App() {
           break;
         case "s":
         case "S":
-          openModal({ id: "settings", flush: true, size: "lg" });
+          setView("settings");
           break;
         default:
           return;

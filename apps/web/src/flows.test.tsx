@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import App from "./App";
 import { OnboardingWizardModal } from "./components/OnboardingWizardModal";
-import { SettingsModal } from "./components/SettingsModal";
+import { SettingsView } from "./views/SettingsView";
 import { SearchDropdown } from "./components/SearchDropdown";
 import { AccountProfileModal } from "./components/AccountProfileModal";
 import { PracticeQuizModal } from "./components/PracticeQuizModal";
@@ -204,30 +204,22 @@ describe("Web UI Flows & Modals (Phase 10)", () => {
     });
   });
 
-  // 2. Settings Modal: Tab restoration, feeds HTTPS validation, AI consent & quota copy
-  describe("Settings Modal", () => {
-    it("restores the last active tab from localStorage", () => {
-      localStorage.setItem("quizradar_settings_tab", "courses");
+  // 2. Settings Page: one scrollable surface (the old tabbed modal is gone),
+  //    feeds HTTPS validation, AI consent & quota copy
+  describe("Settings Page", () => {
+    it("renders all three sections on one anchored page", () => {
+      render(<SettingsView />);
 
-      render(<SettingsModal modalId="settings" onClose={vi.fn()} />);
-
-      // Courses tab should be active
+      // Every section header is present at once — no tab switching, no
+      // localStorage tab restoration to lose state.
       expect(screen.getByText(copy.settings.coursesHeader)).toBeInTheDocument();
-
-      // Click Integrations tab (the v4-style tab bar exposes ARIA tabs)
-      const integrationsTab = screen.getByRole("tab", {
-        name: new RegExp(copy.settings.tabIntegrations, "i"),
-      });
-      fireEvent.click(integrationsTab);
-
-      // Should persist "integrations" to localStorage
-      expect(localStorage.getItem("quizradar_settings_tab")).toBe("integrations");
       expect(screen.getByText(copy.settings.integrationsHeader)).toBeInTheDocument();
+      expect(screen.getByRole("navigation", { name: "Settings sections" })).toBeInTheDocument();
+      expect(document.getElementById("settings-section-integrations")).not.toBeNull();
     });
 
     it("displays exact verbatim Gemini free-tier consent disclosure and quota cap text", () => {
-      localStorage.setItem("quizradar_settings_tab", "account");
-      render(<SettingsModal modalId="settings" onClose={vi.fn()} />);
+      render(<SettingsView />);
 
       // Verbatim AI consent string from 05 §5.1
       expect(
@@ -245,11 +237,10 @@ describe("Web UI Flows & Modals (Phase 10)", () => {
     });
 
     it("rejects non-https URLs when adding an external calendar feed", async () => {
-      localStorage.setItem("quizradar_settings_tab", "integrations");
       const addToastMock = vi.fn();
       useAppStore.setState({ addToast: addToastMock });
 
-      render(<SettingsModal modalId="settings" onClose={vi.fn()} />);
+      render(<SettingsView />);
 
       const nameInput = screen.getByPlaceholderText(copy.settings.feedNamePlaceholder);
       const urlInput = screen.getByPlaceholderText(copy.settings.feedUrlPlaceholder);
@@ -268,8 +259,7 @@ describe("Web UI Flows & Modals (Phase 10)", () => {
     });
 
     it("keeps sign-in simple on the browser tier — client IDs are baked in, not user-entered", () => {
-      localStorage.setItem("quizradar_settings_tab", "account");
-      render(<SettingsModal modalId="settings" onClose={vi.fn()} />);
+      render(<SettingsView />);
 
       // The OAuth client-ID entry card is gone: both tiers ship working
       // clients, so the user only ever presses "Sign in".
@@ -289,8 +279,7 @@ describe("Web UI Flows & Modals (Phase 10)", () => {
       const globals = window as unknown as Record<string, unknown>;
       globals.__TAURI_INTERNALS__ = {};
       try {
-        localStorage.setItem("quizradar_settings_tab", "account");
-        render(<SettingsModal modalId="settings" onClose={vi.fn()} />);
+        render(<SettingsView />);
 
         expect(screen.queryByText(copy.settings.desktopSignInHeader)).not.toBeInTheDocument();
         expect(
@@ -302,6 +291,14 @@ describe("Web UI Flows & Modals (Phase 10)", () => {
       } finally {
         delete globals.__TAURI_INTERNALS__;
       }
+    });
+
+    it("discloses what the academic rhythm preset actually does", () => {
+      render(<SettingsView />);
+
+      // The preset is wired into the planner now — the page must say so.
+      expect(screen.getByText(/Sets how many days before each exam/i)).toBeInTheDocument();
+      expect(screen.getByText(copy.onboarding.trackEffect)).toBeInTheDocument();
     });
   });
 

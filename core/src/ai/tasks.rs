@@ -763,7 +763,7 @@ pub async fn optimize_plan(
         if !seen.insert((assessment.id.clone(), topic_index, day_offset)) {
             continue;
         }
-        let key = topic_key_for_text(&assessment.id, &real_topic);
+        let key = topic_key_for_text(&assessment.id, real_topic);
         let completed = completed_topics.get(&key).copied().unwrap_or(false);
         let priority_rank = task
             .priority_rank

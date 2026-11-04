@@ -322,7 +322,9 @@ impl std::fmt::Debug for Db {
 /// deleted — the positional scheme had already lost them, and carrying the
 /// dead rows would fabricate completion state. Remap/drop counts land in
 /// `kv_meta` under `topic_key_migration_v3` so the step is inspectable.
-pub(crate) fn migrate_topic_keys_to_content_addressing(conn: &Connection) -> Result<(), StoreError> {
+pub(crate) fn migrate_topic_keys_to_content_addressing(
+    conn: &Connection,
+) -> Result<(), StoreError> {
     // Index→text table per assessment, straight from the stored radar.
     let mut topic_table: std::collections::HashMap<String, Vec<String>> =
         std::collections::HashMap::new();
@@ -506,12 +508,21 @@ mod tests {
         assert_eq!(db.schema_version().unwrap(), SCHEMA_VERSION);
 
         let done: Vec<(String, i64)> = {
-            let mut stmt = db.conn().prepare("SELECT key, done FROM topics_done").unwrap();
-            let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?))).unwrap();
+            let mut stmt = db
+                .conn()
+                .prepare("SELECT key, done FROM topics_done")
+                .unwrap();
+            let rows = stmt
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                .unwrap();
             rows.collect::<Result<Vec<_>, _>>().unwrap()
         };
         let trees_key = crate::plan::dashboard::topic_key_for_text("a1", "Trees");
-        assert_eq!(done, vec![(trees_key, 1)], "index 1 → 'Trees', dangling index 9 gone");
+        assert_eq!(
+            done,
+            vec![(trees_key, 1)],
+            "index 1 → 'Trees', dangling index 9 gone"
+        );
 
         let counts: Option<String> = db
             .conn()

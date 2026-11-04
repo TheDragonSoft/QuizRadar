@@ -1854,6 +1854,33 @@ repository public**, and **ship the release with fresh signing keys**.
    `ebec88e`, and the final fix commit) before any release published - no
    artifacts, release, or `latest.json` existed yet, so each move re-ran the
    pipeline rather than mutating one.
+7. Two more publish-side finds after the builds went green: the publish job
+   downloaded EVERY artifact including the `github-pages` site artifact whose
+   internal `artifact.tar` leaked onto the release (downloads are now
+   explicitly `desktop-*` + `android-release`, and empty bundle dirs are
+   deleted before hashing; `sha256sum` runs over files only); and
+   `generate-updater-manifest.mjs` matched Tauri **v1** artifact names, so
+   the first published `latest.json` had one wrong platform (the macOS
+   tarball has no arch in its v2 filename) and missed Windows (v2 signs the
+   NSIS `-setup.exe` directly) and Linux (v2 signs the `.AppImage` itself).
+   The generator now matches v2 names (verified against a simulation of the
+   exact release filenames: windows-x86_64, darwin-aarch64, linux-x86_64),
+   and the macOS job renames its updater artifacts to carry `aarch64`.
+   A command-chain `cd` that silently failed also briefly committed the
+   updater-manifest simulation files into the repo root - purged in the next
+   commit, and the tag was re-pointed before the final run.
+
+### Released: QuizRadar v5.0.0 (2026-11-04, run 41745239239 - 7/7 jobs green)
+
+- Assets: `QuizRadar_5.0.0_x64-setup.exe`(+sig), `QuizRadar-Portable-win-x64.zip`,
+  `QuizRadar_5.0.0_aarch64.dmg`, `QuizRadar_aarch64.app.tar.gz`(+sig),
+  `QuizRadar_5.0.0_amd64.deb`, `QuizRadar_5.0.0_amd64.AppImage`(+sig),
+  `QuizRadar-v5.0.0.apk`, `QuizRadar-v5.0.0.aab`, `SHA256SUMS.txt`,
+  `latest.json` (windows-x86_64 / darwin-aarch64 / linux-x86_64, all signed).
+- PWA live at https://thedragonsoft.github.io/QuizRadar/ (the subpath-safe
+  manifest ships with this deploy).
+- The desktop auto-updater endpoint (`releases/latest/download/latest.json`)
+  resolves for unauthenticated clients now that the repo is public.
 
 ### Gates (2026-11-04)
 

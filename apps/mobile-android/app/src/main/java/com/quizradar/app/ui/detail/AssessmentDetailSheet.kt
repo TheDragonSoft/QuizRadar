@@ -59,6 +59,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.quizradar.app.core.topicKey
 import com.quizradar.app.model.AssessmentModel
 import com.quizradar.app.ui.GradeSaveResult
 import com.quizradar.app.ui.calendarEventBeginTimeMillis
@@ -396,7 +397,10 @@ fun AssessmentDetailSheet(
                 )
             } else {
                 assessment.topics.forEachIndexed { index, topic ->
-                    val key = "${assessment.id}::$index"
+                    // Content-addressed key (`{id}::h{hash}` of the topic
+                    // text): a rescan that reorders the list can never move
+                    // someone's checkmark onto a different topic.
+                    val key = topicKey(assessment.id, topic)
                     val isChecked = completedTopicsMap[key] == true
                     Row(
                         modifier =

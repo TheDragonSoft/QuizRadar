@@ -7,6 +7,19 @@ use chrono::{Datelike, NaiveDate, NaiveTime, Timelike, Weekday};
 
 use crate::types::{AssessmentType, UrgencyLevel};
 
+/// 64-bit FNV-1a over raw bytes — the one content-hash primitive
+/// (uid-less ICS ids, Teams palette assignment, content-addressed topic
+/// keys). Reference-vector-tested in `parse::ics`.
+#[must_use]
+pub(crate) fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for &byte in bytes {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
 /// Full weekday name (core owns display strings; the UI never formats dates).
 #[must_use]
 pub fn weekday_full_name(weekday: Weekday) -> &'static str {

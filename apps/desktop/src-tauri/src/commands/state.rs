@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use quizradar_core::plan::dashboard::{topic_key, DashboardSummary};
+use quizradar_core::plan::dashboard::{topic_key_for_text, DashboardSummary};
 use quizradar_core::plan::study_blocks::{block_date_for, block_id_for, study_block_candidates};
 use quizradar_core::plan::tasks::StudyTasksPayload;
 use quizradar_core::store::repo::{FieldUpdate, GradeChange};
@@ -586,7 +586,23 @@ pub async fn toggle_topic(
         .await
         .map_err(|e| format!("Failed to read state: {e}"))?;
 
-    let key = topic_key(&assessment_id, topic_idx);
+    // Topic keys are content-addressed (`{id}::h{hash}`): resolve the
+    // requested index through the assessment's CURRENT topics so a rescan
+    // that reorders the list can never move someone's checkmark onto a
+    // different topic.
+    let topic_text = snapshot
+        .assessments
+        .iter()
+        .find(|assessment| assessment.id == assessment_id)
+        .and_then(|assessment| assessment.topics.get(topic_idx))
+        .cloned()
+        .ok_or_else(|| {
+            format!(
+                "Topic {} no longer exists for this assessment — refresh and try again.",
+                topic_idx + 1
+            )
+        })?;
+    let key = topic_key_for_text(&assessment_id, &topic_text);
     let next_done = match completed {
         Some(explicit) => explicit,
         None => {

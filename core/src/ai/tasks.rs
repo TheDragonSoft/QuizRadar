@@ -33,7 +33,7 @@ use crate::ai::provider::{
 use crate::parse::util::{
     build_display_time, compute_priority_score, day_name_for, urgency_for, weekday_index,
 };
-use crate::plan::dashboard::{readiness_percent, topic_key};
+use crate::plan::dashboard::{readiness_percent, topic_key_for_text};
 use crate::plan::tasks::{
     reasoning_for_days, study_day_display, DailyStudyDayGroup, DailyStudyTask, ExamReadinessCard,
     StudyTasksPayload, FALLBACK_TOPICS, HORIZON_DAYS,
@@ -674,9 +674,9 @@ pub async fn optimize_plan(
         let total_count = topic_list.len();
         let mut completed_count = 0usize;
         let mut unchecked: Vec<String> = Vec::new();
-        for (index, topic) in topic_list.iter().enumerate() {
+        for topic in &topic_list {
             if completed_topics
-                .get(&topic_key(&assessment.id, index))
+                .get(&topic_key_for_text(&assessment.id, topic))
                 .copied()
                 .unwrap_or(false)
             {
@@ -763,7 +763,7 @@ pub async fn optimize_plan(
         if !seen.insert((assessment.id.clone(), topic_index, day_offset)) {
             continue;
         }
-        let key = topic_key(&assessment.id, topic_index);
+        let key = topic_key_for_text(&assessment.id, &real_topic);
         let completed = completed_topics.get(&key).copied().unwrap_or(false);
         let priority_rank = task
             .priority_rank
@@ -1421,7 +1421,7 @@ mod tests {
             vec!["Recursion", "Loops"],
         );
         let mut completed = CompletedTopics::new();
-        completed.insert(topic_key("gmail-1", 1), true); // Loops done
+        completed.insert(topic_key_for_text("gmail-1", "Loops"), true); // Loops done
 
         let payload = optimize_plan(
             &fixture_provider(&server.uri()),

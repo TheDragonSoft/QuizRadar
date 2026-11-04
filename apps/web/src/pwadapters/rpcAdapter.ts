@@ -22,6 +22,7 @@ import {
   deleteCourse,
   deleteCustomEvent,
   deleteFeed,
+  getConfigValue,
   idbResetAll,
   loadAllConfig,
   loadAssessments,
@@ -29,7 +30,9 @@ import {
   loadFeeds,
   loadGrades,
   loadScheduleData,
+  loadTopicRecords,
   loadTopicsDone,
+  rewriteTopicKeys,
   saveAssessments,
   saveGrade,
   saveScheduleData,
@@ -179,7 +182,63 @@ export function toRustSchedulePayload(schedule: ScheduleData): Record<string, un
   };
 }
 
+/**
+ * One-shot browser twin of SQLite migration 3: rewrite legacy positional
+ * topic keys (`"{id}::{index}"`) into content-addressed keys
+ * (`"{id}::h{hash}"`) through each assessment's CURRENT topic list. Memoized
+ * per session and marker-stamped in `config_kv`, so it runs exactly once and
+ * a half-applied rewrite can never exist (single IDB transaction).
+ */
+let topicKeyMigration: Promise<void> | null = null;
+export function ensureTopicKeysContentAddressed(): Promise<void> {
+  topicKeyMigration ??= (async () => {
+    const MARKER = "topic_key_migration_v3_done";
+    if (await getConfigValue<boolean>(MARKER, false)) {
+      return;
+    }
+    const wasm = await getWasmEngine();
+    const records = await loadTopicRecords();
+    const assessments = await loadAssessments();
+    const result = JSON.parse(
+      wasm.migrate_topic_keys(
+        JSON.stringify(
+          records.map((record) => ({
+            key: record.key,
+            done: record.done,
+            updated_at: record.updated_at ?? null,
+          })),
+        ),
+        JSON.stringify(assessments.map(toRustAssessment)),
+      ),
+    ) as {
+      entries: Array<{ key: string; done: boolean; updated_at: string | null }>;
+      remapped: number;
+      dropped: number;
+    };
+    // Delete every known key, re-put the migrated set: legacy rows that
+    // could not resolve are gone, content rows round-trip unchanged.
+    await rewriteTopicKeys(
+      records.map((record) => record.key),
+      result.entries
+        .filter((entry) => entry.done)
+        .map((entry) => ({
+          key: entry.key,
+          done: true,
+          updated_at: entry.updated_at ?? undefined,
+        })),
+      MARKER,
+    );
+  })().catch((error) => {
+    topicKeyMigration = null; // a failed migration retries on the next call
+    throw error;
+  });
+  return topicKeyMigration;
+}
+
 export async function buildFullState(refDate?: string): Promise<GetStatePayload> {
+  // Topic toggles and derivations both read `topics_done` — the key rewrite
+  // must land before anything derives from the map.
+  await ensureTopicKeysContentAddressed();
   const schedule = await loadScheduleData();
   const rawAssessments = await loadAssessments();
   const topicsDone = await loadTopicsDone();
@@ -225,12 +284,14 @@ export async function buildFullState(refDate?: string): Promise<GetStatePayload>
   );
   const dashboard = JSON.parse(dashboardJson);
 
-  // Derive study tasks via WASM
+  // Derive study tasks via WASM — the declared academic rhythm tunes the
+  // prep-day spread (`01` §4.1; unset behaves like the default "eng").
   const tasksJson = wasm.derive_tasks(
     JSON.stringify(rawOrdered),
     JSON.stringify(schedule),
     JSON.stringify(topicsDone),
     todayIso,
+    (allConfig.academic_track as string) || "eng",
   );
   const studyTasksPayload = JSON.parse(tasksJson) as StudyTasksPayload;
 
@@ -361,15 +422,28 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
 
     case "toggle_topic": {
       // The desktop shell toggles by (assessment id, topic index) and derives
-      // the `"{assessment_id}::{topic_index}"` key itself; the browser tier
-      // used to expect a pre-built key that the UI never sent. The intended
-      // value comes from the caller when present: a read-modify-write here
-      // loses one of two overlapping toggles.
+      // the content-addressed `"{assessment_id}::h{hash}"` key from the
+      // assessment's CURRENT topic list; the browser tier does the same via
+      // the wasm engine — a rescan that reorders the list can never move a
+      // checkmark onto a different topic. The intended value comes from the
+      // caller when present: a read-modify-write here loses one of two
+      // overlapping toggles.
       const assessmentId = (args?.assessmentId as string) || "";
       const topicIdx = Number(args?.topicIdx ?? 0);
-      const topicKey =
-        (args?.topicKey as string) ||
-        `${assessmentId}::${Number.isFinite(topicIdx) ? topicIdx : 0}`;
+      await ensureTopicKeysContentAddressed();
+      const assessments = await loadAssessments();
+      const topicText = assessments
+        .filter((a) => String((a as unknown as Record<string, unknown>).id ?? "") === assessmentId)
+        .flatMap((a) => (Array.isArray(a.topics) ? a.topics : []))[topicIdx] as
+        | string
+        | undefined;
+      if (typeof topicText !== "string" || topicText === "") {
+        throw new Error(
+          `Topic ${topicIdx + 1} no longer exists for this assessment — refresh and try again.`,
+        );
+      }
+      const wasm = await getWasmEngine();
+      const topicKey = wasm.topic_key(assessmentId, topicText);
       let next: boolean;
       if (args?.completed !== undefined) {
         next = Boolean(args.completed);
@@ -573,9 +647,26 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
       const rawTopics = (parsed.completed_topics ?? parsed.topics_done) as
         Record<string, boolean> | undefined;
       if (rawTopics && typeof rawTopics === "object") {
-        for (const [key, done] of Object.entries(rawTopics)) {
-          if (done) {
-            await setTopicDone(key, true);
+        // v4 / pre-migration v5 backups key topics by POSITION inside the
+        // backup's own topic lists — remap into content keys through the
+        // just-imported assessments before writing (same rule as the Rust
+        // importer), so a reordered announcement keeps its checkmarks.
+        const wasm = await getWasmEngine();
+        const migrated = JSON.parse(
+          wasm.migrate_topic_keys(
+            JSON.stringify(
+              Object.entries(rawTopics).map(([key, done]) => ({
+                key,
+                done: Boolean(done),
+                updated_at: null,
+              })),
+            ),
+            JSON.stringify(normalizedAssessments.map(toRustAssessment)),
+          ),
+        ) as { entries: Array<{ key: string; done: boolean }> };
+        for (const entry of migrated.entries) {
+          if (entry.done) {
+            await setTopicDone(entry.key, true);
             topicsImported += 1;
           }
         }

@@ -116,6 +116,45 @@ class QuizRadarViewModelTest {
         }
 
     @Test
+    fun `the oauth client ids persist, reload, and feed the engine callback`() =
+        runTest {
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
+            val viewModel = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
+            advanceUntilIdle()
+
+            // The trim matters: a paste with surrounding whitespace must not
+            // reach the OAuth URL builder untrimmed.
+            viewModel.setGoogleClientId("  1234-test.apps.googleusercontent.com  ")
+            viewModel.setTeamsClientId("ms-azure-app-id")
+            advanceUntilIdle()
+
+            assertEquals(
+                "1234-test.apps.googleusercontent.com",
+                viewModel.googleClientId.value,
+            )
+
+            // The restart path: a second ViewModel over the same store reads
+            // the persisted ids, and the engine's SYNCHRONOUS token callback
+            // (which cannot read the store itself) serves the cached one.
+            val second = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
+            advanceUntilIdle()
+            assertEquals("1234-test.apps.googleusercontent.com", second.googleClientId.value)
+            assertEquals("ms-azure-app-id", second.teamsClientId.value)
+            assertEquals(
+                "1234-test.apps.googleusercontent.com",
+                engine.oauthClientIds.googleClientId(),
+            )
+            assertEquals("ms-azure-app-id", engine.oauthClientIds.microsoftClientId())
+
+            // An emptied field un-sets the id everywhere - the sign-in refusal
+            // must come back honestly, not from a stale cached value.
+            second.setGoogleClientId("")
+            advanceUntilIdle()
+            assertEquals("", second.googleClientId.value)
+            assertEquals(null, engine.oauthClientIds.googleClientId())
+        }
+
+    @Test
     fun `the onboarding flag written as a bool survives a reload`() =
         runTest {
             val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)

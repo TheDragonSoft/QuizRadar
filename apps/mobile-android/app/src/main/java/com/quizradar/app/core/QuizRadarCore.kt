@@ -155,6 +155,9 @@ interface QuizRadarCore {
         assessmentsJson: String,
         topicsJson: String,
         refDate: LocalDate = LocalDate.now(),
+        // The declared academic rhythm ("med" | "eng" | "biz"); an empty
+        // string behaves like the default spread.
+        academicTrack: String = "",
     ): String
 
     fun detectConflicts(

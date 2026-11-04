@@ -21,8 +21,8 @@ use crate::sources::{SourceProgress, SourceStatus, TokenProvider};
 use crate::store::backup::{DriveBackupClient, PushOutcome};
 use crate::store::Store;
 use crate::types::{
-    Assessment, CachedEmail, CompletedTopics, Course, CustomCalendarEvent, ScheduleData,
-    ScheduleSlot,
+    AcademicTrack, Assessment, CachedEmail, CompletedTopics, Course, CustomCalendarEvent,
+    ScheduleData, ScheduleSlot,
 };
 use crate::CORE_VERSION;
 use chrono::{FixedOffset, NaiveDate};
@@ -128,12 +128,24 @@ pub fn derive_study_tasks(
     assessments_json: String,
     topics_json: String,
     ref_date_iso: String,
+    // The declared academic rhythm (`01` §4.1 track chips): tunes the
+    // prep-day spread. Unknown/empty strings behave like the default.
+    academic_track: String,
 ) -> Result<String, QuizRadarFfiError> {
     let assessments: Vec<Assessment> = serde_json::from_str(&assessments_json)?;
     let topics: CompletedTopics = serde_json::from_str(&topics_json)?;
     let ref_date = parse_ref_date(&ref_date_iso)?;
-    let tasks = build_study_tasks(&assessments, &topics, ref_date);
+    let track = AcademicTrack::from_config(Some(&academic_track));
+    let tasks = build_study_tasks(&assessments, &topics, ref_date, track);
     Ok(serde_json::to_string(&tasks)?)
+}
+
+/// The content-addressed topic-completion key for one topic
+/// (`plan::dashboard::topic_key_for_text`). Shells toggle by this key; the
+/// FORMAT lives here so no shell re-implements the hash.
+#[uniffi::export]
+pub fn topic_key(assessment_id: String, topic_text: String) -> String {
+    crate::plan::dashboard::topic_key_for_text(&assessment_id, &topic_text)
 }
 
 #[uniffi::export]

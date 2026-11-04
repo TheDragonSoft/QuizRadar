@@ -375,6 +375,8 @@ export const copy = {
     emailLabel: "University / Personal Email",
     localProfileNote: "Local profile anchor · We never claim fake authentication",
     tracksTitle: "Academic Rhythm Preset",
+    trackEffect:
+      "Sets how many days before each exam the study roadmap spreads preparation: Health Sciences starts 7 days out, Engineering & Sciences 5 (default), Business & Humanities concentrates 3 days before.",
     trackMed: "Medicine & Health Sciences",
     trackMedSub: "High-density continuous assessments, clinical rotations",
     trackEng: "Engineering & Sciences",

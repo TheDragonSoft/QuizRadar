@@ -837,6 +837,8 @@ internal open class UniffiVTableCallbackInterfaceFfiTokenProvider(
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -914,7 +916,7 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_derive_dashboard_summary(`assessmentsJson`: RustBuffer.ByValue,`topicsJson`: RustBuffer.ByValue,`eventsJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    fun uniffi_quizradar_core_fn_func_derive_study_tasks(`assessmentsJson`: RustBuffer.ByValue,`topicsJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_quizradar_core_fn_func_derive_study_tasks(`assessmentsJson`: RustBuffer.ByValue,`topicsJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,`academicTrack`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_detect_schedule_conflicts(`assessmentsJson`: RustBuffer.ByValue,`eventsJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -939,6 +941,8 @@ internal interface UniffiLib : Library {
     fun uniffi_quizradar_core_fn_func_parse_ics(`content`: RustBuffer.ByValue,`scheduleJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_radar_order_list(`assessmentsJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_quizradar_core_fn_func_topic_key(`assessmentId`: RustBuffer.ByValue,`topicText`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun ffi_quizradar_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1086,6 +1090,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_quizradar_core_checksum_func_radar_order_list(
     ): Short
+    fun uniffi_quizradar_core_checksum_func_topic_key(
+    ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_delete_course(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_delete_custom_event(
@@ -1159,7 +1165,7 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_quizradar_core_checksum_func_derive_dashboard_summary() != 48307.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_quizradar_core_checksum_func_derive_study_tasks() != 44458.toShort()) {
+    if (lib.uniffi_quizradar_core_checksum_func_derive_study_tasks() != 45971.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_func_detect_schedule_conflicts() != 35150.toShort()) {
@@ -1196,6 +1202,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_func_radar_order_list() != 15281.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_func_topic_key() != 27437.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_delete_course() != 42974.toShort()) {
@@ -3000,11 +3009,11 @@ public object FfiConverterOptionalTypeFfiTokenProvider: FfiConverterRustBuffer<F
     }
     
 
-    @Throws(QuizRadarFfiException::class) fun `deriveStudyTasks`(`assessmentsJson`: kotlin.String, `topicsJson`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String {
+    @Throws(QuizRadarFfiException::class) fun `deriveStudyTasks`(`assessmentsJson`: kotlin.String, `topicsJson`: kotlin.String, `refDateIso`: kotlin.String, `academicTrack`: kotlin.String): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCallWithError(QuizRadarFfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_derive_study_tasks(
-        FfiConverterString.lower(`assessmentsJson`),FfiConverterString.lower(`topicsJson`),FfiConverterString.lower(`refDateIso`),_status)
+        FfiConverterString.lower(`assessmentsJson`),FfiConverterString.lower(`topicsJson`),FfiConverterString.lower(`refDateIso`),FfiConverterString.lower(`academicTrack`),_status)
 }
     )
     }
@@ -3124,6 +3133,20 @@ public object FfiConverterOptionalTypeFfiTokenProvider: FfiConverterRustBuffer<F
     uniffiRustCallWithError(QuizRadarFfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_radar_order_list(
         FfiConverterString.lower(`assessmentsJson`),FfiConverterString.lower(`refDateIso`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The content-addressed topic-completion key for one topic
+         * (`plan::dashboard::topic_key_for_text`). Shells toggle by this key; the
+         * FORMAT lives here so no shell re-implements the hash.
+         */ fun `topicKey`(`assessmentId`: kotlin.String, `topicText`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_topic_key(
+        FfiConverterString.lower(`assessmentId`),FfiConverterString.lower(`topicText`),_status)
 }
     )
     }

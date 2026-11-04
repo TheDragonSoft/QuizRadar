@@ -14,7 +14,7 @@
 
 use std::path::Path;
 
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 
 use thiserror::Error;
 
@@ -44,7 +44,7 @@ pub enum StoreError {
 }
 
 /// The schema this build ships. Written by [`Db::apply_migrations`].
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 pub(crate) const INITIAL_SCHEMA_SQL: &str = "
 CREATE TABLE courses (
@@ -191,6 +191,12 @@ pub const MIGRATIONS: &[(u32, &str)] = &[
         "ALTER TABLE assessments ADD COLUMN last_seen_source_run TEXT;
          ALTER TABLE assessments ADD COLUMN retired_source_run TEXT;",
     ),
+    // Topic keys become content-addressed (`plan::dashboard::
+    // topic_key_for_text`). No table shape changes — the data does: the
+    // positional `"{id}::{index}"` rows in `topics_done` are rewritten
+    // through each assessment's CURRENT topic list by the Rust step below
+    // (an index→text table lives in the `assessments` row, not in SQL).
+    (3, "SELECT 1;"),
 ];
 
 /// One SQLite handle. Cheap to share behind a mutex (see
@@ -269,6 +275,13 @@ impl Db {
                 tx.commit()?;
             }
         }
+        // Migration 3 is a DATA migration (positional topic keys →
+        // content-addressed keys through each assessment's current topic
+        // list); it needs Rust, not SQL, and runs once, right after the
+        // ladder crosses version 3.
+        if from < 3 {
+            migrate_topic_keys_to_content_addressing(&self.conn)?;
+        }
         Ok(())
     }
 
@@ -300,6 +313,91 @@ impl std::fmt::Debug for Db {
         // Never print connection details (path could appear in odd logs).
         f.debug_struct("Db").finish_non_exhaustive()
     }
+}
+
+/// Migration-3 data step: rewrite positional `topics_done` keys
+/// (`"{assessment_id}::{index}"`) into content-addressed keys through each
+/// assessment's CURRENT topic list. Idempotent (content keys never match the
+/// legacy pattern); rows whose assessment or index no longer resolve are
+/// deleted — the positional scheme had already lost them, and carrying the
+/// dead rows would fabricate completion state. Remap/drop counts land in
+/// `kv_meta` under `topic_key_migration_v3` so the step is inspectable.
+pub(crate) fn migrate_topic_keys_to_content_addressing(conn: &Connection) -> Result<(), StoreError> {
+    // Index→text table per assessment, straight from the stored radar.
+    let mut topic_table: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    {
+        let mut stmt = conn.prepare("SELECT id, topics FROM assessments")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        for row in rows {
+            let (id, topics_json) = row?;
+            let topics: Vec<String> = serde_json::from_str(&topics_json).unwrap_or_default();
+            topic_table.insert(id, topics);
+        }
+    }
+
+    let rows: Vec<(String, i64, Option<String>)> = {
+        let mut stmt = conn.prepare("SELECT key, done, updated_at FROM topics_done")?;
+        let mapped = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?;
+        mapped.collect::<Result<Vec<_>, _>>()?
+    };
+
+    let mut remapped = 0usize;
+    let mut dropped = 0usize;
+    let mut updates: Vec<(String, String, i64, Option<String>)> = Vec::new();
+    let mut stale_keys: Vec<String> = Vec::new();
+    for (key, done, updated_at) in rows {
+        let legacy = crate::plan::dashboard::parse_legacy_topic_key(&key);
+        let Some((assessment_id, index)) = legacy else {
+            continue; // already content-addressed
+        };
+        stale_keys.push(key);
+        match topic_table
+            .get(&assessment_id)
+            .and_then(|topics| topics.get(index))
+        {
+            Some(topic_text) => {
+                updates.push((
+                    crate::plan::dashboard::topic_key_for_text(&assessment_id, topic_text),
+                    assessment_id,
+                    done,
+                    updated_at,
+                ));
+                remapped += 1;
+            }
+            None => dropped += 1,
+        }
+    }
+
+    let tx = conn.unchecked_transaction()?;
+    for (new_key, _assessment_id, done, updated_at) in &updates {
+        if done == &1 {
+            tx.execute(
+                "INSERT INTO topics_done (key, done, updated_at) VALUES (?1, 1, ?2) \
+                 ON CONFLICT(key) DO UPDATE SET done = 1, updated_at = excluded.updated_at",
+                params![new_key, updated_at],
+            )?;
+        }
+    }
+    for key in &stale_keys {
+        tx.execute("DELETE FROM topics_done WHERE key = ?1", [key])?;
+    }
+    let summary = serde_json::json!({ "remapped": remapped, "dropped": dropped });
+    tx.execute(
+        "INSERT INTO kv_meta (key, value) VALUES ('topic_key_migration_v3', ?1) \
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        [&summary.to_string()],
+    )?;
+    tx.commit()?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -371,6 +469,64 @@ mod tests {
             }
             other => panic!("expected SchemaTooNew, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn migration_3_remaps_positional_topic_keys_through_current_topics() {
+        // A v2-era file: positional `topics_done` keys against a topic list
+        // the next scan would reorder. THE regression: index 1 pointed at
+        // "Trees"; after remap the completion must belong to the TEXT.
+        let dir = std::env::temp_dir().join("quizradar_p04_db_tests");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(format!("topic_keys_{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(INITIAL_SCHEMA_SQL).unwrap();
+            conn.execute_batch(MIGRATIONS[1].1).unwrap();
+            conn.pragma_update(None, "user_version", 2).unwrap();
+            conn.execute(
+                "INSERT INTO assessments (id, title, assessment_type, urgency_level, priority_score, topics, warnings, source)
+                 VALUES ('a1', 'Quiz 1', 'Class Quiz', 'upcoming', 10, ?1, '[]', 'Gmail')",
+                [r#"["Loops","Trees"]"#],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO topics_done (key, done) VALUES ('a1::1', 1)",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO topics_done (key, done) VALUES ('a1::9', 1)",
+                [],
+            )
+            .unwrap();
+        }
+        let db = Db::open(&path).unwrap();
+        assert_eq!(db.schema_version().unwrap(), SCHEMA_VERSION);
+
+        let done: Vec<(String, i64)> = {
+            let mut stmt = db.conn().prepare("SELECT key, done FROM topics_done").unwrap();
+            let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?))).unwrap();
+            rows.collect::<Result<Vec<_>, _>>().unwrap()
+        };
+        let trees_key = crate::plan::dashboard::topic_key_for_text("a1", "Trees");
+        assert_eq!(done, vec![(trees_key, 1)], "index 1 → 'Trees', dangling index 9 gone");
+
+        let counts: Option<String> = db
+            .conn()
+            .query_row(
+                "SELECT value FROM kv_meta WHERE key = 'topic_key_migration_v3'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            counts.as_deref(),
+            Some(r#"{"dropped":1,"remapped":1}"#),
+            "the one-shot step is inspectable, not silent"
+        );
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

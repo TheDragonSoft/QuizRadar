@@ -192,8 +192,14 @@ pub fn import_v4_backup_json(
 
         // Completed topics: additive, true-only (v4 map may contain false
         // entries — they are ignored; absence already means incomplete).
-        let topics_merged =
-            TopicRepo::new(&tx).merge_additive(&backup.completed_topics, updated_at)?;
+        // v4 (and pre-migration v5) backups key completion by topic POSITION;
+        // remap through the just-imported topics so a reordered announcement
+        // keeps its checkmarks (the store is content-addressed from v5.0.1).
+        let (completed, _remapped, _dropped) = crate::plan::dashboard::remap_legacy_topic_keys(
+            &backup.completed_topics,
+            &backup.assessments,
+        );
+        let topics_merged = TopicRepo::new(&tx).merge_additive(&completed, updated_at)?;
 
         // Grades: upsert-fill — non-null remote fields overwrite, nothing
         // is erased; validated so a corrupt v4 grade fails loudly here.
@@ -494,7 +500,19 @@ mod tests {
         );
         let topics = TopicRepo::new(db.conn()).all().unwrap();
         assert_eq!(topics.len(), 3);
-        assert_eq!(topics.get("email-1778000001::0"), Some(&true));
+        // v4's positional keys remapped into content keys through the
+        // imported topics (fixture topic index 0 = "Number systems").
+        assert_eq!(
+            topics.get(&crate::plan::dashboard::topic_key_for_text(
+                "email-1778000001",
+                "Number systems"
+            )),
+            Some(&true)
+        );
+        assert!(
+            topics.keys().all(|key| crate::plan::dashboard::parse_legacy_topic_key(key).is_none()),
+            "no positional key survives the import: {topics:?}"
+        );
     }
 
     #[test]

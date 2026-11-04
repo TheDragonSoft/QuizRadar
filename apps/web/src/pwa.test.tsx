@@ -104,12 +104,13 @@ describe("Phase 11: PWA Companion Tier", () => {
       expect(dashboard.all_upcoming).toHaveLength(1);
       expect(dashboard.readiness_percent).toBe(0);
 
-      // 3. Tasks derivation
+      // 3. Tasks derivation (default "eng" rhythm)
       const tasksJson = wasm.derive_tasks(
         JSON.stringify(ordered),
         scheduleJson,
         JSON.stringify({}),
         refDate,
+        "eng",
       );
       const tasksPayload = JSON.parse(tasksJson);
       expect(tasksPayload.readiness_cards).toHaveLength(1);

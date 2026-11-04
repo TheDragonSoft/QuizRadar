@@ -75,6 +75,7 @@ import androidx.core.content.ContextCompat
 import com.quizradar.app.model.AppSnapshotModel
 import com.quizradar.app.ui.ACADEMIC_TRACKS
 import com.quizradar.app.ui.QuizRadarViewModel
+import com.quizradar.app.ui.components.OAuthClientIdFields
 import com.quizradar.app.ui.detail.CourseEditorSheet
 import com.quizradar.app.ui.icons.Icons
 import com.quizradar.app.ui.theme.StatusColors
@@ -654,10 +655,18 @@ private fun Step3Sources(
             text =
                 "Sign in and QuizRadar scans Gmail, Classroom and Teams announcements ON THIS DEVICE " +
                     "and pins quiz and exam dates to your timetable. Tokens never leave your phone. " +
-                    "Sign-in needs your own OAuth client ID (Settings -> Sources). Fully skippable.",
+                    "Sign-in needs your own OAuth client ID - paste it below (it saves automatically). " +
+                    "Fully skippable.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+
+        // The client-id editors live HERE, where the user hits the refusal -
+        // sending them to Settings -> Sources mid-wizard was a detour long
+        // enough that the id was often typed somewhere and never saved. The
+        // shared component auto-saves as the user types.
+        Spacer(modifier = Modifier.height(12.dp))
+        OAuthClientIdFields(viewModel = viewModel)
 
         Spacer(modifier = Modifier.height(20.dp))
 

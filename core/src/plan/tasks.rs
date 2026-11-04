@@ -38,8 +38,8 @@ use chrono::{Duration, NaiveDate};
 use serde::{Deserialize, Serialize};
 
 use crate::parse::util::{compute_priority_score, urgency_for};
-use crate::plan::dashboard::{readiness_percent, topic_key};
-use crate::types::{Assessment, AssessmentType, CompletedTopics, UrgencyLevel};
+use crate::plan::dashboard::{readiness_percent, topic_key_for_text};
+use crate::types::{AcademicTrack, Assessment, AssessmentType, CompletedTopics, UrgencyLevel};
 
 /// Generic scaffold topics for an assessment the sources posted without a
 /// topic list (deterministic, non-course-specific plannability — the only
@@ -55,12 +55,9 @@ pub(crate) const FALLBACK_TOPICS: [&str; 3] = [
 /// task validates proposed tasks against the same window.
 pub(crate) const HORIZON_DAYS: i64 = 14;
 
-/// Maximum prep days per assessment (v4); an assessment landing today
-/// keeps everything on day 0.
-const MAX_PREP_DAYS: i32 = 5;
-
-/// One checkbox on a day card (the same `"{assessment_id}::{topic_index}"`
-/// key the dashboard writes back into `completed_topics`).
+/// One checkbox on a day card (the same content-addressed
+/// `"{assessment_id}::h{hash}"` key the dashboard writes back into
+/// `completed_topics`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DailyStudyTask {
     /// `task-{assessment_id}-{topic_index}-{day_offset}` (stable per plan).
@@ -73,7 +70,8 @@ pub struct DailyStudyTask {
     pub assessment_title: String,
     pub assessment_type: AssessmentType,
     pub topic: String,
-    /// 0 = today, growing towards the assessment (≤ `MAX_PREP_DAYS`).
+    /// 0 = today, growing towards the assessment (≤ the rhythm's prep-day
+    /// ceiling — v4's default is 5).
     pub day_offset: i32,
     /// The concrete target calendar date (`ref + day_offset`).
     #[serde(rename = "target_date_iso", with = "crate::types::iso_date_req")]
@@ -192,11 +190,16 @@ pub(crate) fn reasoning_for_days(days: i32) -> String {
 
 /// Build the deterministic roadmap (`01` §4.4). Pure: inputs are data plus
 /// the injected reference date; no clock, no IO, no fabricated stats.
+/// `track` is the user's declared academic rhythm (`01` §4.1) — it sets how
+/// many days before each exam the roadmap spreads preparation across and
+/// nothing else; unset/unknown values behave exactly like the shipped
+/// default (`AcademicTrack::Eng`, v4's 5 prep days).
 #[must_use]
 pub fn build_study_tasks(
     assessments: &[Assessment],
     completed_topics: &CompletedTopics,
     reference_date: NaiveDate,
+    track: AcademicTrack,
 ) -> StudyTasksPayload {
     let mut horizon: Vec<(&Assessment, i64)> = assessments
         .iter()
@@ -248,18 +251,18 @@ pub fn build_study_tasks(
         let real_completed = assessment
             .topics
             .iter()
-            .enumerate()
-            .filter(|(index, _)| {
+            .filter(|topic| {
                 completed_topics
-                    .get(&topic_key(&assessment.id, *index))
+                    .get(&topic_key_for_text(&assessment.id, topic))
                     .copied()
                     .unwrap_or(false)
             })
             .count();
         let real_total = assessment.topics.len();
 
-        // ≤5 prep days; an assessment landing today keeps one day group.
-        let prep_days = (days.max(1) - 1).min(MAX_PREP_DAYS);
+        // Prep-day ceiling from the declared rhythm (Eng = v4's 5); an
+        // assessment landing today keeps one day group.
+        let prep_days = (days.max(1) - 1).min(track.max_prep_days());
 
         let hours = per_topic_hours(assessment.estimated_study_hours, total_count);
         let urgency = urgency_for(Some(days_i64));
@@ -273,7 +276,7 @@ pub fn build_study_tasks(
         let mut first_uncompleted: Option<String> = None;
 
         for (index, topic) in topic_list.iter().enumerate() {
-            let key = topic_key(&assessment.id, index);
+            let key = topic_key_for_text(&assessment.id, topic);
             let completed = completed_topics.get(&key).copied().unwrap_or(false);
             if !completed && first_uncompleted.is_none() {
                 first_uncompleted = Some(topic.clone());
@@ -415,9 +418,19 @@ mod tests {
 
     use super::*;
     use crate::plan::fixtures::{assessment_on, ref_date};
+    use crate::types::AcademicTrack;
 
     fn day(offset: i64) -> NaiveDate {
         ref_date() + Duration::days(offset)
+    }
+
+    /// The default-rhythm call every existing test asserts against.
+    fn build_eng(
+        assessments: &[Assessment],
+        completed: &CompletedTopics,
+        reference_date: NaiveDate,
+    ) -> StudyTasksPayload {
+        build_study_tasks(assessments, completed, reference_date, AcademicTrack::Eng)
     }
 
     fn all_topics(tasks: &[DailyStudyTask]) -> Vec<(String, i32)> {
@@ -433,7 +446,7 @@ mod tests {
         let too_far = assessment_on("gmail-2", None, "Day 15", Some(day(15)), vec!["Alpha"]);
         let undated = assessment_on("gmail-3", None, "No date", None, vec!["Alpha"]);
         let past = assessment_on("gmail-4", None, "Old", Some(day(-2)), vec!["Alpha"]);
-        let payload = build_study_tasks(
+        let payload = build_eng(
             &[fit, too_far, undated, past],
             &CompletedTopics::new(),
             ref_date(),
@@ -453,7 +466,7 @@ mod tests {
             Some(day(5)),
             vec!["a", "b", "c", "d", "e", "f", "g"],
         );
-        let payload = build_study_tasks(&[far], &CompletedTopics::new(), ref_date());
+        let payload = build_eng(&[far], &CompletedTopics::new(), ref_date());
         let mut spread = Vec::new();
         for group in &payload.days {
             spread.push((group.day_offset, group.tasks.len()));
@@ -476,7 +489,7 @@ mod tests {
             Some(day(1)),
             vec!["a", "b", "c", "d"],
         );
-        let payload = build_study_tasks(&[tomorrow], &CompletedTopics::new(), ref_date());
+        let payload = build_eng(&[tomorrow], &CompletedTopics::new(), ref_date());
         // prep_days = 0 → every topic slot-day 0; nothing planned beyond it.
         let offset_holders: Vec<i32> = payload
             .days
@@ -515,7 +528,7 @@ mod tests {
         );
         planned.estimated_study_hours = Some(4.0);
         let unplanned = assessment_on("gmail-2", None, "Raw quiz", Some(day(1)), vec!["x", "y"]);
-        let payload = build_study_tasks(&[planned, unplanned], &CompletedTopics::new(), ref_date());
+        let payload = build_eng(&[planned, unplanned], &CompletedTopics::new(), ref_date());
         assert!(
             payload.total_hours.is_none(),
             "one task without an estimate must hide the payload total"
@@ -540,7 +553,7 @@ mod tests {
     #[test]
     fn day_groups_always_carry_today_and_tomorrow_with_honest_labels() {
         let one = assessment_on("gmail-1", None, "Later quiz", Some(day(4)), vec!["one"]);
-        let payload = build_study_tasks(&[one], &CompletedTopics::new(), ref_date());
+        let payload = build_eng(&[one], &CompletedTopics::new(), ref_date());
         assert_eq!(payload.days.len(), 2);
         assert!(payload.days[0].is_today);
         assert!(payload.days[1].tasks.is_empty());
@@ -564,7 +577,7 @@ mod tests {
                 )
             })
             .collect();
-        let payload = build_study_tasks(&items, &CompletedTopics::new(), ref_date());
+        let payload = build_eng(&items, &CompletedTopics::new(), ref_date());
         let ladder: std::collections::HashMap<i32, UrgencyLevel> = payload
             .days
             .iter()
@@ -593,7 +606,7 @@ mod tests {
                 )
             })
             .collect();
-        let payload = build_study_tasks(&items, &CompletedTopics::new(), ref_date());
+        let payload = build_eng(&items, &CompletedTopics::new(), ref_date());
         let reasoning: std::collections::HashMap<i32, String> = payload
             .days
             .iter()
@@ -628,8 +641,8 @@ mod tests {
             vec!["Alpha", "Beta", "Gamma"],
         );
         let mut done = CompletedTopics::new();
-        done.insert(topic_key("gmail-1", 1), true);
-        let payload = build_study_tasks(&[quiz], &done, ref_date());
+        done.insert(topic_key_for_text("gmail-1", "Beta"), true);
+        let payload = build_eng(&[quiz], &done, ref_date());
         assert_eq!(payload.total_tasks, 3);
         assert_eq!(payload.completed_tasks, 1);
         assert_eq!(payload.pending_tasks, 2);
@@ -644,7 +657,7 @@ mod tests {
     #[test]
     fn fallback_topics_scaffold_topicless_assessments_honestly() {
         let bare = assessment_on("gmail-1", None, "No topics posted", Some(day(2)), vec![]);
-        let payload = build_study_tasks(
+        let payload = build_eng(
             std::slice::from_ref(&bare),
             &CompletedTopics::new(),
             ref_date(),
@@ -665,10 +678,10 @@ mod tests {
         // Now complete every scaffold step: the plan is fully ticked, but
         // the card still refuses to invent a readiness percentage.
         let mut done = CompletedTopics::new();
-        for index in 0..3 {
-            done.insert(topic_key("gmail-1", index), true);
+        for topic in FALLBACK_TOPICS {
+            done.insert(topic_key_for_text("gmail-1", topic), true);
         }
-        let payload = build_study_tasks(&[bare], &done, ref_date());
+        let payload = build_eng(&[bare], &done, ref_date());
         assert_eq!(
             payload.readiness_cards[0].recommended_focus,
             "Add topics in the assessment detail to track readiness."
@@ -681,8 +694,8 @@ mod tests {
     fn a_topicless_assessment_never_counts_scaffold_steps_as_real_topics() {
         let bare = assessment_on("gmail-1", None, "No topics posted", Some(day(2)), vec![]);
         let mut done = CompletedTopics::new();
-        done.insert(topic_key("gmail-1", 0), true);
-        let payload = build_study_tasks(&[bare], &done, ref_date());
+        done.insert(topic_key_for_text("gmail-1", FALLBACK_TOPICS[0]), true);
+        let payload = build_eng(&[bare], &done, ref_date());
         let card = &payload.readiness_cards[0];
         // The scaffold step is ticked in the plan, yet the readiness card
         // still reports "nothing tracked" - the two lists are different.
@@ -705,8 +718,8 @@ mod tests {
             vec!["Alpha", "Beta", "Gamma"],
         );
         let mut done = CompletedTopics::new();
-        done.insert(topic_key("gmail-1", 1), true);
-        let payload = build_study_tasks(&[quiz], &done, ref_date());
+        done.insert(topic_key_for_text("gmail-1", "Beta"), true);
+        let payload = build_eng(&[quiz], &done, ref_date());
         let card = &payload.readiness_cards[0];
         assert_eq!(card.completed_count, 1);
         assert_eq!(card.total_count, 3);
@@ -721,7 +734,7 @@ mod tests {
         // tasks come first, then `priority_rank` descending.
         let nearer = assessment_on("gmail-1", None, "Beta", Some(day(1)), vec!["t1"]);
         let farther = assessment_on("gmail-2", None, "Alpha", Some(day(4)), vec!["t2"]);
-        let payload = build_study_tasks(&[farther, nearer], &CompletedTopics::new(), ref_date());
+        let payload = build_eng(&[farther, nearer], &CompletedTopics::new(), ref_date());
         let cards: Vec<&str> = payload
             .readiness_cards
             .iter()
@@ -747,7 +760,7 @@ mod tests {
     fn priority_scores_recomputed_from_injected_reference_date() {
         let mut midterm = assessment_on("gmail-1", None, "Midterm", Some(day(3)), vec![]);
         midterm.assessment_type = AssessmentType::MidtermExam;
-        let payload = build_study_tasks(&[midterm], &CompletedTopics::new(), ref_date());
+        let payload = build_eng(&[midterm], &CompletedTopics::new(), ref_date());
         // days=3: urgency base 84 + midterm bonus 12 + 0 topics = 96.
         assert_eq!(payload.readiness_cards[0].priority_score, 96);
 
@@ -757,8 +770,64 @@ mod tests {
         let later_today = ref_date() + Duration::days(2);
         let mut same_midterm = assessment_on("gmail-1", None, "Midterm", Some(day(5)), vec![]);
         same_midterm.assessment_type = AssessmentType::MidtermExam;
-        let payload = build_study_tasks(&[same_midterm], &CompletedTopics::new(), later_today);
+        let payload = build_eng(&[same_midterm], &CompletedTopics::new(), later_today);
         assert_eq!(payload.readiness_cards[0].days_until, 3);
         assert_eq!(payload.readiness_cards[0].priority_score, 96);
+    }
+
+    #[test]
+    fn academic_rhythm_tunes_the_prep_day_spread() {
+        // 8 days out, 8 topics: prep_days = min(days-1, ceiling) and slots
+        // cycle over prep_days+1 day groups (day 0 = today). Eng (v4
+        // default, ceiling 5) → 0..5, Med starts earlier (ceiling 7 →
+        // 0..7, one topic per day), Biz concentrates (ceiling 3 → 0..3).
+        let make = || {
+            assessment_on(
+                "gmail-1",
+                None,
+                "Quiz",
+                Some(day(8)),
+                vec!["a", "b", "c", "d", "e", "f", "g", "h"],
+            )
+        };
+        let offsets = |payload: &StudyTasksPayload| -> Vec<i32> {
+            let mut seen: Vec<i32> = payload
+                .days
+                .iter()
+                .flat_map(|group| group.tasks.iter())
+                .map(|task| task.day_offset)
+                .collect();
+            seen.sort_unstable();
+            seen.dedup();
+            seen
+        };
+
+        let eng = offsets(&build_eng(&[make()], &CompletedTopics::new(), ref_date()));
+        assert_eq!(eng, vec![0, 1, 2, 3, 4, 5], "Eng = the v4 default ceiling");
+
+        let med = build_study_tasks(
+            &[make()],
+            &CompletedTopics::new(),
+            ref_date(),
+            AcademicTrack::Med,
+        );
+        assert_eq!(offsets(&med), vec![0, 1, 2, 3, 4, 5, 6, 7]);
+
+        let biz = build_study_tasks(
+            &[make()],
+            &CompletedTopics::new(),
+            ref_date(),
+            AcademicTrack::Biz,
+        );
+        assert_eq!(offsets(&biz), vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn unknown_track_configs_fall_back_to_eng() {
+        assert_eq!(AcademicTrack::from_config(None), AcademicTrack::Eng);
+        assert_eq!(AcademicTrack::from_config(Some("")), AcademicTrack::Eng);
+        assert_eq!(AcademicTrack::from_config(Some("weird")), AcademicTrack::Eng);
+        assert_eq!(AcademicTrack::from_config(Some(" MED ")), AcademicTrack::Med);
+        assert_eq!(AcademicTrack::from_config(Some("biz")), AcademicTrack::Biz);
     }
 }

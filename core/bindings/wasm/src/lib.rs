@@ -12,7 +12,8 @@ use quizradar_core::plan::study_blocks::{block_date_for, block_id_for, study_blo
 use quizradar_core::plan::tasks::build_study_tasks;
 use quizradar_core::sources::{merge_preserving_user_fields, retire_unseen_items, source_run_id};
 use quizradar_core::types::{
-    Assessment, AssessmentSource, CachedEmail, CompletedTopics, CustomCalendarEvent, ScheduleData,
+    AcademicTrack, Assessment, AssessmentSource, CachedEmail, CompletedTopics,
+    CustomCalendarEvent, ScheduleData,
 };
 use wasm_bindgen::prelude::*;
 
@@ -220,6 +221,7 @@ impl QuizRadarWasm {
         schedule_json: &str,
         topics_json: &str,
         ref_date_iso: &str,
+        academic_track: &str,
     ) -> Result<String, JsValue> {
         let _ = schedule_json;
         let date = NaiveDate::parse_from_str(ref_date_iso, "%Y-%m-%d")
@@ -228,8 +230,87 @@ impl QuizRadarWasm {
             .map_err(|e| JsValue::from_str(&format!("Invalid assessments JSON: {e}")))?;
         let topics: CompletedTopics = serde_json::from_str(topics_json)
             .map_err(|e| JsValue::from_str(&format!("Invalid topics JSON: {e}")))?;
-        let tasks = build_study_tasks(&assessments, &topics, date);
+        let track = AcademicTrack::from_config(Some(academic_track));
+        let tasks = build_study_tasks(&assessments, &topics, date, track);
         serde_json::to_string(&tasks)
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+    }
+
+    /// The content-addressed topic-completion key for one topic — the same
+    /// `"{assessment_id}::h{hash}"` shape the store and desktop shell use.
+    /// The FORMAT lives here (once, in core) so the browser tier never
+    /// re-implements the hash.
+    #[must_use]
+    pub fn topic_key(&self, assessment_id: &str, topic_text: &str) -> String {
+        quizradar_core::plan::dashboard::topic_key_for_text(assessment_id, topic_text)
+    }
+
+    /// One-shot browser migration for the content-addressed topic keys:
+    /// rewrites legacy positional `"{id}::{index}"` entries through each
+    /// assessment's CURRENT topic list. `entries_json` is
+    /// `[{"key":…, "done":…, "updated_at":…}]`; the result carries the
+    /// rewritten entries (provenance timestamps preserved) plus honest
+    /// `remapped`/`dropped` counts — entries whose assessment or index no
+    /// longer resolves are dropped, because the positional scheme had
+    /// already lost them.
+    pub fn migrate_topic_keys(
+        &self,
+        entries_json: &str,
+        assessments_json: &str,
+    ) -> Result<String, JsValue> {
+        #[derive(serde::Deserialize)]
+        struct Entry {
+            key: String,
+            #[serde(default)]
+            done: bool,
+            #[serde(default)]
+            updated_at: Option<String>,
+        }
+        let entries: Vec<Entry> = serde_json::from_str(entries_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid topic entries JSON: {e}")))?;
+        let assessments: Vec<Assessment> = serde_json::from_str(assessments_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid assessments JSON: {e}")))?;
+
+        let mut out: Vec<serde_json::Value> = Vec::with_capacity(entries.len());
+        let mut remapped = 0usize;
+        let mut dropped = 0usize;
+        for entry in entries {
+            let rewritten = quizradar_core::plan::dashboard::parse_legacy_topic_key(&entry.key)
+                .and_then(|(assessment_id, index)| {
+                    assessments
+                        .iter()
+                        .find(|assessment| assessment.id == assessment_id)
+                        .and_then(|assessment| assessment.topics.get(index))
+                        .map(|topic_text| {
+                            quizradar_core::plan::dashboard::topic_key_for_text(
+                                &assessment_id,
+                                topic_text,
+                            )
+                        })
+                });
+            match rewritten {
+                Some(new_key) => {
+                    remapped += 1;
+                    out.push(serde_json::json!({
+                        "key": new_key,
+                        "done": entry.done,
+                        "updated_at": entry.updated_at,
+                    }));
+                }
+                None if quizradar_core::plan::dashboard::parse_legacy_topic_key(&entry.key)
+                    .is_some() =>
+                {
+                    dropped += 1;
+                }
+                None => out.push(serde_json::json!({
+                    "key": entry.key,
+                    "done": entry.done,
+                    "updated_at": entry.updated_at,
+                })),
+            }
+        }
+        let result = serde_json::json!({ "entries": out, "remapped": remapped, "dropped": dropped });
+        serde_json::to_string(&result)
             .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
     }
 

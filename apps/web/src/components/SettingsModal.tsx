@@ -493,6 +493,9 @@ export function SettingsModal({
                     );
                   })}
                 </div>
+                <p className="mt-2.5 text-[11px] text-[var(--text-muted)]">
+                  {copy.onboarding.trackEffect}
+                </p>
               </div>
 
               {/* Google account — v4 hub card with the real Google mark */}

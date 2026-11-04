@@ -25,8 +25,8 @@ use serde::{Deserialize, Serialize};
 use crate::parse::email::{classify_ics_text, find_course_code, strip_html_tags, ScanStats};
 use crate::parse::merge::merge_key;
 use crate::parse::util::{
-    build_display_time, compute_priority_score, day_name_for, days_until, infer_semester_from_date,
-    urgency_for, weekday_index, weekday_to_index,
+    build_display_time, compute_priority_score, day_name_for, days_until, fnv1a64,
+    infer_semester_from_date, urgency_for, weekday_index, weekday_to_index,
 };
 use crate::types::{Assessment, AssessmentSource, Course, ScheduleData};
 
@@ -435,15 +435,6 @@ fn room_for_course(schedule: &ScheduleData, course_id: &str, date: NaiveDate) ->
         .find(|slot| weekday_index(&slot.day) == Some(index))
         .and_then(|slot| slot.room.clone())
         .filter(|room| !room.trim().is_empty())
-}
-
-fn fnv1a64(bytes: &[u8]) -> u64 {
-    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
-    for &byte in bytes {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    hash
 }
 
 /// Stable id: v4's `{prefix}{uid}` with `@`/`/` sanitized, or — for uid-less

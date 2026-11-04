@@ -52,6 +52,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.quizradar.app.core.topicKey
 import com.quizradar.app.model.AppSnapshotModel
 import com.quizradar.app.ui.PomodoroInterval
 import com.quizradar.app.ui.QuizRadarViewModel
@@ -429,22 +430,27 @@ fun FocusScreen(
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
                             Spacer(modifier = Modifier.height(8.dp))
-                            // The completion key is "{assessment_id}::{topic_index}"
-                            // (`01` §3) - the index of the topic shown above,
-                            // never a hardcoded first topic.
-                            val topicKey =
-                                if (activePomodoroAssessmentId != null && activePomodoroTopicIndex != null) {
-                                    "$activePomodoroAssessmentId::$activePomodoroTopicIndex"
+                            // The completion key is content-addressed from
+                            // the topic text (`{id}::h{hash}`, `01` §3) —
+                            // never a positional index, so a rescan that
+                            // reorders topics cannot move the checkmark.
+                            // Local copies: the state delegates cannot smart-
+                            // cast through the null check.
+                            val pomodoroAssessmentId = activePomodoroAssessmentId
+                            val pomodoroTopic = activePomodoroTopic
+                            val completionKey =
+                                if (pomodoroAssessmentId != null && pomodoroTopic != null) {
+                                    topicKey(pomodoroAssessmentId, pomodoroTopic)
                                 } else {
                                     null
                                 }
                             Button(
                                 onClick = {
-                                    if (topicKey != null) {
-                                        viewModel.toggleTopic(topicKey, true)
+                                    if (completionKey != null) {
+                                        viewModel.toggleTopic(completionKey, true)
                                     }
                                 },
-                                enabled = topicKey != null,
+                                enabled = completionKey != null,
                                 shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier.defaultMinSize(minHeight = 42.dp),
                             ) {
@@ -456,7 +462,7 @@ fun FocusScreen(
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(text = "Mark Topic Done", fontSize = 12.sp)
                             }
-                            if (topicKey == null) {
+                            if (completionKey == null) {
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
                                     text = "This topic's completion key is unknown - reopen it from the assessment.",

@@ -70,15 +70,108 @@ pub fn readiness_percent(completed: usize, total: usize) -> u32 {
 
 /// Topic-check key: the single write/read shape for `completed_topics` and
 /// every topic checkbox (`01` §3 topic key).
+///
+/// The key is **content-addressed**: `"{assessment_id}::h{fnv1a64 of the
+/// normalized topic text}"`. Earlier builds keyed by the topic's *position*
+/// (`"{assessment_id}::{index}"`), so a rescan that reordered an
+/// announcement's topic list silently reattached the user's checkmarks to
+/// whatever now sat at that index. Addressing the topic's own (normalized)
+/// text makes completion survive reordering; a topic the sources reword
+/// loses its check — the same trade-off as before, but only on a real
+/// content change. Identical normalized topics inside one assessment share
+/// a key and therefore one done-state (they are indistinguishable strings).
 #[must_use]
-pub fn topic_key(assessment_id: &str, topic_index: usize) -> String {
-    format!("{assessment_id}::{topic_index}")
+pub fn topic_key_for_text(assessment_id: &str, topic_text: &str) -> String {
+    format!(
+        "{assessment_id}::h{:016x}",
+        crate::parse::util::fnv1a64(normalize_topic_text(topic_text).as_bytes())
+    )
+}
+
+/// Whitespace/case normalization for topic addressing: trim, collapse
+/// internal whitespace runs to one space, casefold. Deterministic and
+/// locale-independent (`to_lowercase`, never a locale-aware collation).
+#[must_use]
+fn normalize_topic_text(topic_text: &str) -> String {
+    let mut normalized = String::with_capacity(topic_text.len());
+    let mut in_whitespace = false;
+    for character in topic_text.trim().chars() {
+        if character.is_whitespace() {
+            in_whitespace = true;
+        } else {
+            if in_whitespace && !normalized.is_empty() {
+                normalized.push(' ');
+            }
+            in_whitespace = false;
+            normalized.extend(character.to_lowercase());
+        }
+    }
+    normalized
+}
+
+/// The pre-v5.0.1 positional key (`"{assessment_id}::{index}"`), if this key
+/// is one. Migration and the backup/import merge boundaries use this to
+/// carry completion state into the content-addressed shape; the `h` prefix
+/// on new keys keeps the two shapes structurally distinct.
+#[must_use]
+pub fn parse_legacy_topic_key(key: &str) -> Option<(String, usize)> {
+    let (assessment_id, index) = key.rsplit_once("::")?;
+    if assessment_id.is_empty() || index.is_empty() {
+        return None;
+    }
+    // Legacy suffixes are pure decimal; content keys carry the `h` prefix.
+    index.parse::<usize>().ok().map(|parsed| (assessment_id.to_string(), parsed))
+}
+
+/// Rewrites legacy positional keys in a `completed_topics` map into
+/// content-addressed keys, using each assessment's CURRENT topic list as the
+/// index→text table. Entries whose assessment or index no longer resolve are
+/// dropped and counted (the positional scheme had already lost them; this
+/// just stops carrying the dead rows). Content keys pass through untouched.
+/// Returns `(remapped map, remapped count, dropped count)`.
+#[must_use]
+pub fn remap_legacy_topic_keys(
+    map: &CompletedTopics,
+    assessments: &[Assessment],
+) -> (CompletedTopics, usize, usize) {
+    let mut remapped = CompletedTopics::new();
+    let mut remapped_count = 0usize;
+    let mut dropped_count = 0usize;
+    for (key, done) in map {
+        match parse_legacy_topic_key(key) {
+            Some((assessment_id, index)) => {
+                let topic = assessments
+                    .iter()
+                    .find(|assessment| assessment.id == assessment_id)
+                    .and_then(|assessment| assessment.topics.get(index));
+                match topic {
+                    Some(topic_text) => {
+                        let new_key = topic_key_for_text(&assessment_id, topic_text);
+                        // Two positional keys may address the same content
+                        // (duplicate topic texts): a `true` wins over a
+                        // `false`, and identity wins over nothing.
+                        let entry = remapped.entry(new_key).or_insert(*done);
+                        if *done {
+                            *entry = true;
+                        }
+                        remapped_count += 1;
+                    }
+                    None => dropped_count += 1,
+                }
+            }
+            None => {
+                remapped.insert(key.clone(), *done);
+            }
+        }
+    }
+    (remapped, remapped_count, dropped_count)
 }
 
 /// One checklist item inside a recommendation card.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TopicCheckItem {
-    /// `"{assessment_id}::{topic_index}"` — the `completed_topics` key.
+    /// The content-addressed `completed_topics` key
+    /// (`"{assessment_id}::h{hash}"` — see [`topic_key_for_text`]).
     pub key: String,
     pub topic: String,
     pub completed: bool,
@@ -209,10 +302,9 @@ pub fn why_study_now(assessment: &Assessment, completed_topics: &CompletedTopics
     let remaining = assessment
         .topics
         .iter()
-        .enumerate()
-        .filter(|(index, _)| {
+        .filter(|topic| {
             !completed_topics
-                .get(&topic_key(&assessment.id, *index))
+                .get(&topic_key_for_text(&assessment.id, topic))
                 .copied()
                 .unwrap_or(false)
         })
@@ -316,7 +408,7 @@ pub fn why_study_now(assessment: &Assessment, completed_topics: &CompletedTopics
 }
 
 /// Build one recommendation card (topic-check items carry the
-/// `"{assessment_id}::{index}"` keys the UI writes back).
+/// content-addressed keys the UI writes back).
 #[must_use]
 pub fn build_recommendation(
     assessment: &Assessment,
@@ -324,8 +416,8 @@ pub fn build_recommendation(
 ) -> StudyRecommendation {
     let mut topic_items = Vec::with_capacity(assessment.topics.len());
     let mut completed_for_this = 0usize;
-    for (index, topic) in assessment.topics.iter().enumerate() {
-        let key = topic_key(&assessment.id, index);
+    for topic in &assessment.topics {
+        let key = topic_key_for_text(&assessment.id, topic);
         let completed = completed_topics.get(&key).copied().unwrap_or(false);
         if completed {
             completed_for_this += 1;
@@ -415,10 +507,9 @@ pub fn build_dashboard_summary(
         completed_topics_count += assessment
             .topics
             .iter()
-            .enumerate()
-            .filter(|(index, _)| {
+            .filter(|topic| {
                 completed_topics
-                    .get(&topic_key(&assessment.id, *index))
+                    .get(&topic_key_for_text(&assessment.id, topic))
                     .copied()
                     .unwrap_or(false)
             })
@@ -464,10 +555,11 @@ mod tests {
         NaiveTime::from_hms_opt(h, m, 0).unwrap()
     }
 
-    fn completed_map(keys: &[(&str, usize)]) -> CompletedTopics {
+    fn completed_map(keys: &[(&str, &str)]) -> CompletedTopics {
+        // Seeded by topic TEXT (production keys are content-addressed).
         let mut map = HashMap::new();
-        for (assessment_id, index) in keys {
-            map.insert(topic_key(assessment_id, *index), true);
+        for (assessment_id, topic) in keys {
+            map.insert(topic_key_for_text(assessment_id, topic), true);
         }
         map
     }
@@ -505,7 +597,11 @@ mod tests {
             Some(day(6)),
             vec!["Graphs", "Trees"],
         );
-        let done = completed_map(&[("gmail-1", 0), ("gmail-1", 1), ("gmail-2", 0)]);
+        let done = completed_map(&[
+            ("gmail-1", "Sensor Stack"),
+            ("gmail-1", "Memory Map"),
+            ("gmail-2", "Graphs"),
+        ]);
         let summary = build_dashboard_summary(&[one, two], &done, &[], ref_date());
         assert_eq!(summary.total_topics_count, 5);
         assert_eq!(summary.completed_topics_count, 3);
@@ -521,7 +617,7 @@ mod tests {
         assert_eq!(
             summary.study_recommendations[0].topics[0],
             TopicCheckItem {
-                key: "gmail-1::0".to_string(),
+                key: topic_key_for_text("gmail-1", "Sensor Stack"),
                 topic: "Sensor Stack".to_string(),
                 completed: true,
             }
@@ -541,9 +637,19 @@ mod tests {
     }
 
     #[test]
-    fn topic_key_is_assessment_id_colon_colon_index() {
-        assert_eq!(topic_key("gmail-3", 2), "gmail-3::2");
-        assert_eq!(topic_key("custom-9", 0), "custom-9::0");
+    fn topic_key_is_assessment_id_hash_of_normalized_text() {
+        let key = topic_key_for_text("gmail-3", "Sensor Stack");
+        assert!(key.starts_with("gmail-3::h"), "content-addressed shape: {key}");
+        assert_eq!(key.len(), "gmail-3::h".len() + 16, "64-bit hash as 16 hex chars");
+        assert_eq!(
+            topic_key_for_text("gmail-3", "Sensor Stack"),
+            key,
+            "deterministic across calls"
+        );
+        // The legacy positional shape is recognized (and only that shape).
+        assert_eq!(parse_legacy_topic_key("gmail-3::2"), Some(("gmail-3".into(), 2)));
+        assert_eq!(parse_legacy_topic_key(&key), None, "content keys are not legacy");
+        assert_eq!(parse_legacy_topic_key("no-separator"), None);
     }
 
     #[test]
@@ -635,7 +741,7 @@ mod tests {
             None,
             vec!["Chapter 1", "Chapter 2"],
         );
-        let done = completed_map(&[("gmail-8", 0)]);
+        let done = completed_map(&[("gmail-8", "Chapter 1")]);
         let summary = build_dashboard_summary(&[undated], &done, &[], ref_date());
         assert_eq!(summary.next_up, None);
         let card = &summary.study_recommendations[0];
@@ -749,7 +855,7 @@ mod tests {
             Some(day(4)),
             three_topics.clone(),
         );
-        let done = completed_map(&[("gmail-4", 0)]);
+        let done = completed_map(&[("gmail-4", "Alpha")]);
         let summary = build_dashboard_summary(&[bare], &done, &[], ref_date());
         assert_eq!(
             summary.study_recommendations[0].why_study_now,
@@ -898,5 +1004,93 @@ mod tests {
         assert!(!refreshed.is_upcoming);
         assert_eq!(refreshed.urgency_level, UrgencyLevel::Past);
         assert_eq!(refreshed.priority_score, 10);
+    }
+
+    #[test]
+    fn topic_keys_are_content_addressed_and_reorder_safe() {
+        // THE regression this change exists for: a completion recorded
+        // against "Memory Map" must survive the source announcing the same
+        // topics in a different order (the positional key scheme attached
+        // the checkmark to whatever moved into that index).
+        let before = assessment_on(
+            "gmail-1",
+            Some("CSE241"),
+            "Quiz 1",
+            Some(day(3)),
+            vec!["Sensor Stack", "Memory Map", "Build Pipeline"],
+        );
+        let mut reordered = before.clone();
+        reordered.topics = vec![
+            "Build Pipeline".to_string(),
+            "Sensor Stack".to_string(),
+            "Memory Map".to_string(),
+        ];
+
+        let done = completed_map(&[("gmail-1", "Memory Map")]);
+        let card_before = build_recommendation(&before, &done);
+        let card_after = build_recommendation(&reordered, &done);
+
+        assert_eq!(card_before.topics[1].key, card_after.topics[2].key);
+        assert!(card_before.topics[1].completed);
+        assert!(card_after.topics[2].completed);
+        assert!(!card_after.topics[0].completed);
+        assert!(!card_after.topics[1].completed);
+    }
+
+    #[test]
+    fn topic_keys_normalize_case_and_whitespace_but_not_wording() {
+        let base = topic_key_for_text("a1", "  Sensor   Stack ");
+        assert_eq!(base, topic_key_for_text("a1", "sensor stack"));
+        assert_ne!(base, topic_key_for_text("a1", "Sensor Stacks"));
+        // Different assessments never share a key, identical texts do.
+        assert_ne!(base, topic_key_for_text("a2", "Sensor Stack"));
+        assert_eq!(
+            topic_key_for_text("a1", "Memory Map"),
+            topic_key_for_text("a1", "Memory Map")
+        );
+        assert!(base.starts_with("a1::h"), "content-addressed shape: {base}");
+        assert!(parse_legacy_topic_key(&base).is_none());
+    }
+
+    #[test]
+    fn remap_carries_positional_completion_through_reorder_and_drops_dead_rows() {
+        let assessment = assessment_on(
+            "gmail-1",
+            Some("CSE241"),
+            "Quiz 1",
+            Some(day(3)),
+            vec!["Sensor Stack", "Memory Map", "Build Pipeline"],
+        );
+        // v4/pre-migration shape: indexes into the ORIGINAL topic order.
+        let legacy: CompletedTopics = [
+            ("gmail-1::1", true),  // "Memory Map" → must survive
+            ("gmail-1::2", false), // false entries pass through as false
+            ("gmail-1::9", true),  // out of range → dropped
+            ("gone::0", true),     // unknown assessment → dropped
+            ("gmail-1::h0badbeef0badbeef", true), // already content key → untouched
+        ]
+        .into_iter()
+        .map(|(key, done)| (key.to_string(), done))
+        .collect();
+
+        let (remapped, moved, dropped) = remap_legacy_topic_keys(&legacy, &[assessment]);
+
+        assert_eq!(moved, 2, "the two in-range legacy keys; the content key passes through uncounted");
+        assert_eq!(dropped, 2);
+        assert_eq!(
+            remapped.get(&topic_key_for_text("gmail-1", "Memory Map")),
+            Some(&true)
+        );
+        assert_eq!(
+            remapped.get(&topic_key_for_text("gmail-1", "Build Pipeline")),
+            Some(&false)
+        );
+        assert_eq!(
+            remapped.get("gmail-1::h0badbeef0badbeef"),
+            Some(&true),
+            "content keys pass through untouched"
+        );
+        assert!(!remapped.contains_key("gmail-1::9"));
+        assert!(!remapped.contains_key("gone::0"));
     }
 }

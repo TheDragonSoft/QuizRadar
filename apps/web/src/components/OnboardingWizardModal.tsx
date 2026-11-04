@@ -283,6 +283,9 @@ export function OnboardingWizardModal({
               <div className="block text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider mb-2">
                 {copy.onboarding.tracksTitle}
               </div>
+              <p className="text-[11px] text-[var(--text-muted)] mb-2.5">
+                {copy.onboarding.trackEffect}
+              </p>
               <div className="grid grid-cols-1 gap-2.5">
                 <button
                   type="button"

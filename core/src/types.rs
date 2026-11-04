@@ -343,6 +343,58 @@ fn default_slot_type() -> String {
     "Lecture".to_string()
 }
 
+/// The academic-rhythm preset the user picks in onboarding (`01` §4.1
+/// "track/rhythm chips"). It is a declared study-cadence preference, not a
+/// fact about the data: it parameterizes how many days before each exam the
+/// deterministic planner spreads preparation across —
+/// [`Med`](AcademicTrack::Med) starts earlier (continuous assessment
+/// rhythm), [`Biz`](AcademicTrack::Biz) concentrates near the exam
+/// (midterm/milestone rhythm), [`Eng`](AcademicTrack::Eng) is the shipped
+/// default. Anything unreadable falls back to Eng so an unconfigured or
+/// legacy value can never break derivation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AcademicTrack {
+    Med,
+    #[default]
+    Eng,
+    Biz,
+}
+
+impl AcademicTrack {
+    /// Config-string parser (`academic_track` in `config_kv`: `med`/`eng`/
+    /// `biz`). Unknown or empty → Eng.
+    #[must_use]
+    pub fn from_config(value: Option<&str>) -> Self {
+        match value.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
+            Some("med") => Self::Med,
+            Some("biz") => Self::Biz,
+            _ => Self::Eng,
+        }
+    }
+
+    /// The wire/config string.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Med => "med",
+            Self::Eng => "eng",
+            Self::Biz => "biz",
+        }
+    }
+
+    /// How many days before an exam the roadmap spreads prep over (the
+    /// deterministic planner's `MAX_PREP_DAYS` per rhythm). Disclosed in the
+    /// onboarding/settings copy so the choice has an honest, visible effect.
+    #[must_use]
+    pub fn max_prep_days(self) -> i32 {
+        match self {
+            Self::Med => 7,
+            Self::Eng => 5,
+            Self::Biz => 3,
+        }
+    }
+}
+
 /// Where an assessment came from (`02` §3.3 `source`). Serialized as the
 /// plain user-facing label string — exactly v4's wire shape — so backup files
 /// round-trip both ways. Unknown labels (v4 wrote the user's own feed label)

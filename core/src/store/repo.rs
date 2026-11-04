@@ -26,8 +26,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::plan;
 use crate::types::{
-    Assessment, AssessmentType, CompletedTopics, Course, CustomCalendarEvent, FeedConfig,
-    GradeRecord, ScheduleData, ScheduleSlot, UrgencyLevel,
+    AcademicTrack, Assessment, AssessmentType, CompletedTopics, Course, CustomCalendarEvent,
+    FeedConfig, GradeRecord, ScheduleData, ScheduleSlot, UrgencyLevel,
 };
 
 use super::db::{Db, StoreError};
@@ -39,8 +39,11 @@ pub const MAX_FEEDS: usize = 10;
 /// The section of the v4 export the store still serves — a full topic-check
 /// item exists only when the topic list did; an empty `topics` array has no
 /// keys and must behave like 100% readiness at display time.
-pub fn topic_key(assessment_id: &str, index: usize) -> String {
-    plan::dashboard::topic_key(assessment_id, index)
+/// Topic-completion keys are content-addressed (`plan::dashboard`); the
+/// desktop shell resolves `(assessment_id, topic index)` → text → key
+/// through this so no shell ever re-implements the hash.
+pub fn topic_key_for_text(assessment_id: &str, topic_text: &str) -> String {
+    plan::dashboard::topic_key_for_text(assessment_id, topic_text)
 }
 
 // ---------------------------------------------------------------------------
@@ -131,7 +134,10 @@ pub fn read_snapshot(
         &custom_events,
         reference_date,
     );
-    let tasks = plan::tasks::build_study_tasks(&refreshed, &completed_topics, reference_date);
+    // The declared academic rhythm lives in config_kv; the store reads it
+    // here so every shell's snapshot carries the same roadmap shape.
+    let track = AcademicTrack::from_config(ConfigRepo::new(conn).get_string("academic_track")?.as_deref());
+    let tasks = plan::tasks::build_study_tasks(&refreshed, &completed_topics, reference_date, track);
 
     Ok(AppSnapshot {
         assessments: refreshed,
@@ -881,7 +887,7 @@ impl<'a> TopicRepo<'a> {
     pub fn set(&self, key: &str, done: bool, updated_at: &str) -> Result<(), StoreError> {
         if key.trim().is_empty() {
             return Err(StoreError::Validation(
-                "topic key must be <assessment_id>::<topic_index>".to_string(),
+                "topic key must be <assessment_id>::h<topic-hash>".to_string(),
             ));
         }
         if done {
@@ -2348,26 +2354,28 @@ mod tests {
         )
         .unwrap();
 
-        ops::set_topic_done(&db, &topic_key("a", 0), true, "t1", ref_date()).unwrap();
-        ops::set_topic_done(&db, &topic_key("a", 0), false, "t2", ref_date()).unwrap();
+        let key_a = topic_key_for_text("a", "Chapter 1");
+        let key_b = topic_key_for_text("a", "Chapter 2");
+        ops::set_topic_done(&db, &key_a, true, "t1", ref_date()).unwrap();
+        ops::set_topic_done(&db, &key_a, false, "t2", ref_date()).unwrap();
         let topics = TopicRepo::new(db.conn()).all().unwrap();
         assert!(
-            !topics.contains_key(&topic_key("a", 0)),
+            !topics.contains_key(&key_a),
             "unchecking removes the row — no false rows in the store"
         );
 
-        ops::set_topic_done(&db, &topic_key("a", 0), true, "t3", ref_date()).unwrap();
+        ops::set_topic_done(&db, &key_a, true, "t3", ref_date()).unwrap();
         // A remote backup with `false` for the same key never un-completes.
         let mut remote: CompletedTopics = CompletedTopics::new();
-        remote.insert(topic_key("a", 0), false);
-        remote.insert(topic_key("a", 1), true);
+        remote.insert(key_a.clone(), false);
+        remote.insert(key_b.clone(), true);
         let merged = TopicRepo::new(db.conn())
             .merge_additive(&remote, "t4")
             .unwrap();
         assert_eq!(merged, 1, "only the true entry is added");
         let topics = TopicRepo::new(db.conn()).all().unwrap();
-        assert_eq!(topics.get(&topic_key("a", 0)), Some(&true));
-        assert_eq!(topics.get(&topic_key("a", 1)), Some(&true));
+        assert_eq!(topics.get(&key_a), Some(&true));
+        assert_eq!(topics.get(&key_b), Some(&true));
     }
 
     // --- grades ------------------------------------------------------------
@@ -2673,8 +2681,14 @@ mod tests {
         let mut a = assessment("a", Some("CSE241"), "Quiz 1 — Digital Logic", "2026-10-27");
         a.topics = vec!["Logic gates".to_string(), "Karnaugh maps".to_string()];
         ops::replace_assessments(&db, &[a], "s1", ref_date()).unwrap();
-        let snapshot =
-            ops::set_topic_done(&db, &topic_key("a", 0), true, "t1", ref_date()).unwrap();
+        let snapshot = ops::set_topic_done(
+            &db,
+            &topic_key_for_text("a", "Logic gates"),
+            true,
+            "t1",
+            ref_date(),
+        )
+        .unwrap();
         let dashboard = snapshot.derived.dashboard;
         assert_eq!(dashboard.reference_date, ref_date());
         assert_eq!(dashboard.next_up.as_ref().map(|x| x.id.as_str()), Some("a"));

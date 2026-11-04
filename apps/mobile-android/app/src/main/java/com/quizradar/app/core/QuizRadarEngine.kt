@@ -241,8 +241,9 @@ class QuizRadarEngine(
         assessmentsJson: String,
         topicsJson: String,
         refDate: LocalDate,
+        academicTrack: String,
     ): String {
-        return deriveStudyTasks(assessmentsJson, topicsJson, refDate.toString())
+        return deriveStudyTasks(assessmentsJson, topicsJson, refDate.toString(), academicTrack)
     }
 
     override fun detectConflicts(

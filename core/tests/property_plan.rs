@@ -50,6 +50,7 @@ use quizradar_core::plan::conflicts::{detect_conflicts, ConflictSeverity};
 use quizradar_core::plan::dashboard::{build_dashboard_summary, radar_order, readiness_percent};
 use quizradar_core::plan::study_blocks::study_block_candidates;
 use quizradar_core::plan::tasks::build_study_tasks;
+use quizradar_core::types::AcademicTrack;
 use quizradar_core::types::{
     Assessment, AssessmentSource, AssessmentType, CompletedTopics, CustomCalendarEvent,
     ScheduleData, ScheduleSlot, UrgencyLevel,
@@ -296,7 +297,7 @@ proptest! {
         let day = ref_date();
 
         let _ = build_dashboard_summary(&assessments, &completed, &events, day);
-        let _ = build_study_tasks(&assessments, &completed, day);
+        let _ = build_study_tasks(&assessments, &completed, day, AcademicTrack::Eng);
         let ordered = radar_order(&assessments, day);
         let _ = detect_conflicts(&ordered, &events);
         for offset in 0..7i64 {
@@ -391,7 +392,7 @@ proptest! {
     ) {
         let mut topic_dice = || false;
         let completed = completed_for(&assessments, &mut topic_dice);
-        let payload = build_study_tasks(&assessments, &completed, ref_date());
+        let payload = build_study_tasks(&assessments, &completed, ref_date(), AcademicTrack::Eng);
 
         // Unique ids by construction: `a0..a5` → id lookup is unambiguous.
         let days_of = |id: &str| -> Option<i64> {
@@ -659,7 +660,7 @@ fn control_roadmap_horizon_cutoffs() {
         AssessmentType::ClassQuiz,
         None,
     )];
-    let payload = build_study_tasks(&undated, &CompletedTopics::new(), ref_date());
+    let payload = build_study_tasks(&undated, &CompletedTopics::new(), ref_date(), AcademicTrack::Eng);
     assert!(
         payload.days.iter().all(|day| day.tasks.is_empty()),
         "an undated draft produces no tasks"
@@ -678,7 +679,7 @@ fn control_roadmap_horizon_cutoffs() {
         AssessmentType::ClassQuiz,
         None,
     )];
-    let payload = build_study_tasks(&too_far, &CompletedTopics::new(), ref_date());
+    let payload = build_study_tasks(&too_far, &CompletedTopics::new(), ref_date(), AcademicTrack::Eng);
     assert!(
         payload.days.iter().all(|day| day.tasks.is_empty()),
         "beyond 14 days there is no roadmap"
@@ -694,7 +695,7 @@ fn control_roadmap_horizon_cutoffs() {
         AssessmentType::ClassQuiz,
         None,
     )];
-    let payload = build_study_tasks(&soon, &CompletedTopics::new(), ref_date());
+    let payload = build_study_tasks(&soon, &CompletedTopics::new(), ref_date(), AcademicTrack::Eng);
     let tasks: Vec<_> = payload.days.iter().flat_map(|day| &day.tasks).collect();
     assert_eq!(tasks.len(), 2, "one checkbox per real topic");
     for task in &tasks {
@@ -713,7 +714,7 @@ fn control_roadmap_horizon_cutoffs() {
         AssessmentType::ClassQuiz,
         None,
     )];
-    let payload = build_study_tasks(&topicless, &CompletedTopics::new(), ref_date());
+    let payload = build_study_tasks(&topicless, &CompletedTopics::new(), ref_date(), AcademicTrack::Eng);
     let tasks: Vec<_> = payload.days.iter().flat_map(|day| &day.tasks).collect();
     assert_eq!(tasks.len(), 3, "the 3 fallback framework topics");
 }

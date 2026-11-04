@@ -290,6 +290,38 @@ export async function loadTopicsDone(): Promise<Record<string, boolean>> {
   return map;
 }
 
+/** Raw `topics_done` rows (migration input — keys may predate content addressing). */
+export async function loadTopicRecords(): Promise<IdbTopicRecord[]> {
+  return idbGetAll<IdbTopicRecord>("topics_done");
+}
+
+/**
+ * One-transaction topic-key rewrite (the browser twin of SQLite migration 3):
+ * deletes every key listed, puts the rewritten entries, and stamps the
+ * `config_kv` marker — a half-applied key migration can never exist.
+ */
+export async function rewriteTopicKeys(
+  removeKeys: string[],
+  puts: IdbTopicRecord[],
+  markerKey: string,
+): Promise<void> {
+  const db = await openIdb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(["topics_done", "config_kv"], "readwrite");
+    const topics = tx.objectStore("topics_done");
+    for (const key of removeKeys) {
+      topics.delete(key);
+    }
+    for (const record of puts) {
+      topics.put(record);
+    }
+    tx.objectStore("config_kv").put({ key: markerKey, value: true });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
+  });
+}
+
 export async function setTopicDone(key: string, done: boolean): Promise<void> {
   if (done) {
     await idbPut("topics_done", { key, done: true, updated_at: new Date().toISOString() });

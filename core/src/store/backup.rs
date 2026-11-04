@@ -188,7 +188,14 @@ pub(crate) fn merge_backup_payload(
     {
         let tx = db.transaction()?;
         let topic_repo = TopicRepo::new(&tx);
-        report.topics_merged = topic_repo.merge_additive(&payload.completed_topics, now)?;
+        // A payload from a pre-migration build (or an imported v4 file)
+        // keys topics by POSITION within its OWN topic lists — remap
+        // against the payload's assessments before merging.
+        let (completed, _remapped, _dropped) = crate::plan::dashboard::remap_legacy_topic_keys(
+            &payload.completed_topics,
+            &payload.assessments,
+        );
+        report.topics_merged = topic_repo.merge_additive(&completed, now)?;
 
         let assessment_repo = AssessmentRepo::new(&tx);
         let local_stamps = assessment_repo.record_stamps()?;
@@ -490,7 +497,7 @@ mod tests {
             days_until: Some(12),
             urgency_level: UrgencyLevel::Upcoming,
             priority_score: 20,
-            topics: Vec::new(),
+            topics: vec!["Number systems".to_string(), "Karnaugh maps".to_string()],
             warnings: Vec::new(),
             ai_inference_note: None,
             ai_study_plan: None,
@@ -667,12 +674,27 @@ mod tests {
         assert_eq!(report.topics_merged, 1, "only the `true` topic counts");
         assert_eq!(report.grades_merged, 1);
 
-        // The store now really holds it.
+        // The store now really holds it — under the CONTENT key the legacy
+        // positional key remapped into (the payload's own topic list is the
+        // index→text table).
         let schedule = CourseRepo::new(db.conn()).list().unwrap();
         assert_eq!(schedule[0].id, "CSE241");
         let topic_repo = TopicRepo::new(db.conn());
-        assert_eq!(topic_repo.all().unwrap().get("a1::0"), Some(&true));
-        assert_eq!(topic_repo.all().unwrap().get("a1::1"), None);
+        assert_eq!(
+            topic_repo
+                .all()
+                .unwrap()
+                .get(&crate::plan::dashboard::topic_key_for_text("a1", "Number systems")),
+            Some(&true)
+        );
+        assert_eq!(
+            topic_repo
+                .all()
+                .unwrap()
+                .get(&crate::plan::dashboard::topic_key_for_text("a1", "Karnaugh maps")),
+            None,
+            "a `false` entry merges as absence (true-only store)"
+        );
         assert_eq!(
             GradeRepo::new(db.conn())
                 .get("a1")

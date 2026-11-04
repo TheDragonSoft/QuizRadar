@@ -11,13 +11,13 @@
     "core/src/types.rs"
   ],
   "sourceHashes": {
-    "core/src/types.rs": "483f2be664ef03f3c4afa2cd2aafa6dda70a0c2fcc6decf195a8a1813dd5c5d2",
-    "core/src/plan/dashboard.rs": "a1987bb714d422593c3120207fdd08005e5402602889a160de05351312a3af89",
-    "core/src/plan/tasks.rs": "556c2a8013cc405e177f0568af6f73a98312c56245d772e61c4027600d73fc91",
+    "core/src/types.rs": "e5dbb598f29b5f6de391dc579b0cb4080c488cb511d436c520d3ad98d8af6c6e",
+    "core/src/plan/dashboard.rs": "e5c94bc56e4ae5e97c297f8ec2728e395f2db7bf66da03cfc6043645547fb6eb",
+    "core/src/plan/tasks.rs": "ffc089ca111dba716a6cc9364e428e3b543cea1d23956030f940da60e8a41c7d",
     "core/src/plan/conflicts.rs": "a953cf743da6a8fc45b43bc6c2dfd716c6842a65a2d4311b08c56a19e8729e74",
-    "apps/desktop/src-tauri/src/commands/state.rs": "537d6c73b3dcf31faae548e74e6d703deda0f137fc647411b7a1a590cf34f2ce",
-    "core/src/store/repo.rs": "5aa07b83f4f255934d3ff10d1bfd18b5dcad094b0cad2695850255d99575f8df",
-    "core/src/ffi.rs": "bc5cd5a410787673eb67ca56c3fa39ec6c879ebc2a413c8c4fa5a8a6e3863d93"
+    "apps/desktop/src-tauri/src/commands/state.rs": "cc0a9e43c5254a35700bc5ed9f3ed7e04be17b75800b5f63172a5faca533dc3e",
+    "core/src/store/repo.rs": "e0e924c2d90fa2de71c5de066b67a319afefa671251dc4d58fece31d711c247e",
+    "core/src/ffi.rs": "484e4700f38e3dfcc188f084e96dcf0d613f5b0e89ad4637d2b0054c052c08be"
   },
   "structs": {
     "CachedEmail": {
@@ -1573,6 +1573,23 @@
         }
       ]
     },
+    "AcademicTrack": {
+      "source": "core/src/types.rs",
+      "variants": [
+        {
+          "name": "Med",
+          "wireName": "Med"
+        },
+        {
+          "name": "Eng",
+          "wireName": "Eng"
+        },
+        {
+          "name": "Biz",
+          "wireName": "Biz"
+        }
+      ]
+    },
     "AssessmentSource": {
       "source": "core/src/types.rs",
       "variants": [
@@ -1699,9 +1716,17 @@
       "parameters": [
         "assessments_json: String",
         "topics_json: String",
-        "ref_date_iso: String"
+        "ref_date_iso: String",
+        "// The declared academic rhythm (`01` §4.1 track chips): tunes the\n    // prep-day spread. Unknown/empty strings behave like the default.\n    academic_track: String"
       ],
       "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "topic_key": {
+      "parameters": [
+        "assessment_id: String",
+        "topic_text: String"
+      ],
+      "returns": "String"
     },
     "detect_schedule_conflicts": {
       "parameters": [

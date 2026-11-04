@@ -83,6 +83,7 @@ import com.quizradar.app.ui.ACADEMIC_TRACKS
 import com.quizradar.app.ui.QuizRadarViewModel
 import com.quizradar.app.ui.TimetableImportState
 import com.quizradar.app.ui.academicTrackLabel
+import com.quizradar.app.ui.components.OAuthClientIdFields
 import com.quizradar.app.ui.components.TimetableImportErrorDialog
 import com.quizradar.app.ui.components.TimetableImportPreviewDialog
 import com.quizradar.app.ui.components.TimetableImportWorkingDialog
@@ -132,8 +133,6 @@ fun SettingsScreen(
     val theme by viewModel.theme.collectAsState()
     val academicTrack by viewModel.academicTrack.collectAsState()
     val timetableImportState by viewModel.timetableImportState.collectAsState()
-    val googleClientId by viewModel.googleClientId.collectAsState()
-    val teamsClientId by viewModel.teamsClientId.collectAsState()
     val backgroundScanEnabled by viewModel.backgroundScanEnabled.collectAsState()
 
     // Dialog & Sheet States
@@ -146,10 +145,6 @@ fun SettingsScreen(
     // Digest time picker (M3 TimePicker in a dialog) - the "at $time" copy
     // used to display a value nothing could ever change.
     var showDigestTimePicker by rememberSaveable { mutableStateOf(false) }
-    // BYO OAuth client ids (Settings -> Sources). The drafts re-key when the
-    // persisted value changes, like the Gemini key field.
-    var googleClientIdInput by remember(googleClientId) { mutableStateOf(googleClientId) }
-    var teamsClientIdInput by remember(teamsClientId) { mutableStateOf(teamsClientId) }
 
     // Course Editor Sheet State
     var editingCourse by remember { mutableStateOf<CourseModel?>(null) }
@@ -849,49 +844,13 @@ fun SettingsScreen(
                     // "Android" OAuth client registered for THIS package name
                     // and their signing SHA-1; Microsoft needs an Azure app
                     // with the custom-scheme redirect. Honest, actionable copy
-                    // instead of a sign-in button that can only fail.
-                    Text(
-                        text = "OAuth client IDs (bring your own)",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text =
-                            "Google: create an \"Android\" OAuth client for package com.quizradar.app with your " +
-                                "signing SHA-1. Microsoft: register an Azure app with the redirect " +
-                                "com.quizradar.app://oauth/microsoft. Sign-in is refused until an ID is set here.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = googleClientIdInput,
-                        onValueChange = { googleClientIdInput = it },
-                        label = { Text("Google client ID") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = teamsClientIdInput,
-                        onValueChange = { teamsClientIdInput = it },
-                        label = { Text("Microsoft (Azure) client ID") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedButton(
-                        onClick = {
-                            viewModel.setGoogleClientId(googleClientIdInput)
-                            viewModel.setTeamsClientId(teamsClientIdInput)
-                            viewModel.showToast("OAuth client IDs saved")
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
-                    ) {
-                        Text("Save Client IDs")
-                    }
+                    // instead of a sign-in button that can only fail. The ids
+                    // auto-save as they are typed (shared with the onboarding
+                    // connections step) - the old explicit Save button at the
+                    // bottom of this long screen was easy to miss, and a
+                    // typed-but-unsaved id looked like "the app has no client
+                    // id" after a restart.
+                    OAuthClientIdFields(viewModel = viewModel)
                 }
             }
 

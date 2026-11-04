@@ -146,6 +146,18 @@ jobs:
           Copy-Item "target/${{ matrix.platform.target }}/release/quizradar-desktop.exe" -Destination "$stage/quizradar.exe"
           Compress-Archive -Path "$stage/*" -DestinationPath "target/${{ matrix.platform.target }}/release/bundle/QuizRadar-Portable-win-x64.zip"
 
+      # Tauri v2 names the macOS updater artifacts without an architecture
+      # (`QuizRadar.app.tar.gz`); the updater manifest generator needs the
+      # arch in the filename to emit `darwin-aarch64` instead of guessing.
+      - name: Name the macOS updater artifacts with their architecture
+        if: runner.os == 'macOS'
+        run: |
+          cd target/aarch64-apple-darwin/release/bundle/macos
+          for f in QuizRadar.app.tar.gz QuizRadar.app.tar.gz.sig; do
+            mv "$f" "QuizRadar_aarch64.${f#QuizRadar.}"
+          done
+          ls -la
+
       - name: Upload Desktop Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -345,10 +357,21 @@ jobs:
           echo "version=${VER}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
-      - name: Download all built artifacts
+      # Explicit patterns: downloading everything would also pull the
+      # `github-pages` site artifact, whose internal `artifact.tar` leaked
+      # into the first published release.
+      - name: Download desktop artifacts
         uses: actions/download-artifact@v4
         with:
           path: release-assets
+          pattern: desktop-*
+          merge-multiple: true
+
+      - name: Download Android artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          pattern: android-release
           merge-multiple: true
 
       # The desktop upload globs preserved their bundle subdirectories

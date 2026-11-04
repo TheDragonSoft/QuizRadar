@@ -1,0 +1,19 @@
+{
+  "version": "5.0.0",
+  "notes": "QuizRadar v5.0.0 release",
+  "pub_date": "2026-11-04T00:07:27.910Z",
+  "platforms": {
+    "linux-x86_64": {
+      "signature": "fake",
+      "url": "https://github.com/TheDragonSoft/QuizRadar/releases/download/v5.0.0/QuizRadar_5.0.0_amd64.AppImage"
+    },
+    "windows-x86_64": {
+      "signature": "fake",
+      "url": "https://github.com/TheDragonSoft/QuizRadar/releases/download/v5.0.0/QuizRadar_5.0.0_x64-setup.exe"
+    },
+    "darwin-aarch64": {
+      "signature": "fake",
+      "url": "https://github.com/TheDragonSoft/QuizRadar/releases/download/v5.0.0/QuizRadar_aarch64.app.tar.gz"
+    }
+  }
+}

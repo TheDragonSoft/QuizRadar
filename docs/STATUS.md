@@ -1833,9 +1833,27 @@ repository public**, and **ship the release with fresh signing keys**.
    could never work. Re-set to the keystore password, byte-exact (PowerShell
    pipes append a trailing newline; `cmd /c "gh secret set ... < file"` does
    not). `SECRETS-README.txt` documents the constraint.
-4. The v5.0.0 tag was moved twice (to `67384bc`, then the final fix commit)
-   before any release published - no artifacts, release, or `latest.json`
-   existed yet, so the moves re-ran the pipeline rather than mutating one.
+4. Windows + macOS desktop bundling failed (`os error 2` on Windows, an
+   OpenSSL `BIO_new_file` fopen on macOS): the branding `licenseFile` was
+   written as `../../LICENSE` but resolves from `apps/desktop/src-tauri/`,
+   which lands at `apps/LICENSE`. Fixed to `../../../LICENSE`; the desktop
+   matrix now also passes `--bundles` per platform (nsis / dmg,app /
+   deb,appimage) so the unused WiX/MSI path is gone.
+5. The PWA deploy failed twice for two different reasons: first Pages was
+   not enabled (private-repo plan limit; enabled after going public, and the
+   auto-created `github-pages` environment's custom branch policy would
+   have gated tag deployments - switched to the protected-branches policy),
+   then `tar: apps/web/dist: No such file or directory` - the release
+   workflow's `pnpm --filter quizradar-web build` filtered on a package name
+   that does not exist (`@quizradar/web`), pnpm exited 0 having matched no
+   projects, and no dist was ever produced. The desktop matrix had silently
+   survived the same wrong filter because tauri's `beforeBuildCommand` runs
+   the real build from the web workspace. Filter fixed; the previous run's
+   artifacts (desktop installers + signed APK/AAB) were already green.
+6. The v5.0.0 tag was moved several times (to `67384bc`, `1dc5f4a`,
+   `ebec88e`, and the final fix commit) before any release published - no
+   artifacts, release, or `latest.json` existed yet, so each move re-ran the
+   pipeline rather than mutating one.
 
 ### Gates (2026-11-04)
 

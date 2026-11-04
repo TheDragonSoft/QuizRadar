@@ -77,7 +77,11 @@ try {
   }
 }
 
-// Search for signatures and corresponding archives
+// Search for signatures and corresponding archives.
+// Tauri 2 v2-style updater artifacts: Windows signs the NSIS `-setup.exe`
+// directly, macOS signs `*.app.tar.gz`, and Linux signs the `.AppImage`
+// itself — none of them carry an architecture in the macOS case, so the
+// release workflow renames the macOS updater artifacts to include it.
 for (const file of files) {
   if (!file.endsWith(".sig")) continue;
 
@@ -87,30 +91,20 @@ for (const file of files) {
   const sigPath = path.join(config.artifactsDir, file);
   const signature = readFileSync(sigPath, "utf8").trim();
   const url = `https://github.com/${config.repo}/releases/download/${config.tag}/${archiveName}`;
+  const isAarch64 = archiveName.includes("aarch64") || archiveName.includes("arm64");
 
-  if (
-    archiveName.includes("x64") &&
-    (archiveName.includes("windows") ||
-      archiveName.endsWith(".nsis.zip") ||
-      archiveName.endsWith(".msi.zip"))
-  ) {
+  if (archiveName.includes("x64") && archiveName.endsWith("-setup.exe")) {
     platforms["windows-x86_64"] = { signature, url };
   } else if (
+    archiveName.endsWith(".app.tar.gz") ||
     archiveName.includes("darwin") ||
     archiveName.includes("macos") ||
-    archiveName.endsWith(".app.tar.gz")
+    archiveName.endsWith(".msi.zip") ||
+    archiveName.endsWith(".nsis.zip")
   ) {
-    if (archiveName.includes("aarch64") || archiveName.includes("arm64")) {
-      platforms["darwin-aarch64"] = { signature, url };
-    } else {
-      platforms["darwin-x86_64"] = { signature, url };
-    }
-  } else if (archiveName.includes("linux") || archiveName.endsWith(".AppImage.tar.gz")) {
-    if (archiveName.includes("aarch64") || archiveName.includes("arm64")) {
-      platforms["linux-aarch64"] = { signature, url };
-    } else {
-      platforms["linux-x86_64"] = { signature, url };
-    }
+    platforms[isAarch64 ? "darwin-aarch64" : "darwin-x86_64"] = { signature, url };
+  } else if (archiveName.endsWith(".AppImage") || archiveName.endsWith(".AppImage.tar.gz")) {
+    platforms[isAarch64 ? "linux-aarch64" : "linux-x86_64"] = { signature, url };
   }
 }
 

@@ -1,4 +1,4 @@
-﻿# QuizRadar
+# QuizRadar
 
 [![CI](https://github.com/TheDragonSoft/QuizRadar/actions/workflows/ci.yml/badge.svg)](https://github.com/TheDragonSoft/QuizRadar/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -6,7 +6,7 @@
 [![Rust](https://img.shields.io/badge/Core-Rust%202021-orange.svg)](core/)
 [![Zero Server](https://img.shields.io/badge/Architecture-Zero--Server%20%2F%20Local--First-success)](PRIVACY.md)
 
-**QuizRadar** is a local-first, zero-server academic radar for university students. It resolves fuzzy announcements (_"Class Quiz 1 next week, not this week"_) into exact calendar items by cross-referencing each announcement against your weekly timetable, then manages the resulting exam radar â€” complete with conflict detection, readiness tracking, study recommendations, practice quizzes, grade what-if calculations, and home screen countdown widgets.
+**QuizRadar** is a local-first, zero-server academic radar for university students. It resolves fuzzy announcements (_"Class Quiz 1 next week, not this week"_) into exact calendar items by cross-referencing each announcement against your weekly timetable, then manages the resulting exam radar — complete with conflict detection, readiness tracking, study recommendations, practice quizzes, grade what-if calculations, and home screen countdown widgets.
 
 ---
 
@@ -22,17 +22,11 @@ All official builds are published on the [GitHub Releases](https://github.com/Th
 | **Android**             | `QuizRadar-v5.0.0.apk` / `.aab`                                                 | arm64-v8a + x86_64; see **Android sign-in setup** below                                |
 | **Web Companion (PWA)** | [thedragonsoft.github.io/QuizRadar](https://thedragonsoft.github.io/QuizRadar/) | Install from your browser ("Add to Home Screen"); runs fully offline after first visit |
 
-### Android sign-in setup (bring your own OAuth client)
+### Android sign-in
 
-QuizRadar ships **no embedded Android OAuth client** â€” Android Google accounts require _your_ Google Cloud OAuth client, because Google binds Android clients to a package name + signing certificate:
+Google sign-in works out of the box: the app ships a built-in QuizRadar Google client id. **Microsoft (Teams) sign-in needs your own Azure app id** — register one with the redirect `com.quizradar.app://oauth/microsoft` and paste it in Settings → Sources. You can also override the built-in Google id there with your own client.
 
-1. In [Google Cloud Console â†’ Credentials](https://console.cloud.google.com/apis/credentials), create an **OAuth client ID** of type **Android** with package name `com.quizradar.app` and the SHA-1 of the certificate you installed the APK with.
-2. Create a **Web application** client for Microsoft/Azure (or reuse one) and add the redirect `com.quizradar.app://oauth/microsoft`.
-3. In QuizRadar â†’ **Settings â†’ Sources**, paste the Google client ID (and the Microsoft client ID) â€” sign-in then works, and Gmail/Classroom/Teams scans run on-device.
-
-Without a client id the app refuses sign-in with an honest message instead of pretending to scan. The **desktop** tier ships its own configured Google client, so Windows/macOS/Linux need none of the above.
-
----
+If you build QuizRadar yourself from source and want your own Google client instead, create one in [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials) and register the redirect `com.quizradar.app://oauth/google` (for an "Android"-type client: package `com.quizradar.app` + your signing SHA-1). The **desktop** tier ships its own configured clients, so Windows/macOS/Linux need none of the above.
 
 ## 2. Screenshots
 
@@ -83,7 +77,7 @@ Without a client id the app refuses sign-in with an honest message instead of pr
 - **Interactive Calendar & Roadmap:**
   - 7-day (Desktop) and 3-day (Mobile) overlapping lane timetable views with visual exam glow.
   - Daily study roadmap and per-course readiness grid.
-  - One-click iCalendar (`.ics`) file export and one-way Google Calendar push (dated assessments â€” never an import of your calendar).
+  - One-click iCalendar (`.ics`) file export and one-way Google Calendar push (dated assessments — never an import of your calendar).
 - **Grades & What-If Projection:** Record achieved scores and simulate required finals scores to achieve your target letter grades.
 - **Study Support Tools:**
   - AI-assisted practice quiz generator with labeled on-device deterministic fallbacks.
@@ -97,7 +91,7 @@ Without a client id the app refuses sign-in with an honest message instead of pr
 QuizRadar is engineered with a strict **Honesty Doctrine**:
 
 1. **Zero Server Architecture:** QuizRadar operates no servers, relays, or central databases. All data remains on your physical device.
-2. **Zero Fabricated Data:** If a room, instructor, or time is unannounced, QuizRadar renders `"â€”"` rather than hallucinating placeholder lecture halls.
+2. **Zero Fabricated Data:** If a room, instructor, or time is unannounced, QuizRadar renders `"—"` rather than hallucinating placeholder lecture halls.
 3. **No Embedded Secrets:** Authentication uses standard PKCE OAuth 2.0 without embedded client secrets.
 4. **Bring-Your-Own-Key (BYOK) AI:** Optional Google Gemini AI features use your personal API key via direct HTTP headers. When offline or unconfigured, QuizRadar automatically uses fully local, deterministic heuristics.
 
@@ -111,7 +105,7 @@ See [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md) for full policies.
 
 - **Rust:** Stable toolchain (`rustup update stable`)
 - **Node.js:** Node.js 20+ with `pnpm`
-- **Java:** JDK 21 (Temurin / Adoptium) â€” Gradle 8.11 rejects Java 25, so point `JAVA_HOME` at the JDK 21 install
+- **Java:** JDK 21 (Temurin / Adoptium) — Gradle 8.11 rejects Java 25, so point `JAVA_HOME` at the JDK 21 install
 - **Android SDK:** Command-line Tools, API Platform 35, Build-Tools 34.0.0+, and the **NDK r27b** (`sdkmanager "ndk;27.1.12297006"`); the build locates it via `ANDROID_NDK_HOME` or the SDK's `ndk/` directory
 - **wasm-bindgen-cli:** version pinned by `Cargo.lock` (only needed for the PWA tier: `pnpm --dir apps/web build:wasm`)
 

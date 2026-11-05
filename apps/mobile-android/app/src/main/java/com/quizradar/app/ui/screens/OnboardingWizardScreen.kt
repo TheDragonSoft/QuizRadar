@@ -655,8 +655,8 @@ private fun Step3Sources(
             text =
                 "Sign in and QuizRadar scans Gmail, Classroom and Teams announcements ON THIS DEVICE " +
                     "and pins quiz and exam dates to your timetable. Tokens never leave your phone. " +
-                    "Sign-in needs your own OAuth client ID - paste it below (it saves automatically). " +
-                    "Fully skippable.",
+                    "Google sign-in ships ready (a built-in client id); Microsoft needs your own " +
+                    "Azure app id - paste it below (it saves automatically). Fully skippable.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

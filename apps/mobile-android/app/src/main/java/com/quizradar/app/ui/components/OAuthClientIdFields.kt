@@ -85,10 +85,9 @@ fun OAuthClientIdFields(
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             text =
-                "Google: create an \"Android\" OAuth client for package com.quizradar.app with your " +
-                    "signing SHA-1. Microsoft: register an Azure app with the redirect " +
-                    "com.quizradar.app://oauth/microsoft. Sign-in is refused until an ID is saved here " +
-                    "(it saves automatically as you type).",
+                "Google sign-in ships with a built-in QuizRadar client id — paste your own to " +
+                    "override it. Microsoft needs YOUR Azure app id: register one with the redirect " +
+                    "com.quizradar.app://oauth/microsoft. Both fields save automatically as you type.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -107,7 +106,7 @@ fun OAuthClientIdFields(
                     when {
                         googleInput.trim() != googleClientId -> "Saving automatically…"
                         googleClientId.isNotBlank() -> "Saved ✓ - Google sign-in will use this id"
-                        else -> "Not set - Google sign-in is refused until one is saved"
+                        else -> "Not set - the built-in QuizRadar client id will be used"
                     },
                 )
             },

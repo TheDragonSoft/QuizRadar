@@ -51,26 +51,26 @@ pub const GEMINI_KEY_FILENAME: &str = "gemini.key";
 pub const DEFAULT_MICROSOFT_CLIENT_ID: &str = "14d82eec-204b-4c2f-b7e8-296a70dab67e";
 
 /// Google OAuth client id of the maintainer-provided registration (project
-/// `quizradar-511922`, authorized for the dev origins `http://localhost:4317`
-/// and `http://127.0.0.1:4317`). A client id is a public identifier, so it may
-/// ship.
+/// `gmail-summary-511914`, an **Installed**-type client; maintainer-provided
+/// 2026-11-05 and shared with the Android app). A client id is a public
+/// identifier, so it may ship.
 pub const DEFAULT_GOOGLE_CLIENT_ID: &str =
-    "620389124802-98bn4r9kllknq8l820rts76840l4af7q.apps.googleusercontent.com";
+    "341760934836-60toi8rjgkid0gmc69tmt598teghbgv4.apps.googleusercontent.com";
 
 /// Client secret of the Google registration above.
 ///
-/// That registration is a **Web application** client, which Google treats as
-/// confidential: its token endpoint refuses a secretless exchange with
-/// `invalid_request: client_secret is missing` (verified against
-/// `oauth2.googleapis.com/token`). The desktop shell therefore ships the
-/// secret that belongs to the client id it ships.
+/// The registration is an installed-app client, for which Google itself
+/// states the secret "is not treated as a secret" — but its token endpoint
+/// still refuses a secretless exchange with `invalid_request: client_secret
+/// is missing` (verified against `oauth2.googleapis.com/token`), so the
+/// desktop shell ships the secret that belongs to the client id it ships.
 ///
 /// Scope of use: the desktop token exchange and the Google refresh grant
 /// only. It never reaches the web/PWA bundle, the SQLite database, the UI,
 /// the logs or any error string. Runtime overrides (OS keyring entry
 /// `google_client_secret`, or `QUIZRADAR_GOOGLE_CLIENT_SECRET`) win, so the
 /// secret can be rotated without touching the source.
-pub const DEFAULT_GOOGLE_CLIENT_SECRET: &str = "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";
+pub const DEFAULT_GOOGLE_CLIENT_SECRET: &str = "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";
 
 pub const GOOGLE_CLIENT_ID_INVALID: &str = "The Google OAuth client ID in Settings is not usable. Copy it again from Google Cloud Console → APIs & Services → Credentials (it looks like 1234567890-abc.apps.googleusercontent.com and contains no spaces).";
 

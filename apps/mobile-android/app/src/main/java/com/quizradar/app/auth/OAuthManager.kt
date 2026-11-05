@@ -50,16 +50,14 @@ class OAuthManager(
     }
 
     /**
-     * True when a real client id is in place.
+     * True when a real, usable client id is in place.
      *
-     * The open-source build ships placeholder ids: a Google Android client id
-     * must be registered for the app's package name + SHA-1, and an Azure app
-     * id must exist for the Teams channel. Starting the browser flow with a
-     * placeholder can only fail at the provider, so the UI checks this first
-     * and says the truth instead of opening a tab that dies on "client id not
-     * found".
+     * The build ships the maintainer's Google client id (public identifier —
+     * it appears in every authorize URL), so Google sign-in works out of the
+     * box. A user-supplied id (Settings → Sources) wins over it, and the
+     * legacy placeholder ids older builds saved are still refused honestly.
      */
-    fun isGoogleClientConfigured(): Boolean = googleClientId.isNotBlank() && googleClientId != DEFAULT_GOOGLE_CLIENT_ID
+    fun isGoogleClientConfigured(): Boolean = googleClientId.isNotBlank() && googleClientId !in LEGACY_PLACEHOLDER_GOOGLE_CLIENT_IDS
 
     fun isMicrosoftClientConfigured(): Boolean = microsoftClientId.isNotBlank() && microsoftClientId != DEFAULT_MICROSOFT_CLIENT_ID
 
@@ -224,7 +222,22 @@ class OAuthManager(
     companion object {
         const val GOOGLE_REDIRECT_URI = "com.quizradar.app://oauth/google"
         const val MICROSOFT_REDIRECT_URI = "com.quizradar.app://oauth/microsoft"
-        const val DEFAULT_GOOGLE_CLIENT_ID = "quizradar-android-public.apps.googleusercontent.com"
+
+        /**
+         * The maintainer's Google OAuth client id (project
+         * `gmail-summary-511914`, shared with the desktop shell). A client id
+         * is a public identifier — it appears in every authorize URL — so it
+         * ships; a user-supplied id (Settings → Sources) wins over it. No
+         * client secret ships: the Android flow is a PKCE public client.
+         */
+        const val DEFAULT_GOOGLE_CLIENT_ID =
+            "341760934836-60toi8rjgkid0gmc69tmt598teghbgv4.apps.googleusercontent.com"
+
+        /** Microsoft sign-in still needs the user's own Azure app id. */
         const val DEFAULT_MICROSOFT_CLIENT_ID = "quizradar-android-public-ms"
+
+        /** Ids older placeholder builds may have saved; still refused. */
+        val LEGACY_PLACEHOLDER_GOOGLE_CLIENT_IDS =
+            setOf("quizradar-android-public.apps.googleusercontent.com")
     }
 }

@@ -69,10 +69,13 @@ class MainActivity : ComponentActivity() {
         }
 
         // The user's own OAuth client ids (Settings -> Sources) flow into the
-        // manager as they load: BYO ids win over the placeholders, and the
-        // honest sign-in refusal turns into a real flow once an id exists.
+        // manager as they load: a BYO id wins, a blank one falls back to the
+        // shipped Google client id (Microsoft keeps its honest placeholder —
+        // it still needs the user's own Azure app id).
         lifecycleScope.launch {
-            viewModel.googleClientId.collect { oauthManager.googleClientId = it }
+            viewModel.googleClientId.collect {
+                oauthManager.googleClientId = it.ifBlank { OAuthManager.DEFAULT_GOOGLE_CLIENT_ID }
+            }
         }
         lifecycleScope.launch {
             viewModel.teamsClientId.collect { oauthManager.microsoftClientId = it }
@@ -101,13 +104,12 @@ class MainActivity : ComponentActivity() {
                         viewModel = viewModel,
                         onStartGoogleLogin = {
                             if (!oauthManager.isGoogleClientConfigured()) {
-                                // Google needs the USER'S OWN Android OAuth client
-                                // (package com.quizradar.app + their signing SHA-1);
-                                // the shipped placeholder would only die at the
-                                // provider with "client id not found". Say what to
-                                // do instead of opening a dead tab.
+                                // Only reachable on builds whose saved id is a
+                                // legacy placeholder: say what to do instead of
+                                // opening a tab that dies on "client id not
+                                // found".
                                 viewModel.showToast(
-                                    "Google sign-in needs your own OAuth client id - add it " +
+                                    "This build has no usable Google client id - add one " +
                                         "in Settings -> Sources (an Android client for package " +
                                         "com.quizradar.app with your signing SHA-1).",
                                 )

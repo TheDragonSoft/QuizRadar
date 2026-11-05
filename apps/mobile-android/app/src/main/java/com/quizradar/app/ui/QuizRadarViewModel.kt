@@ -307,18 +307,15 @@ class QuizRadarViewModel(
 
     /**
      * The user's own OAuth client ids (Settings -> Sources). Empty = the
-     * honest "not configured" state: sign-in stays refused and the copy says
-     * what is missing instead of pretending a scan could run.
+     * built-in Google client id is used; Microsoft sign-in additionally
+     * needs the user's Azure app id, so a blank teams id keeps the honest
+     * "add your Azure app id" copy on Microsoft's own sign-in button.
      */
     private val _googleClientId = MutableStateFlow("")
     val googleClientId: StateFlow<String> = _googleClientId.asStateFlow()
 
     private val _teamsClientId = MutableStateFlow("")
     val teamsClientId: StateFlow<String> = _teamsClientId.asStateFlow()
-
-    /** True when at least one OAuth client id is configured (either provider). */
-    val oauthClientConfigured: Boolean
-        get() = _googleClientId.value.isNotBlank() || _teamsClientId.value.isNotBlank()
 
     /**
      * Background periodic scan (explicit opt-in, default OFF). The gate the

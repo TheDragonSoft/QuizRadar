@@ -14,6 +14,22 @@
 
 ---
 
+## 0. Spec Conformance Gate (read before Phase 1)
+
+Acceptance for v5 is `docs/rebuild/01-product-spec.md` §8; `docs/rebuild/` and `prompts/` are immutable to agents (`AGENTS.md` rule 9), and work proceeds through the normal one-prompt-per-session phase flow with `docs/STATUS.md` checklist ticks (`AGENTS.md` §6) — not as a standalone redesign branch. Every fix below carries its spec citation; rows marked ⚠ **conflict** with the locked spec and need a maintainer ruling (amend the spec vs. amend this plan) before that item is implemented:
+
+| Plan item | Spec citation | Status |
+|---|---|---|
+| §4 [P2] Search collision — decouple top search from in-page filtering | `01` §4.8: "typing re-renders dashboard + calendar"; §8 checklist item "search re-render" | ⚠ conflicts |
+| §5 [P1] Remove Android Dashboard sub-tab bar | `01` §4.3 mandates the "mobile sub-tab bar (Overview KPI / Assessments / Study)" | ⚠ conflicts |
+| §6 Phase 1 tokens `#070A12` / `#F5F7FB` | `01` §6 design language: dark base `#0b0f19`, light `#f8fafc/#ffffff`, accent `#1a73e8` (matches current `apps/web/src/tokens.css`) | ⚠ deviates |
+| §5 [P1] Remove `ModalNavigationDrawer` on phones | `01` §4.8 Android back order "… → search palette → sidebar → dashboard → exit" assumes a sidebar | ⚠ conflicts (keep on tablet form factors via `WindowSizeClass`?) |
+| §4 [P1] Move view tabs into the Sidebar | `01` §5: "left sidebar on desktop (nav tabs, mini-cal, course filters, layer toggles, sync status footer)" | ✅ aligns |
+| §4 [P1] Move Settings out of the TopBar | `01` §5 chrome lists a top-bar "settings gear"; §4.9 settings is a 3-tab modal — the working tree already moves settings to a full-page `SettingsView` | ⚠ in flux |
+| §5 [P2] IME padding · [P3] week swipe | additions only; `01` §4.5 mandates the <768px 3-day calendar window, so the swipe must slide that window | ✅ no conflict |
+
+---
+
 ## 1. Multi-Dimensional Scorecards (Rated /10 on 7 Foundational Bases)
 
 | Dimension / Basis | Desktop Score (/10) | Android Score (/10) | Desktop Notes | Android Notes |
@@ -44,6 +60,8 @@
 | **10** | **Help & Documentation** | **3.5** | **3.0** | Desktop has a dedicated `/help` view with shortcut cheatsheets; Android lacks an in-app help/FAQ sheet. |
 | **Total** | | **34.0 / 40 (85.0%)** | **34.8 / 40 (87.0%)** | **Good / Very Good Rating Band** |
 
+> **Note on row 7 (Flexibility & Efficiency):** the `Cmd+K` / single-key accelerator credit assumes the `01` §4.8 keyboard handlers (`/` or Ctrl/⌘K focuses search, ordered `Escape`) are actually wired. A case-insensitive recursive grep of `apps/web/src` finds no `keydown` / `onKeyDown` / `KeyK` handling yet — verify the hotkeys exist in code before claiming them in the scorecard.
+
 ---
 
 ## 3. Visual Redesign: *The Student Observatory*
@@ -64,6 +82,8 @@ QuizRadar resolves fuzzy university announcements through weekly timetable cross
 │  └──────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────┘
 ```
+
+> **Invariant — course colors:** the constellation accents (Sapphire / Emerald / Amethyst / Amber) are decorative UI accents only. Course colors stay the user-chosen 8-preset derivation in `core/` (`core/src/types.rs`: "chosen from the 8-preset palette"; "no default demo palettes"). The theme palette must never assign or override a course color (`AGENTS.md` golden rule 4).
 
 ### Key Visual Upgrades
 
@@ -92,6 +112,7 @@ QuizRadar resolves fuzzy university announcements through weekly timetable cross
   1. Move the 3 view tabs (Dashboard, Tasks, Calendar) into the **Sidebar**, creating a unified navigation rail above Focus and Help.
   2. Move Data & Backup and Settings into the **Account Profile dropdown**.
   3. Keep the TopBar minimal: `[Sidebar Toggle + Brand]` | `[Global Search (Cmd+K)]` | `[Sync Pill]` | `[Theme Toggle]` | `[Account Profile]`.
+- **Spec:** moving the view tabs into the Sidebar aligns with `01` §5 (the sidebar owns the nav tabs). Moving Settings out of the top bar touches the `01` §5 chrome spec (top-bar "settings gear") and §4.9 (settings modal) — follow the in-progress settings-page redo (`apps/web/src/views/SettingsView.tsx`) and confirm with the maintainer.
 
 ### [P1] Dual-Scrolling Container Trap on Dashboard
 - **Location:** [`apps/web/src/views/DashboardView.tsx`](file:///d:/Projects/QuizRadar/apps/web/src/views/DashboardView.tsx#L573-L630)
@@ -104,11 +125,13 @@ QuizRadar resolves fuzzy university announcements through weekly timetable cross
 - **Fix:** Decouple global search from in-page filtering:
   - TopBar search acts as a command palette (`SearchPaletteModal`) for jumping to items.
   - In-page filtering is handled by dedicated filter controls inside the respective view headers.
+- **⚠ Spec conflict:** `01` §4.8 mandates "typing re-renders dashboard + calendar" and the §8 checklist includes "search re-render" — decoupling requires a maintainer ruling; do not implement as-is. Also note `SearchPaletteModal` does not exist in the codebase yet: the spec'd palette (`/` or Ctrl/⌘K, recents, suggestions, top-4 matches) is new build work, not a rewire.
 
 ### [P2] Settings View Context Detachment
 - **Location:** [`apps/web/src/views/SettingsView.tsx`](file:///d:/Projects/QuizRadar/apps/web/src/views/SettingsView.tsx)
 - **Problem:** Navigating to Settings replaces the main view area without a breadcrumb or clear back button, making the user feel stranded outside the app.
 - **Fix:** Add a sticky header with a prominent `← Back to Dashboard` button and clear breadcrumb (`Settings / Integrations`).
+- **Spec:** consistent with the in-progress settings-page redo (`apps/web/src/views/SettingsView.tsx`); `01` §4.9 / §5 still describe a settings *modal*, so the modal→view change should be recorded with the maintainer.
 
 ---
 
@@ -118,6 +141,7 @@ QuizRadar resolves fuzzy university announcements through weekly timetable cross
 - **Location:** [`AppScaffold.kt`](file:///d:/Projects/QuizRadar/apps/mobile-android/app/src/main/java/com/quizradar/app/ui/AppScaffold.kt#L246-L320)
 - **Problem:** The app has a bottom `NavigationBar` with 4 destinations (*Dashboard, Tasks, Calendar, Focus*) and a `ModalNavigationDrawer` that opens from the brand logo with the *exact same 4 destinations*.
 - **Fix:** Remove `ModalNavigationDrawer` on mobile phone form factors. Use the `NavigationBar` exclusively. Secondary links (*Settings*, *Accounts & Sources*) are accessed via the TopAppBar user avatar sheet.
+- **⚠ Spec conflict:** the `01` §4.8 Android back-button order ("… → search palette → sidebar → dashboard → exit") assumes a sidebar exists; if the drawer is removed on phones, keep it on tablet form factors (`WindowSizeClass`) and get a maintainer ruling on the back-order step.
 
 ### [P1] Architecture Collision: Dashboard "Study" Sub-Tab vs. "Tasks" Screen
 - **Location:** [`DashboardScreen.kt`](file:///d:/Projects/QuizRadar/apps/mobile-android/app/src/main/java/com/quizradar/app/ui/screens/DashboardScreen.kt#L260-L327)
@@ -126,6 +150,7 @@ QuizRadar resolves fuzzy university announcements through weekly timetable cross
   - Simplify the Dashboard into a unified overview (Next-Up Hero + Conflict Alerts + Upcoming Radar Timeline + Readiness summary).
   - Remove the 3-way sub-tab segmented control.
   - Tapping the Readiness card deep-links the user directly to the **Tasks** screen for full topic tracking.
+- **⚠ Spec conflict:** `01` §4.3 mandates the mobile sub-tab bar (Overview / Assessments / Study) — do not remove it without a spec amendment.
 
 ### [P2] Viewport Overcrowding on First Launch
 - **Location:** [`DashboardScreen.kt`](file:///d:/Projects/QuizRadar/apps/mobile-android/app/src/main/java/com/quizradar/app/ui/screens/DashboardScreen.kt#L250-L360)
@@ -143,6 +168,7 @@ QuizRadar resolves fuzzy university announcements through weekly timetable cross
 - **Location:** [`CalendarScreen.kt`](file:///d:/Projects/QuizRadar/apps/mobile-android/app/src/main/java/com/quizradar/app/ui/screens/CalendarScreen.kt)
 - **Problem:** Navigating forward requires tapping `<` and `>` repeatedly.
 - **Fix:** Implement a horizontal swipe gesture (`HorizontalPager` or drag gesture) to flip between weeks naturally.
+- **Spec:** addition only — `01` §4.5 mandates the <768px 3-day calendar window on phones; the swipe must slide that 3-day window, never widen it to 7 days.
 
 ---
 
@@ -159,6 +185,8 @@ flowchart LR
 - Update `apps/web/src/tokens.css` with Obsidian dark variables, frosted glass tokens, and soft ambient shadows.
 - Update `QuizRadarTheme.kt` with matching dark elevation colors and gradient border definitions.
 - Refine `.has-exam-glow` and Android exam badges to use the breathing crimson nebula glow.
+- Keep the `01` §6 design-language tokens (`#0b0f19` dark base, `#f8fafc/#ffffff` light, accent `#1a73e8`) unless the maintainer rules otherwise — the `#070A12` / `#F5F7FB` proposal in §3 deviates (see §0 gate).
+- Any phase that changes rendered UI must regenerate the Playwright `e2e-baselines` (`apps/web/e2e-baselines/`) and re-run the visual acceptance pass in that same phase — not only in Phase 4.
 
 ### Phase 2: Desktop Navigation & Scroll Modernization
 - Refactor `TopBar.tsx` to streamline controls down to 5 essential items.
@@ -175,4 +203,5 @@ flowchart LR
 ### Phase 4: Micro-Interactions & Delights
 - Implement the orbital star indicator on the Focus / Pomodoro timer ring.
 - Add subtle constellation checkmark sparkles on topic completion.
-- Verify contrast ratios, Playwright baselines, and Robolectric test suites.
+- Honor `prefers-reduced-motion`: disable (or replace with static states) the breathing nebula exam glow, topic-completion sparkles, and the orbital Pomodoro indicator; never encode meaning in motion alone.
+- Verify contrast ratios (WCAG AA), Playwright baselines, and Robolectric test suites.

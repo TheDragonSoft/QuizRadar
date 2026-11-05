@@ -123,32 +123,21 @@ fun SetupChecklistCard(
                 modifier = Modifier.padding(vertical = 8.dp),
             )
 
-            // Item 2: Connect Sources. Honest about the OAuth requirement: the
-            // scan itself runs ON this device, but sign-in needs the user's
-            // own OAuth client id first - without one, no scan can run and
-            // this step must say so (and lead to Settings -> Sources) instead
-            // of pretending a Connect tap will start one.
-            val oauthConfigured = viewModel.oauthClientConfigured
+            // Item 2: Connect Sources. Google sign-in ships with a usable
+            // client id, so the step always offers Connect; Microsoft needs
+            // the user's Azure app id and says so on its own sign-in button.
             ChecklistItemRow(
                 title = "Connect Gmail or Teams",
                 desc =
                     if (sourcesDone) {
                         "Signed in - scans course announcements on this device"
-                    } else if (oauthConfigured) {
-                        "Sign in and QuizRadar scans course announcements for quizzes on this device"
                     } else {
-                        "Add an OAuth client ID in Settings -> Sources, then sign in - " +
-                            "scans run on this device once connected"
+                        "Sign in and QuizRadar scans course announcements for quizzes on this device"
                     },
                 icon = Icons.Outlined.Email,
                 isDone = sourcesDone,
-                actionLabel = if (oauthConfigured) "Connect" else "Open Settings",
-                onAction =
-                    if (oauthConfigured) {
-                        onConnectSources
-                    } else {
-                        onOpenSettings
-                    },
+                actionLabel = "Connect",
+                onAction = onConnectSources,
             )
 
             HorizontalDivider(

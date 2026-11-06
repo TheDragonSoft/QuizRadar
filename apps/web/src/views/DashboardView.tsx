@@ -12,14 +12,12 @@ import {
   CalendarPlus,
   CheckCircle2,
   ChevronRight,
-  ChevronsUpDown,
   GraduationCap,
   Link,
   Mail,
   Map as MapIcon,
   MapPin,
   Plus,
-  Radar as RadarIcon,
   RefreshCw,
   School,
   Search as SearchIcon,
@@ -41,7 +39,7 @@ import { computeActiveSourceCount, formatLastSynced } from "../state/syncStatus"
 import { formatIsoShortDate, parseIsoDate } from "../lib/weekRange";
 import type { Assessment, StudyRecommendation } from "../state/types";
 
-type MobileDashboardTab = "study" | "assessments" | "overview";
+type MobileDashboardTab = "study" | "overview";
 
 // ---------------------------------------------------------------------------
 // v4 display helpers (v4-final:static/app.js::renderDashboard / formatCompactCardSchedule)
@@ -163,22 +161,6 @@ function SourceIcon({ name, className }: { name: string; className?: string }) {
   }
 }
 
-function matchesSourceFilter(source: string | null | undefined, filter: string): boolean {
-  if (filter === "ALL") return true;
-  // An unknown source is not "Gmail" - it simply belongs to no source pill.
-  const s = (source || "").toUpperCase();
-  if (filter === "TEAMS") {
-    return s.includes("TEAMS") || s.includes("MICROSOFT") || s.includes("OUTLOOK");
-  }
-  if (filter === "MANUAL") {
-    return s.includes("MANUAL") || s.includes("CUSTOM");
-  }
-  if (filter === "FEEDS") {
-    return s.includes("FEED") || s.includes("ICS");
-  }
-  return s.includes(filter);
-}
-
 // ---------------------------------------------------------------------------
 // The view
 // ---------------------------------------------------------------------------
@@ -190,10 +172,6 @@ export const DashboardView: React.FC = () => {
   const config = useAppStore((s) => s.data.config);
   const auth = useAppStore((s) => s.data.auth);
   const selectedCourseIds = useAppStore((s) => s.selectedCourseIds);
-  const activeSourceFilter = useAppStore((s) => s.activeSourceFilter);
-  const setActiveSourceFilter = useAppStore((s) => s.setActiveSourceFilter);
-  const activeTypeFilter = useAppStore((s) => s.activeTypeFilter);
-  const setActiveTypeFilter = useAppStore((s) => s.setActiveTypeFilter);
   // The top-bar search is app-wide (spec §4.8): typing filters this dashboard
   // and the week calendar live.
   const searchQuery = useAppStore((s) => s.searchQuery);
@@ -233,31 +211,6 @@ export const DashboardView: React.FC = () => {
   const trimmedSearch = searchQuery.trim();
   const searchActive = trimmedSearch.length > 0;
 
-  const filteredTimeline = (assessments || []).filter((a) => {
-    if (!isCourseSelected(a.courseId)) return false;
-    if (!matchesSourceFilter(a.source, activeSourceFilter)) return false;
-    if (activeTypeFilter === "UPCOMING") return a.isUpcoming;
-    if (activeTypeFilter !== "ALL" && a.assessmentType !== activeTypeFilter) return false;
-    if (
-      searchActive &&
-      !matchesGlobalSearch(
-        searchQuery,
-        a.title,
-        a.courseName,
-        a.courseId,
-        a.instructor,
-        a.room,
-        a.source,
-        a.assessmentType,
-        a.displayTime,
-        a.topics?.join(" "),
-      )
-    ) {
-      return false;
-    }
-    return true;
-  });
-
   const filteredRecs = (dash.studyRecommendations || []).filter(
     (r) =>
       isCourseSelected(r.courseId) &&
@@ -296,80 +249,58 @@ export const DashboardView: React.FC = () => {
   const readinessPct = dash.totalTopicsCount === 0 ? null : (dash.readinessPercent ?? 100);
   const hasCourses = courses.length > 0;
 
-  // Adaptive source pills: only the sources that actually have records
-  // (v4 un-hides its Moodle pill the same way).
-  const sourcePills: ReadonlyArray<{ filter: string; label: string; icon: string }> = [
-    { filter: "GMAIL", label: "Gmail", icon: "mail" },
-    { filter: "MOODLE", label: "Moodle", icon: "graduation-cap" },
-    { filter: "TEAMS", label: "Teams", icon: "users" },
-    { filter: "CLASSROOM", label: "Classroom", icon: "school" },
-    { filter: "MANUAL", label: "Manual", icon: "calendar-plus" },
-    { filter: "FEEDS", label: "Feeds", icon: "calendar" },
-  ].filter((pill) => (assessments || []).some((a) => matchesSourceFilter(a.source, pill.filter)));
-
   return (
-    <div data-testid="dashboard-view" className="w-full space-y-6">
-      {/* Conflict & Schedule Overload Alert Banner (v4 renders it above the hero) */}
-      <ConflictBanner />
-
-      {/* Top Hero Banner: What's Coming Next */}
-      <NextUpHero
-        assessment={nextUp}
-        onOpenDetail={() => nextUp && openAssessmentDetail(nextUp.id)}
-        onOpenCalendar={() => setView("calendar")}
-        onConnect={() => openSettings("account")}
-        onSync={() => void triggerSync()}
-      />
+    <div data-testid="dashboard-view" className="w-full relative space-y-6">
+      {/* Sticky Observatory Canopy Hero Banner — Parallax Anchor */}
+      <div className="sticky top-0 z-20 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 pt-1 pb-3 bg-[var(--page)]/90 backdrop-blur-md transition-all space-y-3">
+        <ConflictBanner />
+        <NextUpHero
+          assessment={nextUp}
+          onOpenDetail={() => nextUp && openAssessmentDetail(nextUp.id)}
+          onOpenCalendar={() => setView("calendar")}
+          onConnect={() => openSettings("account")}
+          onSync={() => void triggerSync()}
+        />
+      </div>
 
       {/* Mobile Segmented Sub-Navigation Switcher (< 1024px) */}
-      <div className="flex items-center gap-1 rounded-xl border border-slate-200/80 bg-slate-100 p-1 text-xs font-semibold lg:hidden dark:border-slate-700/80 dark:bg-slate-800/80">
-        <button
-          type="button"
-          onClick={() => setMobileTab("study")}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-2 transition ${
-            mobileTab === "study"
-              ? "bg-white font-bold text-[#1557b0] shadow-2xs dark:bg-slate-900 dark:text-blue-300"
-              : "cursor-pointer text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
-          }`}
-        >
-          <BrainCircuit className="h-3.5 w-3.5" aria-hidden="true" />
-          <span>{copy.dashboard.subtabs.study}</span>
-          {filteredRecs.length > 0 && (
-            <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-blue-800 dark:bg-blue-900/70 dark:text-blue-200">
-              {filteredRecs.length}
-            </span>
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={() => setMobileTab("assessments")}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-2 transition ${
-            mobileTab === "assessments"
-              ? "bg-white font-bold text-[#1557b0] shadow-2xs dark:bg-slate-900 dark:text-blue-300"
-              : "cursor-pointer text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
-          }`}
-        >
-          <RadarIcon className="h-3.5 w-3.5" aria-hidden="true" />
-          <span>{copy.dashboard.subtabs.assessments}</span>
-          {filteredTimeline.length > 0 && (
-            <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-slate-800 dark:bg-slate-700 dark:text-slate-200">
-              {filteredTimeline.length}
-            </span>
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={() => setMobileTab("overview")}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-2 transition ${
-            mobileTab === "overview"
-              ? "bg-white font-bold text-[#1557b0] shadow-2xs dark:bg-slate-900 dark:text-blue-300"
-              : "cursor-pointer text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
-          }`}
-        >
-          <BarChart2 className="h-3.5 w-3.5" aria-hidden="true" />
-          <span>{copy.dashboard.subtabs.overview}</span>
-        </button>
+      <nav aria-label="Dashboard sections" className="lg:hidden">
+        <div role="tablist" className="flex items-center gap-1 rounded-xl border border-slate-200/80 bg-slate-100 p-1 text-xs font-semibold dark:border-slate-700/80 dark:bg-slate-800/80">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mobileTab === "study"}
+            onClick={() => setMobileTab("study")}
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-2 transition ${
+              mobileTab === "study"
+                ? "bg-white font-bold text-[#1557b0] shadow-2xs dark:bg-slate-900 dark:text-blue-300"
+                : "cursor-pointer text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+            }`}
+          >
+            <BrainCircuit className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>{copy.dashboard.subtabs.study}</span>
+            {filteredRecs.length > 0 && (
+              <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-blue-800 dark:bg-blue-900/70 dark:text-blue-200">
+                {filteredRecs.length}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mobileTab === "overview"}
+            onClick={() => setMobileTab("overview")}
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-2 transition ${
+              mobileTab === "overview"
+                ? "bg-white font-bold text-[#1557b0] shadow-2xs dark:bg-slate-900 dark:text-blue-300"
+                : "cursor-pointer text-slate-700 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+            }`}
+          >
+            <BarChart2 className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>{copy.dashboard.subtabs.overview}</span>
+          </button>
       </div>
+    </nav>
 
       {/* 4 KPI Overview Cards (desktop; the "At a Glance" tab on mobile) */}
       <section
@@ -393,7 +324,7 @@ export const DashboardView: React.FC = () => {
               <span className="text-3xl font-bold tabular-nums text-slate-900 dark:text-white">
                 {weekCount}
               </span>
-              <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
                 {copy.dashboard.kpiUpcomingCountLabel}
               </span>
             </div>
@@ -431,7 +362,7 @@ export const DashboardView: React.FC = () => {
             <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
               {copy.dashboard.kpiExamsTitle}
             </span>
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-50 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-[var(--accent)] dark:bg-blue-950/60 dark:text-blue-300">
               <GraduationCap className="h-4 w-4" aria-hidden="true" />
             </div>
           </div>
@@ -440,7 +371,7 @@ export const DashboardView: React.FC = () => {
               <span className="text-3xl font-bold tabular-nums text-slate-900 dark:text-white">
                 {examsAheadCount}
               </span>
-              <span className="text-xs font-semibold text-purple-700 dark:text-purple-300">
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
                 Exams
               </span>
             </div>
@@ -474,7 +405,14 @@ export const DashboardView: React.FC = () => {
                     )}
               </span>
             </div>
-            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+            <div
+              role="progressbar"
+              aria-label="Overall readiness progress"
+              aria-valuenow={readinessPct === null ? 0 : readinessPct}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"
+            >
               <div
                 className="h-full bg-emerald-600 dark:bg-emerald-500 transition-all duration-300"
                 style={{
@@ -564,26 +502,35 @@ export const DashboardView: React.FC = () => {
       )}
 
       {/* Main Dashboard Grid: Left = Study Planner | Right = Assessments Radar */}
-      <section className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-12 lg:gap-6">
-        {/* Left 7 Cols: What Should I Study? */}
+      <section className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-12 lg:gap-6 relative z-10">
+        {/* Full-Width Study Planner Canvas */}
         <div
           data-testid="dashboard-study-panel"
-          className={`${
-            mobileTab === "study" ? "flex" : "hidden"
-          } flex-col rounded-xl border border-slate-200 bg-white p-3 sm:p-4 lg:col-span-7 lg:flex lg:h-[720px] dark:border-slate-800 dark:bg-slate-900`}
+          className="flex flex-col rounded-xl border border-slate-200 bg-white p-3 sm:p-5 lg:col-span-12 lg:min-h-[500px] dark:border-slate-800 dark:bg-slate-900 shadow-xs"
         >
-          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 pb-3 dark:border-slate-800">
-            <h2 className="flex items-center gap-2 text-sm font-bold text-slate-900 sm:text-base dark:text-white">
-              <BrainCircuit
-                className="h-4 w-4 shrink-0 text-[var(--accent-ink)]"
-                aria-hidden="true"
-              />
-              <span>{copy.dashboard.recommendationsTitle}</span>
-            </h2>
-            <span className="hidden shrink-0 items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700 sm:inline-flex dark:bg-slate-800 dark:text-slate-300">
-              <ChevronsUpDown className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>{copy.dashboard.scrollBadge}</span>
-            </span>
+          <div className="flex shrink-0 flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3 dark:border-slate-800">
+            <div>
+              <h2 className="flex items-center gap-2 text-sm font-bold text-slate-900 sm:text-base dark:text-white">
+                <BrainCircuit
+                  className="h-4 w-4 shrink-0 text-[var(--accent-ink)]"
+                  aria-hidden="true"
+                />
+                <span>{copy.dashboard.recommendationsTitle}</span>
+              </h2>
+              <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">
+                Personalized study blocks and topic readiness derived from your course timetable.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setView("tasks")}
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--page)] px-3 py-1.5 text-xs font-semibold text-[var(--accent-ink)] hover:bg-[var(--surface-hover)] hover:border-[var(--accent)] transition"
+              >
+                <span>View All Assessments & Ledger in Tasks</span>
+                <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </div>
           </div>
 
           <div className="max-h-[640px] flex-1 space-y-2.5 overflow-y-auto pr-1.5 pt-3 sm:space-y-3 lg:max-h-none">
@@ -617,179 +564,6 @@ export const DashboardView: React.FC = () => {
                 onAddCourse={() => openModal("add-course")}
                 onConnect={() => openSettings("account")}
               />
-            )}
-          </div>
-        </div>
-
-        {/* Right 5 Cols: All Assessments Radar */}
-        <div
-          data-testid="all-assessments-panel"
-          className={`${
-            mobileTab === "assessments" ? "flex" : "hidden"
-          } flex-col rounded-xl border border-slate-200 bg-white p-3 sm:p-4 lg:col-span-5 lg:flex lg:h-[720px] dark:border-slate-800 dark:bg-slate-900`}
-        >
-          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 pb-3 dark:border-slate-800">
-            <div>
-              <h2 className="flex items-center gap-1.5 text-sm font-bold text-slate-900 sm:text-base dark:text-white">
-                <RadarIcon
-                  className="h-4 w-4 shrink-0 text-[var(--accent-ink)]"
-                  aria-hidden="true"
-                />
-                <span>{copy.dashboard.timelineTitle}</span>
-              </h2>
-              <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">
-                {copy.dashboard.timelineSubtitle}
-              </p>
-            </div>
-            <select
-              aria-label={copy.dashboard.timelineTitle}
-              title={copy.dashboard.timelineTitle}
-              value={activeTypeFilter}
-              onChange={(e) => setActiveTypeFilter(e.target.value)}
-              className="shrink-0 cursor-pointer rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-700 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-            >
-              <option value="UPCOMING">{copy.dashboard.typeFilterUpcoming}</option>
-              <option value="ALL">{copy.dashboard.typeFilterAll}</option>
-              <option value="Class Quiz">{copy.dashboard.typeFilterClassQuiz}</option>
-              <option value="Online Quiz">{copy.dashboard.typeFilterOnlineQuiz}</option>
-              <option value="Midterm Exam">{copy.dashboard.typeFilterMidterm}</option>
-              <option value="Final Exam">{copy.dashboard.typeFilterFinalExam}</option>
-              <option value="Lab Assessment">{copy.dashboard.typeFilterLabAssessment}</option>
-              <option value="Assignment">{copy.dashboard.typeFilterAssignment}</option>
-            </select>
-          </div>
-
-          {/* Multi-Source Platform Filter Pills */}
-          <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-slate-100 pb-1 pt-2.5 text-[11px] font-semibold dark:border-slate-800/80">
-            <button
-              type="button"
-              onClick={() => setActiveSourceFilter("ALL")}
-              className={`rounded-lg px-2.5 py-1 transition ${
-                activeSourceFilter === "ALL"
-                  ? "bg-[var(--accent-fill)] text-white shadow-2xs"
-                  : "cursor-pointer bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-              }`}
-            >
-              {copy.dashboard.filterAllSources}
-            </button>
-            {sourcePills.map((pill) => {
-              const Icon = () => <SourceIcon name={pill.icon} className="h-3 w-3" />;
-              const iconColor =
-                pill.icon === "mail"
-                  ? "text-blue-700 dark:text-blue-300"
-                  : pill.icon === "graduation-cap"
-                    ? "text-amber-700 dark:text-amber-300"
-                    : pill.icon === "users"
-                      ? "text-indigo-700 dark:text-indigo-300"
-                      : pill.icon === "calendar-plus"
-                        ? "text-pink-700 dark:text-pink-300"
-                        : "text-emerald-700 dark:text-emerald-300";
-              return (
-                <button
-                  key={pill.filter}
-                  type="button"
-                  onClick={() => setActiveSourceFilter(pill.filter)}
-                  className={`flex cursor-pointer items-center gap-1 rounded-lg px-2.5 py-1 transition ${
-                    activeSourceFilter === pill.filter
-                      ? "bg-[var(--accent-fill)] text-white shadow-2xs"
-                      : "cursor-pointer bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                  }`}
-                >
-                  <span className={activeSourceFilter === pill.filter ? "text-white" : iconColor}>
-                    <Icon />
-                  </span>
-                  <span>{pill.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="max-h-[640px] flex-1 space-y-2.5 overflow-y-auto pr-1.5 pt-3.5 lg:max-h-none">
-            {filteredTimeline.length === 0 ? (
-              (assessments || []).length === 0 ? (
-                <div className="space-y-2 rounded-xl border border-slate-200 p-6 text-center dark:border-slate-800">
-                  <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                    {copy.dashboard.timelineEmptyTitle}
-                  </div>
-                  <p className="text-[11px] text-slate-600 dark:text-slate-400">
-                    {copy.dashboard.timelineEmptyBody}
-                  </p>
-                  <div className="flex items-center justify-center gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => openModal("add-course")}
-                      className="cursor-pointer rounded-lg bg-[var(--accent-fill)] px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-[var(--accent-fill-hover)] active:scale-95"
-                    >
-                      {copy.dashboard.studyEmptyAddCourse}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openSettings("account")}
-                      className="cursor-pointer rounded-lg border border-slate-300 px-3 py-1.5 text-[11px] font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
-                    >
-                      {copy.dashboard.connectAccount}
-                    </button>
-                  </div>
-                </div>
-              ) : searchActive ? (
-                // The radar still holds assessments - the search simply matched
-                // none of them. Never render this as "nothing is scheduled".
-                <div
-                  data-testid="timeline-empty-search"
-                  className="space-y-2 rounded-xl border border-slate-200 p-6 text-center dark:border-slate-800"
-                >
-                  <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                    {copy.dashboard.timelineEmptySearchTitle}
-                  </div>
-                  <p className="text-[11px] text-slate-600 dark:text-slate-400">
-                    {copy.dashboard.timelineEmptySearchBody(trimmedSearch)}
-                  </p>
-                  <div className="flex items-center justify-center gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => setSearchQuery("")}
-                      className="cursor-pointer rounded-lg bg-[var(--accent-fill)] px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-[var(--accent-fill-hover)] active:scale-95"
-                    >
-                      {copy.dashboard.searchClear}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                // Assessments exist but the active filters exclude all of them —
-                // say so instead of claiming nothing is scheduled.
-                <div
-                  data-testid="timeline-empty-filtered"
-                  className="space-y-2 rounded-xl border border-slate-200 p-6 text-center dark:border-slate-800"
-                >
-                  <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                    {copy.dashboard.timelineEmptyFilteredTitle}
-                  </div>
-                  <p className="text-[11px] text-slate-600 dark:text-slate-400">
-                    {copy.dashboard.timelineEmptyFilteredBody}
-                  </p>
-                  <div className="flex items-center justify-center gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveSourceFilter("ALL");
-                        setActiveTypeFilter("ALL");
-                        setSearchQuery("");
-                      }}
-                      className="cursor-pointer rounded-lg bg-[var(--accent-fill)] px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-[var(--accent-fill-hover)] active:scale-95"
-                    >
-                      {copy.dashboard.timelineClearFilters}
-                    </button>
-                  </div>
-                </div>
-              )
-            ) : (
-              filteredTimeline.map((assessment) => (
-                <TimelineRow
-                  key={assessment.id}
-                  assessment={assessment}
-                  onClick={() => openAssessmentDetail(assessment.id)}
-                />
-              ))
             )}
           </div>
         </div>
@@ -981,43 +755,61 @@ const NIGHT_STARS_B: ReadonlyArray<[x: number, y: number, size: number, opacity:
   [93, 68, 1.3, 0.85],
 ];
 
-const starsToGradients = (stars: typeof DAY_STARS): string =>
+const starsToGradients = (stars: typeof DAY_STARS, isNight = false): string =>
   stars
-    .map(
-      ([x, y, size, opacity]) =>
-        `radial-gradient(${size}px ${size}px at ${x}% ${y}%, rgba(255,255,255,${opacity}) 45%, transparent 55%)`,
-    )
+    .map(([x, y, size, opacity]) => {
+      const coreSize = isNight ? Math.max(2.4, size * 1.9) : Math.max(1.6, size * 1.4);
+      const bloomSize = isNight ? Math.max(7.0, size * 5.6) : Math.max(3.5, size * 2.8);
+      const bloomOpacity = (opacity * 0.45).toFixed(2);
+      const outerOpacity = (opacity * 0.18).toFixed(2);
+      return [
+        `radial-gradient(${coreSize}px ${coreSize}px at ${x}% ${y}%, rgba(255,255,255,${opacity}) 45%, transparent 62%)`,
+        `radial-gradient(${bloomSize}px ${bloomSize}px at ${x}% ${y}%, rgba(224,231,255,${bloomOpacity}) 15%, rgba(129,140,248,${outerOpacity}) 50%, transparent 75%)`,
+      ].join(", ");
+    })
     .join(", ");
 
 const NextUpHeroStars: React.FC = () => (
   <>
-    {/* Day sky: sparse dim stars, plus a warm sun whose halo gently breathes. */}
+    {/* Day sky: crisp crystalline stars */}
     <div
       aria-hidden="true"
       className="pointer-events-none absolute inset-0 -z-10 dark:hidden"
-      style={{ backgroundImage: starsToGradients(DAY_STARS) }}
+      style={{ backgroundImage: starsToGradients(DAY_STARS, false) }}
     />
+    {/* Radiant glowing Sun in light themes */}
     <div
       aria-hidden="true"
       className="pointer-events-none absolute inset-0 -z-10 animate-[heroSunGlow_5s_ease-in-out_infinite] dark:hidden motion-reduce:animate-none"
       style={{
         backgroundImage: [
-          // Sun halo, then its bright core — both anchored at the same corner.
-          "radial-gradient(150px 150px at 90% 6%, rgba(255,213,64,0.42), rgba(255,213,64,0.1) 55%, transparent 74%)",
-          "radial-gradient(44px 44px at 90% 6%, rgba(255,240,130,0.98), rgba(255,200,0,0.55) 58%, transparent 76%)",
+          // Expansive warm golden atmospheric corona
+          "radial-gradient(340px 340px at 90% 6%, rgba(251,191,36,0.48), rgba(245,158,11,0.22) 42%, rgba(252,211,77,0.08) 68%, transparent 84%)",
+          // Brilliant golden mid-corona
+          "radial-gradient(180px 180px at 90% 6%, rgba(254,240,138,0.85), rgba(245,158,11,0.52) 45%, transparent 74%)",
+          // Incandescent blazing solar core
+          "radial-gradient(72px 72px at 90% 6%, rgba(255,255,255,1) 0%, rgba(254,249,195,0.98) 35%, rgba(250,204,21,0.88) 62%, rgba(245,158,11,0.55) 76%, transparent 82%)",
         ].join(", "),
       }}
     />
-    {/* Night sky: two bright layers pulsing against each other. */}
+    {/* Ambient solar dawn dispersion over the right quadrant */}
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 -z-10 dark:hidden"
+      style={{
+        backgroundImage: "radial-gradient(480px 240px at 92% 0%, rgba(253,224,71,0.18), transparent 70%)",
+      }}
+    />
+    {/* Night sky: two bright sparkling star layers pulsing against each other */}
     <div
       aria-hidden="true"
       className="pointer-events-none absolute inset-0 -z-10 hidden animate-[heroTwinkleA_4.5s_ease-in-out_infinite] dark:block motion-reduce:animate-none"
-      style={{ backgroundImage: starsToGradients(NIGHT_STARS_A) }}
+      style={{ backgroundImage: starsToGradients(NIGHT_STARS_A, true) }}
     />
     <div
       aria-hidden="true"
       className="pointer-events-none absolute inset-0 -z-10 hidden animate-[heroTwinkleB_5.6s_ease-in-out_0.9s_infinite] dark:block motion-reduce:animate-none"
-      style={{ backgroundImage: starsToGradients(NIGHT_STARS_B) }}
+      style={{ backgroundImage: starsToGradients(NIGHT_STARS_B, true) }}
     />
     {/* Sheen: one diagonal light band sweeps the card every few seconds, over
         both the day and the night sky. */}
@@ -1292,7 +1084,14 @@ const StudyRecommendationCard: React.FC<RecommendationCardProps> = ({
               </span>
             ) : (
               <>
-                <div className="h-1.5 w-12 overflow-hidden rounded-full bg-slate-100 sm:w-16 dark:bg-slate-800">
+                <div
+                  role="progressbar"
+                  aria-label={`Topic readiness for ${rec.title}`}
+                  aria-valuenow={progressPct === null ? 0 : progressPct}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  className="h-1.5 w-12 overflow-hidden rounded-full bg-slate-100 sm:w-16 dark:bg-slate-800"
+                >
                   <div
                     className="h-full bg-emerald-600 dark:bg-emerald-500 transition-all duration-300"
                     style={{ width: `${Math.min(100, Math.max(0, progressPct))}%` }}
@@ -1435,7 +1234,7 @@ const StudyRecommendationCard: React.FC<RecommendationCardProps> = ({
                   e.stopPropagation();
                   useAppStore.getState().openPracticeQuiz(rec.assessmentId);
                 }}
-                className="flex items-center gap-1 px-2 py-1 rounded-md bg-purple-500/10 hover:bg-purple-500/20 text-purple-700 dark:text-purple-300 text-[11px] font-semibold transition cursor-pointer"
+                className="flex items-center gap-1 px-2 py-1 rounded-md bg-[var(--accent)]/10 hover:bg-[var(--accent)]/20 text-[var(--accent-ink)] text-[11px] font-semibold transition cursor-pointer"
               >
                 <Sparkles className="h-3 w-3" />
                 <span>Practice</span>
@@ -1448,12 +1247,12 @@ const StudyRecommendationCard: React.FC<RecommendationCardProps> = ({
   );
 };
 
-interface TimelineRowProps {
+export interface TimelineRowProps {
   assessment: Assessment;
   onClick: () => void;
 }
 
-const TimelineRow: React.FC<TimelineRowProps> = ({ assessment: a, onClick }) => {
+export const TimelineRow: React.FC<TimelineRowProps> = ({ assessment: a, onClick }) => {
   const theme = useAppStore((s) => s.theme);
   const courses = useAppStore((s) => s.data.schedule.courses);
   const palette = coursePalette(a.courseId || "GENERAL");

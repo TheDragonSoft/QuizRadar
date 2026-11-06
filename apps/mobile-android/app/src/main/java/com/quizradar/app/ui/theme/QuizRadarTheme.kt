@@ -20,11 +20,11 @@ private val Accent = Color(0xFF1A73E8)
 private val AccentDark = Color(0xFF2563EB)
 private val ExamRed = Color(0xFFD93025)
 private val ExamRedDark = Color(0xFFF87171)
-private val PageLight = Color(0xFFF8FAFC)
+private val PageLight = Color(0xFFF5F7FB)
 private val SurfaceLight = Color(0xFFFFFFFF)
 private val TextLight = Color(0xFF0F172A)
-private val DarkBase = Color(0xFF0B0F19)
-private val SurfaceDark = Color(0xFF111827)
+private val DarkBase = Color(0xFF070A12)
+private val SurfaceDark = Color(0xFF0E1526)
 
 private val LightColors: ColorScheme =
     lightColorScheme(
@@ -67,15 +67,42 @@ private val DarkColors: ColorScheme =
         onBackground = Color(0xFFF1F5F9),
         surface = SurfaceDark,
         onSurface = Color(0xFFF1F5F9),
-        surfaceVariant = Color(0xFF1E293B),
+        surfaceVariant = Color(0xFF162035),
         onSurfaceVariant = Color(0xFF94A3B8),
         surfaceContainerLowest = DarkBase,
-        surfaceContainerLow = Color(0xFF0F172A),
+        surfaceContainerLow = Color(0xFF0A0F1D),
         surfaceContainer = SurfaceDark,
-        surfaceContainerHigh = Color(0xFF1E293B),
-        surfaceContainerHighest = Color(0xFF334155),
-        outline = Color(0xFF334155),
-        outlineVariant = Color(0xFF1E293B),
+        surfaceContainerHigh = Color(0xFF162035),
+        surfaceContainerHighest = Color(0xFF22304D),
+        outline = Color(0xFF273654),
+        outlineVariant = Color(0xFF1A243A),
+        error = ExamRedDark,
+        onError = Color(0xFF450A0A),
+    )
+
+private val AmoledColors: ColorScheme =
+    darkColorScheme(
+        primary = AccentDark,
+        onPrimary = SurfaceLight,
+        primaryContainer = Color(0xFF1E3A8A),
+        onPrimaryContainer = Color(0xFFDBEAFE),
+        secondary = Color(0xFF94A3B8),
+        onSecondary = Color.Black,
+        secondaryContainer = Color(0xFF1E3A8A),
+        onSecondaryContainer = Color(0xFFDBEAFE),
+        background = Color.Black,
+        onBackground = Color(0xFFF1F5F9),
+        surface = Color(0xFF08090D),
+        onSurface = Color(0xFFF1F5F9),
+        surfaceVariant = Color(0xFF101218),
+        onSurfaceVariant = Color(0xFF94A3B8),
+        surfaceContainerLowest = Color.Black,
+        surfaceContainerLow = Color(0xFF050608),
+        surfaceContainer = Color(0xFF0A0B10),
+        surfaceContainerHigh = Color(0xFF12151E),
+        surfaceContainerHighest = Color(0xFF1A1F2C),
+        outline = Color(0xFF202534),
+        outlineVariant = Color(0xFF141722),
         error = ExamRedDark,
         onError = Color(0xFF450A0A),
     )
@@ -132,6 +159,7 @@ object StatusColors {
 @Suppress("standard:function-naming")
 fun QuizRadarTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    isAmoled: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val view = LocalView.current
@@ -140,15 +168,22 @@ fun QuizRadarTheme(
             val activity = view.context as? Activity
             if (activity != null) {
                 WindowCompat.getInsetsController(activity.window, view).apply {
-                    isAppearanceLightStatusBars = !darkTheme
-                    isAppearanceLightNavigationBars = !darkTheme
+                    isAppearanceLightStatusBars = !darkTheme && !isAmoled
+                    isAppearanceLightNavigationBars = !darkTheme && !isAmoled
                 }
             }
         }
     }
 
+    val colors =
+        when {
+            isAmoled -> AmoledColors
+            darkTheme -> DarkColors
+            else -> LightColors
+        }
+
     MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
+        colorScheme = colors,
         content = content,
     )
 }

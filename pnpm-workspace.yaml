@@ -5,4 +5,5 @@ packages:
 # only what legitimately ships one and needs it (esbuild resolves its
 # platform binary in install.js). Keep this list minimal.
 allowBuilds:
+  core-js: set this to true or false
   esbuild: true

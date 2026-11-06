@@ -106,11 +106,38 @@ private fun DrawScope.drawStars(
     alphaScale: Float,
 ) {
     stars.forEach { star ->
+        val center = Offset(size.width * star.x, size.height * star.y)
+        val alpha = (star.alpha * alphaScale).coerceIn(0f, 1f)
+
+        // Soft celestial diffraction bloom
         drawCircle(
-            color = Color.White.copy(alpha = (star.alpha * alphaScale).coerceIn(0f, 1f)),
-            radius = star.radius * 1.1f,
-            center = Offset(size.width * star.x, size.height * star.y),
+            color = Color(0xFFC7D2FE).copy(alpha = alpha * 0.40f),
+            radius = star.radius * 3.2f,
+            center = center,
         )
+        // Brilliant white focal core
+        drawCircle(
+            color = Color.White.copy(alpha = alpha),
+            radius = star.radius * 1.6f,
+            center = center,
+        )
+        // Prominent 4-point sparkle cross on key landmark stars
+        if (star.radius >= 1.4f) {
+            val sparkLen = star.radius * 4.2f
+            val sparkWidth = 1.2f
+            drawLine(
+                color = Color.White.copy(alpha = alpha * 0.70f),
+                start = Offset(center.x - sparkLen, center.y),
+                end = Offset(center.x + sparkLen, center.y),
+                strokeWidth = sparkWidth,
+            )
+            drawLine(
+                color = Color.White.copy(alpha = alpha * 0.70f),
+                start = Offset(center.x, center.y - sparkLen),
+                end = Offset(center.x, center.y + sparkLen),
+                strokeWidth = sparkWidth,
+            )
+        }
     }
 }
 
@@ -206,38 +233,63 @@ fun HeroSky(
             drawStars(NIGHT_STARS_A, alphaA)
             drawStars(NIGHT_STARS_B, alphaB)
         } else {
-            // Sun halo (breathing) + core bleeding over the top-right edge,
-            // then dim stars.
+            // Expansive warm golden atmospheric corona
             val sunCenter = Offset(size.width * 0.90f, -size.height * 0.08f)
-            val haloRadius = size.minDimension * 0.62f
+            val outerCoronaRadius = size.minDimension * 0.95f
+            val midCoronaRadius = size.minDimension * 0.55f
+            val coreRadius = size.minDimension * 0.22f
+
+            // 1. Broad radiant warm atmospheric corona
             drawCircle(
                 brush =
                     Brush.radialGradient(
                         colors =
                             listOf(
-                                Color(0xFFFFD540).copy(alpha = sunGlow),
-                                Color(0xFFFFD540).copy(alpha = 0.10f),
+                                Color(0xFFFFB300).copy(alpha = (sunGlow * 1.15f).coerceIn(0f, 1f)),
+                                Color(0xFFFFA000).copy(alpha = 0.26f),
+                                Color(0xFFFFD54F).copy(alpha = 0.08f),
                                 Color.Transparent,
                             ),
                         center = sunCenter,
-                        radius = haloRadius,
+                        radius = outerCoronaRadius,
                     ),
-                radius = haloRadius,
+                radius = outerCoronaRadius,
                 center = sunCenter,
             )
+
+            // 2. Brilliant golden mid corona
             drawCircle(
                 brush =
                     Brush.radialGradient(
                         colors =
                             listOf(
-                                Color(0xFFFFF082).copy(alpha = 0.98f),
-                                Color(0xFFFFC800).copy(alpha = 0.55f),
+                                Color(0xFFFFF176).copy(alpha = 0.88f),
+                                Color(0xFFFFB300).copy(alpha = 0.52f),
                                 Color.Transparent,
                             ),
                         center = sunCenter,
-                        radius = haloRadius * 0.32f,
+                        radius = midCoronaRadius,
                     ),
-                radius = haloRadius * 0.32f,
+                radius = midCoronaRadius,
+                center = sunCenter,
+            )
+
+            // 3. Blazing incandescent solar core
+            drawCircle(
+                brush =
+                    Brush.radialGradient(
+                        colors =
+                            listOf(
+                                Color.White,
+                                Color(0xFFFFF9C4).copy(alpha = 0.98f),
+                                Color(0xFFFFEE58).copy(alpha = 0.88f),
+                                Color(0xFFFFA000).copy(alpha = 0.42f),
+                                Color.Transparent,
+                            ),
+                        center = sunCenter,
+                        radius = coreRadius,
+                    ),
+                radius = coreRadius,
                 center = sunCenter,
             )
             drawStars(DAY_STARS, 1f)

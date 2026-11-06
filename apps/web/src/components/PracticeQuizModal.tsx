@@ -132,7 +132,7 @@ export function PracticeQuizModal({
                 <BookOpen className="h-4 w-4" />
               </div>
             ) : (
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-500/10 text-purple-700 dark:text-purple-400">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]">
                 <Sparkles className="h-4 w-4" />
               </div>
             )}

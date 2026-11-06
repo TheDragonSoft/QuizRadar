@@ -32,7 +32,7 @@ test("week calendar renders the empty week", async ({ page }, testInfo) => {
 
   await expect(page.getByTestId("view-calendar")).toBeVisible();
   await expect(page.getByTestId("empty-calendar")).toContainText(
-    "No classes or exams scheduled for this week.",
+    "Your Calendar is Ready",
   );
 
   // The frozen clock is in effect: the mini calendar shows October 2026 with

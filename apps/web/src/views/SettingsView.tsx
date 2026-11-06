@@ -14,6 +14,7 @@ import {
   Sparkles,
   ShieldCheck,
   ChevronRight,
+  ArrowLeft,
 } from "lucide-react";
 import { copy } from "../copy";
 import { courseAccessibleChip } from "../lib/coursePalette";
@@ -39,6 +40,7 @@ const SECTION_ID: Record<SettingsSection, string> = {
 
 export function SettingsView() {
   const theme = useAppStore((s) => s.theme);
+  const setTheme = useAppStore((s) => s.setTheme);
   const auth = useAppStore((s) => s.data.auth);
   const config = useAppStore((s) => s.data.config);
   const courses = useAppStore((s) => s.data.schedule.courses);
@@ -65,6 +67,7 @@ export function SettingsView() {
   const resetDatabase = useAppStore((s) => s.resetDatabase);
   const openModal = useAppStore((s) => s.openModal);
   const addToast = useAppStore((s) => s.addToast);
+  const setView = useAppStore((s) => s.setView);
   const pendingSettingsSection = useAppStore((s) => s.pendingSettingsSection);
   const backupFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -338,6 +341,15 @@ export function SettingsView() {
         aria-label="Settings sections"
         className="sticky top-6 hidden h-fit w-56 shrink-0 lg:block"
       >
+        <button
+          type="button"
+          onClick={() => setView("dashboard")}
+          aria-label="Back to dashboard"
+          className="mb-4 inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs font-semibold text-[var(--accent-ink)] transition hover:bg-[var(--surface-hover)] cursor-pointer"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+          <span>← Back</span>
+        </button>
         <div className="flex items-center gap-2.5 pb-4">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--accent-ink)]">
             <Sliders className="h-5 w-5" aria-hidden="true" />
@@ -364,17 +376,41 @@ export function SettingsView() {
             </li>
           ))}
         </ul>
-        <p className="mt-4 border-t border-[var(--border)] px-3 pt-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
+        <p className="mt-4 border-t border-[var(--border)] px-3 pt-3 text-xs leading-relaxed text-[var(--text-muted)]">
           {copy.settings.pageSubtitle}
         </p>
       </nav>
 
       {/* Scrollable page body */}
       <div className="min-w-0 flex-1 space-y-10 pb-16">
+        {/* Breadcrumb navigation */}
+        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+          <button
+            type="button"
+            onClick={() => setView("dashboard")}
+            className="flex items-center gap-1.5 font-semibold text-[var(--accent-ink)] hover:underline cursor-pointer"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>Dashboard</span>
+          </button>
+          <span aria-hidden="true">/</span>
+          <span className="font-semibold text-[var(--text)]">{copy.settings.title}</span>
+        </nav>
+
         {/* Mobile header (the rail carries the title on lg+) */}
         <div className="lg:hidden">
-          <h1 className="text-lg font-bold text-[var(--text)]">{copy.settings.title}</h1>
-          <p className="mt-0.5 text-xs text-[var(--text-muted)]">{copy.settings.pageSubtitle}</p>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setView("dashboard")}
+              aria-label="Back to dashboard"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--text)] transition hover:bg-[var(--surface-hover)] cursor-pointer"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <h1 className="text-lg font-bold text-[var(--text)]">{copy.settings.title}</h1>
+          </div>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">{copy.settings.pageSubtitle}</p>
           <div className="mt-3 flex gap-1.5 overflow-x-auto">
             {(
               [
@@ -421,7 +457,7 @@ export function SettingsView() {
                 <div className="truncate text-xs font-bold text-[var(--text)]">
                   {auth.name || config.userName || "Student"}
                 </div>
-                <div className="truncate text-[11px] text-[var(--text-muted)]">
+                <div className="truncate text-xs text-[var(--text-muted)]">
                   {auth.email || config.userEmail || copy.settings.notSignedIn}
                 </div>
               </div>
@@ -432,13 +468,198 @@ export function SettingsView() {
             </div>
           </button>
 
+          {/* Appearance & Themes Suite */}
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4 space-y-4">
+            <div>
+              <h3 className="mb-1 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                Appearance &amp; Observatory Themes
+              </h3>
+              <p className="text-xs text-[var(--text-muted)]">
+                Configure your active appearance mode and select your preferred Light and Dark themes for daytime and nighttime studying.
+              </p>
+            </div>
+
+            {/* Appearance Mode Segmented Control */}
+            <div>
+              <div className="mb-2 text-xs font-semibold text-[var(--text)]">Active Appearance Mode</div>
+              <div className="flex gap-2">
+                {[
+                  {
+                    id: "system",
+                    label: "System",
+                    icon: "🖥️",
+                    active: false,
+                    onClick: () => {
+                      const isDark = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+                      setTheme(isDark ? "obsidian" : "solar");
+                    },
+                  },
+                  {
+                    id: "light",
+                    label: "Light Mode",
+                    icon: "☀️",
+                    active: theme === "light" || theme === "solar",
+                    onClick: () => setTheme("solar"),
+                  },
+                  {
+                    id: "dark",
+                    label: "Dark Mode",
+                    icon: "🌙",
+                    active: theme === "dark" || theme === "obsidian",
+                    onClick: () => setTheme("obsidian"),
+                  },
+                ].map((mode) => (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    onClick={mode.onClick}
+                    className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                      mode.active
+                        ? "border-[var(--accent)] bg-[var(--surface)] text-[var(--accent-ink)] shadow-xs ring-1 ring-[var(--accent)]"
+                        : "border-[var(--border)] bg-[var(--surface)] text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--border-strong)]"
+                    }`}
+                  >
+                    <span>{mode.icon}</span>
+                    <span>{mode.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Light Theme Collection (Extensible for future light themes) */}
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold text-[var(--text)]">Preferred Light Theme</span>
+                <span className="text-[10px] text-[var(--text-muted)]">Active during daytime</span>
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                {[
+                  {
+                    id: "solar",
+                    name: "Solar Dawn",
+                    bg: "#F5F7FB",
+                    accent: "#1A73E8",
+                    desc: "Atmospheric dawn light with elevated frosted cards and a 3-tier radiant sun",
+                    tag: "Default Light",
+                  },
+                ].map((t) => {
+                  const isSelected = theme === "solar" || theme === "light";
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setTheme("solar")}
+                      className={`flex items-start gap-3 rounded-xl border p-3 text-left transition cursor-pointer ${
+                        isSelected
+                          ? "border-[var(--accent)] bg-[var(--surface)] shadow-xs ring-1 ring-[var(--accent)]"
+                          : "border-[var(--border)] bg-[var(--surface)] hover:border-[var(--border-strong)]"
+                      }`}
+                    >
+                      <div
+                        className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-300/40 shadow-xs"
+                        style={{ backgroundColor: t.bg }}
+                      >
+                        <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: t.accent }} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-[var(--text)]">{t.name}</span>
+                          <span className="rounded bg-[var(--page)] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--accent-ink)] border border-[var(--border)]">
+                            {isSelected ? "Active" : t.tag}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">{t.desc}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Dark Theme Collection (Extensible for future dark themes) */}
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold text-[var(--text)]">Preferred Dark Theme</span>
+                <span className="text-[10px] text-[var(--text-muted)]">Active during nighttime</span>
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                {[
+                  {
+                    id: "obsidian",
+                    name: "Obsidian Cosmic",
+                    bg: "#070A12",
+                    accent: "#3B82F6",
+                    desc: "Deep space obsidian with shimmering constellation starfield & diffraction blooms",
+                    tag: "Default Dark",
+                  },
+                  {
+                    id: "amoled-minimal",
+                    name: "AMOLED Pure Starlight",
+                    bg: "#000000",
+                    accent: "#3B82F6",
+                    desc: "Pitch black (#000000) OLED canvas with subtle, clean micro-starlight pinpricks across the whole UI",
+                    tag: "AMOLED v1",
+                  },
+                  {
+                    id: "amoled-sparkle",
+                    name: "AMOLED Constellation Sparkles",
+                    bg: "#000000",
+                    accent: "#60A5FA",
+                    desc: "Pure OLED black with prominent scattered 4-point sparkle cross stars and celestial clusters",
+                    tag: "AMOLED v2",
+                  },
+                  {
+                    id: "amoled-nebula",
+                    name: "AMOLED Cosmic Stardust",
+                    bg: "#000000",
+                    accent: "#F59E0B",
+                    desc: "Pure black canvas with scattered stellar dust and faint ethereal amber/violet nebula clouds",
+                    tag: "AMOLED v3",
+                  },
+                ].map((t) => {
+                  const isSelected =
+                    theme === t.id ||
+                    (t.id === "obsidian" && theme === "dark") ||
+                    (t.id === "amoled-minimal" && theme === "amoled");
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setTheme(t.id as any)}
+                      className={`flex items-start gap-3 rounded-xl border p-3 text-left transition cursor-pointer ${
+                        isSelected
+                          ? "border-[var(--accent)] bg-[var(--surface)] shadow-xs ring-1 ring-[var(--accent)]"
+                          : "border-[var(--border)] bg-[var(--surface)] hover:border-[var(--border-strong)]"
+                      }`}
+                    >
+                      <div
+                        className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/20 shadow-xs"
+                        style={{ backgroundColor: t.bg }}
+                      >
+                        <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: t.accent }} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-[var(--text)]">{t.name}</span>
+                          <span className="rounded bg-[var(--page)] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--accent-ink)] border border-[var(--border)]">
+                            {isSelected ? "Active" : t.tag}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">{t.desc}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
           {/* Academic rhythm preset — persisted (`01` §4.1) and now WIRED:
               it tunes the roadmap's prep-day spread (see the disclosure). */}
           <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
             <div className="text-xs font-bold text-[var(--text)]">
               {copy.onboarding.tracksTitle}
             </div>
-            <div className="mt-0.5 text-[11px] text-[var(--text-muted)]">{savedTrackLabel}</div>
+            <div className="mt-0.5 text-xs text-[var(--text-muted)]">{savedTrackLabel}</div>
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
               {TRACK_OPTIONS.map((track) => {
                 const active = config.academicTrack === track.id;
@@ -448,7 +669,7 @@ export function SettingsView() {
                     type="button"
                     aria-pressed={active}
                     onClick={() => void handleTrackChange(track.id)}
-                    className={`rounded-lg border px-3 py-2 text-left text-[11px] font-semibold transition ${
+                    className={`rounded-lg border px-3 py-2 text-left text-xs font-semibold transition ${
                       active
                         ? "border-[var(--accent-ink)] bg-[var(--accent-ink)]/10 text-[var(--accent-ink)]"
                         : "border-[var(--border)] bg-[var(--surface)] text-[var(--text)] hover:bg-[var(--surface-hover)]"
@@ -459,7 +680,7 @@ export function SettingsView() {
                 );
               })}
             </div>
-            <p className="mt-2.5 text-[11px] text-[var(--text-muted)]">
+            <p className="mt-2.5 text-xs text-[var(--text-muted)]">
               {copy.onboarding.trackEffect}
             </p>
           </div>
@@ -475,7 +696,7 @@ export function SettingsView() {
                   <div className="text-xs font-bold text-[var(--text)]">
                     Personal Google Account
                   </div>
-                  <div className="text-[11px] text-[var(--text-muted)]">
+                  <div className="text-xs text-[var(--text-muted)]">
                     Gmail scanning, Calendar push & Drive backup
                   </div>
                 </div>
@@ -500,7 +721,7 @@ export function SettingsView() {
                 </button>
               )}
             </div>
-            <p className="mt-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
+            <p className="mt-3 text-xs leading-relaxed text-[var(--text-muted)]">
               {auth.authenticated
                 ? `Connected${auth.email ? ` as ${auth.email}` : ""}. Tokens stay in the OS keyring (desktop) or in memory for one hour (web).`
                 : isBrowserTier
@@ -508,7 +729,7 @@ export function SettingsView() {
                   : "Signs in with the bundled Google client (ID + secret, kept inside the app) over PKCE."}
             </p>
             {!isBrowserTier && !auth.authenticated && !config.googleClientId && (
-              <p className="mt-2 rounded-lg border border-slate-300/60 bg-slate-500/10 px-3 py-2 text-[11px] font-semibold text-[var(--text)]">
+              <p className="mt-2 rounded-lg border border-slate-300/60 bg-slate-500/10 px-3 py-2 text-xs font-semibold text-[var(--text)]">
                 Using the bundled Google client (project quizradar-511922).
               </p>
             )}
@@ -525,7 +746,7 @@ export function SettingsView() {
                   <div className="text-xs font-bold text-[var(--text)]">
                     University Account (Microsoft 365)
                   </div>
-                  <div className="text-[11px] text-[var(--text-muted)]">
+                  <div className="text-xs text-[var(--text-muted)]">
                     Teams, Outlook & campus feeds
                   </div>
                 </div>
@@ -550,7 +771,7 @@ export function SettingsView() {
                 </button>
               )}
             </div>
-            <p className="mt-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
+            <p className="mt-3 text-xs leading-relaxed text-[var(--text-muted)]">
               {auth.hasTeamsAuth
                 ? `Connected${config.teamsAccountEmail ? ` as ${config.teamsAccountEmail}` : ""}.`
                 : "Sign-in asks only for your identity. Mail and calendar scanning are a separate step, because many university tenants require an administrator to approve those permissions."}
@@ -572,7 +793,7 @@ export function SettingsView() {
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Sparkles
-                  className="h-4 w-4 text-purple-600 dark:text-purple-400"
+                  className="h-4 w-4 text-[var(--accent)]"
                   aria-hidden="true"
                 />
                 <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
@@ -593,7 +814,7 @@ export function SettingsView() {
             </div>
 
             {/* Exact Verbatim Disclosure Copy */}
-            <div className="space-y-1 rounded-lg border border-purple-500/20 bg-purple-500/10 p-3 text-xs text-[var(--text)]">
+            <div className="space-y-1 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-hover)] p-3 text-xs text-[var(--text)]">
               <p>{copy.ai.disclosure}</p>
               <p className="font-semibold">{copy.ai.turnOff}</p>
             </div>
@@ -605,20 +826,20 @@ export function SettingsView() {
                 value={geminiKeyInput}
                 onChange={(e) => setGeminiKeyInput(e.target.value)}
                 placeholder={copy.ai.keyPlaceholder}
-                className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] outline-none focus:border-purple-600"
+                className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none focus:border-[var(--accent)]"
               />
               <button
                 type="button"
                 disabled={validatingKey || !geminiKeyInput.trim()}
                 onClick={handleValidateGemini}
-                className="rounded-xl bg-purple-700 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-purple-800 disabled:opacity-50"
+                className="rounded-xl bg-[var(--accent-fill)] px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[var(--accent-fill-hover)] disabled:opacity-50"
               >
                 {validatingKey ? "Validating…" : copy.ai.validateButton}
               </button>
             </div>
 
             {!isBrowserTier && (
-              <p className="mt-2 text-[11px] text-[var(--text-muted)]">{copy.ai.sharedKeyHint}</p>
+              <p className="mt-2 text-xs text-[var(--text-muted)]">{copy.ai.sharedKeyHint}</p>
             )}
 
             {geminiValidationResult && (
@@ -637,7 +858,7 @@ export function SettingsView() {
               </div>
             )}
 
-            <div className="mt-3 flex flex-col gap-1 text-[11px] tabular-nums text-[var(--text-muted)]">
+            <div className="mt-3 flex flex-col gap-1 text-xs tabular-nums text-[var(--text-muted)]">
               <div className="flex items-center justify-between">
                 <span>
                   {aiQuota?.sessionScope
@@ -646,7 +867,7 @@ export function SettingsView() {
                 </span>
                 <span>{copy.ai.quotaCapNote}</span>
               </div>
-              <div className="text-[11px]">{copy.ai.quotaLimitNote}</div>
+              <div className="text-xs">{copy.ai.quotaLimitNote}</div>
             </div>
           </div>
         </section>
@@ -671,14 +892,14 @@ export function SettingsView() {
                 <Upload className="h-4.5 w-4.5" aria-hidden="true" />
               </div>
               <div className="min-w-0 flex-1">
-                <h4 className="text-xs font-bold text-[var(--text)]">
+                <h3 className="text-xs font-bold text-[var(--text)]">
                   {copy.settings.timetableImportTitle}
-                </h4>
-                <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--text-muted)]">
+                </h3>
+                <p className="mt-0.5 text-xs leading-relaxed text-[var(--text-muted)]">
                   {copy.settings.timetableImportSub}
                 </p>
                 {(!config.geminiEnabled || aiQuota?.keyInMemory === false) && (
-                  <p className="mt-1.5 text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">
+                  <p className="mt-1.5 text-xs leading-relaxed text-amber-700 dark:text-amber-300">
                     {copy.settings.timetableImportNoKey}
                   </p>
                 )}
@@ -765,8 +986,8 @@ export function SettingsView() {
                         <div className="truncate text-xs font-bold text-[var(--text)]">
                           {c.name}
                         </div>
-                        <div className="truncate text-[11px] text-[var(--text-muted)]">{c.id}</div>
-                        <div className="mt-0.5 text-[11px] tabular-nums text-[var(--text-muted)]">
+                        <div className="truncate text-xs text-[var(--text-muted)]">{c.id}</div>
+                        <div className="mt-0.5 text-xs tabular-nums text-[var(--text-muted)]">
                           {courseSlots.length} weekly slot
                           {courseSlots.length === 1 ? "" : "s"}
                         </div>
@@ -838,13 +1059,14 @@ export function SettingsView() {
                   className="h-4 w-4 rounded border-[var(--border)] accent-[var(--accent-fill)]"
                 />
               </label>
-              <p className="text-[11px] text-[var(--text-muted)]">
+              <p className="text-xs text-[var(--text-muted)]">
                 Pushes the fresh radar to Google Calendar after every scan that found something. A
                 scan that fetched nothing, or a Calendar scope refusal, is reported in the scan
                 notes — never silently skipped.
               </p>
             </div>
           </div>
+
 
           {/* University Sources Section — spec `01` §4.9: each source is
               a user control. Gmail follows the Google account itself; the
@@ -855,7 +1077,7 @@ export function SettingsView() {
               University Sources
             </h3>
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
+              <label htmlFor="settings-teams-toggle" className="flex cursor-pointer items-center justify-between">
                 <span className="text-xs font-semibold text-[var(--text)]">
                   Microsoft Teams
                   <span className="ml-1.5 font-normal text-[var(--text-muted)]">
@@ -863,13 +1085,15 @@ export function SettingsView() {
                   </span>
                 </span>
                 <input
+                  id="settings-teams-toggle"
                   type="checkbox"
+                  aria-label="Scan Microsoft Teams announcements"
                   checked={config.teamsEnabled}
                   onChange={(e) => updateConfig({ teamsEnabled: e.target.checked })}
                   className="h-4 w-4 rounded border-[var(--border)] accent-[var(--accent-fill)]"
                 />
-              </div>
-              <div className="flex items-center justify-between">
+              </label>
+              <label htmlFor="settings-classroom-toggle" className="flex cursor-pointer items-center justify-between">
                 <span className="text-xs font-semibold text-[var(--text)]">
                   Google Classroom
                   <span className="ml-1.5 font-normal text-[var(--text-muted)]">
@@ -877,13 +1101,15 @@ export function SettingsView() {
                   </span>
                 </span>
                 <input
+                  id="settings-classroom-toggle"
                   type="checkbox"
+                  aria-label="Scan Google Classroom coursework"
                   checked={config.classroomEnabled}
                   onChange={(e) => updateConfig({ classroomEnabled: e.target.checked })}
                   className="h-4 w-4 rounded border-[var(--border)] accent-[var(--accent-fill)]"
                 />
-              </div>
-              <p className="text-[11px] text-[var(--text-muted)]">
+              </label>
+              <p className="text-xs text-[var(--text-muted)]">
                 Gmail scans run whenever the Google account is connected. These toggles exclude a
                 source from the next scan; an excluded source never retires its earlier
                 announcements.
@@ -897,10 +1123,12 @@ export function SettingsView() {
               <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
                 Moodle LMS Integration
               </h3>
-              <label className="flex cursor-pointer items-center gap-2">
+              <label htmlFor="settings-moodle-toggle" className="flex cursor-pointer items-center gap-2">
                 <span className="text-xs font-semibold text-[var(--text)]">Enabled</span>
                 <input
+                  id="settings-moodle-toggle"
                   type="checkbox"
+                  aria-label="Enable Moodle LMS integration"
                   checked={config.moodleEnabled}
                   onChange={(e) => updateConfig({ moodleEnabled: e.target.checked })}
                   className="h-4 w-4 rounded border-[var(--border)] accent-[var(--accent-fill)]"
@@ -912,7 +1140,7 @@ export function SettingsView() {
               <div>
                 <label
                   htmlFor="settings-moodle-url"
-                  className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]"
+                  className="mb-1 block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]"
                 >
                   {copy.onboarding.moodleUrlLabel}
                 </label>
@@ -922,14 +1150,14 @@ export function SettingsView() {
                   value={moodleUrl}
                   onChange={(e) => setMoodleUrl(e.target.value)}
                   placeholder="https://moodle.university.edu"
-                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] outline-none"
+                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none"
                 />
               </div>
 
               <div>
                 <label
                   htmlFor="settings-moodle-ical"
-                  className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]"
+                  className="mb-1 block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]"
                 >
                   {copy.onboarding.moodleIcalLabel}
                 </label>
@@ -939,7 +1167,7 @@ export function SettingsView() {
                   value={moodleIcalUrl}
                   onChange={(e) => setMoodleIcalUrl(e.target.value)}
                   placeholder="https://moodle.university.edu/calendar/export_execute.php?..."
-                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] outline-none"
+                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none"
                 />
               </div>
 
@@ -979,7 +1207,7 @@ export function SettingsView() {
                 value={newFeedName}
                 onChange={(e) => setNewFeedName(e.target.value)}
                 placeholder={copy.settings.feedNamePlaceholder}
-                className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] outline-none sm:w-1/3"
+                className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none sm:w-1/3"
               />
               <input
                 type="url"
@@ -988,7 +1216,7 @@ export function SettingsView() {
                 value={newFeedUrl}
                 onChange={(e) => setNewFeedUrl(e.target.value)}
                 placeholder={copy.settings.feedUrlPlaceholder}
-                className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] outline-none"
+                className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none"
               />
               <button
                 type="submit"
@@ -1011,7 +1239,7 @@ export function SettingsView() {
                       <div className="truncate text-xs font-bold text-[var(--text)]">
                         {feed.name}
                       </div>
-                      <div className="truncate text-[11px] text-[var(--text-muted)]">
+                      <div className="truncate text-xs text-[var(--text-muted)]">
                         {feed.url}
                       </div>
                     </div>
@@ -1119,6 +1347,43 @@ export function SettingsView() {
               </button>
             </div>
           </div>
+
+          {/* Advanced Settings (Folded Accordion at the bottom) */}
+          <details className="group rounded-xl border border-[var(--border)] bg-[var(--page)] p-4 transition">
+            <summary className="flex cursor-pointer items-center justify-between text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] hover:text-[var(--text)]">
+              <span>Advanced Settings &amp; Custom OAuth Overrides</span>
+              <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90 text-[var(--text-muted)]" aria-hidden="true" />
+            </summary>
+            <div className="mt-4 pt-3 border-t border-[var(--border)] space-y-3">
+              <p className="text-xs text-[var(--text-muted)]">
+                The app ships with working built-in Google OAuth credentials out-of-the-box. Only enter custom client IDs below if you wish to override the built-in configuration with your own Google Cloud Console or Microsoft Azure tenant app.
+              </p>
+              <div>
+                <label className="block text-xs font-semibold text-[var(--text)] mb-1">
+                  Google Client ID (Optional Override)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Leave empty to use built-in Google client"
+                  value={config.googleClientId || ""}
+                  onChange={(e) => updateConfig({ googleClientId: e.target.value.trim() || undefined })}
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs text-[var(--text)] focus:border-[var(--accent)] focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-[var(--text)] mb-1">
+                  Microsoft Azure Client ID (Optional Override)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Leave empty to use built-in Microsoft client"
+                  value={config.teamsClientId || ""}
+                  onChange={(e) => updateConfig({ teamsClientId: e.target.value.trim() || undefined })}
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs text-[var(--text)] focus:border-[var(--accent)] focus:outline-none"
+                />
+              </div>
+            </div>
+          </details>
         </section>
       </div>
     </div>

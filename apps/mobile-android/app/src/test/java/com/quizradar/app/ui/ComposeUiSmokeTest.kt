@@ -2,6 +2,8 @@ package com.quizradar.app.ui
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -88,7 +90,7 @@ class ComposeUiSmokeTest {
         // 5. Navigate back to Dashboard
         composeTestRule.onNodeWithTag("bottom-nav-Dashboard").performClick()
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("Study").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Quiz 1").onFirst().assertIsDisplayed()
     }
 
     @Test

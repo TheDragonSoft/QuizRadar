@@ -6,6 +6,10 @@ import App from "./App";
 import { useAppStore } from "./state/store";
 import { bootQuizRadar } from "./state/boot";
 import { BootGate } from "./state/bootGate";
+import { initAnalytics } from "./lib/analytics";
+
+// Initialize privacy-safe analytics if configured via VITE_POSTHOG_KEY
+initAnalytics();
 
 // Dev/test affordance: the Playwright harness and DevRig seed store state
 // through this handle. Dev builds only — the production bundle never exposes it.

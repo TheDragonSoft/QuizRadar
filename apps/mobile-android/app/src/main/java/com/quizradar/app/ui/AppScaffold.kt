@@ -65,6 +65,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
@@ -79,6 +82,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quizradar.app.ui.components.AccountSheet
 import com.quizradar.app.ui.components.AddActionMenuSheet
+import com.quizradar.app.ui.components.HelpSheet
 import com.quizradar.app.ui.components.QuizRadarLogo
 import com.quizradar.app.ui.components.SearchSheet
 import com.quizradar.app.ui.detail.AssessmentDetailSheet
@@ -122,6 +126,7 @@ fun AppScaffold(
     val toastMessage by viewModel.toastMessage.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
+    val theme by viewModel.theme.collectAsState(initial = "system")
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     // The app's own mark in the top-left corner opens the navigation drawer.
@@ -137,12 +142,14 @@ fun AppScaffold(
 
     var isSearchOpen by rememberSaveable { mutableStateOf(false) }
     var isAccountOpen by rememberSaveable { mutableStateOf(false) }
+    var isHelpOpen by rememberSaveable { mutableStateOf(false) }
     var isAddMenuOpen by rememberSaveable { mutableStateOf(false) }
     var isSettingsOpen by rememberSaveable { mutableStateOf(false) }
     var isNewCourseOpen by rememberSaveable { mutableStateOf(false) }
 
     val searchSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val accountSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val helpSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val addMenuSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val detailSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val newCourseSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -177,22 +184,24 @@ fun AppScaffold(
     // Predictive back handler: dismiss layers in strict reverse order before exiting
     BackHandler(
         enabled =
-            drawerState.isOpen ||
+            (isExpanded && drawerState.isOpen) ||
                 isSettingsOpen ||
                 isNewCourseOpen ||
                 isSearchOpen ||
                 isAccountOpen ||
+                isHelpOpen ||
                 isAddMenuOpen ||
                 activeDraft != null ||
                 activeDetailId != null ||
                 selectedTab != "Dashboard",
     ) {
         when {
-            drawerState.isOpen -> scope.launch { drawerState.close() }
+            isExpanded && drawerState.isOpen -> scope.launch { drawerState.close() }
             isSettingsOpen -> isSettingsOpen = false
             isNewCourseOpen -> isNewCourseOpen = false
             isSearchOpen -> isSearchOpen = false
             isAccountOpen -> isAccountOpen = false
+            isHelpOpen -> isHelpOpen = false
             isAddMenuOpen -> isAddMenuOpen = false
             activeDraft != null -> viewModel.dismissCreateEventDraft()
             activeDetailId != null -> viewModel.closeAssessmentDetail()
@@ -245,7 +254,7 @@ fun AppScaffold(
 
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = true,
+        gesturesEnabled = isExpanded,
         drawerContent = {
             ModalDrawerSheet(
                 drawerContainerColor = MaterialTheme.colorScheme.surface,
@@ -393,17 +402,15 @@ fun AppScaffold(
                                 // On expanded widths the mark sits in the rail header,
                                 // so the top bar does not show it twice.
                                 if (!isExpanded) {
-                                    // The app's own mark doubles as the drawer button.
-                                    // It is the same radar squircle the desktop and the
-                                    // browser tier ship - not a monochrome stand-in.
-                                    IconButton(
-                                        onClick = { scope.launch { drawerState.open() } },
+                                    // Brand mark heads the top bar on compact phones.
+                                    // Drawer is reserved for expanded screens (>=600dp);
+                                    // the bottom nav exclusively owns the 4 primary tabs.
+                                    Box(
                                         modifier =
                                             Modifier
                                                 .size(48.dp)
-                                                // The mark is a Canvas, so it carries no
-                                                // label of its own: the button has to.
-                                                .semantics { contentDescription = "Open navigation menu" },
+                                                .semantics { contentDescription = "QuizRadar" },
+                                        contentAlignment = Alignment.Center,
                                     ) {
                                         QuizRadarLogo(
                                             modifier = Modifier.size(26.dp),
@@ -580,7 +587,42 @@ fun AppScaffold(
                     modifier =
                         Modifier
                             .padding(innerPadding)
-                            .fillMaxSize(),
+                            .fillMaxSize()
+                            .then(
+                                if (theme == "amoled") {
+                                    Modifier.drawBehind {
+                                        val stars =
+                                            listOf(
+                                                Offset(size.width * 0.08f, size.height * 0.06f) to 1.8f,
+                                                Offset(size.width * 0.22f, size.height * 0.18f) to 1.2f,
+                                                Offset(size.width * 0.88f, size.height * 0.12f) to 2.2f,
+                                                Offset(size.width * 0.72f, size.height * 0.28f) to 1.4f,
+                                                Offset(size.width * 0.15f, size.height * 0.38f) to 1.6f,
+                                                Offset(size.width * 0.92f, size.height * 0.44f) to 1.2f,
+                                                Offset(size.width * 0.35f, size.height * 0.52f) to 2.0f,
+                                                Offset(size.width * 0.78f, size.height * 0.62f) to 1.4f,
+                                                Offset(size.width * 0.12f, size.height * 0.72f) to 2.4f,
+                                                Offset(size.width * 0.60f, size.height * 0.82f) to 1.5f,
+                                                Offset(size.width * 0.85f, size.height * 0.90f) to 2.0f,
+                                                Offset(size.width * 0.30f, size.height * 0.94f) to 1.2f,
+                                            )
+                                        stars.forEach { (pos, radius) ->
+                                            drawCircle(
+                                                color = Color.White.copy(alpha = 0.85f),
+                                                radius = radius,
+                                                center = pos,
+                                            )
+                                            drawCircle(
+                                                color = Color(0xFF93C5FD).copy(alpha = 0.35f),
+                                                radius = radius * 2.5f,
+                                                center = pos,
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    Modifier
+                                },
+                            ),
                     // On expanded widths the content column is centered and capped
                     // at a readable max width instead of stretching edge to edge.
                     contentAlignment = Alignment.TopCenter,
@@ -701,6 +743,18 @@ fun AppScaffold(
                                             isSettingsOpen = true
                                             onOpenSettings()
                                         },
+                                        onOpenHelp = {
+                                            isAccountOpen = false
+                                            isHelpOpen = true
+                                        },
+                                    )
+                                }
+
+                                // Help & FAQ Sheet
+                                if (isHelpOpen) {
+                                    HelpSheet(
+                                        sheetState = helpSheetState,
+                                        onDismiss = { isHelpOpen = false },
                                     )
                                 }
 

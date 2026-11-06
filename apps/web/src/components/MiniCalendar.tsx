@@ -145,9 +145,10 @@ export const MiniCalendar: React.FC<MiniCalendarProps> = ({
                     type="button"
                     onClick={() => onSelectDate?.(cell.iso)}
                     aria-current={isSelected ? "date" : undefined}
-                    className={`relative mx-auto flex h-6 w-6 cursor-pointer items-center justify-center rounded-full text-[11px] tabular-nums transition ${
+                    aria-label={`${cell.iso}${hasAssessment ? " (has assessment)" : ""}`}
+                    className={`relative mx-auto flex h-8 w-8 sm:h-9 sm:w-9 cursor-pointer items-center justify-center rounded-full text-xs tabular-nums transition ${
                       isSelected
-                        ? "bg-[var(--accent-fill)] font-bold text-white"
+                        ? "bg-[var(--accent-fill)] font-bold text-white shadow-xs"
                         : isToday
                           ? "border border-[var(--accent)] font-bold text-[var(--accent-ink)] hover:bg-[var(--surface-hover)]"
                           : cell.inMonth
@@ -158,7 +159,7 @@ export const MiniCalendar: React.FC<MiniCalendarProps> = ({
                     <span>{cell.day}</span>
                     {hasAssessment && !isSelected && (
                       <span
-                        className="absolute bottom-0.5 h-1 w-1 rounded-full bg-red-500"
+                        className="absolute bottom-1 h-1 w-1 rounded-full bg-red-500"
                         aria-hidden="true"
                       />
                     )}

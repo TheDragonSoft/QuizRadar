@@ -283,7 +283,7 @@ export function AddCourseModal({
                       )}
                       value={slot.startTime}
                       onChange={(e) => handleUpdateSlot(index, "startTime", e.target.value)}
-                      className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--page)] px-1.5 py-1.5 text-[11px] tabular-nums text-[var(--text)]"
+                      className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--page)] px-1.5 py-1.5 text-xs tabular-nums text-[var(--text)]"
                     />
                     <span className="text-[var(--text-muted)]">–</span>
                     <input
@@ -294,7 +294,7 @@ export function AddCourseModal({
                       )}
                       value={slot.endTime}
                       onChange={(e) => handleUpdateSlot(index, "endTime", e.target.value)}
-                      className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--page)] px-1.5 py-1.5 text-[11px] tabular-nums text-[var(--text)]"
+                      className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--page)] px-1.5 py-1.5 text-xs tabular-nums text-[var(--text)]"
                     />
                   </div>
 

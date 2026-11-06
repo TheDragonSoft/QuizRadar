@@ -225,13 +225,13 @@ class OAuthManager(
 
         /**
          * The maintainer's Google OAuth client id (project
-         * `gmail-summary-511914`, shared with the desktop shell). A client id
-         * is a public identifier — it appears in every authorize URL — so it
-         * ships; a user-supplied id (Settings → Sources) wins over it. No
-         * client secret ships: the Android flow is a PKCE public client.
+         * `quizradar-513903`). A client id is a public identifier — it appears
+         * in every authorize URL — so it ships; a user-supplied id
+         * (Settings → Sources) wins over it. No client secret ships: the Android
+         * flow is a PKCE public client.
          */
         const val DEFAULT_GOOGLE_CLIENT_ID =
-            "341760934836-60toi8rjgkid0gmc69tmt598teghbgv4.apps.googleusercontent.com"
+            "438181858687-gubqi1nr6epph2gic9osjvbctg4e0mo4.apps.googleusercontent.com"
 
         /** Microsoft sign-in still needs the user's own Azure app id. */
         const val DEFAULT_MICROSOFT_CLIENT_ID = "quizradar-android-public-ms"

@@ -69,7 +69,7 @@ export const GOOGLE_BROWSER_SCOPES =
  * dev origins `http://localhost:4317` and `http://127.0.0.1:4317`.
  */
 export const DEFAULT_BROWSER_GOOGLE_CLIENT_ID =
-  "620389124802-98bn4r9kllknq8l820rts76840l4af7q.apps.googleusercontent.com";
+  "438181858687-9etakn8k6fd1en8ra968russdpkjh9jr.apps.googleusercontent.com";
 
 export const GOOGLE_USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v3/userinfo";
 export const MICROSOFT_AUTHORIZE_ENDPOINT =

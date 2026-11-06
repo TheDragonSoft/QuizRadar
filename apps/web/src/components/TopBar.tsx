@@ -9,12 +9,13 @@ import {
   Moon,
   PanelLeft,
   RefreshCw,
+  Search as SearchIcon,
   Settings,
   Sun,
 } from "lucide-react";
 import { RadarMark } from "./BrandMarks";
-import { SearchDropdown } from "./SearchDropdown";
 import { copy } from "../copy";
+import { getSearchShortcutLabel } from "../lib/platform";
 import { useAppStore } from "../state/store";
 import type { UpdateCheckResult, View } from "../state/types";
 
@@ -393,12 +394,22 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenAuth }) =>
         )}
       </div>
 
-      {/* Search Bar — real input with its results attached underneath
-          (SearchDropdown), not a pop-out modal. min-w-0 on both wrappers lets
-          it shrink below its placeholder's min-content width on narrow
-          screens instead of pushing the action cluster off-canvas. */}
+      {/* Unified Search Palette Trigger — opens SearchPaletteModal on click or ⌘K */}
       <div className="flex min-w-0 flex-1 items-center justify-center px-1 sm:px-4">
-        <SearchDropdown />
+        <button
+          type="button"
+          onClick={() => openModal({ id: "search-palette" })}
+          aria-label={`Open search palette (Press ${getSearchShortcutLabel()} or /)`}
+          className="group flex h-9 w-full max-w-md items-center justify-between rounded-xl border border-[var(--surface-border)] bg-[var(--page)] px-3 text-xs text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)] active:scale-[0.99] cursor-pointer"
+        >
+          <div className="flex items-center gap-2 truncate">
+            <SearchIcon className="h-4 w-4 shrink-0 text-[var(--text-muted)] group-hover:text-[var(--accent)]" aria-hidden="true" />
+            <span className="truncate">Search assessments, courses, topics...</span>
+          </div>
+          <kbd className="ml-2 hidden sm:inline-flex items-center rounded-md border border-[var(--surface-border)] bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-muted)]">
+            {getSearchShortcutLabel()}
+          </kbd>
+        </button>
       </div>
 
       {/* Action Controls — v4 order: Sync, Data & Backup, theme, Settings, account */}

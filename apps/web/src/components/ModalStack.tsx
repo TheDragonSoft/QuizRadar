@@ -27,6 +27,7 @@ const MODAL_TITLE_IDS: Record<string, string> = {
   "cloud-sync": "cloud-sync-title",
   "scan-progress": "scan-progress-title",
   "account-profile": "account-profile-title",
+  "search-palette": "search-palette-modal-title",
 };
 
 interface ModalLayerProps {

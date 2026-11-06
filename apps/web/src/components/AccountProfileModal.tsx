@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { LogIn, LogOut, Settings, X, ShieldCheck } from "lucide-react";
+import { LogIn, LogOut, Settings, X, ShieldCheck, Database } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
 import { isTauriEnvironment } from "../state/rpc";
@@ -85,7 +85,7 @@ export function AccountProfileModal({
         <div className="text-sm font-bold text-[var(--text)]">{displayName}</div>
         <div className="text-xs text-[var(--text-muted)] mt-0.5">{displayEmail}</div>
 
-        <div className="mt-2 flex items-center gap-1.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+        <div className="mt-2 flex items-center gap-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
           <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
           <span>
             {isTauriEnvironment()
@@ -96,7 +96,7 @@ export function AccountProfileModal({
       </div>
 
       <div className="mt-6 space-y-2 border-t border-[var(--border)] pt-4">
-        <p className="text-[11px] text-[var(--text-muted)] text-center">
+        <p className="text-xs text-[var(--text-muted)] text-center">
           {copy.accountProfile.scopesNote}
         </p>
 
@@ -139,6 +139,18 @@ export function AccountProfileModal({
             <span>{copy.accountProfile.connectMicrosoft}</span>
           </button>
         )}
+
+        <button
+          type="button"
+          onClick={() => {
+            onClose();
+            openModal({ id: "cloud-sync" });
+          }}
+          className="w-full flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] py-2 text-xs font-semibold text-[var(--text)] hover:bg-[color-mix(in_srgb,var(--border)_30%,transparent)] transition"
+        >
+          <Database className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+          <span>{copy.topBar.dataBackupTitle}</span>
+        </button>
 
         <button
           type="button"

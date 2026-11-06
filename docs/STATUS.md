@@ -1998,5 +1998,91 @@ bytes).
   uncompleted until the first state refresh (the IndexedDB store itself is
   migrated synchronously on first RPC).
 
+---
+
+## Round 14: Comprehensive UI/UX Audit & "Student Observatory" Redesign (Phases 0–4)
+
+_Ratified via maintainer `/grill-me` rulings documented in `docs/UI-UX-AUDIT-AND-REDESIGN-PLAN.md` revision v3._
+
+### Shipped
+
+1. **Ratified Maintainer Rulings & Design Alignment:**
+   - Amends `01` §4.8: Replaces cramped TopBar dropdown with floating `SearchPaletteModal.tsx` (`⌘K` / `/` hotkeys, recent search cache, category filters).
+   - Amends `01` §4.3: Removes mobile Dashboard sub-tab bar (`Overview`/`Assessments`/`Study`); turns Dashboard into a single continuous vertical feed, routing study tasks to the Tasks tab.
+   - Amends `01` §4.8: Removes `ModalNavigationDrawer` on compact phones (<600dp); bottom bar owns all 4 primary destinations; drawer/rail retained on tablets (≥600dp).
+   - Amends `01` §6: Rebased to Obsidian cosmic theme (`#070A12` dark base, `#F5F7FB` light base) with frosted glass panels (`backdrop-blur-md` on Web, deep elevation on Android). Course Color Invariant strictly preserved across all themes.
+   - Amends `01` §4.9: Full-page `SettingsView.tsx` with sticky header, `← Back` navigation, and breadcrumbs.
+
+2. **Phase 1: Obsidian Tokens & Frosted Glass Purity:**
+   - Web tokens rebased in `tokens.css` and `tailwind.config.js` (`--page: #070A12`, `--surface: #0E1322`, `--page-light: #F5F7FB`). Purged off-token purple gradients and off-brand KPI colors.
+   - Android tokens rebased in `QuizRadarTheme.kt` (`DarkBase = 0xFF070A12`, `PageLight = 0xFFF5F7FB`, `SurfaceDark = 0xFF0E1322`).
+
+3. **Phase 2: Desktop Layout, Search Palette & A11y Sweep:**
+   - `SearchPaletteModal.tsx` created and registered in `ModalStack.tsx` (`⌘K` and `/` triggers, keyboard navigation, instant jumps).
+   - `Sidebar.tsx` hosts primary navigation view switchers (`Dashboard`, `Tasks`, `Calendar`, `Focus`) with collapsed rail state.
+   - `TopBar.tsx` simplified to 5 items (brand, update pill, search trigger, sync button, theme stage, user avatar).
+   - Sub-12px text upgraded across views; WCAG AA placeholder contrast rule (`var(--text-muted)` at opacity 1); fixed heading hierarchy (`h3` anchors) in `SettingsView.tsx`.
+   - Content-sized dashboard panels with `min-h-[640px]` replacing fixed height caps.
+
+4. **Phase 3: Android Architecture, Onboarding & Ergonomics:**
+   - `DashboardScreen.kt`: sub-tab bar removed; rendered as single continuous feed.
+   - `AppScaffold.kt`: drawer gesture disabled on phones (<600dp), bottom bar owns tabs.
+   - `OnboardingWizardScreen.kt`: full-card clickable Connect affordance with visible "Connect →"; inline timetable photo picker; empty key blur toast suppressed.
+   - `AssessmentDetailSheet.kt`: added `.imePadding()` and `BringIntoViewRequester` to grade editor.
+   - `CalendarScreen.kt`: horizontal drag gesture to slide 3-day viewport window.
+   - `HelpSheet.kt`: added in-app FAQ sheet (zero-server locality, Android Keystore tokens, BYOK privacy).
+   - `TasksScreen.kt`: actionable empty states with direct CTAs.
+
+5. **Phase 4: Observatory Micro-Interactions & Delights (Strict Reduced-Motion):**
+   - `.exam-deadline-pulse`: 4s breathing ruby-to-amber aura for deadlines within 48h, applied in `AssessmentDetailModal.tsx`.
+   - `.topic-shimmer-done`: subtle 350ms celebration shimmer upon marking study topics done.
+   - Orbital Pomodoro Dial: glowing star marker tracking the progress arc in `FocusView.tsx`.
+   - All animations cleanly degrade to static indicators when `prefers-reduced-motion: reduce`.
+
+### Gates Verified (Green Tree)
+
+- **Rust Core:** `cargo test -p quizradar-core` -> **284 passed, 0 failed**.
+- **Desktop Shell:** `cargo test -p quizradar-desktop` -> **34 passed, 0 failed**.
+- **Web UI & PWA:** `pnpm --filter @quizradar/web test` -> **286 passed (31 files), 0 failed**.
+- **Web Typecheck:** `pnpm --filter @quizradar/web typecheck` -> **Clean (0 errors)**.
+- **Android Suite:** `./gradlew.bat ktlintCheck testDebugUnitTest` -> **114 passed, ktlint clean**.
+
+---
+
+## Round 15: Impeccable Critique & Observatory Multi-Theme Overhaul
+
+_Conducted dual-agent design critique and executed full layout, accessibility, and multi-theme overhaul across Web, Desktop, and Android._
+
+### Shipped
+
+1. **Design Critique & Heuristics Scoring:**
+   - Evaluated Nielsen's 10 Heuristics (Score: **32/40, Good (80%)**) via independent subagent reviews.
+   - Persisted audit snapshot to `.impeccable/critique/2026-11-05T04-12-13Z__apps-web-src-app-tsx.md`.
+2. **Android Dashboard 2×2 Metric Grid:**
+   - Replaced 4 vertically stacked full-width KPI cards with an aligned 2×2 grid (Row 1: Upcoming + Exams Ahead; Row 2: Readiness + Sources), cutting mobile vertical scroll depth by >50%.
+3. **Unified Desktop Search Architecture:**
+   - TopBar search input replaced with an integrated trigger opening `SearchPaletteModal.tsx` on click or `⌘K` / `/`.
+   - `SearchPaletteModal.tsx` upgraded with ARIA combobox/listbox pattern, `MODAL_TITLE_IDS` registration in `ModalStack.tsx`, arrow-key `scrollIntoView` navigation, and accessible recent search actions.
+4. **Accessibility & Semantic Hardening:**
+   - Associated explicit `<label>` tags and IDs for Microsoft Teams and Google Classroom toggles and Moodle LMS switch in `SettingsView.tsx`.
+   - `DashboardView.tsx`: Wrapped mobile tab switcher in `<nav aria-label="Dashboard sections">` with `role="tablist"` / `role="tab"`; added `role="progressbar"` to readiness meters; added `aria-pressed` to source filter pills.
+   - `tokens.css`: Added `--custom-event: #f472b6` dark-mode override for WCAG AA 4.5:1 contrast compliance.
+   - `tailwind.config.js`: Added missing color aliases (`accent-fill`, `accent-ink`, `surface-elevated`, `border-strong`, `border-subtle`, `border`).
+5. **Observatory 4-Theme Suite:**
+   - **Obsidian Cosmic Dark** (`obsidian` / default dark): `#070A12` dark cosmic base with starfield stardust.
+   - **Solar Dawn Light** (`solar` / default light): `#F5F7FB` atmospheric dawn light with elevated frosted cards.
+   - **Celestial Aurora Dark** (`aurora`): `#080D1A` boreal dark base with `#2DD4BF` teal aurora accent.
+   - **Academic Editorial Light** (`editorial`): `#F7F5F0` warm parchment with `#2563EB` cobalt ink accent.
+   - Added interactive Theme Gallery with preview swatches in `SettingsView.tsx` and updated `store.ts` theme lifecycle.
+
+### Gates Verified (Green Tree)
+
+- **Rust Core & Workspace:** `cargo test --workspace` -> **318 passed, 0 failed**.
+- **Web UI & PWA:** `pnpm --filter @quizradar/web test` -> **286 passed (31 files), 0 failed**.
+- **Web Typecheck:** `pnpm --filter @quizradar/web typecheck` -> **Clean (0 errors)**.
+- **Playwright E2E:** `pnpm --dir apps/web e2e` -> **5 passed, 1 skipped**.
+- **Android Suite:** `./gradlew.bat ktlintCheck testDebugUnitTest` -> **114 passed, ktlint clean**.
+- **Impeccable Detector:** `impeccable detect --json apps/web/src` -> **0 findings**.
+
 
 

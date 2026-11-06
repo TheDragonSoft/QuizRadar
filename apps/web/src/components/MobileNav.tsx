@@ -51,7 +51,7 @@ export const MobileNav: React.FC = () => {
               <Icon className="h-4 w-4" aria-hidden="true" />
             </div>
             <span
-              className={`text-[11px] font-medium leading-none ${
+              className={`text-xs font-medium leading-none ${
                 isActive ? "font-bold text-[var(--accent)]" : "text-[var(--text-muted)]"
               }`}
             >

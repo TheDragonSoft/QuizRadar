@@ -74,11 +74,33 @@ function getInitialSidebarOpen(): boolean {
   }
 }
 
+export function isDarkTheme(theme: ThemeMode): boolean {
+  return (
+    theme === "dark" ||
+    theme === "obsidian" ||
+    theme === "amoled" ||
+    theme === "amoled-minimal" ||
+    theme === "amoled-sparkle" ||
+    theme === "amoled-nebula"
+  );
+}
+
 function getInitialTheme(): ThemeMode {
   if (typeof window === "undefined" || !window.localStorage) return "light";
   try {
     const saved = window.localStorage.getItem(THEME_STORAGE_KEY) as ThemeMode | null;
-    if (saved === "light" || saved === "dark") return saved;
+    if (
+      saved === "light" ||
+      saved === "dark" ||
+      saved === "obsidian" ||
+      saved === "solar" ||
+      saved === "amoled" ||
+      saved === "amoled-minimal" ||
+      saved === "amoled-sparkle" ||
+      saved === "amoled-nebula"
+    ) {
+      return saved;
+    }
   } catch {
     // ignore
   }
@@ -99,24 +121,35 @@ export function applyThemeToDocument(theme: ThemeMode): void {
     // ignore
   }
 
-  // A store-driven change re-runs App's theme effect, which calls this again
-  // with the already-applied class — skipping here prevents two View
-  // Transitions being queued back-to-back for one click.
-  if (root.classList.contains("dark") === (theme === "dark")) {
+  const isDark = isDarkTheme(theme);
+  const currentThemeAttr = root.getAttribute("data-theme");
+  const normalizedAttr =
+    theme === "dark" ? "obsidian" : theme === "light" ? "solar" : theme;
+
+  if (root.classList.contains("dark") === isDark && currentThemeAttr === normalizedAttr) {
     return;
   }
 
   const flip = () => {
-    if (theme === "dark") {
+    if (isDark) {
       root.classList.add("dark");
     } else {
       root.classList.remove("dark");
     }
+    root.setAttribute("data-theme", normalizedAttr);
+
     // The installed PWA's status bar follows the theme (01 §4.8). The meta tag
     // used to stay dark in light mode because nothing ever touched it.
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) {
-      meta.setAttribute("content", theme === "dark" ? "#0b0f19" : "#f8fafc");
+      meta.setAttribute(
+        "content",
+        normalizedAttr.startsWith("amoled")
+          ? "#000000"
+          : normalizedAttr === "obsidian"
+            ? "#070a12"
+            : "#f5f7fb",
+      );
     }
   };
 
@@ -136,8 +169,13 @@ export function applyThemeToDocument(theme: ThemeMode): void {
     // view-transition-name would make every other View Transition (settings
     // tab switches, ...) snapshot the hero and replay its scene animation.
     root.classList.add("hero-scene-transition");
-    const vt = doc.startViewTransition(flip) as { finished?: Promise<unknown> } | undefined;
+    const vt = doc.startViewTransition(flip) as
+      | { finished?: Promise<unknown>; ready?: Promise<unknown> }
+      | undefined;
     const cleanup = () => root.classList.remove("hero-scene-transition");
+    if (vt?.ready && typeof vt.ready.catch === "function") {
+      vt.ready.catch(() => {});
+    }
     const finished = vt?.finished;
     if (finished && typeof finished.then === "function") {
       finished.then(cleanup, cleanup); // finished rejects when skipped
@@ -441,7 +479,9 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   },
 
   toggleTheme: () => {
-    const next = get().theme === "light" ? "dark" : "light";
+    const current = get().theme;
+    const isDark = isDarkTheme(current);
+    const next: ThemeMode = isDark ? "light" : "dark";
     applyThemeToDocument(next);
     set({ theme: next });
   },

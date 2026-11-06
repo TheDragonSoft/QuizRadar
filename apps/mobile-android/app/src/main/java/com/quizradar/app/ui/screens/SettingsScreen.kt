@@ -145,6 +145,7 @@ fun SettingsScreen(
     // Digest time picker (M3 TimePicker in a dialog) - the "at $time" copy
     // used to display a value nothing could ever change.
     var showDigestTimePicker by rememberSaveable { mutableStateOf(false) }
+    var isAdvancedOAuthExpanded by rememberSaveable { mutableStateOf(false) }
 
     // Course Editor Sheet State
     var editingCourse by remember { mutableStateOf<CourseModel?>(null) }
@@ -834,23 +835,6 @@ fun SettingsScreen(
                             },
                         )
                     }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // BYO OAuth client ids. The open-source build ships
-                    // placeholders: Google sign-in needs the user's own
-                    // "Android" OAuth client registered for THIS package name
-                    // and their signing SHA-1; Microsoft needs an Azure app
-                    // with the custom-scheme redirect. Honest, actionable copy
-                    // instead of a sign-in button that can only fail. The ids
-                    // auto-save as they are typed (shared with the onboarding
-                    // connections step) - the old explicit Save button at the
-                    // bottom of this long screen was easy to miss, and a
-                    // typed-but-unsaved id looked like "the app has no client
-                    // id" after a restart.
-                    OAuthClientIdFields(viewModel = viewModel)
                 }
             }
 
@@ -1198,7 +1182,7 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    Text("Theme", fontWeight = FontWeight.SemiBold)
+                    Text("Appearance Mode", fontWeight = FontWeight.SemiBold)
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Row(
@@ -1219,6 +1203,63 @@ fun SettingsScreen(
                         }
                     }
 
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text("Preferred Light Theme", fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Active in Light mode and during daytime",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    FilterChip(
+                        selected = true,
+                        onClick = { viewModel.setTheme("light") },
+                        label = { Text("Solar Dawn (Default)") },
+                        leadingIcon = {
+                            Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                        },
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text("Preferred Dark Theme", fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Active in Dark mode and during nighttime",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    FilterChip(
+                        selected = theme != "amoled",
+                        onClick = { viewModel.setTheme("dark") },
+                        label = { Text("Obsidian Cosmic (Default)") },
+                        leadingIcon = {
+                            if (theme != "amoled") {
+                                Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                            }
+                        },
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    FilterChip(
+                        selected = theme == "amoled",
+                        onClick = { viewModel.setTheme("amoled") },
+                        label = { Text("AMOLED Pure Black & Starlight") },
+                        leadingIcon = {
+                            if (theme == "amoled") {
+                                Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                            }
+                        },
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         text = "Reduced motion follows system accessibility settings.",
@@ -1384,6 +1425,64 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // =========================================================================
+            // 10. ADVANCED (FOLDED ACCORDION)
+            // =========================================================================
+            SettingsSectionHeader(
+                icon = Icons.Outlined.Settings,
+                title = "Advanced",
+            )
+
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { isAdvancedOAuthExpanded = !isAdvancedOAuthExpanded },
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Custom OAuth Client IDs",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text =
+                                    if (isAdvancedOAuthExpanded) {
+                                        "Tap to collapse custom client ID overrides"
+                                    } else {
+                                        "Tap to expand custom Google & Microsoft client ID overrides"
+                                    },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Icon(
+                            imageVector = if (isAdvancedOAuthExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                            contentDescription = if (isAdvancedOAuthExpanded) "Collapse" else "Expand",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    if (isAdvancedOAuthExpanded) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OAuthClientIdFields(viewModel = viewModel)
+                    }
                 }
             }
 

@@ -322,7 +322,7 @@ export const CalendarView: React.FC = () => {
         assessments.length === 0 &&
         customEvents.length === 0 && (
           <div
-            data-testid="calendar-empty-guide"
+            data-testid="empty-calendar"
             className="rounded-2xl border border-[var(--border)] bg-[var(--page)] p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left"
           >
             <div className="flex items-center gap-3">

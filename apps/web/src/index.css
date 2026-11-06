@@ -91,18 +91,31 @@ input[type="search"]::-webkit-search-decoration {
   position: relative;
 }
 
-/* Focus ring: visible for keyboard users, invisible for pointer users. */
-:focus-visible {
+/* Focus ring: visible for keyboard users, invisible for pointer users.
+   Explicitly exempt search inputs that manage their own focus affordance. */
+:focus-visible:not(.search-palette-input):not([aria-controls="topbar-search-results"]):not([aria-controls="search-palette-results"]) {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
-/* The top-bar search pill draws its own focus affordance (accent border +
-   halo on the wrapper); the global ring would paint a second box inside it.
-   Keyboard users still get the pill's accent border + halo, so the focus
-   state stays visible. */
-input[aria-controls="topbar-search-results"]:focus-visible {
-  outline: none;
+/* Search inputs that draw their own container affordance: suppress the default
+   browser/global outline and platform styling so no focus rectangle can appear. */
+input[aria-controls="topbar-search-results"]:focus,
+input[aria-controls="topbar-search-results"]:focus-visible,
+input[aria-controls="search-palette-results"]:focus,
+input[aria-controls="search-palette-results"]:focus-visible,
+.search-palette-input,
+.search-palette-input:focus,
+.search-palette-input:focus-visible,
+.search-palette-input:active {
+  outline: none !important;
+  outline-color: transparent !important;
+  outline-style: none !important;
+  outline-width: 0 !important;
+  box-shadow: none !important;
+  border: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
 }
 
 /* ---------------------------------------------------------------------------

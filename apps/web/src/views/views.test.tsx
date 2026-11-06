@@ -350,15 +350,15 @@ describe("Web UI Views & Assessment Detail (Phase 09 Full Behavior)", () => {
   // 2d. The top-bar search filters the dashboard live (01 §4.8). The query
   // used to live only inside the search input, so the calendar/dashboard
   // never re-rendered.
-  it("filters the assessment list by the global search query and says so", () => {
+  it("filters the study recommendations by the global search query and says so", () => {
     const twoAssessments = JSON.parse(JSON.stringify(sampleState)) as GetStatePayload;
-    twoAssessments.assessments.push({
-      ...twoAssessments.assessments[0],
-      id: "a-mat102-q1",
+    twoAssessments.dashboard.studyRecommendations.push({
+      ...twoAssessments.dashboard.studyRecommendations[0],
+      assessmentId: "a-mat102-q1",
       courseId: "MAT102",
       courseName: "Calculus II",
       title: "Quiz 1: Derivatives",
-      topics: ["Limits"],
+      topics: [{ topicIndex: 0, title: "Limits", completed: false, key: "topic-0" }],
     });
 
     useAppStore.setState({ data: twoAssessments, searchQuery: "derivatives" });
@@ -425,28 +425,25 @@ describe("Web UI Views & Assessment Detail (Phase 09 Full Behavior)", () => {
     expect(card.textContent).not.toContain("100%");
   });
 
-  // 2d. The timeline's type select is the surviving type filter (the
-  // "Types of exams" KPI card with its All chip became the "Exams ahead"
-  // count); choosing "All Semesters" must map to the ALL filter.
-  it("maps the timeline type select's 'All Semesters' option to the ALL filter", () => {
-    useAppStore.setState({ activeTypeFilter: "UPCOMING" });
-    render(<DashboardView />);
-    fireEvent.change(screen.getByRole("combobox"), {
-      target: { value: "ALL" },
-    });
-    expect(useAppStore.getState().activeTypeFilter).toBe("ALL");
-  });
+  // 2d. The assessments ledger lives in TasksView under the "All Assessments" tab,
+  // with sensible time horizons and type filters.
+  it("renders the assessments ledger inside tasks view with time horizon and type filters", () => {
+    useAppStore.setState({ data: sampleState });
+    render(<TasksView />);
+    fireEvent.click(screen.getByRole("button", { name: /all assessments/i }));
+    expect(screen.getByTestId("timeline-row-a-cse241-q1")).toBeInTheDocument();
 
-  // 2e. Phase-19: filtered-empty timeline says so instead of "No assessments scheduled"
-  it("distinguishes a filtered-empty timeline from a truly empty one", () => {
-    useAppStore.setState({ activeSourceFilter: "TEAMS" });
-    render(<DashboardView />);
-    expect(screen.getByTestId("timeline-empty-filtered")).toBeInTheDocument();
-    expect(screen.getByText(copy.dashboard.timelineEmptyFilteredTitle)).toBeInTheDocument();
-    expect(screen.queryByText(copy.dashboard.timelineEmptyTitle)).not.toBeInTheDocument();
+    // Time horizon buttons
+    expect(screen.getByRole("button", { name: /upcoming & recent/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /all history/i })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: copy.dashboard.timelineClearFilters }));
-    expect(useAppStore.getState().activeSourceFilter).toBe("ALL");
+    // Filter by type
+    const typeSelect = screen.getByLabelText("Filter by assessment type");
+    fireEvent.change(typeSelect, { target: { value: "Final Exam" } });
+    expect(screen.getByText("No assessments match your active filters")).toBeInTheDocument();
+
+    // Reset filters
+    fireEvent.click(screen.getByRole("button", { name: /reset all filters/i }));
     expect(screen.getByTestId("timeline-row-a-cse241-q1")).toBeInTheDocument();
   });
 

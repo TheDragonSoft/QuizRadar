@@ -103,14 +103,14 @@ export function SchedulePreviewModal({
                   className="flex items-center gap-2.5 rounded-xl border border-[var(--border)] bg-[var(--page)] p-2.5"
                 >
                   <span
-                    className="h-7 w-7 rounded-lg flex items-center justify-center text-[11px] font-bold text-white shrink-0"
+                    className="h-7 w-7 rounded-lg flex items-center justify-center text-xs font-bold text-white shrink-0"
                     style={{ backgroundColor: chip.solidBg }}
                   >
                     {course.id.slice(0, 3)}
                   </span>
                   <div className="min-w-0">
                     <div className="text-xs font-bold text-[var(--text)] truncate">{course.id}</div>
-                    <div className="text-[11px] text-[var(--text-muted)] truncate">
+                    <div className="text-xs text-[var(--text-muted)] truncate">
                       {course.name}
                     </div>
                   </div>
@@ -135,7 +135,7 @@ export function SchedulePreviewModal({
                   <span className="font-bold text-[var(--text)]">{slot.courseId}</span>
                   <span className="text-[var(--text-muted)] truncate">{slot.type}</span>
                 </div>
-                <div className="flex items-center gap-3 text-[11px] tabular-nums text-[var(--text-muted)] shrink-0">
+                <div className="flex items-center gap-3 text-xs tabular-nums text-[var(--text-muted)] shrink-0">
                   <span>{slot.day}</span>
                   <span>{slot.displayTime || `${slot.startTime}–${slot.endTime}`}</span>
                   <span>{slot.room ? `@ ${slot.room}` : "—"}</span>

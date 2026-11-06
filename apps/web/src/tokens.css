@@ -14,8 +14,8 @@
   --accent-fill-hover: #1557b0;
   --accent-ink: #1557b0;
 
-  /* Surfaces (v4 `--surface-bg` / `--panel-bg` / `--border-subtle`) */
-  --page: #f8fafc;
+  /* Surfaces (v4 `--surface-bg` / `--panel-bg` / `--border-subtle` — Observatory light sky) */
+  --page: #f5f7fb;
   --surface: #ffffff;
   --surface-elevated: #ffffff;
   --surface-border: #e2e8f0; /* slate-200 */
@@ -23,6 +23,10 @@
   --surface-hover: #f1f5f9; /* slate-100 */
   --text: #0f172a; /* slate-900 */
   --text-muted: #475569; /* slate-600 */
+
+  /* Frosted glass tokens (Observatory theme) */
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(226, 232, 240, 0.8);
 
   /* Aliases: component layers were authored against v4's border names. */
   --border: var(--surface-border);
@@ -54,21 +58,30 @@
   color-scheme: light;
 }
 
-.dark {
+/* Observatory Suite — Theme Variants */
+
+/* 1. Obsidian Cosmic Dark (Default Dark) */
+.dark,
+html[data-theme="obsidian"] {
   /* v4 dark accents lift the base family; --accent-fill stays WCAG AA >= 5.1:1 with white */
   --accent: #3b82f6;
   --accent-hover: #60a5fa;
   --accent-fill: #2563eb;
   --accent-fill-hover: #1d4ed8;
   --accent-ink: #60a5fa;
-  --page: #0b0f19;
-  --surface: #111827; /* slate-900 */
-  --surface-elevated: #162033;
-  --surface-border: #1e293b; /* slate-800 */
-  --border-strong: #334155; /* slate-700 */
-  --surface-hover: #1e293b; /* slate-800 */
+  --page: #070a12;
+  --surface: #0e1526;
+  --surface-elevated: #131c31;
+  --surface-border: #1a243a;
+  --border-strong: #273654;
+  --surface-hover: #17223b;
   --text: #f8fafc; /* slate-50 */
   --text-muted: #94a3b8; /* slate-400 */
+  --custom-event: #f472b6; /* pink-400 for high contrast WCAG AA > 4.5:1 on dark */
+
+  /* Frosted glass tokens (Observatory theme) */
+  --glass-bg: rgba(14, 21, 38, 0.75);
+  --glass-border: rgba(255, 255, 255, 0.08);
 
   /* Aliases: component layers were authored against v4's border names. */
   --border: var(--surface-border);
@@ -78,6 +91,120 @@
   --exam-glow: 0 0 16px rgba(239, 68, 68, 0.45), 0 0 4px rgba(239, 68, 68, 0.65);
 
   color-scheme: dark;
+}
+
+/* 2. Solar Dawn Light (Default Light) */
+html[data-theme="solar"] {
+  --accent: #1a73e8;
+  --accent-hover: #1557b0;
+  --accent-fill: #1a73e8;
+  --accent-fill-hover: #1557b0;
+  --accent-ink: #1557b0;
+  --page: #f5f7fb;
+  --surface: #ffffff;
+  --surface-elevated: #ffffff;
+  --surface-border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --surface-hover: #f1f5f9;
+  --text: #0f172a;
+  --text-muted: #475569;
+  --custom-event: #db2777;
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(226, 232, 240, 0.8);
+  --border: var(--surface-border);
+  --border-subtle: var(--surface-border);
+  --exam-glow: 0 3px 10px rgba(220, 38, 38, 0.14);
+  color-scheme: light;
+}
+
+/* 3. Pure AMOLED Pitch Black Suite (#000000 + Scattered UI Starlight) */
+html[data-theme="amoled"],
+html[data-theme="amoled-minimal"],
+html[data-theme="amoled-sparkle"],
+html[data-theme="amoled-nebula"] {
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --accent-fill: #2563eb;
+  --accent-fill-hover: #1d4ed8;
+  --accent-ink: #60a5fa;
+  --page: #000000;
+  --surface: #08090d;
+  --surface-elevated: #0f1118;
+  --surface-border: #181b24;
+  --border-strong: #232838;
+  --surface-hover: #141722;
+  --text: #f8fafc;
+  --text-muted: #94a3b8;
+  --custom-event: #f472b6;
+  --glass-bg: rgba(8, 9, 13, 0.88);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --border: var(--surface-border);
+  --border-subtle: var(--surface-border);
+  --exam-glow: 0 0 16px rgba(239, 68, 68, 0.45), 0 0 4px rgba(239, 68, 68, 0.65);
+  color-scheme: dark;
+}
+
+/* Scattered UI Starlight across the entire interface */
+html[data-theme^="amoled"] body {
+  background-color: #000000 !important;
+  position: relative;
+}
+
+html[data-theme^="amoled"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-repeat: repeat;
+}
+
+/* AMOLED Variant 1: Pure Starlight (Subtle, clean micro pinprick stars) */
+html[data-theme="amoled"],
+html[data-theme="amoled-minimal"] body::before {
+  background-image:
+    radial-gradient(1px 1px at 35px 50px, rgba(255, 255, 255, 0.75), transparent),
+    radial-gradient(1.2px 1.2px at 140px 190px, rgba(254, 240, 138, 0.7), transparent),
+    radial-gradient(1px 1px at 280px 95px, rgba(147, 197, 253, 0.65), transparent),
+    radial-gradient(1.5px 1.5px at 410px 290px, rgba(255, 255, 255, 0.8), transparent),
+    radial-gradient(1px 1px at 540px 140px, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(1.2px 1.2px at 700px 230px, rgba(254, 240, 138, 0.75), transparent),
+    radial-gradient(1px 1px at 850px 75px, rgba(147, 197, 253, 0.7), transparent),
+    radial-gradient(1.4px 1.4px at 990px 320px, rgba(255, 255, 255, 0.85), transparent),
+    radial-gradient(1px 1px at 1150px 170px, rgba(255, 255, 255, 0.65), transparent),
+    radial-gradient(1.2px 1.2px at 1310px 260px, rgba(254, 240, 138, 0.7), transparent);
+  background-size: 650px 520px;
+}
+
+/* AMOLED Variant 2: Constellation Sparkles (Prominent 4-point sparkle cross stars) */
+html[data-theme="amoled-sparkle"] body::before {
+  background-image:
+    radial-gradient(1.5px 1.5px at 40px 60px, rgba(255, 255, 255, 0.95), transparent),
+    radial-gradient(2px 2px at 170px 230px, rgba(254, 240, 138, 0.95), transparent),
+    radial-gradient(1px 1px at 290px 115px, rgba(147, 197, 253, 0.85), transparent),
+    radial-gradient(2.5px 2.5px at 460px 330px, #ffffff, transparent),
+    radial-gradient(1.2px 1.2px at 600px 155px, rgba(255, 255, 255, 0.9), transparent),
+    radial-gradient(2px 2px at 760px 270px, rgba(254, 240, 138, 0.95), transparent),
+    radial-gradient(1px 1px at 900px 85px, rgba(147, 197, 253, 0.85), transparent),
+    radial-gradient(2.5px 2.5px at 1060px 350px, #ffffff, transparent),
+    radial-gradient(1.5px 1.5px at 1220px 185px, rgba(255, 255, 255, 0.95), transparent);
+  background-size: 520px 420px;
+}
+
+/* AMOLED Variant 3: Cosmic Stardust (Layered stars + ethereal faint amber/violet nebula clouds) */
+html[data-theme="amoled-nebula"] body::before {
+  background-image:
+    radial-gradient(380px 260px at 15% 25%, rgba(99, 102, 241, 0.09), transparent 70%),
+    radial-gradient(420px 320px at 85% 75%, rgba(245, 158, 11, 0.07), transparent 70%),
+    radial-gradient(1.5px 1.5px at 50px 70px, rgba(255, 255, 255, 0.95), transparent),
+    radial-gradient(2px 2px at 190px 250px, rgba(254, 240, 138, 0.95), transparent),
+    radial-gradient(1.2px 1.2px at 330px 125px, rgba(147, 197, 253, 0.9), transparent),
+    radial-gradient(2.2px 2.2px at 510px 360px, #ffffff, transparent),
+    radial-gradient(1.5px 1.5px at 660px 175px, rgba(255, 255, 255, 0.9), transparent),
+    radial-gradient(2px 2px at 830px 300px, rgba(254, 240, 138, 0.95), transparent),
+    radial-gradient(1.2px 1.2px at 980px 105px, rgba(147, 197, 253, 0.85), transparent),
+    radial-gradient(2.2px 2.2px at 1170px 380px, #ffffff, transparent);
+  background-size: 100% 100%, 100% 100%, 580px 460px, 580px 460px, 580px 460px, 580px 460px, 580px 460px, 580px 460px, 580px 460px, 580px 460px;
 }
 
 /* Smooth crossfade applied via CSS only */
@@ -187,4 +314,72 @@ html.hero-scene-transition .hero-view-transition {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* Frosted glass utility (Observatory aesthetic) */
+.frosted-glass {
+  background-color: var(--glass-bg);
+  border-color: var(--glass-border);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .frosted-glass {
+    background-color: var(--surface);
+    border-color: var(--surface-border);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* Nebula exam glow: 4s breathing ruby-to-amber aura on 48h exam deadlines */
+@keyframes examDeadlinePulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+  50% {
+    box-shadow: 0 0 16px 2px rgba(239, 68, 68, 0.4), 0 0 6px 1px rgba(245, 158, 11, 0.3);
+  }
+}
+.exam-deadline-pulse {
+  animation: examDeadlinePulse 4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .exam-deadline-pulse {
+    animation: none;
+    box-shadow: 0 0 8px 1px rgba(239, 68, 68, 0.35);
+  }
+}
+
+/* Constellation sparkle: 350ms celebration scale/shimmer on checking a topic */
+@keyframes topicShimmerDone {
+  0% {
+    transform: scale(1);
+    color: var(--accent);
+  }
+  40% {
+    transform: scale(1.03);
+    color: #F59E0B;
+    text-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
+  }
+  100% {
+    transform: scale(1);
+    color: var(--text-muted);
+    text-shadow: none;
+  }
+}
+.topic-shimmer-done {
+  animation: topicShimmerDone 350ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .topic-shimmer-done {
+    animation: none;
+  }
+}
+
+/* Placeholder contrast conformance (WCAG AA >= 4.5:1) */
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
 }

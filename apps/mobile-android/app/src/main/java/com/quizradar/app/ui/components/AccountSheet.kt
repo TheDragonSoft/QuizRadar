@@ -51,6 +51,7 @@ fun AccountSheet(
     onStartMicrosoftLogin: () -> Unit,
     onDisconnectMicrosoft: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenHelp: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -283,23 +284,42 @@ fun AccountSheet(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Import Backup moved to Settings -> Data Management; this sheet
-            // keeps the one action that belongs to an account sheet.
-            FilledTonalButton(
-                onClick = {
-                    onOpenSettings()
-                    onDismiss()
-                },
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Icon(
-                    imageVector = Icons.Outlined.Settings,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Open Settings", fontSize = 12.sp)
+                OutlinedButton(
+                    onClick = {
+                        onOpenHelp()
+                        onDismiss()
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Info,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Help & FAQ", fontSize = 12.sp)
+                }
+                FilledTonalButton(
+                    onClick = {
+                        onOpenSettings()
+                        onDismiss()
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Settings,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Settings", fontSize = 12.sp)
+                }
             }
 
             Spacer(modifier = Modifier.height(18.dp))

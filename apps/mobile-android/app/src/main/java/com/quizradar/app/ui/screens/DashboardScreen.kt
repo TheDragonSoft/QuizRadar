@@ -12,16 +12,17 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -55,12 +56,10 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.quizradar.app.model.AppSnapshotModel
 import com.quizradar.app.model.FeedConfigModel
-import com.quizradar.app.ui.DashboardSubTab
 import com.quizradar.app.ui.QuizRadarViewModel
 import com.quizradar.app.ui.components.ConflictBanner
 import com.quizradar.app.ui.components.NextUpHeroCard
 import com.quizradar.app.ui.components.SetupChecklistCard
-import com.quizradar.app.ui.components.StudyRecommendationCard
 import com.quizradar.app.ui.components.TimelineAssessmentRow
 import com.quizradar.app.ui.icons.Icons
 
@@ -158,7 +157,6 @@ fun DashboardScreen(
     val isConflictDismissed by viewModel.isConflictDismissed.collectAsState()
     val isSetupChecklistDismissed by viewModel.isSetupChecklistDismissed.collectAsState()
     val notifyExam24h by viewModel.notifyExam24h.collectAsState()
-    val subTab by viewModel.dashboardSubTab.collectAsState()
     val sourceFilter by viewModel.activeSourceFilter.collectAsState()
     val typeFilter by viewModel.activeTypeFilter.collectAsState()
 
@@ -255,77 +253,6 @@ fun DashboardScreen(
                 )
             }
 
-            // Sub-Tab Bar (Overview / Assessments / Study)
-            item {
-                Row(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.surface)
-                            .border(
-                                1.dp,
-                                MaterialTheme.colorScheme.outlineVariant,
-                                RoundedCornerShape(12.dp),
-                            )
-                            .padding(4.dp),
-                ) {
-                    val tabs =
-                        listOf(
-                            DashboardSubTab.OVERVIEW to ("Overview" to Icons.Outlined.Dashboard),
-                            DashboardSubTab.ASSESSMENTS to ("Assessments" to Icons.Outlined.Checklist),
-                            DashboardSubTab.STUDY to ("Study" to Icons.Outlined.AutoAwesome),
-                        )
-
-                    tabs.forEach { (tab, labelIcon) ->
-                        val (label, icon) = labelIcon
-                        val isSelected = subTab == tab
-                        Row(
-                            modifier =
-                                Modifier
-                                    .weight(1f)
-                                    .defaultMinSize(minHeight = 44.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(
-                                        if (isSelected) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            Color.Transparent
-                                        },
-                                    )
-                                    .clickable { viewModel.setDashboardSubTab(tab) }
-                                    .padding(vertical = 8.dp, horizontal = 4.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = null,
-                                tint =
-                                    if (isSelected) {
-                                        MaterialTheme.colorScheme.onPrimary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Spacer(modifier = Modifier.width(5.dp))
-                            Text(
-                                text = label,
-                                fontSize = 12.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
-                                color =
-                                    if (isSelected) {
-                                        MaterialTheme.colorScheme.onPrimary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                            )
-                        }
-                    }
-                }
-            }
-
             // Conflict Banner
             item {
                 ConflictBanner(
@@ -373,18 +300,23 @@ fun DashboardScreen(
                 }
             }
 
-            // OVERVIEW: KPI cards row
-            if (subTab == DashboardSubTab.OVERVIEW) {
-                item {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+            // OVERVIEW: KPI cards 2x2 grid
+            item {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    // Row 1: Upcoming (7 Days) & Exams Ahead
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         // KPI 1: Next 7 Days
                         Column(
                             modifier =
                                 Modifier
-                                    .fillMaxWidth()
+                                    .weight(1f)
+                                    .fillMaxHeight()
                                     .clip(RoundedCornerShape(16.dp))
                                     .background(MaterialTheme.colorScheme.surface)
                                     .border(
@@ -421,7 +353,7 @@ fun DashboardScreen(
                                         "$weekCount assessments"
                                     },
                                 style =
-                                    MaterialTheme.typography.headlineMedium.merge(
+                                    MaterialTheme.typography.titleLarge.merge(
                                         TextStyle(
                                             fontWeight = FontWeight.ExtraBold,
                                             fontFeatureSettings = "tnum",
@@ -467,7 +399,8 @@ fun DashboardScreen(
                         Column(
                             modifier =
                                 Modifier
-                                    .fillMaxWidth()
+                                    .weight(1f)
+                                    .fillMaxHeight()
                                     .clip(RoundedCornerShape(16.dp))
                                     .background(MaterialTheme.colorScheme.surface)
                                     .border(
@@ -509,7 +442,7 @@ fun DashboardScreen(
                                         "$examsAhead exams"
                                     },
                                 style =
-                                    MaterialTheme.typography.headlineMedium.merge(
+                                    MaterialTheme.typography.titleLarge.merge(
                                         TextStyle(
                                             fontWeight = FontWeight.ExtraBold,
                                             fontFeatureSettings = "tnum",
@@ -528,12 +461,19 @@ fun DashboardScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+                    }
 
+                    // Row 2: Exam Readiness & Connected Sources
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
                         // KPI 2: Exam Readiness (Honest when totalTopicsCount == 0)
                         Column(
                             modifier =
                                 Modifier
-                                    .fillMaxWidth()
+                                    .weight(1f)
+                                    .fillMaxHeight()
                                     .clip(RoundedCornerShape(16.dp))
                                     .background(MaterialTheme.colorScheme.surface)
                                     .border(
@@ -565,7 +505,7 @@ fun DashboardScreen(
                             Text(
                                 text = readinessHeadline,
                                 style =
-                                    MaterialTheme.typography.headlineMedium.merge(
+                                    MaterialTheme.typography.titleLarge.merge(
                                         TextStyle(
                                             fontWeight = FontWeight.ExtraBold,
                                             fontFeatureSettings = "tnum",
@@ -601,7 +541,8 @@ fun DashboardScreen(
                         Column(
                             modifier =
                                 Modifier
-                                    .fillMaxWidth()
+                                    .weight(1f)
+                                    .fillMaxHeight()
                                     .clip(RoundedCornerShape(16.dp))
                                     .background(MaterialTheme.colorScheme.surface)
                                     .border(
@@ -643,7 +584,7 @@ fun DashboardScreen(
                             Text(
                                 text = sourcesHeadline,
                                 style =
-                                    MaterialTheme.typography.headlineSmall.merge(
+                                    MaterialTheme.typography.titleLarge.merge(
                                         TextStyle(
                                             fontWeight = FontWeight.ExtraBold,
                                             fontFeatureSettings = "tnum",
@@ -661,196 +602,127 @@ fun DashboardScreen(
                 }
             }
 
-            // STUDY: Study recommendations cards
-            if (subTab == DashboardSubTab.STUDY) {
-                item {
+            // Next 7 Days / Upcoming Assessments Timeline
+            item {
+                Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        text = "Study Recommendations (${dash.studyRecommendations.size})",
-                        fontSize = 12.sp,
+                        text = "Upcoming Assessments",
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Filter by Source",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                }
-
-                if (dash.studyRecommendations.isEmpty()) {
-                    item {
-                        if (snapshot.schedule.courses.isEmpty()) {
-                            EmptyDashboardStateCard(
-                                title = "Add your timetable",
-                                desc =
-                                    "QuizRadar needs your weekly class schedule to cross-reference " +
-                                        "announcements and pin exam dates.",
-                                icon = Icons.Outlined.School,
-                                primaryButtonLabel = "Add Course",
-                                onPrimaryClick = onAddCourse,
-                                secondaryButtonLabel = "Restore Backup",
-                                onSecondaryClick = onImportBackup,
-                            )
-                        } else if (assessments.isEmpty()) {
-                            EmptyDashboardStateCard(
-                                title = "No assessments discovered yet",
-                                desc =
-                                    "Your courses are enrolled. Sign in to Gmail or Teams (or add an " +
-                                        ".ics feed) and pull down to scan - announcements are read on " +
-                                        "this device. You can also add an event manually.",
-                                icon = Icons.Outlined.Checklist,
-                                primaryButtonLabel = "Scan now",
-                                onPrimaryClick = { viewModel.runScan() },
-                                secondaryButtonLabel = "Add Event",
-                                onSecondaryClick = onAddEvent,
-                            )
-                        } else {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        listOf("ALL", "GMAIL", "MOODLE", "TEAMS", "CLASSROOM").forEach { src ->
+                            val isSelected = sourceFilter == src
                             Box(
                                 modifier =
                                     Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(16.dp))
-                                        .background(MaterialTheme.colorScheme.surface)
+                                        .defaultMinSize(minHeight = 36.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (isSelected) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.surface
+                                            },
+                                        )
                                         .border(
                                             1.dp,
-                                            MaterialTheme.colorScheme.outlineVariant,
-                                            RoundedCornerShape(16.dp),
+                                            if (isSelected) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.outlineVariant
+                                            },
+                                            RoundedCornerShape(8.dp),
                                         )
-                                        .padding(28.dp),
+                                        .clickable { viewModel.setActiveSourceFilter(src) }
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
-                                    text = "No pending study recommendations right now.",
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    text = src,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color =
+                                        if (isSelected) {
+                                            MaterialTheme.colorScheme.onPrimary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
                                 )
                             }
                         }
-                    }
-                } else {
-                    itemsIndexed(dash.studyRecommendations, key = { _, rec -> rec.assessmentId }) { index, rec ->
-                        StudyRecommendationCard(
-                            index = index + 1,
-                            recommendation = rec,
-                            completedTopicsMap = completedTopics,
-                            onToggleTopic = { key, done -> viewModel.toggleTopic(key, done) },
-                            onClick = { viewModel.openAssessmentDetail(rec.assessmentId) },
-                        )
                     }
                 }
             }
 
-            // ASSESSMENTS: Timeline list with filters
-            if (subTab == DashboardSubTab.ASSESSMENTS) {
+            if (filteredTimeline.isEmpty()) {
                 item {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            text = "Filter by Source",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    if (snapshot.schedule.courses.isEmpty()) {
+                        EmptyDashboardStateCard(
+                            title = "Add your timetable",
+                            desc =
+                                "QuizRadar needs your weekly class schedule to cross-reference " +
+                                    "announcements and pin exam dates.",
+                            icon = Icons.Outlined.School,
+                            primaryButtonLabel = "Add Course",
+                            onPrimaryClick = onAddCourse,
+                            secondaryButtonLabel = "Restore Backup",
+                            onSecondaryClick = onImportBackup,
                         )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            listOf("ALL", "GMAIL", "MOODLE", "TEAMS", "CLASSROOM").forEach { src ->
-                                val isSelected = sourceFilter == src
-                                Box(
-                                    modifier =
-                                        Modifier
-                                            .defaultMinSize(minHeight = 36.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(
-                                                if (isSelected) {
-                                                    MaterialTheme.colorScheme.primary
-                                                } else {
-                                                    MaterialTheme.colorScheme.surface
-                                                },
-                                            )
-                                            .border(
-                                                1.dp,
-                                                if (isSelected) {
-                                                    MaterialTheme.colorScheme.primary
-                                                } else {
-                                                    MaterialTheme.colorScheme.outlineVariant
-                                                },
-                                                RoundedCornerShape(8.dp),
-                                            )
-                                            .clickable { viewModel.setActiveSourceFilter(src) }
-                                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Text(
-                                        text = src,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color =
-                                            if (isSelected) {
-                                                MaterialTheme.colorScheme.onPrimary
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                            },
+                    } else if (assessments.isEmpty()) {
+                        EmptyDashboardStateCard(
+                            title = "No assessments discovered yet",
+                            desc =
+                                "Your courses are enrolled. Sign in to Gmail or Teams (or add an " +
+                                    ".ics feed) and pull down to scan - announcements are read on " +
+                                    "this device. You can also add an event manually.",
+                            icon = Icons.Outlined.Checklist,
+                            primaryButtonLabel = "Scan now",
+                            onPrimaryClick = { viewModel.runScan() },
+                            secondaryButtonLabel = "Add Event",
+                            onSecondaryClick = onAddEvent,
+                        )
+                    } else {
+                        Box(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(MaterialTheme.colorScheme.surface)
+                                    .border(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.outlineVariant,
+                                        RoundedCornerShape(16.dp),
                                     )
-                                }
-                            }
+                                    .padding(28.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "No assessments matching this filter.",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 }
-
-                if (filteredTimeline.isEmpty()) {
-                    item {
-                        if (snapshot.schedule.courses.isEmpty()) {
-                            EmptyDashboardStateCard(
-                                title = "Add your timetable",
-                                desc =
-                                    "QuizRadar needs your weekly class schedule to cross-reference " +
-                                        "announcements and pin exam dates.",
-                                icon = Icons.Outlined.School,
-                                primaryButtonLabel = "Add Course",
-                                onPrimaryClick = onAddCourse,
-                                secondaryButtonLabel = "Restore Backup",
-                                onSecondaryClick = onImportBackup,
-                            )
-                        } else if (assessments.isEmpty()) {
-                            EmptyDashboardStateCard(
-                                title = "No assessments discovered yet",
-                                desc =
-                                    "Your courses are enrolled. Sign in to Gmail or Teams (or add an " +
-                                        ".ics feed) and pull down to scan - announcements are read on " +
-                                        "this device. You can also add an event manually.",
-                                icon = Icons.Outlined.Checklist,
-                                primaryButtonLabel = "Scan now",
-                                onPrimaryClick = { viewModel.runScan() },
-                                secondaryButtonLabel = "Add Event",
-                                onSecondaryClick = onAddEvent,
-                            )
-                        } else {
-                            Box(
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(16.dp))
-                                        .background(MaterialTheme.colorScheme.surface)
-                                        .border(
-                                            1.dp,
-                                            MaterialTheme.colorScheme.outlineVariant,
-                                            RoundedCornerShape(16.dp),
-                                        )
-                                        .padding(28.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = "No assessments matching this filter.",
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
-                } else {
-                    itemsIndexed(filteredTimeline, key = { _, assessment -> assessment.id }) { _, assessment ->
-                        TimelineAssessmentRow(
-                            assessment = assessment,
-                            onClick = { viewModel.openAssessmentDetail(assessment.id) },
-                        )
-                    }
+            } else {
+                itemsIndexed(filteredTimeline, key = { _, assessment -> assessment.id }) { _, assessment ->
+                    TimelineAssessmentRow(
+                        assessment = assessment,
+                        onClick = { viewModel.openAssessmentDetail(assessment.id) },
+                    )
                 }
             }
 

@@ -344,7 +344,15 @@ export type View = "dashboard" | "tasks" | "calendar" | "focus" | "help" | "sett
  */
 export type SettingsSection = "account" | "courses" | "integrations";
 
-export type ThemeMode = "light" | "dark";
+export type ThemeMode =
+  | "light"
+  | "dark"
+  | "obsidian"
+  | "solar"
+  | "amoled"
+  | "amoled-minimal"
+  | "amoled-sparkle"
+  | "amoled-nebula";
 
 export type SyncStatus = "idle" | "syncing" | "success" | "error";
 

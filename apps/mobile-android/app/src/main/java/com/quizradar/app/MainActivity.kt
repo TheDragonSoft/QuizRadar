@@ -91,10 +91,11 @@ class MainActivity : ComponentActivity() {
             QuizRadarTheme(
                 darkTheme =
                     when (themeMode) {
-                        "dark" -> true
+                        "dark", "amoled" -> true
                         "light" -> false
                         else -> isSystemInDarkTheme()
                     },
+                isAmoled = themeMode == "amoled",
             ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),

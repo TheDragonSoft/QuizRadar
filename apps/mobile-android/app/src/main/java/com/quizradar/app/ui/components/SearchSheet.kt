@@ -127,7 +127,7 @@ fun SearchSheet(
                     shape = RoundedCornerShape(12.dp),
                     colors =
                         OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            focusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
                             unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
                             focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                             unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),

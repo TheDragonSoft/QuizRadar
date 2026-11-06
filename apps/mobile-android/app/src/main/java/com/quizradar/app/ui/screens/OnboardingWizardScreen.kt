@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
@@ -12,6 +13,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,6 +57,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -75,10 +78,18 @@ import androidx.core.content.ContextCompat
 import com.quizradar.app.model.AppSnapshotModel
 import com.quizradar.app.ui.ACADEMIC_TRACKS
 import com.quizradar.app.ui.QuizRadarViewModel
+import com.quizradar.app.ui.TimetableImportState
 import com.quizradar.app.ui.components.OAuthClientIdFields
+import com.quizradar.app.ui.components.TimetableImportErrorDialog
+import com.quizradar.app.ui.components.TimetableImportPreviewDialog
+import com.quizradar.app.ui.components.TimetableImportWorkingDialog
 import com.quizradar.app.ui.detail.CourseEditorSheet
 import com.quizradar.app.ui.icons.Icons
+import com.quizradar.app.ui.readScaledImage
 import com.quizradar.app.ui.theme.StatusColors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // The three presets the spec names (`01` §4.1: Medicine / Business / Sciences)
 // live in one shared list (`com.quizradar.app.ui.ACADEMIC_TRACKS`) so the
@@ -105,6 +116,29 @@ fun OnboardingWizardScreen(
 
     var isAddCourseOpen by rememberSaveable { mutableStateOf(false) }
     val addCourseSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    val timetableImportState by viewModel.timetableImportState.collectAsState()
+    val imageImportScope = rememberCoroutineScope()
+    val timetableImageLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.PickVisualMedia(),
+        ) { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            imageImportScope.launch {
+                val image =
+                    try {
+                        withContext(Dispatchers.IO) { readScaledImage(context, uri) }
+                    } catch (e: Exception) {
+                        viewModel.showToast("Could not read the image: ${e.message}")
+                        null
+                    }
+                if (image == null || image.bytes.isEmpty()) {
+                    viewModel.showToast("That image could not be read - pick another one.")
+                } else {
+                    viewModel.importTimetableFromImage(image.bytes, image.mime)
+                }
+            }
+        }
 
     val notificationPermissionLauncher =
         rememberLauncherForActivityResult(
@@ -222,6 +256,11 @@ fun OnboardingWizardScreen(
                                 snapshot = snapshot,
                                 savedTrack = savedTrack,
                                 onTrackSelected = { viewModel.setAcademicTrack(it) },
+                                onImportTimetablePhoto = {
+                                    timetableImageLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                    )
+                                },
                                 onAddCourse = { isAddCourseOpen = true },
                                 onNext = { viewModel.setOnboardingStep(3) },
                             )
@@ -263,6 +302,22 @@ fun OnboardingWizardScreen(
                         isAddCourseOpen = false
                     },
                 )
+            }
+
+            when (val importState = timetableImportState) {
+                is TimetableImportState.Working -> TimetableImportWorkingDialog()
+                is TimetableImportState.Preview ->
+                    TimetableImportPreviewDialog(
+                        extracted = importState.extracted,
+                        onApply = { viewModel.applyImportedTimetable(importState.extracted) },
+                        onDismiss = { viewModel.dismissTimetableImport() },
+                    )
+                is TimetableImportState.Failed ->
+                    TimetableImportErrorDialog(
+                        message = importState.message,
+                        onDismiss = { viewModel.dismissTimetableImport() },
+                    )
+                else -> {}
             }
         }
     }
@@ -416,6 +471,7 @@ private fun Step2Timetable(
     snapshot: AppSnapshotModel,
     savedTrack: String?,
     onTrackSelected: (String) -> Unit,
+    onImportTimetablePhoto: () -> Unit,
     onAddCourse: () -> Unit,
     onNext: () -> Unit,
     modifier: Modifier = Modifier,
@@ -501,10 +557,23 @@ private fun Step2Timetable(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
-                    TextButton(onClick = onAddCourse) {
-                        Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Add Course")
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedButton(
+                            onClick = onImportTimetablePhoto,
+                            shape = RoundedCornerShape(8.dp),
+                        ) {
+                            Icon(Icons.Outlined.AutoAwesome, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Import Photo", fontSize = 12.sp)
+                        }
+                        TextButton(onClick = onAddCourse) {
+                            Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Add Course")
+                        }
                     }
                 }
 
@@ -674,7 +743,10 @@ private fun Step3Sources(
         Card(
             shape = RoundedCornerShape(14.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            modifier = Modifier.fillMaxWidth(),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { if (!isGoogleConnected) onStartGoogleLogin() },
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(
@@ -682,7 +754,10 @@ private fun Step3Sources(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.weight(1f).padding(end = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Icon(
                             imageVector = Icons.Outlined.Email,
                             contentDescription = null,
@@ -721,7 +796,7 @@ private fun Step3Sources(
                             onClick = onStartGoogleLogin,
                             shape = RoundedCornerShape(8.dp),
                         ) {
-                            Text("Connect", fontSize = 12.sp)
+                            Text("Connect →", fontSize = 12.sp)
                         }
                     }
                 }
@@ -734,7 +809,10 @@ private fun Step3Sources(
         Card(
             shape = RoundedCornerShape(14.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            modifier = Modifier.fillMaxWidth(),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { if (!isMicrosoftConnected) onStartMicrosoftLogin() },
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(
@@ -742,7 +820,10 @@ private fun Step3Sources(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.weight(1f).padding(end = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Icon(
                             imageVector = Icons.Outlined.Groups,
                             contentDescription = null,
@@ -778,7 +859,7 @@ private fun Step3Sources(
                             onClick = onStartMicrosoftLogin,
                             shape = RoundedCornerShape(8.dp),
                         ) {
-                            Text("Connect", fontSize = 12.sp)
+                            Text("Connect →", fontSize = 12.sp)
                         }
                     }
                 }
@@ -830,10 +911,15 @@ private fun Step3Sources(
                         Modifier
                             .fillMaxWidth()
                             // One confirmation, when the user is done with
-                            // the field - not one per letter.
+                            // the field - not one per letter. Never announce a removal
+                            // toast if the user simply unfocused an empty field.
                             .onFocusChanged { focusState ->
                                 if (!focusState.isFocused) {
-                                    viewModel.saveGeminiApiKey(keyInput)
+                                    if (keyInput.isNotBlank()) {
+                                        viewModel.saveGeminiApiKey(keyInput)
+                                    } else {
+                                        viewModel.saveGeminiApiKey(keyInput, announce = false)
+                                    }
                                 }
                             },
                 )

@@ -177,7 +177,7 @@ export function OnboardingWizardModal({
   return (
     <div className="flex h-[620px] max-h-[85vh] min-h-0 flex-1 flex-col">
       {/* v4 gradient header band */}
-      <div className="flex shrink-0 items-center justify-between gap-3 bg-gradient-to-r from-blue-700 to-indigo-800 px-5 py-5 sm:px-6">
+      <div className="flex shrink-0 items-center justify-between gap-3 bg-gradient-to-r from-[var(--accent)] to-[var(--accent-hover)] px-5 py-5 sm:px-6">
         <div className="flex items-center gap-3">
           <RadarMark animated className="h-10 w-10 shrink-0 drop-shadow-md" />
           <div>
@@ -548,14 +548,14 @@ export function OnboardingWizardModal({
                     Verified
                   </span>
                 ) : (
-                  <span className="text-[11px] text-purple-700 dark:text-purple-300 font-semibold">
+                  <span className="text-[11px] text-[var(--text-muted)] font-semibold">
                     Optional
                   </span>
                 )}
               </div>
 
               {/* Verbatim Disclosure */}
-              <div className="rounded-lg border border-purple-500/20 bg-purple-500/10 p-2.5 text-[11px] text-[var(--text)] space-y-0.5">
+              <div className="rounded-lg border border-[var(--surface-border)] bg-[var(--surface-hover)] p-2.5 text-[11px] text-[var(--text)] space-y-0.5">
                 <p>{copy.ai.disclosure}</p>
                 <p className="font-semibold">{copy.ai.turnOff}</p>
               </div>
@@ -573,7 +573,7 @@ export function OnboardingWizardModal({
                   type="button"
                   disabled={geminiValidating || !geminiKey.trim()}
                   onClick={handleValidateGemini}
-                  className="rounded-lg bg-purple-700 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-purple-800 disabled:opacity-50"
+                  className="rounded-lg bg-[var(--accent-fill)] px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[var(--accent-fill-hover)] disabled:opacity-50"
                 >
                   {geminiValidating ? "Checking…" : "Validate"}
                 </button>
@@ -658,7 +658,7 @@ export function OnboardingWizardModal({
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex gap-1.5">
-                  {COURSE_PALETTE_PRESETS.slice(0, 6).map((presetColor: string) => (
+                  {COURSE_PALETTE_PRESETS.map((presetColor: string) => (
                     <button
                       key={presetColor}
                       type="button"

@@ -130,9 +130,9 @@ fun SetupChecklistCard(
                 title = "Connect Gmail or Teams",
                 desc =
                     if (sourcesDone) {
-                        "Signed in - scans course announcements on this device"
+                        "Signed in — scans course announcements on this device"
                     } else {
-                        "Sign in and QuizRadar scans course announcements for quizzes on this device"
+                        "Add your OAuth client ID in Settings → Sources"
                     },
                 icon = Icons.Outlined.Email,
                 isDone = sourcesDone,
@@ -163,41 +163,17 @@ fun SetupChecklistCard(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                         modifier = Modifier.padding(vertical = 8.dp),
                     )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Row(
-                            modifier = Modifier.weight(1f),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Widgets,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp),
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column {
-                                Text("Home-Screen Widget", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                Text(
-                                    "2x1 countdown glance",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                val provider = ComponentName(context, QuizRadarWidgetReceiver::class.java)
-                                appWidgetManager.requestPinAppWidget(provider, null, null)
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                        ) {
-                            Text("Pin", fontSize = 12.sp)
-                        }
-                    }
+                    ChecklistItemRow(
+                        title = "Home-Screen Widget",
+                        desc = "2x1 countdown glance",
+                        icon = Icons.Outlined.Widgets,
+                        isDone = false,
+                        actionLabel = "Pin",
+                        onAction = {
+                            val provider = ComponentName(context, QuizRadarWidgetReceiver::class.java)
+                            appWidgetManager.requestPinAppWidget(provider, null, null)
+                        },
+                    )
                 }
             }
         }
@@ -224,7 +200,7 @@ private fun ChecklistItemRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).padding(end = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(

@@ -51,11 +51,10 @@ pub const GEMINI_KEY_FILENAME: &str = "gemini.key";
 pub const DEFAULT_MICROSOFT_CLIENT_ID: &str = "14d82eec-204b-4c2f-b7e8-296a70dab67e";
 
 /// Google OAuth client id of the maintainer-provided registration (project
-/// `gmail-summary-511914`, an **Installed**-type client; maintainer-provided
-/// 2026-11-05 and shared with the Android app). A client id is a public
+/// `quizradar-513903`, an **Installed**-type client). A client id is a public
 /// identifier, so it may ship.
 pub const DEFAULT_GOOGLE_CLIENT_ID: &str =
-    "341760934836-60toi8rjgkid0gmc69tmt598teghbgv4.apps.googleusercontent.com";
+    "438181858687-l9400b0lu7de8ggdj4vsg7ced9v1vsg6.apps.googleusercontent.com";
 
 /// Client secret of the Google registration above.
 ///
@@ -70,7 +69,7 @@ pub const DEFAULT_GOOGLE_CLIENT_ID: &str =
 /// the logs or any error string. Runtime overrides (OS keyring entry
 /// `google_client_secret`, or `QUIZRADAR_GOOGLE_CLIENT_SECRET`) win, so the
 /// secret can be rotated without touching the source.
-pub const DEFAULT_GOOGLE_CLIENT_SECRET: &str = "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";
+pub const DEFAULT_GOOGLE_CLIENT_SECRET: &str = "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";
 
 pub const GOOGLE_CLIENT_ID_INVALID: &str = "The Google OAuth client ID in Settings is not usable. Copy it again from Google Cloud Console → APIs & Services → Credentials (it looks like 1234567890-abc.apps.googleusercontent.com and contains no spaces).";
 

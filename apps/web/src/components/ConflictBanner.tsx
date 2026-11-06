@@ -40,7 +40,7 @@ export const ConflictBanner: React.FC = () => {
           <div className="space-y-1 min-w-0">
             <div className="text-xs font-bold text-emerald-900 dark:text-emerald-100 flex items-center gap-2 flex-wrap">
               <span>{copy.dashboard.conflictBanner.mitigatedTitle(studyBlocks.length)}</span>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 text-[11px] font-bold">
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 text-xs font-bold">
                 {copy.dashboard.conflictBanner.mitigatedBadge}
               </span>
             </div>
@@ -102,7 +102,7 @@ export const ConflictBanner: React.FC = () => {
                   className="text-xs text-amber-900 dark:text-amber-200 flex items-center gap-2 flex-wrap"
                 >
                   <span
-                    className={`px-1.5 py-0.5 rounded text-[11px] font-bold ${
+                    className={`px-1.5 py-0.5 rounded text-xs font-bold ${
                       a.severity === "critical"
                         ? "bg-red-500/20 text-red-800 dark:text-red-300"
                         : "bg-amber-500/20 text-amber-800 dark:text-amber-200"

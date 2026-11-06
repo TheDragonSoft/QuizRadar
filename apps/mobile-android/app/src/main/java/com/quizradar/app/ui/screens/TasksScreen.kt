@@ -19,9 +19,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -30,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quizradar.app.model.AppSnapshotModel
@@ -231,7 +234,7 @@ fun TasksScreen(
 
             if (filteredCards.isEmpty()) {
                 item {
-                    Box(
+                    Column(
                         modifier =
                             Modifier
                                 .fillMaxWidth()
@@ -243,13 +246,27 @@ fun TasksScreen(
                                     RoundedCornerShape(16.dp),
                                 )
                                 .padding(24.dp),
-                        contentAlignment = Alignment.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text(
-                            text = "No exams matching this course filter.",
+                            text =
+                                if (courseFilter != "ALL") {
+                                    "No exams matching this course filter."
+                                } else {
+                                    "No upcoming exams tracked on your radar yet."
+                                },
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
                         )
+                        if (courseFilter != "ALL") {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            TextButton(
+                                onClick = { viewModel.setTasksCourseFilter("ALL") },
+                            ) {
+                                Text("Show All Courses", fontSize = 12.sp)
+                            }
+                        }
                     }
                 }
             } else {
@@ -274,7 +291,7 @@ fun TasksScreen(
 
             if (filteredDays.isEmpty()) {
                 item {
-                    Box(
+                    Column(
                         modifier =
                             Modifier
                                 .fillMaxWidth()
@@ -286,13 +303,35 @@ fun TasksScreen(
                                     RoundedCornerShape(16.dp),
                                 )
                                 .padding(24.dp),
-                        contentAlignment = Alignment.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text(
-                            text = "No study tasks scheduled for the next 14 days.",
+                            text =
+                                when {
+                                    courseFilter != "ALL" -> "No study tasks scheduled for this course."
+                                    courses.isEmpty() -> "Add your courses to generate a personalized study roadmap."
+                                    snapshot.assessments.isEmpty() -> "Scan announcement sources to discover upcoming exams."
+                                    else -> "All caught up! No pending study tasks for the next 14 days."
+                                },
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
                         )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        if (courseFilter != "ALL") {
+                            TextButton(
+                                onClick = { viewModel.setTasksCourseFilter("ALL") },
+                            ) {
+                                Text("Show All Courses", fontSize = 12.sp)
+                            }
+                        } else if (snapshot.assessments.isEmpty()) {
+                            Button(
+                                onClick = { viewModel.runScan() },
+                                shape = RoundedCornerShape(8.dp),
+                            ) {
+                                Text("Scan Sources Now", fontSize = 12.sp)
+                            }
+                        }
                     }
                 }
             } else {

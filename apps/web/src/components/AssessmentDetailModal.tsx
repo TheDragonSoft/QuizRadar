@@ -144,11 +144,19 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
 
   const whatIf = calculateWhatIf(assessment, assessments, whatIfScore);
   const isGraded = assessment.achievedScore != null && assessment.maxScore != null;
+  const isWithin48h =
+    assessment.isUpcoming &&
+    assessment.daysUntil !== null &&
+    assessment.daysUntil !== undefined &&
+    assessment.daysUntil >= 0 &&
+    assessment.daysUntil <= 2;
 
   return (
     <div
       data-testid="assessment-detail-modal"
-      className="flex min-h-0 flex-1 flex-col overflow-hidden text-[var(--text)]"
+      className={`flex min-h-0 flex-1 flex-col overflow-hidden text-[var(--text)] ${
+        isWithin48h ? "exam-deadline-pulse" : ""
+      }`}
     >
       {/* Course Color Header Bar */}
       <div className="h-2.5 w-full shrink-0" style={{ backgroundColor: chip.dot }} />
@@ -431,7 +439,7 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text)] transition cursor-pointer"
             >
               <HelpCircle
-                className="h-4 w-4 text-purple-700 dark:text-purple-400"
+                className="h-4 w-4 text-[var(--accent)]"
                 aria-hidden="true"
               />
               <span>{copy.practice.practiceQuizAction}</span>

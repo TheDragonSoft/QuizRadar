@@ -24,10 +24,15 @@ import { AppConfirmModal } from "./components/AppConfirmModal";
 import { CloudSyncModal } from "./components/CloudSyncModal";
 import { ScanProgressModal } from "./components/ScanProgressModal";
 import { AccountProfileModal } from "./components/AccountProfileModal";
+import { SearchPaletteModal } from "./components/SearchPaletteModal";
 
 // Register the spec modal components with canonical single-shell sizing & flush
 // metadata. (Settings is NOT one of them anymore: it is a full-screen view —
 // the modal could not hold its nine sections without cramped tabs.)
+registerModal("search-palette", SearchPaletteModal as unknown as ModalComponent, {
+  size: "lg",
+  flush: true,
+});
 registerModal("assessment-detail", AssessmentDetailModal as unknown as ModalComponent, {
   size: "lg",
   flush: true,
@@ -111,7 +116,6 @@ export default function App() {
   // switch views and strand a stale panel).
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
       if (
         target instanceof HTMLInputElement ||
@@ -121,6 +125,27 @@ export default function App() {
       ) {
         return;
       }
+
+      // Cmd+K / Ctrl+K opens floating search palette
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        const { openModals, openModal } = useAppStore.getState();
+        if (openModals.some((m) => m.id === "search-palette")) return;
+        openModal({ id: "search-palette" });
+        return;
+      }
+
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      // / opens search palette
+      if (e.key === "/") {
+        e.preventDefault();
+        const { openModals, openModal } = useAppStore.getState();
+        if (openModals.some((m) => m.id === "search-palette")) return;
+        openModal({ id: "search-palette" });
+        return;
+      }
+
       if (document.getElementById("topbar-search-results")) return;
       const { openModals, setView } = useAppStore.getState();
       if (openModals.length > 0) return;

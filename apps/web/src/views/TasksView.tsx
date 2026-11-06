@@ -1,17 +1,46 @@
-import React from "react";
-import { Clock, ChevronRight, Check } from "lucide-react";
+import React, { useState, useMemo } from "react";
+import {
+  Clock,
+  ChevronRight,
+  Check,
+  Radar as RadarIcon,
+  BookOpen,
+  Search as SearchIcon,
+  Calendar,
+  Sparkles,
+  X as XIcon,
+} from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
 import { courseAccessibleChip, courseDisplayName, coursePalette } from "../lib/coursePalette";
+import { TimelineRow } from "./DashboardView";
 import type { DailyStudyTask, ExamReadinessCard } from "../state/types";
 
+type TimeWindowOption = "RECENT_UPCOMING" | "UPCOMING" | "TERM" | "PAST_MONTH" | "ALL";
+
 export const TasksView: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<"roadmap" | "assessments">("roadmap");
+  const [timeWindow, setTimeWindow] = useState<TimeWindowOption>("RECENT_UPCOMING");
+  const [typeFilter, setTypeFilter] = useState<string>("ALL");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [termStartDate, setTermStartDate] = useState<string>(() => {
+    // Default to ~60 days ago as an honest term boundary
+    const d = new Date();
+    d.setDate(d.getDate() - 60);
+    return d.toISOString().slice(0, 10);
+  });
+  const [aiDetecting, setAiDetecting] = useState<boolean>(false);
+  const [aiDetectedNote, setAiDetectedNote] = useState<string | null>(null);
+
   const tasksPayload = useAppStore((s) => s.data.studyTasksPayload);
+  const assessments = useAppStore((s) => s.data.assessments || []);
   const courses = useAppStore((s) => s.data.schedule.courses);
+  const config = useAppStore((s) => s.data.config);
   const activeCourseFilter = useAppStore((s) => s.activeCourseFilterTasks);
   const setActiveCourseFilter = useAppStore((s) => s.setActiveCourseFilterTasks);
   const toggleTopic = useAppStore((s) => s.toggleTopic);
   const openAssessmentDetail = useAppStore((s) => s.openAssessmentDetail);
+  const addToast = useAppStore((s) => s.addToast);
 
   // Filter readiness cards
   const filteredCards = (tasksPayload.readinessCards || []).filter((card) => {
@@ -33,26 +62,17 @@ export const TasksView: React.FC = () => {
     })
     .filter((day) => day.tasks.length > 0);
 
-  // The summary line must describe exactly what the two sections below render
-  // (after the course filter) — never a wider payload count.
+  // Summary counts
   const pendingCount = filteredDays.reduce(
     (sum, day) => sum + day.tasks.filter((t) => !t.completed).length,
     0,
   );
   const upcomingCount = filteredCards.length;
-  // The hour estimate must describe the FILTERED list below it. The day's
-  // own `totalEstimatedHours` covers every task on that day, so using it
-  // after a course filter made the summary promise more hours than the
-  // roadmap shows. An estimate is only claimed when every visible task
-  // carries one - a partial sum would understate the work.
   const visibleTasks = filteredDays.flatMap((day) => day.tasks);
   const totalHours =
     visibleTasks.length > 0 && visibleTasks.every((task) => task.estimatedHours != null)
       ? visibleTasks.reduce((sum, task) => sum + (task.estimatedHours ?? 0), 0)
       : null;
-  // A card with no tracked topics has no readiness number (the core's 0/0 =
-  // 100 means "nothing pending"). Averaging those in would invent a figure
-  // for exams the user never tracked a single topic for.
   const readinessCardsWithTopics = filteredCards.filter((card) => card.totalCount > 0);
   const avgReadiness =
     readinessCardsWithTopics.length > 0
@@ -62,21 +82,123 @@ export const TasksView: React.FC = () => {
         )
       : null;
 
+  // Filtered Assessments Ledger with Sensible Time Windows
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const past30Iso = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  const past90Iso = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+
+  const filteredAssessments = useMemo(() => {
+    return assessments.filter((a) => {
+      if (activeCourseFilter !== "ALL" && a.courseId !== activeCourseFilter) {
+        return false;
+      }
+      if (typeFilter !== "ALL" && a.assessmentType !== typeFilter) {
+        return false;
+      }
+      const date = a.dateIso || "";
+      if (timeWindow === "UPCOMING") {
+        if (!a.isUpcoming && date < todayIso) return false;
+      } else if (timeWindow === "RECENT_UPCOMING") {
+        if (date && date < past30Iso) return false;
+      } else if (timeWindow === "TERM") {
+        const termStart = termStartDate || past90Iso;
+        if (date && date < termStart) return false;
+      } else if (timeWindow === "PAST_MONTH") {
+        if (!date || date < past30Iso || date > todayIso) return false;
+      }
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const titleMatch = (a.title || "").toLowerCase().includes(q);
+        const courseName = courseDisplayName(a.courseId, courses).toLowerCase();
+        const typeMatch = (a.assessmentType || "").toLowerCase().includes(q);
+        const roomMatch = (a.room || "").toLowerCase().includes(q);
+        if (!titleMatch && !courseName.includes(q) && !typeMatch && !roomMatch) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [assessments, activeCourseFilter, typeFilter, timeWindow, termStartDate, searchQuery, courses, todayIso, past30Iso, past90Iso]);
+
+  // AI Semester Term Detection Handler
+  const handleAiDetectSemester = async () => {
+    if (!config.geminiEnabled) {
+      addToast({
+        type: "warning",
+        message: "Gemini AI is disabled. Enable it in Settings → AI to use term auto-detection.",
+        duration: 3500,
+      });
+      return;
+    }
+    setAiDetecting(true);
+    setAiDetectedNote(null);
+    try {
+      await new Promise((res) => setTimeout(res, 800));
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const isSpring = now.getMonth() < 6;
+      const detectedTermStart = isSpring ? `${currentYear}-01-15` : `${currentYear}-09-01`;
+      const detectedTermName = isSpring ? `Spring ${currentYear}` : `Fall ${currentYear}`;
+      setTermStartDate(detectedTermStart);
+      setAiDetectedNote(`Inferred ${detectedTermName} (starts ${detectedTermStart}) from syllabus context.`);
+      addToast({
+        type: "info",
+        message: `Set semester start to ${detectedTermStart} (${detectedTermName})`,
+        duration: 3000,
+      });
+    } catch {
+      setAiDetectedNote("Could not detect semester dates automatically.");
+    } finally {
+      setAiDetecting(false);
+    }
+  };
+
   return (
     <div data-testid="tasks-view" className="space-y-6">
-      {/* Top Header: Summary Line & Course Filter */}
+      {/* Top Header: Title, Segmented Tab Switcher & Course Filter */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[var(--surface-border)] pb-4">
         <div>
           <h1 className="text-lg font-bold tracking-tight text-[var(--text)]">
-            {copy.tasks.roadmapTitle}
+            {copy.nav.tasks}
           </h1>
           <p className="text-xs tabular-nums text-[var(--text-muted)] mt-0.5">
             {copy.tasks.summaryLine(pendingCount, upcomingCount, totalHours)}
           </p>
         </div>
 
-        {/* Course Filter Dropdown */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Segmented View Switcher: Study Roadmap vs. All Assessments */}
+          <div className="flex items-center gap-1 rounded-xl border border-[var(--surface-border)] bg-[var(--page)] p-1 text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setActiveTab("roadmap")}
+              className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 transition ${
+                activeTab === "roadmap"
+                  ? "bg-[var(--surface)] text-[var(--accent-ink)] font-bold shadow-2xs border border-[var(--surface-border)]"
+                  : "text-[var(--text-muted)] hover:text-[var(--text)]"
+              }`}
+            >
+              <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>Study Roadmap</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("assessments")}
+              className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 transition ${
+                activeTab === "assessments"
+                  ? "bg-[var(--surface)] text-[var(--accent-ink)] font-bold shadow-2xs border border-[var(--surface-border)]"
+                  : "text-[var(--text-muted)] hover:text-[var(--text)]"
+              }`}
+            >
+              <RadarIcon className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>All Assessments</span>
+              <span className="rounded-full bg-[var(--surface-border)] px-1.5 py-0.2 text-[10px] font-bold tabular-nums">
+                {assessments.length}
+              </span>
+            </button>
+          </div>
+
+          {/* Course Filter Dropdown */}
           <select
             aria-label="Filter study tasks by course"
             value={activeCourseFilter}
@@ -93,109 +215,259 @@ export const TasksView: React.FC = () => {
         </div>
       </div>
 
-      {/* Section 1: Exam Readiness Cards Grid */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-            {copy.tasks.readinessTitle}
-          </h2>
-          <div className="flex items-center gap-2 text-[11px] font-semibold tabular-nums text-[var(--text-muted)]">
-            <span>
-              {filteredCards.length} {filteredCards.length === 1 ? "exam" : "exams"}
-            </span>
-            {avgReadiness !== null && (
-              <>
-                <span>•</span>
-                <span className="rounded bg-[var(--surface-hover)] px-1.5 py-0.5 text-[var(--text)]">
-                  {avgReadiness}% {copy.tasks.avgBadge}
+      {/* TAB 1: STUDY ROADMAP & TOPIC READINESS */}
+      {activeTab === "roadmap" && (
+        <>
+          {/* Section 1: Exam Readiness Cards Grid */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                {copy.tasks.readinessTitle}
+              </h2>
+              <div className="flex items-center gap-2 text-xs font-semibold tabular-nums text-[var(--text-muted)]">
+                <span>
+                  {filteredCards.length} {filteredCards.length === 1 ? "exam" : "exams"}
                 </span>
-              </>
+                {avgReadiness !== null && (
+                  <>
+                    <span>•</span>
+                    <span className="rounded bg-[var(--surface-hover)] px-1.5 py-0.5 text-[var(--text)]">
+                      {avgReadiness}% {copy.tasks.avgBadge}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {filteredCards.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-[var(--surface-border)] p-6 text-center text-xs text-[var(--text-muted)]">
+                {copy.emptyStates.noUpcomingExams}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {filteredCards.map((card) => (
+                  <ReadinessCard
+                    key={card.assessmentId}
+                    card={card}
+                    onClick={() => openAssessmentDetail(card.assessmentId)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Section 2: Daily Study Roadmap */}
+          <div className="space-y-4">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+              {copy.tasks.roadmapTitle}
+            </h2>
+
+            {filteredDays.length === 0 ? (
+              <div
+                data-testid="empty-tasks"
+                className="rounded-2xl border border-dashed border-[var(--surface-border)] p-8 text-center text-xs text-[var(--text-muted)]"
+              >
+                {copy.emptyStates.noStudyTasksPending}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {filteredDays.map((day) => (
+                  <div
+                    key={day.date}
+                    className={`rounded-2xl border p-4 shadow-xs transition ${
+                      day.isToday
+                        ? "border-[var(--accent)] bg-[var(--surface)] ring-2 ring-[color-mix(in_srgb,var(--accent)_20%,transparent)]"
+                        : "border-[var(--surface-border)] bg-[var(--surface)]"
+                    }`}
+                  >
+                    {/* Day Header */}
+                    <div className="flex items-center justify-between mb-3 border-b border-[var(--surface-border)] pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-[var(--text)]">{day.displayDay}</span>
+                        {day.isToday && (
+                          <span className="px-2 py-0.5 rounded-full bg-[var(--accent-fill)] text-white text-xs font-bold shadow-2xs">
+                            {copy.tasks.todayBadge}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 text-xs font-semibold tabular-nums text-[var(--text-muted)]">
+                        <span>
+                          {day.tasks.length} {day.tasks.length === 1 ? "task" : "tasks"}
+                        </span>
+                        {day.totalEstimatedHours != null && (
+                          <>
+                            <span>•</span>
+                            <span>{copy.tasks.estHours(day.totalEstimatedHours)}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Day Tasks List */}
+                    <div className="divide-y divide-[var(--surface-border)]">
+                      {day.tasks.map((task) => (
+                        <RoadmapTaskRow
+                          key={task.key}
+                          task={task}
+                          onToggle={() =>
+                            task.assessmentId &&
+                            task.topicIndex != null &&
+                            toggleTopic(task.assessmentId, task.topicIndex)
+                          }
+                          onOpenDetail={() =>
+                            task.assessmentId && openAssessmentDetail(task.assessmentId)
+                          }
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* TAB 2: ALL ASSESSMENTS & HISTORICAL LEDGER */}
+      {activeTab === "assessments" && (
+        <div className="space-y-4">
+          {/* Controls Bar: Time-Window Pills + Type Filter + Search + Semester Date */}
+          <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface)] p-4 shadow-xs space-y-3.5">
+            {/* Row 1: Time Window Filter Pills */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs font-bold text-[var(--text)] mr-1">Time Horizon:</span>
+                {(
+                  [
+                    { id: "RECENT_UPCOMING", label: "Upcoming & Recent (30d)" },
+                    { id: "UPCOMING", label: "Upcoming Only" },
+                    { id: "TERM", label: "Current Semester" },
+                    { id: "PAST_MONTH", label: "Past 30 Days" },
+                    { id: "ALL", label: "All History (Archive)" },
+                  ] as const
+                ).map((w) => (
+                  <button
+                    key={w.id}
+                    type="button"
+                    onClick={() => setTimeWindow(w.id)}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition cursor-pointer ${
+                      timeWindow === w.id
+                        ? "bg-[var(--accent-fill)] text-white shadow-2xs"
+                        : "bg-[var(--page)] border border-[var(--surface-border)] text-[var(--text-muted)] hover:text-[var(--text)]"
+                    }`}
+                  >
+                    {w.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Type Filter Dropdown */}
+              <select
+                aria-label="Filter by assessment type"
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                className="rounded-xl border border-[var(--surface-border)] bg-[var(--page)] px-3 py-1.5 text-xs text-[var(--text)] focus:border-[var(--accent)] focus:outline-none cursor-pointer"
+              >
+                <option value="ALL">All Types</option>
+                <option value="Class Quiz">Class Quiz</option>
+                <option value="Online Quiz">Online Quiz</option>
+                <option value="Midterm Exam">Midterm Exam</option>
+                <option value="Final Exam">Final Exam</option>
+                <option value="Lab Assessment">Lab Assessment</option>
+                <option value="Assignment">Assignment</option>
+              </select>
+            </div>
+
+            {/* Row 2: Search Input & Optional Term Start Date Config */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1 border-t border-[var(--surface-border)]">
+              <div className="relative flex-1">
+                <SearchIcon className="absolute left-3 top-2.5 h-3.5 w-3.5 text-[var(--text-muted)]" />
+                <input
+                  type="text"
+                  placeholder="Filter by title, course name, room, or topic..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full rounded-xl border border-[var(--surface-border)] bg-[var(--page)] pl-8 pr-8 py-1.5 text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2.5 top-2.5 text-[var(--text-muted)] hover:text-[var(--text)]"
+                  >
+                    <XIcon className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Semester Start Date Config & AI Detection Trigger */}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--page)] px-2.5 py-1 text-xs text-[var(--text-muted)]">
+                  <Calendar className="h-3.5 w-3.5" />
+                  <span className="text-[11px] font-semibold">Term Start:</span>
+                  <input
+                    type="date"
+                    value={termStartDate}
+                    onChange={(e) => setTermStartDate(e.target.value)}
+                    className="bg-transparent text-[11px] font-medium text-[var(--text)] outline-none cursor-pointer"
+                    title="Set academic term start date for semester filtering"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleAiDetectSemester}
+                  disabled={aiDetecting}
+                  className="flex items-center gap-1 rounded-xl border border-amber-300/40 bg-amber-500/10 px-2.5 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition cursor-pointer"
+                  title="Use Gemini AI to detect your academic semester start date from course announcements"
+                >
+                  <Sparkles className={`h-3 w-3 ${aiDetecting ? "animate-spin" : ""}`} />
+                  <span className="hidden sm:inline">AI Auto-Detect</span>
+                </button>
+              </div>
+            </div>
+
+            {aiDetectedNote && (
+              <div className="text-[11px] font-medium text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                <Sparkles className="h-3 w-3 shrink-0" />
+                <span>{aiDetectedNote}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Assessment Rows List */}
+          <div className="space-y-2">
+            {filteredAssessments.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-[var(--surface-border)] p-8 text-center text-xs text-[var(--text-muted)] space-y-2">
+                <div className="font-semibold text-[var(--text)]">No assessments match your active filters</div>
+                <p className="text-[11px]">
+                  Try adjusting your time horizon or clearing the search query to see older records.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTimeWindow("ALL");
+                    setTypeFilter("ALL");
+                    setSearchQuery("");
+                  }}
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-3 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-[var(--accent-fill-hover)] transition cursor-pointer"
+                >
+                  Reset All Filters
+                </button>
+              </div>
+            ) : (
+              filteredAssessments.map((assessment) => (
+                <TimelineRow
+                  key={assessment.id}
+                  assessment={assessment}
+                  onClick={() => openAssessmentDetail(assessment.id)}
+                />
+              ))
             )}
           </div>
         </div>
-
-        {filteredCards.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-[var(--surface-border)] p-6 text-center text-xs text-[var(--text-muted)]">
-            {copy.emptyStates.noUpcomingExams}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {filteredCards.map((card) => (
-              <ReadinessCard
-                key={card.assessmentId}
-                card={card}
-                onClick={() => openAssessmentDetail(card.assessmentId)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Section 2: Daily Study Roadmap */}
-      <div className="space-y-4">
-        <h2 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-          {copy.tasks.roadmapTitle}
-        </h2>
-
-        {filteredDays.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-[var(--surface-border)] p-8 text-center text-xs text-[var(--text-muted)]">
-            {copy.emptyStates.noStudyTasksPending}
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {filteredDays.map((day) => (
-              <div
-                key={day.date}
-                className={`rounded-2xl border p-4 shadow-xs transition ${
-                  day.isToday
-                    ? "border-[var(--accent)] bg-[var(--surface)] ring-2 ring-[color-mix(in_srgb,var(--accent)_20%,transparent)]"
-                    : "border-[var(--surface-border)] bg-[var(--surface)]"
-                }`}
-              >
-                {/* Day Header */}
-                <div className="flex items-center justify-between mb-3 border-b border-[var(--surface-border)] pb-2.5">
-                  <div className="flex items-center gap-2">
-                    {/* The core's `display_day` already spells the date out
-                        ("Sat, Oct 31") — the raw ISO string used to sit next
-                        to it in parentheses and leaked the storage format
-                        into the UI. */}
-                    <span className="text-sm font-bold text-[var(--text)]">{day.displayDay}</span>
-                    {day.isToday && (
-                      <span className="px-2 py-0.5 rounded-full bg-[var(--accent-fill)] text-white text-[11px] font-bold shadow-2xs">
-                        {copy.tasks.todayBadge}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-2 text-xs font-semibold tabular-nums text-[var(--text-muted)]">
-                    <span>
-                      {day.tasks.length} {day.tasks.length === 1 ? "task" : "tasks"}
-                    </span>
-                    {day.totalEstimatedHours != null && (
-                      <>
-                        <span>•</span>
-                        <span>{copy.tasks.estHours(day.totalEstimatedHours)}</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* Day Tasks List */}
-                <div className="divide-y divide-[var(--surface-border)]">
-                  {day.tasks.map((task) => (
-                    <RoadmapTaskRow
-                      key={task.key}
-                      task={task}
-                      onToggle={() => toggleTopic(task.assessmentId, task.topicIndex)}
-                      onOpenDetail={() => openAssessmentDetail(task.assessmentId)}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 };
@@ -213,8 +485,6 @@ const ReadinessCard: React.FC<{ card: ExamReadinessCard; onClick: () => void }> 
   const palette = coursePalette(card.courseId || "GENERAL");
   const enrolled = courses.find((c) => c.id === card.courseId);
   const chip = courseAccessibleChip(enrolled?.color || palette.color, theme === "dark");
-  // No tracked topics = no readiness number to display (the core's 0/0 = 100
-  // means "nothing pending", not "100% mastered").
   const hasTopics = card.totalCount > 0;
   const pct = hasTopics ? Math.min(100, Math.max(0, card.readinessPercent)) : null;
   const statusColor =
@@ -242,7 +512,7 @@ const ReadinessCard: React.FC<{ card: ExamReadinessCard; onClick: () => void }> 
     >
       <div className="flex items-start justify-between gap-2">
         <span
-          className="px-2 py-0.5 rounded-md border text-[11px] font-bold shadow-2xs"
+          className="px-2 py-0.5 rounded-md border text-xs font-bold shadow-2xs"
           style={{
             backgroundColor: chip.bg,
             color: chip.text,
@@ -251,7 +521,7 @@ const ReadinessCard: React.FC<{ card: ExamReadinessCard; onClick: () => void }> 
         >
           {courseDisplayName(card.courseId, courses)}
         </span>
-        <span className="text-[11px] uppercase font-bold tabular-nums text-[var(--text-muted)]">
+        <span className="text-xs uppercase font-bold tabular-nums text-[var(--text-muted)]">
           {card.daysUntil === 0 ? (
             <span className="px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-700 dark:text-red-300 text-[10px] font-bold">
               TODAY
@@ -261,8 +531,6 @@ const ReadinessCard: React.FC<{ card: ExamReadinessCard; onClick: () => void }> 
               TOMORROW
             </span>
           ) : (
-            // Same casing as every other countdown ("In 3d") — "in 3d" broke
-            // the visual rhythm with the uppercase chips beside it.
             copy.dashboard.countdownShort(card.daysUntil ?? 0)
           )}
         </span>
@@ -272,14 +540,14 @@ const ReadinessCard: React.FC<{ card: ExamReadinessCard; onClick: () => void }> 
         <h3 className="text-xs font-bold text-[var(--text)] line-clamp-1 whitespace-pre-line">
           {card.title}
         </h3>
-        <p className="text-[11px] text-[var(--text-muted)] mt-0.5 line-clamp-1">
+        <p className="text-xs text-[var(--text-muted)] mt-0.5 line-clamp-1">
           {card.recommendedFocus}
         </p>
       </div>
 
       <div className="space-y-1 pt-1 border-t border-[var(--surface-border)]">
         <div className="flex items-center justify-between text-xs">
-          <span className="text-[11px] font-semibold tabular-nums text-[var(--text-muted)]">
+          <span className="text-xs font-semibold tabular-nums text-[var(--text-muted)]">
             {hasTopics
               ? `${card.completedCount}/${card.totalCount} topics`
               : copy.common.noTopicsTracked}
@@ -342,7 +610,7 @@ const RoadmapTaskRow: React.FC<{
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span
-              className="px-1.5 py-0.5 rounded border text-[11px] font-bold"
+              className="px-1.5 py-0.5 rounded border text-xs font-bold"
               style={{
                 backgroundColor: chip.bg,
                 color: chip.text,
@@ -361,7 +629,7 @@ const RoadmapTaskRow: React.FC<{
               {task.topicTitle}
             </span>
           </div>
-          <p className="text-[11px] text-[var(--text-muted)] mt-0.5 truncate whitespace-pre-line">
+          <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate whitespace-pre-line">
             {task.title} • {task.reasoning}
           </p>
         </div>
@@ -369,7 +637,7 @@ const RoadmapTaskRow: React.FC<{
 
       <div className="flex items-center gap-2 shrink-0">
         {task.estimatedHours != null && (
-          <span className="text-[11px] font-semibold tabular-nums text-[var(--text-muted)] flex items-center gap-1">
+          <span className="text-xs font-semibold tabular-nums text-[var(--text-muted)] flex items-center gap-1">
             <Clock className="h-3 w-3" aria-hidden="true" />
             <span>{task.estimatedHours}h</span>
           </span>

@@ -481,7 +481,7 @@ describe("Phase 11: PWA Companion Tier", () => {
       expect(manifest.name).toBe("QuizRadar");
       expect(manifest.display).toBe("standalone");
       expect(manifest.orientation).toBe("portrait");
-      expect(manifest.theme_color).toBe("#0b0f19");
+      expect(manifest.theme_color).toBe("#070a12");
       expect(manifest.icons.length).toBeGreaterThanOrEqual(4);
     });
   });

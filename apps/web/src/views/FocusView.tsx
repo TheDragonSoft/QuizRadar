@@ -127,6 +127,9 @@ export const FocusView: React.FC = () => {
   const ringRadius = 86;
   const ringCircumference = 2 * Math.PI * ringRadius;
   const strokeDashoffset = ringCircumference * (1 - progressFraction);
+  const starAngleRad = progressFraction * 2 * Math.PI;
+  const starX = 100 + ringRadius * Math.cos(starAngleRad);
+  const starY = 100 + ringRadius * Math.sin(starAngleRad);
 
   // Practice Quiz state
   const [quizLoading, setQuizLoading] = useState(false);
@@ -330,6 +333,17 @@ export const FocusView: React.FC = () => {
                   strokeDashoffset={strokeDashoffset}
                   className="transition-all duration-300"
                 />
+                {progressFraction > 0 && (
+                  <g transform={`translate(${starX}, ${starY})`} className="pointer-events-none">
+                    <circle
+                      r="6"
+                      fill="var(--accent-fill)"
+                      opacity="0.4"
+                      className="animate-pulse motion-reduce:animate-none"
+                    />
+                    <circle r="3" fill="#FFFFFF" />
+                  </g>
+                )}
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <span
@@ -449,7 +463,7 @@ export const FocusView: React.FC = () => {
                       <span
                         className={`text-xs ${
                           completed
-                            ? "line-through text-[var(--text-muted)]"
+                            ? "line-through text-[var(--text-muted)] topic-shimmer-done"
                             : "font-medium text-[var(--text)]"
                         }`}
                       >
@@ -516,7 +530,7 @@ export const FocusView: React.FC = () => {
                         <BookOpen className="h-4 w-4" aria-hidden="true" />
                       </div>
                     ) : (
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-500/10 text-purple-700 dark:text-purple-400">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]">
                         <Sparkles className="h-4 w-4" aria-hidden="true" />
                       </div>
                     )}

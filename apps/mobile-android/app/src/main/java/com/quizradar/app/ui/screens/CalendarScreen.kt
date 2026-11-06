@@ -3,6 +3,7 @@ package com.quizradar.app.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -31,12 +32,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -169,6 +173,38 @@ fun CalendarScreen(
 
         val displayedDates = weekDates.subList(dayOffset, dayOffset + dayCount)
 
+        var totalDragX by remember { mutableFloatStateOf(0f) }
+        val swipeModifier =
+            if (isNarrow) {
+                Modifier.pointerInput(selectedDate, currentWeekStart) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { totalDragX = 0f },
+                        onDragEnd = {
+                            if (totalDragX < -50f) {
+                                // Swiped left -> advance forward
+                                val nextDate = selectedDate.plusDays(1)
+                                viewModel.setSelectedCalendarDate(nextDate)
+                                if (nextDate.isAfter(weekDates.last())) {
+                                    viewModel.shiftWeek(1)
+                                }
+                            } else if (totalDragX > 50f) {
+                                // Swiped right -> go back
+                                val prevDate = selectedDate.minusDays(1)
+                                viewModel.setSelectedCalendarDate(prevDate)
+                                if (prevDate.isBefore(weekDates.first())) {
+                                    viewModel.shiftWeek(-1)
+                                }
+                            }
+                        },
+                        onHorizontalDrag = { _, dragAmount ->
+                            totalDragX += dragAmount
+                        },
+                    )
+                }
+            } else {
+                Modifier
+            }
+
         Column(modifier = Modifier.fillMaxSize()) {
             // Header Controls: Week title + Jump Today + Shift Prev/Next
             Row(
@@ -274,7 +310,8 @@ fun CalendarScreen(
                     Modifier
                         .fillMaxWidth()
                         .background(MaterialTheme.colorScheme.surface)
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        .then(swipeModifier),
             ) {
                 Spacer(modifier = Modifier.width(48.dp))
 

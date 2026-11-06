@@ -44,7 +44,7 @@ export const HelpView: React.FC = () => {
   return (
     <section data-testid="view-help" className="view-transition space-y-8 max-w-5xl mx-auto pb-12">
       {/* Brand Hero Banner */}
-      <div className="rounded-2xl border border-[var(--surface-border)] bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 p-6 text-white shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="rounded-2xl border border-[var(--surface-border)] bg-gradient-to-r from-[var(--accent)] via-[#1557b0] to-[#070a12] p-6 text-white shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <RadarMark animated className="h-12 w-12 shrink-0 drop-shadow-md" />
           <div>
@@ -112,7 +112,7 @@ export const HelpView: React.FC = () => {
             Full native workstation hub. Runs Tauri 2 with in-process Rust core, OS keyring token
             storage, background source sync, and 2-way Google Calendar push.
           </p>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/10 text-blue-800 dark:text-blue-300 text-[11px] font-semibold">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/10 text-blue-800 dark:text-blue-300 text-xs font-semibold">
             Status: Primary Workstation
           </div>
         </div>
@@ -127,7 +127,7 @@ export const HelpView: React.FC = () => {
             EncryptedSharedPreferences, WorkManager background sync, and live Glance home screen
             widgets.
           </p>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 text-[11px] font-semibold">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 text-xs font-semibold">
             Status: Primary Mobile
           </div>
         </div>
@@ -141,7 +141,7 @@ export const HelpView: React.FC = () => {
             Lightweight browser companion (current view). Pure Rust compiled to WebAssembly,
             IndexedDB storage, Service Worker offline cache, and 1h memory-only auth sessions.
           </p>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-900 dark:text-amber-200 text-[11px] font-semibold">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-900 dark:text-amber-200 text-xs font-semibold">
             Status: Browser Companion
           </div>
         </div>
@@ -151,7 +151,7 @@ export const HelpView: React.FC = () => {
       <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface)] overflow-hidden shadow-sm">
         <div className="p-4 border-b border-[var(--surface-border)] bg-[var(--page)] flex items-center justify-between">
           <h2 className="text-sm font-bold text-[var(--text)]">Per-Tier Capability Matrix</h2>
-          <span className="text-[11px] text-[var(--text-muted)] font-mono">v5.0 Spec Locked</span>
+          <span className="text-xs text-[var(--text-muted)] font-mono">v5.0 Spec Locked</span>
         </div>
 
         <div className="overflow-x-auto">
@@ -177,21 +177,21 @@ export const HelpView: React.FC = () => {
                 <td className="py-3 px-4 font-medium">Local Storage Engine</td>
                 <td className="py-3 px-4">
                   SQLite (
-                  <code className="rounded bg-[var(--page)] px-1 py-0.5 font-mono text-[11px]">
+                  <code className="rounded bg-[var(--page)] px-1 py-0.5 font-mono text-xs">
                     quizradar.db
                   </code>
                   )
                 </td>
                 <td className="py-3 px-4">
                   SQLite (
-                  <code className="rounded bg-[var(--page)] px-1 py-0.5 font-mono text-[11px]">
+                  <code className="rounded bg-[var(--page)] px-1 py-0.5 font-mono text-xs">
                     quizradar.db
                   </code>
                   )
                 </td>
                 <td className="py-3 px-4 text-amber-800 dark:text-amber-300 font-medium">
                   IndexedDB (
-                  <code className="rounded bg-[var(--page)] px-1 py-0.5 font-mono text-[11px]">
+                  <code className="rounded bg-[var(--page)] px-1 py-0.5 font-mono text-xs">
                     quizradar
                   </code>
                   )
@@ -229,7 +229,7 @@ export const HelpView: React.FC = () => {
                 <td className="py-3 px-4 text-[var(--text-muted)]">
                   <span className="flex items-center gap-1.5 text-rose-700 dark:text-rose-400 font-medium">
                     <XCircle className="h-3.5 w-3.5" aria-hidden="true" /> Unavailable · Export{" "}
-                    <code className="rounded bg-[var(--page)] px-1 py-0.5 font-mono text-[11px]">
+                    <code className="rounded bg-[var(--page)] px-1 py-0.5 font-mono text-xs">
                       .ics
                     </code>
                   </span>

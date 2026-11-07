@@ -29,6 +29,7 @@ export function AddCourseModal({
 
   const [code, setCode] = useState(initialCourse?.id || "");
   const [name, setName] = useState(initialCourse?.name || "");
+  const [credits, setCredits] = useState<number>(initialCourse?.credits ?? 3.0);
   const [color, setColor] = useState(
     initialCourse?.color ||
       (initialCourse ? coursePalette(initialCourse.id).color : COURSE_PALETTE_PRESETS[0]),
@@ -48,6 +49,7 @@ export function AddCourseModal({
       room: string;
       type: string;
       group: string;
+      weekParity?: "all" | "week_a" | "week_b";
     }>
   >(() => {
     if (courseSlots.length > 0) {
@@ -60,6 +62,7 @@ export function AddCourseModal({
         room: s.room || "",
         type: s.type || "Lecture",
         group: s.group || "",
+        weekParity: s.weekParity || s.week_parity || "all",
       }));
     }
     return [
@@ -72,6 +75,7 @@ export function AddCourseModal({
         room: "",
         type: "Lecture",
         group: "",
+        weekParity: "all",
       },
     ];
   });
@@ -88,6 +92,7 @@ export function AddCourseModal({
         room: "",
         type: "Lecture",
         group: "",
+        weekParity: "all",
       },
     ]);
   };
@@ -123,6 +128,7 @@ export function AddCourseModal({
         id: trimmedCode,
         name: trimmedName,
         color,
+        credits: credits > 0 ? credits : 3.0,
       };
 
       const slotPayload: ScheduleSlot[] = slots.map((s, idx) => ({
@@ -138,6 +144,8 @@ export function AddCourseModal({
         endTime: s.endTime,
         displayTime: `${s.startTime}–${s.endTime}`,
         hasQuiz: false,
+        weekParity: s.weekParity || "all",
+        week_parity: s.weekParity || "all",
       }));
 
       await upsertCourse(courseData, slotPayload);
@@ -170,9 +178,9 @@ export function AddCourseModal({
 
       <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 space-y-6">
-          {/* Course Code & Name */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
+          {/* Course Code, Name & Credits */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            <div className="sm:col-span-1">
               <label
                 htmlFor="course-code"
                 className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5"
@@ -206,6 +214,27 @@ export function AddCourseModal({
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Digital Logic Design"
                 className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] px-3 py-2 text-xs font-medium text-[var(--text)] outline-none focus:border-[var(--accent)]"
+              />
+            </div>
+
+            <div className="sm:col-span-1">
+              <label
+                htmlFor="course-credits"
+                className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5"
+              >
+                Credit Hours
+              </label>
+              <input
+                id="course-credits"
+                data-testid="course-credits-input"
+                type="number"
+                min="0.5"
+                max="12"
+                step="0.5"
+                value={credits}
+                onChange={(e) => setCredits(Math.max(0.1, parseFloat(e.target.value) || 0))}
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] px-3 py-2 text-xs font-bold text-[var(--text)] outline-none focus:border-[var(--accent)] tabular-nums"
+                placeholder="3.0"
               />
             </div>
           </div>
@@ -259,7 +288,7 @@ export function AddCourseModal({
                   key={slot.id || index}
                   className="grid grid-cols-1 gap-2 sm:grid-cols-12 sm:items-center rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] p-2.5 text-xs"
                 >
-                  <div className="sm:col-span-3">
+                  <div className="sm:col-span-2">
                     <select
                       value={slot.day}
                       aria-label={copy.courseModal.slotField(index + 1, copy.courseModal.dayLabel)}
@@ -274,7 +303,7 @@ export function AddCourseModal({
                     </select>
                   </div>
 
-                  <div className="sm:col-span-4 flex items-center gap-1 min-w-0">
+                  <div className="sm:col-span-3 flex items-center gap-1 min-w-0">
                     <input
                       type="time"
                       aria-label={copy.courseModal.slotField(
@@ -296,6 +325,19 @@ export function AddCourseModal({
                       onChange={(e) => handleUpdateSlot(index, "endTime", e.target.value)}
                       className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--page)] px-1.5 py-1.5 text-xs tabular-nums text-[var(--text)]"
                     />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <select
+                      value={slot.weekParity || "all"}
+                      aria-label={`Recurrence for slot ${index + 1}`}
+                      onChange={(e) => handleUpdateSlot(index, "weekParity", e.target.value)}
+                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--page)] px-1.5 py-1.5 text-xs text-[var(--text)]"
+                    >
+                      <option value="all">Weekly (All)</option>
+                      <option value="week_a">Week A Only</option>
+                      <option value="week_b">Week B Only</option>
+                    </select>
                   </div>
 
                   <div className="sm:col-span-2">

@@ -473,6 +473,8 @@ mod tests {
                 color: "#2563EB".to_string(),
                 bg: None,
                 border: None,
+                credits: None,
+                max_absences: None,
             }],
             slots: Vec::new(),
         }
@@ -739,6 +741,8 @@ mod tests {
                             color: "#16A34A".into(),
                             bg: None,
                             border: None,
+                            credits: None,
+                            max_absences: None,
                         }],
                         slots: Vec::new(),
                     },
@@ -781,6 +785,8 @@ mod tests {
             color: "#EF4444".into(),
             bg: None,
             border: None,
+            credits: None,
+            max_absences: None,
         };
         let payload = payload_with(
             remote_schedule,

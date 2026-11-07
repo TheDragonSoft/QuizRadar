@@ -3,6 +3,8 @@ import { Play, Pause, RotateCcw, CheckCircle2, Timer, X } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
 import { stripCoursePrefix } from "../lib/calendarLanes";
+import { analytics } from "../lib/analytics";
+import { recordPomodoroSession } from "../lib/studyStats";
 
 export interface PomodoroModalProps {
   assessmentId?: string;
@@ -89,6 +91,11 @@ export function PomodoroModal({
     } else if (isRunning && timeLeft === 0) {
       setIsRunning(false);
       playChime();
+      const minutes = Math.round(DURATIONS[mode] / 60);
+      if (mode === "pomodoro") {
+        recordPomodoroSession(minutes);
+      }
+      analytics.pomodoroFinished(minutes, Boolean(topicTitle || topicIndex !== undefined));
       addToast({
         type: "success",
         message: copy.pomodoro.sessionComplete,
@@ -117,7 +124,13 @@ export function PomodoroModal({
   };
 
   const totalDuration = DURATIONS[mode];
-  const progressPercent = Math.round(((totalDuration - timeLeft) / totalDuration) * 100);
+  const progressFraction = Math.max(0, Math.min(1, (totalDuration - timeLeft) / totalDuration));
+  const ringRadius = 84;
+  const ringCircumference = 2 * Math.PI * ringRadius;
+  const strokeDashoffset = ringCircumference * (1 - progressFraction);
+  const angleRad = progressFraction * 2 * Math.PI - Math.PI / 2;
+  const starX = 100 + ringRadius * Math.cos(angleRad);
+  const starY = 100 + ringRadius * Math.sin(angleRad);
 
   const handleMarkTopicDone = () => {
     if (assessmentId && topicIndex !== undefined) {
@@ -226,11 +239,11 @@ export function PomodoroModal({
       {/* Large Digital Timer Display & Circular Bar */}
       <div className="mt-6 flex flex-col items-center justify-center">
         <div className="relative flex h-52 w-52 items-center justify-center">
-          <svg className="h-full w-full" viewBox="0 0 200 200">
+          <svg className="h-full w-full" viewBox="0 0 200 200" aria-hidden="true">
             <circle
               cx="100"
               cy="100"
-              r="84"
+              r={ringRadius}
               stroke="currentColor"
               strokeWidth="8"
               fill="none"
@@ -239,16 +252,27 @@ export function PomodoroModal({
             <circle
               cx="100"
               cy="100"
-              r="84"
+              r={ringRadius}
               stroke="var(--accent-fill)"
               strokeWidth="8"
               strokeLinecap="round"
               fill="none"
-              strokeDasharray={527.8}
-              strokeDashoffset={527.8 * (1 - progressPercent / 100)}
+              strokeDasharray={ringCircumference}
+              strokeDashoffset={strokeDashoffset}
               transform="rotate(-90 100 100)"
               className="transition-all duration-500 ease-out"
             />
+            {progressFraction > 0 && (
+              <g transform={`translate(${starX}, ${starY})`} className="pointer-events-none">
+                <circle
+                  r="6"
+                  fill="var(--accent-fill)"
+                  opacity="0.5"
+                  className="animate-pulse motion-reduce:animate-none"
+                />
+                <circle r="3" fill="#FFFFFF" />
+              </g>
+            )}
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <div className="text-4xl font-black tracking-tight text-[var(--text)] tabular-nums font-mono">

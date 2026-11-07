@@ -34,23 +34,35 @@ private data class HeroPalette(
     val border: Color,
 )
 
-private fun heroPalette(isDark: Boolean): HeroPalette =
-    if (isDark) {
-        HeroPalette(
-            gradient =
-                Brush.horizontalGradient(
-                    listOf(Color(0xFF0F172A), Color(0xFF172554), Color(0xFF1E1B4B)),
-                ),
-            border = Color(0xFF1E40AF).copy(alpha = 0.50f),
-        )
-    } else {
-        HeroPalette(
-            gradient =
-                Brush.horizontalGradient(
-                    listOf(Color(0xFF1E3A8A), Color(0xFF1E40AF), Color(0xFF1D4ED8)),
-                ),
-            border = Color(0xFF1D4ED8).copy(alpha = 0.30f),
-        )
+private fun heroPalette(
+    isDark: Boolean,
+    isAmoled: Boolean = false,
+): HeroPalette =
+    when {
+        isAmoled ->
+            HeroPalette(
+                gradient =
+                    Brush.horizontalGradient(
+                        listOf(Color(0xFF0B0D13), Color(0xFF10131C), Color(0xFF171B26)),
+                    ),
+                border = Color(0xFF282D3D),
+            )
+        isDark ->
+            HeroPalette(
+                gradient =
+                    Brush.horizontalGradient(
+                        listOf(Color(0xFF0F172A), Color(0xFF172554), Color(0xFF1E1B4B)),
+                    ),
+                border = Color(0xFF1E40AF).copy(alpha = 0.50f),
+            )
+        else ->
+            HeroPalette(
+                gradient =
+                    Brush.horizontalGradient(
+                        listOf(Color(0xFF1E3A8A), Color(0xFF1E40AF), Color(0xFF1D4ED8)),
+                    ),
+                border = Color(0xFF1D4ED8).copy(alpha = 0.30f),
+            )
     }
 
 private fun countdownLabel(daysUntil: Int?): String =
@@ -74,7 +86,8 @@ fun NextUpHeroCard(
     onOpen: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val palette = heroPalette(isDark)
+    val isAmoled = isDark && androidx.compose.material3.MaterialTheme.colorScheme.background == Color.Black
+    val palette = heroPalette(isDark, isAmoled)
     Box(
         modifier =
             modifier
@@ -97,6 +110,8 @@ fun NextUpHeroCard(
         // inside the banner.
         HeroSky(dark = isDark, modifier = Modifier.matchParentSize())
 
+        val heroSubtitleColor = if (isAmoled) Color(0xFFCBD5E1) else Color(0xFFBFDBFE)
+
         if (assessment == null) {
             Column(modifier = Modifier.padding(18.dp)) {
                 Text(
@@ -109,7 +124,7 @@ fun NextUpHeroCard(
                 Text(
                     text = "Connect an account or add a course — your radar fills in as announcements land.",
                     fontSize = 12.sp,
-                    color = Color(0xFFBFDBFE),
+                    color = heroSubtitleColor,
                     lineHeight = 17.sp,
                 )
             }
@@ -175,7 +190,7 @@ fun NextUpHeroCard(
                 Icon(
                     imageVector = Icons.Filled.CalendarMonth,
                     contentDescription = null,
-                    tint = Color(0xFFBFDBFE),
+                    tint = heroSubtitleColor,
                     modifier = Modifier.size(13.dp),
                 )
                 Spacer(modifier = Modifier.width(5.dp))
@@ -187,7 +202,7 @@ fun NextUpHeroCard(
                             ?: formatIsoDateForDisplay(assessment.dateIso?.toString())
                             ?: "Date not confirmed",
                     fontSize = 12.sp,
-                    color = Color(0xFFBFDBFE),
+                    color = heroSubtitleColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
@@ -202,14 +217,14 @@ fun NextUpHeroCard(
                     Icon(
                         imageVector = Icons.Filled.Place,
                         contentDescription = null,
-                        tint = Color(0xFFBFDBFE),
+                        tint = heroSubtitleColor,
                         modifier = Modifier.size(13.dp),
                     )
                     Spacer(modifier = Modifier.width(5.dp))
                     Text(
                         text = assessment.room,
                         fontSize = 12.sp,
-                        color = Color(0xFFBFDBFE),
+                        color = heroSubtitleColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),

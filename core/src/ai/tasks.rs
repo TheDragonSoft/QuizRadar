@@ -476,6 +476,8 @@ pub async fn extract_timetable(
                     color,
                     bg,
                     border,
+                    credits: None,
+                    max_absences: None,
                 });
             }
             Err(_) => dropped_courses += 1,
@@ -536,6 +538,7 @@ pub async fn extract_timetable(
                     }),
                     has_quiz: false,
                     quiz_title: None,
+                    week_parity: None,
                 });
             }
             Err(_) => dropped_slots += 1,
@@ -852,6 +855,7 @@ pub async fn optimize_plan(
             is_today: *offset == 0,
             total_estimated_hours,
             tasks: day_tasks,
+            cushion: None,
         });
     }
 
@@ -888,6 +892,7 @@ pub async fn optimize_plan(
         completed_tasks,
         total_hours,
         ai_generated: true,
+        today_cushion: None,
     })
 }
 

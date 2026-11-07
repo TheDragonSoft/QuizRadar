@@ -147,7 +147,7 @@ pub struct CachedEmail {
 
 /// Enrolled course (`02` §3.1). The `id` is the unique key (course code, e.g.
 /// `"CSE241"`) — renaming a course must keep its id.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Course {
     /// Unique course code, e.g. `CSE241`.
     pub id: String,
@@ -162,6 +162,12 @@ pub struct Course {
     /// Pre-computed translucent border color.
     #[serde(default)]
     pub border: Option<String>,
+    /// Course credit weight (e.g. 3.0 or 4.0), for weighted GPA calculations.
+    #[serde(default)]
+    pub credits: Option<f64>,
+    /// Absence limit (warning threshold), e.g. 4.
+    #[serde(default)]
+    pub max_absences: Option<u32>,
 }
 
 /// Weekly recurring class slot (`02` §3.1 `"day": "Sun", "day_index": 0`).
@@ -199,11 +205,14 @@ pub struct ScheduleSlot {
     pub has_quiz: bool,
     #[serde(default)]
     pub quiz_title: Option<String>,
+    /// Alternating week parity: `"all"`, `"week_a"`, or `"week_b"`.
+    #[serde(default)]
+    pub week_parity: Option<String>,
 }
 
 /// The semester's timetable (`02` §3.1). `semester` is whatever the user (or
 /// an extraction) actually wrote — nothing invents a label here.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct ScheduleData {
     #[serde(default)]
     pub semester: Option<String>,
@@ -716,4 +725,193 @@ pub struct CustomCalendarEvent {
     /// Palette the user picked (course-derived or chosen); `None` = neutral.
     #[serde(default)]
     pub color: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Attendance Tracker
+// ---------------------------------------------------------------------------
+
+/// Attendance mark for a timetable slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AttendanceStatus {
+    Attended,
+    Absent,
+    Excused,
+}
+
+impl AttendanceStatus {
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Attended => "attended",
+            Self::Absent => "absent",
+            Self::Excused => "excused",
+        }
+    }
+}
+
+/// Recorded attendance for a specific class slot on a calendar date.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttendanceEntry {
+    /// Composite key: `att-{slot_id}-{date_iso}`.
+    pub id: String,
+    pub slot_id: String,
+    pub course_id: String,
+    #[serde(with = "iso_date_req")]
+    pub date_iso: NaiveDate,
+    pub status: AttendanceStatus,
+    pub updated_at: String,
+}
+
+/// Aggregate attendance summary for a course with absence warning chip.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CourseAttendanceSummary {
+    pub course_id: String,
+    pub total_classes: u32,
+    pub attended: u32,
+    pub absent: u32,
+    pub excused: u32,
+    #[serde(default)]
+    pub max_absences: Option<u32>,
+    #[serde(default)]
+    pub warning_chip: Option<String>,
+    #[serde(default)]
+    pub is_critical: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Flashcards & Local Quiz History
+// ---------------------------------------------------------------------------
+
+fn default_box_level() -> u8 {
+    1
+}
+
+/// A local study flashcard with Leitner box spaced repetition.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Flashcard {
+    pub id: String,
+    #[serde(default)]
+    pub course_id: Option<String>,
+    #[serde(default)]
+    pub assessment_id: Option<String>,
+    #[serde(default)]
+    pub topic: Option<String>,
+    pub front: String,
+    pub back: String,
+    #[serde(default = "default_box_level")]
+    pub box_level: u8,
+    #[serde(default)]
+    pub next_review_iso: Option<String>,
+    #[serde(default)]
+    pub last_reviewed_iso: Option<String>,
+}
+
+/// Recorded score for an on-device practice quiz attempt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QuizAttempt {
+    pub id: String,
+    pub assessment_id: String,
+    #[serde(default)]
+    pub course_id: Option<String>,
+    pub timestamp: String,
+    pub score: u32,
+    pub total_questions: u32,
+    pub passed: bool,
+}
+
+/// Mistake bank item saved from an incorrect quiz answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MistakeRecord {
+    pub id: String,
+    #[serde(default)]
+    pub attempt_id: Option<String>,
+    pub assessment_id: String,
+    #[serde(default)]
+    pub course_id: Option<String>,
+    pub question_id: String,
+    pub question_text: String,
+    #[serde(default)]
+    pub options: Vec<String>,
+    pub selected_index: usize,
+    pub correct_index: usize,
+    #[serde(default)]
+    pub explanation: String,
+    pub timestamp: String,
+    #[serde(default)]
+    pub resolved: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Study Session Logging & Analytics
+// ---------------------------------------------------------------------------
+
+/// One completed Pomodoro/focus session logged locally.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StudySessionRecord {
+    pub id: String,
+    #[serde(default)]
+    pub course_id: Option<String>,
+    #[serde(default)]
+    pub assessment_id: Option<String>,
+    #[serde(default)]
+    pub topic: Option<String>,
+    pub duration_minutes: u32,
+    pub timestamp: String,
+    #[serde(with = "iso_date_req")]
+    pub date_iso: NaiveDate,
+}
+
+/// Focus minutes aggregated per enrolled course.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CourseFocusStat {
+    pub course_id: String,
+    pub course_name: String,
+    pub minutes: u32,
+    #[serde(default)]
+    pub color: Option<String>,
+}
+
+/// Focus minutes for one day in the 7-day weekly chart.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DailyFocusStat {
+    #[serde(with = "iso_date_req")]
+    pub date_iso: NaiveDate,
+    pub day_label: String,
+    pub minutes: u32,
+}
+
+/// Overall study analytics with reference-date anchored streak.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StudyAnalytics {
+    pub current_streak_days: u32,
+    pub best_streak_days: u32,
+    pub total_focus_minutes: u32,
+    pub weekly_chart: Vec<DailyFocusStat>,
+    pub course_breakdown: Vec<CourseFocusStat>,
+}
+
+// ---------------------------------------------------------------------------
+// Study Cushion & Deficit Model
+// ---------------------------------------------------------------------------
+
+/// Daily available study capacity versus required roadmap tasks.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DailyStudyCushion {
+    #[serde(with = "iso_date_req")]
+    pub date: NaiveDate,
+    pub waking_hours: f32,
+    pub committed_hours: f32,
+    pub available_hours: f32,
+    #[serde(default)]
+    pub required_hours: Option<f32>,
+    #[serde(default)]
+    pub cushion_hours: Option<f32>,
+    #[serde(default)]
+    pub is_deficit: bool,
+    #[serde(default)]
+    pub deficit_hours: Option<f32>,
+    #[serde(default)]
+    pub warning_note: Option<String>,
 }

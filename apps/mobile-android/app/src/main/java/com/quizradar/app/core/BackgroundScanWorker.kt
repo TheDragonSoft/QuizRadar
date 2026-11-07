@@ -6,6 +6,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.quizradar.app.analytics.AnalyticsManager
 import com.quizradar.app.model.QuizRadarJsonParser
 import java.util.concurrent.TimeUnit
 
@@ -112,9 +113,20 @@ class BackgroundScanWorker(
                         // No live UI in the background - pulses are dropped.
                     }
                 }
-            engine.runNativeSync(syncConfig, progress)
+            val reportJson = engine.runNativeSync(syncConfig, progress)
+            val report = QuizRadarJsonParser.parseSyncReport(reportJson)
+            AnalyticsManager.trackScanCompleted(
+                source = "background",
+                assessmentCount = report.totalNew + report.totalUpdated,
+                success = report.success,
+            )
             Result.success()
         } catch (_: Exception) {
+            AnalyticsManager.trackScanCompleted(
+                source = "background",
+                assessmentCount = 0,
+                success = false,
+            )
             // Transient failures (offline, provider 5xx) retry on the system's
             // schedule; the periodic job itself keeps its 6h cadence.
             Result.retry()

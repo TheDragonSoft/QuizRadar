@@ -210,6 +210,8 @@ fn arb_schedule() -> impl Strategy<Value = ScheduleData> {
                     color: "#4285f4".to_string(),
                     bg: None,
                     border: None,
+                    credits: None,
+                    max_absences: None,
                 });
             }
             built.push(ScheduleSlot {
@@ -226,6 +228,7 @@ fn arb_schedule() -> impl Strategy<Value = ScheduleData> {
                 display_time: String::new(),
                 has_quiz: false,
                 quiz_title: None,
+                week_parity: None,
             });
         }
         ScheduleData {
@@ -679,6 +682,8 @@ fn control_schedule() -> ScheduleData {
             color: "#e67c73".to_string(),
             bg: None,
             border: None,
+            credits: None,
+            max_absences: None,
         }],
         slots: vec![ScheduleSlot {
             id: "s1".to_string(),
@@ -694,6 +699,7 @@ fn control_schedule() -> ScheduleData {
             display_time: String::new(),
             has_quiz: false,
             quiz_title: None,
+            week_parity: None,
         }],
     }
 }

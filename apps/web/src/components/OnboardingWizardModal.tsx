@@ -16,6 +16,7 @@ import { useAppStore } from "../state/store";
 import { COURSE_PALETTE_PRESETS, courseAccessibleChip } from "../lib/coursePalette";
 import { GoogleMark, MicrosoftMark, RadarMark } from "./BrandMarks";
 import type { Course } from "../state/types";
+import { analytics, useFeatureFlag } from "../lib/analytics";
 
 export function OnboardingWizardModal({
   onClose,
@@ -44,6 +45,8 @@ export function OnboardingWizardModal({
   const extractSchedule = useAppStore((s) => s.extractSchedule);
   const openModal = useAppStore((s) => s.openModal);
   const addToast = useAppStore((s) => s.addToast);
+
+  const isVisionEnabled = useFeatureFlag("enable-ai-timetable-vision", true);
 
   // Step 1: Profile & Rhythm State
   const [userName, setUserName] = useState(config.userName || auth.name || "");
@@ -160,6 +163,8 @@ export function OnboardingWizardModal({
         academicTrack: selectedTrack,
         onboardingCompleted: true,
       });
+
+      analytics.onboardingCompleted(courses.length, selectedTrack || "standard");
 
       // Run honest first scan
       await triggerSync();
@@ -584,34 +589,36 @@ export function OnboardingWizardModal({
             {/* Timetable Image Upload Card — every tier can read a timetable
                 image now: the desktop shell runs the task through the Rust
                 core, the browser tier calls Gemini Vision directly with the
-                same prompt and the same drop rules. */}
-            <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--page)] p-4 text-center">
-              <Upload
-                className="h-6 w-6 text-[var(--accent-ink)] mx-auto mb-2"
-                aria-hidden="true"
-              />
-              <div className="text-xs font-bold text-[var(--text)]">
-                {copy.onboarding.timetableUpload}
-              </div>
-              <p className="text-[11px] text-[var(--text-muted)] mt-1 mb-3">
-                {copy.onboarding.timetableUploadSub}
-              </p>
-              <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[var(--accent-fill-hover)] transition">
-                <span>
-                  {extractingTimetable
-                    ? copy.onboarding.timetableExtracting
-                    : copy.onboarding.timetableUploadButton}
-                </span>
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  aria-label={copy.onboarding.timetableUploadButton}
-                  disabled={extractingTimetable}
-                  onChange={handleTimetableFile}
-                  className="hidden"
+                same prompt and the same drop rules. Gated by PostHog feature flag. */}
+            {isVisionEnabled && (
+              <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--page)] p-4 text-center">
+                <Upload
+                  className="h-6 w-6 text-[var(--accent-ink)] mx-auto mb-2"
+                  aria-hidden="true"
                 />
-              </label>
-            </div>
+                <div className="text-xs font-bold text-[var(--text)]">
+                  {copy.onboarding.timetableUpload}
+                </div>
+                <p className="text-[11px] text-[var(--text-muted)] mt-1 mb-3">
+                  {copy.onboarding.timetableUploadSub}
+                </p>
+                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[var(--accent-fill-hover)] transition">
+                  <span>
+                    {extractingTimetable
+                      ? copy.onboarding.timetableExtracting
+                      : copy.onboarding.timetableUploadButton}
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    aria-label={copy.onboarding.timetableUploadButton}
+                    disabled={extractingTimetable}
+                    onChange={handleTimetableFile}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            )}
 
             {/* Consents-First Auto GCal */}
             <label className="flex items-center gap-2 text-xs text-[var(--text)] cursor-pointer pt-2">
@@ -754,7 +761,11 @@ export function OnboardingWizardModal({
         {step < 3 ? (
           <button
             type="button"
-            onClick={() => setStep((s) => (s + 1) as 1 | 2 | 3)}
+            onClick={() => {
+              const next = (step + 1) as 1 | 2 | 3;
+              setStep(next);
+              analytics.onboardingStep(next, "next");
+            }}
             className="flex items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-5 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[var(--accent-fill-hover)] active:scale-[0.98]"
           >
             <span>{copy.onboarding.next}</span>

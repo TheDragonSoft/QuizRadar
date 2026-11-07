@@ -9,7 +9,6 @@ use quizradar_core::parse::ics::{parse_ics_assessments, IcsOrigin};
 use quizradar_core::plan::conflicts::detect_conflicts;
 use quizradar_core::plan::dashboard::{build_dashboard_summary, radar_order};
 use quizradar_core::plan::study_blocks::{block_date_for, block_id_for, study_block_candidates};
-use quizradar_core::plan::tasks::build_study_tasks;
 use quizradar_core::sources::{merge_preserving_user_fields, retire_unseen_items, source_run_id};
 use quizradar_core::types::{
     AcademicTrack, Assessment, AssessmentSource, CachedEmail, CompletedTopics, CustomCalendarEvent,
@@ -223,7 +222,6 @@ impl QuizRadarWasm {
         ref_date_iso: &str,
         academic_track: &str,
     ) -> Result<String, JsValue> {
-        let _ = schedule_json;
         let date = NaiveDate::parse_from_str(ref_date_iso, "%Y-%m-%d")
             .map_err(|e| JsValue::from_str(&format!("Invalid ref_date: {e}")))?;
         let assessments: Vec<Assessment> = serde_json::from_str(assessments_json)
@@ -231,8 +229,265 @@ impl QuizRadarWasm {
         let topics: CompletedTopics = serde_json::from_str(topics_json)
             .map_err(|e| JsValue::from_str(&format!("Invalid topics JSON: {e}")))?;
         let track = AcademicTrack::from_config(Some(academic_track));
-        let tasks = build_study_tasks(&assessments, &topics, date, track);
+        let schedule: Option<ScheduleData> = serde_json::from_str(schedule_json).ok();
+        let empty_slots = Vec::new();
+        let slots = schedule.as_ref().map(|s| &s.slots).unwrap_or(&empty_slots);
+        let tasks = quizradar_core::plan::tasks::build_study_tasks_with_schedule(
+            &assessments,
+            &topics,
+            date,
+            track,
+            slots,
+            &[],
+        );
         serde_json::to_string(&tasks)
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+    }
+
+    pub fn get_week_parity(&self, date_iso: &str) -> String {
+        let date = NaiveDate::parse_from_str(date_iso, "%Y-%m-%d").unwrap_or_default();
+        quizradar_core::plan::parity::date_week_parity(date).to_string()
+    }
+
+    pub fn calculate_study_cushion(
+        &self,
+        schedule_json: &str,
+        events_json: &str,
+        assessments_json: &str,
+        tasks_json: &str,
+        ref_date_iso: &str,
+        waking_hours: Option<f32>,
+    ) -> Result<String, JsValue> {
+        let schedule: ScheduleData = serde_json::from_str(schedule_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid schedule JSON: {e}")))?;
+        let events: Vec<CustomCalendarEvent> = serde_json::from_str(events_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid events JSON: {e}")))?;
+        let assessments: Vec<Assessment> = serde_json::from_str(assessments_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid assessments JSON: {e}")))?;
+        let tasks: Vec<quizradar_core::plan::tasks::DailyStudyTask> =
+            serde_json::from_str(tasks_json)
+                .map_err(|e| JsValue::from_str(&format!("Invalid tasks JSON: {e}")))?;
+        let date = NaiveDate::parse_from_str(ref_date_iso, "%Y-%m-%d")
+            .map_err(|e| JsValue::from_str(&format!("Invalid ref_date: {e}")))?;
+        let cushion = quizradar_core::plan::cushion::calculate_daily_cushion(
+            date,
+            &schedule.slots,
+            &events,
+            &assessments,
+            &tasks,
+            waking_hours,
+        );
+        serde_json::to_string(&cushion)
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+    }
+
+    pub fn calculate_gpa(
+        &self,
+        courses_json: &str,
+        assessments_json: &str,
+        grades_json: &str,
+        scale: &str,
+    ) -> Result<String, JsValue> {
+        let courses: Vec<quizradar_core::types::Course> = serde_json::from_str(courses_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid courses JSON: {e}")))?;
+        let assessments: Vec<Assessment> = serde_json::from_str(assessments_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid assessments JSON: {e}")))?;
+        let grades: std::collections::HashMap<String, quizradar_core::types::GradeRecord> =
+            serde_json::from_str(grades_json)
+                .map_err(|e| JsValue::from_str(&format!("Invalid grades JSON: {e}")))?;
+        let summary =
+            quizradar_core::plan::gpa::calculate_gpa(&courses, &assessments, &grades, scale);
+        serde_json::to_string(&summary)
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+    }
+
+    pub fn calculate_study_analytics(
+        &self,
+        sessions_json: &str,
+        courses_json: &str,
+        ref_date_iso: &str,
+    ) -> Result<String, JsValue> {
+        let sessions: Vec<quizradar_core::types::StudySessionRecord> =
+            serde_json::from_str(sessions_json)
+                .map_err(|e| JsValue::from_str(&format!("Invalid sessions JSON: {e}")))?;
+        let courses: Vec<quizradar_core::types::Course> = serde_json::from_str(courses_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid courses JSON: {e}")))?;
+        let date = NaiveDate::parse_from_str(ref_date_iso, "%Y-%m-%d")
+            .map_err(|e| JsValue::from_str(&format!("Invalid ref_date: {e}")))?;
+
+        let mut total_focus_minutes = 0u32;
+        let mut daily_totals: std::collections::HashMap<NaiveDate, u32> =
+            std::collections::HashMap::new();
+        let mut course_totals: std::collections::HashMap<String, u32> =
+            std::collections::HashMap::new();
+
+        for s in &sessions {
+            total_focus_minutes += s.duration_minutes;
+            *daily_totals.entry(s.date_iso).or_insert(0) += s.duration_minutes;
+            if let Some(ref cid) = s.course_id {
+                *course_totals.entry(cid.clone()).or_insert(0) += s.duration_minutes;
+            }
+        }
+
+        let is_active = |d: NaiveDate| daily_totals.get(&d).copied().unwrap_or(0) >= 1;
+        let current_streak_days = if is_active(date) {
+            let mut streak = 1u32;
+            let mut d = date - chrono::Duration::days(1);
+            while is_active(d) {
+                streak += 1;
+                d -= chrono::Duration::days(1);
+            }
+            streak
+        } else if is_active(date - chrono::Duration::days(1)) {
+            let mut streak = 1u32;
+            let mut d = date - chrono::Duration::days(2);
+            while is_active(d) {
+                streak += 1;
+                d -= chrono::Duration::days(1);
+            }
+            streak
+        } else {
+            0u32
+        };
+
+        let mut active_dates: Vec<NaiveDate> = daily_totals
+            .keys()
+            .copied()
+            .filter(|d| is_active(*d))
+            .collect();
+        active_dates.sort_unstable();
+        let mut best_streak_days = 0u32;
+        let mut current_consecutive = 0u32;
+        let mut prev_date: Option<NaiveDate> = None;
+
+        for d in active_dates {
+            match prev_date {
+                Some(prev) if d == prev + chrono::Duration::days(1) => {
+                    current_consecutive += 1;
+                }
+                _ => {
+                    current_consecutive = 1;
+                }
+            }
+            prev_date = Some(d);
+            best_streak_days = best_streak_days.max(current_consecutive);
+        }
+        best_streak_days = best_streak_days.max(current_streak_days);
+
+        let mut weekly_chart = Vec::with_capacity(7);
+        for i in (0..=6).rev() {
+            let d = date - chrono::Duration::days(i);
+            let mins = daily_totals.get(&d).copied().unwrap_or(0);
+            let day_label = d.format("%a").to_string();
+            weekly_chart.push(quizradar_core::types::DailyFocusStat {
+                date_iso: d,
+                day_label,
+                minutes: mins,
+            });
+        }
+
+        let mut course_breakdown = Vec::new();
+        for (cid, mins) in course_totals {
+            let course = courses.iter().find(|c| c.id.eq_ignore_ascii_case(&cid));
+            let course_name = course
+                .map(|c| c.name.clone())
+                .unwrap_or_else(|| cid.clone());
+            let color = course.map(|c| c.color.clone());
+            course_breakdown.push(quizradar_core::types::CourseFocusStat {
+                course_id: cid,
+                course_name,
+                minutes: mins,
+                color,
+            });
+        }
+        course_breakdown.sort_by_key(|a| std::cmp::Reverse(a.minutes));
+
+        let analytics = quizradar_core::types::StudyAnalytics {
+            current_streak_days,
+            best_streak_days,
+            total_focus_minutes,
+            weekly_chart,
+            course_breakdown,
+        };
+        serde_json::to_string(&analytics)
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+    }
+
+    pub fn review_flashcard(
+        &self,
+        card_json: &str,
+        correct: bool,
+        ref_date_iso: &str,
+    ) -> Result<String, JsValue> {
+        let mut card: quizradar_core::types::Flashcard = serde_json::from_str(card_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid flashcard JSON: {e}")))?;
+        let today = NaiveDate::parse_from_str(ref_date_iso, "%Y-%m-%d")
+            .map_err(|e| JsValue::from_str(&format!("Invalid ref_date: {e}")))?;
+        if correct {
+            card.box_level = (card.box_level + 1).min(5);
+        } else {
+            card.box_level = 1;
+        }
+        let interval_days = match card.box_level {
+            1 => 1,
+            2 => 3,
+            3 => 7,
+            4 => 14,
+            _ => 30,
+        };
+        card.last_reviewed_iso = Some(today.format("%Y-%m-%d").to_string());
+        card.next_review_iso = Some(
+            (today + chrono::Duration::days(interval_days))
+                .format("%Y-%m-%d")
+                .to_string(),
+        );
+        serde_json::to_string(&card)
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+    }
+
+    pub fn calculate_course_attendance_summary(
+        &self,
+        course_id: &str,
+        entries_json: &str,
+        max_absences: Option<u32>,
+    ) -> Result<String, JsValue> {
+        let entries: Vec<quizradar_core::types::AttendanceEntry> =
+            serde_json::from_str(entries_json)
+                .map_err(|e| JsValue::from_str(&format!("Invalid entries JSON: {e}")))?;
+        let total_classes = entries.len() as u32;
+        let mut attended = 0u32;
+        let mut absent = 0u32;
+        let mut excused = 0u32;
+        for e in &entries {
+            match e.status {
+                quizradar_core::types::AttendanceStatus::Attended => attended += 1,
+                quizradar_core::types::AttendanceStatus::Absent => absent += 1,
+                quizradar_core::types::AttendanceStatus::Excused => excused += 1,
+            }
+        }
+        let (warning_chip, is_critical) = match max_absences {
+            Some(limit) if limit > 0 => {
+                if absent >= limit {
+                    (Some(format!("Limit Reached! ({absent}/{limit})")), true)
+                } else if absent == limit - 1 {
+                    (Some(format!("1 Absence Left ({absent}/{limit})")), false)
+                } else {
+                    (Some(format!("{absent}/{limit} Absences")), false)
+                }
+            }
+            _ => (None, false),
+        };
+        let summary = quizradar_core::types::CourseAttendanceSummary {
+            course_id: course_id.to_string(),
+            total_classes,
+            attended,
+            absent,
+            excused,
+            max_absences,
+            warning_chip,
+            is_critical,
+        };
+        serde_json::to_string(&summary)
             .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
     }
 

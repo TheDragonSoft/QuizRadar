@@ -11,13 +11,13 @@
     "core/src/types.rs"
   ],
   "sourceHashes": {
-    "core/src/types.rs": "e5dbb598f29b5f6de391dc579b0cb4080c488cb511d436c520d3ad98d8af6c6e",
+    "core/src/types.rs": "d6dc3806a0e6673abdfdc80bdd6bac9047e48481ed72af8651cfcf15cc1aa0e1",
     "core/src/plan/dashboard.rs": "7843b341f5c2a41dbd98950d1190d63714614f33f7505a60044136773d340948",
-    "core/src/plan/tasks.rs": "31ea4c52e13256d2c518ba77be664030d6b1414a6d36f57978d78cd3cb4cb4d2",
+    "core/src/plan/tasks.rs": "393b8f8badc358a850fe51df90c9b907be10749c1dd4f886bfd4e78d3a5dabba",
     "core/src/plan/conflicts.rs": "a953cf743da6a8fc45b43bc6c2dfd716c6842a65a2d4311b08c56a19e8729e74",
     "apps/desktop/src-tauri/src/commands/state.rs": "cc0a9e43c5254a35700bc5ed9f3ed7e04be17b75800b5f63172a5faca533dc3e",
-    "core/src/store/repo.rs": "1929531cba321fb7c997eb10f4414a1de1cdf014f72ab744e9f5a24eff75c1cb",
-    "core/src/ffi.rs": "484e4700f38e3dfcc188f084e96dcf0d613f5b0e89ad4637d2b0054c052c08be"
+    "core/src/store/repo.rs": "3d5a2e9644bd99792fc7fd075808b270319615bf8c0f11effd74cfce33a4a17e",
+    "core/src/ffi.rs": "7662b0034e5587493af69280c0c7e208e7a1218d6f30b3362d93cb8bad4d4ea6"
   },
   "structs": {
     "CachedEmail": {
@@ -98,6 +98,18 @@
           "rustName": "border",
           "wireName": "border",
           "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "credits",
+          "wireName": "credits",
+          "rustType": "Option<f64>",
+          "optional": true
+        },
+        {
+          "rustName": "max_absences",
+          "wireName": "max_absences",
+          "rustType": "Option<u32>",
           "optional": true
         }
       ]
@@ -180,6 +192,12 @@
         {
           "rustName": "quiz_title",
           "wireName": "quiz_title",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "week_parity",
+          "wireName": "week_parity",
           "rustType": "Option<String>",
           "optional": true
         }
@@ -570,6 +588,476 @@
         }
       ]
     },
+    "AttendanceEntry": {
+      "source": "core/src/types.rs",
+      "fields": [
+        {
+          "rustName": "id",
+          "wireName": "id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "slot_id",
+          "wireName": "slot_id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "course_id",
+          "wireName": "course_id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "date_iso",
+          "wireName": "date_iso",
+          "rustType": "NaiveDate",
+          "optional": false
+        },
+        {
+          "rustName": "status",
+          "wireName": "status",
+          "rustType": "AttendanceStatus",
+          "optional": false
+        },
+        {
+          "rustName": "updated_at",
+          "wireName": "updated_at",
+          "rustType": "String",
+          "optional": false
+        }
+      ]
+    },
+    "CourseAttendanceSummary": {
+      "source": "core/src/types.rs",
+      "fields": [
+        {
+          "rustName": "course_id",
+          "wireName": "course_id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "total_classes",
+          "wireName": "total_classes",
+          "rustType": "u32",
+          "optional": false
+        },
+        {
+          "rustName": "attended",
+          "wireName": "attended",
+          "rustType": "u32",
+          "optional": false
+        },
+        {
+          "rustName": "absent",
+          "wireName": "absent",
+          "rustType": "u32",
+          "optional": false
+        },
+        {
+          "rustName": "excused",
+          "wireName": "excused",
+          "rustType": "u32",
+          "optional": false
+        },
+        {
+          "rustName": "max_absences",
+          "wireName": "max_absences",
+          "rustType": "Option<u32>",
+          "optional": true
+        },
+        {
+          "rustName": "warning_chip",
+          "wireName": "warning_chip",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "is_critical",
+          "wireName": "is_critical",
+          "rustType": "bool",
+          "optional": false
+        }
+      ]
+    },
+    "Flashcard": {
+      "source": "core/src/types.rs",
+      "fields": [
+        {
+          "rustName": "id",
+          "wireName": "id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "course_id",
+          "wireName": "course_id",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "assessment_id",
+          "wireName": "assessment_id",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "topic",
+          "wireName": "topic",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "front",
+          "wireName": "front",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "back",
+          "wireName": "back",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "box_level",
+          "wireName": "box_level",
+          "rustType": "u8",
+          "optional": false
+        },
+        {
+          "rustName": "next_review_iso",
+          "wireName": "next_review_iso",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "last_reviewed_iso",
+          "wireName": "last_reviewed_iso",
+          "rustType": "Option<String>",
+          "optional": true
+        }
+      ]
+    },
+    "QuizAttempt": {
+      "source": "core/src/types.rs",
+      "fields": [
+        {
+          "rustName": "id",
+          "wireName": "id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "assessment_id",
+          "wireName": "assessment_id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "course_id",
+          "wireName": "course_id",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "timestamp",
+          "wireName": "timestamp",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "score",
+          "wireName": "score",
+          "rustType": "u32",
+          "optional": false
+        },
+        {
+          "rustName": "total_questions",
+          "wireName": "total_questions",
+          "rustType": "u32",
+          "optional": false
+        },
+        {
+          "rustName": "passed",
+          "wireName": "passed",
+          "rustType": "bool",
+          "optional": false
+        }
+      ]
+    },
+    "MistakeRecord": {
+      "source": "core/src/types.rs",
+      "fields": [
+        {
+          "rustName": "id",
+          "wireName": "id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "attempt_id",
+          "wireName": "attempt_id",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "assessment_id",
+          "wireName": "assessment_id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "course_id",
+          "wireName": "course_id",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "question_id",
+          "wireName": "question_id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "question_text",
+          "wireName": "question_text",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "options",
+          "wireName": "options",
+          "rustType": "Vec<String>",
+          "optional": false
+        },
+        {
+          "rustName": "selected_index",
+          "wireName": "selected_index",
+          "rustType": "usize",
+          "optional": false
+        },
+        {
+          "rustName": "correct_index",
+          "wireName": "correct_index",
+          "rustType": "usize",
+          "optional": false
+        },
+        {
+          "rustName": "explanation",
+          "wireName": "explanation",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "timestamp",
+          "wireName": "timestamp",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "resolved",
+          "wireName": "resolved",
+          "rustType": "bool",
+          "optional": false
+        }
+      ]
+    },
+    "StudySessionRecord": {
+      "source": "core/src/types.rs",
+      "fields": [
+        {
+          "rustName": "id",
+          "wireName": "id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "course_id",
+          "wireName": "course_id",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "assessment_id",
+          "wireName": "assessment_id",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "topic",
+          "wireName": "topic",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "duration_minutes",
+          "wireName": "duration_minutes",
+          "rustType": "u32",
+          "optional": false
+        },
+        {
+          "rustName": "timestamp",
+          "wireName": "timestamp",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "date_iso",
+          "wireName": "date_iso",
+          "rustType": "NaiveDate",
+          "optional": false
+        }
+      ]
+    },
+    "CourseFocusStat": {
+      "source": "core/src/types.rs",
+      "fields": [
+        {
+          "rustName": "course_id",
+          "wireName": "course_id",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "course_name",
+          "wireName": "course_name",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "minutes",
+          "wireName": "minutes",
+          "rustType": "u32",
+          "optional": false
+        },
+        {
+          "rustName": "color",
+          "wireName": "color",
+          "rustType": "Option<String>",
+          "optional": true
+        }
+      ]
+    },
+    "DailyFocusStat": {
+      "source": "core/src/types.rs",
+      "fields": [
+        {
+          "rustName": "date_iso",
+          "wireName": "date_iso",
+          "rustType": "NaiveDate",
+          "optional": false
+        },
+        {
+          "rustName": "day_label",
+          "wireName": "day_label",
+          "rustType": "String",
+          "optional": false
+        },
+        {
+          "rustName": "minutes",
+          "wireName": "minutes",
+          "rustType": "u32",
+          "optional": false
+        }
+      ]
+    },
+    "StudyAnalytics": {
+      "source": "core/src/types.rs",
+      "fields": [
+        {
+          "rustName": "current_streak_days",
+          "wireName": "current_streak_days",
+          "rustType": "u32",
+          "optional": false
+        },
+        {
+          "rustName": "best_streak_days",
+          "wireName": "best_streak_days",
+          "rustType": "u32",
+          "optional": false
+        },
+        {
+          "rustName": "total_focus_minutes",
+          "wireName": "total_focus_minutes",
+          "rustType": "u32",
+          "optional": false
+        },
+        {
+          "rustName": "weekly_chart",
+          "wireName": "weekly_chart",
+          "rustType": "Vec<DailyFocusStat>",
+          "optional": false
+        },
+        {
+          "rustName": "course_breakdown",
+          "wireName": "course_breakdown",
+          "rustType": "Vec<CourseFocusStat>",
+          "optional": false
+        }
+      ]
+    },
+    "DailyStudyCushion": {
+      "source": "core/src/types.rs",
+      "fields": [
+        {
+          "rustName": "date",
+          "wireName": "date",
+          "rustType": "NaiveDate",
+          "optional": false
+        },
+        {
+          "rustName": "waking_hours",
+          "wireName": "waking_hours",
+          "rustType": "f32",
+          "optional": false
+        },
+        {
+          "rustName": "committed_hours",
+          "wireName": "committed_hours",
+          "rustType": "f32",
+          "optional": false
+        },
+        {
+          "rustName": "available_hours",
+          "wireName": "available_hours",
+          "rustType": "f32",
+          "optional": false
+        },
+        {
+          "rustName": "required_hours",
+          "wireName": "required_hours",
+          "rustType": "Option<f32>",
+          "optional": true
+        },
+        {
+          "rustName": "cushion_hours",
+          "wireName": "cushion_hours",
+          "rustType": "Option<f32>",
+          "optional": true
+        },
+        {
+          "rustName": "is_deficit",
+          "wireName": "is_deficit",
+          "rustType": "bool",
+          "optional": false
+        },
+        {
+          "rustName": "deficit_hours",
+          "wireName": "deficit_hours",
+          "rustType": "Option<f32>",
+          "optional": true
+        },
+        {
+          "rustName": "warning_note",
+          "wireName": "warning_note",
+          "rustType": "Option<String>",
+          "optional": true
+        }
+      ]
+    },
     "TopicCheckItem": {
       "source": "core/src/plan/dashboard.rs",
       "fields": [
@@ -922,6 +1410,12 @@
           "wireName": "tasks",
           "rustType": "Vec<DailyStudyTask>",
           "optional": false
+        },
+        {
+          "rustName": "cushion",
+          "wireName": "cushion",
+          "rustType": "Option<crate::types::DailyStudyCushion>",
+          "optional": true
         }
       ]
     },
@@ -1058,6 +1552,12 @@
           "wireName": "ai_generated",
           "rustType": "bool",
           "optional": false
+        },
+        {
+          "rustName": "today_cushion",
+          "wireName": "today_cushion",
+          "rustType": "Option<crate::types::DailyStudyCushion>",
+          "optional": true
         }
       ]
     },
@@ -1623,6 +2123,23 @@
         }
       ]
     },
+    "AttendanceStatus": {
+      "source": "core/src/types.rs",
+      "variants": [
+        {
+          "name": "Attended",
+          "wireName": "attended"
+        },
+        {
+          "name": "Absent",
+          "wireName": "absent"
+        },
+        {
+          "name": "Excused",
+          "wireName": "excused"
+        }
+      ]
+    },
     "ConflictSeverity": {
       "source": "core/src/plan/conflicts.rs",
       "variants": [
@@ -1718,6 +2235,32 @@
         "topics_json: String",
         "ref_date_iso: String",
         "// The declared academic rhythm (`01` §4.1 track chips): tunes the\n    // prep-day spread. Unknown/empty strings behave like the default.\n    academic_track: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "get_week_parity": {
+      "parameters": [
+        "date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "calculate_gpa": {
+      "parameters": [
+        "courses_json: String",
+        "assessments_json: String",
+        "grades_json: String",
+        "scale: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "calculate_study_cushion": {
+      "parameters": [
+        "schedule_json: String",
+        "events_json: String",
+        "assessments_json: String",
+        "tasks_json: String",
+        "ref_date_iso: String",
+        "waking_hours: Option<f32>"
       ],
       "returns": "Result<String, QuizRadarFfiError>"
     },
@@ -1938,6 +2481,101 @@
         "backup_json: String",
         "updated_at: String",
         "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.record_attendance": {
+      "parameters": [
+        "&self",
+        "slot_id: String",
+        "course_id: String",
+        "date_iso: String",
+        "status: String",
+        "updated_at: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.set_course_absence_limit": {
+      "parameters": [
+        "&self",
+        "course_id: String",
+        "max_absences: Option<u32>",
+        "updated_at: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.log_study_session": {
+      "parameters": [
+        "&self",
+        "session_json: String",
+        "updated_at: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.get_study_analytics": {
+      "parameters": [
+        "&self",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.save_quiz_attempt": {
+      "parameters": [
+        "&self",
+        "attempt_json: String",
+        "mistakes_json: String",
+        "updated_at: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.list_mistakes": {
+      "parameters": [
+        "&self",
+        "assessment_id: Option<String>"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.resolve_mistake": {
+      "parameters": [
+        "&self",
+        "mistake_id: String",
+        "updated_at: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.upsert_flashcard": {
+      "parameters": [
+        "&self",
+        "card_json: String",
+        "updated_at: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.list_flashcards": {
+      "parameters": [
+        "&self",
+        "course_id: Option<String>"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.delete_flashcard": {
+      "parameters": [
+        "&self",
+        "card_id: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.review_flashcard": {
+      "parameters": [
+        "&self",
+        "card_id: String",
+        "correct: bool",
+        "ref_date_iso: String",
+        "updated_at: String"
       ],
       "returns": "Result<String, QuizRadarFfiError>"
     },

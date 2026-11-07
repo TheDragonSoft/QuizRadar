@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   AlertCircle,
   AlertTriangle,
@@ -7,7 +7,6 @@ import {
   BookOpen,
   BrainCircuit,
   Calendar,
-  CalendarClock,
   CalendarDays,
   CalendarPlus,
   CheckCircle2,
@@ -31,6 +30,11 @@ import {
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
 import { ConflictBanner } from "../components/ConflictBanner";
+import { StudyStatsCard } from "../components/StudyStatsCard";
+import { CalendarGrid } from "../components/CalendarGrid";
+import { DailyStudyRoadmap } from "../components/DailyStudyRoadmap";
+import { TimelineHorizon } from "../components/TimelineHorizon";
+import { useFeatureFlag, useFeatureFlagPayload } from "../lib/analytics";
 import { assessmentKind } from "../lib/assessmentKind";
 import { courseAccessibleChip, courseDisplayName, coursePalette } from "../lib/coursePalette";
 import { matchesGlobalSearch } from "../lib/calendarLanes";
@@ -165,7 +169,59 @@ function SourceIcon({ name, className }: { name: string; className?: string }) {
 // The view
 // ---------------------------------------------------------------------------
 
-export const DashboardView: React.FC = () => {
+/**
+ * Remote Announcement Banner wired to PostHog feature flag `banner-announcement`.
+ */
+const RemoteAnnouncementBanner: React.FC = () => {
+  const isEnabled = useFeatureFlag("banner-announcement", false);
+  const payload = useFeatureFlagPayload<{ message?: string; active?: boolean }>("banner-announcement");
+  const [dismissed, setDismissed] = useState(false);
+
+  const message = payload?.message || (typeof payload === "string" ? payload : "");
+  const isActive = payload?.active !== false;
+
+  useEffect(() => {
+    if (message) {
+      const isDismissed = localStorage.getItem(`quizradar_dismissed_banner_${message}`) === "true";
+      setDismissed(isDismissed);
+    }
+  }, [message]);
+
+  if (!isEnabled || !isActive || !message || dismissed) {
+    return null;
+  }
+
+  const handleDismiss = () => {
+    localStorage.setItem(`quizradar_dismissed_banner_${message}`, "true");
+    setDismissed(true);
+  };
+
+  return (
+    <div
+      data-testid="remote-announcement-banner"
+      className="flex items-center justify-between gap-3 rounded-xl border border-blue-200/80 bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-blue-500/10 p-3 text-xs text-slate-800 dark:border-blue-800/60 dark:text-blue-100"
+    >
+      <div className="flex items-center gap-2.5 min-w-0">
+        <Sparkles className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" aria-hidden="true" />
+        <span className="font-medium leading-snug">{message}</span>
+      </div>
+      <button
+        type="button"
+        onClick={handleDismiss}
+        aria-label="Dismiss announcement"
+        className="shrink-0 rounded-lg p-1 text-slate-500 hover:bg-black/5 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white transition"
+      >
+        <XIcon className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+    </div>
+  );
+};
+
+export interface DashboardViewProps {
+  forceWidescreen?: boolean;
+}
+
+export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen }) => {
   const dash = useAppStore((s) => s.data.dashboard);
   const assessments = useAppStore((s) => s.data.assessments);
   const courses = useAppStore((s) => s.data.schedule.courses);
@@ -187,13 +243,34 @@ export const DashboardView: React.FC = () => {
 
   const [mobileTab, setMobileTab] = useState<MobileDashboardTab>("study");
 
+  const [isWidescreen, setIsWidescreen] = useState(() => {
+    if (forceWidescreen !== undefined) return forceWidescreen;
+    if (typeof window !== "undefined" && window.matchMedia) {
+      return window.matchMedia("(min-width: 1200px)").matches;
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    if (forceWidescreen !== undefined) {
+      setIsWidescreen(forceWidescreen);
+      return;
+    }
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(min-width: 1200px)");
+    setIsWidescreen(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsWidescreen(e.matches);
+    mq.addEventListener?.("change", handler);
+    return () => mq.removeEventListener?.("change", handler);
+  }, [forceWidescreen]);
+
   // Course-layer filter (the sidebar's calendar checkboxes)
   const isCourseSelected = (courseId?: string | null) => {
     if (!courseId || selectedCourseIds === null) return true;
     return selectedCourseIds.includes(courseId);
   };
 
-  const upcomingThisWeek = (dash.upcomingThisWeek || []).filter((a) =>
+   const upcomingThisWeek = (dash.upcomingThisWeek || []).filter((a) =>
     isCourseSelected(a.courseId),
   );
   const weekCount = upcomingThisWeek.length;
@@ -253,14 +330,17 @@ export const DashboardView: React.FC = () => {
     <div data-testid="dashboard-view" className="w-full relative space-y-6">
       {/* Sticky Observatory Canopy Hero Banner — Parallax Anchor */}
       <div className="sticky top-0 z-20 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 pt-1 pb-3 bg-[var(--page)]/90 backdrop-blur-md transition-all space-y-3">
+        <RemoteAnnouncementBanner />
         <ConflictBanner />
-        <NextUpHero
-          assessment={nextUp}
-          onOpenDetail={() => nextUp && openAssessmentDetail(nextUp.id)}
-          onOpenCalendar={() => setView("calendar")}
-          onConnect={() => openSettings("account")}
-          onSync={() => void triggerSync()}
-        />
+        {!isWidescreen && (
+          <NextUpHero
+            assessment={nextUp}
+            onOpenDetail={() => nextUp && openAssessmentDetail(nextUp.id)}
+            onOpenCalendar={() => setView("calendar")}
+            onConnect={() => openSettings("account")}
+            onSync={() => void triggerSync()}
+          />
+        )}
       </div>
 
       {/* Mobile Segmented Sub-Navigation Switcher (< 1024px) */}
@@ -302,183 +382,36 @@ export const DashboardView: React.FC = () => {
       </div>
     </nav>
 
-      {/* 4 KPI Overview Cards (desktop; the "At a Glance" tab on mobile) */}
+      {/* Astronomical Timeline Horizon (Replaces the 4 generic SaaS KPI cards) */}
+      <section className={mobileTab === "overview" ? "block" : "hidden lg:block"}>
+        <TimelineHorizon
+          assessments={dash.allUpcoming || []}
+          recommendations={dash.studyRecommendations || []}
+          conflictAlerts={dash.conflictAlerts || []}
+          weekCount={weekCount}
+          examsAheadCount={examsAheadCount}
+          readinessPct={readinessPct}
+          totalTopicsCount={dash.totalTopicsCount}
+          completedTopicsCount={dash.completedTopicsCount}
+          typeBreakdown={typeBreakdown}
+          auth={auth}
+          config={config}
+          activeSourceCount={activeSourceCount}
+          lastSyncText={lastSyncText}
+          weekRangeLabel={copy.dashboard.kpiWeekRange(weekLabels.start, weekLabels.end)}
+          onOpenDetail={openAssessmentDetail}
+          onRunGcalSync={runGcalSync}
+          onOpenConnect={() => openSettings("account")}
+          onOpenAddCourse={() => openModal("add-course")}
+        />
+      </section>
+
+      {/* Local-First Personal Study Stats Card */}
       <section
-        data-testid="dashboard-kpi-row"
-        className={`${
-          mobileTab === "overview" ? "grid" : "hidden lg:grid"
-        } grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4`}
+        data-testid="dashboard-study-stats-section"
+        className={mobileTab === "overview" ? "block" : "hidden lg:block"}
       >
-        {/* Card 1: Upcoming This Week */}
-        <div className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
-              {copy.dashboard.kpiUpcomingTitle}
-            </span>
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-[#1557b0] dark:bg-blue-950/80 dark:text-blue-300">
-              <CalendarClock className="h-4 w-4" aria-hidden="true" />
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-bold tabular-nums text-slate-900 dark:text-white">
-                {weekCount}
-              </span>
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                {copy.dashboard.kpiUpcomingCountLabel}
-              </span>
-            </div>
-            <p className="mt-1 text-xs tabular-nums text-slate-600 dark:text-slate-400">
-              {weekCount > 0
-                ? copy.dashboard.kpiWeekRange(weekLabels.start, weekLabels.end)
-                : copy.dashboard.kpiUpcomingEmpty}
-            </p>
-            {/* The type breakdown sits UNDER this card, so it counts the same
-                seven-day window the headline number counts (core
-                `exam_type_counts`). */}
-            {typeBreakdown.length > 0 && (
-              <div className="mt-2">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  {copy.dashboard.kpiTypeBreakdown}
-                </div>
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {typeBreakdown.map(([type, count]) => (
-                    <span
-                      key={type}
-                      className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                    >
-                      {type} · {count}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Card 2: Exams Ahead (upcoming midterms + finals) */}
-        <div className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
-              {copy.dashboard.kpiExamsTitle}
-            </span>
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-[var(--accent)] dark:bg-blue-950/60 dark:text-blue-300">
-              <GraduationCap className="h-4 w-4" aria-hidden="true" />
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-bold tabular-nums text-slate-900 dark:text-white">
-                {examsAheadCount}
-              </span>
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                Exams
-              </span>
-            </div>
-            <p className="mt-1 text-xs tabular-nums text-slate-600 dark:text-slate-400">
-              {examsAheadCount > 0 ? copy.dashboard.kpiExamsSubtitle : copy.dashboard.kpiExamsEmpty}
-            </p>
-          </div>
-        </div>
-
-        {/* Card 3: Study Readiness Progress */}
-        <div className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
-              {copy.dashboard.kpiReadinessTitle}
-            </span>
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300">
-              <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="flex items-baseline justify-between">
-              <span className="text-3xl font-bold tabular-nums text-slate-900 dark:text-white">
-                {readinessPct === null ? "—" : `${readinessPct}%`}
-              </span>
-              <span className="text-xs tabular-nums text-slate-600 dark:text-slate-400">
-                {readinessPct === null
-                  ? copy.dashboard.kpiReadinessNone
-                  : copy.dashboard.kpiReadinessCounts(
-                      dash.completedTopicsCount,
-                      dash.totalTopicsCount,
-                    )}
-              </span>
-            </div>
-            <div
-              role="progressbar"
-              aria-label="Overall readiness progress"
-              aria-valuenow={readinessPct === null ? 0 : readinessPct}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"
-            >
-              <div
-                className="h-full bg-emerald-600 dark:bg-emerald-500 transition-all duration-300"
-                style={{
-                  width: `${readinessPct === null ? 0 : Math.min(100, Math.max(0, readinessPct))}%`,
-                }}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Card 4: Gemini AI & Google Calendar Sync */}
-        <div className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
-              {copy.dashboard.kpiSyncTitle}
-            </span>
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300">
-              <Sparkles className="h-4 w-4" aria-hidden="true" />
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="flex min-w-0 items-center gap-1.5">
-              <span
-                className={`inline-block h-2 w-2 shrink-0 rounded-full ${
-                  auth.authenticated ? "bg-emerald-500" : "bg-slate-400"
-                }`}
-                aria-hidden="true"
-              />
-              <span
-                className="min-w-0 truncate text-sm font-bold text-slate-900 dark:text-white"
-                title={
-                  auth.authenticated
-                    ? auth.email || config.userEmail || auth.name || config.userName || undefined
-                    : undefined
-                }
-              >
-                {auth.authenticated
-                  ? auth.email || config.userEmail || auth.name || config.userName
-                  : copy.dashboard.kpiNotConnected}
-              </span>
-            </div>
-            <div className="mt-2 flex items-center justify-between gap-2">
-              <span className="text-[11px] text-slate-600 dark:text-slate-400">
-                {config.geminiEnabled ? copy.dashboard.kpiAiActive : copy.dashboard.kpiAiOff}
-              </span>
-              <button
-                type="button"
-                onClick={() => void runGcalSync()}
-                className="min-h-6 shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-xs font-semibold text-[var(--accent-ink)] hover:underline"
-              >
-                {copy.dashboard.kpiSyncCalendarAction}
-              </button>
-            </div>
-            {/* Sources connected + last sync (01 §4.3). These used to live only
-                in the desktop sidebar, so the mobile/PWA tier showed nothing. */}
-            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-600 dark:text-slate-400">
-              <span className="font-semibold">
-                {activeSourceCount > 0
-                  ? copy.dashboard.kpiSyncActive(activeSourceCount)
-                  : copy.dashboard.kpiSyncNone}
-              </span>
-              <span aria-hidden="true">·</span>
-              <span>{lastSyncText}</span>
-            </div>
-          </div>
-        </div>
+        <StudyStatsCard />
       </section>
 
       {/* The top-bar search filters both panels below (spec §4.8). The banner
@@ -501,73 +434,212 @@ export const DashboardView: React.FC = () => {
         </div>
       )}
 
-      {/* Main Dashboard Grid: Left = Study Planner | Right = Assessments Radar */}
-      <section className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-12 lg:gap-6 relative z-10">
-        {/* Full-Width Study Planner Canvas */}
-        <div
-          data-testid="dashboard-study-panel"
-          className="flex flex-col rounded-xl border border-slate-200 bg-white p-3 sm:p-5 lg:col-span-12 lg:min-h-[500px] dark:border-slate-800 dark:bg-slate-900 shadow-xs"
-        >
-          <div className="flex shrink-0 flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3 dark:border-slate-800">
-            <div>
-              <h2 className="flex items-center gap-2 text-sm font-bold text-slate-900 sm:text-base dark:text-white">
-                <BrainCircuit
-                  className="h-4 w-4 shrink-0 text-[var(--accent-ink)]"
-                  aria-hidden="true"
-                />
-                <span>{copy.dashboard.recommendationsTitle}</span>
-              </h2>
-              <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">
-                Personalized study blocks and topic readiness derived from your course timetable.
-              </p>
+      {/* Main Dashboard Grid: Standard <1200px Layout */}
+      {!isWidescreen && (
+        <section className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-12 lg:gap-6 relative z-10">
+          {/* Full-Width Study Planner Canvas */}
+          <div
+            data-testid="dashboard-study-panel"
+            className="flex flex-col rounded-xl border border-slate-200 bg-white p-3 sm:p-5 lg:col-span-12 lg:min-h-[500px] dark:border-slate-800 dark:bg-slate-900 shadow-xs"
+          >
+            <div className="flex shrink-0 flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3 dark:border-slate-800">
+              <div>
+                <h2 className="flex items-center gap-2 text-sm font-bold text-slate-900 sm:text-base dark:text-white">
+                  <BrainCircuit
+                    className="h-4 w-4 shrink-0 text-[var(--accent-ink)]"
+                    aria-hidden="true"
+                  />
+                  <span>{copy.dashboard.recommendationsTitle}</span>
+                </h2>
+                <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-400">
+                  Personalized study blocks and topic readiness derived from your course timetable.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setView("tasks")}
+                  className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--page)] px-3 py-1.5 text-xs font-semibold text-[var(--accent-ink)] hover:bg-[var(--surface-hover)] hover:border-[var(--accent)] transition"
+                >
+                  <span>View All Assessments & Ledger in Tasks</span>
+                  <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
+
+            <div className="max-h-[640px] flex-1 space-y-2.5 overflow-y-auto pr-1.5 pt-3 sm:space-y-3 lg:max-h-none">
+              {hasCourses ? (
+                filteredRecs.length === 0 ? (
+                  searchActive ? (
+                    // Not "all caught up": the search hid the plans, the plans
+                    // are still pending.
+                    <SearchNoMatchesEmpty
+                      title={copy.dashboard.studyEmptySearchTitle}
+                      body={copy.dashboard.studyEmptySearchBody(trimmedSearch)}
+                      onClear={() => setSearchQuery("")}
+                    />
+                  ) : (
+                    <AllClearEmpty onCreateEvent={() => openEventModal()} />
+                  )
+                ) : (
+                  filteredRecs.map((rec, index) => (
+                    <StudyRecommendationCard
+                      key={rec.assessmentId}
+                      index={index + 1}
+                      recommendation={rec}
+                      room={roomByAssessment.get(rec.assessmentId)}
+                      onToggleTopic={(topicIdx) => toggleTopic(rec.assessmentId, topicIdx)}
+                      onOpenDetail={() => openAssessmentDetail(rec.assessmentId)}
+                    />
+                  ))
+                )
+              ) : (
+                <FirstRunEmpty
+                  onAddCourse={() => openModal("add-course")}
+                  onConnect={() => openSettings("account")}
+                />
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Multi-Pane Widescreen Density (≥1200px) */}
+      {isWidescreen && (
+        <section
+          data-testid="dashboard-widescreen-split"
+          className="grid grid-cols-12 gap-6 items-start relative z-10"
+        >
+          {/* Left Pane (~58% width / col-span-7): Embedded Weekly Class Schedule & Calendar Grid */}
+          <div
+            data-testid="dashboard-widescreen-left-pane"
+            className="col-span-7 flex flex-col rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 shadow-xs"
+          >
+            <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-[var(--accent-ink)]" aria-hidden="true" />
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Weekly Class Schedule &amp; Timetable
+                </h2>
+              </div>
               <button
                 type="button"
-                onClick={() => setView("tasks")}
-                className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--page)] px-3 py-1.5 text-xs font-semibold text-[var(--accent-ink)] hover:bg-[var(--surface-hover)] hover:border-[var(--accent)] transition"
+                onClick={() => setView("calendar")}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--accent-ink)] hover:underline cursor-pointer"
               >
-                <span>View All Assessments & Ledger in Tasks</span>
+                <span>Full Calendar View</span>
                 <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
             </div>
+            <div className="flex-1 overflow-y-auto max-h-[700px] pr-1">
+              <CalendarGrid compactMode />
+            </div>
           </div>
 
-          <div className="max-h-[640px] flex-1 space-y-2.5 overflow-y-auto pr-1.5 pt-3 sm:space-y-3 lg:max-h-none">
-            {hasCourses ? (
-              filteredRecs.length === 0 ? (
-                searchActive ? (
-                  // Not "all caught up": the search hid the plans, the plans
-                  // are still pending.
-                  <SearchNoMatchesEmpty
-                    title={copy.dashboard.studyEmptySearchTitle}
-                    body={copy.dashboard.studyEmptySearchBody(trimmedSearch)}
-                    onClear={() => setSearchQuery("")}
-                  />
+          {/* Right Pane (~42% width / col-span-5): Upcoming Assessments Radar & Daily Study Roadmap */}
+          <div
+            data-testid="dashboard-widescreen-right-pane"
+            className="col-span-5 flex flex-col space-y-4"
+          >
+            {/* Embedded NextUpHero */}
+            <NextUpHero
+              assessment={nextUp}
+              onOpenDetail={() => nextUp && openAssessmentDetail(nextUp.id)}
+              onOpenCalendar={() => setView("calendar")}
+              onConnect={() => openSettings("account")}
+              onSync={() => void triggerSync()}
+            />
+
+            {/* Prioritized Study Recommendations & Topic Mastery (Preserved on Widescreen!) */}
+            <div
+              data-testid="dashboard-widescreen-recommendations"
+              className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 shadow-xs space-y-3"
+            >
+              <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2.5">
+                <div className="flex items-center gap-1.5">
+                  <BrainCircuit className="h-4 w-4 text-[var(--accent-ink)]" aria-hidden="true" />
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                    {copy.dashboard.recommendationsTitle}
+                  </h2>
+                </div>
+                <span className="text-[11px] font-semibold text-slate-500 tabular-nums">
+                  {filteredRecs.length} plans
+                </span>
+              </div>
+              <div className="space-y-3 max-h-[440px] overflow-y-auto pr-1">
+                {filteredRecs.length === 0 ? (
+                  <p className="py-4 text-center text-xs text-slate-500">
+                    No active study plans matching your filters.
+                  </p>
                 ) : (
-                  <AllClearEmpty onCreateEvent={() => openEventModal()} />
-                )
-              ) : (
-                filteredRecs.map((rec, index) => (
-                  <StudyRecommendationCard
-                    key={rec.assessmentId}
-                    index={index + 1}
-                    recommendation={rec}
-                    room={roomByAssessment.get(rec.assessmentId)}
-                    onToggleTopic={(topicIdx) => toggleTopic(rec.assessmentId, topicIdx)}
-                    onOpenDetail={() => openAssessmentDetail(rec.assessmentId)}
-                  />
-                ))
-              )
-            ) : (
-              <FirstRunEmpty
-                onAddCourse={() => openModal("add-course")}
-                onConnect={() => openSettings("account")}
-              />
+                  filteredRecs.map((rec, index) => (
+                    <StudyRecommendationCard
+                      key={rec.assessmentId}
+                      index={index + 1}
+                      recommendation={rec}
+                      room={roomByAssessment.get(rec.assessmentId)}
+                      onToggleTopic={(topicIdx) => toggleTopic(rec.assessmentId, topicIdx)}
+                      onOpenDetail={() => openAssessmentDetail(rec.assessmentId)}
+                    />
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Upcoming Assessments Radar List */}
+            {dash.allUpcoming && dash.allUpcoming.length > 0 && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 shadow-xs space-y-2.5">
+                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+                  <div className="flex items-center gap-1.5">
+                    <GraduationCap className="h-4 w-4 text-[var(--accent-ink)]" aria-hidden="true" />
+                    <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                      Upcoming Assessments Radar
+                    </h2>
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-500 tabular-nums">
+                    {dash.allUpcoming.filter((a) => isCourseSelected(a.courseId)).length} assessments
+                  </span>
+                </div>
+                <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
+                  {dash.allUpcoming
+                    .filter((a) => isCourseSelected(a.courseId))
+                    .slice(0, 4)
+                    .map((a) => (
+                      <TimelineRow
+                        key={a.id}
+                        assessment={a}
+                        onClick={() => openAssessmentDetail(a.id)}
+                      />
+                    ))}
+                </div>
+              </div>
             )}
+
+            {/* Daily Study Roadmap */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 shadow-xs">
+              <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-200 dark:border-slate-800">
+                <div className="flex items-center gap-1.5">
+                  <BrainCircuit className="h-4 w-4 text-[var(--accent-ink)]" aria-hidden="true" />
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Daily Study Roadmap
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setView("tasks")}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--accent-ink)] hover:underline cursor-pointer"
+                >
+                  <span>All Tasks</span>
+                  <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </div>
+              <div className="max-h-[380px] overflow-y-auto pr-1">
+                <DailyStudyRoadmap compactMode />
+              </div>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
     </div>
   );
 };

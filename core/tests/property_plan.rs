@@ -165,6 +165,7 @@ fn slot(day_index: u8, start: NaiveTime, end: NaiveTime) -> ScheduleSlot {
         display_time: String::new(),
         has_quiz: false,
         quiz_title: None,
+        week_parity: None,
     }
 }
 

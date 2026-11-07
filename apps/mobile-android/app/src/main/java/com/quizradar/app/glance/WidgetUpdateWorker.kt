@@ -24,6 +24,7 @@ class WidgetUpdateWorker(
         val engine = QuizRadarEngine.create(applicationContext)
         return try {
             QuizRadarWidget.refreshFromEngine(applicationContext, engine)
+            TodayScheduleWidget.refreshFromEngine(applicationContext, engine)
             Result.success()
         } catch (_: Exception) {
             Result.retry()

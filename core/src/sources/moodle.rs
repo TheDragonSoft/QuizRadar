@@ -325,6 +325,8 @@ mod tests {
                 color: "#e67c73".to_string(),
                 bg: None,
                 border: None,
+                credits: None,
+                max_absences: None,
             }],
             slots: vec![ScheduleSlot {
                 id: "slot-1".to_string(),
@@ -340,6 +342,7 @@ mod tests {
                 display_time: "09:00–10:30".to_string(),
                 has_quiz: false,
                 quiz_title: None,
+                week_parity: None,
             }],
         }
     }

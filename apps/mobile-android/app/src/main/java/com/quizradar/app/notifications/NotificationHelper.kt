@@ -94,6 +94,42 @@ object NotificationHelper {
             .setAutoCancel(true)
     }
 
+    fun buildPersistentExamNotification(
+        context: Context,
+        assessment: AssessmentModel,
+        minutesRemaining: Int = 120,
+    ): NotificationCompat.Builder {
+        val intent =
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("EXTRA_ASSESSMENT_ID", assessment.id)
+            }
+        val pendingIntent =
+            PendingIntent.getActivity(
+                context,
+                (assessment.id + "_ongoing").hashCode(),
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+
+        val courseStr = assessment.courseName ?: assessment.courseId ?: "Exam"
+        val timeStr = assessment.displayTime?.let { " ($it)" } ?: ""
+        val roomStr = if (assessment.room != null && assessment.room != "—") " · Room ${assessment.room}" else ""
+        val countdownText = if (minutesRemaining <= 60) "$minutesRemaining mins" else "${minutesRemaining / 60}h ${minutesRemaining % 60}m"
+        val title = "🎯 Exam Soon: ${assessment.title} (in $countdownText)"
+        val body = "$courseStr$roomStr$timeStr"
+
+        return NotificationCompat.Builder(context, CHANNEL_EXAMS)
+            .setSmallIcon(R.drawable.ic_launcher_monochrome)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .setAutoCancel(false)
+    }
+
     fun buildDigestNotification(
         context: Context,
         classesCount: Int,

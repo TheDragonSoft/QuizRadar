@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.quizradar.app.analytics.AnalyticsManager
 import com.quizradar.app.core.OAuthClientIds
 import com.quizradar.app.core.QuizRadarCore
 import com.quizradar.app.core.QuizRadarEngine
@@ -353,6 +354,56 @@ class QuizRadarViewModel(
 
     private val _pomodoroIsRunning = MutableStateFlow(false)
     val pomodoroIsRunning: StateFlow<Boolean> = _pomodoroIsRunning.asStateFlow()
+
+    // Attendance Tracking
+    private val _attendanceMap = MutableStateFlow<Map<String, String>>(emptyMap())
+    val attendanceMap: StateFlow<Map<String, String>> = _attendanceMap.asStateFlow()
+
+    fun toggleAttendance(
+        slotId: String,
+        courseId: String,
+        dateIso: String,
+    ) {
+        val key = "$slotId::$dateIso"
+        val current = _attendanceMap.value[key]
+        val next =
+            when (current) {
+                "attended" -> "absent"
+                "absent" -> "excused"
+                "excused" -> null
+                else -> "attended"
+            }
+        _attendanceMap.update { map ->
+            if (next == null) map - key else map + (key to next)
+        }
+    }
+
+    fun getCourseAbsenceCount(courseId: String): Int {
+        return _attendanceMap.value.entries.count { (k, v) ->
+            v == "absent" && k.contains(courseId)
+        }
+    }
+
+    // Study Analytics
+    private val _studyMinutesByCourse =
+        MutableStateFlow<Map<String, Int>>(
+            mapOf("CS" to 150, "MATH" to 90, "BIO" to 45),
+        )
+    val studyMinutesByCourse: StateFlow<Map<String, Int>> = _studyMinutesByCourse.asStateFlow()
+
+    private val _studyStreakDays = MutableStateFlow(4)
+    val studyStreakDays: StateFlow<Int> = _studyStreakDays.asStateFlow()
+
+    fun logFocusCompleted(
+        courseId: String?,
+        minutes: Int,
+    ) {
+        val cid = courseId?.ifBlank { "GENERAL" } ?: "GENERAL"
+        _studyMinutesByCourse.update { map ->
+            val cur = map[cid] ?: 0
+            map + (cid to (cur + minutes))
+        }
+    }
 
     private var pomodoroJob: Job? = null
 
@@ -1456,6 +1507,11 @@ class QuizRadarViewModel(
                 _lastScanReport.value = report
                 _lastSyncedStamp.value = core.getConfigString("last_gmail_sync")
                 refreshState()
+                AnalyticsManager.trackScanCompleted(
+                    source = "manual",
+                    assessmentCount = report.totalNew + report.totalUpdated,
+                    success = report.success,
+                )
                 var summary = buildScanSummary(report)
                 if (
                     report.success &&
@@ -1471,6 +1527,11 @@ class QuizRadarViewModel(
                 }
                 showToast(summary)
             } catch (e: Exception) {
+                AnalyticsManager.trackScanCompleted(
+                    source = "manual",
+                    assessmentCount = 0,
+                    success = false,
+                )
                 // The core throws on store/parse failures - fail loudly, keep
                 // the previous report (it is still the last REAL outcome).
                 showToast("Scan failed: ${e.message ?: "unknown error"}")

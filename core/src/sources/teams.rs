@@ -190,6 +190,8 @@ pub fn explore_teams_heuristically(context: &TeamsContext) -> TeamsDiscovery {
             color,
             bg,
             border,
+            credits: None,
+            max_absences: None,
         });
     }
     TeamsDiscovery {
@@ -644,6 +646,8 @@ mod tests {
                 color: "#1a73e8".to_string(),
                 bg: None,
                 border: None,
+                credits: None,
+                max_absences: None,
             }];
             Box::pin(std::future::ready(Some(TeamsDiscovery {
                 assessments: Vec::new(),

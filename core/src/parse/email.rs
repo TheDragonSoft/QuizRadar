@@ -1510,6 +1510,8 @@ mod tests {
                 color: "#e67c73".to_string(),
                 bg: Some("#fee2e2".to_string()),
                 border: None,
+                credits: None,
+                max_absences: None,
             },
             Course {
                 id: "CSE346".to_string(),
@@ -1517,6 +1519,8 @@ mod tests {
                 color: "#4285f4".to_string(),
                 bg: None,
                 border: None,
+                credits: None,
+                max_absences: None,
             },
         ];
         let slot = |id: &str,
@@ -1541,6 +1545,7 @@ mod tests {
                 display_time: String::new(),
                 has_quiz: false,
                 quiz_title: None,
+                week_parity: None,
             }
         };
         ScheduleData {

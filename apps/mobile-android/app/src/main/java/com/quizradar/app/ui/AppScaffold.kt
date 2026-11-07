@@ -65,8 +65,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -388,14 +386,21 @@ fun AppScaffold(
                 }
             }
             Scaffold(
-                containerColor = MaterialTheme.colorScheme.background,
+                containerColor = if (theme == "amoled") Color.Transparent else MaterialTheme.colorScheme.background,
                 snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
                 topBar = {
                     Column {
                         TopAppBar(
                             colors =
                                 TopAppBarDefaults.topAppBarColors(
-                                    containerColor = MaterialTheme.colorScheme.surface,
+                                    containerColor =
+                                        if (theme == "amoled") {
+                                            Color.Black.copy(
+                                                alpha = 0.85f,
+                                            )
+                                        } else {
+                                            MaterialTheme.colorScheme.surface
+                                        },
                                     titleContentColor = MaterialTheme.colorScheme.onSurface,
                                 ),
                             navigationIcon = {
@@ -542,7 +547,14 @@ fun AppScaffold(
                                 color = MaterialTheme.colorScheme.outlineVariant,
                             )
                             NavigationBar(
-                                containerColor = MaterialTheme.colorScheme.surface,
+                                containerColor =
+                                    if (theme == "amoled") {
+                                        Color.Black.copy(
+                                            alpha = 0.85f,
+                                        )
+                                    } else {
+                                        MaterialTheme.colorScheme.surface
+                                    },
                                 tonalElevation = 0.dp,
                             ) {
                                 TABS.forEach { tab ->
@@ -587,42 +599,7 @@ fun AppScaffold(
                     modifier =
                         Modifier
                             .padding(innerPadding)
-                            .fillMaxSize()
-                            .then(
-                                if (theme == "amoled") {
-                                    Modifier.drawBehind {
-                                        val stars =
-                                            listOf(
-                                                Offset(size.width * 0.08f, size.height * 0.06f) to 1.8f,
-                                                Offset(size.width * 0.22f, size.height * 0.18f) to 1.2f,
-                                                Offset(size.width * 0.88f, size.height * 0.12f) to 2.2f,
-                                                Offset(size.width * 0.72f, size.height * 0.28f) to 1.4f,
-                                                Offset(size.width * 0.15f, size.height * 0.38f) to 1.6f,
-                                                Offset(size.width * 0.92f, size.height * 0.44f) to 1.2f,
-                                                Offset(size.width * 0.35f, size.height * 0.52f) to 2.0f,
-                                                Offset(size.width * 0.78f, size.height * 0.62f) to 1.4f,
-                                                Offset(size.width * 0.12f, size.height * 0.72f) to 2.4f,
-                                                Offset(size.width * 0.60f, size.height * 0.82f) to 1.5f,
-                                                Offset(size.width * 0.85f, size.height * 0.90f) to 2.0f,
-                                                Offset(size.width * 0.30f, size.height * 0.94f) to 1.2f,
-                                            )
-                                        stars.forEach { (pos, radius) ->
-                                            drawCircle(
-                                                color = Color.White.copy(alpha = 0.85f),
-                                                radius = radius,
-                                                center = pos,
-                                            )
-                                            drawCircle(
-                                                color = Color(0xFF93C5FD).copy(alpha = 0.35f),
-                                                radius = radius * 2.5f,
-                                                center = pos,
-                                            )
-                                        }
-                                    }
-                                } else {
-                                    Modifier
-                                },
-                            ),
+                            .fillMaxSize(),
                     // On expanded widths the content column is centered and capped
                     // at a readable max width instead of stretching edge to edge.
                     contentAlignment = Alignment.TopCenter,

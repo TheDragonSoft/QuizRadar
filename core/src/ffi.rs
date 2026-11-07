@@ -140,6 +140,52 @@ pub fn derive_study_tasks(
     Ok(serde_json::to_string(&tasks)?)
 }
 
+#[uniffi::export]
+pub fn get_week_parity(date_iso: String) -> Result<String, QuizRadarFfiError> {
+    let date = parse_ref_date(&date_iso)?;
+    Ok(crate::plan::parity::date_week_parity(date).to_string())
+}
+
+#[uniffi::export]
+pub fn calculate_gpa(
+    courses_json: String,
+    assessments_json: String,
+    grades_json: String,
+    scale: String,
+) -> Result<String, QuizRadarFfiError> {
+    let courses: Vec<crate::types::Course> = serde_json::from_str(&courses_json)?;
+    let assessments: Vec<crate::types::Assessment> = serde_json::from_str(&assessments_json)?;
+    let grades: std::collections::HashMap<String, crate::types::GradeRecord> =
+        serde_json::from_str(&grades_json)?;
+    let summary = crate::plan::gpa::calculate_gpa(&courses, &assessments, &grades, &scale);
+    Ok(serde_json::to_string(&summary)?)
+}
+
+#[uniffi::export]
+pub fn calculate_study_cushion(
+    schedule_json: String,
+    events_json: String,
+    assessments_json: String,
+    tasks_json: String,
+    ref_date_iso: String,
+    waking_hours: Option<f32>,
+) -> Result<String, QuizRadarFfiError> {
+    let schedule: crate::types::ScheduleData = serde_json::from_str(&schedule_json)?;
+    let events: Vec<crate::types::CustomCalendarEvent> = serde_json::from_str(&events_json)?;
+    let assessments: Vec<crate::types::Assessment> = serde_json::from_str(&assessments_json)?;
+    let tasks: Vec<crate::plan::tasks::DailyStudyTask> = serde_json::from_str(&tasks_json)?;
+    let ref_date = parse_ref_date(&ref_date_iso)?;
+    let cushion = crate::plan::cushion::calculate_daily_cushion(
+        ref_date,
+        &schedule.slots,
+        &events,
+        &assessments,
+        &tasks,
+        waking_hours,
+    );
+    Ok(serde_json::to_string(&cushion)?)
+}
+
 /// The content-addressed topic-completion key for one topic
 /// (`plan::dashboard::topic_key_for_text`). Shells toggle by this key; the
 /// FORMAT lives here so no shell re-implements the hash.
@@ -715,6 +761,147 @@ impl NativeStore {
             .import_v4_backup(backup_json, updated_at, ref_date)
             .await?;
         Ok(serde_json::to_string(&report)?)
+    }
+
+    pub async fn record_attendance(
+        &self,
+        slot_id: String,
+        course_id: String,
+        date_iso: String,
+        status: String,
+        updated_at: String,
+        ref_date_iso: String,
+    ) -> Result<String, QuizRadarFfiError> {
+        let date = parse_ref_date(&date_iso)?;
+        let ref_date = parse_ref_date(&ref_date_iso)?;
+        let att_status = match status.trim().to_ascii_lowercase().as_str() {
+            "absent" => crate::types::AttendanceStatus::Absent,
+            "excused" => crate::types::AttendanceStatus::Excused,
+            _ => crate::types::AttendanceStatus::Attended,
+        };
+        let entry = crate::types::AttendanceEntry {
+            id: format!("att-{slot_id}-{date_iso}"),
+            slot_id,
+            course_id,
+            date_iso: date,
+            status: att_status,
+            updated_at,
+        };
+        let snapshot = self.inner.record_attendance(entry, ref_date).await?;
+        Ok(serde_json::to_string(&snapshot)?)
+    }
+
+    pub async fn set_course_absence_limit(
+        &self,
+        course_id: String,
+        max_absences: Option<u32>,
+        updated_at: String,
+        ref_date_iso: String,
+    ) -> Result<String, QuizRadarFfiError> {
+        let ref_date = parse_ref_date(&ref_date_iso)?;
+        let snapshot = self
+            .inner
+            .set_course_absence_limit(course_id, max_absences, updated_at, ref_date)
+            .await?;
+        Ok(serde_json::to_string(&snapshot)?)
+    }
+
+    pub async fn log_study_session(
+        &self,
+        session_json: String,
+        updated_at: String,
+        ref_date_iso: String,
+    ) -> Result<String, QuizRadarFfiError> {
+        let _ = updated_at;
+        let session: crate::types::StudySessionRecord = serde_json::from_str(&session_json)?;
+        let ref_date = parse_ref_date(&ref_date_iso)?;
+        let snapshot = self.inner.log_study_session(session, ref_date).await?;
+        Ok(serde_json::to_string(&snapshot)?)
+    }
+
+    pub async fn get_study_analytics(
+        &self,
+        ref_date_iso: String,
+    ) -> Result<String, QuizRadarFfiError> {
+        let ref_date = parse_ref_date(&ref_date_iso)?;
+        let analytics = self.inner.get_study_analytics(ref_date).await?;
+        Ok(serde_json::to_string(&analytics)?)
+    }
+
+    pub async fn save_quiz_attempt(
+        &self,
+        attempt_json: String,
+        mistakes_json: String,
+        updated_at: String,
+        ref_date_iso: String,
+    ) -> Result<String, QuizRadarFfiError> {
+        let attempt: crate::types::QuizAttempt = serde_json::from_str(&attempt_json)?;
+        let mistakes: Vec<crate::types::MistakeRecord> = serde_json::from_str(&mistakes_json)?;
+        let ref_date = parse_ref_date(&ref_date_iso)?;
+        self.inner
+            .save_quiz_attempt(attempt, mistakes, updated_at)
+            .await?;
+        let snapshot = self.inner.load_state(ref_date).await?;
+        Ok(serde_json::to_string(&snapshot)?)
+    }
+
+    pub async fn list_mistakes(
+        &self,
+        assessment_id: Option<String>,
+    ) -> Result<String, QuizRadarFfiError> {
+        let mistakes = self.inner.list_mistakes(assessment_id).await?;
+        Ok(serde_json::to_string(&mistakes)?)
+    }
+
+    pub async fn resolve_mistake(
+        &self,
+        mistake_id: String,
+        updated_at: String,
+    ) -> Result<String, QuizRadarFfiError> {
+        let resolved = self.inner.resolve_mistake(mistake_id, updated_at).await?;
+        Ok(serde_json::to_string(
+            &serde_json::json!({ "resolved": resolved }),
+        )?)
+    }
+
+    pub async fn upsert_flashcard(
+        &self,
+        card_json: String,
+        updated_at: String,
+    ) -> Result<String, QuizRadarFfiError> {
+        let card: crate::types::Flashcard = serde_json::from_str(&card_json)?;
+        let updated = self.inner.upsert_flashcard(card, updated_at).await?;
+        Ok(serde_json::to_string(&updated)?)
+    }
+
+    pub async fn list_flashcards(
+        &self,
+        course_id: Option<String>,
+    ) -> Result<String, QuizRadarFfiError> {
+        let cards = self.inner.list_flashcards(course_id).await?;
+        Ok(serde_json::to_string(&cards)?)
+    }
+
+    pub async fn delete_flashcard(&self, card_id: String) -> Result<String, QuizRadarFfiError> {
+        let deleted = self.inner.delete_flashcard(card_id).await?;
+        Ok(serde_json::to_string(
+            &serde_json::json!({ "deleted": deleted }),
+        )?)
+    }
+
+    pub async fn review_flashcard(
+        &self,
+        card_id: String,
+        correct: bool,
+        ref_date_iso: String,
+        updated_at: String,
+    ) -> Result<String, QuizRadarFfiError> {
+        let ref_date = parse_ref_date(&ref_date_iso)?;
+        let card = self
+            .inner
+            .review_flashcard(card_id, correct, ref_date, updated_at)
+            .await?;
+        Ok(serde_json::to_string(&card)?)
     }
 
     /// The timetable vision import (`01` §4.1, `05` §4 task b).

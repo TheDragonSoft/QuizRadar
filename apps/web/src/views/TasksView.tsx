@@ -1,25 +1,26 @@
 import React, { useState, useMemo } from "react";
 import {
-  Clock,
-  ChevronRight,
-  Check,
   Radar as RadarIcon,
   BookOpen,
   Search as SearchIcon,
   Calendar,
   Sparkles,
   X as XIcon,
+  GraduationCap,
 } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
 import { courseAccessibleChip, courseDisplayName, coursePalette } from "../lib/coursePalette";
 import { TimelineRow } from "./DashboardView";
-import type { DailyStudyTask, ExamReadinessCard } from "../state/types";
+import { DailyStudyRoadmap } from "../components/DailyStudyRoadmap";
+import { calculateGpa, getAccumulatedPointsBreakdown } from "../lib/gpaCalculator";
+import type { ExamReadinessCard } from "../state/types";
 
 type TimeWindowOption = "RECENT_UPCOMING" | "UPCOMING" | "TERM" | "PAST_MONTH" | "ALL";
+type TaskTab = "roadmap" | "assessments" | "grades";
 
 export const TasksView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<"roadmap" | "assessments">("roadmap");
+  const [activeTab, setActiveTab] = useState<TaskTab>("roadmap");
   const [timeWindow, setTimeWindow] = useState<TimeWindowOption>("RECENT_UPCOMING");
   const [typeFilter, setTypeFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -38,9 +39,14 @@ export const TasksView: React.FC = () => {
   const config = useAppStore((s) => s.data.config);
   const activeCourseFilter = useAppStore((s) => s.activeCourseFilterTasks);
   const setActiveCourseFilter = useAppStore((s) => s.setActiveCourseFilterTasks);
-  const toggleTopic = useAppStore((s) => s.toggleTopic);
   const openAssessmentDetail = useAppStore((s) => s.openAssessmentDetail);
   const addToast = useAppStore((s) => s.addToast);
+  const gradingScale = useAppStore((s) => s.gradingScale || "4.0");
+  const setGradingScale = useAppStore((s) => s.setGradingScale);
+
+  const gpaSummary = useMemo(() => {
+    return calculateGpa(courses, assessments, undefined, gradingScale);
+  }, [courses, assessments, gradingScale]);
 
   // Filter readiness cards
   const filteredCards = (tasksPayload.readinessCards || []).filter((card) => {
@@ -167,7 +173,7 @@ export const TasksView: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Segmented View Switcher: Study Roadmap vs. All Assessments */}
+          {/* Segmented View Switcher: Study Roadmap vs. Assessments Ledger vs. Grade Center & GPA */}
           <div className="flex items-center gap-1 rounded-xl border border-[var(--surface-border)] bg-[var(--page)] p-1 text-xs font-semibold">
             <button
               type="button"
@@ -179,10 +185,11 @@ export const TasksView: React.FC = () => {
               }`}
             >
               <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>Study Roadmap</span>
+              <span>Daily Roadmap</span>
             </button>
             <button
               type="button"
+              aria-label="All Assessments (Assessments Ledger)"
               onClick={() => setActiveTab("assessments")}
               className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 transition ${
                 activeTab === "assessments"
@@ -191,10 +198,22 @@ export const TasksView: React.FC = () => {
               }`}
             >
               <RadarIcon className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>All Assessments</span>
+              <span>Assessments Ledger</span>
               <span className="rounded-full bg-[var(--surface-border)] px-1.5 py-0.2 text-[10px] font-bold tabular-nums">
                 {assessments.length}
               </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("grades")}
+              className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 transition ${
+                activeTab === "grades"
+                  ? "bg-[var(--surface)] text-[var(--accent-ink)] font-bold shadow-2xs border border-[var(--surface-border)]"
+                  : "text-[var(--text-muted)] hover:text-[var(--text)]"
+              }`}
+            >
+              <GraduationCap className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>Grade Center &amp; GPA</span>
             </button>
           </div>
 
@@ -261,70 +280,7 @@ export const TasksView: React.FC = () => {
             <h2 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
               {copy.tasks.roadmapTitle}
             </h2>
-
-            {filteredDays.length === 0 ? (
-              <div
-                data-testid="empty-tasks"
-                className="rounded-2xl border border-dashed border-[var(--surface-border)] p-8 text-center text-xs text-[var(--text-muted)]"
-              >
-                {copy.emptyStates.noStudyTasksPending}
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {filteredDays.map((day) => (
-                  <div
-                    key={day.date}
-                    className={`rounded-2xl border p-4 shadow-xs transition ${
-                      day.isToday
-                        ? "border-[var(--accent)] bg-[var(--surface)] ring-2 ring-[color-mix(in_srgb,var(--accent)_20%,transparent)]"
-                        : "border-[var(--surface-border)] bg-[var(--surface)]"
-                    }`}
-                  >
-                    {/* Day Header */}
-                    <div className="flex items-center justify-between mb-3 border-b border-[var(--surface-border)] pb-2.5">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-[var(--text)]">{day.displayDay}</span>
-                        {day.isToday && (
-                          <span className="px-2 py-0.5 rounded-full bg-[var(--accent-fill)] text-white text-xs font-bold shadow-2xs">
-                            {copy.tasks.todayBadge}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-2 text-xs font-semibold tabular-nums text-[var(--text-muted)]">
-                        <span>
-                          {day.tasks.length} {day.tasks.length === 1 ? "task" : "tasks"}
-                        </span>
-                        {day.totalEstimatedHours != null && (
-                          <>
-                            <span>•</span>
-                            <span>{copy.tasks.estHours(day.totalEstimatedHours)}</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Day Tasks List */}
-                    <div className="divide-y divide-[var(--surface-border)]">
-                      {day.tasks.map((task) => (
-                        <RoadmapTaskRow
-                          key={task.key}
-                          task={task}
-                          onToggle={() =>
-                            task.assessmentId &&
-                            task.topicIndex != null &&
-                            toggleTopic(task.assessmentId, task.topicIndex)
-                          }
-                          onOpenDetail={() =>
-                            task.assessmentId && openAssessmentDetail(task.assessmentId)
-                          }
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <DailyStudyRoadmap days={filteredDays} activeCourseFilter={activeCourseFilter} />
           </div>
         </>
       )}
@@ -468,6 +424,296 @@ export const TasksView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* TAB 3: GRADE CENTER & GPA */}
+      {activeTab === "grades" && (
+        <div data-testid="grade-center-tab" className="space-y-6">
+          {/* Controls Bar: Scale Selection & Semester GPA Banner */}
+          <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface)] p-4 sm:p-5 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--surface-border)] pb-3">
+              <div>
+                <h2 className="text-sm font-bold text-[var(--text)] flex items-center gap-2">
+                  <GraduationCap className="h-4 w-4 text-[var(--accent-ink)]" aria-hidden="true" />
+                  <span>Semester Grade Center &amp; Credit-Weighted GPA</span>
+                </h2>
+                <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                  Honest grade tracking across assessments and credit-weighted cumulative semester calculations.
+                </p>
+              </div>
+
+              {/* Grading Scale Dropdown */}
+              <div className="flex items-center gap-2">
+                <label htmlFor="grading-scale-select" className="text-xs font-bold text-[var(--text-muted)]">
+                  Grading Scale:
+                </label>
+                <select
+                  id="grading-scale-select"
+                  aria-label="Select grading scale"
+                  value={gradingScale}
+                  onChange={(e) =>
+                    setGradingScale(
+                      e.target.value as "4.0" | "uk_honors" | "ects" | "percentage",
+                    )
+                  }
+                  className="rounded-xl border border-[var(--surface-border)] bg-[var(--page)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] focus:border-[var(--accent)] outline-none cursor-pointer"
+                >
+                  <option value="4.0">US Standard 4.0 Scale</option>
+                  <option value="uk_honors">UK Honours (≥70% 1st Class)</option>
+                  <option value="ects">ECTS European Scale (A–F)</option>
+                  <option value="percentage">Percentage (0–100%)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* GPA Summary KPI Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Card 1: Semester GPA */}
+              <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--page)] p-3.5 space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                  Semester GPA
+                </span>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl font-bold text-[var(--text)] tabular-nums">
+                    {gpaSummary.semesterGpa !== null && gpaSummary.semesterGpa !== undefined
+                      ? gpaSummary.semesterGpa.toFixed(2)
+                      : "—"}
+                  </span>
+                  <span className="text-xs font-semibold text-[var(--text-muted)]">
+                    / {gpaSummary.scaleMax}
+                  </span>
+                </div>
+                <div className="text-[11px] text-[var(--text-muted)]">
+                  {gpaSummary.semesterGpa !== null && gpaSummary.semesterGpa !== undefined
+                    ? `Calculated on ${gradingScale === "uk_honors" ? "UK Honours" : gradingScale === "ects" ? "ECTS" : gradingScale === "percentage" ? "Percentage" : "US 4.0"} scale`
+                    : "Enter assessment scores to calculate"}
+                </div>
+              </div>
+
+              {/* Card 2: Total Enrolled Credits */}
+              <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--page)] p-3.5 space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                  Total Enrolled Credits
+                </span>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl font-bold text-[var(--text)] tabular-nums">
+                    {gpaSummary.totalCredits.toFixed(1)}
+                  </span>
+                  <span className="text-xs font-semibold text-[var(--text-muted)]">
+                    credit hours
+                  </span>
+                </div>
+                <div className="text-[11px] text-[var(--text-muted)]">
+                  {courses.length} course{courses.length === 1 ? "" : "s"} tracked
+                </div>
+              </div>
+
+              {/* Card 3: Graded Courses Progress */}
+              <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--page)] p-3.5 space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                  Courses with Grades
+                </span>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl font-bold text-[var(--text)] tabular-nums">
+                    {gpaSummary.courses.filter((c) => c.percentage !== null).length}
+                  </span>
+                  <span className="text-xs font-semibold text-[var(--text-muted)]">
+                    / {courses.length}
+                  </span>
+                </div>
+                <div className="text-[11px] text-[var(--text-muted)]">
+                  {gpaSummary.courses.filter((c) => c.percentage !== null).length === courses.length && courses.length > 0
+                    ? "All courses have recorded grades"
+                    : "Add scores via assessment cards"}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Course Grade Cards */}
+          <div className="space-y-4">
+            {courses.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-[var(--surface-border)] p-8 text-center text-xs text-[var(--text-muted)]">
+                {copy.sidebar.noCoursesEnrolled}
+              </div>
+            ) : (
+              courses
+                .filter((course) => activeCourseFilter === "ALL" || course.id === activeCourseFilter)
+                .map((course) => {
+                  const summary = gpaSummary.courses.find((c) => c.courseId === course.id);
+                  const courseAssessments = assessments.filter((a) => a.courseId === course.id);
+                  const breakdown = getAccumulatedPointsBreakdown(
+                    summary?.accumulatedPoints ?? 0,
+                    summary?.totalWeightage ?? 0,
+                    gradingScale,
+                  );
+                  const palette = coursePalette(course.id);
+                  const chip = courseAccessibleChip(course.color || palette.color);
+
+                  return (
+                    <div
+                      key={course.id}
+                      data-testid={`course-grade-card-${course.id}`}
+                      className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface)] p-4 sm:p-5 shadow-xs space-y-4"
+                    >
+                      {/* Course Header */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[var(--surface-border)] pb-3">
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          <span
+                            className="px-2.5 py-1 rounded-lg text-xs font-bold text-white shadow-2xs"
+                            style={{ backgroundColor: chip.solidBg }}
+                          >
+                            {course.id}
+                          </span>
+                          <span className="text-sm font-bold text-[var(--text)]">
+                            {course.name}
+                          </span>
+                          <span className="rounded-full bg-[var(--page)] border border-[var(--surface-border)] px-2 py-0.5 text-[11px] font-semibold text-[var(--text-muted)]">
+                            {(course.credits != null ? course.credits : 3).toFixed(1)} Credits
+                          </span>
+                        </div>
+
+                        {/* Grade & Grade Point */}
+                        <div className="flex items-center gap-2">
+                          {summary?.letterGrade ? (
+                            <span className="px-2.5 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs font-bold">
+                              {summary.letterGrade}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-[var(--text-muted)] italic">
+                              No Graded Items
+                            </span>
+                          )}
+                          {summary?.gradePoint !== null && summary?.gradePoint !== undefined && (
+                            <span className="text-xs font-bold text-[var(--text)] tabular-nums">
+                              {summary.gradePoint.toFixed(1)} / {gpaSummary.scaleMax}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Accumulated Points Horizontal Progress Bar */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-semibold text-[var(--text)]">
+                            Accumulated Points Breakdown
+                          </span>
+                          <span className="tabular-nums text-[var(--text-muted)]">
+                            <strong className="text-emerald-600 dark:text-emerald-400">
+                              {(summary?.accumulatedPoints ?? 0).toFixed(1)} pts
+                            </strong>{" "}
+                            secured / {(summary?.totalWeightage ?? 0).toFixed(1)} evaluated
+                          </span>
+                        </div>
+
+                        {/* Multi-segment stacked bar */}
+                        <div
+                          role="progressbar"
+                          aria-label={`Grade progress for ${course.name}`}
+                          aria-valuenow={Math.round(breakdown.securedPercent)}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          className="h-3 w-full rounded-full bg-[var(--page)] border border-[var(--surface-border)] overflow-hidden flex"
+                        >
+                          {/* Secured points */}
+                          <div
+                            style={{ width: `${breakdown.securedPercent}%` }}
+                            className="h-full bg-emerald-500 transition-all duration-300"
+                            title={`Secured: ${breakdown.securedPercent.toFixed(1)}%`}
+                          />
+                          {/* Pending points */}
+                          <div
+                            style={{ width: `${breakdown.pendingPercent}%` }}
+                            className="h-full bg-blue-400/70 transition-all duration-300"
+                            title={`Pending: ${breakdown.pendingPercent.toFixed(1)}%`}
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)] pt-0.5">
+                          <div className="flex items-center gap-3">
+                            <span className="flex items-center gap-1">
+                              <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block" />
+                              <span>Secured</span>
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <span className="h-2 w-2 rounded-full bg-blue-400 inline-block" />
+                              <span>Pending</span>
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <span className="h-2 w-2 rounded-full bg-[var(--page)] border border-[var(--surface-border)] inline-block" />
+                              <span>Unassigned</span>
+                            </span>
+                          </div>
+                          <span>Passing Target: {breakdown.passingThresholdPercent}%</span>
+                        </div>
+                      </div>
+
+                      {/* Course Assessments Ledger */}
+                      <div className="pt-2 border-t border-[var(--surface-border)] space-y-2">
+                        <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                          Course Assessments ({courseAssessments.length})
+                        </div>
+                        {courseAssessments.length === 0 ? (
+                          <div className="text-xs text-[var(--text-muted)] italic py-2">
+                            No assessments found for this course.
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-[var(--surface-border)] border border-[var(--surface-border)] rounded-xl overflow-hidden">
+                            {courseAssessments.map((a) => {
+                              const achieved = a.achievedScore ?? a.achieved_score;
+                              const max = a.maxScore ?? a.max_score;
+                              const weight = a.weightagePercent ?? a.weightage_percent;
+                              const isGraded = achieved !== null && achieved !== undefined && max !== null && max !== undefined;
+
+                              return (
+                                <div
+                                  key={a.id}
+                                  className="flex items-center justify-between p-3 bg-[var(--page)] hover:bg-[var(--surface-hover)] transition text-xs"
+                                >
+                                  <div className="flex flex-col min-w-0 pr-2">
+                                    <span className="font-semibold text-[var(--text)] truncate">
+                                      {a.title}
+                                    </span>
+                                    <span className="text-[11px] text-[var(--text-muted)]">
+                                      {a.assessmentType} · {a.dateIso || "Undated"}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-3 shrink-0">
+                                    {weight !== null && weight !== undefined && (
+                                      <span className="rounded bg-[var(--surface)] border border-[var(--surface-border)] px-1.5 py-0.5 text-[11px] font-semibold text-[var(--text-muted)]">
+                                        {weight}% weight
+                                      </span>
+                                    )}
+                                    {isGraded ? (
+                                      <span className="font-bold text-emerald-700 dark:text-emerald-300 tabular-nums">
+                                        {achieved} / {max}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[11px] text-[var(--text-muted)] italic">
+                                        Not graded
+                                      </span>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => openAssessmentDetail(a.id)}
+                                      className="rounded-lg border border-[var(--surface-border)] bg-[var(--surface)] px-2.5 py-1 text-[11px] font-semibold text-[var(--accent-ink)] hover:bg-[var(--surface-hover)] transition cursor-pointer"
+                                    >
+                                      {isGraded ? "Edit Score" : "Enter Score"}
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -570,88 +816,6 @@ const ReadinessCard: React.FC<{ card: ExamReadinessCard; onClick: () => void }> 
             style={{ width: pct === null ? "0%" : `${pct}%` }}
           />
         </div>
-      </div>
-    </div>
-  );
-};
-
-const RoadmapTaskRow: React.FC<{
-  task: DailyStudyTask;
-  onToggle: () => void;
-  onOpenDetail: () => void;
-}> = ({ task, onToggle, onOpenDetail }) => {
-  const theme = useAppStore((s) => s.theme);
-  const courses = useAppStore((s) => s.data.schedule.courses);
-  const palette = coursePalette(task.courseId || "GENERAL");
-  const enrolled = courses.find((c) => c.id === task.courseId);
-  const chip = courseAccessibleChip(enrolled?.color || palette.color, theme === "dark");
-
-  return (
-    <div
-      data-testid={`roadmap-task-${task.key}`}
-      className="flex items-center justify-between py-2.5 px-1 hover:bg-[var(--surface-hover)] transition rounded-lg gap-3"
-    >
-      <label className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer select-none group">
-        <div className="relative flex h-5 w-5 items-center justify-center shrink-0">
-          <input
-            type="checkbox"
-            checked={task.completed}
-            onChange={onToggle}
-            className="peer absolute inset-0 z-10 h-full w-full opacity-0 cursor-pointer"
-          />
-          <div className="pointer-events-none h-[18px] w-[18px] rounded-md border-2 border-slate-300 dark:border-slate-600 bg-[var(--surface)] peer-checked:bg-[var(--accent-fill)] peer-checked:border-[var(--accent-fill)] flex items-center justify-center transition-all shadow-2xs group-hover:border-[var(--accent)]">
-            <Check
-              className={`h-3 w-3 text-white stroke-[3] transition-transform ${
-                task.completed ? "scale-100" : "scale-0"
-              }`}
-            />
-          </div>
-        </div>
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span
-              className="px-1.5 py-0.5 rounded border text-xs font-bold"
-              style={{
-                backgroundColor: chip.bg,
-                color: chip.text,
-                borderColor: chip.border,
-              }}
-            >
-              {courseDisplayName(task.courseId, courses)}
-            </span>
-            <span
-              className={`text-xs transition ${
-                task.completed
-                  ? "line-through text-[var(--text-muted)]"
-                  : "font-semibold text-[var(--text)]"
-              }`}
-            >
-              {task.topicTitle}
-            </span>
-          </div>
-          <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate whitespace-pre-line">
-            {task.title} • {task.reasoning}
-          </p>
-        </div>
-      </label>
-
-      <div className="flex items-center gap-2 shrink-0">
-        {task.estimatedHours != null && (
-          <span className="text-xs font-semibold tabular-nums text-[var(--text-muted)] flex items-center gap-1">
-            <Clock className="h-3 w-3" aria-hidden="true" />
-            <span>{task.estimatedHours}h</span>
-          </span>
-        )}
-
-        <button
-          type="button"
-          onClick={onOpenDetail}
-          className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-border)] transition"
-          title="View assessment details"
-          aria-label="View assessment details"
-        >
-          <ChevronRight className="h-4 w-4 text-[var(--accent-ink)]" aria-hidden="true" />
-        </button>
       </div>
     </div>
   );

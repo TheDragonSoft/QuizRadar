@@ -115,6 +115,8 @@ fn course_roundtrip() {
         color: "#0f9d58".to_string(),
         bg: None,
         border: None,
+        credits: None,
+        max_absences: None,
     };
     let json = serde_json::to_value(&course).unwrap();
     assert_eq!(json["id"], "MTH102");

@@ -111,6 +111,9 @@ pub struct DailyStudyDayGroup {
     pub total_estimated_hours: Option<f32>,
     /// Uncompleted first, then `priority_rank` descending (v4 sort).
     pub tasks: Vec<DailyStudyTask>,
+    /// Study cushion availability calculation for this day.
+    #[serde(default)]
+    pub cushion: Option<crate::types::DailyStudyCushion>,
 }
 
 /// Per-assessment readiness card (`01` §4.4 readiness grid; the UI draws
@@ -150,6 +153,9 @@ pub struct StudyTasksPayload {
     /// Constant `false`: the deterministic planner fills this payload; an
     /// AI-optimized plan would be its own, explicitly labeled payload.
     pub ai_generated: bool,
+    /// Study cushion for today (offset 0).
+    #[serde(default)]
+    pub today_cushion: Option<crate::types::DailyStudyCushion>,
 }
 
 /// Honest day label (v4 `study_day_display`): Today/Tomorrow always carry
@@ -200,6 +206,27 @@ pub fn build_study_tasks(
     completed_topics: &CompletedTopics,
     reference_date: NaiveDate,
     track: AcademicTrack,
+) -> StudyTasksPayload {
+    build_study_tasks_with_schedule(
+        assessments,
+        completed_topics,
+        reference_date,
+        track,
+        &[],
+        &[],
+    )
+}
+
+/// Build the deterministic roadmap with timetable slots and custom events for
+/// daily study cushion calculation.
+#[must_use]
+pub fn build_study_tasks_with_schedule(
+    assessments: &[Assessment],
+    completed_topics: &CompletedTopics,
+    reference_date: NaiveDate,
+    track: AcademicTrack,
+    slots: &[crate::types::ScheduleSlot],
+    custom_events: &[crate::types::CustomCalendarEvent],
 ) -> StudyTasksPayload {
     let mut horizon: Vec<(&Assessment, i64)> = assessments
         .iter()
@@ -367,16 +394,23 @@ pub fn build_study_tasks(
         } else {
             None
         };
+        let day_date = reference_date + Duration::days(i64::from(*offset));
+        let cushion = Some(crate::plan::cushion::calculate_daily_cushion(
+            day_date,
+            slots,
+            custom_events,
+            assessments,
+            &day_tasks,
+            None,
+        ));
         days.push(DailyStudyDayGroup {
             day_offset: *offset,
-            date: reference_date + Duration::days(i64::from(*offset)),
-            display_day: study_day_display(
-                *offset,
-                reference_date + Duration::days(i64::from(*offset)),
-            ),
+            date: day_date,
+            display_day: study_day_display(*offset, day_date),
             is_today: *offset == 0,
             total_estimated_hours,
             tasks: day_tasks,
+            cushion,
         });
     }
 
@@ -401,6 +435,11 @@ pub fn build_study_tasks(
         None
     };
 
+    let today_cushion = days
+        .iter()
+        .find(|d| d.is_today)
+        .and_then(|d| d.cushion.clone());
+
     StudyTasksPayload {
         days,
         readiness_cards,
@@ -409,6 +448,7 @@ pub fn build_study_tasks(
         completed_tasks,
         total_hours,
         ai_generated: false,
+        today_cushion,
     }
 }
 

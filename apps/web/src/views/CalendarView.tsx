@@ -5,11 +5,13 @@ import {
   Calendar as CalendarIcon,
   Download,
   MapPin,
+  Printer,
   X,
 } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
 import { courseAccessibleChip, courseDisplayName, coursePalette } from "../lib/coursePalette";
+import { getWeekParity, slotMatchesParity } from "../lib/weekParity";
 import {
   START_HOUR,
   END_HOUR,
@@ -45,13 +47,13 @@ import type { Assessment, Course, ScheduleSlot, CustomCalendarEvent } from "../s
  *  - the mobile window renders 3 columns wide (v4 left 4 empty columns).
  */
 
-interface BlockPalette {
+export interface BlockPalette {
   color: string;
   bg: string;
   border: string;
 }
 
-interface CalendarBlockItem extends CalendarLaneItem {
+export interface CalendarBlockItem extends CalendarLaneItem {
   kind: "merged_exam" | "standalone_exam" | "class_slot" | "custom_event";
   title: string;
   courseId?: string | null;
@@ -69,28 +71,29 @@ interface CalendarBlockItem extends CalendarLaneItem {
   eventId?: string | null;
   event?: CustomCalendarEvent;
   palette: BlockPalette;
+  weekParity?: string | null;
 }
 
 /** Honest time label: real clock range when the source stated one, an em
  * dash when placement guessed a slot for a time-less record. */
-const blockTimeLabel = (item: CalendarBlockItem): string =>
+export const blockTimeLabel = (item: CalendarBlockItem): string =>
   item.timeKnown
     ? `${formatCompactTime(item.startTime)} – ${formatCompactTime(item.endTime)}`
     : "Time —";
 
-const CUSTOM_EVENT_PALETTE: BlockPalette = {
+export const CUSTOM_EVENT_PALETTE: BlockPalette = {
   color: "#db2777",
   bg: "#fce7f3",
   border: "#db2777",
 };
 
-const STUDY_BLOCK_PALETTE: BlockPalette = {
+export const STUDY_BLOCK_PALETTE: BlockPalette = {
   color: "#10b981",
   bg: "#d1fae5",
   border: "#10b981",
 };
 
-function isSolidHex(value?: string | null): boolean {
+export function isSolidHex(value?: string | null): boolean {
   return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value.trim());
 }
 
@@ -99,7 +102,7 @@ function isSolidHex(value?: string | null): boolean {
  * deterministic per-course preset. `border` must stay a solid hex so the dark
  * card tint can be derived from it.
  */
-function resolvePalette(
+export function resolvePalette(
   courseId: string | null | undefined,
   courses: Map<string, Course>,
   override?: { color?: string | null; bg?: string | null; border?: string | null },
@@ -116,7 +119,7 @@ function resolvePalette(
 }
 
 /** Device-local UTC offset label (v4 hardcoded "GMT+03" — that was wrong). */
-function localUtcOffsetLabel(): string {
+export function localUtcOffsetLabel(): string {
   const offsetMinutes = -new Date().getTimezoneOffset();
   const sign = offsetMinutes >= 0 ? "+" : "-";
   const abs = Math.abs(offsetMinutes);
@@ -141,6 +144,9 @@ export const CalendarView: React.FC = () => {
   const addToast = useAppStore((s) => s.addToast);
   const searchQuery = useAppStore((s) => s.searchQuery);
   const exportIcs = useAppStore((s) => s.exportIcs);
+  const weekParityFilter = useAppStore((s) => s.weekParityFilter);
+  const setWeekParityFilter = useAppStore((s) => s.setWeekParityFilter);
+  const activeWeekParity = getWeekParity(currentWeekStartStr);
 
   const schedule = useAppStore((s) => s.data.schedule);
   const assessments = useAppStore((s) => s.data.assessments);
@@ -272,10 +278,46 @@ export const CalendarView: React.FC = () => {
         </div>
 
         {/* Navigation Actions (compact viewports; lg+ uses TopBar calendar controls) */}
-        <div className="flex items-center gap-1.5">
-          {/* Export every assessment as one .ics file (01 §4.6 offers
-              single/all). Hidden when the radar is empty - an empty export
-              would be a file with no events. */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {/* Week Parity Chip & Recurrence Filter */}
+          <div className="flex items-center gap-1.5 rounded-lg border border-[var(--surface-border)] bg-[var(--surface)] px-2 py-1 text-xs">
+            <span
+              data-testid="week-parity-chip"
+              className={`px-1.5 py-0.5 rounded font-bold uppercase tracking-wider text-[10px] ${
+                activeWeekParity === "week_a"
+                  ? "bg-indigo-100 text-indigo-800 dark:bg-indigo-950/70 dark:text-indigo-300"
+                  : "bg-purple-100 text-purple-800 dark:bg-purple-950/70 dark:text-purple-300"
+              }`}
+            >
+              {activeWeekParity === "week_a" ? "Week A" : "Week B"}
+            </span>
+            <select
+              aria-label="Filter alternating timetable recurrence"
+              data-testid="parity-filter-select"
+              value={weekParityFilter}
+              onChange={(e) => setWeekParityFilter(e.target.value as "all" | "auto" | "week_a" | "week_b")}
+              className="bg-transparent text-[11px] font-semibold text-[var(--text)] outline-none cursor-pointer"
+            >
+              <option value="auto">Auto</option>
+              <option value="week_a">Week A</option>
+              <option value="week_b">Week B</option>
+              <option value="all">All</option>
+            </select>
+          </div>
+
+          {/* Print / Save PDF Button */}
+          <button
+            type="button"
+            data-testid="print-schedule-btn"
+            onClick={() => window.print()}
+            title="Print or Save Clean PDF"
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--surface-border)] bg-[var(--surface)] px-2.5 text-xs font-medium text-[var(--text)] transition hover:bg-[var(--surface-hover)] active:scale-95 cursor-pointer"
+          >
+            <Printer className="h-3.5 w-3.5 text-[var(--accent-ink)]" aria-hidden="true" />
+            <span className="hidden sm:inline">Print / PDF</span>
+          </button>
+
+          {/* Export every assessment as one .ics file */}
           {assessments.length > 0 && (
             <button
               type="button"
@@ -568,6 +610,8 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
     const nowTopPx = ((nowMinutes - START_HOUR * 60) / 60) * HOUR_HEIGHT;
 
+    const weekParityFilter = useAppStore((s) => s.weekParityFilter);
+
     const dayItems: CalendarBlockItem[] = useMemo(() => {
       const items: CalendarBlockItem[] = [];
 
@@ -575,6 +619,7 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
         ? scheduleSlots.filter(
             (s) =>
               s.dayIndex === dayIndex &&
+              slotMatchesParity(s, dateIso, weekParityFilter) &&
               isCourseSelected(s.courseId) &&
               matchesGlobalSearch(searchQuery, s.courseId, s.courseName, s.type),
           )
@@ -618,6 +663,7 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
             timeKnown: true,
             assessmentId: matchingExam.id,
             palette,
+            weekParity: slot.weekParity ?? slot.week_parity,
           });
         } else {
           items.push({
@@ -634,6 +680,7 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
             endTime: slot.endTime,
             timeKnown: true,
             palette,
+            weekParity: slot.weekParity ?? slot.week_parity,
           });
         }
       });
@@ -962,6 +1009,16 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                 <span className="truncate">
                   {item.courseName || courseDisplayName(item.courseId, coursesById)}
                 </span>
+                {item.weekParity === "week_a" && (
+                  <span className="px-1 py-0.2 rounded bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 text-[9px] font-bold shrink-0">
+                    Week A
+                  </span>
+                )}
+                {item.weekParity === "week_b" && (
+                  <span className="px-1 py-0.2 rounded bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 text-[9px] font-bold shrink-0">
+                    Week B
+                  </span>
+                )}
               </div>
               {!isCompact ? (
                 <>

@@ -26,8 +26,10 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::plan;
 use crate::types::{
-    AcademicTrack, Assessment, AssessmentType, CompletedTopics, Course, CustomCalendarEvent,
-    FeedConfig, GradeRecord, ScheduleData, ScheduleSlot, UrgencyLevel,
+    AcademicTrack, Assessment, AssessmentType, AttendanceEntry, AttendanceStatus, CompletedTopics,
+    Course, CourseAttendanceSummary, CourseFocusStat, CustomCalendarEvent, DailyFocusStat,
+    FeedConfig, Flashcard, GradeRecord, MistakeRecord, QuizAttempt, ScheduleData, ScheduleSlot,
+    StudyAnalytics, StudySessionRecord, UrgencyLevel,
 };
 
 use super::db::{Db, StoreError};
@@ -276,9 +278,9 @@ impl<'a> CourseRepo<'a> {
     }
 
     pub fn list(&self) -> Result<Vec<Course>, StoreError> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT id, name, color, bg, border FROM courses ORDER BY id")?;
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, color, bg, border, credits, max_absences FROM courses ORDER BY id",
+        )?;
         let rows = stmt.query_map([], |row| {
             Ok(Course {
                 id: row.get(0)?,
@@ -286,6 +288,8 @@ impl<'a> CourseRepo<'a> {
                 color: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
                 bg: row.get(3)?,
                 border: row.get(4)?,
+                credits: row.get(5)?,
+                max_absences: row.get::<_, Option<i64>>(6)?.map(|v| v as u32),
             })
         })?;
         let mut courses = Vec::new();
@@ -293,6 +297,28 @@ impl<'a> CourseRepo<'a> {
             courses.push(row?);
         }
         Ok(courses)
+    }
+
+    pub fn get(&self, code: &str) -> Result<Option<Course>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, color, bg, border, credits, max_absences FROM courses WHERE id = ?1 COLLATE NOCASE",
+        )?;
+        let mut rows = stmt.query_map([code.trim()], |row| {
+            Ok(Course {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                color: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                bg: row.get(3)?,
+                border: row.get(4)?,
+                credits: row.get(5)?,
+                max_absences: row.get::<_, Option<i64>>(6)?.map(|v| v as u32),
+            })
+        })?;
+        if let Some(r) = rows.next() {
+            Ok(Some(r?))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Insert-or-replace by id (ASCII-case-insensitive match replaces an
@@ -312,13 +338,15 @@ impl<'a> CourseRepo<'a> {
         // Case-insensitive replacement of any near-duplicate id/label pair.
         self.delete(&course.id)?;
         self.conn.execute(
-            "INSERT INTO courses (id, name, color, bg, border) VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO courses (id, name, color, bg, border, credits, max_absences) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 course.id,
                 course.name,
                 course.color,
                 course.bg,
                 course.border,
+                course.credits,
+                course.max_absences.map(i64::from),
             ],
         )?;
         Ok(())
@@ -340,10 +368,30 @@ impl<'a> CourseRepo<'a> {
         Ok(self.conn.changes() > 0)
     }
 
+    pub fn set_max_absences(
+        &self,
+        code: &str,
+        max_absences: Option<u32>,
+    ) -> Result<(), StoreError> {
+        self.conn.execute(
+            "UPDATE courses SET max_absences = ?1 WHERE id = ?2 COLLATE NOCASE",
+            params![max_absences.map(i64::from), code.trim()],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_credits(&self, code: &str, credits: Option<f64>) -> Result<(), StoreError> {
+        self.conn.execute(
+            "UPDATE courses SET credits = ?1 WHERE id = ?2 COLLATE NOCASE",
+            params![credits, code.trim()],
+        )?;
+        Ok(())
+    }
+
     pub fn all_slots(&self) -> Result<Vec<ScheduleSlot>, StoreError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, day, day_index, course_id, course_name, slot_type, group_name, room, \
-             start_time, end_time, display_time, has_quiz, quiz_title \
+             start_time, end_time, display_time, has_quiz, quiz_title, week_parity \
              FROM slots ORDER BY day_index, start_time, id",
         )?;
         let mut slots = Vec::new();
@@ -357,7 +405,7 @@ impl<'a> CourseRepo<'a> {
     pub fn slots_for_course(&self, code: &str) -> Result<Vec<ScheduleSlot>, StoreError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, day, day_index, course_id, course_name, slot_type, group_name, room, \
-             start_time, end_time, display_time, has_quiz, quiz_title \
+             start_time, end_time, display_time, has_quiz, quiz_title, week_parity \
              FROM slots WHERE course_id = ?1 COLLATE NOCASE ORDER BY day_index, start_time, id",
         )?;
         let mut slots = Vec::new();
@@ -454,8 +502,8 @@ impl<'a> CourseRepo<'a> {
         self.conn.execute(
             "INSERT OR REPLACE INTO slots \
              (id, day, day_index, course_id, course_name, slot_type, group_name, room, \
-              start_time, end_time, display_time, has_quiz, quiz_title) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+              start_time, end_time, display_time, has_quiz, quiz_title, week_parity) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 slot.id,
                 slot.day,
@@ -470,6 +518,7 @@ impl<'a> CourseRepo<'a> {
                 slot.display_time,
                 i64::from(slot.has_quiz),
                 slot.quiz_title,
+                slot.week_parity,
             ],
         )?;
         Ok(())
@@ -512,6 +561,7 @@ fn row_to_slot(row: &rusqlite::Row<'_>) -> rusqlite::Result<ScheduleSlot> {
         display_time: row.get::<_, Option<String>>(10)?.unwrap_or_default(),
         has_quiz: row.get::<_, Option<i64>>(11)?.unwrap_or_default() != 0,
         quiz_title: row.get(12)?,
+        week_parity: row.get(13)?,
     })
 }
 
@@ -1626,6 +1676,653 @@ pub struct ProfileMeta {
 }
 
 // ---------------------------------------------------------------------------
+// AttendanceRepo
+// ---------------------------------------------------------------------------
+
+pub struct AttendanceRepo<'a> {
+    conn: &'a Connection,
+}
+
+impl<'a> AttendanceRepo<'a> {
+    pub fn new(conn: &'a Connection) -> Self {
+        Self { conn }
+    }
+
+    pub fn record(&self, entry: &AttendanceEntry) -> Result<(), StoreError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO attendance (id, slot_id, course_id, date_iso, status, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                entry.id,
+                entry.slot_id,
+                entry.course_id,
+                entry.date_iso.format("%Y-%m-%d").to_string(),
+                entry.status.as_str(),
+                entry.updated_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_all(&self) -> Result<Vec<AttendanceEntry>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, slot_id, course_id, date_iso, status, updated_at \
+             FROM attendance ORDER BY date_iso DESC, id",
+        )?;
+        let rows = stmt.query_map([], row_to_attendance)?;
+        let mut entries = Vec::new();
+        for r in rows {
+            entries.push(r?);
+        }
+        Ok(entries)
+    }
+
+    pub fn list_for_course(&self, course_id: &str) -> Result<Vec<AttendanceEntry>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, slot_id, course_id, date_iso, status, updated_at \
+             FROM attendance WHERE course_id = ?1 COLLATE NOCASE ORDER BY date_iso DESC, id",
+        )?;
+        let rows = stmt.query_map([course_id.trim()], row_to_attendance)?;
+        let mut entries = Vec::new();
+        for r in rows {
+            entries.push(r?);
+        }
+        Ok(entries)
+    }
+
+    pub fn summary_for_course(
+        &self,
+        course_id: &str,
+        max_absences: Option<u32>,
+    ) -> Result<CourseAttendanceSummary, StoreError> {
+        let entries = self.list_for_course(course_id)?;
+        let total_classes = entries.len() as u32;
+        let mut attended = 0u32;
+        let mut absent = 0u32;
+        let mut excused = 0u32;
+        for e in &entries {
+            match e.status {
+                AttendanceStatus::Attended => attended += 1,
+                AttendanceStatus::Absent => absent += 1,
+                AttendanceStatus::Excused => excused += 1,
+            }
+        }
+
+        let (warning_chip, is_critical) = match max_absences {
+            Some(limit) if limit > 0 => {
+                if absent >= limit {
+                    (Some(format!("Limit Reached! ({absent}/{limit})")), true)
+                } else if absent == limit - 1 {
+                    (Some(format!("1 Absence Left ({absent}/{limit})")), false)
+                } else {
+                    (Some(format!("{absent}/{limit} Absences")), false)
+                }
+            }
+            _ => (None, false),
+        };
+
+        Ok(CourseAttendanceSummary {
+            course_id: course_id.to_string(),
+            total_classes,
+            attended,
+            absent,
+            excused,
+            max_absences,
+            warning_chip,
+            is_critical,
+        })
+    }
+
+    pub fn course_summary(&self, course_id: &str) -> Result<CourseAttendanceSummary, StoreError> {
+        let max_absences = CourseRepo::new(self.conn)
+            .get(course_id)?
+            .and_then(|c| c.max_absences);
+        self.summary_for_course(course_id, max_absences)
+    }
+
+    pub fn all_summaries(&self) -> Result<Vec<CourseAttendanceSummary>, StoreError> {
+        let courses = CourseRepo::new(self.conn).list()?;
+        let mut summaries = Vec::with_capacity(courses.len());
+        for c in courses {
+            summaries.push(self.summary_for_course(&c.id, c.max_absences)?);
+        }
+        Ok(summaries)
+    }
+}
+
+fn row_to_attendance(row: &rusqlite::Row<'_>) -> rusqlite::Result<AttendanceEntry> {
+    let date_str: String = row.get(3)?;
+    let date_iso = NaiveDate::parse_from_str(date_str.trim(), "%Y-%m-%d").unwrap_or(NaiveDate::MIN);
+    let status_str: String = row.get(4)?;
+    let status = match status_str.trim().to_ascii_lowercase().as_str() {
+        "absent" => AttendanceStatus::Absent,
+        "excused" => AttendanceStatus::Excused,
+        _ => AttendanceStatus::Attended,
+    };
+    Ok(AttendanceEntry {
+        id: row.get(0)?,
+        slot_id: row.get(1)?,
+        course_id: row.get(2)?,
+        date_iso,
+        status,
+        updated_at: row.get(5)?,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// FlashcardRepo
+// ---------------------------------------------------------------------------
+
+pub struct FlashcardRepo<'a> {
+    conn: &'a Connection,
+}
+
+impl<'a> FlashcardRepo<'a> {
+    pub fn new(conn: &'a Connection) -> Self {
+        Self { conn }
+    }
+
+    pub fn upsert(&self, card: &Flashcard, updated_at: &str) -> Result<(), StoreError> {
+        if card.id.trim().is_empty() {
+            return Err(StoreError::Validation(
+                "Flashcard needs a non-empty id.".to_string(),
+            ));
+        }
+        if card.front.trim().is_empty() {
+            return Err(StoreError::Validation(
+                "Flashcard front cannot be empty.".to_string(),
+            ));
+        }
+        self.conn.execute(
+            "INSERT OR REPLACE INTO flashcards \
+             (id, course_id, assessment_id, topic, front, back, box_level, next_review_iso, last_reviewed_iso, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                card.id,
+                card.course_id,
+                card.assessment_id,
+                card.topic,
+                card.front,
+                card.back,
+                i64::from(card.box_level.clamp(1, 5)),
+                card.next_review_iso,
+                card.last_reviewed_iso,
+                updated_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn get(&self, id: &str) -> Result<Option<Flashcard>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, course_id, assessment_id, topic, front, back, box_level, next_review_iso, last_reviewed_iso \
+             FROM flashcards WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query_map([id.trim()], row_to_flashcard)?;
+        if let Some(row) = rows.next() {
+            Ok(Some(row?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn delete(&self, id: &str) -> Result<bool, StoreError> {
+        self.conn
+            .execute("DELETE FROM flashcards WHERE id = ?1", [id.trim()])?;
+        Ok(self.conn.changes() > 0)
+    }
+
+    pub fn list_all(&self) -> Result<Vec<Flashcard>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, course_id, assessment_id, topic, front, back, box_level, next_review_iso, last_reviewed_iso \
+             FROM flashcards ORDER BY box_level ASC, id ASC",
+        )?;
+        let rows = stmt.query_map([], row_to_flashcard)?;
+        let mut cards = Vec::new();
+        for r in rows {
+            cards.push(r?);
+        }
+        Ok(cards)
+    }
+
+    pub fn list_for_course(&self, course_id: &str) -> Result<Vec<Flashcard>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, course_id, assessment_id, topic, front, back, box_level, next_review_iso, last_reviewed_iso \
+             FROM flashcards WHERE course_id = ?1 COLLATE NOCASE ORDER BY box_level ASC, id ASC",
+        )?;
+        let rows = stmt.query_map([course_id.trim()], row_to_flashcard)?;
+        let mut cards = Vec::new();
+        for r in rows {
+            cards.push(r?);
+        }
+        Ok(cards)
+    }
+
+    pub fn list_for_assessment(&self, assessment_id: &str) -> Result<Vec<Flashcard>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, course_id, assessment_id, topic, front, back, box_level, next_review_iso, last_reviewed_iso \
+             FROM flashcards WHERE assessment_id = ?1 ORDER BY box_level ASC, id ASC",
+        )?;
+        let rows = stmt.query_map([assessment_id.trim()], row_to_flashcard)?;
+        let mut cards = Vec::new();
+        for r in rows {
+            cards.push(r?);
+        }
+        Ok(cards)
+    }
+
+    pub fn review(
+        &self,
+        id: &str,
+        correct: bool,
+        today: NaiveDate,
+        updated_at: &str,
+    ) -> Result<Option<Flashcard>, StoreError> {
+        let Some(mut card) = self.get(id)? else {
+            return Ok(None);
+        };
+        if correct {
+            card.box_level = (card.box_level + 1).min(5);
+        } else {
+            card.box_level = 1;
+        }
+        let interval_days = match card.box_level {
+            1 => 1,
+            2 => 3,
+            3 => 7,
+            4 => 14,
+            _ => 30,
+        };
+        card.last_reviewed_iso = Some(today.format("%Y-%m-%d").to_string());
+        card.next_review_iso = Some(
+            (today + chrono::Duration::days(interval_days))
+                .format("%Y-%m-%d")
+                .to_string(),
+        );
+        self.upsert(&card, updated_at)?;
+        Ok(Some(card))
+    }
+}
+
+fn row_to_flashcard(row: &rusqlite::Row<'_>) -> rusqlite::Result<Flashcard> {
+    let box_level_raw: i64 = row.get::<_, Option<i64>>(6)?.unwrap_or(1);
+    Ok(Flashcard {
+        id: row.get(0)?,
+        course_id: row.get(1)?,
+        assessment_id: row.get(2)?,
+        topic: row.get(3)?,
+        front: row.get(4)?,
+        back: row.get(5)?,
+        box_level: (box_level_raw.clamp(1, 5)) as u8,
+        next_review_iso: row.get(7)?,
+        last_reviewed_iso: row.get(8)?,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// QuizAttemptRepo & MistakeRepo
+// ---------------------------------------------------------------------------
+
+pub struct QuizAttemptRepo<'a> {
+    conn: &'a Connection,
+}
+
+impl<'a> QuizAttemptRepo<'a> {
+    pub fn new(conn: &'a Connection) -> Self {
+        Self { conn }
+    }
+
+    pub fn record(&self, attempt: &QuizAttempt) -> Result<(), StoreError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO quiz_attempts (id, assessment_id, course_id, timestamp, score, total_questions, passed) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                attempt.id,
+                attempt.assessment_id,
+                attempt.course_id,
+                attempt.timestamp,
+                i64::from(attempt.score),
+                i64::from(attempt.total_questions),
+                if attempt.passed { 1i64 } else { 0i64 },
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn save(&self, attempt: &QuizAttempt) -> Result<(), StoreError> {
+        self.record(attempt)
+    }
+
+    pub fn list_all(&self) -> Result<Vec<QuizAttempt>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, assessment_id, course_id, timestamp, score, total_questions, passed \
+             FROM quiz_attempts ORDER BY timestamp DESC, id",
+        )?;
+        let rows = stmt.query_map([], row_to_attempt)?;
+        let mut attempts = Vec::new();
+        for r in rows {
+            attempts.push(r?);
+        }
+        Ok(attempts)
+    }
+
+    pub fn list_for_assessment(&self, assessment_id: &str) -> Result<Vec<QuizAttempt>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, assessment_id, course_id, timestamp, score, total_questions, passed \
+             FROM quiz_attempts WHERE assessment_id = ?1 ORDER BY timestamp DESC, id",
+        )?;
+        let rows = stmt.query_map([assessment_id.trim()], row_to_attempt)?;
+        let mut attempts = Vec::new();
+        for r in rows {
+            attempts.push(r?);
+        }
+        Ok(attempts)
+    }
+}
+
+fn row_to_attempt(row: &rusqlite::Row<'_>) -> rusqlite::Result<QuizAttempt> {
+    Ok(QuizAttempt {
+        id: row.get(0)?,
+        assessment_id: row.get(1)?,
+        course_id: row.get(2)?,
+        timestamp: row.get(3)?,
+        score: row.get::<_, i64>(4)? as u32,
+        total_questions: row.get::<_, i64>(5)? as u32,
+        passed: row.get::<_, i64>(6)? != 0,
+    })
+}
+
+pub struct MistakeRepo<'a> {
+    conn: &'a Connection,
+}
+
+impl<'a> MistakeRepo<'a> {
+    pub fn new(conn: &'a Connection) -> Self {
+        Self { conn }
+    }
+
+    pub fn record(&self, mistake: &MistakeRecord, updated_at: &str) -> Result<(), StoreError> {
+        let options_json = serde_json::to_string(&mistake.options)?;
+        self.conn.execute(
+            "INSERT OR REPLACE INTO mistake_bank \
+             (id, attempt_id, assessment_id, course_id, question_id, question_text, options, selected_index, correct_index, explanation, timestamp, resolved, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            params![
+                mistake.id,
+                mistake.attempt_id,
+                mistake.assessment_id,
+                mistake.course_id,
+                mistake.question_id,
+                mistake.question_text,
+                options_json,
+                mistake.selected_index as i64,
+                mistake.correct_index as i64,
+                mistake.explanation,
+                mistake.timestamp,
+                if mistake.resolved { 1i64 } else { 0i64 },
+                updated_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn save(&self, mistake: &MistakeRecord, updated_at: &str) -> Result<(), StoreError> {
+        self.record(mistake, updated_at)
+    }
+
+    pub fn list_all(&self) -> Result<Vec<MistakeRecord>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, attempt_id, assessment_id, course_id, question_id, question_text, options, selected_index, correct_index, explanation, timestamp, resolved \
+             FROM mistake_bank ORDER BY resolved ASC, timestamp DESC, id",
+        )?;
+        let rows = stmt.query_map([], row_to_mistake)?;
+        let mut mistakes = Vec::new();
+        for r in rows {
+            mistakes.push(r?);
+        }
+        Ok(mistakes)
+    }
+
+    pub fn list_unresolved(&self) -> Result<Vec<MistakeRecord>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, attempt_id, assessment_id, course_id, question_id, question_text, options, selected_index, correct_index, explanation, timestamp, resolved \
+             FROM mistake_bank WHERE resolved = 0 ORDER BY timestamp DESC, id",
+        )?;
+        let rows = stmt.query_map([], row_to_mistake)?;
+        let mut mistakes = Vec::new();
+        for r in rows {
+            mistakes.push(r?);
+        }
+        Ok(mistakes)
+    }
+
+    pub fn list_for_assessment(
+        &self,
+        assessment_id: &str,
+    ) -> Result<Vec<MistakeRecord>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, attempt_id, assessment_id, course_id, question_id, question_text, options, selected_index, correct_index, explanation, timestamp, resolved \
+             FROM mistake_bank WHERE assessment_id = ?1 ORDER BY resolved ASC, timestamp DESC, id",
+        )?;
+        let rows = stmt.query_map([assessment_id.trim()], row_to_mistake)?;
+        let mut mistakes = Vec::new();
+        for r in rows {
+            mistakes.push(r?);
+        }
+        Ok(mistakes)
+    }
+
+    pub fn resolve(&self, id: &str, updated_at: &str) -> Result<bool, StoreError> {
+        self.conn.execute(
+            "UPDATE mistake_bank SET resolved = 1, updated_at = ?1 WHERE id = ?2",
+            params![updated_at, id.trim()],
+        )?;
+        Ok(self.conn.changes() > 0)
+    }
+}
+
+fn row_to_mistake(row: &rusqlite::Row<'_>) -> rusqlite::Result<MistakeRecord> {
+    let options_raw: String = row.get(6)?;
+    let options: Vec<String> = serde_json::from_str(&options_raw).unwrap_or_default();
+    Ok(MistakeRecord {
+        id: row.get(0)?,
+        attempt_id: row.get(1)?,
+        assessment_id: row.get(2)?,
+        course_id: row.get(3)?,
+        question_id: row.get(4)?,
+        question_text: row.get(5)?,
+        options,
+        selected_index: row.get::<_, i64>(7)? as usize,
+        correct_index: row.get::<_, i64>(8)? as usize,
+        explanation: row.get::<_, Option<String>>(9)?.unwrap_or_default(),
+        timestamp: row.get(10)?,
+        resolved: row.get::<_, i64>(11)? != 0,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// StudySessionRepo
+// ---------------------------------------------------------------------------
+
+pub struct StudySessionRepo<'a> {
+    conn: &'a Connection,
+}
+
+impl<'a> StudySessionRepo<'a> {
+    pub fn new(conn: &'a Connection) -> Self {
+        Self { conn }
+    }
+
+    pub fn record(&self, session: &StudySessionRecord) -> Result<(), StoreError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO study_sessions (id, course_id, assessment_id, topic, duration_minutes, timestamp, date_iso) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                session.id,
+                session.course_id,
+                session.assessment_id,
+                session.topic,
+                i64::from(session.duration_minutes),
+                session.timestamp,
+                session.date_iso.format("%Y-%m-%d").to_string(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn log(&self, session: &StudySessionRecord) -> Result<(), StoreError> {
+        self.record(session)
+    }
+
+    pub fn list_all(&self) -> Result<Vec<StudySessionRecord>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, course_id, assessment_id, topic, duration_minutes, timestamp, date_iso \
+             FROM study_sessions ORDER BY date_iso DESC, timestamp DESC",
+        )?;
+        let rows = stmt.query_map([], row_to_session)?;
+        let mut sessions = Vec::new();
+        for r in rows {
+            sessions.push(r?);
+        }
+        Ok(sessions)
+    }
+
+    pub fn list_for_course(&self, course_id: &str) -> Result<Vec<StudySessionRecord>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, course_id, assessment_id, topic, duration_minutes, timestamp, date_iso \
+             FROM study_sessions WHERE course_id = ?1 COLLATE NOCASE ORDER BY date_iso DESC, timestamp DESC",
+        )?;
+        let rows = stmt.query_map([course_id.trim()], row_to_session)?;
+        let mut sessions = Vec::new();
+        for r in rows {
+            sessions.push(r?);
+        }
+        Ok(sessions)
+    }
+
+    /// Calculates study analytics (streaks anchored to ref_date, 7-day chart, and course breakdown).
+    pub fn get_analytics(
+        &self,
+        ref_date: NaiveDate,
+        courses: &[Course],
+    ) -> Result<StudyAnalytics, StoreError> {
+        let sessions = self.list_all()?;
+
+        let mut total_focus_minutes = 0u32;
+        let mut daily_totals: HashMap<NaiveDate, u32> = HashMap::new();
+        let mut course_totals: HashMap<String, u32> = HashMap::new();
+
+        for s in &sessions {
+            total_focus_minutes += s.duration_minutes;
+            *daily_totals.entry(s.date_iso).or_insert(0) += s.duration_minutes;
+            if let Some(ref cid) = s.course_id {
+                *course_totals.entry(cid.clone()).or_insert(0) += s.duration_minutes;
+            }
+        }
+
+        // Streak calculation (anchored to ref_date)
+        let is_active = |d: NaiveDate| daily_totals.get(&d).copied().unwrap_or(0) >= 1;
+
+        let current_streak_days = if is_active(ref_date) {
+            let mut streak = 1u32;
+            let mut d = ref_date - chrono::Duration::days(1);
+            while is_active(d) {
+                streak += 1;
+                d -= chrono::Duration::days(1);
+            }
+            streak
+        } else if is_active(ref_date - chrono::Duration::days(1)) {
+            let mut streak = 1u32;
+            let mut d = ref_date - chrono::Duration::days(2);
+            while is_active(d) {
+                streak += 1;
+                d -= chrono::Duration::days(1);
+            }
+            streak
+        } else {
+            0u32
+        };
+
+        // Best streak calculation across all historical active dates
+        let mut active_dates: Vec<NaiveDate> = daily_totals
+            .keys()
+            .copied()
+            .filter(|d| is_active(*d))
+            .collect();
+        active_dates.sort_unstable();
+        let mut best_streak_days = 0u32;
+        let mut current_consecutive = 0u32;
+        let mut prev_date: Option<NaiveDate> = None;
+
+        for d in active_dates {
+            match prev_date {
+                Some(prev) if d == prev + chrono::Duration::days(1) => {
+                    current_consecutive += 1;
+                }
+                _ => {
+                    current_consecutive = 1;
+                }
+            }
+            prev_date = Some(d);
+            best_streak_days = best_streak_days.max(current_consecutive);
+        }
+        best_streak_days = best_streak_days.max(current_streak_days);
+
+        // Weekly chart (last 7 days: ref_date - 6d ..= ref_date)
+        let mut weekly_chart = Vec::with_capacity(7);
+        for i in (0..=6).rev() {
+            let d = ref_date - chrono::Duration::days(i);
+            let mins = daily_totals.get(&d).copied().unwrap_or(0);
+            let day_label = d.format("%a").to_string();
+            weekly_chart.push(DailyFocusStat {
+                date_iso: d,
+                day_label,
+                minutes: mins,
+            });
+        }
+
+        // Course breakdown
+        let mut course_breakdown = Vec::new();
+        for (cid, mins) in course_totals {
+            let course = courses.iter().find(|c| c.id.eq_ignore_ascii_case(&cid));
+            let course_name = course
+                .map(|c| c.name.clone())
+                .unwrap_or_else(|| cid.clone());
+            let color = course.map(|c| c.color.clone());
+            course_breakdown.push(CourseFocusStat {
+                course_id: cid,
+                course_name,
+                minutes: mins,
+                color,
+            });
+        }
+        course_breakdown.sort_by_key(|a| std::cmp::Reverse(a.minutes));
+
+        Ok(StudyAnalytics {
+            current_streak_days,
+            best_streak_days,
+            total_focus_minutes,
+            weekly_chart,
+            course_breakdown,
+        })
+    }
+}
+
+fn row_to_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<StudySessionRecord> {
+    let date_str: String = row.get(6)?;
+    let date_iso = NaiveDate::parse_from_str(date_str.trim(), "%Y-%m-%d").unwrap_or(NaiveDate::MIN);
+    Ok(StudySessionRecord {
+        id: row.get(0)?,
+        course_id: row.get(1)?,
+        assessment_id: row.get(2)?,
+        topic: row.get(3)?,
+        duration_minutes: row.get::<_, i64>(4)? as u32,
+        timestamp: row.get(5)?,
+        date_iso,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // ops — the transactional mutations every shell calls
 // ---------------------------------------------------------------------------
 
@@ -1880,6 +2577,130 @@ pub mod ops {
         }
         read_snapshot(db.conn(), reference_date)
     }
+
+    pub fn record_attendance(
+        db: &Db,
+        entry: &AttendanceEntry,
+        reference_date: NaiveDate,
+    ) -> Result<AppSnapshot, StoreError> {
+        {
+            let tx = db.transaction()?;
+            AttendanceRepo::new(&tx).record(entry)?;
+            tx.commit()?;
+        }
+        read_snapshot(db.conn(), reference_date)
+    }
+
+    pub fn set_course_absence_limit(
+        db: &Db,
+        course_id: &str,
+        max_absences: Option<u32>,
+        updated_at: &str,
+        reference_date: NaiveDate,
+    ) -> Result<AppSnapshot, StoreError> {
+        {
+            let tx = db.transaction()?;
+            CourseRepo::new(&tx).set_max_absences(course_id, max_absences)?;
+            MetaRepo::new(&tx).set_schedule_updated_at(updated_at)?;
+            tx.commit()?;
+        }
+        read_snapshot(db.conn(), reference_date)
+    }
+
+    pub fn log_study_session(
+        db: &Db,
+        session: &StudySessionRecord,
+        reference_date: NaiveDate,
+    ) -> Result<AppSnapshot, StoreError> {
+        {
+            let tx = db.transaction()?;
+            StudySessionRepo::new(&tx).record(session)?;
+            tx.commit()?;
+        }
+        read_snapshot(db.conn(), reference_date)
+    }
+
+    pub fn get_study_analytics(db: &Db, ref_date: NaiveDate) -> Result<StudyAnalytics, StoreError> {
+        let courses = CourseRepo::new(db.conn()).list()?;
+        StudySessionRepo::new(db.conn()).get_analytics(ref_date, &courses)
+    }
+
+    pub fn save_quiz_attempt(
+        db: &Db,
+        attempt: &QuizAttempt,
+        mistakes: &[MistakeRecord],
+        updated_at: &str,
+    ) -> Result<(), StoreError> {
+        let tx = db.transaction()?;
+        QuizAttemptRepo::new(&tx).record(attempt)?;
+        let mistake_repo = MistakeRepo::new(&tx);
+        for m in mistakes {
+            mistake_repo.record(m, updated_at)?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn list_mistakes(
+        db: &Db,
+        assessment_id: Option<&str>,
+    ) -> Result<Vec<MistakeRecord>, StoreError> {
+        let repo = MistakeRepo::new(db.conn());
+        match assessment_id {
+            Some(aid) if !aid.trim().is_empty() => repo.list_for_assessment(aid),
+            _ => repo.list_all(),
+        }
+    }
+
+    pub fn resolve_mistake(
+        db: &Db,
+        mistake_id: &str,
+        updated_at: &str,
+    ) -> Result<bool, StoreError> {
+        let tx = db.transaction()?;
+        let res = MistakeRepo::new(&tx).resolve(mistake_id, updated_at)?;
+        tx.commit()?;
+        Ok(res)
+    }
+
+    pub fn upsert_flashcard(
+        db: &Db,
+        card: &Flashcard,
+        updated_at: &str,
+    ) -> Result<Flashcard, StoreError> {
+        let tx = db.transaction()?;
+        FlashcardRepo::new(&tx).upsert(card, updated_at)?;
+        tx.commit()?;
+        Ok(card.clone())
+    }
+
+    pub fn list_flashcards(db: &Db, course_id: Option<&str>) -> Result<Vec<Flashcard>, StoreError> {
+        let repo = FlashcardRepo::new(db.conn());
+        match course_id {
+            Some(cid) if !cid.trim().is_empty() => repo.list_for_course(cid),
+            _ => repo.list_all(),
+        }
+    }
+
+    pub fn delete_flashcard(db: &Db, id: &str) -> Result<bool, StoreError> {
+        let tx = db.transaction()?;
+        let res = FlashcardRepo::new(&tx).delete(id)?;
+        tx.commit()?;
+        Ok(res)
+    }
+
+    pub fn review_flashcard(
+        db: &Db,
+        id: &str,
+        correct: bool,
+        today: NaiveDate,
+        updated_at: &str,
+    ) -> Result<Option<Flashcard>, StoreError> {
+        let tx = db.transaction()?;
+        let res = FlashcardRepo::new(&tx).review(id, correct, today, updated_at)?;
+        tx.commit()?;
+        Ok(res)
+    }
 }
 
 #[cfg(test)]
@@ -1912,6 +2733,8 @@ mod tests {
             color: "#2563EB".to_string(),
             bg: None,
             border: None,
+            credits: None,
+            max_absences: None,
         }
     }
 
@@ -1936,6 +2759,7 @@ mod tests {
             display_time: String::new(),
             has_quiz: false,
             quiz_title: None,
+            week_parity: None,
         }
     }
 
@@ -1961,6 +2785,7 @@ mod tests {
             display_time: String::new(),
             has_quiz: false,
             quiz_title: None,
+            week_parity: None,
         }
     }
 
@@ -2718,5 +3543,420 @@ mod tests {
 
         // Derived countdown is stamped at read time, not at scan time.
         assert_eq!(snapshot.assessments[0].days_until, Some(3));
+    }
+
+    // --- Milestone 1: Attendance, Flashcards, Quizzes, Mistakes, Sessions, Migration ---
+
+    #[test]
+    fn attendance_repo_crud_and_summary_warnings() {
+        let db = mem_db();
+        ops::save_schedule(
+            &db,
+            &ScheduleData {
+                semester: Some("Fall 2026".into()),
+                courses: vec![Course {
+                    id: "CSE241".into(),
+                    name: "Digital Design".into(),
+                    color: "#2563EB".into(),
+                    bg: None,
+                    border: None,
+                    credits: Some(3.0),
+                    max_absences: Some(4),
+                }],
+                slots: vec![ScheduleSlot {
+                    id: "slot-1".into(),
+                    day: "Sun".into(),
+                    day_index: 0,
+                    course_id: "CSE241".into(),
+                    course_name: "Digital Design".into(),
+                    slot_type: "Lecture".into(),
+                    group: None,
+                    room: None,
+                    start_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+                    end_time: NaiveTime::from_hms_opt(10, 30, 0).unwrap(),
+                    display_time: "09:00–10:30".into(),
+                    has_quiz: false,
+                    quiz_title: None,
+                    week_parity: Some("all".into()),
+                }],
+            },
+            "st",
+            ref_date(),
+        )
+        .unwrap();
+
+        let att_repo = AttendanceRepo::new(db.conn());
+        let date1 = NaiveDate::from_ymd_opt(2026, 10, 25).unwrap();
+        let date2 = NaiveDate::from_ymd_opt(2026, 11, 1).unwrap();
+        let date3 = NaiveDate::from_ymd_opt(2026, 11, 8).unwrap();
+        let date4 = NaiveDate::from_ymd_opt(2026, 11, 15).unwrap();
+
+        att_repo
+            .record(&AttendanceEntry {
+                id: "att-1".into(),
+                slot_id: "slot-1".into(),
+                course_id: "CSE241".into(),
+                date_iso: date1,
+                status: AttendanceStatus::Attended,
+                updated_at: "t1".into(),
+            })
+            .unwrap();
+
+        att_repo
+            .record(&AttendanceEntry {
+                id: "att-2".into(),
+                slot_id: "slot-1".into(),
+                course_id: "CSE241".into(),
+                date_iso: date2,
+                status: AttendanceStatus::Absent,
+                updated_at: "t2".into(),
+            })
+            .unwrap();
+
+        att_repo
+            .record(&AttendanceEntry {
+                id: "att-3".into(),
+                slot_id: "slot-1".into(),
+                course_id: "CSE241".into(),
+                date_iso: date3,
+                status: AttendanceStatus::Absent,
+                updated_at: "t3".into(),
+            })
+            .unwrap();
+
+        att_repo
+            .record(&AttendanceEntry {
+                id: "att-4".into(),
+                slot_id: "slot-1".into(),
+                course_id: "CSE241".into(),
+                date_iso: date4,
+                status: AttendanceStatus::Absent,
+                updated_at: "t4".into(),
+            })
+            .unwrap();
+
+        let summary = att_repo.course_summary("CSE241").unwrap();
+        assert_eq!(summary.total_classes, 4);
+        assert_eq!(summary.attended, 1);
+        assert_eq!(summary.absent, 3);
+        assert_eq!(summary.excused, 0);
+        assert_eq!(summary.max_absences, Some(4));
+        assert_eq!(summary.is_critical, false);
+        assert_eq!(
+            summary.warning_chip.as_deref(),
+            Some("1 Absence Left (3/4)")
+        );
+
+        // Record a 4th absence hitting the critical threshold
+        let date5 = NaiveDate::from_ymd_opt(2026, 11, 22).unwrap();
+        att_repo
+            .record(&AttendanceEntry {
+                id: "att-5".into(),
+                slot_id: "slot-1".into(),
+                course_id: "CSE241".into(),
+                date_iso: date5,
+                status: AttendanceStatus::Absent,
+                updated_at: "t5".into(),
+            })
+            .unwrap();
+
+        let crit_summary = att_repo.course_summary("CSE241").unwrap();
+        assert_eq!(crit_summary.absent, 4);
+        assert_eq!(crit_summary.is_critical, true);
+        assert_eq!(
+            crit_summary.warning_chip.as_deref(),
+            Some("Limit Reached! (4/4)")
+        );
+
+        // Modifying absence limit via CourseRepo
+        let course_repo = CourseRepo::new(db.conn());
+        course_repo.set_max_absences("CSE241", Some(6)).unwrap();
+        let updated_summary = att_repo.course_summary("CSE241").unwrap();
+        assert_eq!(updated_summary.max_absences, Some(6));
+        assert_eq!(updated_summary.is_critical, false);
+    }
+
+    #[test]
+    fn flashcard_repo_crud_and_leitner_repetition() {
+        let db = mem_db();
+        let fc_repo = FlashcardRepo::new(db.conn());
+
+        let fc = Flashcard {
+            id: "fc-1".into(),
+            course_id: Some("CSE241".into()),
+            assessment_id: Some("a1".into()),
+            topic: Some("Flip-Flops".into()),
+            front: "What is a D flip-flop?".into(),
+            back: "A data or delay flip-flop that captures the D input on the clock edge.".into(),
+            box_level: 1,
+            next_review_iso: Some("2026-10-24".into()),
+            last_reviewed_iso: None,
+        };
+
+        fc_repo.upsert(&fc, "t1").unwrap();
+        let list = fc_repo.list_for_course("CSE241").unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].box_level, 1);
+
+        // Correct review advances box from 1 to 2 with +3 days
+        let reviewed = fc_repo
+            .review(
+                "fc-1",
+                true,
+                NaiveDate::from_ymd_opt(2026, 10, 24).unwrap(),
+                "t1",
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(reviewed.box_level, 2);
+        assert_eq!(reviewed.next_review_iso.as_deref(), Some("2026-10-27"));
+        assert_eq!(reviewed.last_reviewed_iso.as_deref(), Some("2026-10-24"));
+
+        // Another correct review advances to box 3 (+7 days -> 2026-11-03)
+        let reviewed2 = fc_repo
+            .review(
+                "fc-1",
+                true,
+                NaiveDate::from_ymd_opt(2026, 10, 27).unwrap(),
+                "t2",
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(reviewed2.box_level, 3);
+        assert_eq!(reviewed2.next_review_iso.as_deref(), Some("2026-11-03"));
+
+        // Incorrect review resets to box 1 (+1 day)
+        let reviewed3 = fc_repo
+            .review(
+                "fc-1",
+                false,
+                NaiveDate::from_ymd_opt(2026, 11, 3).unwrap(),
+                "t3",
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(reviewed3.box_level, 1);
+        assert_eq!(reviewed3.next_review_iso.as_deref(), Some("2026-11-04"));
+
+        // Delete flashcard
+        fc_repo.delete("fc-1").unwrap();
+        let empty = fc_repo.list_all().unwrap();
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn quiz_attempt_and_mistake_bank_flow() {
+        let db = mem_db();
+        let qa_repo = QuizAttemptRepo::new(db.conn());
+        let mb_repo = MistakeRepo::new(db.conn());
+
+        let attempt = QuizAttempt {
+            id: "qa-1".into(),
+            assessment_id: "a1".into(),
+            course_id: Some("CSE241".into()),
+            timestamp: "2026-10-24T12:00:00Z".into(),
+            score: 4,
+            total_questions: 5,
+            passed: true,
+        };
+        qa_repo.save(&attempt).unwrap();
+
+        let attempts = qa_repo.list_for_assessment("a1").unwrap();
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0].score, 4);
+
+        let mistake = MistakeRecord {
+            id: "mis-1".into(),
+            attempt_id: Some("qa-1".into()),
+            assessment_id: "a1".into(),
+            course_id: Some("CSE241".into()),
+            question_id: "q-3".into(),
+            question_text: "What does race condition mean?".into(),
+            options: vec!["Hazard".into(), "Clock jitter".into(), "Parity".into()],
+            selected_index: 1,
+            correct_index: 0,
+            explanation: "Timing race causes hazard.".into(),
+            timestamp: "2026-10-24T12:00:00Z".into(),
+            resolved: false,
+        };
+        mb_repo.save(&mistake, "t1").unwrap();
+
+        let unresolved = mb_repo.list_unresolved().unwrap();
+        assert_eq!(unresolved.len(), 1);
+        assert_eq!(unresolved[0].id, "mis-1");
+
+        mb_repo.resolve("mis-1", "t2").unwrap();
+        assert!(mb_repo.list_unresolved().unwrap().is_empty());
+
+        let all = mb_repo.list_all().unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].resolved, true);
+    }
+
+    #[test]
+    fn study_session_repo_and_streak_analytics() {
+        let db = mem_db();
+        let courses = vec![
+            course("CSE241", "Digital Design"),
+            course("MTH102", "Calculus II"),
+        ];
+        ops::save_schedule(
+            &db,
+            &ScheduleData {
+                semester: Some("Fall 2026".into()),
+                courses: courses.clone(),
+                slots: Vec::new(),
+            },
+            "st",
+            ref_date(),
+        )
+        .unwrap();
+
+        let session_repo = StudySessionRepo::new(db.conn());
+        let d_today = ref_date(); // 2026-10-24
+        let d_yesterday = d_today - chrono::Duration::days(1);
+        let d_two_days_ago = d_today - chrono::Duration::days(2);
+
+        session_repo
+            .log(&StudySessionRecord {
+                id: "sess-1".into(),
+                course_id: Some("CSE241".into()),
+                assessment_id: None,
+                topic: Some("K-Maps".into()),
+                duration_minutes: 50,
+                timestamp: "2026-10-22T10:00:00Z".into(),
+                date_iso: d_two_days_ago,
+            })
+            .unwrap();
+
+        session_repo
+            .log(&StudySessionRecord {
+                id: "sess-2".into(),
+                course_id: Some("CSE241".into()),
+                assessment_id: None,
+                topic: Some("Flip-Flops".into()),
+                duration_minutes: 25,
+                timestamp: "2026-10-23T10:00:00Z".into(),
+                date_iso: d_yesterday,
+            })
+            .unwrap();
+
+        session_repo
+            .log(&StudySessionRecord {
+                id: "sess-3".into(),
+                course_id: Some("MTH102".into()),
+                assessment_id: None,
+                topic: Some("Integrals".into()),
+                duration_minutes: 45,
+                timestamp: "2026-10-24T10:00:00Z".into(),
+                date_iso: d_today,
+            })
+            .unwrap();
+
+        let analytics = session_repo.get_analytics(d_today, &courses).unwrap();
+        assert_eq!(analytics.total_focus_minutes, 120);
+        assert_eq!(analytics.current_streak_days, 3);
+        assert_eq!(analytics.best_streak_days, 3);
+        assert_eq!(analytics.weekly_chart.len(), 7);
+        assert_eq!(analytics.course_breakdown.len(), 2);
+    }
+
+    #[test]
+    fn sqlite_v4_migration_from_v3_database() {
+        let conn = Connection::open_in_memory().unwrap();
+        // Run migration 1, 2, 3 manually to create a pure v3 database
+        conn.execute_batch(super::super::db::MIGRATIONS[0].1)
+            .unwrap();
+        conn.execute_batch(super::super::db::MIGRATIONS[1].1)
+            .unwrap();
+        conn.execute_batch(super::super::db::MIGRATIONS[2].1)
+            .unwrap();
+        conn.pragma_update(None, "user_version", 3).unwrap();
+
+        // Verify v3 schema state
+        let v: i32 = conn
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, 3);
+
+        // Insert sample course and slot in v3
+        conn.execute(
+            "INSERT INTO courses (id, name, color) VALUES (?1, ?2, ?3)",
+            params!["CSE101", "Intro CS", "#1a73e8"],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO slots (id, day, day_index, course_id, course_name, slot_type, start_time, end_time, display_time, has_quiz)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params!["slot-1", "Mon", 1, "CSE101", "Intro CS", "Lecture", "09:00", "10:30", "09:00–10:30", 0],
+        )
+        .unwrap();
+
+        // Now run migration 4
+        conn.execute_batch(super::super::db::MIGRATIONS[3].1)
+            .unwrap();
+        conn.pragma_update(None, "user_version", 4).unwrap();
+
+        let v4: i32 = conn
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        assert_eq!(v4, 4);
+
+        // Verify new columns exist and default to NULL
+        let (credits, max_absences): (Option<f64>, Option<u32>) = conn
+            .query_row(
+                "SELECT credits, max_absences FROM courses WHERE id = 'CSE101'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(credits, None);
+        assert_eq!(max_absences, None);
+
+        let week_parity: Option<String> = conn
+            .query_row(
+                "SELECT week_parity FROM slots WHERE id = 'slot-1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(week_parity, None);
+
+        // Verify new v4 tables can be written to
+        conn.execute(
+            "INSERT INTO attendance (id, slot_id, course_id, date_iso, status, updated_at)
+             VALUES ('att-1', 'slot-1', 'CSE101', '2026-10-26', 'attended', 't1')",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO flashcards (id, front, back, box_level)
+             VALUES ('fc-1', 'Front', 'Back', 1)",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO quiz_attempts (id, assessment_id, timestamp, score, total_questions, passed)
+             VALUES ('qa-1', 'a1', 't1', 5, 5, 1)",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO mistake_bank (id, assessment_id, question_id, question_text, options, selected_index, correct_index, timestamp)
+             VALUES ('mis-1', 'a1', 'q-1', 'Q?', '[]', 0, 1, 't1')",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO study_sessions (id, duration_minutes, timestamp, date_iso)
+             VALUES ('sess-1', 30, 't1', '2026-10-26')",
+            [],
+        )
+        .unwrap();
     }
 }

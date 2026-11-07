@@ -238,6 +238,11 @@ export const KNOWN_TS_ONLY_FIELDS: KnownTsOnlyField[] = [
     tsField: "reasoning",
     reason: "filled by the adapter from ai_reasoning — the mirror keeps the roadmap row's own name",
   },
+  {
+    tsInterface: "DesktopConfig",
+    tsField: "gradingScale",
+    reason: "grading scale preference managed in UI state and local configuration",
+  },
 ];
 
 export interface KnownEnumDivergence {

@@ -4,6 +4,7 @@ import { getModalMeta } from "../components/modalRegistry";
 import { rpc } from "./rpc";
 import { loadCachedState, saveCachedState } from "./swr";
 import { applyOptimistic } from "./optimistic";
+import { analytics } from "../lib/analytics";
 import type {
   AiQuotaUsage,
   ConfigUpdate,
@@ -12,11 +13,14 @@ import type {
   DesktopExtractedTimetable,
   ExportBackupResult,
   FeedConfig,
+  Flashcard,
   GetStatePayload,
   ImportReport,
   LayerToggles,
+  MistakeItem,
   ModalInstance,
   PracticeQuizPayload,
+  QuizAttemptRecord,
   ScheduleData,
   ScheduleSlot,
   SettingsSection,
@@ -64,6 +68,89 @@ export function getWeekStart(dateStr: string): string {
 
 export const THEME_STORAGE_KEY = "quizradar-theme";
 export const SIDEBAR_STORAGE_KEY = "quizradar-sidebar-open";
+export const GRADING_SCALE_STORAGE_KEY = "quizradar-grading-scale";
+export const FLASHCARDS_STORAGE_KEY = "quizradar-flashcards";
+export const QUIZ_HISTORY_STORAGE_KEY = "quizradar-quiz-history";
+export const MISTAKES_STORAGE_KEY = "quizradar-mistake-bank";
+
+function getInitialGradingScale(): "4.0" | "uk_honors" | "ects" | "percentage" {
+  if (typeof window === "undefined" || !window.localStorage) return "4.0";
+  try {
+    const saved = window.localStorage.getItem(GRADING_SCALE_STORAGE_KEY);
+    if (saved === "4.0" || saved === "uk_honors" || saved === "ects" || saved === "percentage") {
+      return saved;
+    }
+  } catch {
+    // ignore
+  }
+  return "4.0";
+}
+
+function saveGradingScale(scale: string): void {
+  if (typeof window === "undefined" || !window.localStorage) return;
+  try {
+    window.localStorage.setItem(GRADING_SCALE_STORAGE_KEY, scale);
+  } catch {
+    // ignore
+  }
+}
+
+function loadStoredFlashcards(): Flashcard[] {
+  if (typeof window === "undefined" || !window.localStorage) return [];
+  try {
+    const raw = window.localStorage.getItem(FLASHCARDS_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Flashcard[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStoredFlashcards(cards: Flashcard[]): void {
+  if (typeof window === "undefined" || !window.localStorage) return;
+  try {
+    window.localStorage.setItem(FLASHCARDS_STORAGE_KEY, JSON.stringify(cards));
+  } catch {
+    // ignore
+  }
+}
+
+function loadStoredQuizHistory(): QuizAttemptRecord[] {
+  if (typeof window === "undefined" || !window.localStorage) return [];
+  try {
+    const raw = window.localStorage.getItem(QUIZ_HISTORY_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as QuizAttemptRecord[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStoredQuizHistory(history: QuizAttemptRecord[]): void {
+  if (typeof window === "undefined" || !window.localStorage) return;
+  try {
+    window.localStorage.setItem(QUIZ_HISTORY_STORAGE_KEY, JSON.stringify(history));
+  } catch {
+    // ignore
+  }
+}
+
+function loadStoredMistakes(): MistakeItem[] {
+  if (typeof window === "undefined" || !window.localStorage) return [];
+  try {
+    const raw = window.localStorage.getItem(MISTAKES_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as MistakeItem[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStoredMistakes(mistakes: MistakeItem[]): void {
+  if (typeof window === "undefined" || !window.localStorage) return;
+  try {
+    window.localStorage.setItem(MISTAKES_STORAGE_KEY, JSON.stringify(mistakes));
+  } catch {
+    // ignore
+  }
+}
 
 function getInitialSidebarOpen(): boolean {
   if (typeof window === "undefined" || !window.localStorage) return true;
@@ -402,6 +489,37 @@ export interface AppStoreState {
   openCourseModal: (course?: Course) => void;
   openEventModal: (event?: CustomCalendarEvent) => void;
   openSchedulePreview: (extracted: DesktopExtractedTimetable) => void;
+
+  // Pomodoro
+  pomodoroIsRunning: boolean;
+  pomodoroSecondsLeft: number;
+  pomodoroMode: "pomodoro" | "shortBreak" | "longBreak";
+  togglePomodoro: () => void;
+  resetPomodoro: () => void;
+  setPomodoroMode: (mode: "pomodoro" | "shortBreak" | "longBreak") => void;
+  tickPomodoro: () => void;
+  setPomodoroSecondsLeft: (seconds: number) => void;
+
+  // Grading scale
+  gradingScale: "4.0" | "uk_honors" | "ects" | "percentage";
+  setGradingScale: (scale: "4.0" | "uk_honors" | "ects" | "percentage") => void;
+
+  // Week Parity filter
+  weekParityFilter: "all" | "auto" | "week_a" | "week_b";
+  setWeekParityFilter: (filter: "all" | "auto" | "week_a" | "week_b") => void;
+
+  // Flashcards & Mistake Bank & Quiz History
+  flashcards: Flashcard[];
+  upsertFlashcard: (card: Omit<Flashcard, "id"> & { id?: string }) => void;
+  deleteFlashcard: (id: string) => void;
+  reviewFlashcard: (id: string, correct: boolean) => void;
+
+  quizHistory: QuizAttemptRecord[];
+  recordQuizAttempt: (attempt: Omit<QuizAttemptRecord, "id">) => void;
+
+  mistakeBank: MistakeItem[];
+  addMistake: (mistake: Omit<MistakeItem, "id">) => void;
+  resolveMistake: (id: string) => void;
 }
 
 export const useAppStore = create<AppStoreState>((set, get) => ({
@@ -453,6 +571,125 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       selectedCalendarDate: today,
       currentWeekStart: getWeekStart(today),
     });
+  },
+
+  // Pomodoro
+  pomodoroIsRunning: false,
+  pomodoroSecondsLeft: 25 * 60,
+  pomodoroMode: "pomodoro",
+  togglePomodoro: () => set((state) => ({ pomodoroIsRunning: !state.pomodoroIsRunning })),
+  resetPomodoro: () => {
+    const mode = get().pomodoroMode;
+    const seconds = mode === "pomodoro" ? 25 * 60 : mode === "shortBreak" ? 5 * 60 : 15 * 60;
+    set({
+      pomodoroIsRunning: false,
+      pomodoroSecondsLeft: seconds,
+    });
+  },
+  setPomodoroMode: (mode) => {
+    const seconds = mode === "pomodoro" ? 25 * 60 : mode === "shortBreak" ? 5 * 60 : 15 * 60;
+    set({
+      pomodoroMode: mode,
+      pomodoroSecondsLeft: seconds,
+      pomodoroIsRunning: false,
+    });
+  },
+  tickPomodoro: () => {
+    const current = get().pomodoroSecondsLeft;
+    if (current <= 1) {
+      set({
+        pomodoroSecondsLeft: 0,
+        pomodoroIsRunning: false,
+      });
+    } else {
+      set({ pomodoroSecondsLeft: current - 1 });
+    }
+  },
+  setPomodoroSecondsLeft: (seconds) => set({ pomodoroSecondsLeft: seconds }),
+
+  // Grading scale
+  gradingScale: getInitialGradingScale(),
+  setGradingScale: (gradingScale) => {
+    saveGradingScale(gradingScale);
+    set({ gradingScale });
+  },
+
+  // Week Parity filter
+  weekParityFilter: "auto",
+  setWeekParityFilter: (weekParityFilter) => set({ weekParityFilter }),
+
+  // Flashcards & Mistake Bank & Quiz History
+  flashcards: loadStoredFlashcards(),
+  upsertFlashcard: (card) => {
+    const current = get().flashcards;
+    const id = card.id || `card-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const now = new Date().toISOString().slice(0, 10);
+    const updatedCard: Flashcard = {
+      id,
+      courseId: card.courseId,
+      assessmentId: card.assessmentId,
+      topic: card.topic,
+      front: card.front,
+      back: card.back,
+      boxLevel: card.boxLevel ?? 1,
+      nextReviewIso: card.nextReviewIso ?? now,
+      lastReviewedIso: card.lastReviewedIso,
+    };
+    const next = current.some((c) => c.id === id)
+      ? current.map((c) => (c.id === id ? updatedCard : c))
+      : [updatedCard, ...current];
+    saveStoredFlashcards(next);
+    set({ flashcards: next });
+  },
+  deleteFlashcard: (id) => {
+    const next = get().flashcards.filter((c) => c.id !== id);
+    saveStoredFlashcards(next);
+    set({ flashcards: next });
+  },
+  reviewFlashcard: (id, correct) => {
+    const now = new Date();
+    const todayIso = now.toISOString().slice(0, 10);
+    const next = get().flashcards.map((card) => {
+      if (card.id !== id) return card;
+      let newBox = card.boxLevel;
+      if (correct) {
+        newBox = Math.min(5, card.boxLevel + 1);
+      } else {
+        newBox = 1;
+      }
+      const days = newBox === 1 ? 1 : newBox === 2 ? 2 : newBox === 3 ? 4 : newBox === 4 ? 7 : 14;
+      const nextDate = new Date(now.getTime() + days * 86400000).toISOString().slice(0, 10);
+      return {
+        ...card,
+        boxLevel: newBox,
+        reviewCount: (card.reviewCount || 0) + 1,
+        lastReviewedIso: todayIso,
+        nextReviewIso: nextDate,
+      };
+    });
+    saveStoredFlashcards(next);
+    set({ flashcards: next });
+  },
+
+  quizHistory: loadStoredQuizHistory(),
+  recordQuizAttempt: (attempt) => {
+    const id = `attempt-${Date.now()}`;
+    const next = [{ ...attempt, id }, ...get().quizHistory];
+    saveStoredQuizHistory(next);
+    set({ quizHistory: next });
+  },
+
+  mistakeBank: loadStoredMistakes(),
+  addMistake: (mistake) => {
+    const id = `mistake-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const next = [{ ...mistake, id }, ...get().mistakeBank];
+    saveStoredMistakes(next);
+    set({ mistakeBank: next });
+  },
+  resolveMistake: (id) => {
+    const next = get().mistakeBank.map((m) => (m.id === id ? { ...m, resolved: true } : m));
+    saveStoredMistakes(next);
+    set({ mistakeBank: next });
   },
 
   setActiveSourceFilter: (activeSourceFilter) => set({ activeSourceFilter }),
@@ -666,6 +903,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       syncOutcome: null,
       cancelRequested: false,
     });
+    const syncStartTime = typeof performance !== "undefined" ? performance.now() : Date.now();
     try {
       const result = await rpc<{
         success: boolean;
@@ -681,6 +919,14 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         notes: result?.notes ?? [],
       };
       set({ syncStatus: "success", syncProgressMessage: null, syncOutcome: outcome });
+      analytics.scanCompleted({
+        source: "all",
+        assessmentCount: outcome.totalNew + outcome.totalUpdated,
+        durationMs: Math.round(
+          (typeof performance !== "undefined" ? performance.now() : Date.now()) - syncStartTime,
+        ),
+        success: true,
+      });
       get().addToast({
         type: "success",
         message: copy.topBar.syncSyncedSummary(outcome.totalNew, outcome.totalUpdated),
@@ -720,6 +966,14 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
           notes: [],
           message: msg,
         },
+      });
+      analytics.scanCompleted({
+        source: "all",
+        assessmentCount: 0,
+        durationMs: Math.round(
+          (typeof performance !== "undefined" ? performance.now() : Date.now()) - syncStartTime,
+        ),
+        success: false,
       });
       get().addToast({
         type: "error",
@@ -1523,6 +1777,10 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     });
   },
 }));
+
+if (typeof window !== "undefined") {
+  (window as unknown as Record<string, unknown>).__QUIZRADAR_STORE__ = useAppStore;
+}
 
 // Day-rollover watchdog initialization helper.
 //

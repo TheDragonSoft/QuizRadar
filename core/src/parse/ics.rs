@@ -787,12 +787,23 @@ pub(crate) fn assessment_from_event(
 
 // ---------------------------------------------------------------------------
 // Feed URL validation (pure core half of the later `sources/` fetch layer)
-// ---------------------------------------------------------------------------
+/// Automatically normalizes `webcal://` URLs to `https://`.
+#[must_use]
+pub fn normalize_feed_url(url: &str) -> String {
+    let trimmed = url.trim();
+    if trimmed.len() >= 9 && trimmed[..9].eq_ignore_ascii_case("webcal://") {
+        format!("https://{}", &trimmed[9..])
+    } else {
+        trimmed.to_string()
+    }
+}
 
 /// A feed URL usually embeds a personal access token, so it must never be
 /// fetched over plaintext HTTP. Ported verbatim from v4 `feeds.rs`.
+/// Automatically normalizes `webcal://` to `https://`.
 pub fn validate_feed_url(url: &str) -> Result<(), String> {
-    let trimmed = url.trim();
+    let normalized = normalize_feed_url(url);
+    let trimmed = normalized.trim();
     if trimmed.is_empty() {
         return Err("Feed URL is empty.".to_string());
     }
@@ -843,6 +854,7 @@ mod tests {
             display_time: "9:00 AM – 10:30 AM".to_string(),
             has_quiz: false,
             quiz_title: None,
+            week_parity: None,
         }
     }
     fn schedule() -> ScheduleData {
@@ -855,6 +867,8 @@ mod tests {
                     color: "#ef4444".to_string(),
                     bg: None,
                     border: None,
+                    credits: None,
+                    max_absences: None,
                 },
                 Course {
                     id: "MATH201".to_string(),
@@ -862,6 +876,8 @@ mod tests {
                     color: "#0ea5e9".to_string(),
                     bg: None,
                     border: None,
+                    credits: None,
+                    max_absences: None,
                 },
             ],
             slots: vec![slot("slot-1", "CS101", "Lecture", "Sun", 0, "Room CT S1 9")],
@@ -1373,6 +1389,15 @@ BEGIN:VEVENT\r\nSUMMARY:CS101 Quiz 2\r\nDTSTART:20261019T100000Z\r\nEND:VEVENT";
         assert!(validate_feed_url("https://uni.edu/timetable.ics").is_ok());
         assert!(validate_feed_url("HTTPS://UNI.EDU/FEED.ICS").is_ok());
         assert!(validate_feed_url("  https://uni.edu/t?token=abc  ").is_ok());
+        assert!(validate_feed_url("webcal://canvas.instructure.com/feeds/user.ics").is_ok());
+        assert_eq!(
+            normalize_feed_url("webcal://canvas.instructure.com/feeds/user.ics"),
+            "https://canvas.instructure.com/feeds/user.ics"
+        );
+        assert_eq!(
+            normalize_feed_url("WEBCAL://blackboard.edu/calendar.ics"),
+            "https://blackboard.edu/calendar.ics"
+        );
 
         assert!(validate_feed_url("").is_err());
         assert!(validate_feed_url("   ").is_err());

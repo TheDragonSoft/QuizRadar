@@ -256,6 +256,111 @@ impl Store {
             .await
     }
 
+    pub async fn record_attendance(
+        &self,
+        entry: crate::types::AttendanceEntry,
+        reference_date: NaiveDate,
+    ) -> Result<repo::AppSnapshot, StoreError> {
+        self.run(move |db| repo::ops::record_attendance(db, &entry, reference_date))
+            .await
+    }
+
+    pub async fn set_course_absence_limit(
+        &self,
+        course_id: String,
+        max_absences: Option<u32>,
+        updated_at: String,
+        reference_date: NaiveDate,
+    ) -> Result<repo::AppSnapshot, StoreError> {
+        self.run(move |db| {
+            repo::ops::set_course_absence_limit(
+                db,
+                &course_id,
+                max_absences,
+                &updated_at,
+                reference_date,
+            )
+        })
+        .await
+    }
+
+    pub async fn log_study_session(
+        &self,
+        session: crate::types::StudySessionRecord,
+        reference_date: NaiveDate,
+    ) -> Result<repo::AppSnapshot, StoreError> {
+        self.run(move |db| repo::ops::log_study_session(db, &session, reference_date))
+            .await
+    }
+
+    pub async fn get_study_analytics(
+        &self,
+        reference_date: NaiveDate,
+    ) -> Result<crate::types::StudyAnalytics, StoreError> {
+        self.run(move |db| repo::ops::get_study_analytics(db, reference_date))
+            .await
+    }
+
+    pub async fn save_quiz_attempt(
+        &self,
+        attempt: crate::types::QuizAttempt,
+        mistakes: Vec<crate::types::MistakeRecord>,
+        updated_at: String,
+    ) -> Result<(), StoreError> {
+        self.run(move |db| repo::ops::save_quiz_attempt(db, &attempt, &mistakes, &updated_at))
+            .await
+    }
+
+    pub async fn list_mistakes(
+        &self,
+        assessment_id: Option<String>,
+    ) -> Result<Vec<crate::types::MistakeRecord>, StoreError> {
+        self.run(move |db| repo::ops::list_mistakes(db, assessment_id.as_deref()))
+            .await
+    }
+
+    pub async fn resolve_mistake(
+        &self,
+        mistake_id: String,
+        updated_at: String,
+    ) -> Result<bool, StoreError> {
+        self.run(move |db| repo::ops::resolve_mistake(db, &mistake_id, &updated_at))
+            .await
+    }
+
+    pub async fn upsert_flashcard(
+        &self,
+        card: crate::types::Flashcard,
+        updated_at: String,
+    ) -> Result<crate::types::Flashcard, StoreError> {
+        self.run(move |db| repo::ops::upsert_flashcard(db, &card, &updated_at))
+            .await
+    }
+
+    pub async fn list_flashcards(
+        &self,
+        course_id: Option<String>,
+    ) -> Result<Vec<crate::types::Flashcard>, StoreError> {
+        self.run(move |db| repo::ops::list_flashcards(db, course_id.as_deref()))
+            .await
+    }
+
+    pub async fn delete_flashcard(&self, id: String) -> Result<bool, StoreError> {
+        self.run(move |db| repo::ops::delete_flashcard(db, &id))
+            .await
+    }
+
+    pub async fn review_flashcard(
+        &self,
+        id: String,
+        correct: bool,
+        today: NaiveDate,
+        updated_at: String,
+    ) -> Result<Option<crate::types::Flashcard>, StoreError> {
+        self.run(move |db| repo::ops::review_flashcard(db, &id, correct, today, &updated_at))
+            .await
+    }
+
     /// Dismiss the conflict banner (`/api/conflicts/dismiss`).
     pub async fn dismiss_conflicts(&self) -> Result<(), StoreError> {
         self.run(move |db| {

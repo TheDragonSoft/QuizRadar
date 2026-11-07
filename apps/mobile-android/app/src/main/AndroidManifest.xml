@@ -68,6 +68,18 @@
                 android:resource="@xml/quizradar_widget_info" />
         </receiver>
 
+        <!-- 4x2 / 4x1 Glance Today's Schedule Widget -->
+        <receiver
+            android:name=".glance.TodayScheduleWidgetReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/today_schedule_widget_info" />
+        </receiver>
+
     </application>
 
 </manifest>

@@ -498,3 +498,58 @@ h4 {
     background-position: -60% 0;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Print & PDF Clean Vector Styling (300+ DPI wall/binder export)
+   --------------------------------------------------------------------------- */
+@media print {
+  @page {
+    size: auto;
+    margin: 10mm 12mm;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11pt;
+  }
+
+  /* Hide screen UI chrome and interactive elements */
+  nav,
+  aside,
+  header,
+  button,
+  .no-print,
+  [data-testid="app-topbar"],
+  [data-testid="main-sidebar"],
+  [data-testid="mobile-bottom-nav"],
+  [data-testid="modal-stack-root"],
+  [data-testid="app-shell"] > *:not(.print-only-doc),
+  #modal-root {
+    display: none !important;
+  }
+
+  /* Reveal print document */
+  .print-only-doc {
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
+    width: 100% !important;
+  }
+
+  .print-avoid-break {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .print-page-break {
+    page-break-before: always;
+    break-before: page;
+  }
+}
+
+@media screen {
+  .print-only-doc {
+    display: none !important;
+  }
+}

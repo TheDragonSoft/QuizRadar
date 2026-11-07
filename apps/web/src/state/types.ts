@@ -9,6 +9,9 @@ export interface Course {
   color: string;
   bg?: string | null;
   border?: string | null;
+  credits?: number | null;
+  maxAbsences?: number | null;
+  max_absences?: number | null;
 }
 
 export interface ScheduleSlot {
@@ -25,6 +28,8 @@ export interface ScheduleSlot {
   displayTime: string;
   hasQuiz?: boolean;
   quizTitle?: string | null;
+  weekParity?: "all" | "week_a" | "week_b" | null;
+  week_parity?: "all" | "week_a" | "week_b" | null;
 }
 
 export interface ScheduleData {
@@ -211,6 +216,27 @@ export interface ExamReadinessCard {
   recommendedFocus: string;
 }
 
+export interface DailyStudyCushion {
+  date: string;
+  wakingHours: number;
+  committedHours: number;
+  availableHours: number;
+  requiredHours?: number | null;
+  cushionHours?: number | null;
+  isDeficit: boolean;
+  deficitHours?: number | null;
+  warningNote?: string | null;
+  // Rust snake_case wire aliases
+  waking_hours?: number;
+  committed_hours?: number;
+  available_hours?: number;
+  required_hours?: number | null;
+  cushion_hours?: number | null;
+  is_deficit?: boolean;
+  deficit_hours?: number | null;
+  warning_note?: string | null;
+}
+
 export interface DailyStudyDayGroup {
   dayOffset: number;
   date: string;
@@ -218,6 +244,7 @@ export interface DailyStudyDayGroup {
   isToday: boolean;
   totalEstimatedHours?: number | null;
   tasks: DailyStudyTask[];
+  cushion?: DailyStudyCushion | null;
 }
 
 export interface StudyTasksPayload {
@@ -228,6 +255,8 @@ export interface StudyTasksPayload {
   completedTasks: number;
   totalHours?: number | null;
   aiGenerated: boolean;
+  todayCushion?: DailyStudyCushion | null;
+  today_cushion?: DailyStudyCushion | null;
 }
 
 export interface CustomCalendarEvent {
@@ -277,6 +306,7 @@ export interface DesktopConfig {
   userEmail?: string | null;
   userName?: string | null;
   userPicture?: string | null;
+  gradingScale?: "4.0" | "uk_honors" | "ects" | "percentage" | null;
 }
 
 export interface DesktopAuthProfile {
@@ -469,6 +499,7 @@ export interface ConfigUpdate {
   userEmail?: string;
   userName?: string;
   userPicture?: string;
+  gradingScale?: "4.0" | "uk_honors" | "ects" | "percentage";
 }
 
 export interface ExportBackupResult {
@@ -489,3 +520,79 @@ export interface ImportReport {
   secretsIgnored: string[];
   warnings: string[];
 }
+
+export interface CourseGradeSummary {
+  courseId: string;
+  courseName: string;
+  credits?: number | null;
+  accumulatedPoints: number;
+  totalWeightage: number;
+  percentage?: number | null;
+  gradePoint?: number | null;
+  letterGrade?: string | null;
+  course_id?: string;
+  course_name?: string;
+  accumulated_points?: number;
+  total_weightage?: number;
+  grade_point?: number | null;
+  letter_grade?: string | null;
+}
+
+export interface GpaSummary {
+  scale: string;
+  scaleMax: number;
+  totalCredits: number;
+  semesterGpa?: number | null;
+  courses: CourseGradeSummary[];
+  scale_max?: number;
+  total_credits?: number;
+  semester_gpa?: number | null;
+}
+
+export interface Flashcard {
+  id: string;
+  courseId?: string | null;
+  assessmentId?: string | null;
+  topic?: string | null;
+  front: string;
+  back: string;
+  boxLevel: number;
+  reviewCount?: number;
+  review_count?: number;
+  nextReviewIso?: string | null;
+  lastReviewedIso?: string | null;
+  course_id?: string | null;
+  assessment_id?: string | null;
+  box_level?: number;
+  next_review_iso?: string | null;
+  last_reviewed_iso?: string | null;
+}
+
+export interface QuizAttemptRecord {
+  id: string;
+  assessmentId: string;
+  assessmentTitle: string;
+  courseId?: string | null;
+  timestamp: string;
+  score: number;
+  totalQuestions: number;
+  percentage: number;
+  passed: boolean;
+}
+
+export interface MistakeItem {
+  id: string;
+  attemptId?: string | null;
+  assessmentId: string;
+  courseId?: string | null;
+  topic?: string | null;
+  questionId: string;
+  questionText: string;
+  options: string[];
+  selectedIndex: number;
+  correctIndex: number;
+  explanation: string;
+  timestamp: string;
+  resolved: boolean;
+}
+

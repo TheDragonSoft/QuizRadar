@@ -74,6 +74,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.quizradar.app.analytics.AnalyticsManager
 import com.quizradar.app.core.BackgroundScanWorker
 import com.quizradar.app.model.AppSnapshotModel
 import com.quizradar.app.model.CourseModel
@@ -265,14 +266,14 @@ fun SettingsScreen(
                     },
                     colors =
                         TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surface,
+                            containerColor = if (theme == "amoled") Color.Black.copy(alpha = 0.85f) else MaterialTheme.colorScheme.surface,
                             titleContentColor = MaterialTheme.colorScheme.onSurface,
                         ),
                 )
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                HorizontalDivider(color = if (theme == "amoled") Color(0xFF222222) else MaterialTheme.colorScheme.outlineVariant)
             }
         },
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = if (theme == "amoled") Color.Transparent else MaterialTheme.colorScheme.background,
         modifier = modifier.fillMaxSize(),
     ) { innerPadding ->
         Column(
@@ -1190,12 +1191,13 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         listOf("system" to "System", "light" to "Light", "dark" to "Dark").forEach { (key, label) ->
+                            val isChipSelected = theme == key || (key == "dark" && theme == "amoled")
                             FilterChip(
-                                selected = theme == key,
+                                selected = isChipSelected,
                                 onClick = { viewModel.setTheme(key) },
                                 label = { Text(label) },
                                 leadingIcon = {
-                                    if (theme == key) {
+                                    if (isChipSelected) {
                                         Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(16.dp))
                                     }
                                 },
@@ -1483,6 +1485,46 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.height(12.dp))
                         OAuthClientIdFields(viewModel = viewModel)
                     }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Anonymous Diagnostics & Telemetry Card
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Anonymous Diagnostics",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text =
+                                "Send coarse, anonymous reliability and error signals (widget taps, notification delivery, scan health). " +
+                                    "Student schedules, grades, course names, and email contents are never collected.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    val context = LocalContext.current
+                    var telemetryOptOut by remember { mutableStateOf(AnalyticsManager.isOptedOut(context)) }
+                    Switch(
+                        checked = !telemetryOptOut,
+                        onCheckedChange = { enabled ->
+                            AnalyticsManager.setOptOut(context, !enabled)
+                            telemetryOptOut = !enabled
+                        },
+                    )
                 }
             }
 

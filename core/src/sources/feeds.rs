@@ -53,6 +53,8 @@ pub async fn fetch_feed(
     ref_date: NaiveDate,
     local: FixedOffset,
 ) -> Result<(Vec<Assessment>, ScanStats), String> {
+    let normalized = crate::parse::ics::normalize_feed_url(url);
+    let url = normalized.as_str();
     validate_feed_url(url).or_else(|_| {
         // The pure validator is strictly https-only; the fetch layer allows
         // loopback http (traffic never leaves the device) for recorded
@@ -247,6 +249,8 @@ mod tests {
                 color: "#1a73e8".to_string(),
                 bg: None,
                 border: None,
+                credits: None,
+                max_absences: None,
             }],
             slots: Vec::new(),
         }

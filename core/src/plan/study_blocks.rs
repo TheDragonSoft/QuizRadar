@@ -25,10 +25,8 @@
 //! domain as the timetable; the platform shell produced those
 //! `NaiveTime`s once at its boundary (module docs in `plan::mod`).
 
-use chrono::{Datelike, Duration, NaiveDate, NaiveTime};
-
-use crate::parse::util::{weekday_index, weekday_to_index};
 use crate::types::{CustomCalendarEvent, ScheduleData};
+use chrono::{Duration, NaiveDate, NaiveTime};
 
 use serde::{Deserialize, Serialize};
 
@@ -83,12 +81,11 @@ pub fn study_block_candidates(
     custom_events: &[CustomCalendarEvent],
     day: NaiveDate,
 ) -> Vec<StudyBlockCandidate> {
-    let target_day_index = weekday_to_index(day.weekday());
     study_window_candidates()
         .into_iter()
         .filter(|&(window_start, window_end)| {
             !schedule.slots.iter().any(|slot| {
-                weekday_index(&slot.day) == Some(target_day_index)
+                crate::plan::parity::slot_matches_date(slot, day)
                     && overlaps(slot.start_time, slot.end_time, window_start, window_end)
             })
         })
@@ -166,6 +163,7 @@ mod tests {
             display_time: String::new(),
             has_quiz: false,
             quiz_title: None,
+            week_parity: None,
         }
     }
 

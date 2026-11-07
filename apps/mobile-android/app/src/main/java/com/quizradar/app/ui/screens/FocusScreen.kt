@@ -27,6 +27,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -57,6 +59,7 @@ import com.quizradar.app.model.AppSnapshotModel
 import com.quizradar.app.ui.PomodoroInterval
 import com.quizradar.app.ui.QuizRadarViewModel
 import com.quizradar.app.ui.icons.Icons
+import com.quizradar.app.ui.theme.CoursePalette
 import com.quizradar.app.ui.theme.StatusColors
 
 private enum class FocusMode {
@@ -295,13 +298,35 @@ fun FocusScreen(
                         modifier = Modifier.size(216.dp),
                         contentAlignment = Alignment.Center,
                     ) {
+                        val primaryColor = MaterialTheme.colorScheme.primary
                         CircularProgressIndicator(
                             progress = { progress },
                             modifier = Modifier.fillMaxSize(),
                             strokeWidth = 10.dp,
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                            color = primaryColor,
+                            trackColor = primaryColor.copy(alpha = 0.12f),
                         )
+                        if (progress > 0f) {
+                            androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                                val strokeWidthPx = 10.dp.toPx()
+                                val r = (size.width - strokeWidthPx) / 2f
+                                val angleDeg = -90.0 + (progress * 360.0)
+                                val rad = Math.toRadians(angleDeg)
+                                val cx = (size.width / 2f) + (r * Math.cos(rad)).toFloat()
+                                val cy = (size.height / 2f) + (r * Math.sin(rad)).toFloat()
+
+                                drawCircle(
+                                    color = primaryColor.copy(alpha = 0.45f),
+                                    radius = 7.dp.toPx(),
+                                    center = androidx.compose.ui.geometry.Offset(cx, cy),
+                                )
+                                drawCircle(
+                                    color = Color(0xFFFEF08A),
+                                    radius = 3.5.dp.toPx(),
+                                    center = androidx.compose.ui.geometry.Offset(cx, cy),
+                                )
+                            }
+                        }
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
                                 text = timeDisplay,
@@ -469,6 +494,106 @@ fun FocusScreen(
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.error,
                                 )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    val streakDays by viewModel.studyStreakDays.collectAsState()
+                    val courseMinutes by viewModel.studyMinutesByCourse.collectAsState()
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "🔥",
+                                        fontSize = 18.sp,
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "$streakDays-Day Study Streak",
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
+                                val totalMins = courseMinutes.values.sum()
+                                Text(
+                                    text = "${totalMins / 60}h ${totalMins % 60}m logged",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Text(
+                                text = "WEEKLY STUDY TIME BY COURSE",
+                                fontSize = 10.sp,
+                                letterSpacing = 0.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            courseMinutes.forEach { (cid, mins) ->
+                                val courseColor = CoursePalette.getHex(cid)
+                                val color =
+                                    try {
+                                        Color(android.graphics.Color.parseColor(courseColor))
+                                    } catch (_: Exception) {
+                                        MaterialTheme.colorScheme.primary
+                                    }
+                                val progress = (mins.toFloat() / 180f).coerceIn(0.05f, 1f)
+
+                                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Text(
+                                            text = cid,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = color,
+                                        )
+                                        Text(
+                                            text = "${mins / 60}h ${mins % 60}m",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Box(
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .height(6.dp)
+                                                .clip(RoundedCornerShape(3.dp))
+                                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                                    ) {
+                                        Box(
+                                            modifier =
+                                                Modifier
+                                                    .fillMaxWidth(progress)
+                                                    .height(6.dp)
+                                                    .clip(RoundedCornerShape(3.dp))
+                                                    .background(color),
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

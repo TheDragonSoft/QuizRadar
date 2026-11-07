@@ -185,6 +185,7 @@ class QuizRadarWidget : GlanceAppWidget() {
             val launchIntent =
                 android.content.Intent(context, MainActivity::class.java).apply {
                     flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    putExtra("EXTRA_FROM_WIDGET", true)
                 }
 
             Box(

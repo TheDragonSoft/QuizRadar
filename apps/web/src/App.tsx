@@ -9,6 +9,7 @@ import { DashboardView, TasksView, CalendarView, FocusView, HelpView } from "./v
 import { SettingsView } from "./views/SettingsView";
 import { DevRig } from "./dev/DevRig";
 import { useAppStore, applyThemeToDocument, initDayRolloverWatchdog } from "./state/store";
+import { PrintScheduleDoc } from "./components/PrintScheduleDoc";
 import { isTauriEnvironment } from "./state/rpc";
 import { copy } from "./copy";
 import type { View } from "./state/types";
@@ -116,13 +117,18 @@ export default function App() {
   // switch views and strand a stale panel).
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement ||
-        (target && target.isContentEditable)
-      ) {
+      const target = (e.target as HTMLElement | null) || (document.activeElement as HTMLElement | null);
+      const isInput = (el: HTMLElement | null) => {
+        let cur: HTMLElement | null = el;
+        while (cur) {
+          const tag = cur.tagName?.toUpperCase();
+          if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+          if (cur.isContentEditable || (cur as any).contentEditable === "true" || cur.getAttribute?.("contenteditable") === "true") return true;
+          cur = cur.parentElement;
+        }
+        return false;
+      };
+      if (isInput(target) || isInput(document.activeElement as HTMLElement | null)) {
         return;
       }
 
@@ -146,17 +152,40 @@ export default function App() {
         return;
       }
 
+      // Space toggles Pomodoro timer app-wide (strictly ignored if typing in inputs)
+      if (e.key === " " || e.code === "Space") {
+        e.preventDefault();
+        useAppStore.getState().togglePomodoro();
+        return;
+      }
+
       if (document.getElementById("topbar-search-results")) return;
       const { openModals, setView } = useAppStore.getState();
       if (openModals.length > 0) return;
       switch (e.key) {
-        case "d":
-        case "D":
+        case "1":
           setView("dashboard");
+          break;
+        case "2":
+          setView("tasks");
+          break;
+        case "3":
+          setView("calendar");
+          break;
+        case "4":
+          setView("focus");
           break;
         case "t":
         case "T":
-          setView("tasks");
+          useAppStore.getState().jumpToToday();
+          break;
+        case "n":
+        case "N":
+          useAppStore.getState().openEventModal();
+          break;
+        case "d":
+        case "D":
+          setView("dashboard");
           break;
         case "c":
         case "C":
@@ -291,6 +320,9 @@ export default function App() {
       {/* Declarative Modals & Toast Containers */}
       <ModalStack />
       <ToastContainer />
+
+      {/* Printable Timetable & Exam Cram Document (Vector clean print only) */}
+      <PrintScheduleDoc />
     </div>
   );
 }

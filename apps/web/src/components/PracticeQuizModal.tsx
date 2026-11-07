@@ -3,6 +3,7 @@ import { HelpCircle, Check, X, RotateCcw, Sparkles, BookOpen } from "lucide-reac
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
 import type { PracticeQuizPayload } from "../state/types";
+import { analytics } from "../lib/analytics";
 
 export interface PracticeQuizModalProps {
   assessmentId?: string;
@@ -46,6 +47,8 @@ export function PracticeQuizModal({
           setQuiz(payload);
           setSelectedAnswers({});
           setLoading(false);
+          const mode = (payload.generatedByAi ?? payload.generated_by_ai) ? "ai" : "local_fallback";
+          analytics.practiceQuizStarted(mode, payload.questions.length);
         }
       } catch (err) {
         if (!cancelled) {

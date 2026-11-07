@@ -5,15 +5,18 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import com.quizradar.app.analytics.AnalyticsManager
 import com.quizradar.app.auth.OAuthManager
 import com.quizradar.app.auth.OAuthRedirectResult
 import com.quizradar.app.core.BackgroundScanWorker
@@ -24,6 +27,7 @@ import com.quizradar.app.notifications.ExamReminderWorker
 import com.quizradar.app.notifications.NotificationHelper
 import com.quizradar.app.ui.AppScaffold
 import com.quizradar.app.ui.QuizRadarViewModel
+import com.quizradar.app.ui.components.AmoledStarrySky
 import com.quizradar.app.ui.share.ShareIngestParser
 import com.quizradar.app.ui.theme.QuizRadarTheme
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +40,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AnalyticsManager.init(this)
         enableEdgeToEdge()
         engine = QuizRadarEngine.create(this)
         viewModel =
@@ -88,6 +93,7 @@ class MainActivity : ComponentActivity() {
             // when the persisted mode reaches the theme — it used to be read
             // and written but never applied.
             val themeMode by viewModel.theme.collectAsState(initial = "system")
+            val isAmoled = themeMode == "amoled"
             QuizRadarTheme(
                 darkTheme =
                     when (themeMode) {
@@ -95,12 +101,17 @@ class MainActivity : ComponentActivity() {
                         "light" -> false
                         else -> isSystemInDarkTheme()
                     },
-                isAmoled = themeMode == "amoled",
+                isAmoled = isAmoled,
             ) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background,
+                Box(
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .background(if (isAmoled) Color.Black else MaterialTheme.colorScheme.background),
                 ) {
+                    if (isAmoled) {
+                        AmoledStarrySky(modifier = Modifier.fillMaxSize())
+                    }
                     AppScaffold(
                         viewModel = viewModel,
                         onStartGoogleLogin = {
@@ -234,6 +245,12 @@ class MainActivity : ComponentActivity() {
         val assessmentId = intent.getStringExtra("EXTRA_ASSESSMENT_ID")
         if (!assessmentId.isNullOrBlank()) {
             viewModel.openAssessmentDetail(assessmentId)
+        }
+
+        // 5. Glance Widget interaction
+        if (intent.getBooleanExtra("EXTRA_FROM_WIDGET", false)) {
+            AnalyticsManager.trackWidgetInteraction("launch_from_widget")
+            intent.removeExtra("EXTRA_FROM_WIDGET")
         }
     }
 }

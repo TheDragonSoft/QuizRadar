@@ -7,6 +7,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.quizradar.app.analytics.AnalyticsManager
 import com.quizradar.app.core.QuizRadarEngine
 import com.quizradar.app.model.QuizRadarJsonParser
 import java.time.LocalDate
@@ -85,6 +86,18 @@ class ExamReminderWorker(
                     try {
                         notificationManager.notify(notifId, builder.build())
                         markNotified(marker)
+                        AnalyticsManager.trackExamReminderNotification(if (isSameDay) "same_day" else "24h")
+
+                        if (isSameDay) {
+                            val persistentId = engine.notificationIdFor(assessment.id, "exam-ongoing")
+                            val persistentBuilder =
+                                NotificationHelper.buildPersistentExamNotification(
+                                    applicationContext,
+                                    assessment,
+                                    minutesRemaining = 120,
+                                )
+                            notificationManager.notify(persistentId, persistentBuilder.build())
+                        }
                     } catch (_: SecurityException) {
                         // POST_NOTIFICATIONS runtime permission not granted
                     }

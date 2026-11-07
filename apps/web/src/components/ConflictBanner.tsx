@@ -1,6 +1,7 @@
 import React from "react";
 import { AlertTriangle, Calendar, ShieldCheck, Sparkles, X } from "lucide-react";
 import { copy } from "../copy";
+import { analytics } from "../lib/analytics";
 import { useAppStore } from "../state/store";
 
 export const ConflictBanner: React.FC = () => {
@@ -61,7 +62,10 @@ export const ConflictBanner: React.FC = () => {
           </button>
           <button
             type="button"
-            onClick={dismissConflicts}
+            onClick={() => {
+              dismissConflicts();
+              analytics.conflictDismissed();
+            }}
             aria-label={copy.dashboard.conflictBanner.dismissTitle}
             title={copy.dashboard.conflictBanner.dismissTitle}
             className="p-1.5 rounded-lg hover:bg-emerald-200 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 transition cursor-pointer"
@@ -144,7 +148,10 @@ export const ConflictBanner: React.FC = () => {
         </button>
         <button
           type="button"
-          onClick={dismissConflicts}
+          onClick={() => {
+              dismissConflicts();
+              analytics.conflictDismissed();
+            }}
           aria-label={copy.dashboard.conflictBanner.dismissTitle}
           title={copy.dashboard.conflictBanner.dismissTitle}
           className="p-1.5 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 transition cursor-pointer"

@@ -44,7 +44,7 @@ pub enum StoreError {
 }
 
 /// The schema this build ships. Written by [`Db::apply_migrations`].
-pub const SCHEMA_VERSION: u32 = 3;
+pub const SCHEMA_VERSION: u32 = 4;
 
 pub(crate) const INITIAL_SCHEMA_SQL: &str = "
 CREATE TABLE courses (
@@ -197,6 +197,80 @@ pub const MIGRATIONS: &[(u32, &str)] = &[
     // through each assessment's CURRENT topic list by the Rust step below
     // (an index→text table lives in the `assessments` row, not in SQL).
     (3, "SELECT 1;"),
+    // Milestone 1: Non-AI Suite Extensions.
+    // Adds course credits and absence limits, slot week parity, attendance sessions,
+    // flashcards (Leitner boxes), quiz attempt history, mistake bank, and study focus sessions.
+    (
+        4,
+        "ALTER TABLE slots ADD COLUMN week_parity TEXT;
+         ALTER TABLE courses ADD COLUMN credits REAL;
+         ALTER TABLE courses ADD COLUMN max_absences INTEGER;
+
+         CREATE TABLE attendance (
+             id TEXT PRIMARY KEY NOT NULL,
+             slot_id TEXT NOT NULL,
+             course_id TEXT NOT NULL,
+             date_iso TEXT NOT NULL,
+             status TEXT NOT NULL,
+             updated_at TEXT
+         );
+         CREATE UNIQUE INDEX idx_attendance_slot_date ON attendance(slot_id, date_iso);
+         CREATE INDEX idx_attendance_course ON attendance(course_id);
+
+         CREATE TABLE flashcards (
+             id TEXT PRIMARY KEY NOT NULL,
+             course_id TEXT,
+             assessment_id TEXT,
+             topic TEXT,
+             front TEXT NOT NULL,
+             back TEXT NOT NULL,
+             box_level INTEGER NOT NULL DEFAULT 1,
+             next_review_iso TEXT,
+             last_reviewed_iso TEXT,
+             updated_at TEXT
+         );
+         CREATE INDEX idx_flashcards_course ON flashcards(course_id);
+
+         CREATE TABLE quiz_attempts (
+             id TEXT PRIMARY KEY NOT NULL,
+             assessment_id TEXT NOT NULL,
+             course_id TEXT,
+             timestamp TEXT NOT NULL,
+             score INTEGER NOT NULL,
+             total_questions INTEGER NOT NULL,
+             passed INTEGER NOT NULL
+         );
+         CREATE INDEX idx_quiz_attempts_assessment ON quiz_attempts(assessment_id);
+
+         CREATE TABLE mistake_bank (
+             id TEXT PRIMARY KEY NOT NULL,
+             attempt_id TEXT,
+             assessment_id TEXT NOT NULL,
+             course_id TEXT,
+             question_id TEXT NOT NULL,
+             question_text TEXT NOT NULL,
+             options TEXT NOT NULL,
+             selected_index INTEGER NOT NULL,
+             correct_index INTEGER NOT NULL,
+             explanation TEXT,
+             timestamp TEXT NOT NULL,
+             resolved INTEGER NOT NULL DEFAULT 0,
+             updated_at TEXT
+         );
+         CREATE INDEX idx_mistake_bank_assessment ON mistake_bank(assessment_id);
+
+         CREATE TABLE study_sessions (
+             id TEXT PRIMARY KEY NOT NULL,
+             course_id TEXT,
+             assessment_id TEXT,
+             topic TEXT,
+             duration_minutes INTEGER NOT NULL,
+             timestamp TEXT NOT NULL,
+             date_iso TEXT NOT NULL
+         );
+         CREATE INDEX idx_study_sessions_date ON study_sessions(date_iso);
+         CREATE INDEX idx_study_sessions_course ON study_sessions(course_id);",
+    ),
 ];
 
 /// One SQLite handle. Cheap to share behind a mutex (see

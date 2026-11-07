@@ -14,6 +14,7 @@ import {
   Sparkles,
   ShieldCheck,
   ChevronRight,
+  ChevronDown,
   ArrowLeft,
 } from "lucide-react";
 import { copy } from "../copy";
@@ -22,6 +23,7 @@ import { useAppStore } from "../state/store";
 import { isTauriEnvironment } from "../state/rpc";
 import { APP_VERSION } from "../generated/version";
 import { GoogleMark, MicrosoftMark } from "../components/BrandMarks";
+import { analytics, isAnalyticsConfigured, isAnalyticsOptedOut, setAnalyticsOptOut, useFeatureFlag } from "../lib/analytics";
 import type { Course, FeedConfig, SettingsSection } from "../state/types";
 
 /**
@@ -47,6 +49,8 @@ export function SettingsView() {
   const slots = useAppStore((s) => s.data.schedule.slots);
   const feeds = useAppStore((s) => s.data.config.feeds || []);
 
+  const isVisionEnabled = useFeatureFlag("enable-ai-timetable-vision", true);
+
   const updateConfig = useAppStore((s) => s.updateConfig);
   const deleteCourse = useAppStore((s) => s.deleteCourse);
   const upsertFeed = useAppStore((s) => s.upsertFeed);
@@ -70,6 +74,8 @@ export function SettingsView() {
   const setView = useAppStore((s) => s.setView);
   const pendingSettingsSection = useAppStore((s) => s.pendingSettingsSection);
   const backupFileInputRef = useRef<HTMLInputElement>(null);
+  const [telemetryOptedOut, setTelemetryOptedOut] = useState(isAnalyticsOptedOut());
+  const hasAnalyticsKey = isAnalyticsConfigured();
 
   // A caller that asked for a specific section scrolls the page there, then
   // the request is consumed (jsdom has no scrollIntoView — guard it).
@@ -113,6 +119,7 @@ export function SettingsView() {
     try {
       const jsonText = await file.text();
       const report = await importBackupFile(undefined, jsonText);
+      analytics.backupAction("import");
       // A quiet import contradicts the honesty doctrine — surface the real
       // counts and any partial-failure warnings, like the backup modal does.
       addToast({
@@ -144,6 +151,18 @@ export function SettingsView() {
   // Moodle state
   const [moodleUrl, setMoodleUrl] = useState(config.moodleUrl || "");
   const [moodleIcalUrl, setMoodleIcalUrl] = useState(config.moodleIcalUrl || "");
+
+  // Canvas & Blackboard state
+  const canvasFeed = feeds.find(
+    (f) => f.id === "feed-canvas-lms" || f.name.toLowerCase().includes("canvas"),
+  );
+  const blackboardFeed = feeds.find(
+    (f) => f.id === "feed-blackboard-lms" || f.name.toLowerCase().includes("blackboard"),
+  );
+  const [canvasAccordionOpen, setCanvasAccordionOpen] = useState(false);
+  const [canvasIcalUrl, setCanvasIcalUrl] = useState(() => canvasFeed?.url || "");
+  const [blackboardAccordionOpen, setBlackboardAccordionOpen] = useState(false);
+  const [blackboardIcalUrl, setBlackboardIcalUrl] = useState(() => blackboardFeed?.url || "");
 
   // Browser-tier OAuth client IDs (GIS / MS PKCE popup)
   const isBrowserTier = !isTauriEnvironment();
@@ -236,6 +255,64 @@ export function SettingsView() {
     });
   };
 
+  const handleSaveCanvas = async () => {
+    const trimmed = canvasIcalUrl.trim();
+    if (trimmed && !trimmed.startsWith("https://")) {
+      addToast({
+        type: "error",
+        message: copy.settings.feedHttpsError,
+      });
+      return;
+    }
+    if (trimmed) {
+      await upsertFeed({
+        id: "feed-canvas-lms",
+        name: "Canvas LMS Calendar",
+        url: trimmed,
+        enabled: true,
+      });
+      addToast({
+        type: "success",
+        message: "Canvas LMS calendar feed connected",
+      });
+    } else if (canvasFeed) {
+      await deleteFeed(canvasFeed.id);
+      addToast({
+        type: "info",
+        message: "Canvas LMS calendar feed removed",
+      });
+    }
+  };
+
+  const handleSaveBlackboard = async () => {
+    const trimmed = blackboardIcalUrl.trim();
+    if (trimmed && !trimmed.startsWith("https://")) {
+      addToast({
+        type: "error",
+        message: copy.settings.feedHttpsError,
+      });
+      return;
+    }
+    if (trimmed) {
+      await upsertFeed({
+        id: "feed-blackboard-lms",
+        name: "Blackboard Learn Calendar",
+        url: trimmed,
+        enabled: true,
+      });
+      addToast({
+        type: "success",
+        message: "Blackboard Learn calendar feed connected",
+      });
+    } else if (blackboardFeed) {
+      await deleteFeed(blackboardFeed.id);
+      addToast({
+        type: "info",
+        message: "Blackboard Learn calendar feed removed",
+      });
+    }
+  };
+
   const handleAddFeed = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedUrl = newFeedUrl.trim();
@@ -297,6 +374,7 @@ export function SettingsView() {
                 // freshly emptied state is honest evidence enough.)
                 const wiped = await resetDatabase();
                 if (!wiped) return;
+                analytics.backupAction("reset");
                 addToast({
                   type: "info",
                   message: "All application data reset. Fresh database initialized.",
@@ -505,7 +583,7 @@ export function SettingsView() {
                     id: "dark",
                     label: "Dark Mode",
                     icon: "🌙",
-                    active: theme === "dark" || theme === "obsidian",
+                    active: theme === "dark" || theme === "obsidian" || theme.startsWith("amoled"),
                     onClick: () => setTheme("obsidian"),
                   },
                 ].map((mode) => (
@@ -620,7 +698,7 @@ export function SettingsView() {
                   const isSelected =
                     theme === t.id ||
                     (t.id === "obsidian" && theme === "dark") ||
-                    (t.id === "amoled-minimal" && theme === "amoled");
+                    (t.id === "amoled-sparkle" && theme === "amoled");
                   return (
                     <button
                       key={t.id}
@@ -886,50 +964,66 @@ export function SettingsView() {
 
           {/* Timetable vision import (`01` §4.1): image → Gemini Vision →
               preview → apply. The manual editor is always one click away. */}
-          <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--page)] p-4">
-            <div className="flex items-start gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--accent-ink)]">
-                <Upload className="h-4.5 w-4.5" aria-hidden="true" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <h3 className="text-xs font-bold text-[var(--text)]">
-                  {copy.settings.timetableImportTitle}
-                </h3>
-                <p className="mt-0.5 text-xs leading-relaxed text-[var(--text-muted)]">
-                  {copy.settings.timetableImportSub}
-                </p>
-                {(!config.geminiEnabled || aiQuota?.keyInMemory === false) && (
-                  <p className="mt-1.5 text-xs leading-relaxed text-amber-700 dark:text-amber-300">
-                    {copy.settings.timetableImportNoKey}
+          {isVisionEnabled ? (
+            <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--page)] p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--accent-ink)]">
+                  <Upload className="h-4.5 w-4.5" aria-hidden="true" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-xs font-bold text-[var(--text)]">
+                    {copy.settings.timetableImportTitle}
+                  </h3>
+                  <p className="mt-0.5 text-xs leading-relaxed text-[var(--text-muted)]">
+                    {copy.settings.timetableImportSub}
                   </p>
-                )}
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[var(--accent-fill-hover)]">
-                    <span>
-                      {extractingTimetable
-                        ? copy.settings.timetableImportExtracting
-                        : copy.settings.timetableImportButton}
-                    </span>
-                    <input
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp"
-                      aria-label={copy.settings.timetableImportButton}
-                      disabled={extractingTimetable}
-                      onChange={handleTimetableImage}
-                      className="hidden"
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => openModal({ id: "add-course" })}
-                    className="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] transition hover:bg-[color-mix(in_srgb,var(--border)_30%,transparent)]"
-                  >
-                    {copy.settings.timetableImportManual}
-                  </button>
+                  {(!config.geminiEnabled || aiQuota?.keyInMemory === false) && (
+                    <p className="mt-1.5 text-xs leading-relaxed text-amber-700 dark:text-amber-300">
+                      {copy.settings.timetableImportNoKey}
+                    </p>
+                  )}
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[var(--accent-fill-hover)]">
+                      <span>
+                        {extractingTimetable
+                          ? copy.settings.timetableImportExtracting
+                          : copy.settings.timetableImportButton}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        aria-label={copy.settings.timetableImportButton}
+                        disabled={extractingTimetable}
+                        onChange={handleTimetableImage}
+                        className="hidden"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => openModal({ id: "add-course" })}
+                      className="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] transition hover:bg-[color-mix(in_srgb,var(--border)_30%,transparent)]"
+                    >
+                      {copy.settings.timetableImportManual}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-bold text-[var(--text)]">Courses & Timetable</h3>
+                <p className="text-xs text-[var(--text-muted)] mt-0.5">Add and manage courses manually.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => openModal({ id: "add-course" })}
+                className="rounded-xl bg-[var(--accent-fill)] px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[var(--accent-fill-hover)]"
+              >
+                {copy.settings.timetableImportManual}
+              </button>
+            </div>
+          )}
 
           <div className="flex items-center justify-between">
             <div>
@@ -989,7 +1083,7 @@ export function SettingsView() {
                         <div className="truncate text-xs text-[var(--text-muted)]">{c.id}</div>
                         <div className="mt-0.5 text-xs tabular-nums text-[var(--text-muted)]">
                           {courseSlots.length} weekly slot
-                          {courseSlots.length === 1 ? "" : "s"}
+                          {courseSlots.length === 1 ? "" : "s"} · {c.credits ?? 3.0} credits
                         </div>
                       </div>
                     </div>
@@ -1183,6 +1277,148 @@ export function SettingsView() {
             </div>
           </div>
 
+          {/* Canvas LMS Integration Accordion */}
+          <div data-testid="settings-canvas-card" className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
+            <button
+              type="button"
+              aria-label="Canvas LMS Calendar Feed"
+              onClick={() => setCanvasAccordionOpen((v) => !v)}
+              className="flex w-full items-center justify-between text-left cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                  Canvas LMS Integration
+                </h3>
+                {canvasFeed?.enabled && (
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300">
+                    Connected
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1 text-xs font-semibold text-[var(--accent-ink)]">
+                <span>{canvasAccordionOpen ? "Hide Guide" : "Setup Guide & Feed"}</span>
+                {canvasAccordionOpen ? (
+                  <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                )}
+              </div>
+            </button>
+
+            {canvasAccordionOpen && (
+              <div className="mt-3.5 space-y-3 pt-3 border-t border-[var(--border)]">
+                {/* Step-by-step instructions */}
+                <div className="rounded-lg bg-[var(--surface)] p-3 text-xs text-[var(--text)] space-y-1.5 border border-[var(--border)]">
+                  <div className="font-bold text-[var(--text)]">How to extract your private Canvas Calendar Feed:</div>
+                  <ol className="list-decimal pl-4 space-y-1 text-xs text-[var(--text-muted)]">
+                    <li>Log into your university Canvas portal in a browser.</li>
+                    <li>Click <strong>Calendar</strong> in the left global navigation sidebar.</li>
+                    <li>In the right sidebar or footer, click <strong>Calendar Feed</strong>.</li>
+                    <li>Copy the private URL ending in <code className="text-[var(--accent-ink)] font-mono">.ics</code> and paste it below:</li>
+                  </ol>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="settings-canvas-ical"
+                    className="mb-1 block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]"
+                  >
+                    Canvas Private iCal Feed URL
+                  </label>
+                  <input
+                    id="settings-canvas-ical"
+                    type="url"
+                    value={canvasIcalUrl}
+                    onChange={(e) => setCanvasIcalUrl(e.target.value)}
+                    placeholder="https://canvas.institution.edu/feeds/calendars/user_...ics"
+                    className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveCanvas}
+                    className="rounded-xl bg-[var(--accent-fill)] px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-[var(--accent-fill-hover)] transition cursor-pointer"
+                  >
+                    {canvasFeed ? "Update Canvas Feed" : "Connect Canvas Feed"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Blackboard Learn Integration Accordion */}
+          <div data-testid="settings-blackboard-card" className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
+            <button
+              type="button"
+              aria-label="Blackboard Learn Calendar Feed"
+              onClick={() => setBlackboardAccordionOpen((v) => !v)}
+              className="flex w-full items-center justify-between text-left cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                  Blackboard Learn Integration
+                </h3>
+                {blackboardFeed?.enabled && (
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300">
+                    Connected
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1 text-xs font-semibold text-[var(--accent-ink)]">
+                <span>{blackboardAccordionOpen ? "Hide Guide" : "Setup Guide & Feed"}</span>
+                {blackboardAccordionOpen ? (
+                  <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                )}
+              </div>
+            </button>
+
+            {blackboardAccordionOpen && (
+              <div className="mt-3.5 space-y-3 pt-3 border-t border-[var(--border)]">
+                {/* Step-by-step instructions */}
+                <div className="rounded-lg bg-[var(--surface)] p-3 text-xs text-[var(--text)] space-y-1.5 border border-[var(--border)]">
+                  <div className="font-bold text-[var(--text)]">How to extract your Blackboard Calendar Link:</div>
+                  <ol className="list-decimal pl-4 space-y-1 text-xs text-[var(--text-muted)]">
+                    <li>Log into your university Blackboard Learn portal.</li>
+                    <li>Navigate to the <strong>Calendar</strong> tool from the base navigation or course list.</li>
+                    <li>At the bottom or under the gear icon, click <strong>Share Calendar</strong> or <strong>External Calendar Link</strong>.</li>
+                    <li>Copy the generated <code className="text-[var(--accent-ink)] font-mono">.ics</code> webcal or https link and paste it below:</li>
+                  </ol>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="settings-blackboard-ical"
+                    className="mb-1 block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]"
+                  >
+                    Blackboard Calendar Feed URL
+                  </label>
+                  <input
+                    id="settings-blackboard-ical"
+                    type="url"
+                    value={blackboardIcalUrl}
+                    onChange={(e) => setBlackboardIcalUrl(e.target.value)}
+                    placeholder="https://blackboard.institution.edu/webapps/calendar/export/..."
+                    className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveBlackboard}
+                    className="rounded-xl bg-[var(--accent-fill)] px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-[var(--accent-fill-hover)] transition cursor-pointer"
+                  >
+                    {blackboardFeed ? "Update Blackboard Feed" : "Connect Blackboard Feed"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Notification Preferences Section */}
           <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
             <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
@@ -1285,7 +1521,10 @@ export function SettingsView() {
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
-                onClick={() => exportBackupFile()}
+                onClick={() => {
+                  exportBackupFile();
+                  analytics.backupAction("export");
+                }}
                 className="flex items-center gap-1.5 rounded-xl border border-[var(--border)] px-3 py-2 text-xs font-semibold text-[var(--text)] transition hover:bg-[color-mix(in_srgb,var(--border)_30%,transparent)]"
               >
                 <Download className="h-4 w-4" aria-hidden="true" />
@@ -1299,6 +1538,7 @@ export function SettingsView() {
                     backupFileInputRef.current?.click();
                   } else {
                     void importBackupFile();
+                    analytics.backupAction("import");
                   }
                 }}
                 className="flex items-center gap-1.5 rounded-xl border border-[var(--border)] px-3 py-2 text-xs font-semibold text-[var(--text)] transition hover:bg-[color-mix(in_srgb,var(--border)_30%,transparent)]"
@@ -1323,6 +1563,45 @@ export function SettingsView() {
                 <RotateCcw className="h-4 w-4" aria-hidden="true" />
                 <span>{copy.settings.resetDatabase}</span>
               </button>
+            </div>
+          </div>
+
+          {/* Usage Analytics & Privacy Section */}
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                    Anonymous Analytics & Health
+                  </h3>
+                  {hasAnalyticsKey && (
+                    <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                      PostHog Active
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+                  Help improve QuizRadar by sharing anonymous scan reliability and feature usage. We strictly NEVER collect student grades, course titles, email contents, or schedule details.
+                </p>
+              </div>
+              <label className="relative inline-flex cursor-pointer items-center shrink-0">
+                <input
+                  type="checkbox"
+                  checked={!telemetryOptedOut}
+                  onChange={(e) => {
+                    const enabled = e.target.checked;
+                    setTelemetryOptedOut(!enabled);
+                    setAnalyticsOptOut(!enabled);
+                    addToast({
+                      type: "info",
+                      message: enabled ? "Anonymous analytics enabled" : "Analytics disabled (opted out)",
+                    });
+                  }}
+                  className="peer sr-only"
+                  aria-label="Toggle anonymous usage analytics"
+                />
+                <div className="peer h-5 w-9 rounded-full bg-[var(--border)] after:absolute after:top-[2px] after:left-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:bg-[var(--accent)] peer-checked:after:translate-x-full peer-focus:outline-hidden"></div>
+              </label>
             </div>
           </div>
 

@@ -22,6 +22,7 @@ import { formatIsoShortDate } from "../lib/weekRange";
 import { useAppStore } from "../state/store";
 import { calculateWhatIf } from "../lib/whatIf";
 import { courseAccessibleChip, courseDisplayName, coursePalette } from "../lib/coursePalette";
+import { analytics } from "../lib/analytics";
 
 interface AssessmentDetailModalProps {
   modalId: string;
@@ -392,6 +393,7 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
                 href={safeExternalUrl(assessment.googleCalUrl)}
                 target="_blank"
                 rel="noreferrer"
+                onClick={() => analytics.calendarExport("gcal", 1)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text)] transition"
               >
                 <Calendar className="h-4 w-4 text-[var(--accent-ink)]" aria-hidden="true" />
@@ -401,7 +403,10 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
 
             <button
               type="button"
-              onClick={() => exportIcs(assessment.id)}
+              onClick={() => {
+                exportIcs(assessment.id);
+                analytics.calendarExport("ics", 1);
+              }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text)] transition cursor-pointer"
             >
               <Download className="h-4 w-4 text-[var(--accent-ink)]" aria-hidden="true" />

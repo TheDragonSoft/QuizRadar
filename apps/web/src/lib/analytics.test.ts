@@ -5,6 +5,8 @@ import {
   isAnalyticsOptedOut,
   setAnalyticsOptOut,
   trackEvent,
+  isFeatureEnabled,
+  onFeatureFlags,
   analytics,
 } from "./analytics";
 
@@ -50,5 +52,8 @@ describe("analytics module", () => {
     expect(() => analytics.calendarExport("gcal", 2)).not.toThrow();
     expect(() => analytics.conflictDismissed()).not.toThrow();
     expect(() => analytics.backupAction("export")).not.toThrow();
+    expect(isFeatureEnabled("test_flag", true)).toBe(true);
+    expect(isFeatureEnabled("test_flag", false)).toBe(false);
+    expect(() => onFeatureFlags(() => {})).not.toThrow();
   });
 });

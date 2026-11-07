@@ -118,8 +118,33 @@ const KEY_ALIASES: ReadonlyArray<readonly [string, string]> = [
   ["completedTasks", "completed_tasks"],
   ["totalHours", "total_hours"],
   ["aiGenerated", "ai_generated"],
+  ["todayCushion", "today_cushion"],
   // Custom calendar events
   ["eventType", "event_type"],
+  // Course and Schedule
+  ["maxAbsences", "max_absences"],
+  ["weekParity", "week_parity"],
+  // Study Cushion
+  ["wakingHours", "waking_hours"],
+  ["committedHours", "committed_hours"],
+  ["availableHours", "available_hours"],
+  ["requiredHours", "required_hours"],
+  ["cushionHours", "cushion_hours"],
+  ["isDeficit", "is_deficit"],
+  ["deficitHours", "deficit_hours"],
+  ["warningNote", "warning_note"],
+  // GPA and Flashcards
+  ["gradingScale", "grading_scale"],
+  ["boxLevel", "box_level"],
+  ["nextReviewIso", "next_review_iso"],
+  ["lastReviewedIso", "last_reviewed_iso"],
+  ["accumulatedPoints", "accumulated_points"],
+  ["totalWeightage", "total_weightage"],
+  ["gradePoint", "grade_point"],
+  ["letterGrade", "letter_grade"],
+  ["scaleMax", "scale_max"],
+  ["totalCredits", "total_credits"],
+  ["semesterGpa", "semester_gpa"],
 ];
 
 function isRecord(value: unknown): value is Rec {

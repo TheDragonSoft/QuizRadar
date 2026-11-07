@@ -642,6 +642,8 @@ mod tests {
                 color: "#1a73e8".to_string(),
                 bg: None,
                 border: None,
+                credits: None,
+                max_absences: None,
             }],
             slots: Vec::new(),
         }

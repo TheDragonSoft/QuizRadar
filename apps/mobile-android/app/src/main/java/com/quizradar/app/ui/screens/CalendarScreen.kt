@@ -1,5 +1,6 @@
 package com.quizradar.app.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,6 +26,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -148,6 +152,7 @@ fun CalendarScreen(
     val currentWeekStart by viewModel.currentWeekStart.collectAsState()
     val selectedDate by viewModel.selectedCalendarDate.collectAsState()
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    var isAgendaMode by remember { mutableStateOf(false) }
 
     val weekDates =
         remember(currentWeekStart) {
@@ -301,404 +306,740 @@ fun CalendarScreen(
                             modifier = Modifier.size(18.dp),
                         )
                     }
-                }
-            }
-
-            // Days Header Row
-            Row(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surface)
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                        .then(swipeModifier),
-            ) {
-                Spacer(modifier = Modifier.width(48.dp))
-
-                displayedDates.forEach { date ->
-                    val isSelected = date == selectedDate
-                    val isToday = date == LocalDate.now()
-                    val dayName = date.dayOfWeek.name.take(3)
-
-                    Column(
-                        modifier =
-                            Modifier
-                                .weight(1f)
-                                .clickable { viewModel.setSelectedCalendarDate(date) }
-                                .padding(vertical = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
+                    IconButton(
+                        onClick = { isAgendaMode = !isAgendaMode },
+                        modifier = Modifier.size(48.dp),
                     ) {
-                        Text(
-                            text = dayName,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color =
-                                if (isSelected) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
+                        Icon(
+                            imageVector = if (isAgendaMode) Icons.Outlined.CalendarMonth else Icons.Outlined.Checklist,
+                            contentDescription = if (isAgendaMode) "Switch to Grid View" else "Switch to Agenda View",
+                            modifier = Modifier.size(18.dp),
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Box(
-                            modifier =
-                                Modifier
-                                    .size(28.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (isSelected) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            Color.Transparent
-                                        },
-                                    ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = "${date.dayOfMonth}",
-                                style =
-                                    TextStyle(
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        fontFeatureSettings = "tnum",
-                                        color =
-                                            if (isSelected) {
-                                                MaterialTheme.colorScheme.onPrimary
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurface
-                                            },
-                                    ),
-                            )
-                        }
-                        if (isToday && !isSelected) {
-                            Box(
-                                modifier =
-                                    Modifier
-                                        .size(4.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primary),
-                            )
-                        }
                     }
                 }
             }
 
-            // Week Grid with vertical scroll
-            val scrollState = rememberScrollState()
-            val totalGridHeight = (END_HOUR - START_HOUR + 1) * HOUR_HEIGHT_DP
-
-            Row(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .padding(bottom = 88.dp)
-                        .verticalScroll(scrollState),
-            ) {
-                // Time Gutter (08:00 to 21:00)
-                Column(
-                    modifier =
-                        Modifier
-                            .width(48.dp)
-                            .height(totalGridHeight.dp),
-                ) {
-                    for (h in START_HOUR..END_HOUR) {
-                        Box(
-                            modifier =
-                                Modifier
-                                    .height(HOUR_HEIGHT_DP.dp)
-                                    .padding(start = 6.dp, top = 2.dp),
-                        ) {
-                            Text(
-                                text = String.format("%02d:00", h),
-                                style =
-                                    TextStyle(
-                                        fontSize = 11.sp,
-                                        fontFeatureSettings = "tnum",
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    ),
-                            )
-                        }
-                    }
-                }
-
-                // Grid Days Columns
+            if (isAgendaMode) {
+                CalendarAgendaView(
+                    displayedDates = displayedDates,
+                    snapshot = snapshot,
+                    viewModel = viewModel,
+                    modifier = Modifier.fillMaxSize().padding(bottom = 88.dp).then(swipeModifier),
+                )
+            } else {
+                // Days Header Row
                 Row(
                     modifier =
                         Modifier
-                            .weight(1f)
-                            .height(totalGridHeight.dp),
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surface)
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                            .then(swipeModifier),
                 ) {
+                    Spacer(modifier = Modifier.width(48.dp))
+
                     displayedDates.forEach { date ->
+                        val isSelected = date == selectedDate
+                        val isToday = date == LocalDate.now()
                         val dayName = date.dayOfWeek.name.take(3)
 
-                        val daySlots =
-                            snapshot.schedule.slots.filter {
-                                it.day.take(3).equals(dayName, ignoreCase = true)
-                            }
-                        val dayAssessments =
-                            snapshot.assessments.filter {
-                                it.dateIso == date
-                            }
-                        val dayCustomEvents =
-                            snapshot.customEvents.filter {
-                                it.dateIso == date
-                            }
-
-                        val rawBlocks = mutableListOf<CalendarUiBlock>()
-
-                        // A slot and an exam are one block only when they
-                        // share the course AND the start time; every other
-                        // pair stays two blocks (no class is ever dropped).
-                        val mergedSlotByExamId = mutableMapOf<String, ScheduleSlotModel>()
-                        val mergedSlotIds = mutableSetOf<String>()
-                        daySlots.forEach { s ->
-                            val matchingExam =
-                                dayAssessments.firstOrNull { a ->
-                                    // One exam absorbs one slot: a second slot
-                                    // with the same course and start time keeps
-                                    // its own block instead of vanishing.
-                                    val alreadyMerged = mergedSlotByExamId.containsKey(a.id)
-                                    !alreadyMerged && shouldMergeExamWithSlot(a.courseId, a.startTime, s.courseId, s.startTime)
-                                }
-                            if (matchingExam != null) {
-                                mergedSlotByExamId[matchingExam.id] = s
-                                mergedSlotIds.add(s.id)
-                            }
-                        }
-
-                        dayAssessments.forEach { a ->
-                            val mergedSlot = mergedSlotByExamId[a.id]
-                            // The merged block keeps the SLOT's clock range
-                            // (web parity) so the class length is not lost.
-                            val pos =
-                                CalendarLanes.computeBlockPosition(
-                                    mergedSlot?.startTime ?: a.startTime,
-                                    mergedSlot?.endTime ?: a.endTime,
-                                )
-                            val kind =
-                                if (mergedSlot != null) {
-                                    BlockKind.MERGED_EXAM
-                                } else {
-                                    BlockKind.STANDALONE_EXAM
-                                }
-                            rawBlocks.add(
-                                CalendarUiBlock(
-                                    id = a.id,
-                                    topPx = pos.topPx,
-                                    heightPx = pos.heightPx,
-                                    kind = kind,
-                                    title = a.title,
-                                    courseId = a.courseId,
-                                    displayTime = a.displayTime ?: "All Day",
-                                    room = mergedSlot?.room ?: a.room,
-                                    assessmentId = a.id,
-                                ),
-                            )
-                        }
-
-                        daySlots.forEach { s ->
-                            if (s.id !in mergedSlotIds) {
-                                val pos = CalendarLanes.computeBlockPosition(s.startTime, s.endTime)
-                                rawBlocks.add(
-                                    CalendarUiBlock(
-                                        id = s.id,
-                                        topPx = pos.topPx,
-                                        heightPx = pos.heightPx,
-                                        kind = BlockKind.CLASS_SLOT,
-                                        title = listOfNotNull(s.courseName ?: s.courseId, s.type.ifBlank { null }).joinToString(" "),
-                                        courseId = s.courseId,
-                                        displayTime = s.displayTime ?: "${s.startTime}–${s.endTime}",
-                                        room = s.room,
-                                        assessmentId = null,
-                                    ),
-                                )
-                            }
-                        }
-
-                        dayCustomEvents.forEach { e ->
-                            val pos = CalendarLanes.computeBlockPosition(e.startTime, e.endTime)
-                            rawBlocks.add(
-                                CalendarUiBlock(
-                                    id = e.id,
-                                    topPx = pos.topPx,
-                                    heightPx = pos.heightPx,
-                                    kind = BlockKind.CUSTOM_EVENT,
-                                    title = e.title,
-                                    courseId = e.courseId,
-                                    displayTime = formatCustomEventTime(e.startTime, e.endTime),
-                                    room = e.room,
-                                    assessmentId = null,
-                                ),
-                            )
-                        }
-
-                        val laneItems = CalendarLanes.assignOverlapLanes(rawBlocks)
-
-                        Box(
+                        Column(
                             modifier =
                                 Modifier
                                     .weight(1f)
-                                    .fillMaxHeight()
-                                    .border(
-                                        1.dp,
-                                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-                                    ),
+                                    .clickable { viewModel.setSelectedCalendarDate(date) }
+                                    .padding(vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
-                            // Hour grid dividers with tap-to-create study block
-                            for (h in 0 until (END_HOUR - START_HOUR + 1)) {
-                                val hourSlot = START_HOUR + h
+                            Text(
+                                text = dayName,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color =
+                                    if (isSelected) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Box(
+                                modifier =
+                                    Modifier
+                                        .size(28.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (isSelected) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                Color.Transparent
+                                            },
+                                        ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "${date.dayOfMonth}",
+                                    style =
+                                        TextStyle(
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFeatureSettings = "tnum",
+                                            color =
+                                                if (isSelected) {
+                                                    MaterialTheme.colorScheme.onPrimary
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurface
+                                                },
+                                        ),
+                                )
+                            }
+                            if (isToday && !isSelected) {
                                 Box(
                                     modifier =
                                         Modifier
-                                            .fillMaxWidth()
-                                            .offset(y = (h * HOUR_HEIGHT_DP).dp)
-                                            .height(HOUR_HEIGHT_DP.dp)
-                                            // The grid is the screen: 14 slots per
-                                            // day column, and every one of them is a
-                                            // tap target. Without a name, a screen
-                                            // reader announced a wall of
-                                            // "button"s and the user could not
-                                            // tell WHICH hour they were on.
-                                            .semantics {
-                                                contentDescription =
-                                                    "$dayName ${String.format("%02d:00", hourSlot)}, " +
-                                                    "double tap to schedule a study block"
-                                            }.clickable {
-                                                val startStr = String.format("%02d:00", hourSlot)
-                                                val endStr = String.format("%02d:00", (hourSlot + 1).coerceAtMost(23))
-                                                viewModel.openCreateEventDraft(
-                                                    com.quizradar.app.ui.share.SharedEventDraft(
-                                                        title = "Study Session",
-                                                        notes = "Scheduled study slot $startStr–$endStr",
-                                                        dateIso = date,
-                                                        startTime = startStr,
-                                                        endTime = endStr,
-                                                    ),
-                                                )
-                                            },
-                                ) {
-                                    Box(
-                                        modifier =
-                                            Modifier
-                                                .fillMaxWidth()
-                                                .height(1.dp)
-                                                .background(MaterialTheme.colorScheme.outlineVariant),
+                                            .size(4.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primary),
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Week Grid with vertical scroll
+                val scrollState = rememberScrollState()
+                val totalGridHeight = (END_HOUR - START_HOUR + 1) * HOUR_HEIGHT_DP
+
+                Row(
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .padding(bottom = 88.dp)
+                            .verticalScroll(scrollState),
+                ) {
+                    // Time Gutter (08:00 to 21:00)
+                    Column(
+                        modifier =
+                            Modifier
+                                .width(48.dp)
+                                .height(totalGridHeight.dp),
+                    ) {
+                        for (h in START_HOUR..END_HOUR) {
+                            Box(
+                                modifier =
+                                    Modifier
+                                        .height(HOUR_HEIGHT_DP.dp)
+                                        .padding(start = 6.dp, top = 2.dp),
+                            ) {
+                                Text(
+                                    text = String.format("%02d:00", h),
+                                    style =
+                                        TextStyle(
+                                            fontSize = 11.sp,
+                                            fontFeatureSettings = "tnum",
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        ),
+                                )
+                            }
+                        }
+                    }
+
+                    // Grid Days Columns
+                    Row(
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .height(totalGridHeight.dp),
+                    ) {
+                        displayedDates.forEach { date ->
+                            val dayName = date.dayOfWeek.name.take(3)
+
+                            val daySlots =
+                                snapshot.schedule.slots.filter {
+                                    it.day.take(3).equals(dayName, ignoreCase = true)
+                                }
+                            val dayAssessments =
+                                snapshot.assessments.filter {
+                                    it.dateIso == date
+                                }
+                            val dayCustomEvents =
+                                snapshot.customEvents.filter {
+                                    it.dateIso == date
+                                }
+
+                            val rawBlocks = mutableListOf<CalendarUiBlock>()
+
+                            // A slot and an exam are one block only when they
+                            // share the course AND the start time; every other
+                            // pair stays two blocks (no class is ever dropped).
+                            val mergedSlotByExamId = mutableMapOf<String, ScheduleSlotModel>()
+                            val mergedSlotIds = mutableSetOf<String>()
+                            daySlots.forEach { s ->
+                                val matchingExam =
+                                    dayAssessments.firstOrNull { a ->
+                                        // One exam absorbs one slot: a second slot
+                                        // with the same course and start time keeps
+                                        // its own block instead of vanishing.
+                                        val alreadyMerged = mergedSlotByExamId.containsKey(a.id)
+                                        !alreadyMerged && shouldMergeExamWithSlot(a.courseId, a.startTime, s.courseId, s.startTime)
+                                    }
+                                if (matchingExam != null) {
+                                    mergedSlotByExamId[matchingExam.id] = s
+                                    mergedSlotIds.add(s.id)
+                                }
+                            }
+
+                            dayAssessments.forEach { a ->
+                                val mergedSlot = mergedSlotByExamId[a.id]
+                                // The merged block keeps the SLOT's clock range
+                                // (web parity) so the class length is not lost.
+                                val pos =
+                                    CalendarLanes.computeBlockPosition(
+                                        mergedSlot?.startTime ?: a.startTime,
+                                        mergedSlot?.endTime ?: a.endTime,
+                                    )
+                                val kind =
+                                    if (mergedSlot != null) {
+                                        BlockKind.MERGED_EXAM
+                                    } else {
+                                        BlockKind.STANDALONE_EXAM
+                                    }
+                                rawBlocks.add(
+                                    CalendarUiBlock(
+                                        id = a.id,
+                                        topPx = pos.topPx,
+                                        heightPx = pos.heightPx,
+                                        kind = kind,
+                                        title = a.title,
+                                        courseId = a.courseId,
+                                        displayTime = a.displayTime ?: "All Day",
+                                        room = mergedSlot?.room ?: a.room,
+                                        assessmentId = a.id,
+                                    ),
+                                )
+                            }
+
+                            daySlots.forEach { s ->
+                                if (s.id !in mergedSlotIds) {
+                                    val pos = CalendarLanes.computeBlockPosition(s.startTime, s.endTime)
+                                    rawBlocks.add(
+                                        CalendarUiBlock(
+                                            id = s.id,
+                                            topPx = pos.topPx,
+                                            heightPx = pos.heightPx,
+                                            kind = BlockKind.CLASS_SLOT,
+                                            title = listOfNotNull(s.courseName ?: s.courseId, s.type.ifBlank { null }).joinToString(" "),
+                                            courseId = s.courseId,
+                                            displayTime = s.displayTime ?: "${s.startTime}–${s.endTime}",
+                                            room = s.room,
+                                            assessmentId = null,
+                                        ),
                                     )
                                 }
                             }
 
-                            // Current time "Now" indicator line (if column is today)
-                            if (date == LocalDate.now()) {
-                                val now = java.time.LocalTime.now()
-                                val nowDecimal = now.hour + now.minute / 60f
-                                if (nowDecimal >= START_HOUR && nowDecimal <= END_HOUR + 1) {
-                                    val nowTopPx = (nowDecimal - START_HOUR) * HOUR_HEIGHT_DP
+                            dayCustomEvents.forEach { e ->
+                                val pos = CalendarLanes.computeBlockPosition(e.startTime, e.endTime)
+                                rawBlocks.add(
+                                    CalendarUiBlock(
+                                        id = e.id,
+                                        topPx = pos.topPx,
+                                        heightPx = pos.heightPx,
+                                        kind = BlockKind.CUSTOM_EVENT,
+                                        title = e.title,
+                                        courseId = e.courseId,
+                                        displayTime = formatCustomEventTime(e.startTime, e.endTime),
+                                        room = e.room,
+                                        assessmentId = null,
+                                    ),
+                                )
+                            }
+
+                            val laneItems = CalendarLanes.assignOverlapLanes(rawBlocks)
+
+                            Box(
+                                modifier =
+                                    Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .border(
+                                            1.dp,
+                                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                                        ),
+                            ) {
+                                // Hour grid dividers with tap-to-create study block
+                                for (h in 0 until (END_HOUR - START_HOUR + 1)) {
+                                    val hourSlot = START_HOUR + h
                                     Box(
                                         modifier =
                                             Modifier
                                                 .fillMaxWidth()
-                                                .offset(y = nowTopPx.dp)
-                                                .height(2.dp)
-                                                .background(Color(0xFFEF4444)),
+                                                .offset(y = (h * HOUR_HEIGHT_DP).dp)
+                                                .height(HOUR_HEIGHT_DP.dp)
+                                                // The grid is the screen: 14 slots per
+                                                // day column, and every one of them is a
+                                                // tap target. Without a name, a screen
+                                                // reader announced a wall of
+                                                // "button"s and the user could not
+                                                // tell WHICH hour they were on.
+                                                .semantics {
+                                                    contentDescription =
+                                                        "$dayName ${String.format("%02d:00", hourSlot)}, " +
+                                                        "double tap to schedule a study block"
+                                                }.clickable {
+                                                    val startStr = String.format("%02d:00", hourSlot)
+                                                    val endStr = String.format("%02d:00", (hourSlot + 1).coerceAtMost(23))
+                                                    viewModel.openCreateEventDraft(
+                                                        com.quizradar.app.ui.share.SharedEventDraft(
+                                                            title = "Study Session",
+                                                            notes = "Scheduled study slot $startStr–$endStr",
+                                                            dateIso = date,
+                                                            startTime = startStr,
+                                                            endTime = endStr,
+                                                        ),
+                                                    )
+                                                },
                                     ) {
                                         Box(
                                             modifier =
                                                 Modifier
-                                                    .size(7.dp)
-                                                    .offset(x = (-3.5).dp, y = (-2.5).dp)
-                                                    .clip(CircleShape)
-                                                    .background(Color(0xFFEF4444)),
+                                                    .fillMaxWidth()
+                                                    .height(1.dp)
+                                                    .background(MaterialTheme.colorScheme.outlineVariant),
                                         )
                                     }
                                 }
-                            }
 
-                            laneItems.forEach { block ->
-                                val palette = CoursePalette.get(block.courseId)
-                                val accessibleCourseText = CoursePalette.textOnSurface(block.courseId, isDark)
-                                val (bg, border, textClr) =
-                                    when (block.kind) {
-                                        BlockKind.MERGED_EXAM ->
-                                            Triple(
-                                                Color(0xFFDC2626).copy(alpha = if (isDark) 0.22f else 0.14f),
-                                                Color(0xFFDC2626),
-                                                if (isDark) Color(0xFFFCA5A5) else Color(0xFFB91C1C),
-                                            )
-                                        BlockKind.STANDALONE_EXAM ->
-                                            Triple(
-                                                palette.color.copy(alpha = if (isDark) 0.2f else 0.14f),
-                                                palette.color,
-                                                accessibleCourseText,
-                                            )
-                                        BlockKind.CLASS_SLOT ->
-                                            Triple(
-                                                palette.color.copy(alpha = if (isDark) 0.12f else 0.08f),
-                                                palette.border,
-                                                accessibleCourseText,
-                                            )
-                                        BlockKind.CUSTOM_EVENT ->
-                                            Triple(
-                                                CustomEventPink.copy(alpha = if (isDark) 0.2f else 0.12f),
-                                                CustomEventPink,
-                                                if (isDark) Color(0xFFF9A8D4) else Color(0xFF9D174D),
-                                            )
-                                    }
-
-                                BoxWithConstraints(
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .offset(y = block.topPx.dp)
-                                            .height(block.heightPx.dp),
-                                ) {
-                                    val laneWidth = maxWidth / block.laneCount.coerceAtLeast(1)
-                                    val xOffset = laneWidth * block.laneIndex
-
-                                    Column(
-                                        modifier =
-                                            Modifier
-                                                .offset(x = xOffset)
-                                                .width(laneWidth)
-                                                .fillMaxHeight()
-                                                .padding(1.5.dp)
-                                                .clip(RoundedCornerShape(6.dp))
-                                                .background(bg)
-                                                .border(
-                                                    if (block.kind == BlockKind.MERGED_EXAM || block.kind == BlockKind.STANDALONE_EXAM) {
-                                                        1.5.dp
-                                                    } else {
-                                                        1.dp
-                                                    },
-                                                    border,
-                                                    RoundedCornerShape(6.dp),
-                                                )
-                                                .clickable {
-                                                    if (block.assessmentId != null) {
-                                                        viewModel.openAssessmentDetail(block.assessmentId)
-                                                    }
-                                                }
-                                                .padding(horizontal = 5.dp, vertical = 4.dp),
-                                    ) {
-                                        Text(
-                                            text = block.title,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = textClr,
-                                            maxLines = if (block.heightPx >= 52) 2 else 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                        if (block.room != null && block.heightPx >= 42) {
-                                            Text(
-                                                text = block.room,
-                                                fontSize = 11.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
+                                // Current time "Now" indicator line (if column is today)
+                                if (date == LocalDate.now()) {
+                                    val now = java.time.LocalTime.now()
+                                    val nowDecimal = now.hour + now.minute / 60f
+                                    if (nowDecimal >= START_HOUR && nowDecimal <= END_HOUR + 1) {
+                                        val nowTopPx = (nowDecimal - START_HOUR) * HOUR_HEIGHT_DP
+                                        Box(
+                                            modifier =
+                                                Modifier
+                                                    .fillMaxWidth()
+                                                    .offset(y = nowTopPx.dp)
+                                                    .height(2.dp)
+                                                    .background(Color(0xFFEF4444)),
+                                        ) {
+                                            Box(
+                                                modifier =
+                                                    Modifier
+                                                        .size(7.dp)
+                                                        .offset(x = (-3.5).dp, y = (-2.5).dp)
+                                                        .clip(CircleShape)
+                                                        .background(Color(0xFFEF4444)),
                                             )
                                         }
                                     }
                                 }
+
+                                laneItems.forEach { block ->
+                                    val palette = CoursePalette.get(block.courseId)
+                                    val accessibleCourseText = CoursePalette.textOnSurface(block.courseId, isDark)
+                                    val (bg, border, textClr) =
+                                        when (block.kind) {
+                                            BlockKind.MERGED_EXAM ->
+                                                Triple(
+                                                    Color(0xFFDC2626).copy(alpha = if (isDark) 0.22f else 0.14f),
+                                                    Color(0xFFDC2626),
+                                                    if (isDark) Color(0xFFFCA5A5) else Color(0xFFB91C1C),
+                                                )
+                                            BlockKind.STANDALONE_EXAM ->
+                                                Triple(
+                                                    palette.color.copy(alpha = if (isDark) 0.2f else 0.14f),
+                                                    palette.color,
+                                                    accessibleCourseText,
+                                                )
+                                            BlockKind.CLASS_SLOT ->
+                                                Triple(
+                                                    palette.color.copy(alpha = if (isDark) 0.12f else 0.08f),
+                                                    palette.border,
+                                                    accessibleCourseText,
+                                                )
+                                            BlockKind.CUSTOM_EVENT ->
+                                                Triple(
+                                                    CustomEventPink.copy(alpha = if (isDark) 0.2f else 0.12f),
+                                                    CustomEventPink,
+                                                    if (isDark) Color(0xFFF9A8D4) else Color(0xFF9D174D),
+                                                )
+                                        }
+
+                                    val isExam =
+                                        block.kind == BlockKind.MERGED_EXAM ||
+                                            block.kind == BlockKind.STANDALONE_EXAM
+                                    val borderWidth = if (isExam) 1.5.dp else 1.dp
+                                    val titleMaxLines = if (block.heightPx >= 52) 2 else 1
+
+                                    BoxWithConstraints(
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .offset(y = block.topPx.dp)
+                                                .height(block.heightPx.dp),
+                                    ) {
+                                        val laneWidth = maxWidth / block.laneCount.coerceAtLeast(1)
+                                        val xOffset = laneWidth * block.laneIndex
+
+                                        Column(
+                                            modifier =
+                                                Modifier
+                                                    .offset(x = xOffset)
+                                                    .width(laneWidth)
+                                                    .fillMaxHeight()
+                                                    .padding(1.5.dp)
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(bg)
+                                                    .border(
+                                                        borderWidth,
+                                                        border,
+                                                        RoundedCornerShape(6.dp),
+                                                    )
+                                                    .clickable {
+                                                        if (block.assessmentId != null) {
+                                                            viewModel.openAssessmentDetail(block.assessmentId)
+                                                        }
+                                                    }
+                                                    .padding(horizontal = 5.dp, vertical = 4.dp),
+                                        ) {
+                                            Text(
+                                                text = block.title,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = textClr,
+                                                maxLines = titleMaxLines,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                            if (block.room != null && block.heightPx >= 42) {
+                                                Text(
+                                                    text = block.room,
+                                                    fontSize = 11.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CalendarAgendaView(
+    displayedDates: List<LocalDate>,
+    snapshot: AppSnapshotModel,
+    viewModel: QuizRadarViewModel,
+    modifier: Modifier = Modifier,
+) {
+    val attendanceMap by viewModel.attendanceMap.collectAsState()
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+
+    Column(
+        modifier = modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        displayedDates.forEach { date ->
+            val isToday = date == LocalDate.now()
+            val dayOfWeek = date.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }
+            val headerText = date.format(DateTimeFormatter.ofPattern("EEEE, MMM d"))
+
+            val daySlots =
+                snapshot.schedule.slots.filter { it.day.equals(dayOfWeek, ignoreCase = true) }
+                    .sortedBy { it.startTime }
+            val dayAssessments =
+                snapshot.assessments.filter { it.dateIso == date }
+                    .sortedBy { it.startTime ?: "00:00" }
+            val dayEvents = snapshot.customEvents.filter { it.dateIso == date }
+
+            val totalCount = daySlots.size + dayAssessments.size + dayEvents.size
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors =
+                    CardDefaults.cardColors(
+                        containerColor =
+                            if (isToday) {
+                                if (isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9)
+                            } else {
+                                MaterialTheme.colorScheme.surface
+                            },
+                    ),
+                shape = RoundedCornerShape(16.dp),
+                border =
+                    BorderStroke(
+                        1.dp,
+                        if (isToday) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                        } else {
+                            MaterialTheme.colorScheme.outlineVariant
+                        },
+                    ),
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    // Header
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = headerText,
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            )
+                            if (isToday) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    modifier =
+                                        Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(MaterialTheme.colorScheme.primary)
+                                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                                ) {
+                                    Text(
+                                        text = "TODAY",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            text = if (totalCount == 0) "Clear" else "$totalCount items",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (totalCount == 0) {
+                        Text(
+                            text = "No classes, exams, or events scheduled.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 4.dp),
+                        )
+                    } else {
+                        // 1. Exams
+                        dayAssessments.forEach { exam ->
+                            val course = snapshot.schedule.courses.find { it.id == exam.courseId }
+                            val courseColorHex = CoursePalette.getHex(exam.courseId)
+                            val accentColor =
+                                try {
+                                    Color(android.graphics.Color.parseColor(courseColorHex))
+                                } catch (_: Exception) {
+                                    MaterialTheme.colorScheme.primary
+                                }
+
+                            Row(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(MaterialTheme.colorScheme.surface)
+                                        .border(1.5.dp, Color(0xFFEF4444).copy(alpha = 0.7f), RoundedCornerShape(10.dp))
+                                        .clickable { viewModel.openAssessmentDetail(exam.id) }
+                                        .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(
+                                    modifier =
+                                        Modifier
+                                            .width(4.dp)
+                                            .height(36.dp)
+                                            .clip(RoundedCornerShape(2.dp))
+                                            .background(Color(0xFFEF4444)),
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier =
+                                                Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(Color(0xFFEF4444).copy(alpha = 0.15f))
+                                                    .padding(horizontal = 5.dp, vertical = 2.dp),
+                                        ) {
+                                            Text(
+                                                text = exam.assessmentType.uppercase(),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFFEF4444),
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = exam.courseName ?: exam.courseId ?: course?.name ?: "EXAM",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = accentColor,
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = exam.title,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Text(
+                                        text = "${exam.displayTime ?: "All day"} · ${exam.room ?: "—"}",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                        }
+
+                        // 2. Class Slots with Attendance Tracker
+                        daySlots.forEach { slot ->
+                            val courseColorHex = CoursePalette.getHex(slot.courseId)
+                            val accentColor =
+                                try {
+                                    Color(android.graphics.Color.parseColor(courseColorHex))
+                                } catch (_: Exception) {
+                                    MaterialTheme.colorScheme.primary
+                                }
+                            val attKey = "${slot.id}::$date"
+                            val attStatus = attendanceMap[attKey]
+                            val absenceCount = viewModel.getCourseAbsenceCount(slot.courseId)
+
+                            Row(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(MaterialTheme.colorScheme.surface)
+                                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(10.dp))
+                                        .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(
+                                    modifier =
+                                        Modifier
+                                            .width(4.dp)
+                                            .height(36.dp)
+                                            .clip(RoundedCornerShape(2.dp))
+                                            .background(accentColor),
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "${slot.courseId} · ${slot.type}",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = accentColor,
+                                        )
+                                        if (absenceCount >= 2) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "⚠️ $absenceCount absences",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFFF59E0B),
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = slot.courseName,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Text(
+                                        text = "${slot.startTime}–${slot.endTime} @ ${slot.room ?: "—"}",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+
+                                // Interactive Attendance Chip
+                                val (attText, attBg, attFg) =
+                                    when (attStatus) {
+                                        "attended" -> Triple("✓ Attended", Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF10B981))
+                                        "absent" -> Triple("✗ Absent", Color(0xFFEF4444).copy(alpha = 0.15f), Color(0xFFEF4444))
+                                        "excused" -> Triple("~ Excused", Color(0xFFF59E0B).copy(alpha = 0.15f), Color(0xFFF59E0B))
+                                        else ->
+                                            Triple(
+                                                "Mark",
+                                                MaterialTheme.colorScheme.surfaceVariant,
+                                                MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                    }
+
+                                Box(
+                                    modifier =
+                                        Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(attBg)
+                                            .clickable {
+                                                viewModel.toggleAttendance(slot.id, slot.courseId, date.toString())
+                                            }
+                                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                                ) {
+                                    Text(
+                                        text = attText,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = attFg,
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                        }
+
+                        // 3. Custom events
+                        dayEvents.forEach { event ->
+                            Row(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(MaterialTheme.colorScheme.surface)
+                                        .border(1.dp, CustomEventPink.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                                        .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(
+                                    modifier =
+                                        Modifier
+                                            .width(4.dp)
+                                            .height(30.dp)
+                                            .clip(RoundedCornerShape(2.dp))
+                                            .background(CustomEventPink),
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = event.title,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Text(
+                                        text = formatCustomEventTime(event.startTime, event.endTime),
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
                         }
                     }
                 }

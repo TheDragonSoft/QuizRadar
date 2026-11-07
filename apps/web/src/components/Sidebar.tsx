@@ -138,6 +138,7 @@ export const Sidebar: React.FC = () => {
                 <button
                   key={item.id}
                   type="button"
+                  data-testid={`sidebar-nav-${item.id}`}
                   onClick={() => setView(item.id)}
                   aria-current={isActive ? "page" : undefined}
                   className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] font-semibold transition ${

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   AlertTriangle,
@@ -326,6 +326,53 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
   const readinessPct = dash.totalTopicsCount === 0 ? null : (dash.readinessPercent ?? 100);
   const hasCourses = courses.length > 0;
 
+  // Aggregate approaching assessments + custom exam/quiz events into the Timeline Horizon
+  const allHorizonAssessments = useMemo(() => {
+    const list = [...(dash.allUpcoming || [])];
+    const existingIds = new Set(list.map((a) => a.id));
+
+    for (const ev of config.customEvents || []) {
+      if (!ev.dateIso || existingIds.has(ev.id)) continue;
+      const type = (ev.eventType || "").toLowerCase();
+      if (
+        type.includes("exam") ||
+        type.includes("quiz") ||
+        type.includes("midterm") ||
+        type.includes("final") ||
+        type.includes("test")
+      ) {
+        const from = new Date((dash.referenceDate || "2026-10-29") + "T00:00:00Z");
+        const to = new Date(ev.dateIso + "T00:00:00Z");
+        const days = Math.round((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
+        if (days >= 0) {
+          list.push({
+            id: ev.id,
+            courseId: ev.courseId,
+            courseName: courses.find((c) => c.id === ev.courseId)?.name ?? null,
+            title: ev.title,
+            assessmentType: ev.eventType || "Exam",
+            dateIso: ev.dateIso,
+            startTime: ev.startTime,
+            endTime: ev.endTime,
+            displayTime: ev.startTime
+              ? `${ev.startTime}${ev.endTime ? ` - ${ev.endTime}` : ""}`
+              : null,
+            room: ev.room,
+            isUpcoming: true,
+            daysUntil: days,
+            urgencyLevel: days <= 1 ? "critical" : days <= 4 ? "high" : "upcoming",
+            priorityScore: Math.max(10, 100 - days * 5),
+            topics: [],
+            warnings: [],
+            source: "MANUAL",
+            color: ev.color,
+          });
+        }
+      }
+    }
+    return list;
+  }, [dash.allUpcoming, config.customEvents, dash.referenceDate, courses]);
+
   return (
     <div data-testid="dashboard-view" className="w-full relative space-y-6">
       {/* Sticky Observatory Canopy Hero Banner — Parallax Anchor */}
@@ -385,7 +432,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
       {/* Astronomical Timeline Horizon (Replaces the 4 generic SaaS KPI cards) */}
       <section className={mobileTab === "overview" ? "block" : "hidden lg:block"}>
         <TimelineHorizon
-          assessments={dash.allUpcoming || []}
+          assessments={allHorizonAssessments}
           recommendations={dash.studyRecommendations || []}
           conflictAlerts={dash.conflictAlerts || []}
           weekCount={weekCount}

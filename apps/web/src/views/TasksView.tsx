@@ -205,6 +205,7 @@ export const TasksView: React.FC = () => {
             </button>
             <button
               type="button"
+              data-testid="tab-grades"
               onClick={() => setActiveTab("grades")}
               className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 transition ${
                 activeTab === "grades"
@@ -213,7 +214,7 @@ export const TasksView: React.FC = () => {
               }`}
             >
               <GraduationCap className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>Grade Center &amp; GPA</span>
+              <span>Grade Center & GPA</span>
             </button>
           </div>
 
@@ -434,7 +435,7 @@ export const TasksView: React.FC = () => {
               <div>
                 <h2 className="text-sm font-bold text-[var(--text)] flex items-center gap-2">
                   <GraduationCap className="h-4 w-4 text-[var(--accent-ink)]" aria-hidden="true" />
-                  <span>Semester Grade Center &amp; Credit-Weighted GPA</span>
+                  <span>Semester Grade Center & Credit-Weighted GPA</span>
                 </h2>
                 <p className="text-xs text-[var(--text-muted)] mt-0.5">
                   Honest grade tracking across assessments and credit-weighted cumulative semester calculations.
@@ -466,7 +467,7 @@ export const TasksView: React.FC = () => {
             </div>
 
             {/* GPA Summary KPI Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div data-testid="gpa-summary-card" className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {/* Card 1: Semester GPA */}
               <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--page)] p-3.5 space-y-1">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)]">

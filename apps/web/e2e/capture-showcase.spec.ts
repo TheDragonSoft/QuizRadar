@@ -98,133 +98,95 @@ test("capture comprehensive redesign showcase screenshots", async ({ page }) => 
   await page.waitForTimeout(500);
   await saveScreenshots("after-desktop-amoled-nebula.png");
 
-  // 8. Astronomical Timeline Horizon on Dashboard (AMOLED Sparkle - Variant 2)
-  await page.evaluate(() => {
+  // 8. Astronomical Timeline Horizon on Dashboard (Populated with honest courses & events)
+  await page.evaluate(async () => {
     document.documentElement.dataset.theme = "amoled-sparkle";
     document.documentElement.classList.add("dark");
     localStorage.setItem("quizradar_theme", "amoled-sparkle");
 
     const store = (window as unknown as Record<string, unknown>).__QUIZRADAR_STORE__ as {
-      getState: () => { data: Record<string, unknown> };
-      setState: (s: Record<string, unknown>) => void;
+      getState: () => {
+        upsertCourse: (c: unknown, s?: unknown) => Promise<void>;
+        addCustomEvent: (e: unknown) => Promise<void>;
+        setView: (v: string) => void;
+      };
     };
     if (store) {
-      const prev = store.getState().data;
-      store.setState({
-        data: {
-          ...prev,
-          schedule: {
-            ...((prev.schedule as Record<string, unknown>) || {}),
-            courses: [
-              { id: "CS241", code: "CS241", title: "Digital Systems", color: "#3b82f6", credits: 4 },
-              { id: "MATH102", code: "MATH102", title: "Calculus II", color: "#f59e0b", credits: 4 },
-              { id: "PHYS201", code: "PHYS201", title: "University Physics", color: "#8b5cf6", credits: 4 },
-              { id: "CHEM101", code: "CHEM101", title: "General Chemistry", color: "#10b981", credits: 3 },
-            ],
-            slots: [
-              { id: "slot-1", courseId: "CS241", dayOfWeek: "Monday", startTime: "10:00", endTime: "11:30", room: "Hall B-101" },
-              { id: "slot-2", courseId: "MATH102", dayOfWeek: "Tuesday", startTime: "13:00", endTime: "14:30", room: "Room 402" },
-              { id: "slot-3", courseId: "PHYS201", dayOfWeek: "Wednesday", startTime: "09:00", endTime: "10:30", room: "SciLab 3" },
-            ],
+      store.getState().setView("dashboard");
+      await store.getState().upsertCourse(
+        { id: "CSE241", name: "Digital Systems", color: "#3b82f6", credits: 4 },
+        [
+          {
+            id: "slot-1",
+            courseId: "CSE241",
+            courseName: "Digital Systems",
+            day: "Monday",
+            dayIndex: 1,
+            type: "Lecture",
+            room: "Auditorium C",
+            startTime: "09:00",
+            endTime: "10:30",
+            displayTime: "09:00 - 10:30",
           },
-          dashboard: {
-            ...((prev.dashboard as Record<string, unknown>) || {}),
-            weekCount: 3,
-            examsAheadCount: 2,
-            readinessPercent: 68,
-            totalTopicsCount: 12,
-            completedTopicsCount: 8,
-            allUpcoming: [
-              {
-                id: "exam-cs241",
-                courseId: "CS241",
-                courseName: "Digital Systems",
-                title: "Midterm Exam: Circuit Synthesis",
-                assessmentType: "Midterm",
-                dateIso: "2026-10-30",
-                displayTime: "09:30 AM",
-                daysUntil: 1,
-                isUpcoming: true,
-                room: "Auditorium C",
-                color: "#3b82f6",
-              },
-              {
-                id: "exam-math102",
-                courseId: "MATH102",
-                courseName: "Calculus II",
-                title: "Quiz 2: Multi-Variable Integration",
-                assessmentType: "Quiz",
-                dateIso: "2026-11-02",
-                displayTime: "11:00 AM",
-                daysUntil: 4,
-                isUpcoming: true,
-                room: "Room 402",
-                color: "#f59e0b",
-              },
-              {
-                id: "exam-phys201",
-                courseId: "PHYS201",
-                courseName: "University Physics",
-                title: "Final Exam: Electromagnetism & Optics",
-                assessmentType: "Final",
-                dateIso: "2026-11-10",
-                displayTime: "14:00 PM",
-                daysUntil: 12,
-                isUpcoming: true,
-                room: "Hall A",
-                color: "#8b5cf6",
-              },
-              {
-                id: "exam-chem101",
-                courseId: "CHEM101",
-                courseName: "General Chemistry",
-                title: "Term Paper & Lab Defense",
-                assessmentType: "Exam",
-                dateIso: "2026-11-22",
-                displayTime: "10:00 AM",
-                daysUntil: 24,
-                isUpcoming: true,
-                room: "Lab 2B",
-                color: "#10b981",
-              },
-            ],
-            studyRecommendations: [
-              {
-                assessmentId: "exam-cs241",
-                courseId: "CS241",
-                courseName: "Digital Systems",
-                title: "Midterm Exam: Circuit Synthesis",
-                kind: "Midterm",
-                urgency: "critical",
-                topics: [
-                  { topicIndex: 0, title: "Karnaugh Maps & Quine-McCluskey", completed: true, key: "t1" },
-                  { topicIndex: 1, title: "Synchronous State Machine Design", completed: true, key: "t2" },
-                  { topicIndex: 2, title: "Setup & Hold Time Margin Analysis", completed: false, key: "t3" },
-                ],
-              },
-              {
-                assessmentId: "exam-math102",
-                courseId: "MATH102",
-                courseName: "Calculus II",
-                title: "Quiz 2: Multi-Variable Integration",
-                kind: "Quiz",
-                urgency: "warning",
-                topics: [
-                  { topicIndex: 0, title: "Polar & Cylindrical Coordinate Transforms", completed: true, key: "t4" },
-                  { topicIndex: 1, title: "Jacobian Determinants", completed: false, key: "t5" },
-                ],
-              },
-            ],
+        ],
+      );
+      await store.getState().upsertCourse(
+        { id: "MAT102", name: "Calculus II", color: "#f59e0b", credits: 4 },
+        [
+          {
+            id: "slot-2",
+            courseId: "MAT102",
+            courseName: "Calculus II",
+            day: "Wednesday",
+            dayIndex: 3,
+            type: "Lecture",
+            room: "Hall B-101",
+            startTime: "11:00",
+            endTime: "12:30",
+            displayTime: "11:00 - 12:30",
           },
-        },
+        ],
+      );
+      await store.getState().addCustomEvent({
+        id: "exam-1",
+        title: "Midterm: Circuit Synthesis",
+        courseId: "CSE241",
+        eventType: "Exam",
+        date: "2026-10-30",
+        dateIso: "2026-10-30",
+        startTime: "09:30",
+        endTime: "11:00",
+        room: "Auditorium C",
+        color: "#3b82f6",
       });
+      await store.getState().addCustomEvent({
+        id: "quiz-2",
+        title: "Quiz 2: Integration",
+        courseId: "MAT102",
+        eventType: "Quiz",
+        date: "2026-11-03",
+        dateIso: "2026-11-03",
+        startTime: "11:00",
+        endTime: "12:00",
+        room: "Hall B-101",
+        color: "#f59e0b",
+      });
+      await (store.getState() as unknown as { refreshState: () => Promise<void> }).refreshState();
     }
   });
-  await page.waitForTimeout(600);
+  await page.waitForTimeout(1200);
   await saveScreenshots("after-desktop-timeline-horizon.png");
 
-  // 9. Widescreen Unified Academic Mission Control (>=1200px viewport)
+  // 9. Widescreen Unified Academic Mission Control (>=1200px viewport, e.g. 1440x900)
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.waitForTimeout(600);
+  await page.waitForTimeout(1000);
   await saveScreenshots("after-desktop-widescreen-mission-control.png");
+
+  // 10. Widescreen Mission Control Scrolled (showing Timetable Matrix & Prioritized Study Deck)
+  await page.evaluate(() => {
+    const main = document.querySelector("main");
+    if (main) main.scrollTo({ top: 460, behavior: "instant" });
+  });
+  await page.waitForTimeout(600);
+  await saveScreenshots("after-desktop-widescreen-mission-control-scrolled.png");
 });

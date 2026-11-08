@@ -232,7 +232,11 @@ pub async fn run_sync_with_ai(
 
                         match extract_assessment(ai_prov, email, &input.schedule).await {
                             Ok(extraction) => {
-                                all_new_extractions.push((hash.clone(), email.id.clone(), extraction.clone()));
+                                all_new_extractions.push((
+                                    hash.clone(),
+                                    email.id.clone(),
+                                    extraction.clone(),
+                                ));
                                 if extraction.is_assessment {
                                     assessments.push(merge_extraction(
                                         assessment,
@@ -247,11 +251,14 @@ pub async fn run_sync_with_ai(
                             Err(e) => {
                                 ai_fallback += 1;
                                 let mut fallback = assessment;
-                                let note = fallback.ai_inference_note.get_or_insert_with(String::new);
+                                let note =
+                                    fallback.ai_inference_note.get_or_insert_with(String::new);
                                 if !note.is_empty() {
-                                    note.push_str(" ");
+                                    note.push(' ');
                                 }
-                                note.push_str(&format!("[AI unavailable: {e}; used local heuristic]"));
+                                note.push_str(&format!(
+                                    "[AI unavailable: {e}; used local heuristic]"
+                                ));
                                 assessments.push(fallback);
                             }
                         }

@@ -824,7 +824,11 @@ fn find_week_phrase(lower: &str) -> Option<WeekPhrase> {
 /// `body_lower` all lower-cased by the caller). The literal `"lecture 1
 /// slides"` reject is kept for parity and flagged in STATUS as the one
 /// literal-based filter that deserves a generic pass later.
-pub fn is_candidate_assessment_email(subject_lower: &str, from_lower: &str, body_lower: &str) -> bool {
+pub fn is_candidate_assessment_email(
+    subject_lower: &str,
+    from_lower: &str,
+    body_lower: &str,
+) -> bool {
     // Filter out the student's own outgoing replies
     if subject_lower.starts_with("re:") {
         return false;
@@ -2549,7 +2553,10 @@ mod tests {
         assert_eq!(m1.unwrap().1, "id-match");
 
         // 2. By Name
-        let m2 = match_course_from_text("Midterm in Object-Oriented Programming next week", &schedule);
+        let m2 = match_course_from_text(
+            "Midterm in Object-Oriented Programming next week",
+            &schedule,
+        );
         assert!(m2.is_some());
         assert_eq!(m2.unwrap().0.id, "CSE241");
         assert_eq!(m2.unwrap().1, "name-match");

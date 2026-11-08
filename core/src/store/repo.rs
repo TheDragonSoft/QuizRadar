@@ -2398,10 +2398,12 @@ impl<'a> EmailAiExtractionRepo<'a> {
         &self,
         cache_key: &str,
     ) -> Result<Option<crate::ai::tasks::ExtractedAssessment>, StoreError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT extraction_json FROM email_ai_extractions WHERE cache_key = ?1",
-        )?;
-        let row = stmt.query_row(params![cache_key], |r| r.get::<_, String>(0)).optional()?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT extraction_json FROM email_ai_extractions WHERE cache_key = ?1")?;
+        let row = stmt
+            .query_row(params![cache_key], |r| r.get::<_, String>(0))
+            .optional()?;
         match row {
             Some(json) => {
                 let parsed: crate::ai::tasks::ExtractedAssessment = serde_json::from_str(&json)?;
@@ -2844,7 +2846,8 @@ pub mod ops {
         created_at: &str,
     ) -> Result<(), StoreError> {
         let tx = db.transaction()?;
-        EmailAiExtractionRepo::new(&tx).put(cache_key, email_id, extraction, model_id, created_at)?;
+        EmailAiExtractionRepo::new(&tx)
+            .put(cache_key, email_id, extraction, model_id, created_at)?;
         tx.commit()?;
         Ok(())
     }
@@ -4125,7 +4128,10 @@ mod tests {
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].id, "msg-1");
         assert_eq!(loaded[0].subject, "CSE241 Quiz 1 on Monday");
-        assert_eq!(loaded[0].snippet.as_deref(), Some("Please prepare chapters 1 and 2"));
+        assert_eq!(
+            loaded[0].snippet.as_deref(),
+            Some("Please prepare chapters 1 and 2")
+        );
 
         let extraction = crate::ai::tasks::ExtractedAssessment {
             is_assessment: true,

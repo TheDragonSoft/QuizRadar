@@ -255,7 +255,9 @@ pub async fn run_sync_inner(
         }
     };
 
-    let consent = crate::commands::ai::gemini_consent(state).await.unwrap_or(false);
+    let consent = crate::commands::ai::gemini_consent(state)
+        .await
+        .unwrap_or(false);
     let gemini_key = if consent {
         state.get_gemini_api_key().ok().flatten()
     } else {
@@ -263,9 +265,8 @@ pub async fn run_sync_inner(
     };
     let clock = Arc::new(chrono::Utc::now);
     let ledger = Arc::new(QuotaLedger::new(Arc::new(state.store.quota_kv()), None));
-    let email_ai = gemini_key.and_then(|k| {
-        GeminiProvider::production(Some(k), clock, Some(Arc::clone(&ledger))).ok()
-    });
+    let email_ai = gemini_key
+        .and_then(|k| GeminiProvider::production(Some(k), clock, Some(Arc::clone(&ledger))).ok());
 
     // The user may abort the scan from the overlay's Cancel button. The abort
     // is honoured during the fetch phase only — the merge into the store

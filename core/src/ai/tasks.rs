@@ -233,8 +233,8 @@ pub async fn extract_assessment(
 ) -> Result<ExtractedAssessment, AiUnavailable> {
     // Pre-match course deterministically via QuizRadar code to prevent LLM token waste
     let subj_and_body = format!("{} {}", email.subject, email.body);
-    let matched_course = crate::parse::email::match_course_from_text(&subj_and_body, schedule)
-        .map(|(c, _)| c);
+    let matched_course =
+        crate::parse::email::match_course_from_text(&subj_and_body, schedule).map(|(c, _)| c);
 
     let course_header = match matched_course {
         Some(course) => {

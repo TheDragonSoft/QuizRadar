@@ -561,8 +561,10 @@ impl Store {
         let id = email_id.to_string();
         let ext = extraction.clone();
         let mid = model_id.to_string();
-        self.run(move |db| repo::ops::save_email_ai_extraction(db, &key, &id, &ext, &mid, &created_at))
-            .await
+        self.run(move |db| {
+            repo::ops::save_email_ai_extraction(db, &key, &id, &ext, &mid, &created_at)
+        })
+        .await
     }
 
     /// Permanently wipes all tables and records, recreating a clean database state.

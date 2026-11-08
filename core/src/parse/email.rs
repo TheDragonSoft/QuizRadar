@@ -25,7 +25,7 @@
 
 use std::collections::HashSet;
 
-use chrono::{Datelike, Duration, NaiveDate};
+use chrono::{DateTime, Datelike, Duration, NaiveDate};
 
 use crate::parse::merge::merge_key;
 use crate::parse::util::{
@@ -360,7 +360,7 @@ pub fn extract_announcement_body(body: &str) -> &str {
 /// alternation order), then 3-letter abbreviations (`prompts/p02` includes
 /// `d Mon YYYY` in the ladder; v4 knew only full names — documented
 /// divergence).
-const MONTHS: [&str; 24] = [
+const MONTHS: [&str; 25] = [
     "january",
     "february",
     "march",
@@ -381,6 +381,7 @@ const MONTHS: [&str; 24] = [
     "jun",
     "jul",
     "aug",
+    "sept",
     "sep",
     "oct",
     "nov",
@@ -391,16 +392,28 @@ const MONTHS: [&str; 24] = [
 const MONTH_ABBREV_START: usize = 12;
 
 fn month_number_from_index(idx: usize) -> u32 {
-    let base = if idx >= MONTH_ABBREV_START {
-        idx - MONTH_ABBREV_START
-    } else {
-        idx
-    };
-    (base + 1) as u32
+    match idx {
+        0..=11 => (idx + 1) as u32,
+        12..=19 => (idx - 12 + 1) as u32, // jan (12)->1 .. aug (19)->8
+        20 | 21 => 9,                     // sept (20)->9, sep (21)->9
+        22 => 10,                         // oct (22)->10
+        23 => 11,                         // nov (23)->11
+        24 => 12,                         // dec (24)->12
+        _ => 1,
+    }
 }
 
-/// 3-letter month abbreviation (case-insensitive) → 1..=12.
+/// 3-letter or 4-letter ("sept") month abbreviation (case-insensitive) → 1..=12.
 fn lookup_month_abbrev(chars: &[char], at: usize) -> Option<u32> {
+    if at + 4 <= chars.len() {
+        let mut four = String::with_capacity(4);
+        for k in 0..4 {
+            four.push(*chars.get(at + k)?);
+        }
+        if four.eq_ignore_ascii_case("sept") {
+            return Some(9);
+        }
+    }
     let mut name = String::with_capacity(3);
     for k in 0..3 {
         name.push(*chars.get(at + k)?);
@@ -410,7 +423,7 @@ fn lookup_month_abbrev(chars: &[char], at: usize) -> Option<u32> {
         .iter()
         .skip(MONTH_ABBREV_START)
         .position(|candidate| *candidate == lowered)?;
-    Some((idx + 1) as u32)
+    Some(month_number_from_index(MONTH_ABBREV_START + idx))
 }
 
 /// Scanner for `(?i)\b(\d{1,2})\s+(january|…|december)\s+(\d{4})\b`.
@@ -578,6 +591,11 @@ pub fn find_explicit_date(text: &str) -> Option<NaiveDate> {
 /// `None` — the stored `email_sent_date` stays `None`, no invented date.
 #[must_use]
 pub fn parse_email_sent_date(date_header: &str) -> Option<NaiveDate> {
+    let trimmed = date_header.trim();
+    if let Ok(dt) = DateTime::parse_from_rfc2822(trimmed) {
+        return Some(dt.date_naive());
+    }
+
     let chars: Vec<char> = date_header.chars().collect();
     let len = chars.len();
 
@@ -648,7 +666,8 @@ pub const MAX_EMAIL_AGE_DAYS: i64 = 60;
 /// never dropped on a guessed age either (see [`parse_emails_from_source`]).
 #[must_use]
 pub fn is_email_recent(sent: NaiveDate, reference: NaiveDate, max_age_days: i64) -> bool {
-    (reference - sent).num_days() <= max_age_days
+    let diff = (reference - sent).num_days();
+    diff >= -1 && diff <= max_age_days
 }
 
 // ---------------------------------------------------------------------------
@@ -1499,6 +1518,8 @@ mod tests {
             snippet: None,
             body: body.to_string(),
             body_truncated: false,
+            internal_date_ms: None,
+            history_id: None,
         }
     }
 
@@ -1550,6 +1571,7 @@ mod tests {
         };
         ScheduleData {
             semester: Some("Fall 2026".to_string()),
+            academic_week_start: None,
             courses,
             slots: vec![
                 slot("s1", "Sun", 0, "CSE241", "Lecture", Some("Lab A"), 9, 10),

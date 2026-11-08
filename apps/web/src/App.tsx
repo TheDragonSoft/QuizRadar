@@ -117,13 +117,19 @@ export default function App() {
   // switch views and strand a stale panel).
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const target = (e.target as HTMLElement | null) || (document.activeElement as HTMLElement | null);
+      const target =
+        (e.target as HTMLElement | null) || (document.activeElement as HTMLElement | null);
       const isInput = (el: HTMLElement | null) => {
         let cur: HTMLElement | null = el;
         while (cur) {
           const tag = cur.tagName?.toUpperCase();
           if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-          if (cur.isContentEditable || (cur as any).contentEditable === "true" || cur.getAttribute?.("contenteditable") === "true") return true;
+          if (
+            cur.isContentEditable ||
+            cur.contentEditable === "true" ||
+            cur.getAttribute?.("contenteditable") === "true"
+          )
+            return true;
           cur = cur.parentElement;
         }
         return false;

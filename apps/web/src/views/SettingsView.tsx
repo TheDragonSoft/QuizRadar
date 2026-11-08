@@ -23,7 +23,13 @@ import { useAppStore } from "../state/store";
 import { isTauriEnvironment } from "../state/rpc";
 import { APP_VERSION } from "../generated/version";
 import { GoogleMark, MicrosoftMark } from "../components/BrandMarks";
-import { analytics, isAnalyticsConfigured, isAnalyticsOptedOut, setAnalyticsOptOut, useFeatureFlag } from "../lib/analytics";
+import {
+  analytics,
+  isAnalyticsConfigured,
+  isAnalyticsOptedOut,
+  setAnalyticsOptOut,
+  useFeatureFlag,
+} from "../lib/analytics";
 import type { Course, FeedConfig, SettingsSection } from "../state/types";
 
 /**
@@ -462,7 +468,10 @@ export function SettingsView() {
       {/* Scrollable page body */}
       <div className="min-w-0 flex-1 space-y-10 pb-16">
         {/* Breadcrumb navigation */}
-        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+        <nav
+          aria-label="Breadcrumb"
+          className="flex items-center gap-2 text-xs text-[var(--text-muted)]"
+        >
           <button
             type="button"
             onClick={() => setView("dashboard")}
@@ -553,13 +562,16 @@ export function SettingsView() {
                 Appearance &amp; Observatory Themes
               </h3>
               <p className="text-xs text-[var(--text-muted)]">
-                Configure your active appearance mode and select your preferred Light and Dark themes for daytime and nighttime studying.
+                Configure your active appearance mode and select your preferred Light and Dark
+                themes for daytime and nighttime studying.
               </p>
             </div>
 
             {/* Appearance Mode Segmented Control */}
             <div>
-              <div className="mb-2 text-xs font-semibold text-[var(--text)]">Active Appearance Mode</div>
+              <div className="mb-2 text-xs font-semibold text-[var(--text)]">
+                Active Appearance Mode
+              </div>
               <div className="flex gap-2">
                 {[
                   {
@@ -568,7 +580,10 @@ export function SettingsView() {
                     icon: "🖥️",
                     active: false,
                     onClick: () => {
-                      const isDark = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+                      const isDark =
+                        typeof window !== "undefined" &&
+                        window.matchMedia &&
+                        window.matchMedia("(prefers-color-scheme: dark)").matches;
                       setTheme(isDark ? "obsidian" : "solar");
                     },
                   },
@@ -607,7 +622,9 @@ export function SettingsView() {
             {/* Light Theme Collection (Extensible for future light themes) */}
             <div>
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-semibold text-[var(--text)]">Preferred Light Theme</span>
+                <span className="text-xs font-semibold text-[var(--text)]">
+                  Preferred Light Theme
+                </span>
                 <span className="text-[10px] text-[var(--text-muted)]">Active during daytime</span>
               </div>
               <div className="grid grid-cols-1 gap-2">
@@ -637,7 +654,10 @@ export function SettingsView() {
                         className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-300/40 shadow-xs"
                         style={{ backgroundColor: t.bg }}
                       >
-                        <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: t.accent }} />
+                        <div
+                          className="h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: t.accent }}
+                        />
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between">
@@ -657,8 +677,12 @@ export function SettingsView() {
             {/* Dark Theme Collection (Extensible for future dark themes) */}
             <div>
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-semibold text-[var(--text)]">Preferred Dark Theme</span>
-                <span className="text-[10px] text-[var(--text-muted)]">Active during nighttime</span>
+                <span className="text-xs font-semibold text-[var(--text)]">
+                  Preferred Dark Theme
+                </span>
+                <span className="text-[10px] text-[var(--text-muted)]">
+                  Active during nighttime
+                </span>
               </div>
               <div className="grid grid-cols-1 gap-2">
                 {[
@@ -703,7 +727,7 @@ export function SettingsView() {
                     <button
                       key={t.id}
                       type="button"
-                      onClick={() => setTheme(t.id as any)}
+                      onClick={() => setTheme(t.id as ThemeMode)}
                       className={`flex items-start gap-3 rounded-xl border p-3 text-left transition cursor-pointer ${
                         isSelected
                           ? "border-[var(--accent)] bg-[var(--surface)] shadow-xs ring-1 ring-[var(--accent)]"
@@ -714,7 +738,10 @@ export function SettingsView() {
                         className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/20 shadow-xs"
                         style={{ backgroundColor: t.bg }}
                       >
-                        <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: t.accent }} />
+                        <div
+                          className="h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: t.accent }}
+                        />
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between">
@@ -758,9 +785,7 @@ export function SettingsView() {
                 );
               })}
             </div>
-            <p className="mt-2.5 text-xs text-[var(--text-muted)]">
-              {copy.onboarding.trackEffect}
-            </p>
+            <p className="mt-2.5 text-xs text-[var(--text-muted)]">{copy.onboarding.trackEffect}</p>
           </div>
 
           {/* Google account — v4 hub card with the real Google mark */}
@@ -870,10 +895,7 @@ export function SettingsView() {
           <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Sparkles
-                  className="h-4 w-4 text-[var(--accent)]"
-                  aria-hidden="true"
-                />
+                <Sparkles className="h-4 w-4 text-[var(--accent)]" aria-hidden="true" />
                 <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
                   Google Gemini AI (Bring Your Own Key)
                 </h3>
@@ -1013,7 +1035,9 @@ export function SettingsView() {
             <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4 flex items-center justify-between">
               <div>
                 <h3 className="text-xs font-bold text-[var(--text)]">Courses & Timetable</h3>
-                <p className="text-xs text-[var(--text-muted)] mt-0.5">Add and manage courses manually.</p>
+                <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                  Add and manage courses manually.
+                </p>
               </div>
               <button
                 type="button"
@@ -1161,7 +1185,6 @@ export function SettingsView() {
             </div>
           </div>
 
-
           {/* University Sources Section — spec `01` §4.9: each source is
               a user control. Gmail follows the Google account itself; the
               Teams and Classroom toggles exclude one source from scans
@@ -1171,7 +1194,10 @@ export function SettingsView() {
               University Sources
             </h3>
             <div className="space-y-3">
-              <label htmlFor="settings-teams-toggle" className="flex cursor-pointer items-center justify-between">
+              <label
+                htmlFor="settings-teams-toggle"
+                className="flex cursor-pointer items-center justify-between"
+              >
                 <span className="text-xs font-semibold text-[var(--text)]">
                   Microsoft Teams
                   <span className="ml-1.5 font-normal text-[var(--text-muted)]">
@@ -1187,7 +1213,10 @@ export function SettingsView() {
                   className="h-4 w-4 rounded border-[var(--border)] accent-[var(--accent-fill)]"
                 />
               </label>
-              <label htmlFor="settings-classroom-toggle" className="flex cursor-pointer items-center justify-between">
+              <label
+                htmlFor="settings-classroom-toggle"
+                className="flex cursor-pointer items-center justify-between"
+              >
                 <span className="text-xs font-semibold text-[var(--text)]">
                   Google Classroom
                   <span className="ml-1.5 font-normal text-[var(--text-muted)]">
@@ -1217,7 +1246,10 @@ export function SettingsView() {
               <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
                 Moodle LMS Integration
               </h3>
-              <label htmlFor="settings-moodle-toggle" className="flex cursor-pointer items-center gap-2">
+              <label
+                htmlFor="settings-moodle-toggle"
+                className="flex cursor-pointer items-center gap-2"
+              >
                 <span className="text-xs font-semibold text-[var(--text)]">Enabled</span>
                 <input
                   id="settings-moodle-toggle"
@@ -1278,7 +1310,10 @@ export function SettingsView() {
           </div>
 
           {/* Canvas LMS Integration Accordion */}
-          <div data-testid="settings-canvas-card" className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
+          <div
+            data-testid="settings-canvas-card"
+            className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4"
+          >
             <button
               type="button"
               aria-label="Canvas LMS Calendar Feed"
@@ -1309,12 +1344,22 @@ export function SettingsView() {
               <div className="mt-3.5 space-y-3 pt-3 border-t border-[var(--border)]">
                 {/* Step-by-step instructions */}
                 <div className="rounded-lg bg-[var(--surface)] p-3 text-xs text-[var(--text)] space-y-1.5 border border-[var(--border)]">
-                  <div className="font-bold text-[var(--text)]">How to extract your private Canvas Calendar Feed:</div>
+                  <div className="font-bold text-[var(--text)]">
+                    How to extract your private Canvas Calendar Feed:
+                  </div>
                   <ol className="list-decimal pl-4 space-y-1 text-xs text-[var(--text-muted)]">
                     <li>Log into your university Canvas portal in a browser.</li>
-                    <li>Click <strong>Calendar</strong> in the left global navigation sidebar.</li>
-                    <li>In the right sidebar or footer, click <strong>Calendar Feed</strong>.</li>
-                    <li>Copy the private URL ending in <code className="text-[var(--accent-ink)] font-mono">.ics</code> and paste it below:</li>
+                    <li>
+                      Click <strong>Calendar</strong> in the left global navigation sidebar.
+                    </li>
+                    <li>
+                      In the right sidebar or footer, click <strong>Calendar Feed</strong>.
+                    </li>
+                    <li>
+                      Copy the private URL ending in{" "}
+                      <code className="text-[var(--accent-ink)] font-mono">.ics</code> and paste it
+                      below:
+                    </li>
                   </ol>
                 </div>
 
@@ -1349,7 +1394,10 @@ export function SettingsView() {
           </div>
 
           {/* Blackboard Learn Integration Accordion */}
-          <div data-testid="settings-blackboard-card" className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
+          <div
+            data-testid="settings-blackboard-card"
+            className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4"
+          >
             <button
               type="button"
               aria-label="Blackboard Learn Calendar Feed"
@@ -1380,12 +1428,24 @@ export function SettingsView() {
               <div className="mt-3.5 space-y-3 pt-3 border-t border-[var(--border)]">
                 {/* Step-by-step instructions */}
                 <div className="rounded-lg bg-[var(--surface)] p-3 text-xs text-[var(--text)] space-y-1.5 border border-[var(--border)]">
-                  <div className="font-bold text-[var(--text)]">How to extract your Blackboard Calendar Link:</div>
+                  <div className="font-bold text-[var(--text)]">
+                    How to extract your Blackboard Calendar Link:
+                  </div>
                   <ol className="list-decimal pl-4 space-y-1 text-xs text-[var(--text-muted)]">
                     <li>Log into your university Blackboard Learn portal.</li>
-                    <li>Navigate to the <strong>Calendar</strong> tool from the base navigation or course list.</li>
-                    <li>At the bottom or under the gear icon, click <strong>Share Calendar</strong> or <strong>External Calendar Link</strong>.</li>
-                    <li>Copy the generated <code className="text-[var(--accent-ink)] font-mono">.ics</code> webcal or https link and paste it below:</li>
+                    <li>
+                      Navigate to the <strong>Calendar</strong> tool from the base navigation or
+                      course list.
+                    </li>
+                    <li>
+                      At the bottom or under the gear icon, click <strong>Share Calendar</strong> or{" "}
+                      <strong>External Calendar Link</strong>.
+                    </li>
+                    <li>
+                      Copy the generated{" "}
+                      <code className="text-[var(--accent-ink)] font-mono">.ics</code> webcal or
+                      https link and paste it below:
+                    </li>
                   </ol>
                 </div>
 
@@ -1475,9 +1535,7 @@ export function SettingsView() {
                       <div className="truncate text-xs font-bold text-[var(--text)]">
                         {feed.name}
                       </div>
-                      <div className="truncate text-xs text-[var(--text-muted)]">
-                        {feed.url}
-                      </div>
+                      <div className="truncate text-xs text-[var(--text-muted)]">{feed.url}</div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <button
@@ -1581,7 +1639,9 @@ export function SettingsView() {
                   )}
                 </div>
                 <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-                  Help improve QuizRadar by sharing anonymous scan reliability and feature usage. We strictly NEVER collect student grades, course titles, email contents, or schedule details.
+                  Help improve QuizRadar by sharing anonymous scan reliability and feature usage. We
+                  strictly NEVER collect student grades, course titles, email contents, or schedule
+                  details.
                 </p>
               </div>
               <label className="relative inline-flex cursor-pointer items-center shrink-0">
@@ -1594,7 +1654,9 @@ export function SettingsView() {
                     setAnalyticsOptOut(!enabled);
                     addToast({
                       type: "info",
-                      message: enabled ? "Anonymous analytics enabled" : "Analytics disabled (opted out)",
+                      message: enabled
+                        ? "Anonymous analytics enabled"
+                        : "Analytics disabled (opted out)",
                     });
                   }}
                   className="peer sr-only"
@@ -1631,11 +1693,16 @@ export function SettingsView() {
           <details className="group rounded-xl border border-[var(--border)] bg-[var(--page)] p-4 transition">
             <summary className="flex cursor-pointer items-center justify-between text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] hover:text-[var(--text)]">
               <span>Advanced Settings &amp; Custom OAuth Overrides</span>
-              <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90 text-[var(--text-muted)]" aria-hidden="true" />
+              <ChevronRight
+                className="h-4 w-4 transition-transform group-open:rotate-90 text-[var(--text-muted)]"
+                aria-hidden="true"
+              />
             </summary>
             <div className="mt-4 pt-3 border-t border-[var(--border)] space-y-3">
               <p className="text-xs text-[var(--text-muted)]">
-                The app ships with working built-in Google OAuth credentials out-of-the-box. Only enter custom client IDs below if you wish to override the built-in configuration with your own Google Cloud Console or Microsoft Azure tenant app.
+                The app ships with working built-in Google OAuth credentials out-of-the-box. Only
+                enter custom client IDs below if you wish to override the built-in configuration
+                with your own Google Cloud Console or Microsoft Azure tenant app.
               </p>
               <div>
                 <label className="block text-xs font-semibold text-[var(--text)] mb-1">
@@ -1645,7 +1712,9 @@ export function SettingsView() {
                   type="text"
                   placeholder="Leave empty to use built-in Google client"
                   value={config.googleClientId || ""}
-                  onChange={(e) => updateConfig({ googleClientId: e.target.value.trim() || undefined })}
+                  onChange={(e) =>
+                    updateConfig({ googleClientId: e.target.value.trim() || undefined })
+                  }
                   className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs text-[var(--text)] focus:border-[var(--accent)] focus:outline-none"
                 />
               </div>
@@ -1657,7 +1726,9 @@ export function SettingsView() {
                   type="text"
                   placeholder="Leave empty to use built-in Microsoft client"
                   value={config.teamsClientId || ""}
-                  onChange={(e) => updateConfig({ teamsClientId: e.target.value.trim() || undefined })}
+                  onChange={(e) =>
+                    updateConfig({ teamsClientId: e.target.value.trim() || undefined })
+                  }
                   className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs text-[var(--text)] focus:border-[var(--accent)] focus:outline-none"
                 />
               </div>

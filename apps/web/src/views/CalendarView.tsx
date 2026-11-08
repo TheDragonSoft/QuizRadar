@@ -295,7 +295,9 @@ export const CalendarView: React.FC = () => {
               aria-label="Filter alternating timetable recurrence"
               data-testid="parity-filter-select"
               value={weekParityFilter}
-              onChange={(e) => setWeekParityFilter(e.target.value as "all" | "auto" | "week_a" | "week_b")}
+              onChange={(e) =>
+                setWeekParityFilter(e.target.value as "all" | "auto" | "week_a" | "week_b")
+              }
               className="bg-transparent text-[11px] font-semibold text-[var(--text)] outline-none cursor-pointer"
             >
               <option value="auto">Auto</option>
@@ -753,6 +755,7 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
       showExams,
       isCourseSelected,
       searchQuery,
+      weekParityFilter,
     ]);
 
     return (

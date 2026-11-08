@@ -161,6 +161,38 @@ pub(crate) fn build_backup_payload_conn(
     })
 }
 
+/// Unified Last-Write-Wins (LWW) timestamp comparison for backup merging.
+/// Parses RFC3339 / ISO-8601 timestamps into `DateTime<Utc>` before comparison.
+/// Returns true only if `remote_stamp` is non-empty and strictly newer than `local_stamp`.
+/// Equal stamps do NOT replace local data.
+fn is_remote_newer(local_str: &str, remote_str: &str) -> bool {
+    let remote_trimmed = remote_str.trim();
+    if remote_trimmed.is_empty() {
+        return false;
+    }
+    let local_trimmed = local_str.trim();
+    if local_trimmed.is_empty() {
+        return true;
+    }
+
+    let parse_dt = |s: &str| -> Option<chrono::DateTime<chrono::Utc>> {
+        chrono::DateTime::parse_from_rfc3339(s)
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .or_else(|_| {
+                chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").map(|d| d.and_utc())
+            })
+            .or_else(|_| {
+                chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S").map(|d| d.and_utc())
+            })
+            .ok()
+    };
+
+    match (parse_dt(local_trimmed), parse_dt(remote_trimmed)) {
+        (Some(l), Some(r)) => r > l,
+        _ => remote_trimmed > local_trimmed,
+    }
+}
+
 /// Applies a pulled payload with the additive rules (`04` §4.6):
 /// 1. **topics**: true-only additive (`TopicRepo::merge_additive`),
 /// 2. **grades**: upsert-fill (remote non-null fields overwrite; local
@@ -210,11 +242,18 @@ pub(crate) fn merge_backup_payload(
                 .get(&assessment.id)
                 .cloned()
                 .unwrap_or_default();
-            if local_stamp > remote_stamp {
+            if local_stamps.contains_key(&assessment.id)
+                && !is_remote_newer(&local_stamp, &remote_stamp)
+            {
                 report.assessments_kept_newer += 1;
                 continue;
             }
-            assessment_repo.upsert(assessment, &remote_stamp)?;
+            let stamp_to_write = if remote_stamp.trim().is_empty() {
+                now
+            } else {
+                &remote_stamp
+            };
+            assessment_repo.upsert(assessment, stamp_to_write)?;
             report.assessments_replaced += 1;
         }
 
@@ -224,15 +263,15 @@ pub(crate) fn merge_backup_payload(
         let grade_repo = GradeRepo::new(&tx);
         let grade_stamps = grade_repo.record_stamps()?;
         for (id, record) in &payload.grades {
-            let local_newer = grade_stamps.get(id).is_some_and(|local| {
-                local.as_str()
-                    >= payload
-                        .record_stamps
-                        .grades
-                        .get(id)
-                        .map(String::as_str)
-                        .unwrap_or("")
-            });
+            let remote_stamp = payload
+                .record_stamps
+                .grades
+                .get(id)
+                .cloned()
+                .unwrap_or_default();
+            let local_stamp = grade_stamps.get(id).cloned().unwrap_or_default();
+            let local_newer =
+                grade_stamps.contains_key(id) && !is_remote_newer(&local_stamp, &remote_stamp);
             if !local_newer && grade_repo.merge_upsert(id, record, now)? {
                 report.grades_merged += 1;
             }
@@ -248,10 +287,16 @@ pub(crate) fn merge_backup_payload(
                 .cloned()
                 .unwrap_or_default();
             let local_stamp = event_stamps.get(&event.id).cloned().unwrap_or_default();
-            if event_stamps.contains_key(&event.id) && local_stamp > remote_stamp {
+            if event_stamps.contains_key(&event.id) && !is_remote_newer(&local_stamp, &remote_stamp)
+            {
                 continue;
             }
-            event_repo.upsert(event, &remote_stamp)?;
+            let stamp_to_write = if remote_stamp.trim().is_empty() {
+                now
+            } else {
+                &remote_stamp
+            };
+            event_repo.upsert(event, stamp_to_write)?;
             report.events_upserted += 1;
         }
 
@@ -265,7 +310,7 @@ pub(crate) fn merge_backup_payload(
                 .cloned()
                 .unwrap_or_default();
             let local_stamp = feed_stamps.get(&feed.id).cloned().unwrap_or_default();
-            if feed_stamps.contains_key(&feed.id) && local_stamp > remote_stamp {
+            if feed_stamps.contains_key(&feed.id) && !is_remote_newer(&local_stamp, &remote_stamp) {
                 continue;
             }
             // https-only validation still gates remote data on the way in.
@@ -275,7 +320,12 @@ pub(crate) fn merge_backup_payload(
                 let _ = error;
                 continue;
             }
-            feed_repo.save(feed, &remote_stamp)?;
+            let stamp_to_write = if remote_stamp.trim().is_empty() {
+                now
+            } else {
+                &remote_stamp
+            };
+            feed_repo.save(feed, stamp_to_write)?;
             report.feeds_upserted += 1;
         }
 
@@ -289,10 +339,16 @@ pub(crate) fn merge_backup_payload(
         let remote_schedule_stamp = payload.record_stamps.schedule.clone().unwrap_or_default();
         let local_schedule_fresh = local_schedule_stamp.is_empty();
         if !payload.schedule.courses.is_empty()
-            && (local_schedule_fresh || remote_schedule_stamp > local_schedule_stamp)
+            && (local_schedule_fresh
+                || is_remote_newer(&local_schedule_stamp, &remote_schedule_stamp))
         {
-            CourseRepo::new(&tx).save_all(&payload.schedule, &remote_schedule_stamp)?;
-            meta.set_schedule_updated_at(&remote_schedule_stamp)?;
+            let sched_stamp_to_write = if remote_schedule_stamp.trim().is_empty() {
+                now
+            } else {
+                &remote_schedule_stamp
+            };
+            CourseRepo::new(&tx).save_all(&payload.schedule, sched_stamp_to_write)?;
+            meta.set_schedule_updated_at(sched_stamp_to_write)?;
             match payload
                 .schedule
                 .semester
@@ -302,6 +358,16 @@ pub(crate) fn merge_backup_payload(
             {
                 Some(text) => meta.set("schedule_semester", Some(text))?,
                 None => meta.set("schedule_semester", None)?,
+            }
+            match payload
+                .schedule
+                .academic_week_start
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                Some(text) => meta.set("schedule_academic_week_start", Some(text))?,
+                None => meta.set("schedule_academic_week_start", None)?,
             }
             report.schedule_replaced = true;
         }
@@ -467,6 +533,7 @@ mod tests {
     fn sample_schedule() -> ScheduleData {
         ScheduleData {
             semester: Some("Fall 2026".to_string()),
+            academic_week_start: None,
             courses: vec![Course {
                 id: "CSE241".to_string(),
                 name: "Digital Design".to_string(),
@@ -735,6 +802,7 @@ mod tests {
                 .save_all(
                     &ScheduleData {
                         semester: Some("Fall 2026".into()),
+                        academic_week_start: None,
                         courses: vec![Course {
                             id: "MTH115".into(),
                             name: "Linear Algebra".into(),

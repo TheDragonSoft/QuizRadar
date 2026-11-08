@@ -44,7 +44,7 @@ pub enum StoreError {
 }
 
 /// The schema this build ships. Written by [`Db::apply_migrations`].
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;
 
 pub(crate) const INITIAL_SCHEMA_SQL: &str = "
 CREATE TABLE courses (
@@ -271,6 +271,22 @@ pub const MIGRATIONS: &[(u32, &str)] = &[
          CREATE INDEX idx_study_sessions_date ON study_sessions(date_iso);
          CREATE INDEX idx_study_sessions_course ON study_sessions(course_id);",
     ),
+    // Migration 5: Persistent announcement email cache.
+    // Retains up to 500 cached announcement emails across sync runs so both
+    // desktop and Android avoid redundant mailbox scans.
+    (
+        5,
+        "CREATE TABLE email_cache (
+             id TEXT PRIMARY KEY NOT NULL,
+             internal_date_ms INTEGER NOT NULL DEFAULT 0,
+             history_id TEXT,
+             subject TEXT NOT NULL,
+             sender TEXT,
+             body TEXT NOT NULL,
+             synced_at TEXT NOT NULL
+         );
+         CREATE INDEX idx_email_cache_internal_date ON email_cache(internal_date_ms DESC);",
+    ),
 ];
 
 /// One SQLite handle. Cheap to share behind a mutex (see
@@ -351,9 +367,19 @@ impl Db {
         }
         // Migration 3 is a DATA migration (positional topic keys →
         // content-addressed keys through each assessment's current topic
-        // list); it needs Rust, not SQL, and runs once, right after the
-        // ladder crosses version 3.
-        if from < 3 {
+        // list); it needs Rust, not SQL. It is tracked idempotently in `kv_meta`
+        // via 'topic_key_migration_v3' so a crash between schema v4 pragma update
+        // and data migration re-runs and never drops topic completion state.
+        let v3_data_migrated: bool = self
+            .conn
+            .query_row(
+                "SELECT 1 FROM kv_meta WHERE key = 'topic_key_migration_v3'",
+                [],
+                |_| Ok(true),
+            )
+            .unwrap_or(false);
+
+        if (from < 3 || !v3_data_migrated) && self.schema_version()? >= 3 {
             migrate_topic_keys_to_content_addressing(&self.conn)?;
         }
         Ok(())

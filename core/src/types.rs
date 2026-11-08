@@ -143,6 +143,12 @@ pub struct CachedEmail {
     /// text is incomplete instead of trusting a silently shortened body.
     #[serde(default)]
     pub body_truncated: bool,
+    /// Gmail internal date in milliseconds since Unix epoch (for chronological sorting).
+    #[serde(default)]
+    pub internal_date_ms: Option<i64>,
+    /// Gmail message history id (for incremental sync cursoring).
+    #[serde(default)]
+    pub history_id: Option<String>,
 }
 
 /// Enrolled course (`02` §3.1). The `id` is the unique key (course code, e.g.
@@ -216,6 +222,10 @@ pub struct ScheduleSlot {
 pub struct ScheduleData {
     #[serde(default)]
     pub semester: Option<String>,
+    /// Explicit academic week start: "Saturday", "Sunday", "Monday".
+    /// Extracted from timetable metadata or set by user.
+    #[serde(default)]
+    pub academic_week_start: Option<String>,
     #[serde(default)]
     pub courses: Vec<Course>,
     #[serde(default)]

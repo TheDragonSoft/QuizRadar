@@ -12,6 +12,13 @@ export interface PomodoroModalProps {
   topicTitle?: string;
 }
 
+type TimerMode = "pomodoro" | "shortBreak" | "longBreak";
+const DURATIONS: Record<TimerMode, number> = {
+  pomodoro: 25 * 60,
+  shortBreak: 5 * 60,
+  longBreak: 15 * 60,
+};
+
 export function PomodoroModal({
   props,
   onClose,
@@ -30,13 +37,6 @@ export function PomodoroModal({
   const addToast = useAppStore((s) => s.addToast);
 
   const matchedAssessment = assessments.find((a) => a.id === assessmentId);
-
-  type TimerMode = "pomodoro" | "shortBreak" | "longBreak";
-  const DURATIONS: Record<TimerMode, number> = {
-    pomodoro: 25 * 60,
-    shortBreak: 5 * 60,
-    longBreak: 15 * 60,
-  };
 
   const [mode, setMode] = useState<TimerMode>("pomodoro");
   const [timeLeft, setTimeLeft] = useState<number>(DURATIONS.pomodoro);
@@ -104,7 +104,7 @@ export function PomodoroModal({
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isRunning, timeLeft, addToast]);
+  }, [isRunning, timeLeft, addToast, mode, topicTitle, topicIndex]);
 
   const switchMode = (newMode: TimerMode) => {
     setMode(newMode);

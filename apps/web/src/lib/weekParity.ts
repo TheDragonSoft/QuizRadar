@@ -21,7 +21,9 @@ export function getIsoWeekNumber(dateInput: Date | string): number {
     const [y, m, day] = dateInput.split("-").map(Number);
     d = new Date(Date.UTC(y, (m ?? 1) - 1, day ?? 1, 12, 0, 0));
   } else {
-    d = new Date(Date.UTC(dateInput.getFullYear(), dateInput.getMonth(), dateInput.getDate(), 12, 0, 0));
+    d = new Date(
+      Date.UTC(dateInput.getFullYear(), dateInput.getMonth(), dateInput.getDate(), 12, 0, 0),
+    );
   }
 
   const dayNum = d.getUTCDay() || 7; // Sunday is 7 in ISO
@@ -31,11 +33,44 @@ export function getIsoWeekNumber(dateInput: Date | string): number {
 }
 
 /**
- * Returns "week_a" (odd ISO week) or "week_b" (even ISO week).
+ * Returns the week start date on or before `dateInput` for a given weekday start index (0=Sun .. 6=Sat).
  */
-export function getWeekParity(dateInput: Date | string): WeekParity {
-  const weekNumber = getIsoWeekNumber(dateInput);
-  return weekNumber % 2 !== 0 ? "week_a" : "week_b";
+export function getWeekStartOnOrBefore(dateInput: Date | string, weekStartIndex: number): Date {
+  let d: Date;
+  if (typeof dateInput === "string") {
+    const [y, m, day] = dateInput.split("-").map(Number);
+    d = new Date(Date.UTC(y, (m ?? 1) - 1, day ?? 1, 12, 0, 0));
+  } else {
+    d = new Date(
+      Date.UTC(dateInput.getFullYear(), dateInput.getMonth(), dateInput.getDate(), 12, 0, 0),
+    );
+  }
+  const day = d.getUTCDay();
+  const diff = (day + 7 - weekStartIndex) % 7;
+  d.setUTCDate(d.getUTCDate() - diff);
+  return d;
+}
+
+/**
+ * Returns "week_a" or "week_b" for a given date and optional week start day (e.g. "saturday", "sunday", "monday").
+ * When weekStart is omitted or "monday", defaults to ISO week parity.
+ */
+export function getWeekParity(dateInput: Date | string, weekStart?: string): WeekParity {
+  const cleanStart = weekStart?.trim().toLowerCase();
+  const startIndex = cleanStart ? DAY_NAME_TO_INDEX[cleanStart] : undefined;
+
+  if (startIndex === undefined || startIndex === 1) {
+    const weekNumber = getIsoWeekNumber(dateInput);
+    return weekNumber % 2 !== 0 ? "week_a" : "week_b";
+  }
+
+  // Anchor to 2026-01-05 (Monday of ISO week 2)
+  const anchor = new Date(Date.UTC(2026, 0, 5, 12, 0, 0));
+  const wDate = getWeekStartOnOrBefore(dateInput, startIndex);
+  const wAnchor = getWeekStartOnOrBefore(anchor, startIndex);
+  const diffDays = Math.round((wDate.getTime() - wAnchor.getTime()) / 86400000);
+  const diffWeeks = Math.floor(diffDays / 7);
+  return ((diffWeeks % 2) + 2) % 2 === 1 ? "week_a" : "week_b";
 }
 
 const DAY_NAME_TO_INDEX: Record<string, number> = {
@@ -73,6 +108,7 @@ export function slotMatchesParity(
   slot: { weekParity?: string | null; week_parity?: string | null },
   dateInput: Date | string,
   filterOverride?: WeekParityFilter,
+  weekStart?: string,
 ): boolean {
   if (filterOverride === "all") return true;
   if (filterOverride === "week_a") {
@@ -87,7 +123,7 @@ export function slotMatchesParity(
   const slotParity = (slot.weekParity ?? slot.week_parity ?? "all").trim().toLowerCase();
   if (slotParity === "all" || slotParity === "") return true;
 
-  const currentParity = getWeekParity(dateInput);
+  const currentParity = getWeekParity(dateInput, weekStart);
   return slotParity === currentParity;
 }
 
@@ -98,6 +134,7 @@ export function slotMatchesDate(
   slot: ScheduleSlot,
   dateInput: Date | string,
   filterOverride?: WeekParityFilter,
+  weekStart?: string,
 ): boolean {
   let targetWeekday: number;
   if (typeof dateInput === "string") {
@@ -113,5 +150,5 @@ export function slotMatchesDate(
     return false;
   }
 
-  return slotMatchesParity(slot, dateInput, filterOverride);
+  return slotMatchesParity(slot, dateInput, filterOverride, weekStart);
 }

@@ -1,12 +1,70 @@
-//! Week parity calculation (ISO 8601 calendar week) and alternating slot matching.
+//! Week parity calculation (ISO 8601 calendar week and timetable-anchored week) and alternating slot matching.
 //!
 //! Honesty rules:
-//! - Determines whether a calendar date is "week_a" (odd ISO week) or "week_b" (even ISO week).
+//! - Determines whether a calendar date is "week_a" or "week_b" based on the institution's timetable week start.
 //! - Matches timetable slots by both weekday index and recurrence parity ("all", "week_a", "week_b").
 
 use crate::parse::util::{weekday_index, weekday_to_index};
-use crate::types::ScheduleSlot;
-use chrono::{Datelike, NaiveDate};
+use crate::types::{ScheduleData, ScheduleSlot};
+use chrono::{Datelike, NaiveDate, Weekday};
+
+pub const DEFAULT_ANCHOR_DATE: (i32, u32, u32) = (2026, 1, 5); // Monday of Week 2
+
+pub fn parse_weekday_name(name: &str) -> Option<Weekday> {
+    match name.trim().to_ascii_lowercase().as_str() {
+        "monday" | "mon" => Some(Weekday::Mon),
+        "tuesday" | "tue" => Some(Weekday::Tue),
+        "wednesday" | "wed" => Some(Weekday::Wed),
+        "thursday" | "thu" => Some(Weekday::Thu),
+        "friday" | "fri" => Some(Weekday::Fri),
+        "saturday" | "sat" => Some(Weekday::Sat),
+        "sunday" | "sun" => Some(Weekday::Sun),
+        _ => None,
+    }
+}
+
+pub fn timetable_week_start(schedule: &ScheduleData) -> (Weekday, Option<&'static str>) {
+    if let Some(ref start) = schedule.academic_week_start {
+        if let Some(wd) = parse_weekday_name(start) {
+            return (wd, None);
+        }
+    }
+    (
+        Weekday::Mon,
+        Some("Academic week start assumed Monday — set in timetable"),
+    )
+}
+
+pub fn week_start_on_or_before(date: NaiveDate, week_start: Weekday) -> NaiveDate {
+    let diff = (date.weekday().num_days_from_monday() + 7 - week_start.num_days_from_monday()) % 7;
+    date - chrono::Duration::days(diff as i64)
+}
+
+pub fn date_week_parity_anchored(
+    date: NaiveDate,
+    anchor_date: NaiveDate,
+    week_start: Weekday,
+) -> &'static str {
+    let w_date = week_start_on_or_before(date, week_start);
+    let w_anchor = week_start_on_or_before(anchor_date, week_start);
+    let weeks = (w_date - w_anchor).num_days() / 7;
+    if weeks.rem_euclid(2) == 1 {
+        "week_a"
+    } else {
+        "week_b"
+    }
+}
+
+pub fn date_week_parity_for_schedule(date: NaiveDate, schedule: &ScheduleData) -> &'static str {
+    let (week_start, _) = timetable_week_start(schedule);
+    let anchor = NaiveDate::from_ymd_opt(
+        DEFAULT_ANCHOR_DATE.0,
+        DEFAULT_ANCHOR_DATE.1,
+        DEFAULT_ANCHOR_DATE.2,
+    )
+    .unwrap_or(date);
+    date_week_parity_anchored(date, anchor, week_start)
+}
 
 /// Returns "week_a" for odd ISO calendar weeks, and "week_b" for even ISO weeks.
 #[must_use]
@@ -79,6 +137,24 @@ mod tests {
         let week44_mon = NaiveDate::from_ymd_opt(2026, 10, 26).unwrap();
         assert_eq!(week44_mon.iso_week().week(), 44);
         assert_eq!(date_week_parity(week44_mon), "week_b");
+    }
+
+    #[test]
+    fn timetable_anchored_parity_saturday_first() {
+        let schedule = ScheduleData {
+            academic_week_start: Some("Saturday".to_string()),
+            ..Default::default()
+        };
+        // Saturday 2026-10-17 and Sunday 2026-10-18 belong to the same academic week as Monday 2026-10-19
+        let sat = NaiveDate::from_ymd_opt(2026, 10, 17).unwrap();
+        let sun = NaiveDate::from_ymd_opt(2026, 10, 18).unwrap();
+        let mon = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
+        let parity_sat = date_week_parity_for_schedule(sat, &schedule);
+        let parity_sun = date_week_parity_for_schedule(sun, &schedule);
+        let parity_mon = date_week_parity_for_schedule(mon, &schedule);
+
+        assert_eq!(parity_sat, parity_sun);
+        assert_eq!(parity_sun, parity_mon);
     }
 
     #[test]

@@ -238,6 +238,7 @@ async fn test_study_streak_reference_dates_and_resilience() {
         .save_schedule(
             ScheduleData {
                 semester: Some("Fall 2026".into()),
+                academic_week_start: None,
                 courses: courses.clone(),
                 slots: vec![],
             },
@@ -408,7 +409,7 @@ async fn test_attendance_absence_limits_warning_chips_and_thresholds() {
     // Open a direct connection and run through AttendanceRepo
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     let db = Db::open_in_memory().unwrap();
-    assert_eq!(db.schema_version().unwrap(), 4);
+    assert_eq!(db.schema_version().unwrap(), 5);
 
     let course_repo = CourseRepo::new(&conn);
     // Create tables via migration
@@ -754,11 +755,11 @@ async fn test_sqlite_v4_migration_on_temporary_file_database() {
     // This MUST automatically detect schema 3 < 4 and apply migration 4
     let db = Db::open(&db_path).unwrap();
 
-    // Verify schema version is now 4
+    // Verify schema version is now 5
     assert_eq!(
         db.schema_version().unwrap(),
-        4,
-        "Db::open must automatically apply migration 4 and upgrade user_version to 4"
+        5,
+        "Db::open must automatically apply migrations and upgrade user_version to 5"
     );
 
     // Open through Store
@@ -900,7 +901,7 @@ async fn test_sqlite_v4_migration_on_temporary_file_database() {
 
     let store2 = Store::open(db_path.clone()).await.unwrap();
     let db2 = Db::open(&db_path).unwrap();
-    assert_eq!(db2.schema_version().unwrap(), 4);
+    assert_eq!(db2.schema_version().unwrap(), 5);
 
     let state2 = store2.load_state(d(2026, 11, 6)).await.unwrap();
     let bio2 = &state2.schedule.courses[0];
@@ -984,7 +985,7 @@ async fn test_adversarial_edge_cases_and_schema_too_new() {
     match err {
         quizradar_core::store::db::StoreError::SchemaTooNew { found, supported } => {
             assert_eq!(found, 999);
-            assert_eq!(supported, 4);
+            assert_eq!(supported, 5);
         }
         other => panic!("Expected SchemaTooNew, got: {other:?}"),
     }

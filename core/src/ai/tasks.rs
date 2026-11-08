@@ -211,11 +211,11 @@ Return ONLY a valid JSON object matching this exact structure (null when unknown
   "date_iso": "2026-10-19",
   "start_time": "13:00",
   "end_time": "15:30",
-  "room": "Hall A-101",
-  "group": "Group B",
-  "instructor": "Prof. Alan Turing",
-  "topics": ["Lecture 1: Introduction"],
-  "warnings": ["Bring printed Quiz Template"],
+  "room": null,
+  "group": null,
+  "instructor": null,
+  "topics": ["Quoted topic from announcement"],
+  "warnings": ["Quoted warning from announcement"],
   "ai_inference_note": "Brief explanation of how the exact date, time, and room were inferred from the email + student schedule.",
   "ai_study_plan": "Specific, actionable 2-sentence study recommendation for these topics.",
   "estimated_study_hours": 3.5
@@ -353,7 +353,14 @@ pub fn merge_extraction(
         base.warnings = ai.warnings.clone();
     }
     if let Some(note) = &ai.ai_inference_note {
-        base.ai_inference_note = Some(note.clone());
+        let trimmed = note.trim();
+        if base.date != ai.date && !trimmed.starts_with("Estimated:") {
+            base.ai_inference_note = Some(format!("Estimated: {trimmed}"));
+        } else {
+            base.ai_inference_note = Some(note.clone());
+        }
+    } else if base.date != ai.date && ai.date.is_some() {
+        base.ai_inference_note = Some("Estimated: Inferred by AI from announcement".to_string());
     }
     if let Some(plan) = &ai.ai_study_plan {
         base.ai_study_plan = Some(plan.clone());
@@ -548,6 +555,7 @@ pub async fn extract_timetable(
     Ok(ExtractedTimetable {
         schedule: ScheduleData {
             semester: de_optional(raw.semester.as_deref()),
+            academic_week_start: None,
             courses,
             slots,
         },
@@ -1102,6 +1110,8 @@ mod tests {
             snippet: None,
             body: "Quiz 2 next Wednesday during the lecture.".to_string(),
             body_truncated: false,
+            internal_date_ms: None,
+            history_id: None,
         }
     }
 

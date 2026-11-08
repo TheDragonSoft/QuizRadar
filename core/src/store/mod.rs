@@ -301,6 +301,27 @@ impl Store {
             .await
     }
 
+    pub async fn load_cached_emails(&self) -> Result<Vec<crate::types::CachedEmail>, StoreError> {
+        self.run(|db| repo::EmailCacheRepo::new(db.conn()).list_cached(500))
+            .await
+    }
+
+    pub async fn save_cached_emails(
+        &self,
+        emails: Vec<crate::types::CachedEmail>,
+        synced_at: String,
+    ) -> Result<(), StoreError> {
+        self.run(move |db| {
+            let tx = db.transaction()?;
+            let repo = repo::EmailCacheRepo::new(&tx);
+            repo.upsert_all(&emails, &synced_at)?;
+            repo.prune_oldest(500)?;
+            tx.commit()?;
+            Ok(())
+        })
+        .await
+    }
+
     pub async fn save_quiz_attempt(
         &self,
         attempt: crate::types::QuizAttempt,
@@ -539,7 +560,13 @@ impl Store {
                  DELETE FROM feeds;
                  DELETE FROM config_kv;
                  DELETE FROM tokens_meta;
-                 DELETE FROM kv_meta;",
+                 DELETE FROM kv_meta;
+                 DELETE FROM attendance;
+                 DELETE FROM flashcards;
+                 DELETE FROM quiz_attempts;
+                 DELETE FROM mistake_bank;
+                 DELETE FROM study_sessions;
+                 DELETE FROM email_cache;",
             )?;
             tx.commit()?;
             Ok(())

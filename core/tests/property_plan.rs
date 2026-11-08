@@ -261,6 +261,7 @@ fn arb_schedule() -> impl Strategy<Value = ScheduleData> {
             .collect();
         ScheduleData {
             semester: None,
+            academic_week_start: None,
             courses: Vec::new(),
             slots,
         }

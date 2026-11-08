@@ -11,13 +11,13 @@
     "core/src/types.rs"
   ],
   "sourceHashes": {
-    "core/src/types.rs": "d6dc3806a0e6673abdfdc80bdd6bac9047e48481ed72af8651cfcf15cc1aa0e1",
+    "core/src/types.rs": "dbee36eddf342ed6ac57aaf06f8cac2ef203dab4a7f2fce63b003c9b8fb5d506",
     "core/src/plan/dashboard.rs": "7843b341f5c2a41dbd98950d1190d63714614f33f7505a60044136773d340948",
     "core/src/plan/tasks.rs": "393b8f8badc358a850fe51df90c9b907be10749c1dd4f886bfd4e78d3a5dabba",
     "core/src/plan/conflicts.rs": "a953cf743da6a8fc45b43bc6c2dfd716c6842a65a2d4311b08c56a19e8729e74",
     "apps/desktop/src-tauri/src/commands/state.rs": "cc0a9e43c5254a35700bc5ed9f3ed7e04be17b75800b5f63172a5faca533dc3e",
-    "core/src/store/repo.rs": "d61b0ea5fc9350b340480f3f52bfab2765889ce4e6d2f6e053dccaa627b104f4",
-    "core/src/ffi.rs": "b136c51863e9b68ac520181974ca7a4c16593edc991ac2c5c7d0bd1322e0cf11"
+    "core/src/store/repo.rs": "caf48837b023d10d87faad153215b94031b03d17eb6292a89d12dc3ef5b04dd0",
+    "core/src/ffi.rs": "6491f33e519a0459c8d7ea324114b30c00afd3199889ecfa72f4db633eaf5fa8"
   },
   "structs": {
     "CachedEmail": {
@@ -64,6 +64,18 @@
           "wireName": "body_truncated",
           "rustType": "bool",
           "optional": false
+        },
+        {
+          "rustName": "internal_date_ms",
+          "wireName": "internal_date_ms",
+          "rustType": "Option<i64>",
+          "optional": true
+        },
+        {
+          "rustName": "history_id",
+          "wireName": "history_id",
+          "rustType": "Option<String>",
+          "optional": true
         }
       ]
     },
@@ -209,6 +221,12 @@
         {
           "rustName": "semester",
           "wireName": "semester",
+          "rustType": "Option<String>",
+          "optional": true
+        },
+        {
+          "rustName": "academic_week_start",
+          "wireName": "academic_week_start",
           "rustType": "Option<String>",
           "optional": true
         },
@@ -2209,7 +2227,8 @@
       "parameters": [
         "content: String",
         "schedule_json: String",
-        "ref_date_iso: String"
+        "ref_date_iso: String",
+        "offset_seconds: i32"
       ],
       "returns": "Result<String, QuizRadarFfiError>"
     },

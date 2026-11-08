@@ -383,6 +383,15 @@ fn parse_gmail_message(msg_id: &str, message: &Value) -> CachedEmail {
         .unwrap_or_default()
         .to_string();
     let (body, body_truncated) = extract_mime_body(payload);
+    let internal_date_ms = message
+        .get("internalDate")
+        .and_then(Value::as_str)
+        .and_then(|s| s.parse::<i64>().ok())
+        .or_else(|| message.get("internalDate").and_then(Value::as_i64));
+    let history_id = message
+        .get("historyId")
+        .and_then(Value::as_str)
+        .map(|s| s.to_string());
 
     CachedEmail {
         id: msg_id.to_string(),
@@ -392,6 +401,8 @@ fn parse_gmail_message(msg_id: &str, message: &Value) -> CachedEmail {
         snippet: Some(snippet),
         body,
         body_truncated,
+        internal_date_ms,
+        history_id,
     }
 }
 
@@ -613,6 +624,8 @@ mod tests {
                 snippet: None,
                 body: "old".to_string(),
                 body_truncated: false,
+                internal_date_ms: None,
+                history_id: None,
             })
             .collect();
 

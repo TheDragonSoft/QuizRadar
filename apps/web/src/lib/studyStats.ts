@@ -66,8 +66,10 @@ export function loadStoredStudyStats(): StoredStudyStats {
     return {
       totalMinutes: Math.max(0, Number(parsed.totalMinutes) || 0),
       totalSessions: Math.max(0, Number(parsed.totalSessions) || 0),
-      dailyMinutes: parsed.dailyMinutes && typeof parsed.dailyMinutes === "object" ? parsed.dailyMinutes : {},
-      lastUpdated: typeof parsed.lastUpdated === "string" ? parsed.lastUpdated : getTodayIsoString(),
+      dailyMinutes:
+        parsed.dailyMinutes && typeof parsed.dailyMinutes === "object" ? parsed.dailyMinutes : {},
+      lastUpdated:
+        typeof parsed.lastUpdated === "string" ? parsed.lastUpdated : getTodayIsoString(),
     };
   } catch {
     return {
@@ -120,7 +122,7 @@ export function calculateStudyStreak(dailyMinutes: Record<string, number>): numb
 
   const dateSet = new Set(dates);
   const now = new Date();
-  let checkDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const checkDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
   const toIso = (d: Date) => {
     const year = d.getFullYear();
@@ -130,7 +132,7 @@ export function calculateStudyStreak(dailyMinutes: Record<string, number>): numb
   };
 
   let streak = 0;
-  let todayIso = toIso(checkDate);
+  const todayIso = toIso(checkDate);
 
   // If today has study activity, count today and walk backward
   if (dateSet.has(todayIso)) {

@@ -225,9 +225,11 @@ pub async fn run_sync_inner(
         moodle_rest_token: None,
     };
 
+    let cached_emails = state.store.load_cached_emails().await.unwrap_or_default();
+
     let input = SyncInput {
         schedule: snapshot.schedule,
-        emails_cache: Vec::new(),
+        emails_cache: cached_emails,
         existing_assessments: snapshot.assessments,
         reference_date: today,
         local: state.local_offset(),
@@ -252,6 +254,13 @@ pub async fn run_sync_inner(
         result = core_run_sync(&config, &input, None, &progress_cb) => result?,
     };
 
+    if !report.emails_cache.is_empty() {
+        let _ = state
+            .store
+            .save_cached_emails(report.emails_cache, now.to_string())
+            .await;
+    }
+
     // "Last synced" reflects real fetches only: a scan in which every source
     // was skipped or failed fetched nothing, so no stamp is written.
     let fetched_anything = report
@@ -263,6 +272,12 @@ pub async fn run_sync_inner(
         state
             .store
             .replace_assessments(report.assessments, now, today)
+            .await
+            .map_err(|e| format!("Failed to save merged assessments: {e}"))?;
+    } else if fetched_anything {
+        state
+            .store
+            .replace_assessments_allowing_empty(report.assessments, now, today)
             .await
             .map_err(|e| format!("Failed to save merged assessments: {e}"))?;
     }

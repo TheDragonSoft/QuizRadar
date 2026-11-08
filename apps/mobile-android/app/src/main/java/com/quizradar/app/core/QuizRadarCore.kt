@@ -1,7 +1,9 @@
 package com.quizradar.app.core
 
 import kotlinx.coroutines.CoroutineDispatcher
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 
 /**
  * High-level Kotlin interface for QuizRadar operations on Android.
@@ -137,6 +139,7 @@ interface QuizRadarCore {
         content: String,
         scheduleJson: String,
         refDate: LocalDate = LocalDate.now(),
+        offsetSeconds: Int = ZoneId.systemDefault().rules.getOffset(Instant.now()).totalSeconds,
     ): String
 
     fun radarOrder(

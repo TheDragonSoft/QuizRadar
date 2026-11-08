@@ -5,6 +5,7 @@ import CelestialSky from "../components/CelestialSky.astro";
 import {
   ANCHOR_STEPS,
   FAQ_ITEMS,
+  GITHUB_REPO_URL,
   INGESTION_SOURCES,
   PLATFORM_DOWNLOADS,
   PRODUCT_VIEWS,
@@ -38,34 +39,35 @@ function splitHighlight(text: string, highlight?: string) {
         <CelestialSky showRadarArcs={true} />
 
         <div class="hero-sky-content">
-          <h1 class="hero-title">Never miss a quiz hidden in a professor’s post.</h1>
+          <h1 class="hero-title">Turn chaotic class announcements into a calm semester schedule.</h1>
 
           <p class="hero-sub">
-            QuizRadar scans your Gmail, Microsoft Teams, Moodle, and Google Classroom directly on
-            your device and anchors fuzzy announcements against your weekly class timetable. Every
-            quiz, conflict alert, and study block lands on one starry radar — free, MIT-licensed,
-            and zero-server.
+            QuizRadar reviews course updates from Gmail, Microsoft Teams, Moodle, and Google Classroom
+            directly on your device, matching fuzzy dates against your enrolled class timetable. Every
+            quiz, conflict warning, and study session appears on one clear calendar — completely private,
+            free, and zero-server.
           </p>
 
           <div class="hero-actions">
             <a
-              href={PLATFORM_DOWNLOADS.windows.primaryUrl}
+              href={downloadHref}
               class="btn btn-sky-primary btn-lg"
               data-dl-cta
+              data-default-href={downloadHref}
             >
               <BrandIcon name="download" size={18} />
-              <span data-dl-label>{PLATFORM_DOWNLOADS.windows.label}</span>
+              <span data-dl-label>Download QuizRadar</span>
             </a>
 
             <a href={webAppHref} class="btn btn-sky-secondary btn-lg">
               <BrandIcon name="globe" size={18} />
-              <span>Open Web App — No Install</span>
+              <span>Try Web App in Browser</span>
             </a>
           </div>
 
           <div class="hero-foot-strip">
             <a href={downloadHref} class="sky-foot-link">
-              Windows · macOS · Linux · Android APK →
+              Available for Windows, macOS, Linux, and Android &rarr;
             </a>
           </div>
         </div>
@@ -75,7 +77,7 @@ function splitHighlight(text: string, highlight?: string) {
       <div id="views" class="stage-wrap">
         <div class="gradient-stage app-stage">
           <div class="stage-toolbar">
-            <div class="stage-tablist" role="tablist" aria-label="QuizRadar application views">
+            <div class="stage-tablist" role="tablist" aria-orientation="horizontal" aria-label="QuizRadar application views">
               {
                 PRODUCT_VIEWS.map((view, idx) => (
                   <button
@@ -166,12 +168,11 @@ function splitHighlight(text: string, highlight?: string) {
   <section id="how-it-works" class="page-section">
     <div class="container">
       <div class="section-head animate-on-scroll">
-        <span class="eyebrow">Timetable-Anchored Parsing</span>
-        <h2 class="section-title">How a fuzzy email becomes an exact exam slot.</h2>
+        <h2 class="section-title">How fuzzy class messages become an exact study schedule.</h2>
         <p class="section-lead">
-          Professors rarely attach an <code>.ics</code> invite. QuizRadar reads announcements the way
-          students do — cross-referencing relative dates against your enrolled lectures, tutorials, and
-          labs.
+          Professors rarely send clean calendar invites. QuizRadar reads announcements the way
+          students do &mdash; matching casual phrases against your weekly lectures, tutorials, and
+          lab times.
         </p>
       </div>
 
@@ -266,12 +267,11 @@ function splitHighlight(text: string, highlight?: string) {
   <section id="sources" class="page-section">
     <div class="container">
       <div class="section-head animate-on-scroll">
-        <span class="eyebrow">Zero-Relay Integrations</span>
-        <h2 class="section-title">Connects straight to your campus tools — never through us.</h2>
+        <h2 class="section-title">Connects directly to your university tools &mdash; never through our servers.</h2>
         <p class="section-lead">
-          Each device talks directly to Google, Microsoft, or your university’s Moodle instance via
-          secret-free PKCE OAuth. Credentials stay in your OS keyring and never touch an external
-          relay.
+          Your device connects straight to Google, Microsoft, or your campus Moodle portal.
+          Your passwords and access tokens stay locked in your device's secure vault and never
+          pass through an outside relay.
         </p>
       </div>
 
@@ -302,11 +302,10 @@ function splitHighlight(text: string, highlight?: string) {
   <section class="page-section">
     <div class="container">
       <div class="section-head animate-on-scroll">
-        <span class="eyebrow">From Detection to Exam Day</span>
-        <h2 class="section-title">Everything around the countdown, built into one workspace.</h2>
+        <h2 class="section-title">Everything you need for exam week, built into one calm workspace.</h2>
         <p class="section-lead">
-          Once an announcement is anchored, QuizRadar maps conflicts, schedules study blocks into
-          your open hours, and tracks topic mastery without clutter.
+          Once an exam is scheduled, QuizRadar flags tight deadlines, sets aside focused study blocks in
+          your free hours, and tracks topic progress without clutter.
         </p>
       </div>
 
@@ -320,12 +319,12 @@ function splitHighlight(text: string, highlight?: string) {
                 Press <kbd class="keycap">/</kbd> to filter any course
               </span>
             </div>
-            <h3>Classes, glowing exams, and study blocks on one 8 AM – 8 PM grid</h3>
+            <h3>Classes, confirmed exams, and dedicated study time on one clear weekly grid</h3>
             <p>
-              Anchored quizzes light up inside the exact lecture or lab slot where they happen. When
-              two assessments land within 26 hours, one click carves out conflict-free evening study
-              blocks — ready for explicit one-way Google Calendar push or standard <code>.ics</code>
-              export.
+              Anchored quizzes appear inside the exact lecture or lab slot where they take place. When
+              two exams or major deadlines land close together, one click schedules quiet study sessions
+              in your free time &mdash; ready to export to Google Calendar or save as an <code>.ics</code>
+              file.
             </p>
           </div>
           <div class="workflow-shot-wrap">
@@ -357,13 +356,13 @@ function splitHighlight(text: string, highlight?: string) {
           <div class="workflow-copy">
             <div class="workflow-tag-row">
               <span class="mini-pill">25m Focus Timer</span>
-              <span class="mini-pill">Offline + BYOK Practice</span>
+              <span class="mini-pill">Offline Practice</span>
             </div>
             <h3>Checkable syllabus topics, Pomodoro focus, and Grade What-If</h3>
             <p>
-              Break each exam into concrete topics, run a built-in 25-minute focus session, drill
-              deterministic practice questions offline (or connect your own Gemini key), and compute
-              the exact final-exam score needed for your target grade.
+              Break each exam into concrete topics, launch a built-in 25-minute focus session, drill
+              sample questions offline (or connect an optional AI key), and calculate the exact
+              exam score needed for your target grade.
             </p>
           </div>
           <div class="workflow-shot-wrap">
@@ -397,28 +396,27 @@ function splitHighlight(text: string, highlight?: string) {
   <section id="android" class="page-section">
     <div class="container android-grid">
       <div class="android-copy animate-on-scroll">
-        <span class="eyebrow">Android · Kotlin + Jetpack Compose + UniFFI</span>
-        <h2 class="section-title">Pinned right to your Android home screen.</h2>
+        <h2 class="section-title">Your exam countdown right on your Android home screen.</h2>
         <p class="section-lead">
-          Not a mobile web wrapper. QuizRadar for Android is a first-party Material 3 Jetpack
-          Compose app bound directly to <code>quizradar-core</code> via UniFFI.
+          Built as a fast, native Android app designed for students on the move, with instant
+          glanceable countdowns and private on-device study reminders.
         </p>
 
         <!-- Authentic 2x1 Starry Android Glance Home-Screen Widget Preview -->
         <div class="glance-widget-wrap">
-          <span class="glance-caption">2×1 Android Glance Home-Screen Widget</span>
+          <span class="glance-caption">2&times;1 Android Glance Home-Screen Widget</span>
           <div class="glance-widget">
             <CelestialSky showRadarArcs={false} />
             <div class="glance-inner">
               <div class="glance-top">
                 <span class="amber-pill glance-pill">
                   <BrandIcon name="zap" size={11} />
-                  <span>Up next · In 3d</span>
+                  <span>Up next &middot; In 3d</span>
                 </span>
                 <span class="glance-course">CSE 341</span>
               </div>
-              <div class="glance-title">Class Quiz 2 — CPU Scheduling</div>
-              <div class="glance-meta tabular">Thu, Nov 5 · 10:00 AM · CS Lab 3</div>
+              <div class="glance-title">Class Quiz 2 &mdash; CPU Scheduling</div>
+              <div class="glance-meta tabular">Thu, Nov 5 &middot; 10:00 AM &middot; CS Lab 3</div>
             </div>
           </div>
         </div>
@@ -427,22 +425,22 @@ function splitHighlight(text: string, highlight?: string) {
           <li>
             <BrandIcon name="check" size={16} />
             <span>
-              <strong>Android Share-Sheet ingest:</strong> share any message from WhatsApp, Telegram,
-              or Discord class chats straight into QuizRadar to anchor it instantly.
+              <strong>Share-Sheet Quick Add:</strong> Share messages from WhatsApp, Telegram,
+              or class group chats directly into QuizRadar to add exam dates in one tap.
             </span>
           </li>
           <li>
             <BrandIcon name="check" size={16} />
             <span>
-              <strong>WorkManager T-24h reminders:</strong> local exam notifications scheduled on-device
-              with zero push servers.
+              <strong>On-Device Reminders:</strong> Receive timely study and exam alerts scheduled
+              locally on your phone &mdash; no push servers or data collection.
             </span>
           </li>
           <li>
             <BrandIcon name="check" size={16} />
             <span>
-              <strong>Hardware-backed storage:</strong> OAuth tokens stay inside Android
-              <code>EncryptedSharedPreferences</code>.
+              <strong>Hardware-Backed Protection:</strong> Your login credentials stay protected
+              inside Android's secure system vault.
             </span>
           </li>
         </ul>
@@ -508,13 +506,47 @@ function splitHighlight(text: string, highlight?: string) {
        6. FREQUENTLY ASKED QUESTIONS (`#faq`)
        ===================================================================== -->
   <section id="faq" class="page-section">
-    <div class="container faq-container">
-      <div class="section-head text-center animate-on-scroll">
-        <span class="eyebrow">Frequently Asked Questions</span>
+    <div class="container faq-layout">
+      <!-- Left Column: Context, Privacy Guarantees & Support -->
+      <aside class="faq-sidebar animate-on-scroll">
         <h2 class="section-title">Everything about QuizRadar, answered.</h2>
-      </div>
+        <p class="section-lead">
+          Can't find what you're looking for? QuizRadar is fully open-source and built from the ground up for student privacy.
+        </p>
 
-      <div class="faq-list faq-list-centered animate-on-scroll" style="--reveal-delay: 80ms;">
+        <div class="faq-guarantees">
+          <div class="faq-guarantee-row">
+            <BrandIcon name="shield" size={18} />
+            <div>
+              <strong>Private & Zero-Telemetry</strong>
+              <p>Your access tokens and timetable data never leave your device.</p>
+            </div>
+          </div>
+
+          <div class="faq-guarantee-row">
+            <BrandIcon name="sparkles" size={18} />
+            <div>
+              <strong>100% Offline-Capable</strong>
+              <p>Schedule detection and study planning work without any AI keys or accounts.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="faq-action-row">
+          <a
+            href={`${GITHUB_REPO_URL}/issues`}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn btn-secondary btn-sm"
+          >
+            <BrandIcon name="github" size={15} />
+            <span>Ask on GitHub Discussions</span>
+          </a>
+        </div>
+      </aside>
+
+      <!-- Right Column: Accordion List -->
+      <div class="faq-list animate-on-scroll" style="--reveal-delay: 80ms;">
         {
           FAQ_ITEMS.map((item, idx) => (
             <details class="faq-item" open={idx === 0}>
@@ -541,8 +573,8 @@ function splitHighlight(text: string, highlight?: string) {
           <BrandIcon name="quizradar" size={56} animated={true} class="finale-logo" />
           <h2 class="finale-title">Put your semester on the radar.</h2>
           <p class="finale-sub">
-            Free and open source under the MIT License. Install natively for background scans and
-            OS keyring storage, or open the WebAssembly companion right now.
+            Free, private, and open source under the MIT License. Install on your laptop or phone
+            for automatic schedule checks, or try the Web App instantly in your browser.
           </p>
           <div class="finale-actions">
             <a
@@ -687,7 +719,7 @@ function splitHighlight(text: string, highlight?: string) {
   }
 
   .hero-title {
-    font-size: clamp(2.25rem, 4.9vw, 3.85rem);
+    font-size: clamp(1.85rem, 5.2vw, 3.85rem);
     font-weight: 800;
     line-height: 1.06;
     letter-spacing: -0.032em;
@@ -839,6 +871,27 @@ function splitHighlight(text: string, highlight?: string) {
     display: none;
   }
 
+  .stage-panel:not([hidden]) {
+    animation: stagePanelIn 220ms var(--ease-snappy);
+  }
+
+  @keyframes stagePanelIn {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .stage-panel:not([hidden]) {
+      animation: none;
+    }
+  }
+
   .stage-frame {
     background-color: var(--page);
     padding: 14px 14px 0;
@@ -871,7 +924,6 @@ function splitHighlight(text: string, highlight?: string) {
   }
 
   .stage-badge {
-    font-family: var(--font-mono);
     font-size: 0.72rem;
     font-weight: 700;
     padding: 3px 9px;
@@ -888,7 +940,6 @@ function splitHighlight(text: string, highlight?: string) {
   }
 
   .stage-provenance {
-    font-family: var(--font-mono);
     font-size: 0.71rem;
     color: var(--text-muted);
     white-space: nowrap;
@@ -960,8 +1011,8 @@ function splitHighlight(text: string, highlight?: string) {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-family: var(--font-mono);
-    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.82rem;
     font-weight: 700;
     background-color: var(--surface);
     border: 1px solid var(--border-strong);
@@ -992,9 +1043,9 @@ function splitHighlight(text: string, highlight?: string) {
   }
 
   .step-kicker {
-    font-family: var(--font-mono);
-    font-size: 0.74rem;
-    font-weight: 600;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
     color: var(--accent-ink);
   }
 
@@ -1058,8 +1109,8 @@ function splitHighlight(text: string, highlight?: string) {
   }
 
   .snippet-source {
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
     color: var(--text-muted);
   }
 
@@ -1067,18 +1118,24 @@ function splitHighlight(text: string, highlight?: string) {
     font-size: 0.94rem;
     line-height: 1.56;
     color: var(--text);
-    padding: 12px 14px;
+    padding: 12px 16px;
     border-radius: 10px;
     background-color: var(--page);
-    border-inline-start: 3px solid var(--accent);
+    border: 1px solid var(--surface-border);
   }
 
   .phrase-mark {
-    background-color: rgba(251, 191, 36, 0.22);
+    background-color: rgba(245, 158, 11, 0.16);
+    border: 1px solid rgba(245, 158, 11, 0.35);
     color: inherit;
     padding: 1px 5px;
     border-radius: 4px;
     font-weight: 600;
+  }
+
+  :global(html.dark) .phrase-mark {
+    background-color: rgba(251, 191, 36, 0.22);
+    border-color: rgba(251, 191, 36, 0.4);
   }
 
   .resolved-grid {
@@ -1106,9 +1163,9 @@ function splitHighlight(text: string, highlight?: string) {
   }
 
   .resolved-val {
-    font-family: var(--font-mono);
-    font-size: 0.82rem;
+    font-size: 0.84rem;
     font-weight: 700;
+    font-variant-numeric: tabular-nums;
     color: var(--text);
   }
 
@@ -1120,7 +1177,7 @@ function splitHighlight(text: string, highlight?: string) {
     display: flex;
     align-items: center;
     gap: 7px;
-    font-size: 0.76rem;
+    font-size: 0.8125rem;
     color: var(--text-muted);
   }
 
@@ -1189,8 +1246,7 @@ function splitHighlight(text: string, highlight?: string) {
   }
 
   .protocol-tag {
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
+    font-size: 0.8125rem;
     font-weight: 600;
     color: var(--accent-ink);
   }
@@ -1236,8 +1292,7 @@ function splitHighlight(text: string, highlight?: string) {
   }
 
   .mini-pill {
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
+    font-size: 0.8125rem;
     font-weight: 600;
     padding: 3px 9px;
     border-radius: 999px;
@@ -1254,7 +1309,7 @@ function splitHighlight(text: string, highlight?: string) {
   }
 
   .shortcut-hint {
-    font-size: 0.76rem;
+    font-size: 0.8125rem;
     color: var(--text-muted);
     display: inline-flex;
     align-items: center;
@@ -1321,8 +1376,7 @@ function splitHighlight(text: string, highlight?: string) {
   }
 
   .glance-caption {
-    font-family: var(--font-mono);
-    font-size: 0.71rem;
+    font-size: 0.8125rem;
     font-weight: 600;
     color: var(--text-muted);
   }
@@ -1354,12 +1408,11 @@ function splitHighlight(text: string, highlight?: string) {
 
   .glance-pill {
     padding: 3px 9px;
-    font-size: 0.7rem;
+    font-size: 0.8125rem;
   }
 
   .glance-course {
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
+    font-size: 0.8125rem;
     font-weight: 700;
     color: rgba(255, 255, 255, 0.88);
   }
@@ -1372,7 +1425,7 @@ function splitHighlight(text: string, highlight?: string) {
   }
 
   .glance-meta {
-    font-size: 0.76rem;
+    font-size: 0.8125rem;
     color: rgba(226, 232, 240, 0.88);
   }
 
@@ -1446,15 +1499,66 @@ function splitHighlight(text: string, highlight?: string) {
   }
 
   /* -------------------------------------------------------------------------
-     6. Frequently Asked Questions
+     6. Frequently Asked Questions (2-Column Balanced Layout)
      ------------------------------------------------------------------------- */
-  .faq-container {
-    max-width: 840px;
-    margin-inline: auto;
+  .faq-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 0.88fr) minmax(0, 1.12fr);
+    gap: 48px;
+    align-items: start;
   }
 
-  .faq-list-centered {
-    margin-block-start: 28px;
+  .faq-sidebar {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 18px;
+    position: sticky;
+    top: 96px;
+  }
+
+  .faq-guarantees {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px 18px;
+    background-color: var(--surface);
+    border: 1px solid var(--surface-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    width: 100%;
+  }
+
+  .faq-guarantee-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .faq-guarantee-row :global(svg) {
+    color: var(--accent-ink);
+    margin-block-start: 2px;
+    flex-shrink: 0;
+  }
+
+  .faq-guarantee-row strong {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: var(--text);
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  .faq-guarantee-row p {
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+  }
+
+  .faq-action-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
   }
 
   .faq-list {
@@ -1486,6 +1590,11 @@ function splitHighlight(text: string, highlight?: string) {
 
   .faq-summary::-webkit-details-marker {
     display: none;
+  }
+
+  .faq-summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
 
   .faq-summary :global(.faq-chevron) {
@@ -1581,6 +1690,10 @@ function splitHighlight(text: string, highlight?: string) {
       border-color: var(--border-strong);
       color: var(--text);
     }
+
+    .faq-summary:hover {
+      background-color: var(--surface-hover);
+    }
   }
 
   @media (max-width: 980px) {
@@ -1596,8 +1709,13 @@ function splitHighlight(text: string, highlight?: string) {
 
     .step-grid,
     .workflow-split,
-    .android-grid {
+    .android-grid,
+    .faq-layout {
       grid-template-columns: minmax(0, 1fr);
+    }
+
+    .faq-sidebar {
+      position: static;
     }
 
     .sources-ledger {

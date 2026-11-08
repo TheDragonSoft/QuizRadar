@@ -32,7 +32,7 @@
   --amber-pill: #fbbf24;
   --amber-ink: #0f172a;
   --status-ok: #0f9d58;
-  --status-warn: #d97706;
+  --status-warn: #b45309;
   --exam-red: #dc2626;
   --exam-glow: 0 3px 12px rgba(220, 38, 38, 0.18);
 
@@ -108,7 +108,7 @@ html.dark {
   --status-ok: #34d399;
   --status-warn: #fbbf24;
   --exam-red: #f87171;
-  --exam-glow: 0 0 16px rgba(239, 68, 68, 0.45), 0 0 4px rgba(239, 68, 68, 0.65);
+  --exam-glow: 0 4px 14px rgba(0, 0, 0, 0.45);
 
   --nav-bg: rgba(11, 15, 25, 0.8);
 
@@ -279,17 +279,6 @@ h4 {
   font-variant-numeric: tabular-nums;
 }
 
-.eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent-ink);
-}
-
 .section-title {
   font-size: clamp(1.85rem, 3.5vw, 2.75rem);
   font-weight: 700;
@@ -329,13 +318,12 @@ h4 {
   min-width: 1.5rem;
   padding: 0.125rem 0.42rem;
   font-family: var(--font-mono);
-  font-size: 0.74rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   line-height: 1.1rem;
   color: var(--text);
   background-color: var(--surface);
   border: 1px solid var(--border-strong);
-  border-bottom-width: 2px;
   border-radius: 6px;
 }
 
@@ -375,7 +363,7 @@ h4 {
   color: #ffffff;
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.18) inset,
-    0 8px 20px -8px rgba(37, 99, 235, 0.55);
+    var(--shadow-sm);
 }
 
 .btn-secondary {

@@ -586,7 +586,13 @@ const webAppHref = withBase(base, "/app/");
 
     .nav-mobile-dl-btn {
       padding: 5px 9px;
-      font-size: 0.74rem;
+      font-size: 0.8125rem;
+    }
+  }
+
+  @media (max-width: 360px) {
+    .nav-mobile-dl-btn {
+      display: none !important;
     }
   }
 </style>

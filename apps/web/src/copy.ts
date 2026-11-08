@@ -196,6 +196,7 @@ export const copy = {
       unresolvedTitle: (count: number) =>
         `Exam Overload & Schedule Conflict Detected (${count} conflict${count > 1 ? "s" : ""})`,
       autoScheduleAction: "Auto-Schedule Study Blocks",
+      balancedFlightPathAction: "Draft Balanced Study Flight Path",
       mitigatedTitle: (count: number) =>
         `Exam Overload Mitigated (${count} Active Study Preparation Blocks)`,
       mitigatedBadge: "Protected",
@@ -209,6 +210,8 @@ export const copy = {
       // old toast claimed success even when no block was written.
       blocksCreated: (count: number) =>
         `Added ${count} study block${count === 1 ? "" : "s"} to your timetable`,
+      balancedPathCreated: (count: number) =>
+        `Drafted ${count} balanced, interleaved study block${count === 1 ? "" : "s"} across your week calendar to resolve exam overload`,
       blocksSkippedUndated: (count: number) =>
         `Skipped ${count} assessment${count === 1 ? "" : "s"} without a confirmed date — no study block was added`,
       blocksNoWindow:

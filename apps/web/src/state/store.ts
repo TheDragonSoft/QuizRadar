@@ -449,6 +449,7 @@ export interface AppStoreState {
   ) => Promise<void>;
   dismissConflicts: () => Promise<void>;
   scheduleStudyBlocks: (assessmentId?: string) => Promise<void>;
+  draftBalancedFlightPath: () => Promise<void>;
   exportIcs: (assessmentId?: string) => Promise<void>;
 
   updateConfig: (update: ConfigUpdate) => Promise<void>;
@@ -1221,6 +1222,138 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       get().addToast({
         type: "error",
         message: `Failed to schedule study blocks: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  },
+
+  draftBalancedFlightPath: async () => {
+    try {
+      const state = get().data;
+      const alerts = state.dashboard.conflictAlerts ?? [];
+      const unresolved = alerts.filter((a) => !a.isMitigated);
+      if (unresolved.length === 0) {
+        await get().scheduleStudyBlocks();
+        return;
+      }
+
+      const assessments = state.assessments ?? [];
+      const schedule = state.schedule;
+      const existingEvents = [...(state.config.customEvents ?? [])];
+      let createdCount = 0;
+
+      const isSlotFree = (dateIso: string, start: string, end: string) => {
+        const d = new Date(dateIso + "T00:00:00");
+        const dayIdx = d.getDay();
+        const startMin = parseInt(start.slice(0, 2), 10) * 60 + parseInt(start.slice(3, 5), 10);
+        const endMin = parseInt(end.slice(0, 2), 10) * 60 + parseInt(end.slice(3, 5), 10);
+
+        for (const slot of schedule.slots ?? []) {
+          if (slot.dayIndex === dayIdx) {
+            const sStart = parseInt(slot.startTime.slice(0, 2), 10) * 60 + parseInt(slot.startTime.slice(3, 5), 10);
+            const sEnd = parseInt(slot.endTime.slice(0, 2), 10) * 60 + parseInt(slot.endTime.slice(3, 5), 10);
+            if (Math.max(startMin, sStart) < Math.min(endMin, sEnd)) return false;
+          }
+        }
+        for (const ev of existingEvents) {
+          if (ev.dateIso === dateIso || ev.date === dateIso) {
+            if (ev.startTime && ev.endTime) {
+              const eStart = parseInt(ev.startTime.slice(0, 2), 10) * 60 + parseInt(ev.startTime.slice(3, 5), 10);
+              const eEnd = parseInt(ev.endTime.slice(0, 2), 10) * 60 + parseInt(ev.endTime.slice(3, 5), 10);
+              if (Math.max(startMin, eStart) < Math.min(endMin, eEnd)) return false;
+            } else {
+              return false;
+            }
+          }
+        }
+        return true;
+      };
+
+      const windowCandidates = [
+        { start: "16:30", end: "18:00" },
+        { start: "18:30", end: "20:00" },
+        { start: "14:30", end: "16:00" },
+        { start: "10:00", end: "11:30" },
+      ];
+
+      const findWindowForDay = (dateIso: string) => {
+        for (const win of windowCandidates) {
+          if (isSlotFree(dateIso, win.start, win.end)) {
+            return win;
+          }
+        }
+        return null;
+      };
+
+      const dateMinusDays = (baseIso: string, days: number) => {
+        const d = new Date(baseIso + "T00:00:00");
+        d.setDate(d.getDate() - days);
+        return d.toISOString().slice(0, 10);
+      };
+
+      for (const alert of unresolved) {
+        const a1 = assessments.find((a) => a.id === alert.assessmentAId);
+        const a2 = assessments.find((a) => a.id === alert.assessmentBId);
+        if (!a1 || !a2 || !a1.dateIso || !a2.dateIso) continue;
+
+        const [first, second] = a1.dateIso <= a2.dateIso ? [a1, a2] : [a2, a1];
+        const firstDate = first.dateIso;
+        const secondDate = second.dateIso;
+
+        const planSchedule = [
+          { target: first, dayOffset: 3, label: "Deep Focus Review", blockId: `study-block-${first.id}` },
+          { target: second, dayOffset: 2, label: "Deep Focus Review", blockId: `study-block-${second.id}` },
+          { target: first, dayOffset: 1, label: "Final Pre-Exam Polish", blockId: `study-block-${first.id}-polish` },
+        ];
+
+        if (secondDate > firstDate) {
+          planSchedule.push({
+            target: second,
+            dayOffset: 0,
+            label: "Targeted Concept Refresh",
+            blockId: `study-block-${second.id}-refresh`,
+          });
+        }
+
+        for (const item of planSchedule) {
+          const targetDateIso = dateMinusDays(firstDate, item.dayOffset);
+          if (existingEvents.some((e) => e.id === item.blockId)) continue;
+
+          const freeWin = findWindowForDay(targetDateIso);
+          if (freeWin) {
+            const newEvent: CustomCalendarEvent = {
+              id: item.blockId,
+              title: `Study: ${item.target.title} (${item.label})`,
+              courseId: item.target.courseId ?? null,
+              eventType: "Study Session",
+              date: targetDateIso,
+              dateIso: targetDateIso,
+              startTime: freeWin.start,
+              endTime: freeWin.end,
+              room: null,
+              notes: `Balanced flight path study block for ${item.target.title} to resolve orbital conflict.`,
+              color: "#10b981",
+            };
+            await get().addCustomEvent(newEvent);
+            existingEvents.push(newEvent);
+            createdCount++;
+          }
+        }
+      }
+
+      await get().refreshState();
+
+      if (createdCount > 0) {
+        get().addToast({
+          type: "success",
+          message: copy.dashboard.conflictBanner.balancedPathCreated(createdCount),
+        });
+      } else {
+        await get().scheduleStudyBlocks();
+      }
+    } catch (err) {
+      get().addToast({
+        type: "error",
+        message: `Failed to draft balanced study flight path: ${err instanceof Error ? err.message : String(err)}`,
       });
     }
   },

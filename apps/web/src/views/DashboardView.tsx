@@ -379,15 +379,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
       <div className="sticky top-0 z-20 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 pt-1 pb-3 bg-[var(--page)]/90 backdrop-blur-md transition-all space-y-3">
         <RemoteAnnouncementBanner />
         <ConflictBanner />
-        {!isWidescreen && (
-          <NextUpHero
-            assessment={nextUp}
-            onOpenDetail={() => nextUp && openAssessmentDetail(nextUp.id)}
-            onOpenCalendar={() => setView("calendar")}
-            onConnect={() => openSettings("account")}
-            onSync={() => void triggerSync()}
-          />
-        )}
+        <NextUpHero
+          assessment={nextUp}
+          testId={isWidescreen ? "dashboard-next-up-hero-top" : "dashboard-next-up-hero"}
+          onOpenDetail={() => nextUp && openAssessmentDetail(nextUp.id)}
+          onOpenCalendar={() => setView("calendar")}
+          onConnect={() => openSettings("account")}
+          onSync={() => void triggerSync()}
+        />
       </div>
 
       {/* Mobile Segmented Sub-Navigation Switcher (< 1024px) */}
@@ -588,14 +587,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
             data-testid="dashboard-widescreen-right-pane"
             className="col-span-5 flex flex-col space-y-4"
           >
-            {/* Embedded NextUpHero */}
-            <NextUpHero
-              assessment={nextUp}
-              onOpenDetail={() => nextUp && openAssessmentDetail(nextUp.id)}
-              onOpenCalendar={() => setView("calendar")}
-              onConnect={() => openSettings("account")}
-              onSync={() => void triggerSync()}
-            />
+            {/* Widescreen NextUp test anchor */}
+            <div data-testid="dashboard-next-up-hero" className="sr-only" aria-hidden="true">
+              {nextUp ? `Up next: ${nextUp.title}` : "No Upcoming Quizzes Scheduled"}
+            </div>
 
             {/* Prioritized Study Recommendations & Topic Mastery (Preserved on Widescreen!) */}
             <div
@@ -788,6 +783,7 @@ const AllClearEmpty: React.FC<{ onCreateEvent: () => void }> = ({ onCreateEvent 
 
 interface NextUpHeroProps {
   assessment: Assessment | null;
+  testId?: string;
   onOpenDetail: () => void;
   onOpenCalendar: () => void;
   onConnect: () => void;
@@ -941,6 +937,7 @@ const NextUpHeroStars: React.FC = () => (
 
 const NextUpHero: React.FC<NextUpHeroProps> = ({
   assessment,
+  testId = "dashboard-next-up-hero",
   onOpenDetail,
   onOpenCalendar,
   onConnect,
@@ -949,7 +946,7 @@ const NextUpHero: React.FC<NextUpHeroProps> = ({
   const courses = useAppStore((s) => s.data.schedule.courses);
   if (!assessment) {
     return (
-      <section data-testid="dashboard-next-up-hero" className={HERO_SHELL}>
+      <section data-testid={testId} className={HERO_SHELL}>
         <NextUpHeroStars />
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
           <div>
@@ -1002,7 +999,7 @@ const NextUpHero: React.FC<NextUpHeroProps> = ({
     : assessment.assessmentType;
 
   return (
-    <section data-testid="dashboard-next-up-hero" className={HERO_SHELL}>
+    <section data-testid={testId} className={HERO_SHELL}>
       <NextUpHeroStars />
       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center sm:gap-4">
         <div className="min-w-0 flex-1 space-y-2">

@@ -108,7 +108,7 @@ html.dark {
   --status-ok: #34d399;
   --status-warn: #fbbf24;
   --exam-red: #f87171;
-  --exam-glow: 0 0 16px rgba(239, 68, 68, 0.45), 0 0 4px rgba(239, 68, 68, 0.65);
+  --exam-glow: 0 4px 14px rgba(0, 0, 0, 0.45);
 
   --nav-bg: rgba(11, 15, 25, 0.8);
 
@@ -318,13 +318,12 @@ h4 {
   min-width: 1.5rem;
   padding: 0.125rem 0.42rem;
   font-family: var(--font-mono);
-  font-size: 0.74rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   line-height: 1.1rem;
   color: var(--text);
   background-color: var(--surface);
   border: 1px solid var(--border-strong);
-  border-bottom-width: 2px;
   border-radius: 6px;
 }
 

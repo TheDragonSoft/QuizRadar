@@ -60,6 +60,48 @@ cd apps/mobile-android
 .\gradlew.bat ktlintCheck testDebugUnitTest assembleDebug
 ```
 
+## Round 16: Non-AI Academic Productivity Suite & Live Dogfooding (Desktop & Android)
+
+_Executed the complete non-AI feature expansion across Rust Core, Web/Desktop, and Android Compose tiers. Exercised live dogfooding on physical/AVD Android emulator `emulator-5554` and verified desktop production build and IPC test suite._
+
+### Shipped & Verified Across Tiers
+
+1. **Rust Core Engine (`core`)**:
+   - `core/src/plan/cushion.rs`: Study cushion deficit and availability calculator.
+   - `core/src/plan/gpa.rs`: Multi-scale GPA engine (4.0, 4.33, 5.0, 10.0) with credit weighting, honours classification, and what-if targets.
+   - `core/src/plan/parity.rs`: Alternating week parity (Week A / Week B) schedule resolution.
+   - SQLite v4 migrations in `core/src/store/db.rs` and `repo.rs` for flashcards, quiz history, mistake bank, and attendance.
+   - Regenerated UniFFI bindings and WASM exports.
+   - **Verification**: `cargo test -p quizradar-core` -> **342 passed, 0 failed** (296 unit, 8 adversarial, 5 storage, property and fixture tests).
+
+2. **Web & Desktop Tier (`apps/web` & `apps/desktop`)**:
+   - Components: `CalendarGrid.tsx`, `DailyStudyRoadmap.tsx`, `PrintScheduleDoc.tsx`, `StudyStatsCard.tsx`, `TimelineHorizon.tsx`.
+   - Grade Center tab with GPA calculator and international scales in `TasksView.tsx`.
+   - Canvas and Blackboard LMS manual integration guides in `SettingsView.tsx`.
+   - Leitner 5-box review hub, mistake bank, and interactive Pomodoro in `FocusView.tsx`.
+   - Global keyboard shortcuts (`1-4`, `T`, `N`, `Space`) with input field suppression in `App.tsx`.
+   - **Verification**:
+     - `pnpm --dir apps/web vitest run` -> **323 passed, 0 failed** (38 test files).
+     - `pnpm --dir apps/web typecheck` -> **Clean (0 errors)**.
+     - `pnpm --dir apps/web build` -> **Built in 17.75s** (Vite + WASM + SW clean).
+     - `cargo test -p quizradar-desktop` -> **34 passed, 0 failed** (23 unit, 11 integration).
+
+3. **Android Mobile Native Tier (`apps/mobile-android`)**:
+   - Assembled `arm64-v8a` and `x86_64` native Rust libraries via NDK 27 into `jniLibs`.
+   - Assembled and installed `app-debug.apk` directly on Android emulator `emulator-5554` (Pixel 10, Android API 35).
+   - `TodayScheduleWidget.kt` and Glance provider `today_schedule_widget_info.xml` wired to `WidgetUpdateWorker.kt`.
+   - Persistent exam notification builder `buildPersistentExamNotification` in `NotificationHelper.kt`.
+   - Attendance and absence tracker with interactive status chips (`✓ Attended`, `✗ Absent`, `~ Excused`) and absence warning badges.
+   - Calendar Agenda / List view toggle (`Switch to Agenda View` / `Switch to Grid View`) with empty-state honesty.
+   - Focus screen with active countdown Pomodoro timer, study streak counter (`4-Day Study Streak`), and course study time analytics.
+   - **Live Dogfooding Evidence**:
+     - Live screenshot captures in `docs/screenshots/non-ai-suite/`: `live-android-focused.png`, `live-android-calendar.png`, `live-android-agenda.png`, `live-android-focus.png`.
+     - Verified interactive timer: Play button tapped live on device, state transitioned to "Focusing", display actively decremented (`25:00` -> `24:54`).
+     - `./gradlew.bat testDebugUnitTest` and `ktlintCheck` -> **100% clean**.
+
+4. **Showcase Documentation & Before/After Report**:
+   - Comprehensive showcase report generated in `docs/NON_AI_SUITE_DEMO.md` with 8 Playwright mock showcase captures.
+
 ## Open Backlog & Known Limitations (Honest State)
 
 - **Android direct `deriveStudyTasks` track passthrough:** Native-store snapshots apply `academic_track` (`med|eng|biz`), while the direct stateless `QuizRadarEngine.deriveStudyTasks` wrapper still defaults to `""` (`eng`) until the ViewModel forwards the config string.

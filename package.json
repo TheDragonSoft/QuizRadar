@@ -22,6 +22,9 @@
     "coverage:web": "pnpm --dir apps/web test:coverage",
     "coverage:ratchet": "node tooling/coverage-ratchet.mjs",
     "coverage:update": "node tooling/coverage-ratchet.mjs --update tooling/coverage-baseline.json",
+    "landing:dev": "pnpm --filter @quizradar/landing dev",
+    "landing:build": "pnpm --filter @quizradar/landing build",
+    "site:build": "node tooling/build-site.mjs",
     "tauri:dev": "pnpm --dir apps/desktop dev",
     "tauri:build": "pnpm --dir apps/desktop build"
   },

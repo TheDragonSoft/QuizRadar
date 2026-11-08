@@ -1,0 +1,122 @@
+---
+import BrandIcon from "./BrandIcon.astro";
+import {
+  GITHUB_RELEASES_LATEST,
+  GITHUB_REPO_URL,
+  withBase,
+} from "../lib/releaseData";
+
+const base = import.meta.env.BASE_URL;
+const homeHref = withBase(base, "/");
+const downloadHref = withBase(base, "/download/");
+const webAppHref = withBase(base, "/app/");
+---
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <div class="footer-brand-col">
+      <a href={homeHref} class="footer-brand">
+        <BrandIcon name="quizradar" size={26} class="footer-mark" />
+        <span class="footer-name">QuizRadar</span>
+      </a>
+      <p class="footer-tagline">
+        Local-first university exam radar. One pure-Rust core across Tauri 2 Desktop, Android
+        Jetpack Compose, and Browser WebAssembly — zero servers, zero telemetry, MIT licensed.
+      </p>
+    </div>
+
+    <nav class="footer-links" aria-label="Footer">
+      <a href={downloadHref}>Downloads</a>
+      <a href={webAppHref}>Web Companion</a>
+      <a href={GITHUB_RELEASES_LATEST} target="_blank" rel="noopener noreferrer">GitHub Releases</a>
+      <a href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer">Source Code</a>
+      <a
+        href={`${GITHUB_REPO_URL}/blob/main/PRIVACY.md`}
+        target="_blank"
+        rel="noopener noreferrer">Privacy Policy</a
+      >
+      <a
+        href={`${GITHUB_REPO_URL}/blob/main/SECURITY.md`}
+        target="_blank"
+        rel="noopener noreferrer">Security Policy</a
+      >
+      <a
+        href={`${GITHUB_REPO_URL}/blob/main/CHANGELOG.md`}
+        target="_blank"
+        rel="noopener noreferrer">Changelog</a
+      >
+    </nav>
+  </div>
+</footer>
+
+<style>
+  .footer {
+    margin-block-start: auto;
+    border-block-start: 1px solid var(--surface-border);
+    background-color: var(--page-subtle);
+    padding-block: 44px max(36px, env(safe-area-inset-bottom));
+  }
+
+  .footer-inner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 28px 40px;
+  }
+
+  .footer-brand-col {
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .footer-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    width: fit-content;
+  }
+
+  .footer-brand :global(.footer-mark) {
+    border-radius: 6px;
+  }
+
+  .footer-name {
+    font-size: 0.96rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--text);
+  }
+
+  .footer-tagline {
+    font-size: 0.83rem;
+    line-height: 1.58;
+    color: var(--text-muted);
+    text-wrap: pretty;
+  }
+
+  .footer-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px 22px;
+    padding-block-start: 4px;
+  }
+
+  .footer-links a {
+    font-size: 0.84rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    transition-property: color;
+    transition-duration: 150ms;
+    transition-timing-function: var(--ease-snappy);
+  }
+
+  @media (hover: hover) {
+    .footer-links a:hover {
+      color: var(--accent-ink);
+    }
+  }
+</style>

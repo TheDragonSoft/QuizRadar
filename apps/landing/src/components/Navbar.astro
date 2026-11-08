@@ -1,0 +1,592 @@
+---
+import BrandIcon from "./BrandIcon.astro";
+import { GITHUB_REPO_URL, withBase } from "../lib/releaseData";
+
+interface Props {
+  currentPage?: "home" | "download";
+}
+
+const { currentPage = "home" } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const homeHref = withBase(base, "/");
+const downloadHref = withBase(base, "/download/");
+const webAppHref = withBase(base, "/app/");
+---
+
+<header class="nav" id="site-nav">
+  <div class="nav-inner">
+    <a href={homeHref} class="nav-brand" aria-label="QuizRadar home">
+      <BrandIcon name="quizradar" size={30} animated={true} class="nav-logo" />
+      <span class="nav-wordmark">QuizRadar</span>
+    </a>
+
+    <!-- Desktop Navigation Pill -->
+    <nav class="nav-pill nav-desktop-only" aria-label="Primary">
+      <a href={`${homeHref}#views`} class="nav-link">App Views</a>
+      <a href={`${homeHref}#how-it-works`} class="nav-link">How It Works</a>
+      <a href={`${homeHref}#sources`} class="nav-link">Sources</a>
+      <a href={`${homeHref}#android`} class="nav-link">Android</a>
+      <a href={`${homeHref}#faq`} class="nav-link">FAQ</a>
+      <a
+        href={downloadHref}
+        class:list={["nav-link", { "is-active": currentPage === "download" }]}
+        aria-current={currentPage === "download" ? "page" : undefined}
+      >
+        Download
+      </a>
+    </nav>
+
+    <div class="nav-actions">
+      <!-- Day / Starry Sky Theme Toggle -->
+      <button
+        type="button"
+        class="theme-toggle"
+        data-theme-toggle
+        aria-label="Toggle between Starry Night and Day Sky theme"
+        title="Switch between Starry Night and Day Sky"
+      >
+        <span class="theme-icon-sun">
+          <BrandIcon name="sun" size={16} />
+        </span>
+        <span class="theme-icon-moon">
+          <BrandIcon name="moon" size={16} />
+        </span>
+        <span class="theme-label theme-label-day">Day Sky</span>
+        <span class="theme-label theme-label-night">Starry Sky</span>
+      </button>
+
+      <!-- GitHub Link (Desktop/Tablet) -->
+      <a
+        href={GITHUB_REPO_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        class="nav-icon-btn nav-hide-mobile"
+        aria-label="QuizRadar source code on GitHub"
+        title="View MIT source on GitHub"
+      >
+        <BrandIcon name="github" size={17} />
+      </a>
+
+      <!-- Primary Action CTA (Desktop: Web App; Mobile: Direct Download) -->
+      <a href={webAppHref} class="btn btn-primary nav-pwa-btn nav-desktop-only">
+        <span>Open Web App</span>
+      </a>
+
+      <a
+        href={downloadHref}
+        class:list={[
+          "btn btn-primary nav-mobile-dl-btn",
+          { "is-active": currentPage === "download" },
+        ]}
+        aria-label="Download QuizRadar"
+      >
+        <BrandIcon name="download" size={15} />
+        <span>Download</span>
+      </a>
+
+      <!-- Mobile Hamburger Toggle -->
+      <button
+        type="button"
+        class="nav-icon-btn nav-hamburger-btn"
+        id="nav-menu-toggle"
+        aria-expanded="false"
+        aria-controls="nav-mobile-menu"
+        aria-label="Toggle navigation menu"
+      >
+        <span class="icon-menu">
+          <BrandIcon name="menu" size={19} />
+        </span>
+        <span class="icon-close">
+          <BrandIcon name="x" size={19} />
+        </span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Mobile Collapsible Menu Drawer -->
+  <div
+    class="nav-mobile-drawer"
+    id="nav-mobile-menu"
+    hidden
+    aria-label="Mobile navigation"
+  >
+    <div class="nav-mobile-inner">
+      <nav class="nav-mobile-links">
+        <a href={`${homeHref}#views`} class="mobile-nav-link">
+          <span>App Views</span>
+          <span class="mobile-nav-desc">5 real desktop and mobile views</span>
+        </a>
+        <a href={`${homeHref}#how-it-works`} class="mobile-nav-link">
+          <span>How It Works</span>
+          <span class="mobile-nav-desc">Timetable anchoring & honesty rules</span>
+        </a>
+        <a href={`${homeHref}#sources`} class="mobile-nav-link">
+          <span>Campus Sources</span>
+          <span class="mobile-nav-desc">Gmail, Teams, Moodle, Classroom</span>
+        </a>
+        <a href={`${homeHref}#android`} class="mobile-nav-link">
+          <span>Android App</span>
+          <span class="mobile-nav-desc">Jetpack Compose + 2×1 Glance widget</span>
+        </a>
+        <a href={`${homeHref}#faq`} class="mobile-nav-link">
+          <span>FAQ</span>
+          <span class="mobile-nav-desc">Zero servers, privacy & BYOK Gemini</span>
+        </a>
+      </nav>
+
+      <div class="nav-mobile-footer">
+        <a href={downloadHref} class="btn btn-primary mobile-menu-cta">
+          <BrandIcon name="download" size={17} />
+          <span>Download Installers (Windows, Mac, Linux, Android)</span>
+        </a>
+        <a href={webAppHref} class="btn btn-secondary mobile-menu-cta">
+          <BrandIcon name="globe" size={17} />
+          <span>Launch Web Companion (PWA)</span>
+        </a>
+        <a
+          href={GITHUB_REPO_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="mobile-github-link"
+        >
+          <BrandIcon name="github" size={16} />
+          <span>View Source Code on GitHub</span>
+        </a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<script>
+  const nav = document.getElementById("site-nav");
+  const menuToggle = document.getElementById("nav-menu-toggle");
+  const mobileMenu = document.getElementById("nav-mobile-menu");
+
+  const syncScrollState = () => {
+    if (!nav) return;
+    nav.classList.toggle("is-scrolled", window.scrollY > 10);
+  };
+  window.addEventListener("scroll", syncScrollState, { passive: true });
+  syncScrollState();
+
+  const applyTheme = (next: "dark" | "light") => {
+    const root = document.documentElement;
+    root.classList.toggle("dark", next === "dark");
+    try {
+      localStorage.setItem("quizradar-theme", next);
+    } catch {
+      // Ignore storage errors in private browsing
+    }
+    const meta = document.getElementById("meta-theme-color");
+    if (meta) {
+      meta.setAttribute("content", next === "dark" ? "#0b0f19" : "#f8fafc");
+    }
+  };
+
+  const toggleTheme = () => {
+    const isDark = document.documentElement.classList.contains("dark");
+    const next: "dark" | "light" = isDark ? "light" : "dark";
+    const docWithVT = document as Document & {
+      startViewTransition?: (cb: () => void) => unknown;
+    };
+    const allowMotion = window.matchMedia("(prefers-reduced-motion: no-preference)").matches;
+    if (allowMotion && typeof docWithVT.startViewTransition === "function") {
+      docWithVT.startViewTransition(() => applyTheme(next));
+    } else {
+      applyTheme(next);
+    }
+  };
+
+  document.querySelectorAll<HTMLButtonElement>("[data-theme-toggle]").forEach((btn) => {
+    btn.addEventListener("click", toggleTheme);
+  });
+
+  // Mobile Menu Drawer Toggle Logic
+  if (menuToggle && mobileMenu) {
+    const closeMenu = () => {
+      menuToggle.setAttribute("aria-expanded", "false");
+      mobileMenu.classList.remove("is-open");
+      mobileMenu.hidden = true;
+      document.body.classList.remove("mobile-nav-lock");
+    };
+
+    const openMenu = () => {
+      menuToggle.setAttribute("aria-expanded", "true");
+      mobileMenu.hidden = false;
+      // Allow DOM paint before triggering transition class
+      requestAnimationFrame(() => {
+        mobileMenu.classList.add("is-open");
+      });
+      document.body.classList.add("mobile-nav-lock");
+    };
+
+    menuToggle.addEventListener("click", () => {
+      const isExpanded = menuToggle.getAttribute("aria-expanded") === "true";
+      if (isExpanded) {
+        closeMenu();
+      } else {
+        openMenu();
+      }
+    });
+
+    // Close on navigation link clicks
+    mobileMenu.querySelectorAll("a").forEach((link) => {
+      link.addEventListener("click", closeMenu);
+    });
+
+    // Close on Escape key
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && menuToggle.getAttribute("aria-expanded") === "true") {
+        closeMenu();
+        menuToggle.focus();
+      }
+    });
+  }
+</script>
+
+<style>
+  .nav {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 50;
+    background-color: var(--nav-bg);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    border-block-end: 1px solid transparent;
+    transition-property: border-color, background-color, box-shadow;
+    transition-duration: 180ms;
+    transition-timing-function: var(--ease-snappy);
+  }
+
+  .nav.is-scrolled {
+    border-block-end-color: var(--surface-border);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .nav-inner {
+    max-width: 1220px;
+    margin-inline: auto;
+    padding: 11px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .nav-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    min-height: 38px;
+    flex-shrink: 0;
+  }
+
+  .nav-brand :global(.nav-logo) {
+    border-radius: 7px;
+    box-shadow: 0 2px 8px rgba(29, 78, 216, 0.28);
+  }
+
+  .nav-wordmark {
+    font-size: 1.02rem;
+    font-weight: 750;
+    letter-spacing: -0.026em;
+    color: var(--text);
+  }
+
+  /* Segmented switcher bar inspired by QuizRadar's TopBar */
+  .nav-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 12px;
+    background-color: var(--surface-elevated);
+    border: 1px solid var(--surface-border);
+  }
+
+  .nav-link {
+    font-size: 0.825rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding: 6px 11px;
+    border-radius: 9px;
+    white-space: nowrap;
+    transition-property: color, background-color;
+    transition-duration: 150ms;
+    transition-timing-function: var(--ease-snappy);
+  }
+
+  .nav-link.is-active {
+    color: var(--text);
+    background-color: var(--accent-soft);
+  }
+
+  .nav-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 0 11px;
+    border-radius: 10px;
+    background-color: var(--surface-elevated);
+    border: 1px solid var(--surface-border);
+    color: var(--text-secondary);
+    font-size: 0.79rem;
+    font-weight: 600;
+    white-space: nowrap;
+    transition-property: transform, background-color, border-color, color;
+    transition-duration: 150ms;
+    transition-timing-function: var(--ease-snappy);
+  }
+
+  .theme-toggle:active {
+    transform: scale(0.96);
+  }
+
+  /* Light mode shows Moon ("Starry Sky"); Dark mode shows Sun ("Day Sky") */
+  .theme-icon-sun,
+  .theme-label-day {
+    display: none;
+  }
+
+  .theme-icon-moon,
+  .theme-label-night {
+    display: inline-flex;
+    color: var(--accent-ink);
+  }
+
+  .theme-label-night {
+    color: var(--text-secondary);
+  }
+
+  :global(html.dark) .theme-icon-sun {
+    display: inline-flex;
+    color: #fbbf24;
+  }
+
+  :global(html.dark) .theme-label-day {
+    display: inline;
+  }
+
+  :global(html.dark) .theme-icon-moon,
+  :global(html.dark) .theme-label-night {
+    display: none;
+  }
+
+  .nav-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background-color: var(--surface-elevated);
+    border: 1px solid var(--surface-border);
+    color: var(--text-muted);
+    transition-property: transform, color, background-color, border-color;
+    transition-duration: 150ms;
+    transition-timing-function: var(--ease-snappy);
+  }
+
+  .nav-icon-btn:active {
+    transform: scale(0.96);
+  }
+
+  .nav-pwa-btn {
+    min-height: 36px;
+    padding: 7px 14px;
+    border-radius: 10px;
+    font-size: 0.82rem;
+    white-space: nowrap;
+  }
+
+  .nav-mobile-dl-btn {
+    display: none;
+    min-height: 34px;
+    padding: 6px 12px;
+    border-radius: 10px;
+    font-size: 0.78rem;
+    gap: 5px;
+    white-space: nowrap;
+  }
+
+  .nav-hamburger-btn {
+    display: none;
+  }
+
+  .nav-hamburger-btn .icon-close {
+    display: none;
+  }
+
+  .nav-hamburger-btn[aria-expanded="true"] .icon-menu {
+    display: none;
+  }
+
+  .nav-hamburger-btn[aria-expanded="true"] .icon-close {
+    display: inline-flex;
+  }
+
+  /* -------------------------------------------------------------------------
+     Mobile Navigation Drawer
+     ------------------------------------------------------------------------- */
+  .nav-mobile-drawer {
+    border-block-start: 1px solid var(--surface-border);
+    background-color: var(--surface);
+    box-shadow: var(--shadow-lg);
+    max-height: calc(100dvh - 60px);
+    overflow-y: auto;
+    opacity: 0;
+    transform: translateY(-8px);
+    transition-property: opacity, transform;
+    transition-duration: 180ms;
+    transition-timing-function: var(--ease-snappy);
+  }
+
+  .nav-mobile-drawer.is-open {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .nav-mobile-inner {
+    padding: 18px 20px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-width: 520px;
+    margin-inline: auto;
+  }
+
+  .nav-mobile-links {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .mobile-nav-link {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    transition-property: background-color, transform;
+    transition-duration: 150ms;
+    transition-timing-function: var(--ease-snappy);
+  }
+
+  .mobile-nav-link:active {
+    transform: scale(0.98);
+  }
+
+  .mobile-nav-link span:first-child {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .mobile-nav-desc {
+    font-size: 0.77rem;
+    color: var(--text-muted);
+  }
+
+  .nav-mobile-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-block-start: 12px;
+    border-block-start: 1px solid var(--surface-border);
+  }
+
+  .mobile-menu-cta {
+    width: 100%;
+    justify-content: center;
+    min-height: 42px;
+    font-size: 0.86rem;
+  }
+
+  .mobile-github-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding-block: 6px;
+    transition-property: color;
+    transition-duration: 150ms;
+    transition-timing-function: var(--ease-snappy);
+  }
+
+  @media (hover: hover) {
+    .nav-link:hover {
+      color: var(--text);
+      background-color: var(--surface-hover);
+    }
+
+    .theme-toggle:hover,
+    .nav-icon-btn:hover {
+      color: var(--text);
+      background-color: var(--surface-hover);
+      border-color: var(--border-strong);
+    }
+
+    .mobile-nav-link:hover {
+      background-color: var(--surface-hover);
+    }
+
+    .mobile-github-link:hover {
+      color: var(--accent-ink);
+    }
+  }
+
+  @media (max-width: 1040px) {
+    .theme-label {
+      display: none !important;
+    }
+
+    .theme-toggle {
+      padding: 0;
+      width: 36px;
+      justify-content: center;
+    }
+  }
+
+  @media (max-width: 860px) {
+    .nav-desktop-only,
+    .nav-hide-mobile {
+      display: none !important;
+    }
+
+    .nav-mobile-dl-btn,
+    .nav-hamburger-btn {
+      display: inline-flex;
+    }
+
+    .nav-inner {
+      padding-inline: 18px;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .nav-inner {
+      padding-inline: 14px;
+      gap: 6px;
+    }
+
+    .nav-wordmark {
+      font-size: 0.96rem;
+    }
+
+    .nav-mobile-dl-btn {
+      padding: 5px 9px;
+      font-size: 0.74rem;
+    }
+  }
+</style>

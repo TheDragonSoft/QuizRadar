@@ -123,6 +123,8 @@ jobs:
         run: pnpm typecheck
       - name: vitest
         run: pnpm test
+      - name: landing static build
+        run: pnpm --filter @quizradar/landing build
 
   desktop:
     name: desktop (tauri shell tests)

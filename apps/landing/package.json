@@ -1,0 +1,22 @@
+{
+  "name": "@quizradar/landing",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev --port 4321",
+    "build": "astro build",
+    "preview": "astro preview --port 4321",
+    "typecheck": "astro sync && tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.2.0",
+    "astro": "^5.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

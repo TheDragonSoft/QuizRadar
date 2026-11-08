@@ -18,6 +18,7 @@ export default tseslint.config(
     ignores: [
       "**/node_modules/**",
       "**/dist/**",
+      "**/.astro/**",
       "**/build/**",
       "**/target/**",
       "**/gen/**",
@@ -40,7 +41,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["apps/web/src/**/*.{ts,tsx}"],
+    files: ["apps/web/src/**/*.{ts,tsx}", "apps/landing/src/**/*.{ts,tsx}"],
     plugins: {
       "react-hooks": reactHooks,
       "react-refresh": reactRefresh,

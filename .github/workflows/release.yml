@@ -321,12 +321,17 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build Web Bundle
         run: pnpm --filter @quizradar/web build
+      - name: Build Landing Site & Mount Web Companion at /app/
+        env:
+          ASTRO_SITE: https://thedragonsoft.github.io
+          ASTRO_BASE: /QuizRadar
+        run: node tooling/build-site.mjs --skip-web-build
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: apps/web/dist
+          path: apps/landing/dist
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

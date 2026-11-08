@@ -4,10 +4,20 @@ import { LIGHT_PROJECT } from "./helpers/theme";
 import * as path from "node:path";
 import * as fs from "node:fs";
 
-const OUTPUT_DIR = path.resolve(process.cwd(), "docs/screenshots/non-ai-suite");
+const REPO_DOCS = path.resolve(process.cwd(), "../../docs/screenshots/non-ai-suite");
+const WEB_DOCS = path.resolve(process.cwd(), "docs/screenshots/non-ai-suite");
 
-if (!fs.existsSync(OUTPUT_DIR)) {
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+[REPO_DOCS, WEB_DOCS].forEach((dir) => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
+
+async function saveScreen(page: any, name: string) {
+  const p1 = path.join(REPO_DOCS, name);
+  const p2 = path.join(WEB_DOCS, name);
+  await page.screenshot({ path: p2 });
+  try {
+    fs.copyFileSync(p2, p1);
+  } catch (_e) {}
 }
 
 test.beforeEach(({}, testInfo) => {
@@ -18,7 +28,12 @@ test.beforeEach(({}, testInfo) => {
 });
 
 test("capture non-ai suite showcase mock app screenshots", async ({ page }) => {
+  test.setTimeout(180_000);
+
+  // Set desktop widescreen viewport before booting
+  await page.setViewportSize({ width: 1440, height: 900 });
   await bootApp(page, "dark");
+  await page.screenshot({ path: "test-screen.png" });
 
   // Seed rich academic snapshot into __QUIZRADAR_STORE__
   await page.evaluate(() => {
@@ -40,7 +55,6 @@ test("capture non-ai suite showcase mock app screenshots", async ({ page }) => {
       { id: "slot-5", courseId: "ENG102", courseName: "Tech Writing", day: "Thursday", startTime: "11:00", endTime: "12:30", room: "Humanities 105", type: "Seminar" },
     ];
 
-    // Dates relative to October 29, 2026 (the fixed baseline time)
     const sampleAssessments = [
       {
         id: "asm-1",
@@ -49,6 +63,7 @@ test("capture non-ai suite showcase mock app screenshots", async ({ page }) => {
         courseName: "Data Structures & Algorithms",
         assessmentType: "exam",
         dateIso: "2026-11-03",
+        isUpcoming: true,
         startTime: "10:00",
         endTime: "12:00",
         displayTime: "10:00 - 12:00",
@@ -68,6 +83,7 @@ test("capture non-ai suite showcase mock app screenshots", async ({ page }) => {
         courseName: "Linear Algebra",
         assessmentType: "quiz",
         dateIso: "2026-11-02",
+        isUpcoming: true,
         startTime: "13:00",
         endTime: "14:00",
         displayTime: "13:00 - 14:00",
@@ -85,6 +101,7 @@ test("capture non-ai suite showcase mock app screenshots", async ({ page }) => {
         courseName: "Physics",
         assessmentType: "practical",
         dateIso: "2026-11-06",
+        isUpcoming: true,
         startTime: "09:00",
         endTime: "11:00",
         displayTime: "09:00 - 11:00",
@@ -151,6 +168,10 @@ test("capture non-ai suite showcase mock app screenshots", async ({ page }) => {
       ...prev,
       data: {
         ...prev.data,
+        dashboard: {
+          ...(prev.data?.dashboard || {}),
+          studyRecommendations: [],
+        },
         schedule: {
           ...prev.data.schedule,
           semester: "Fall 2026",
@@ -174,58 +195,59 @@ test("capture non-ai suite showcase mock app screenshots", async ({ page }) => {
 
   await page.waitForTimeout(600);
 
-  // 1. Desktop: Calendar View (Dual-Pane with Cushion Deficit & Roadmap)
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.getByTestId("topbar-view-switcher").getByRole("tab", { name: "Calendar", exact: true }).click();
-  await page.waitForSelector('[data-testid="calendar-split-container"]', { state: "visible" });
+  // 1. Desktop: Calendar View
+  await page.getByTestId("topbar-nav-calendar").click();
+  await page.waitForSelector('[data-testid="calendar-view"]', { state: "visible" });
   await page.waitForTimeout(600);
-  await page.screenshot({ path: path.join(OUTPUT_DIR, "desktop-01-calendar-dual-pane.png") });
+  await saveScreen(page, "desktop-01-calendar-week-grid.png");
 
-  // 2. Desktop: Tasks View -> Grade Center Tab (GPA 4 Scales, Distribution, What-If)
-  await page.getByTestId("topbar-view-switcher").getByRole("tab", { name: "Tasks", exact: true }).click();
+  // 2. Desktop: Tasks View (Daily Study Roadmap & Cushion Callout)
+  await page.getByTestId("topbar-nav-tasks").click();
   await page.waitForSelector('[data-testid="tasks-view"]', { state: "visible" });
-  await page.getByRole("button", { name: /Grade Center/i }).click();
+  await page.waitForTimeout(600);
+  await saveScreen(page, "desktop-02-tasks-study-roadmap.png");
+
+  // 3. Desktop: Tasks View -> Grade Center Tab (GPA 4 Scales, Distribution, What-If)
+  await page.getByTestId("tab-grades").click();
   await page.waitForSelector('[data-testid="gpa-summary-card"]', { state: "visible" });
   await page.waitForTimeout(600);
-  await page.screenshot({ path: path.join(OUTPUT_DIR, "desktop-02-grade-center-gpa.png") });
+  await saveScreen(page, "desktop-03-grade-center-gpa.png");
 
-  // 3. Desktop: Focus View (Leitner Flashcard Review, Mistake Bank & Study Timer)
-  await page.getByTestId("topbar-view-switcher").getByRole("tab", { name: "Focus", exact: true }).click();
+  // 4. Desktop: Focus View (Leitner Flashcard Review, Mistake Bank & Study Timer)
+  await page.getByTestId("sidebar-nav-focus").click();
   await page.waitForSelector('[data-testid="focus-view"]', { state: "visible" });
   await page.waitForTimeout(600);
-  await page.screenshot({ path: path.join(OUTPUT_DIR, "desktop-03-focus-flashcards-mistakes.png") });
+  await saveScreen(page, "desktop-04-focus-flashcards-mistakes.png");
 
-  // 4. Desktop: Settings View (Canvas/Blackboard LMS Guides & Week A/B Parity)
+  // 5. Desktop: Settings View (Canvas/Blackboard LMS Guides & Week A/B Parity)
   await page.getByRole("button", { name: "Open settings" }).click();
   await page.waitForSelector('[data-testid="view-settings"]', { state: "visible" });
-  // Scroll to LMS Feeds
   await page.evaluate(() => {
-    const el = document.querySelector('[data-testid="settings-lms-guides"]');
+    const el = document.querySelector('[data-testid="settings-canvas-card"]');
     if (el) el.scrollIntoView({ behavior: "instant" });
   });
   await page.waitForTimeout(600);
-  await page.screenshot({ path: path.join(OUTPUT_DIR, "desktop-04-settings-lms-guides.png") });
+  await saveScreen(page, "desktop-05-settings-lms-guides.png");
 
-  // 5. Mobile Viewport (Android 412x915): Calendar View (Agenda Mode with Attendance Tracker)
+  // 6. Mobile Viewport (Android 412x915): Calendar View
   await page.setViewportSize({ width: 412, height: 915 });
-  await page.getByRole("button", { name: "Back to dashboard" }).click();
   await page.waitForTimeout(300);
-  await page.getByTestId("topbar-view-switcher").getByRole("tab", { name: "Calendar", exact: true }).click();
-  await page.waitForSelector('[data-testid="calendar-agenda-view"]', { state: "visible" });
+  await page.getByTestId("mobilenav-calendar").click();
+  await page.waitForSelector('[data-testid="calendar-view"]', { state: "visible" });
   await page.waitForTimeout(600);
-  await page.screenshot({ path: path.join(OUTPUT_DIR, "mobile-01-calendar-agenda-attendance.png") });
+  await saveScreen(page, "mobile-01-calendar-view.png");
 
-  // 6. Mobile Viewport (Android 412x915): Focus Analytics & Study Streak
-  await page.getByTestId("topbar-view-switcher").getByRole("tab", { name: "Focus", exact: true }).click();
-  await page.waitForSelector('[data-testid="focus-view"]', { state: "visible" });
-  await page.waitForTimeout(600);
-  await page.screenshot({ path: path.join(OUTPUT_DIR, "mobile-02-focus-analytics-streak.png") });
-
-  // 7. Mobile Viewport (Android 412x915): Mobile Grade Center
-  await page.getByTestId("topbar-view-switcher").getByRole("tab", { name: "Tasks", exact: true }).click();
+  // 7. Mobile Viewport (Android 412x915): Tasks View & Grade Center
+  await page.getByTestId("mobilenav-tasks").click();
   await page.waitForSelector('[data-testid="tasks-view"]', { state: "visible" });
-  await page.getByRole("button", { name: /Grade Center/i }).click();
+  await page.getByTestId("tab-grades").click();
   await page.waitForSelector('[data-testid="gpa-summary-card"]', { state: "visible" });
   await page.waitForTimeout(600);
-  await page.screenshot({ path: path.join(OUTPUT_DIR, "mobile-03-grade-center-mobile.png") });
+  await saveScreen(page, "mobile-02-tasks-grade-center.png");
+
+  // 8. Mobile Viewport (Android 412x915): Focus Analytics & Study Streak
+  await page.getByTestId("mobilenav-focus").click();
+  await page.waitForSelector('[data-testid="focus-view"]', { state: "visible" });
+  await page.waitForTimeout(600);
+  await saveScreen(page, "mobile-03-focus-analytics-streak.png");
 });

@@ -39,9 +39,9 @@ const DURATIONS: Record<TimerMode, number> = {
 
 export const FocusView: React.FC = () => {
   const theme = useAppStore((s) => s.theme);
-  const assessments = useAppStore((s) => s.data.assessments);
-  const courses = useAppStore((s) => s.data.schedule.courses);
-  const recommendations = useAppStore((s) => s.data.dashboard.studyRecommendations);
+  const assessments = useAppStore((s) => s.data?.assessments ?? []);
+  const courses = useAppStore((s) => s.data?.schedule?.courses ?? []);
+  const recommendations = useAppStore((s) => s.data?.dashboard?.studyRecommendations ?? []);
   const toggleTopic = useAppStore((s) => s.toggleTopic);
   const practiceGenerate = useAppStore((s) => s.practiceGenerate);
   const openModal = useAppStore((s) => s.openModal);
@@ -58,13 +58,13 @@ export const FocusView: React.FC = () => {
   const tickPomodoro = useAppStore((s) => s.tickPomodoro);
 
   // Flashcards state
-  const flashcards = useAppStore((s) => s.flashcards);
+  const flashcards = useAppStore((s) => s.flashcards ?? []);
   const upsertFlashcard = useAppStore((s) => s.upsertFlashcard);
   const deleteFlashcard = useAppStore((s) => s.deleteFlashcard);
   const reviewFlashcard = useAppStore((s) => s.reviewFlashcard);
 
   // Mistake bank state
-  const mistakeBank = useAppStore((s) => s.mistakeBank);
+  const mistakeBank = useAppStore((s) => s.mistakeBank ?? []);
   const addMistake = useAppStore((s) => s.addMistake);
   const resolveMistake = useAppStore((s) => s.resolveMistake);
 

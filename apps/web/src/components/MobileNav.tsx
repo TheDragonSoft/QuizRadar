@@ -37,6 +37,7 @@ export const MobileNav: React.FC = () => {
           <button
             key={item.id}
             type="button"
+            data-testid={`mobilenav-${item.id}`}
             onClick={() => setView(item.id)}
             aria-current={isActive ? "page" : undefined}
             className="flex min-w-[64px] flex-col items-center justify-center gap-1 py-1 rounded-lg focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"

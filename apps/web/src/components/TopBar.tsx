@@ -338,6 +338,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenAuth }) =>
               <button
                 key={item.id}
                 type="button"
+                data-testid={`topbar-nav-${item.id}`}
                 role="tab"
                 aria-selected={isActive}
                 onClick={() => setView(item.id)}

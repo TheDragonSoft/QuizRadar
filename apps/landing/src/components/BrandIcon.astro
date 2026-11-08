@@ -1,0 +1,565 @@
+---
+interface Props {
+  name:
+    | "quizradar"
+    | "gmail"
+    | "teams"
+    | "moodle"
+    | "classroom"
+    | "gcal"
+    | "drive"
+    | "windows"
+    | "apple"
+    | "linux"
+    | "android"
+    | "github"
+    | "check"
+    | "arrow-up-right"
+    | "download"
+    | "globe"
+    | "shield"
+    | "cpu"
+    | "calendar"
+    | "sparkles"
+    | "copy"
+    | "sun"
+    | "moon"
+    | "zap"
+    | "chevron-down"
+    | "menu"
+    | "x";
+  size?: number;
+  animated?: boolean;
+  class?: string;
+}
+
+const { name, size = 20, animated = false, class: className = "" } = Astro.props;
+const uid = Math.random().toString(36).slice(2, 8);
+const bgId = `qrBrandBg-${uid}`;
+const sweepId = `qrBrandSweep-${uid}`;
+---
+
+{
+  name === "quizradar" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 256 256"
+      fill="none"
+      aria-hidden="true"
+    >
+      <defs>
+        <linearGradient
+          id={bgId}
+          x1="0"
+          y1="0"
+          x2="256"
+          y2="256"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop offset="0%" stop-color="#1e3a8a" />
+          <stop offset="50%" stop-color="#1d4ed8" />
+          <stop offset="100%" stop-color="#2563eb" />
+        </linearGradient>
+        <linearGradient
+          id={sweepId}
+          x1="128"
+          y1="36"
+          x2="210"
+          y2="128"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop offset="0%" stop-color="#60a5fa" stop-opacity="0.58" />
+          <stop offset="100%" stop-color="#38bdf8" stop-opacity="0" />
+        </linearGradient>
+      </defs>
+      <rect x="12" y="12" width="232" height="232" rx="56" fill={`url(#${bgId})`} />
+      <rect
+        x="14"
+        y="14"
+        width="228"
+        height="228"
+        rx="54"
+        stroke="#ffffff"
+        stroke-opacity="0.2"
+        stroke-width="3"
+      />
+      <rect x="78" y="28" width="16" height="26" rx="8" fill="#ffffff" fill-opacity="0.92" />
+      <rect x="162" y="28" width="16" height="26" rx="8" fill="#ffffff" fill-opacity="0.92" />
+      <circle
+        cx="128"
+        cy="136"
+        r="76"
+        stroke="#ffffff"
+        stroke-opacity="0.24"
+        stroke-width="5"
+      />
+      <circle
+        cx="128"
+        cy="136"
+        r="50"
+        stroke="#ffffff"
+        stroke-opacity="0.34"
+        stroke-width="4"
+        stroke-dasharray="10 8"
+      />
+      <circle
+        cx="128"
+        cy="136"
+        r="24"
+        stroke="#ffffff"
+        stroke-opacity="0.46"
+        stroke-width="4"
+      />
+      <g class={animated ? "radar-sweep-hand" : undefined}>
+        <path d="M128 136 L128 60 A76 76 0 0 1 198 106 Z" fill={`url(#${sweepId})`} />
+        <line
+          x1="128"
+          y1="136"
+          x2="184"
+          y2="84"
+          stroke="#facc15"
+          stroke-width="6"
+          stroke-linecap="round"
+        />
+      </g>
+      <circle cx="128" cy="136" r="10" fill="#ffffff" />
+      <circle cx="128" cy="136" r="5" fill="#1d4ed8" />
+      <circle cx="174" cy="93" r="9" fill="#facc15" />
+      <circle
+        class={animated ? "radar-blip-pulse" : undefined}
+        cx="174"
+        cy="93"
+        r="15"
+        stroke="#facc15"
+        stroke-opacity="0.52"
+        stroke-width="3"
+      />
+      <circle cx="92" cy="112" r="6.5" fill="#34d399" />
+      <circle cx="156" cy="166" r="6.5" fill="#f87171" />
+    </svg>
+  )
+}
+
+{
+  name === "gmail" && (
+    <svg class={className} width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#4285F4" d="M2 6.5V18a2 2 0 0 0 2 2h2V9.8L12 14l6-4.2V20h2a2 2 0 0 0 2-2V6.5L12 13.5 2 6.5Z" />
+      <path fill="#EA4335" d="M22 6.5V6a2 2 0 0 0-3.15-1.64L12 9.15 5.15 4.36A2 2 0 0 0 2 6v.5L12 13.5l10-7Z" />
+      <path fill="#34A853" d="M18 9.8V20h2a2 2 0 0 0 2-2V7l-4 2.8Z" />
+      <path fill="#FBBC05" d="M2 7v11a2 2 0 0 0 2 2h2V9.8L2 7Z" />
+    </svg>
+  )
+}
+
+{
+  name === "teams" && (
+    <svg class={className} width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="2" y="5" width="12" height="14" rx="2.5" fill="#5059C9" />
+      <path d="M5.5 9.2h5v1.6H8.9V15H7.1v-4.2H5.5V9.2Z" fill="#ffffff" />
+      <circle cx="17.5" cy="7.5" r="2.5" fill="#7B83EB" />
+      <path d="M14.5 11.5h5a2.5 2.5 0 0 1 2.5 2.5v3a2.5 2.5 0 0 1-2.5 2.5h-5v-8Z" fill="#7B83EB" />
+    </svg>
+  )
+}
+
+{
+  name === "moodle" && (
+    <svg class={className} width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M3 9.5 12 5l9 4.5-9 4.5-9-4.5Z" fill="#F98012" />
+      <path
+        d="M6.5 11.8v4.2c0 1.5 2.5 2.8 5.5 2.8s5.5-1.3 5.5-2.8v-4.2"
+        stroke="#F98012"
+        stroke-width="2"
+        stroke-linecap="round"
+      />
+      <path d="M20 10v5.5" stroke="#F98012" stroke-width="2" stroke-linecap="round" />
+    </svg>
+  )
+}
+
+{
+  name === "classroom" && (
+    <svg class={className} width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="2.5" y="4" width="19" height="16" rx="2.5" fill="#0F9D58" />
+      <rect x="4.5" y="6" width="15" height="11" rx="1" fill="#188038" />
+      <circle cx="12" cy="10.2" r="2.1" fill="#ffffff" />
+      <path d="M8.3 15.8c.5-1.8 2-2.8 3.7-2.8s3.2 1 3.7 2.8H8.3Z" fill="#ffffff" />
+      <rect x="8.5" y="18.2" width="7" height="1.2" rx="0.6" fill="#F4B400" />
+    </svg>
+  )
+}
+
+{
+  name === "gcal" && (
+    <svg class={className} width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="3" y="4" width="18" height="17" rx="3" fill="#1A73E8" />
+      <path d="M3 9h18v9a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V9Z" fill="#4285F4" />
+      <rect x="7" y="2.5" width="2.2" height="4" rx="1.1" fill="#ffffff" />
+      <rect x="14.8" y="2.5" width="2.2" height="4" rx="1.1" fill="#ffffff" />
+      <rect x="7.5" y="12" width="3.5" height="3.5" rx="0.8" fill="#ffffff" />
+      <rect x="13" y="12" width="3.5" height="3.5" rx="0.8" fill="#FBBC04" />
+    </svg>
+  )
+}
+
+{
+  name === "drive" && (
+    <svg class={className} width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M9.2 4h5.6l6.2 10.8-2.8 4.8H15L9.2 4Z" fill="#FBBC04" />
+      <path d="M9.2 4 3 14.8l2.8 4.8L12 8.8 9.2 4Z" fill="#0F9D58" />
+      <path d="M5.8 19.6h12.4l2.8-4.8H8.6l-2.8 4.8Z" fill="#4285F4" />
+    </svg>
+  )
+}
+
+{
+  name === "windows" && (
+    <svg class={className} width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M3 4.6 10.9 3.5v7.7H3V4.6Zm8.9-1.2L21 2v9.2h-9.1V3.4ZM3 12.6h7.9v7.8L3 19.3v-6.7Zm8.9 0H21V22l-9.1-1.3v-8.1Z" />
+    </svg>
+  )
+}
+
+{
+  name === "apple" && (
+    <svg class={className} width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M16.7 12.6c0-2.1 1.7-3.2 1.8-3.3-1-1.5-2.5-1.7-3.1-1.7-1.3-.1-2.5.8-3.2.8-.7 0-1.7-.8-2.8-.8-1.5 0-2.8.9-3.6 2.2-1.5 2.7-.4 6.6 1.1 8.8.7 1.1 1.6 2.3 2.7 2.2 1.1 0 1.5-.7 2.8-.7s1.7.7 2.8.7c1.2 0 1.9-1.1 2.6-2.2.8-1.2 1.2-2.4 1.2-2.5-.1 0-2.3-.9-2.3-3.5ZM14.6 6.2c.6-.7 1-1.8.9-2.8-.9 0-2 .6-2.6 1.3-.5.6-1 1.7-.9 2.7 1 .1 2-.5 2.6-1.2Z" />
+    </svg>
+  )
+}
+
+{
+  name === "linux" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.8"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <path d="m7.5 9.5 3 2.5-3 2.5M12.5 14.5h4" />
+    </svg>
+  )
+}
+
+{
+  name === "android" && (
+    <svg class={className} width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M16.6 8.3 18.4 5a.5.5 0 0 0-.9-.5l-1.8 3.3a9.3 9.3 0 0 0-7.4 0L6.5 4.5a.5.5 0 0 0-.9.5l1.8 3.3A8 8 0 0 0 3.2 15h17.6a8 8 0 0 0-4.2-6.7ZM8.5 12.5a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8Zm7 0a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8ZM4 16.5h16V19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2.5Z" />
+    </svg>
+  )
+}
+
+{
+  name === "github" && (
+    <svg class={className} width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.18-3.37-1.18-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.04 1.53 1.04.9 1.53 2.35 1.09 2.92.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.95 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.6 9.6 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.85-2.34 4.7-4.57 4.95.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2Z" />
+    </svg>
+  )
+}
+
+{
+  name === "check" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2.2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  )
+}
+
+{
+  name === "arrow-up-right" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M7 17 17 7M8 7h9v9" />
+    </svg>
+  )
+}
+
+{
+  name === "download" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 3v12m0 0 4.5-4.5M12 15 7.5 10.5M4 19h16" />
+    </svg>
+  )
+}
+
+{
+  name === "globe" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.8"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3.5 12h17M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3Z" />
+    </svg>
+  )
+}
+
+{
+  name === "shield" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.8"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 3 4.5 6.2v5.4c0 5 3.2 8.2 7.5 9.9 4.3-1.7 7.5-4.9 7.5-9.9V6.2L12 3Z" />
+      <path d="m9 12 2 2 4-4" />
+    </svg>
+  )
+}
+
+{
+  name === "cpu" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.75"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+      <rect x="9.5" y="9.5" width="5" height="5" rx="1" />
+      <path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4" />
+    </svg>
+  )
+}
+
+{
+  name === "calendar" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.75"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3" y="4" width="18" height="17" rx="2.5" />
+      <path d="M8 2.5v3M16 2.5v3M3 9.5h18" />
+    </svg>
+  )
+}
+
+{
+  name === "sparkles" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.75"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m12 3 1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z" />
+      <path d="m19 16 .8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z" />
+    </svg>
+  )
+}
+
+{
+  name === "copy" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.75"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  )
+}
+
+{
+  name === "sun" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.85"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+    </svg>
+  )
+}
+
+{
+  name === "moon" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.85"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+    </svg>
+  )
+}
+
+{
+  name === "zap" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" />
+    </svg>
+  )
+}
+
+{
+  name === "chevron-down" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  )
+}
+
+{
+  name === "menu" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <line x1="4" y1="6" x2="20" y2="6" />
+      <line x1="4" y1="12" x2="20" y2="12" />
+      <line x1="4" y1="18" x2="20" y2="18" />
+    </svg>
+  )
+}
+
+{
+  name === "x" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  )
+}
+
+<style>
+  svg {
+    flex-shrink: 0;
+  }
+</style>

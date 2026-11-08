@@ -1,0 +1,604 @@
+/*
+ * QuizRadar Marketing Design System
+ *
+ * Directly shares the v4/v5 QuizRadar visual language (`apps/web/src/tokens.css`
+ * & `apps/web/src/index.css`): Day Sky (royal blue + breathing golden sun) and
+ * Night Sky (deep slate-indigo + dual twinkling starfields + diagonal sheen),
+ * animated calendar-radar mark, tactile keycaps, and layered neutral shadows.
+ */
+
+:root {
+  /* Day Mode palette — exact match with `apps/web/src/tokens.css` `:root` */
+  --page: #f8fafc;
+  --page-subtle: #f1f5f9;
+  --surface: #ffffff;
+  --surface-elevated: #ffffff;
+  --surface-border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --surface-hover: #f1f5f9;
+
+  --text: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #475569;
+
+  --accent: #1a73e8;
+  --accent-hover: #1557b0;
+  --accent-fill: #1a73e8;
+  --accent-fill-hover: #1557b0;
+  --accent-ink: #1557b0;
+  --accent-soft: rgba(26, 115, 232, 0.1);
+
+  /* Signature QuizRadar countdown & semantic tokens */
+  --amber-pill: #fbbf24;
+  --amber-ink: #0f172a;
+  --status-ok: #0f9d58;
+  --status-warn: #d97706;
+  --exam-red: #dc2626;
+  --exam-glow: 0 3px 12px rgba(220, 38, 38, 0.18);
+
+  /* Authentic 8-course palette (`apps/web/src/tokens.css`) */
+  --course-1: #1a73e8;
+  --course-2: #0f9d58;
+  --course-3: #ea8600;
+  --course-4: #d93025;
+  --course-5: #8e24aa;
+  --course-6: #00acc1;
+  --course-7: #e67c73;
+  --course-8: #3949ab;
+
+  /* Nav glass */
+  --nav-bg: rgba(248, 250, 252, 0.82);
+
+  /* Layered neutral shadows (`beautiful-shadows`) */
+  --shadow-sm:
+    0px 2px 3px -1px rgba(15, 23, 42, 0.08), 0px 1px 0px 0px rgba(15, 23, 42, 0.02),
+    0px 0px 0px 1px rgba(15, 23, 42, 0.06);
+  --shadow-md:
+    0px 0px 0px 1px rgba(15, 23, 42, 0.06), 0px 1px 2px -0.5px rgba(15, 23, 42, 0.06),
+    0px 6px 12px -4px rgba(15, 23, 42, 0.07), 0px 18px 28px -12px rgba(15, 23, 42, 0.09);
+  --shadow-lg:
+    0 2.8px 2.2px rgba(15, 23, 42, 0.03), 0 6.7px 5.3px rgba(15, 23, 42, 0.045),
+    0 12.5px 10px rgba(15, 23, 42, 0.055), 0 22.3px 17.9px rgba(15, 23, 42, 0.07),
+    0 41.8px 33.4px rgba(15, 23, 42, 0.09);
+
+  /* Border-gradient stops (`css-border-gradient`) */
+  --grad-border-a: rgba(26, 115, 232, 0.32);
+  --grad-border-b: rgba(142, 36, 170, 0.2);
+  --grad-border-c: rgba(15, 23, 42, 0.08);
+
+  /* Typography & Radii */
+  --font-sans:
+    "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "Cascadia Code", Menlo, Consolas, monospace;
+
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+
+  /* Motion curves (`apps/web/src/tokens.css` + `animation-systems`) */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-quart: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-snappy: cubic-bezier(0.2, 0, 0, 1);
+
+  color-scheme: light;
+}
+
+html.dark {
+  /* Night Mode palette — exact match with `apps/web/src/tokens.css` `.dark` */
+  --page: #0b0f19;
+  --page-subtle: #0e1424;
+  --surface: #111827;
+  --surface-elevated: #162033;
+  --surface-border: #1e293b;
+  --border-strong: #334155;
+  --surface-hover: #1e293b;
+
+  --text: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --accent-fill: #2563eb;
+  --accent-fill-hover: #1d4ed8;
+  --accent-ink: #60a5fa;
+  --accent-soft: rgba(59, 130, 246, 0.15);
+
+  --status-ok: #34d399;
+  --status-warn: #fbbf24;
+  --exam-red: #f87171;
+  --exam-glow: 0 0 16px rgba(239, 68, 68, 0.45), 0 0 4px rgba(239, 68, 68, 0.65);
+
+  --nav-bg: rgba(11, 15, 25, 0.8);
+
+  --shadow-sm: 0px 2px 4px -1px rgba(0, 0, 0, 0.4), 0px 0px 0px 1px rgba(255, 255, 255, 0.06);
+  --shadow-md:
+    0px 0px 0px 1px rgba(255, 255, 255, 0.07), 0px 6px 16px -4px rgba(0, 0, 0, 0.45),
+    0px 20px 34px -14px rgba(0, 0, 0, 0.6);
+  --shadow-lg:
+    0 0 0 1px rgba(148, 163, 184, 0.14), 0 12px 24px -6px rgba(0, 0, 0, 0.52),
+    0 32px 64px -16px rgba(2, 6, 23, 0.78);
+
+  --grad-border-a: rgba(96, 165, 250, 0.42);
+  --grad-border-b: rgba(129, 140, 248, 0.28);
+  --grad-border-c: rgba(255, 255, 255, 0.08);
+
+  color-scheme: dark;
+}
+
+@media (color-gamut: p3) {
+  html.dark {
+    --accent-fill: oklch(0.55 0.21 262);
+    --accent-fill-hover: oklch(0.5 0.21 262);
+    --accent-ink: oklch(0.74 0.15 254);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  background-color: var(--page);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-padding-block-start: 80px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+body {
+  background-color: var(--page);
+  color: var(--text);
+  min-height: 100dvh;
+  overflow-x: clip;
+  display: flex;
+  flex-direction: column;
+}
+
+::selection {
+  background-color: rgba(26, 115, 232, 0.18);
+  color: #1557b0;
+}
+
+html.dark ::selection {
+  background-color: rgba(59, 130, 246, 0.3);
+  color: #dbeafe;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+}
+
+/* Accessible keyboard focus ring (WCAG 2.2 AA) */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Skip link */
+.skip-link {
+  position: fixed;
+  inset-block-start: 12px;
+  inset-inline-start: 16px;
+  z-index: 100;
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  background-color: var(--accent-fill);
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-200%);
+  transition-property: transform, opacity;
+  transition-duration: 160ms;
+  transition-timing-function: var(--ease-snappy);
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+/* Screen-reader only */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Container */
+.container {
+  width: 100%;
+  max-width: 1220px;
+  margin-inline: auto;
+  padding-inline: 28px;
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding-inline: 18px;
+  }
+}
+
+/* Typography system (`better-typography`) */
+h1,
+h2,
+h3,
+h4 {
+  text-wrap: balance;
+  letter-spacing: -0.024em;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+.section-title {
+  font-size: clamp(1.85rem, 3.5vw, 2.75rem);
+  font-weight: 700;
+  line-height: 1.12;
+  color: var(--text);
+}
+
+.section-lead {
+  font-size: clamp(1rem, 1.25vw, 1.125rem);
+  line-height: 1.62;
+  color: var(--text-muted);
+  max-width: 62ch;
+  text-wrap: pretty;
+}
+
+/* Signature Amber Countdown Pill (`DashboardView.tsx` NextUpHero) */
+.amber-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background-color: var(--amber-pill);
+  color: var(--amber-ink);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 10px rgba(251, 191, 36, 0.28);
+}
+
+/* Tactile physical keycap (`apps/web/src/index.css`) */
+.keycap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  padding: 0.125rem 0.42rem;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  font-weight: 600;
+  line-height: 1.1rem;
+  color: var(--text);
+  background-color: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+}
+
+/* Buttons — verb-first, exact 0.96 press scale (`better-ui`) */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 9px 18px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  transition-property: transform, background-color, border-color, color, box-shadow;
+  transition-duration: 160ms;
+  transition-timing-function: var(--ease-snappy);
+}
+
+.btn:not(:disabled):active {
+  transform: scale(0.96);
+}
+
+.btn-lg {
+  min-height: 48px;
+  padding: 12px 22px;
+  border-radius: 14px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.btn-primary {
+  background-color: var(--accent-fill);
+  color: #ffffff;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.18) inset,
+    0 8px 20px -8px rgba(37, 99, 235, 0.55);
+}
+
+.btn-secondary {
+  background-color: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Buttons sitting on the dark/royal Celestial Sky banner (matches NextUpHero) */
+.btn-sky-primary {
+  background-color: #ffffff;
+  color: #1557b0;
+  box-shadow:
+    0 2px 6px rgba(2, 6, 23, 0.2),
+    0 12px 28px -8px rgba(2, 6, 23, 0.35);
+}
+
+.btn-sky-secondary {
+  background-color: rgba(2, 6, 23, 0.38);
+  border-color: rgba(255, 255, 255, 0.24);
+  color: #ffffff;
+}
+
+@media (hover: hover) {
+  .btn-primary:hover {
+    background-color: var(--accent-fill-hover);
+  }
+
+  .btn-secondary:hover {
+    background-color: var(--surface-hover);
+  }
+
+  .btn-sky-primary:hover {
+    background-color: #eff6ff;
+  }
+
+  .btn-sky-secondary:hover {
+    background-color: rgba(2, 6, 23, 0.54);
+    border-color: rgba(255, 255, 255, 0.4);
+  }
+}
+
+/* Dual-theme real product screenshots */
+.theme-shot-dark {
+  display: none;
+}
+
+.theme-shot-light {
+  display: block;
+}
+
+html.dark .theme-shot-dark {
+  display: block;
+}
+
+html.dark .theme-shot-light {
+  display: none;
+}
+
+.screenshot-outline {
+  outline: 1px solid rgba(15, 23, 42, 0.08);
+  outline-offset: -1px;
+}
+
+html.dark .screenshot-outline {
+  outline: 1px solid oklch(1 0 0 / 0.1);
+  outline-offset: -1px;
+}
+
+/* Gradient-border elevated stage (`css-border-gradient`) */
+.gradient-stage {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(140deg, var(--grad-border-a), var(--grad-border-b) 50%, var(--grad-border-c))
+      border-box;
+  box-shadow: var(--shadow-lg);
+}
+
+/* ---------------------------------------------------------------------------
+   Authentic QuizRadar Celestial Animations (`apps/web/src/index.css`)
+   --------------------------------------------------------------------------- */
+@keyframes radarSweep {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes radarPing {
+  0% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  60% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+@keyframes heroTwinkleA {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.42;
+  }
+}
+
+@keyframes heroTwinkleB {
+  0%,
+  100% {
+    opacity: 0.38;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes heroSunGlow {
+  0%,
+  100% {
+    opacity: 0.82;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes heroSheen {
+  0% {
+    background-position: 160% 0;
+  }
+  60%,
+  100% {
+    background-position: -60% 0;
+  }
+}
+
+@keyframes qrRevealIn {
+  0% {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .radar-sweep-hand {
+    transform-origin: 128px 136px;
+    animation: radarSweep 5s linear infinite;
+  }
+
+  .radar-blip-pulse {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: radarPing 2.2s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+
+  .animate-on-scroll {
+    animation: qrRevealIn 560ms var(--ease-out-expo) both;
+    animation-delay: var(--reveal-delay, 0ms);
+    animation-play-state: paused;
+  }
+
+  .animate-on-scroll.is-visible {
+    animation-play-state: running;
+  }
+
+  /* View Transitions Day <-> Starry Night crossfade (`tokens.css`) */
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 260ms;
+    animation-timing-function: ease;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .amber-pill {
+    font-size: 0.72rem;
+    padding: 4px 10px;
+    max-width: 100%;
+  }
+
+  .btn {
+    white-space: normal;
+    text-align: center;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* Section structural rhythm */
+.page-section {
+  position: relative;
+  padding-block: 88px;
+  border-block-start: 1px solid var(--surface-border);
+}
+
+@media (max-width: 768px) {
+  .page-section {
+    padding-block: 60px;
+  }
+}

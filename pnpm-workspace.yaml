@@ -3,7 +3,8 @@ packages:
 
 # pnpm ≥12: dependency postinstall scripts are blocked by default. Allow-list
 # only what legitimately ships one and needs it (esbuild resolves its
-# platform binary in install.js). Keep this list minimal.
+# platform binary in install.js; sharp uses prebuilt @img/sharp-* packages).
 allowBuilds:
-  core-js: set this to true or false
+  core-js: false
   esbuild: true
+  sharp: false

@@ -6,6 +6,7 @@ Cargo.lock.bak
 node_modules/
 dist/
 dist-ssr/
+.astro/
 .swc/
 
 # Android / Kotlin (any gradle project)

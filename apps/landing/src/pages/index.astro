@@ -1,0 +1,1728 @@
+---
+import Layout from "../layouts/Layout.astro";
+import BrandIcon from "../components/BrandIcon.astro";
+import CelestialSky from "../components/CelestialSky.astro";
+import {
+  ANCHOR_STEPS,
+  FAQ_ITEMS,
+  INGESTION_SOURCES,
+  PLATFORM_DOWNLOADS,
+  PRODUCT_VIEWS,
+  withBase,
+} from "../lib/releaseData";
+
+const base = import.meta.env.BASE_URL;
+const downloadHref = withBase(base, "/download/");
+const webAppHref = withBase(base, "/app/");
+
+function splitHighlight(text: string, highlight?: string) {
+  if (!highlight || !text.includes(highlight)) {
+    return { before: text, match: "", after: "" };
+  }
+  const idx = text.indexOf(highlight);
+  return {
+    before: text.slice(0, idx),
+    match: highlight,
+    after: text.slice(idx + highlight.length),
+  };
+}
+---
+
+<Layout currentPage="home" canonicalPath="/">
+  <!-- =====================================================================
+       1. CELESTIAL SKY HERO + REAL APPLICATION VIEWS STAGE
+       ===================================================================== -->
+  <section class="hero-section">
+    <div class="container">
+      <div class="hero-sky-card">
+        <CelestialSky showRadarArcs={true} />
+
+        <div class="hero-sky-content">
+          <h1 class="hero-title">Never miss a quiz hidden in a professor’s post.</h1>
+
+          <p class="hero-sub">
+            QuizRadar scans your Gmail, Microsoft Teams, Moodle, and Google Classroom directly on
+            your device and anchors fuzzy announcements against your weekly class timetable. Every
+            quiz, conflict alert, and study block lands on one starry radar — free, MIT-licensed,
+            and zero-server.
+          </p>
+
+          <div class="hero-actions">
+            <a
+              href={PLATFORM_DOWNLOADS.windows.primaryUrl}
+              class="btn btn-sky-primary btn-lg"
+              data-dl-cta
+            >
+              <BrandIcon name="download" size={18} />
+              <span data-dl-label>{PLATFORM_DOWNLOADS.windows.label}</span>
+            </a>
+
+            <a href={webAppHref} class="btn btn-sky-secondary btn-lg">
+              <BrandIcon name="globe" size={18} />
+              <span>Open Web App — No Install</span>
+            </a>
+          </div>
+
+          <div class="hero-foot-strip">
+            <a href={downloadHref} class="sky-foot-link">
+              Windows · macOS · Linux · Android APK →
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Real 2x Retina Product Stage (`#views`) -->
+      <div id="views" class="stage-wrap">
+        <div class="gradient-stage app-stage">
+          <div class="stage-toolbar">
+            <div class="stage-tablist" role="tablist" aria-label="QuizRadar application views">
+              {
+                PRODUCT_VIEWS.map((view, idx) => (
+                  <button
+                    type="button"
+                    role="tab"
+                    id={`tab-${view.id}`}
+                    aria-selected={idx === 0 ? "true" : "false"}
+                    aria-controls={`panel-${view.id}`}
+                    tabindex={idx === 0 ? 0 : -1}
+                    class:list={["stage-tab", { "is-active": idx === 0 }]}
+                    data-view-tab={view.id}
+                  >
+                    {view.tabLabel}
+                  </button>
+                ))
+              }
+            </div>
+
+            <button
+              type="button"
+              class="stage-sky-switch"
+              data-theme-toggle
+              aria-label="Preview screenshots in Day or Starry Night theme"
+            >
+              <span class="switch-sun">
+                <BrandIcon name="sun" size={14} />
+                <span>Switch to Day Sky</span>
+              </span>
+              <span class="switch-moon">
+                <BrandIcon name="moon" size={14} />
+                <span>Switch to Starry Sky</span>
+              </span>
+            </button>
+          </div>
+
+          <div class="stage-panels">
+            {
+              PRODUCT_VIEWS.map((view, idx) => (
+                <div
+                  role="tabpanel"
+                  id={`panel-${view.id}`}
+                  aria-labelledby={`tab-${view.id}`}
+                  hidden={idx !== 0}
+                  class="stage-panel"
+                  data-view-panel={view.id}
+                >
+                  <div class="stage-frame">
+                    <img
+                      class="theme-shot-dark screenshot-outline stage-img"
+                      src={withBase(base, view.darkSrc)}
+                      alt={view.alt}
+                      width="2160"
+                      height="1350"
+                      loading={idx === 0 ? "eager" : "lazy"}
+                      fetchpriority={idx === 0 ? "high" : undefined}
+                      decoding="async"
+                    />
+                    <img
+                      class="theme-shot-light screenshot-outline stage-img"
+                      src={withBase(base, view.lightSrc)}
+                      alt={view.alt}
+                      width="2160"
+                      height="1350"
+                      loading={idx === 0 ? "eager" : "lazy"}
+                      decoding="async"
+                    />
+                  </div>
+
+                  <div class="stage-caption-bar">
+                    <div class="stage-caption-main">
+                      <span class="stage-badge tabular">{view.badge}</span>
+                      <p class="stage-caption-text">{view.caption}</p>
+                    </div>
+                    <span class="stage-provenance">Real app capture · Sample Fall 2026</span>
+                  </div>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =====================================================================
+       2. TIMETABLE ANCHOR SCROLL STORY (`scroll-progress-timeline`)
+       ===================================================================== -->
+  <section id="how-it-works" class="page-section">
+    <div class="container">
+      <div class="section-head animate-on-scroll">
+        <span class="eyebrow">Timetable-Anchored Parsing</span>
+        <h2 class="section-title">How a fuzzy email becomes an exact exam slot.</h2>
+        <p class="section-lead">
+          Professors rarely attach an <code>.ics</code> invite. QuizRadar reads announcements the way
+          students do — cross-referencing relative dates against your enrolled lectures, tutorials, and
+          labs.
+        </p>
+      </div>
+
+      <div class="timeline-shell" data-scroll-timeline>
+        <div class="timeline-rail" aria-hidden="true">
+          <div class="timeline-fill" data-timeline-fill></div>
+        </div>
+
+        <ol class="timeline-list">
+          {
+            ANCHOR_STEPS.map((step, idx) => {
+              const parts = splitHighlight(step.snippetText, step.highlight);
+              return (
+                <li
+                  class:list={["timeline-step", { "is-active": idx === 0 }]}
+                  data-timeline-step
+                >
+                  <div class="step-marker tabular" aria-hidden="true">
+                    {step.number}
+                  </div>
+
+                  <div class="step-grid">
+                    <div class="step-copy">
+                      <span class="step-kicker">{step.kicker}</span>
+                      <h3 class="step-title">{step.title}</h3>
+                      <p class="step-body">{step.body}</p>
+                    </div>
+
+                    <div class="anchor-card">
+                      <div class="anchor-card-top">
+                        <span
+                          class="course-chip"
+                          style={`--chip-color: ${step.courseColor};`}
+                        >
+                          <span class="course-dot" aria-hidden="true" />
+                          <span>{step.courseCode}</span>
+                          <span class="course-chip-sep">·</span>
+                          <span class="course-chip-name">{step.courseName}</span>
+                        </span>
+                        <span class="snippet-source">{step.snippetLabel}</span>
+                      </div>
+
+                      <blockquote class="snippet-quote">
+                        {
+                          parts.match ? (
+                            <>
+                              <span>{`“${parts.before}`}</span><mark class="phrase-mark">{parts.match}</mark><span>{`${parts.after}”`}</span>
+                            </>
+                          ) : (
+                            <span>{`“${parts.before}”`}</span>
+                          )
+                        }
+                      </blockquote>
+
+                      <div class="resolved-grid">
+                        <div class="resolved-cell">
+                          <span class="resolved-label">Anchored Slot</span>
+                          <span class="resolved-val tabular">{step.resolvedDate}</span>
+                        </div>
+                        <div class="resolved-cell">
+                          <span class="resolved-label">Room</span>
+                          <span
+                            class:list={[
+                              "resolved-val",
+                              "tabular",
+                              { "is-unassigned": step.resolvedRoom === "—" },
+                            ]}
+                          >
+                            {step.resolvedRoom}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div class="honesty-strip">
+                        <BrandIcon name="check" size={14} />
+                        <span>{step.honestyNote}</span>
+                      </div>
+                    </div>
+                  </div>
+                </li>
+              );
+            })
+          }
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- =====================================================================
+       3. DIRECT CAMPUS SOURCES (`#sources`)
+       ===================================================================== -->
+  <section id="sources" class="page-section">
+    <div class="container">
+      <div class="section-head animate-on-scroll">
+        <span class="eyebrow">Zero-Relay Integrations</span>
+        <h2 class="section-title">Connects straight to your campus tools — never through us.</h2>
+        <p class="section-lead">
+          Each device talks directly to Google, Microsoft, or your university’s Moodle instance via
+          secret-free PKCE OAuth. Credentials stay in your OS keyring and never touch an external
+          relay.
+        </p>
+      </div>
+
+      <div class="sources-ledger animate-on-scroll">
+        {
+          INGESTION_SOURCES.map((source) => (
+            <article class="source-cell">
+              <div class="source-cell-head">
+                <div class="source-icon-wrap">
+                  <BrandIcon name={source.id} size={22} />
+                </div>
+                <div class="source-meta">
+                  <h3>{source.name}</h3>
+                  <span class="protocol-tag">{source.protocol}</span>
+                </div>
+              </div>
+              <p class="source-summary">{source.summary}</p>
+            </article>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <!-- =====================================================================
+       4. BUILT FOR REAL EXAM WEEKS (CALENDAR, FOCUS & HONEST GRADES)
+       ===================================================================== -->
+  <section class="page-section">
+    <div class="container">
+      <div class="section-head animate-on-scroll">
+        <span class="eyebrow">From Detection to Exam Day</span>
+        <h2 class="section-title">Everything around the countdown, built into one workspace.</h2>
+        <p class="section-lead">
+          Once an announcement is anchored, QuizRadar maps conflicts, schedules study blocks into
+          your open hours, and tracks topic mastery without clutter.
+        </p>
+      </div>
+
+      <div class="workflow-split">
+        <article class="workflow-card workflow-card-wide animate-on-scroll">
+          <div class="workflow-copy">
+            <div class="workflow-tag-row">
+              <span class="mini-pill mini-pill-red">Exam Glow</span>
+              <span class="mini-pill">Auto Study Blocks</span>
+              <span class="shortcut-hint">
+                Press <kbd class="keycap">/</kbd> to filter any course
+              </span>
+            </div>
+            <h3>Classes, glowing exams, and study blocks on one 8 AM – 8 PM grid</h3>
+            <p>
+              Anchored quizzes light up inside the exact lecture or lab slot where they happen. When
+              two assessments land within 26 hours, one click carves out conflict-free evening study
+              blocks — ready for explicit one-way Google Calendar push or standard <code>.ics</code>
+              export.
+            </p>
+          </div>
+          <div class="workflow-shot-wrap">
+            <img
+              class="theme-shot-dark screenshot-outline workflow-shot"
+              src={withBase(base, "/screenshots/app-calendar-dark.webp")}
+              alt="QuizRadar Week Calendar with glowing red Class Quiz 2 slot and scheduled study sessions."
+              width="2160"
+              height="1350"
+              loading="lazy"
+              decoding="async"
+            />
+            <img
+              class="theme-shot-light screenshot-outline workflow-shot"
+              src={withBase(base, "/screenshots/app-calendar-light.webp")}
+              alt="QuizRadar Week Calendar in Day mode with glowing Class Quiz 2 slot and study sessions."
+              width="2160"
+              height="1350"
+              loading="lazy"
+              decoding="async"
+            />
+          </div>
+        </article>
+
+        <article
+          class="workflow-card animate-on-scroll"
+          style="--reveal-delay: 80ms;"
+        >
+          <div class="workflow-copy">
+            <div class="workflow-tag-row">
+              <span class="mini-pill">25m Focus Timer</span>
+              <span class="mini-pill">Offline + BYOK Practice</span>
+            </div>
+            <h3>Checkable syllabus topics, Pomodoro focus, and Grade What-If</h3>
+            <p>
+              Break each exam into concrete topics, run a built-in 25-minute focus session, drill
+              deterministic practice questions offline (or connect your own Gemini key), and compute
+              the exact final-exam score needed for your target grade.
+            </p>
+          </div>
+          <div class="workflow-shot-wrap">
+            <img
+              class="theme-shot-dark screenshot-outline workflow-shot"
+              src={withBase(base, "/screenshots/app-detail-dark.webp")}
+              alt="QuizRadar Assessment Detail modal showing study topics, Pomodoro timer button, and Grade What-If calculator."
+              width="2160"
+              height="1350"
+              loading="lazy"
+              decoding="async"
+            />
+            <img
+              class="theme-shot-light screenshot-outline workflow-shot"
+              src={withBase(base, "/screenshots/app-detail-light.webp")}
+              alt="QuizRadar Assessment Detail modal in Day mode showing study topics and Grade What-If calculator."
+              width="2160"
+              height="1350"
+              loading="lazy"
+              decoding="async"
+            />
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- =====================================================================
+       5. NATIVE ANDROID + 2x1 STARRY GLANCE WIDGET (`#android`)
+       ===================================================================== -->
+  <section id="android" class="page-section">
+    <div class="container android-grid">
+      <div class="android-copy animate-on-scroll">
+        <span class="eyebrow">Android · Kotlin + Jetpack Compose + UniFFI</span>
+        <h2 class="section-title">Pinned right to your Android home screen.</h2>
+        <p class="section-lead">
+          Not a mobile web wrapper. QuizRadar for Android is a first-party Material 3 Jetpack
+          Compose app bound directly to <code>quizradar-core</code> via UniFFI.
+        </p>
+
+        <!-- Authentic 2x1 Starry Android Glance Home-Screen Widget Preview -->
+        <div class="glance-widget-wrap">
+          <span class="glance-caption">2×1 Android Glance Home-Screen Widget</span>
+          <div class="glance-widget">
+            <CelestialSky showRadarArcs={false} />
+            <div class="glance-inner">
+              <div class="glance-top">
+                <span class="amber-pill glance-pill">
+                  <BrandIcon name="zap" size={11} />
+                  <span>Up next · In 3d</span>
+                </span>
+                <span class="glance-course">CSE 341</span>
+              </div>
+              <div class="glance-title">Class Quiz 2 — CPU Scheduling</div>
+              <div class="glance-meta tabular">Thu, Nov 5 · 10:00 AM · CS Lab 3</div>
+            </div>
+          </div>
+        </div>
+
+        <ul class="android-points">
+          <li>
+            <BrandIcon name="check" size={16} />
+            <span>
+              <strong>Android Share-Sheet ingest:</strong> share any message from WhatsApp, Telegram,
+              or Discord class chats straight into QuizRadar to anchor it instantly.
+            </span>
+          </li>
+          <li>
+            <BrandIcon name="check" size={16} />
+            <span>
+              <strong>WorkManager T-24h reminders:</strong> local exam notifications scheduled on-device
+              with zero push servers.
+            </span>
+          </li>
+          <li>
+            <BrandIcon name="check" size={16} />
+            <span>
+              <strong>Hardware-backed storage:</strong> OAuth tokens stay inside Android
+              <code>EncryptedSharedPreferences</code>.
+            </span>
+          </li>
+        </ul>
+
+        <div class="android-cta-row">
+          <a href={PLATFORM_DOWNLOADS.android.primaryUrl} class="btn btn-primary">
+            <BrandIcon name="android" size={17} />
+            <span>{PLATFORM_DOWNLOADS.android.label}</span>
+          </a>
+          <a href={downloadHref} class="btn btn-secondary">
+            <span>View SHA-256 Checksums</span>
+          </a>
+        </div>
+      </div>
+
+      <div class="android-phones animate-on-scroll" style="--reveal-delay: 90ms;">
+        <div class="phone-frame phone-primary">
+          <img
+            class="theme-shot-dark phone-img"
+            src={withBase(base, "/screenshots/android-dashboard-dark.webp")}
+            alt="QuizRadar native Android Jetpack Compose app in dark mode showing the starry Next-Up hero and upcoming exams."
+            width="960"
+            height="2133"
+            loading="lazy"
+            decoding="async"
+          />
+          <img
+            class="theme-shot-light phone-img"
+            src={withBase(base, "/screenshots/android-dashboard-light.webp")}
+            alt="QuizRadar native Android Jetpack Compose app in light mode showing the sunlit Next-Up hero and upcoming exams."
+            width="960"
+            height="2133"
+            loading="lazy"
+            decoding="async"
+          />
+        </div>
+
+        <div class="phone-frame phone-secondary">
+          <img
+            class="theme-shot-dark phone-img"
+            src={withBase(base, "/screenshots/android-focus-dark.webp")}
+            alt="QuizRadar Android Focus timer and study readiness view in dark mode."
+            width="960"
+            height="2155"
+            loading="lazy"
+            decoding="async"
+          />
+          <img
+            class="theme-shot-light phone-img"
+            src={withBase(base, "/screenshots/android-focus-light.webp")}
+            alt="QuizRadar Android Focus timer and study readiness view in light mode."
+            width="960"
+            height="2155"
+            loading="lazy"
+            decoding="async"
+          />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =====================================================================
+       6. FREQUENTLY ASKED QUESTIONS (`#faq`)
+       ===================================================================== -->
+  <section id="faq" class="page-section">
+    <div class="container faq-container">
+      <div class="section-head text-center animate-on-scroll">
+        <span class="eyebrow">Frequently Asked Questions</span>
+        <h2 class="section-title">Everything about QuizRadar, answered.</h2>
+      </div>
+
+      <div class="faq-list faq-list-centered animate-on-scroll" style="--reveal-delay: 80ms;">
+        {
+          FAQ_ITEMS.map((item, idx) => (
+            <details class="faq-item" open={idx === 0}>
+              <summary class="faq-summary">
+                <span>{item.question}</span>
+                <BrandIcon name="chevron-down" size={18} class="faq-chevron" />
+              </summary>
+              <p class="faq-answer">{item.answer}</p>
+            </details>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <!-- =====================================================================
+       7. STARRY HORIZON FINALE
+       ===================================================================== -->
+  <section class="finale-section">
+    <div class="container">
+      <div class="finale-card animate-on-scroll">
+        <CelestialSky showRadarArcs={true} />
+        <div class="finale-inner">
+          <BrandIcon name="quizradar" size={56} animated={true} class="finale-logo" />
+          <h2 class="finale-title">Put your semester on the radar.</h2>
+          <p class="finale-sub">
+            Free and open source under the MIT License. Install natively for background scans and
+            OS keyring storage, or open the WebAssembly companion right now.
+          </p>
+          <div class="finale-actions">
+            <a
+              href={PLATFORM_DOWNLOADS.windows.primaryUrl}
+              class="btn btn-sky-primary btn-lg"
+              data-dl-cta
+            >
+              <BrandIcon name="download" size={18} />
+              <span data-dl-label>{PLATFORM_DOWNLOADS.windows.label}</span>
+            </a>
+            <a href={downloadHref} class="btn btn-sky-secondary btn-lg">
+              <span>All Platforms & Checksums</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</Layout>
+
+<script>
+  import { detectClientPlatform, PLATFORM_DOWNLOADS } from "../lib/releaseData";
+
+  // 1. OS-aware primary download CTA routing
+  const os = detectClientPlatform(
+    navigator.userAgent || "",
+    (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform ||
+      navigator.platform ||
+      "",
+  );
+  const target = PLATFORM_DOWNLOADS[os];
+  document.querySelectorAll<HTMLAnchorElement>("[data-dl-cta]").forEach((anchor) => {
+    anchor.href = target.primaryUrl;
+  });
+  document.querySelectorAll<HTMLElement>("[data-dl-label]").forEach((span) => {
+    span.textContent = target.label;
+  });
+
+  // 2. Accessible Roving-Tabindex Real App View Switcher
+  const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-view-tab]"));
+  const panels = Array.from(document.querySelectorAll<HTMLElement>("[data-view-panel]"));
+
+  const activateView = (viewId: string, focusTab = false) => {
+    tabs.forEach((tab) => {
+      const active = tab.dataset.viewTab === viewId;
+      tab.classList.toggle("is-active", active);
+      tab.setAttribute("aria-selected", active ? "true" : "false");
+      tab.tabIndex = active ? 0 : -1;
+      if (active && focusTab) tab.focus();
+    });
+    panels.forEach((panel) => {
+      panel.hidden = panel.dataset.viewPanel !== viewId;
+    });
+  };
+
+  tabs.forEach((tab, index) => {
+    tab.addEventListener("click", () => {
+      if (tab.dataset.viewTab) activateView(tab.dataset.viewTab, false);
+    });
+
+    tab.addEventListener("keydown", (event) => {
+      let nextIndex: number | null = null;
+      if (event.key === "ArrowRight") nextIndex = (index + 1) % tabs.length;
+      else if (event.key === "ArrowLeft") nextIndex = (index - 1 + tabs.length) % tabs.length;
+      else if (event.key === "Home") nextIndex = 0;
+      else if (event.key === "End") nextIndex = tabs.length - 1;
+
+      if (nextIndex !== null) {
+        event.preventDefault();
+        const nextId = tabs[nextIndex]?.dataset.viewTab;
+        if (nextId) activateView(nextId, true);
+      }
+    });
+  });
+
+  // 3. Scroll-Progress Timeline (`scroll-progress-timeline`, compositor-only `scaleY`)
+  const timeline = document.querySelector<HTMLElement>("[data-scroll-timeline]");
+  const fill = document.querySelector<HTMLElement>("[data-timeline-fill]");
+  const stepEls = Array.from(document.querySelectorAll<HTMLElement>("[data-timeline-step]"));
+
+  if (timeline && fill && stepEls.length > 0) {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      fill.style.setProperty("--timeline-progress", "1");
+      stepEls.forEach((el) => el.classList.add("is-active"));
+    } else {
+      let ticking = false;
+      const updateTimeline = () => {
+        ticking = false;
+        const rect = timeline.getBoundingClientRect();
+        const triggerY = window.innerHeight * 0.62;
+        const raw = (triggerY - rect.top) / Math.max(rect.height, 1);
+        const clamped = Math.min(1, Math.max(0.06, raw));
+        fill.style.setProperty("--timeline-progress", clamped.toFixed(4));
+
+        stepEls.forEach((step, idx) => {
+          const sRect = step.getBoundingClientRect();
+          const reached = idx === 0 || sRect.top <= triggerY;
+          step.classList.toggle("is-active", reached);
+        });
+      };
+
+      const requestTick = () => {
+        if (!ticking) {
+          ticking = true;
+          window.requestAnimationFrame(updateTimeline);
+        }
+      };
+
+      window.addEventListener("scroll", requestTick, { passive: true });
+      window.addEventListener("resize", requestTick, { passive: true });
+      updateTimeline();
+    }
+  }
+</script>
+
+<style>
+  /* -------------------------------------------------------------------------
+     1. Hero Celestial Canopy + Real App Views Stage
+     ------------------------------------------------------------------------- */
+  .hero-section {
+    padding-block: 16px 52px;
+  }
+
+  .hero-sky-card {
+    position: relative;
+    border-radius: 28px;
+    overflow: hidden;
+    padding: 42px 48px 84px;
+    color: #ffffff;
+    box-shadow: var(--shadow-lg);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+  }
+
+  .hero-sky-content {
+    position: relative;
+    z-index: 1;
+    max-width: 820px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .hero-title {
+    font-size: clamp(2.25rem, 4.9vw, 3.85rem);
+    font-weight: 800;
+    line-height: 1.06;
+    letter-spacing: -0.032em;
+    color: #ffffff;
+    text-shadow: 0 2px 24px rgba(2, 6, 23, 0.28);
+  }
+
+  .hero-sub {
+    font-size: clamp(1rem, 1.35vw, 1.15rem);
+    line-height: 1.62;
+    color: rgba(241, 245, 249, 0.9);
+    max-width: 63ch;
+    text-wrap: pretty;
+  }
+
+  .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-block-start: 4px;
+  }
+
+  .hero-foot-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    font-size: 0.81rem;
+    color: rgba(226, 232, 240, 0.86);
+    margin-block-start: 2px;
+  }
+
+  .sky-foot-link {
+    font-weight: 600;
+    color: #ffffff;
+    text-decoration: underline;
+    text-decoration-color: rgba(255, 255, 255, 0.42);
+    text-underline-offset: 3px;
+    transition-property: color, text-decoration-color;
+    transition-duration: 150ms;
+    transition-timing-function: var(--ease-snappy);
+  }
+
+  /* Overlapping Real Product Stage */
+  .stage-wrap {
+    position: relative;
+    z-index: 2;
+    margin-block-start: -52px;
+    padding-inline: 22px;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .app-stage {
+    border-radius: 20px;
+    overflow: hidden;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .stage-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    background-color: var(--surface-elevated);
+    border-block-end: 1px solid var(--surface-border);
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .stage-tablist {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .stage-tab {
+    padding: 7px 13px;
+    border-radius: 10px;
+    font-size: 0.815rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    transition-property: transform, color, background-color, box-shadow;
+    transition-duration: 150ms;
+    transition-timing-function: var(--ease-snappy);
+  }
+
+  .stage-tab:active {
+    transform: scale(0.96);
+  }
+
+  .stage-tab.is-active {
+    background-color: var(--accent-fill);
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.32);
+  }
+
+  .stage-sky-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 11px;
+    border-radius: 9px;
+    border: 1px solid var(--surface-border);
+    background-color: var(--surface);
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    transition-property: transform, border-color, background-color, color;
+    transition-duration: 150ms;
+    transition-timing-function: var(--ease-snappy);
+  }
+
+  .stage-sky-switch:active {
+    transform: scale(0.96);
+  }
+
+  .switch-sun {
+    display: none;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .switch-sun :global(svg) {
+    color: #fbbf24;
+  }
+
+  .switch-moon {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .switch-moon :global(svg) {
+    color: var(--accent-ink);
+  }
+
+  :global(html.dark) .switch-sun {
+    display: inline-flex;
+  }
+
+  :global(html.dark) .switch-moon {
+    display: none;
+  }
+
+  .stage-frame {
+    background-color: var(--page);
+    padding: 14px 14px 0;
+  }
+
+  .stage-img {
+    width: 100%;
+    height: auto;
+    border-radius: 12px 12px 0 0;
+    box-shadow: var(--shadow-md);
+  }
+
+  .stage-caption-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px 20px;
+    padding: 14px 18px;
+    background-color: var(--surface);
+    border-block-start: 1px solid var(--surface-border);
+  }
+
+  .stage-caption-main {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    max-width: 820px;
+  }
+
+  .stage-badge {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background-color: var(--accent-soft);
+    color: var(--accent-ink);
+    white-space: nowrap;
+  }
+
+  .stage-caption-text {
+    font-size: 0.86rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  .stage-provenance {
+    font-family: var(--font-mono);
+    font-size: 0.71rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  /* -------------------------------------------------------------------------
+     Shared Section Header
+     ------------------------------------------------------------------------- */
+  .section-head {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    margin-block-end: 48px;
+  }
+
+  .section-lead code {
+    font-size: 0.9em;
+    padding: 1px 6px;
+    border-radius: 5px;
+    background-color: var(--accent-soft);
+    color: var(--accent-ink);
+  }
+
+  /* -------------------------------------------------------------------------
+     2. Scroll-Progress Timetable Anchor Timeline
+     ------------------------------------------------------------------------- */
+  .timeline-shell {
+    position: relative;
+    padding-inline-start: 56px;
+  }
+
+  .timeline-rail {
+    position: absolute;
+    inset-block: 16px 24px;
+    inset-inline-start: 19px;
+    width: 2px;
+    background-color: var(--surface-border);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  .timeline-fill {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(180deg, var(--accent) 0%, #8e24aa 60%, #fbbf24 100%);
+    transform-origin: top;
+    transform: scaleY(var(--timeline-progress, 0.1));
+  }
+
+  .timeline-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 34px;
+  }
+
+  .timeline-step {
+    position: relative;
+  }
+
+  .step-marker {
+    position: absolute;
+    inset-inline-start: -56px;
+    inset-block-start: 4px;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    font-weight: 700;
+    background-color: var(--surface);
+    border: 1px solid var(--border-strong);
+    color: var(--text-muted);
+    box-shadow: var(--shadow-sm);
+    transition-property: background-color, border-color, color, transform;
+    transition-duration: 200ms;
+    transition-timing-function: var(--ease-out-quart);
+  }
+
+  .timeline-step.is-active .step-marker {
+    background-color: var(--accent-fill);
+    border-color: var(--accent-fill);
+    color: #ffffff;
+  }
+
+  .step-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+    gap: 28px 40px;
+    align-items: center;
+  }
+
+  .step-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .step-kicker {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: var(--accent-ink);
+  }
+
+  .step-title {
+    font-size: clamp(1.2rem, 2vw, 1.48rem);
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--text);
+  }
+
+  .step-body {
+    font-size: 0.94rem;
+    line-height: 1.62;
+    color: var(--text-muted);
+    text-wrap: pretty;
+  }
+
+  .anchor-card {
+    background-color: var(--surface);
+    border: 1px solid var(--surface-border);
+    border-radius: var(--radius-lg);
+    padding: 20px 22px;
+    box-shadow: var(--shadow-md);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .anchor-card-top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .course-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background-color: var(--surface-elevated);
+    border: 1px solid var(--surface-border);
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .course-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background-color: var(--chip-color);
+  }
+
+  .course-chip-sep,
+  .course-chip-name {
+    font-weight: 500;
+    color: var(--text-muted);
+  }
+
+  .snippet-source {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--text-muted);
+  }
+
+  .snippet-quote {
+    font-size: 0.94rem;
+    line-height: 1.56;
+    color: var(--text);
+    padding: 12px 14px;
+    border-radius: 10px;
+    background-color: var(--page);
+    border-inline-start: 3px solid var(--accent);
+  }
+
+  .phrase-mark {
+    background-color: rgba(251, 191, 36, 0.22);
+    color: inherit;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+
+  .resolved-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.65fr);
+    gap: 10px;
+  }
+
+  .resolved-cell {
+    padding: 10px 12px;
+    border-radius: 10px;
+    background-color: var(--surface-elevated);
+    border: 1px solid var(--surface-border);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .resolved-label {
+    font-size: 0.69rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+  }
+
+  .resolved-val {
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .resolved-val.is-unassigned {
+    color: var(--status-warn);
+  }
+
+  .honesty-strip {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.76rem;
+    color: var(--text-muted);
+  }
+
+  .honesty-strip :global(svg) {
+    color: var(--status-ok);
+  }
+
+  /* -------------------------------------------------------------------------
+     3. Campus Sources Ledger
+     ------------------------------------------------------------------------- */
+  .sources-ledger {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border: 1px solid var(--surface-border);
+    border-radius: var(--radius-lg);
+    background-color: var(--surface);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+  }
+
+  .source-cell {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    border-inline-end: 1px solid var(--surface-border);
+    border-block-end: 1px solid var(--surface-border);
+  }
+
+  .source-cell:nth-child(3n) {
+    border-inline-end: 0;
+  }
+
+  .source-cell:nth-last-child(-n + 3) {
+    border-block-end: 0;
+  }
+
+  .source-cell-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .source-icon-wrap {
+    width: 42px;
+    height: 42px;
+    border-radius: 11px;
+    background-color: var(--page);
+    border: 1px solid var(--surface-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .source-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .source-meta h3 {
+    font-size: 0.98rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .protocol-tag {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--accent-ink);
+  }
+
+  .source-summary {
+    font-size: 0.865rem;
+    line-height: 1.56;
+    color: var(--text-muted);
+  }
+
+  /* -------------------------------------------------------------------------
+     4. Workflow Split (Calendar + Detail Proof)
+     ------------------------------------------------------------------------- */
+  .workflow-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
+    gap: 22px;
+  }
+
+  .workflow-card {
+    background-color: var(--surface);
+    border: 1px solid var(--surface-border);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  .workflow-copy {
+    padding: 28px 28px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+  }
+
+  .workflow-tag-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .mini-pill {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background-color: var(--surface-elevated);
+    border: 1px solid var(--surface-border);
+    color: var(--text-secondary);
+  }
+
+  .mini-pill-red {
+    background-color: rgba(220, 38, 38, 0.12);
+    border-color: rgba(239, 68, 68, 0.35);
+    color: var(--exam-red);
+    box-shadow: var(--exam-glow);
+  }
+
+  .shortcut-hint {
+    font-size: 0.76rem;
+    color: var(--text-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .workflow-copy h3 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1.26;
+    color: var(--text);
+  }
+
+  .workflow-copy p {
+    font-size: 0.9rem;
+    line-height: 1.6;
+    color: var(--text-muted);
+  }
+
+  .workflow-copy code {
+    font-size: 0.84rem;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background-color: var(--accent-soft);
+    color: var(--accent-ink);
+  }
+
+  .workflow-shot-wrap {
+    padding: 14px 18px 0;
+    background-color: var(--page-subtle);
+    border-block-start: 1px solid var(--surface-border);
+  }
+
+  .workflow-shot {
+    width: 100%;
+    height: auto;
+    border-radius: 10px 10px 0 0;
+  }
+
+  /* -------------------------------------------------------------------------
+     5. Native Android & 2x1 Starry Glance Widget
+     ------------------------------------------------------------------------- */
+  .android-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    gap: 44px;
+    align-items: center;
+  }
+
+  .android-copy {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .glance-widget-wrap {
+    width: 100%;
+    max-width: 390px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    margin-block: 6px;
+  }
+
+  .glance-caption {
+    font-family: var(--font-mono);
+    font-size: 0.71rem;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  .glance-widget {
+    position: relative;
+    border-radius: 22px;
+    overflow: hidden;
+    padding: 16px 18px;
+    color: #ffffff;
+    box-shadow: var(--shadow-md);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+  }
+
+  .glance-inner {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .glance-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .glance-pill {
+    padding: 3px 9px;
+    font-size: 0.7rem;
+  }
+
+  .glance-course {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.88);
+  }
+
+  .glance-title {
+    font-size: 0.98rem;
+    font-weight: 750;
+    letter-spacing: -0.015em;
+    color: #ffffff;
+  }
+
+  .glance-meta {
+    font-size: 0.76rem;
+    color: rgba(226, 232, 240, 0.88);
+  }
+
+  .android-points {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    margin-block: 4px;
+  }
+
+  .android-points li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 0.9rem;
+    line-height: 1.55;
+    color: var(--text-secondary);
+  }
+
+  .android-points li :global(svg) {
+    color: var(--status-ok);
+    margin-block-start: 3px;
+  }
+
+  .android-points code {
+    font-size: 0.8rem;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background-color: var(--accent-soft);
+    color: var(--accent-ink);
+  }
+
+  .android-cta-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-block-start: 4px;
+  }
+
+  .android-phones {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+  }
+
+  .phone-frame {
+    border-radius: 30px;
+    padding: 8px;
+    background-color: #0f172a;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+  }
+
+  .phone-primary {
+    width: min(260px, 54%);
+  }
+
+  .phone-secondary {
+    width: min(224px, 44%);
+    margin-block-start: 38px;
+  }
+
+  .phone-img {
+    width: 100%;
+    height: auto;
+    border-radius: 22px;
+  }
+
+  /* -------------------------------------------------------------------------
+     6. Frequently Asked Questions
+     ------------------------------------------------------------------------- */
+  .faq-container {
+    max-width: 840px;
+    margin-inline: auto;
+  }
+
+  .faq-list-centered {
+    margin-block-start: 28px;
+  }
+
+  .faq-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .faq-item {
+    background-color: var(--surface);
+    border: 1px solid var(--surface-border);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .faq-summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 16px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    font-size: 0.93rem;
+    font-weight: 650;
+    color: var(--text);
+  }
+
+  .faq-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .faq-summary :global(.faq-chevron) {
+    color: var(--text-muted);
+    transition-property: transform, color;
+    transition-duration: 180ms;
+    transition-timing-function: var(--ease-snappy);
+  }
+
+  .faq-item[open] .faq-summary :global(.faq-chevron) {
+    transform: rotate(180deg);
+    color: var(--accent-ink);
+  }
+
+  .faq-answer {
+    padding: 0 18px 18px;
+    font-size: 0.88rem;
+    line-height: 1.62;
+    color: var(--text-muted);
+  }
+
+  /* -------------------------------------------------------------------------
+     7. Starry Horizon Finale
+     ------------------------------------------------------------------------- */
+  .finale-section {
+    padding-block: 16px 84px;
+  }
+
+  .finale-card {
+    position: relative;
+    border-radius: 28px;
+    overflow: hidden;
+    padding: 60px 32px;
+    color: #ffffff;
+    box-shadow: var(--shadow-lg);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+  }
+
+  .finale-inner {
+    position: relative;
+    z-index: 1;
+    max-width: 640px;
+    margin-inline: auto;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .finale-inner :global(.finale-logo) {
+    border-radius: 14px;
+    box-shadow: 0 10px 28px rgba(2, 6, 23, 0.42);
+  }
+
+  .finale-title {
+    font-size: clamp(1.9rem, 3.6vw, 2.75rem);
+    font-weight: 800;
+    line-height: 1.1;
+    color: #ffffff;
+  }
+
+  .finale-sub {
+    font-size: 1rem;
+    line-height: 1.6;
+    color: rgba(241, 245, 249, 0.9);
+    text-wrap: pretty;
+  }
+
+  .finale-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-block-start: 6px;
+  }
+
+  /* -------------------------------------------------------------------------
+     Hover & Responsive Breakpoints (verified down to 320px)
+     ------------------------------------------------------------------------- */
+  @media (hover: hover) {
+    .sky-foot-link:hover {
+      text-decoration-color: #ffffff;
+    }
+
+    .stage-tab:not(.is-active):hover {
+      color: var(--text);
+      background-color: var(--surface-hover);
+    }
+
+    .stage-sky-switch:hover {
+      border-color: var(--border-strong);
+      color: var(--text);
+    }
+  }
+
+  @media (max-width: 980px) {
+    .hero-sky-card {
+      padding: 38px 28px 96px;
+      border-radius: 22px;
+    }
+
+    .stage-wrap {
+      margin-block-start: -56px;
+      padding-inline: 10px;
+    }
+
+    .step-grid,
+    .workflow-split,
+    .android-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .sources-ledger {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .source-cell:nth-child(3n) {
+      border-inline-end: 1px solid var(--surface-border);
+    }
+
+    .source-cell:nth-child(2n) {
+      border-inline-end: 0;
+    }
+
+    .source-cell:nth-last-child(-n + 3) {
+      border-block-end: 1px solid var(--surface-border);
+    }
+
+    .source-cell:nth-last-child(-n + 2) {
+      border-block-end: 0;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .hero-sky-card {
+      padding: 28px 20px 72px;
+      border-radius: 20px;
+    }
+
+    .hero-actions {
+      width: 100%;
+    }
+
+    .hero-actions .btn {
+      width: 100%;
+    }
+
+    .stage-wrap {
+      margin-block-start: -42px;
+      padding-inline: 0;
+    }
+
+    .stage-toolbar {
+      padding: 10px 12px;
+    }
+
+    .stage-tablist {
+      width: 100%;
+      overflow-x: auto;
+      flex-wrap: nowrap;
+      padding-block-end: 2px;
+    }
+
+    .stage-tab {
+      white-space: nowrap;
+      padding: 6px 10px;
+      font-size: 0.77rem;
+    }
+
+    .stage-sky-switch {
+      width: 100%;
+      justify-content: center;
+    }
+
+    .stage-frame {
+      padding: 8px 8px 0;
+    }
+
+    .timeline-shell {
+      padding-inline-start: 38px;
+    }
+
+    .timeline-rail {
+      inset-inline-start: 13px;
+    }
+
+    .step-marker {
+      inset-inline-start: -38px;
+      width: 28px;
+      height: 28px;
+      font-size: 0.7rem;
+    }
+
+    .anchor-card {
+      padding: 16px 14px;
+      min-width: 0;
+    }
+
+    .resolved-grid,
+    .sources-ledger {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .source-cell,
+    .source-cell:nth-child(n) {
+      border-inline-end: 0;
+      border-block-end: 1px solid var(--surface-border);
+    }
+
+    .source-cell:last-child {
+      border-block-end: 0;
+    }
+
+    .workflow-copy {
+      padding: 22px 20px 16px;
+    }
+
+    .phone-secondary {
+      display: none;
+    }
+
+    .phone-primary {
+      width: min(260px, 82%);
+    }
+
+    .finale-card {
+      padding: 44px 20px;
+    }
+
+    .finale-actions {
+      width: 100%;
+    }
+
+    .finale-actions .btn {
+      width: 100%;
+    }
+  }
+</style>

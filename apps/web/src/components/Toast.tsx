@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { AlertCircle, AlertTriangle, CheckCircle, Info, X } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
@@ -28,6 +28,16 @@ interface ToastProps {
 const ToastMessage: React.FC<ToastProps> = ({ toast, onDismiss }) => {
   const Icon = TOAST_ICONS[toast.type];
 
+  // Auto-dismiss: 4s default, 6s for errors, or custom duration if specified
+  useEffect(() => {
+    const timeoutMs =
+      toast.duration && toast.duration > 0 ? toast.duration : toast.type === "error" ? 6000 : 4000;
+    const timer = setTimeout(() => {
+      onDismiss(toast.id);
+    }, timeoutMs);
+    return () => clearTimeout(timer);
+  }, [toast.id, toast.type, toast.duration, onDismiss]);
+
   return (
     <div
       role={toast.type === "error" ? "alert" : "status"}
@@ -40,7 +50,7 @@ const ToastMessage: React.FC<ToastProps> = ({ toast, onDismiss }) => {
         type="button"
         onClick={() => onDismiss(toast.id)}
         aria-label={copy.common.close}
-        className="rounded-lg p-1 opacity-70 hover:opacity-100 transition"
+        className="rounded-lg p-1 opacity-70 hover:opacity-100 transition cursor-pointer"
       >
         <X className="h-4 w-4" aria-hidden="true" />
       </button>
@@ -54,13 +64,16 @@ export const ToastContainer: React.FC = () => {
 
   if (toasts.length === 0) return null;
 
+  // Cap visible toasts to maximum 2 concurrent items to prevent viewport obstruction
+  const visibleToasts = toasts.slice(-2);
+
   return (
     <div
       data-testid="toast-container"
       aria-live="polite"
       className="pointer-events-none fixed bottom-20 right-4 z-[120] flex flex-col gap-2 sm:bottom-6"
     >
-      {toasts.map((toast) => (
+      {visibleToasts.map((toast) => (
         <ToastMessage key={toast.id} toast={toast} onDismiss={removeToast} />
       ))}
     </div>

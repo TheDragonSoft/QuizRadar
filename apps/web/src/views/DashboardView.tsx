@@ -174,7 +174,9 @@ function SourceIcon({ name, className }: { name: string; className?: string }) {
  */
 const RemoteAnnouncementBanner: React.FC = () => {
   const isEnabled = useFeatureFlag("banner-announcement", false);
-  const payload = useFeatureFlagPayload<{ message?: string; active?: boolean }>("banner-announcement");
+  const payload = useFeatureFlagPayload<{ message?: string; active?: boolean }>(
+    "banner-announcement",
+  );
   const [dismissed, setDismissed] = useState(false);
 
   const message = payload?.message || (typeof payload === "string" ? payload : "");
@@ -202,7 +204,10 @@ const RemoteAnnouncementBanner: React.FC = () => {
       className="flex items-center justify-between gap-3 rounded-xl border border-blue-200/80 bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-blue-500/10 p-3 text-xs text-slate-800 dark:border-blue-800/60 dark:text-blue-100"
     >
       <div className="flex items-center gap-2.5 min-w-0">
-        <Sparkles className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" aria-hidden="true" />
+        <Sparkles
+          className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400"
+          aria-hidden="true"
+        />
         <span className="font-medium leading-snug">{message}</span>
       </div>
       <button
@@ -270,7 +275,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
     return selectedCourseIds.includes(courseId);
   };
 
-   const upcomingThisWeek = (dash.upcomingThisWeek || []).filter((a) =>
+  const upcomingThisWeek = (dash.upcomingThisWeek || []).filter((a) =>
     isCourseSelected(a.courseId),
   );
   const weekCount = upcomingThisWeek.length;
@@ -305,13 +310,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
 
   // v4 looks the rec card's room up from the matching assessment record.
   const roomByAssessment = new Map((assessments || []).map((a) => [a.id, a.room] as const));
-
-  // v4 hero spotlight: the next assessment, honouring the course filter.
-  const nextUp =
-    (dash.nextUp && isCourseSelected(dash.nextUp.courseId) ? dash.nextUp : null) ??
-    upcomingThisWeek[0] ??
-    (dash.allUpcoming || []).find((a) => isCourseSelected(a.courseId)) ??
-    null;
 
   const weekLabels = weekRangeLabels(dash.referenceDate);
   // The KPI card is the only sync summary visible on the mobile/PWA tier
@@ -373,6 +371,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
     return list;
   }, [dash.allUpcoming, config.customEvents, dash.referenceDate, courses]);
 
+  // v4 hero spotlight: the next assessment, honouring the course filter.
+  // Checks dash.nextUp, then upcoming this week, then allHorizonAssessments (unifying custom exams/quizzes).
+  const nextUp =
+    (dash.nextUp && isCourseSelected(dash.nextUp.courseId) ? dash.nextUp : null) ??
+    upcomingThisWeek[0] ??
+    allHorizonAssessments.find((a) => isCourseSelected(a.courseId)) ??
+    (dash.allUpcoming || []).find((a) => isCourseSelected(a.courseId)) ??
+    null;
+
+  // Track scroll position for adaptive parallax canopy collapse
+  const [isScrolled, setIsScrolled] = useState(false);
+  useEffect(() => {
+    const handleScroll = () => {
+      const main = document.querySelector("main");
+      const scrollY = main ? main.scrollTop : window.scrollY;
+      setIsScrolled(scrollY > 50);
+    };
+    const main = document.querySelector("main");
+    if (main) {
+      main.addEventListener("scroll", handleScroll, { passive: true });
+    }
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      if (main) main.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
+
   return (
     <div data-testid="dashboard-view" className="w-full relative space-y-6">
       {/* Sticky Observatory Canopy Hero Banner — Parallax Anchor */}
@@ -382,6 +408,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
         <NextUpHero
           assessment={nextUp}
           testId={isWidescreen ? "dashboard-next-up-hero-top" : "dashboard-next-up-hero"}
+          isScrolled={isScrolled}
           onOpenDetail={() => nextUp && openAssessmentDetail(nextUp.id)}
           onOpenCalendar={() => setView("calendar")}
           onConnect={() => openSettings("account")}
@@ -391,7 +418,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
 
       {/* Mobile Segmented Sub-Navigation Switcher (< 1024px) */}
       <nav aria-label="Dashboard sections" className="lg:hidden">
-        <div role="tablist" className="flex items-center gap-1 rounded-xl border border-slate-200/80 bg-slate-100 p-1 text-xs font-semibold dark:border-slate-700/80 dark:bg-slate-800/80">
+        <div
+          role="tablist"
+          className="flex items-center gap-1 rounded-xl border border-slate-200/80 bg-slate-100 p-1 text-xs font-semibold dark:border-slate-700/80 dark:bg-slate-800/80"
+        >
           <button
             type="button"
             role="tab"
@@ -425,8 +455,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
             <BarChart2 className="h-3.5 w-3.5" aria-hidden="true" />
             <span>{copy.dashboard.subtabs.overview}</span>
           </button>
-      </div>
-    </nav>
+        </div>
+      </nav>
 
       {/* Astronomical Timeline Horizon (Replaces the 4 generic SaaS KPI cards) */}
       <section className={mobileTab === "overview" ? "block" : "hidden lg:block"}>
@@ -628,35 +658,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
               </div>
             </div>
 
-            {/* Upcoming Assessments Radar List */}
-            {dash.allUpcoming && dash.allUpcoming.length > 0 && (
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 shadow-xs space-y-2.5">
-                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
-                  <div className="flex items-center gap-1.5">
-                    <GraduationCap className="h-4 w-4 text-[var(--accent-ink)]" aria-hidden="true" />
-                    <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                      Upcoming Assessments Radar
-                    </h2>
-                  </div>
-                  <span className="text-[11px] font-semibold text-slate-500 tabular-nums">
-                    {dash.allUpcoming.filter((a) => isCourseSelected(a.courseId)).length} assessments
-                  </span>
-                </div>
-                <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
-                  {dash.allUpcoming
-                    .filter((a) => isCourseSelected(a.courseId))
-                    .slice(0, 4)
-                    .map((a) => (
-                      <TimelineRow
-                        key={a.id}
-                        assessment={a}
-                        onClick={() => openAssessmentDetail(a.id)}
-                      />
-                    ))}
-                </div>
-              </div>
-            )}
-
             {/* Daily Study Roadmap */}
             <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 shadow-xs">
               <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-200 dark:border-slate-800">
@@ -784,6 +785,7 @@ const AllClearEmpty: React.FC<{ onCreateEvent: () => void }> = ({ onCreateEvent 
 interface NextUpHeroProps {
   assessment: Assessment | null;
   testId?: string;
+  isScrolled?: boolean;
   onOpenDetail: () => void;
   onOpenCalendar: () => void;
   onConnect: () => void;
@@ -912,7 +914,8 @@ const NextUpHeroStars: React.FC = () => (
       aria-hidden="true"
       className="pointer-events-none absolute inset-0 -z-10 dark:hidden"
       style={{
-        backgroundImage: "radial-gradient(480px 240px at 92% 0%, rgba(253,224,71,0.18), transparent 70%)",
+        backgroundImage:
+          "radial-gradient(480px 240px at 92% 0%, rgba(253,224,71,0.18), transparent 70%)",
       }}
     />
     {/* Night sky: two bright sparkling star layers pulsing against each other */}
@@ -938,12 +941,103 @@ const NextUpHeroStars: React.FC = () => (
 const NextUpHero: React.FC<NextUpHeroProps> = ({
   assessment,
   testId = "dashboard-next-up-hero",
+  isScrolled = false,
   onOpenDetail,
   onOpenCalendar,
   onConnect,
   onSync,
 }) => {
   const courses = useAppStore((s) => s.data.schedule.courses);
+
+  if (isScrolled) {
+    if (!assessment) {
+      return (
+        <section
+          data-testid={testId}
+          className="relative overflow-hidden rounded-xl border border-blue-900/40 bg-slate-950/85 px-4 py-2 shadow-md backdrop-blur-md transition-all duration-300"
+        >
+          <NextUpHeroStars />
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-xs font-semibold text-white">
+              <Sparkles className="h-3.5 w-3.5 text-amber-300" aria-hidden="true" />
+              <span>{copy.dashboard.heroEmptyTitle}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onConnect}
+                className="flex cursor-pointer items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11px] font-bold text-[#1557b0] transition hover:bg-blue-50"
+              >
+                <UserCheck className="h-3 w-3" aria-hidden="true" />
+                <span>{copy.dashboard.heroConnectAccount}</span>
+              </button>
+              <button
+                type="button"
+                onClick={onSync}
+                className="flex cursor-pointer items-center gap-1 rounded-lg bg-slate-900/60 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-slate-900"
+              >
+                <RefreshCw className="h-3 w-3" aria-hidden="true" />
+                <span>{copy.dashboard.heroSyncRadar}</span>
+              </button>
+            </div>
+          </div>
+        </section>
+      );
+    }
+
+    const days = assessment.daysUntil ?? null;
+    const countdownLabel =
+      days === 0
+        ? copy.dashboard.heroToday
+        : days === 1
+          ? copy.dashboard.heroTomorrow
+          : days !== null
+            ? copy.dashboard.heroInDays(days)
+            : "";
+    const room = assessment.room?.trim();
+    const heroCourseBadge = assessment.courseId
+      ? `${courseDisplayName(assessment.courseId, courses)} · ${assessment.assessmentType}`
+      : assessment.assessmentType;
+
+    return (
+      <section
+        data-testid={testId}
+        className="relative overflow-hidden rounded-xl border border-blue-900/40 bg-slate-950/85 px-4 py-2 shadow-md backdrop-blur-md transition-all duration-300"
+      >
+        <NextUpHeroStars />
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            {countdownLabel && (
+              <span className="flex items-center gap-1 rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-extrabold text-slate-950 shrink-0">
+                <Zap className="h-2.5 w-2.5" aria-hidden="true" />
+                <span>{copy.dashboard.heroUpNext(countdownLabel)}</span>
+              </span>
+            )}
+            <span className="truncate text-xs font-bold text-white">
+              {heroCourseBadge}: {assessment.title}
+            </span>
+            {room && (
+              <span className="hidden md:inline-flex items-center gap-1 text-[11px] text-emerald-300 shrink-0">
+                <MapPin className="h-2.5 w-2.5" />
+                <span>{copy.dashboard.roomLabel(stripRoomPrefix(room))}</span>
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={onOpenDetail}
+              className="flex cursor-pointer items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11px] font-bold text-[#1557b0] transition hover:bg-blue-50"
+            >
+              <span>{copy.dashboard.heroStudyPlan}</span>
+              <ChevronRight className="h-3 w-3" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   if (!assessment) {
     return (
       <section data-testid={testId} className={HERO_SHELL}>

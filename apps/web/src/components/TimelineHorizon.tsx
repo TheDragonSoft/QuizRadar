@@ -107,7 +107,10 @@ export const TimelineHorizon: React.FC<TimelineHorizonProps> = ({
   // Filter to upcoming assessments with dates, sorted chronologically
   const horizonNodes = useMemo<HorizonNode[]>(() => {
     const upcoming = assessments
-      .filter((a) => a.isUpcoming && a.daysUntil !== null && a.daysUntil !== undefined && a.daysUntil >= 0)
+      .filter(
+        (a) =>
+          a.isUpcoming && a.daysUntil !== null && a.daysUntil !== undefined && a.daysUntil >= 0,
+      )
       .sort((a, b) => (a.daysUntil ?? 0) - (b.daysUntil ?? 0));
 
     if (upcoming.length === 0) return [];
@@ -127,7 +130,8 @@ export const TimelineHorizon: React.FC<TimelineHorizonProps> = ({
       const rec = recMap.get(a.id);
       const totalTopics = rec?.topics?.length ?? 0;
       const completedTopics = rec?.topics?.filter((t) => t.completed).length ?? 0;
-      const topicProgressPct = totalTopics > 0 ? Math.round((completedTopics / totalTopics) * 100) : 0;
+      const topicProgressPct =
+        totalTopics > 0 ? Math.round((completedTopics / totalTopics) * 100) : 0;
 
       const isConflict = conflictMap.has(a.id);
       const conflictPartner = conflictMap.get(a.id);
@@ -192,11 +196,11 @@ export const TimelineHorizon: React.FC<TimelineHorizonProps> = ({
               </h2>
               <span className="inline-flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase text-sky-600 dark:text-sky-300">
                 <Radio className="h-2.5 w-2.5 animate-pulse" aria-hidden="true" />
-                Orbital Radar
+                Academic Radar
               </span>
             </div>
             <p className="text-xs text-[var(--text-muted)] font-medium">
-              Logarithmic projection of approaching academic bodies &amp; gravity windows
+              Logarithmic timeline of upcoming exams, quizzes &amp; preparation windows
             </p>
           </div>
         </div>
@@ -237,8 +241,8 @@ export const TimelineHorizon: React.FC<TimelineHorizonProps> = ({
                 readinessPct !== null && readinessPct >= 75
                   ? "text-emerald-500"
                   : readinessPct !== null && readinessPct >= 40
-                  ? "text-amber-500"
-                  : "text-slate-400"
+                    ? "text-amber-500"
+                    : "text-slate-400"
               }`}
               aria-hidden="true"
             />
@@ -258,18 +262,28 @@ export const TimelineHorizon: React.FC<TimelineHorizonProps> = ({
           <div className="hidden lg:flex items-center gap-2 rounded-xl border border-[var(--surface-border)] bg-[var(--page)] px-3 py-1.5 text-xs shadow-xs">
             <span
               className={`inline-block h-2 w-2 shrink-0 rounded-full ${
-                auth.authenticated ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : "bg-slate-400"
+                auth.authenticated
+                  ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"
+                  : "bg-slate-400"
               }`}
               aria-hidden="true"
             />
             <span
               className="max-w-[130px] truncate text-[11px] font-semibold text-[var(--text)]"
-              title={auth.authenticated ? auth.email || config.userEmail || "Connected" : copy.dashboard.kpiNotConnected}
+              title={
+                auth.authenticated
+                  ? auth.email || config.userEmail || "Connected"
+                  : copy.dashboard.kpiNotConnected
+              }
             >
-              {auth.authenticated ? auth.email || config.userEmail || "Google Account" : copy.dashboard.kpiNotConnected}
+              {auth.authenticated
+                ? auth.email || config.userEmail || "Google Account"
+                : copy.dashboard.kpiNotConnected}
             </span>
             <span className="text-[10px] text-[var(--text-muted)]">
-              {activeSourceCount > 0 ? copy.dashboard.kpiSyncActive(activeSourceCount) : copy.dashboard.kpiSyncNone}
+              {activeSourceCount > 0
+                ? copy.dashboard.kpiSyncActive(activeSourceCount)
+                : copy.dashboard.kpiSyncNone}
               {lastSyncText ? ` · ${lastSyncText}` : ""}
             </span>
             <button
@@ -285,7 +299,9 @@ export const TimelineHorizon: React.FC<TimelineHorizonProps> = ({
         </div>
         {typeBreakdown.length > 0 && (
           <div className="w-full flex items-center gap-1.5 pt-1 text-[10px] text-[var(--text-muted)]">
-            <span className="font-semibold uppercase tracking-wider">{copy.dashboard.kpiTypeBreakdown}:</span>
+            <span className="font-semibold uppercase tracking-wider">
+              {copy.dashboard.kpiTypeBreakdown}:
+            </span>
             {typeBreakdown.map(([type, count]) => (
               <span
                 key={type}
@@ -298,18 +314,22 @@ export const TimelineHorizon: React.FC<TimelineHorizonProps> = ({
         )}
       </div>
 
-      {/* ASTRONOMICAL CELESTIAL HORIZON BODY */}
+      {/* ACADEMIC HORIZON BODY */}
       <div className="relative z-10 p-4 sm:p-6" data-testid="timeline-horizon">
         {horizonNodes.length === 0 ? (
-          /* EMPTY CELESTIAL HORIZON STATE */
+          /* EMPTY HORIZON STATE */
           <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
             <div className="relative flex h-16 w-16 items-center justify-center rounded-3xl bg-[var(--page)] border border-[var(--surface-border)] shadow-inner mb-4">
-              <Compass className="h-8 w-8 text-[var(--text-muted)] animate-[spin_12s_linear_infinite]" aria-hidden="true" />
+              <Compass
+                className="h-8 w-8 text-[var(--text-muted)] animate-[spin_12s_linear_infinite]"
+                aria-hidden="true"
+              />
               <div className="absolute inset-0 rounded-3xl border border-sky-400/20 animate-ping opacity-30" />
             </div>
-            <h3 className="text-base font-bold text-[var(--text)]">Clear Orbital Horizon</h3>
+            <h3 className="text-base font-bold text-[var(--text)]">Clear Exam Horizon</h3>
             <p className="mt-1 max-w-md text-xs text-[var(--text-muted)] leading-relaxed">
-              No celestial academic events detected in your near-field trajectory. Sync your university accounts or add your course timetable to project approaching quizzes and deadlines.
+              No upcoming exams or quizzes in your radar. Connect your university accounts or add
+              your course timetable to project upcoming deadlines.
             </p>
             <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">
               <button
@@ -331,14 +351,14 @@ export const TimelineHorizon: React.FC<TimelineHorizonProps> = ({
             </div>
           </div>
         ) : (
-          /* POPULATED HORIZON: LOGARITHMIC CURVE & CELESTIAL BODIES */
+          /* POPULATED HORIZON: LOGARITHMIC CURVE & UPCOMING EXAMS */
           <div className="space-y-4">
             {/* Horizon Temporal Scale Labels */}
             <div className="relative flex items-center justify-between text-[11px] font-bold tracking-wider uppercase text-[var(--text-muted)] px-2">
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1.5 text-rose-500 dark:text-rose-400">
                   <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-ping" />
-                  <span>T-0 / 48H Crunch Orbit</span>
+                  <span>T-0 / 48h Exam Window</span>
                 </div>
                 {conflictAlerts.some((c) => !c.isMitigated) && (
                   <button
@@ -347,18 +367,18 @@ export const TimelineHorizon: React.FC<TimelineHorizonProps> = ({
                     className="cursor-pointer inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-600 dark:text-rose-300 transition"
                   >
                     <Sparkles className="h-2.5 w-2.5 text-rose-400" aria-hidden="true" />
-                    <span>Balance 48h Flight Path</span>
+                    <span>Auto-Balance 48h Schedule</span>
                   </button>
                 )}
               </div>
               <div className="hidden sm:block text-amber-500 dark:text-amber-400">
-                <span>7-Day Proximity</span>
+                <span>7-Day Horizon</span>
               </div>
               <div className="hidden md:block text-sky-500 dark:text-sky-400">
-                <span>14-Day Trajectory</span>
+                <span>14-Day Horizon</span>
               </div>
               <div className="text-indigo-400 dark:text-indigo-300">
-                <span>Deep Space Horizon (30d+)</span>
+                <span>30+ Days Ahead</span>
               </div>
             </div>
 
@@ -367,7 +387,7 @@ export const TimelineHorizon: React.FC<TimelineHorizonProps> = ({
               <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.2)_50%,transparent_100%)] animate-[shimmer_3s_infinite]" />
             </div>
 
-            {/* Celestial Nodes Grid / Horizon Scrollable Strip */}
+            {/* Upcoming Exams Grid / Horizon Scrollable Strip */}
             <div className="relative overflow-x-auto pb-3 pt-2 scrollbar-thin">
               <div className="flex min-w-[700px] items-stretch gap-4 px-1">
                 {horizonNodes.map((node) => {
@@ -387,20 +407,20 @@ export const TimelineHorizon: React.FC<TimelineHorizonProps> = ({
                   const accentColor = a.color || enrolled?.color || palette.color;
                   const chipStyle = courseAccessibleChip(accentColor, theme === "dark");
 
-                  // Urgency-based cosmic styling
+                  // Urgency-based styling
                   const cardBorderClass = isCrunch48h
                     ? "border-rose-500/60 dark:border-rose-500/70 shadow-[0_0_20px_rgba(244,63,94,0.22)] bg-gradient-to-b from-rose-500/5 to-transparent"
                     : isConflict
-                    ? "border-amber-500/60 dark:border-amber-500/70 shadow-[0_0_16px_rgba(245,158,11,0.2)]"
-                    : daysUntil <= 7
-                    ? "border-sky-500/40 dark:border-sky-500/50 hover:border-sky-400 shadow-sm"
-                    : "border-[var(--surface-border)] hover:border-[var(--border-subtle)] shadow-2xs";
+                      ? "border-amber-500/60 dark:border-amber-500/70 shadow-[0_0_16px_rgba(245,158,11,0.2)]"
+                      : daysUntil <= 7
+                        ? "border-sky-500/40 dark:border-sky-500/50 hover:border-sky-400 shadow-sm"
+                        : "border-[var(--surface-border)] hover:border-[var(--border-subtle)] shadow-2xs";
 
                   const orbPulseClass = isCrunch48h
                     ? "bg-rose-500 text-white shadow-[0_0_16px_rgba(244,63,94,0.8)] animate-pulse"
                     : daysUntil <= 7
-                    ? "bg-amber-500 text-slate-900 shadow-[0_0_12px_rgba(245,158,11,0.6)]"
-                    : "bg-sky-500 text-slate-950 shadow-[0_0_10px_rgba(56,189,248,0.5)]";
+                      ? "bg-amber-500 text-slate-900 shadow-[0_0_12px_rgba(245,158,11,0.6)]"
+                      : "bg-sky-500 text-slate-950 shadow-[0_0_10px_rgba(56,189,248,0.5)]";
 
                   return (
                     <div
@@ -414,13 +434,13 @@ export const TimelineHorizon: React.FC<TimelineHorizonProps> = ({
                       }}
                       tabIndex={0}
                       role="button"
-                      aria-label={`Celestial Event: ${a.title} for ${a.courseId || "Course"}, in ${daysUntil} days`}
+                      aria-label={`Upcoming Exam: ${a.title} for ${a.courseId || "Course"}, in ${daysUntil} days`}
                       className={`group relative flex flex-col justify-between w-64 shrink-0 rounded-2xl border p-3.5 bg-[var(--page)] transition-all duration-200 hover:-translate-y-1 hover:shadow-md cursor-pointer ${cardBorderClass}`}
                     >
                       {/* Top Node Header: Urgency Orb + Course Badge + Countdown */}
                       <div>
                         <div className="flex items-center justify-between gap-2 mb-2.5">
-                          {/* Celestial Orb with Orbital Topic Ring */}
+                          {/* Indicator with Topic Completion Ring */}
                           <div className="relative flex items-center justify-center h-8 w-8">
                             <svg className="h-8 w-8 -rotate-90" viewBox="0 0 32 32">
                               <circle
@@ -468,8 +488,8 @@ export const TimelineHorizon: React.FC<TimelineHorizonProps> = ({
                               isCrunch48h
                                 ? "bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/30"
                                 : daysUntil <= 7
-                                ? "bg-amber-500/20 text-amber-800 dark:text-amber-200 border border-amber-500/30"
-                                : "bg-[var(--surface)] text-[var(--text-muted)] border border-[var(--surface-border)]"
+                                  ? "bg-amber-500/20 text-amber-800 dark:text-amber-200 border border-amber-500/30"
+                                  : "bg-[var(--surface)] text-[var(--text-muted)] border border-[var(--surface-border)]"
                             }`}
                           >
                             <Clock className="h-3 w-3" aria-hidden="true" />
@@ -477,8 +497,8 @@ export const TimelineHorizon: React.FC<TimelineHorizonProps> = ({
                               {daysUntil === 0
                                 ? "Today"
                                 : daysUntil === 1
-                                ? "Tomorrow"
-                                : `T-${daysUntil}d`}
+                                  ? "Tomorrow"
+                                  : `T-${daysUntil}d`}
                             </span>
                           </span>
                         </div>
@@ -494,13 +514,18 @@ export const TimelineHorizon: React.FC<TimelineHorizonProps> = ({
                           {(a.displayTime || a.startTime) && (
                             <>
                               <span aria-hidden="true">·</span>
-                              <span className="tabular-nums font-semibold">{a.displayTime || a.startTime}</span>
+                              <span className="tabular-nums font-semibold">
+                                {a.displayTime || a.startTime}
+                              </span>
                             </>
                           )}
                           {a.room && (
                             <>
                               <span aria-hidden="true">·</span>
-                              <span className="inline-flex items-center gap-0.5 truncate max-w-[80px]" title={a.room}>
+                              <span
+                                className="inline-flex items-center gap-0.5 truncate max-w-[80px]"
+                                title={a.room}
+                              >
                                 <MapPin className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
                                 {a.room}
                               </span>
@@ -525,7 +550,9 @@ export const TimelineHorizon: React.FC<TimelineHorizonProps> = ({
                             <span>topics</span>
                           </div>
                         ) : (
-                          <span className="text-[var(--text-muted)] font-medium">Ready to review</span>
+                          <span className="text-[var(--text-muted)] font-medium">
+                            Ready to review
+                          </span>
                         )}
 
                         <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-[var(--accent-ink)] group-hover:translate-x-0.5 transition-transform">

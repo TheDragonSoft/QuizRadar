@@ -210,8 +210,7 @@ export function applyThemeToDocument(theme: ThemeMode): void {
 
   const isDark = isDarkTheme(theme);
   const currentThemeAttr = root.getAttribute("data-theme");
-  const normalizedAttr =
-    theme === "dark" ? "obsidian" : theme === "light" ? "solar" : theme;
+  const normalizedAttr = theme === "dark" ? "obsidian" : theme === "light" ? "solar" : theme;
 
   if (root.classList.contains("dark") === isDark && currentThemeAttr === normalizedAttr) {
     return;
@@ -257,8 +256,7 @@ export function applyThemeToDocument(theme: ThemeMode): void {
     // tab switches, ...) snapshot the hero and replay its scene animation.
     root.classList.add("hero-scene-transition");
     const vt = doc.startViewTransition(flip) as
-      | { finished?: Promise<unknown>; ready?: Promise<unknown> }
-      | undefined;
+      { finished?: Promise<unknown>; ready?: Promise<unknown> } | undefined;
     const cleanup = () => root.classList.remove("hero-scene-transition");
     if (vt?.ready && typeof vt.ready.catch === "function") {
       vt.ready.catch(() => {});
@@ -817,11 +815,12 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       return;
     }
     const id = toast.id || `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const defaultDuration = toast.type === "error" ? 6000 : 4000;
     const fullToast: ToastItem = {
       id,
       message: toast.message,
       type: toast.type,
-      duration: toast.duration ?? 4000,
+      duration: toast.duration ?? defaultDuration,
     };
 
     set((state) => ({
@@ -1249,16 +1248,22 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
 
         for (const slot of schedule.slots ?? []) {
           if (slot.dayIndex === dayIdx) {
-            const sStart = parseInt(slot.startTime.slice(0, 2), 10) * 60 + parseInt(slot.startTime.slice(3, 5), 10);
-            const sEnd = parseInt(slot.endTime.slice(0, 2), 10) * 60 + parseInt(slot.endTime.slice(3, 5), 10);
+            const sStart =
+              parseInt(slot.startTime.slice(0, 2), 10) * 60 +
+              parseInt(slot.startTime.slice(3, 5), 10);
+            const sEnd =
+              parseInt(slot.endTime.slice(0, 2), 10) * 60 + parseInt(slot.endTime.slice(3, 5), 10);
             if (Math.max(startMin, sStart) < Math.min(endMin, sEnd)) return false;
           }
         }
         for (const ev of existingEvents) {
           if (ev.dateIso === dateIso) {
             if (ev.startTime && ev.endTime) {
-              const eStart = parseInt(ev.startTime.slice(0, 2), 10) * 60 + parseInt(ev.startTime.slice(3, 5), 10);
-              const eEnd = parseInt(ev.endTime.slice(0, 2), 10) * 60 + parseInt(ev.endTime.slice(3, 5), 10);
+              const eStart =
+                parseInt(ev.startTime.slice(0, 2), 10) * 60 +
+                parseInt(ev.startTime.slice(3, 5), 10);
+              const eEnd =
+                parseInt(ev.endTime.slice(0, 2), 10) * 60 + parseInt(ev.endTime.slice(3, 5), 10);
               if (Math.max(startMin, eStart) < Math.min(endMin, eEnd)) return false;
             } else {
               return false;
@@ -1300,9 +1305,24 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         const secondDate: string = second.dateIso!;
 
         const planSchedule = [
-          { target: first, dayOffset: 3, label: "Deep Focus Review", blockId: `study-block-${first.id}` },
-          { target: second, dayOffset: 2, label: "Deep Focus Review", blockId: `study-block-${second.id}` },
-          { target: first, dayOffset: 1, label: "Final Pre-Exam Polish", blockId: `study-block-${first.id}-polish` },
+          {
+            target: first,
+            dayOffset: 3,
+            label: "Deep Focus Review",
+            blockId: `study-block-${first.id}`,
+          },
+          {
+            target: second,
+            dayOffset: 2,
+            label: "Deep Focus Review",
+            blockId: `study-block-${second.id}`,
+          },
+          {
+            target: first,
+            dayOffset: 1,
+            label: "Final Pre-Exam Polish",
+            blockId: `study-block-${first.id}-polish`,
+          },
         ];
 
         if (secondDate > firstDate) {

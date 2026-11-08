@@ -1,44 +1,49 @@
 # Contributing to QuizRadar
 
-Thank you for your interest in contributing to QuizRadar! QuizRadar is a local-first, zero-server academic dashboard designed for university students to track quizzes, exams, assignments, study tasks, and schedules.
+Thank you for contributing to QuizRadar — a local-first, zero-server academic dashboard for university students. Both human contributors and AI coding agents share the same workflow defined in [`AGENTS.md`](./AGENTS.md).
 
 ---
 
 ## 1. Golden Rules & Architectural Principles
 
-Before writing code, please review these core rules:
-
-1. **Honesty Doctrine:** Never fabricate data, rooms, countdowns, grades, or fake success indicators. If data is unknown or missing, render `"—"`. Estimations must be explicitly labeled with provenance.
-2. **Zero Secrets in Code or Git:** Never commit API keys, OAuth client secrets, tokens, or credentials. Use PKCE for OAuth. Secrets live exclusively in OS Keyring (Desktop), EncryptedSharedPreferences (Android), or ephemeral memory (Web/PWA).
-3. **Core Purity:** All core domain logic, parsers, conflict detectors, study block generators, SQLite persistence, and source integrations live strictly in the Rust `core/` crate. Shells (`apps/desktop`, `apps/mobile-android`, `apps/web`) are thin UI wrappers.
-4. **Single Source of Truth for Versions:** Never hardcode version literals. Update `tooling/version.json` and run `node tooling/generate-version.mjs --apply`.
+1. **Honesty Doctrine:** Never fabricate data, rooms, countdowns, grades, or fake success indicators. Missing rooms render `"—"`. Estimations must be explicitly labeled with provenance.
+2. **Zero Secrets in Code or Git:** Never commit API keys, OAuth client secrets, tokens, or credentials. Use PKCE for OAuth (see `AGENTS.md` §3.2 for the sole scoped desktop override). Secrets live exclusively in OS Keyring (Desktop), EncryptedSharedPreferences (Android), or ephemeral memory (Web/PWA).
+3. **Core Purity:** Domain logic, parsers, conflict detection, study blocks, SQLite persistence, and source integrations live in the pure Rust `core/` crate. Shells (`apps/desktop`, `apps/mobile-android`, `apps/web`) stay thin UI wrappers.
+4. **Conflict-Free Versioning (`changes/<slug>.md`):** Never hardcode version literals or edit `tooling/version.json` on feature branches. Record changes via `pnpm agent:note`; GitHub Actions (`.github/workflows/version-bump.yml`) automatically updates `tooling/version.json`, all 5 version sinks, `Cargo.lock`, `CHANGELOG.md`, and `docs/worklog/` on merge to `main`.
 
 ---
 
-## 2. Prerequisites & Development Environment
+## 2. Multi-Agent & Contributor Workflow
 
-- **Rust:** Stable toolchain (`rustup update stable`) with `rustfmt` and `clippy`.
-- **Node.js:** Node.js 20+ with `pnpm` (v9+).
-- **Java:** JDK 21 (Temurin / Adoptium recommended).
-- **Android SDK:** Compile SDK 35, Command-line Tools, Build Tools 34.0.0+.
+1. **Install dependencies & local git hooks:**
+   ```powershell
+   pnpm install
+   ```
+   (`prepare` installs `tooling/git-hooks` automatically; run `pnpm hooks:install` manually anytime.)
+2. **Run preflight before starting work:**
+   ```powershell
+   pnpm agent:preflight
+   ```
+3. **Create a branch/handoff note before pushing:**
+   ```powershell
+   pnpm agent:note --bump patch --surfaces core,web --agent human --summary "Describe your change" --verify "cargo test --workspace; pnpm test"
+   ```
 
 ---
 
-## 3. Verification Commands
+## 3. Verification Gates
 
-All pull requests must pass the complete workspace quality gates before merging:
-
-### Web Tier (React 19 + TypeScript + Vite)
+### Web & Tooling (`apps/web/`, `tooling/`)
 
 ```powershell
-pnpm install
+pnpm --dir apps/web build:wasm
 pnpm format:check
 pnpm lint
 pnpm typecheck
 pnpm test
 ```
 
-### Rust Core (`core/`)
+### Rust Workspace (`core/`, `apps/desktop/src-tauri/`)
 
 ```powershell
 cargo fmt --all --check
@@ -46,7 +51,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-### Android App (`apps/mobile-android/`)
+### Android App (`apps/mobile-android/`, JDK 21)
 
 ```powershell
 cd apps/mobile-android
@@ -55,15 +60,11 @@ cd apps/mobile-android
 
 ---
 
-## 4. Conventional Commits & Pull Requests
+## 4. Conventional Commits
 
-We follow conventional commit format:
+Commit messages are validated by local git hooks and CI (`tooling/agent-gate.mjs`):
 
-- `feat(scope): ...`
-- `fix(scope): ...`
-- `test(scope): ...`
-- `docs(scope): ...`
-- `chore(scope): ...`
-- `phase(N): ...` (for rebuild phase milestones)
-
-Ensure your branch is clean, formatted, tested, and contains no committed test databases or personal tokens.
+- `feat(scope): ...` (minor bump)
+- `fix(scope): ...` / `perf(scope): ...` (patch bump)
+- `feat(scope)!: ...` or `BREAKING CHANGE:` footer (major bump)
+- `refactor(scope): ...` / `test(scope): ...` / `docs(scope): ...` / `chore(scope): ...` / `ci(scope): ...`

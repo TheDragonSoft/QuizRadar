@@ -1,0 +1,78 @@
+name: Version Rollup
+
+# Automatically rolls up conflict-free per-branch agent fragments (`changes/*.md`)
+# and Conventional Commits on every merge/push to `main`:
+#   - Bumps `tooling/version.json` + all 5 version sinks + workspace Cargo.lock
+#   - Updates `CHANGELOG.md` and `docs/STATUS.md`
+#   - Archives detailed agent handoffs into `docs/worklog/YYYY-MM.md`
+#   - Removes consumed `changes/*.md` files
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+# Serialize pushes to `main` so back-to-back merges never cancel mid-commit or race.
+concurrency:
+  group: version-bump-main
+  cancel-in-progress: false
+
+jobs:
+  rollup:
+    name: SemVer & Agent Worklog Rollup
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      !startsWith(github.event.head_commit.message, 'chore(release):')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Inspect pending version rollup
+        id: plan
+        run: |
+          PLAN_JSON="$(node tooling/version-rollup.mjs --dry-run --json)"
+          echo "$PLAN_JSON"
+          HAS_WORK="$(node -e 'const p = JSON.parse(process.argv[1]); console.log(p.hasWork ? "true" : "false");' "$PLAN_JSON")"
+          NEXT_VER="$(node -e 'const p = JSON.parse(process.argv[1]); console.log(p.nextVersion);' "$PLAN_JSON")"
+          BUMP="$(node -e 'const p = JSON.parse(process.argv[1]); console.log(p.bump);' "$PLAN_JSON")"
+          echo "has_work=${HAS_WORK}" >> "$GITHUB_OUTPUT"
+          echo "next_version=${NEXT_VER}" >> "$GITHUB_OUTPUT"
+          echo "bump=${BUMP}" >> "$GITHUB_OUTPUT"
+
+      - name: Apply SemVer bump, stamp 5 sinks, update CHANGELOG & archive worklog
+        if: steps.plan.outputs.has_work == 'true'
+        run: |
+          node tooling/version-rollup.mjs --apply
+          node tooling/generate-version.mjs --check
+
+      - name: Commit & push release rollup to main
+        if: steps.plan.outputs.has_work == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Working tree unchanged after rollup; nothing to commit."
+            exit 0
+          fi
+          if [ "${{ steps.plan.outputs.bump }}" != "none" ]; then
+            MSG="chore(release): bump version to v${{ steps.plan.outputs.next_version }}"
+          else
+            MSG="chore(release): archive agent worklog notes"
+          fi
+          git commit -m "${MSG}"
+          git pull --rebase origin main
+          if ! git push origin HEAD:main; then
+            echo "::warning::Direct push to main was rejected (likely branch protection). Allow github-actions[bot] bypass or run 'pnpm version:rollup' via a release PR."
+            exit 1
+          fi

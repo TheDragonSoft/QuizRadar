@@ -6,6 +6,13 @@
     "node": ">=20"
   },
   "scripts": {
+    "prepare": "node tooling/install-hooks.mjs",
+    "hooks:install": "node tooling/install-hooks.mjs",
+    "agent:preflight": "node tooling/agent-preflight.mjs",
+    "agent:note": "node tooling/agent-note.mjs",
+    "agent:gate": "node tooling/agent-gate.mjs",
+    "version:rollup": "node tooling/version-rollup.mjs --apply",
+    "version:dry-run": "node tooling/version-rollup.mjs --dry-run",
     "lint": "eslint .",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",

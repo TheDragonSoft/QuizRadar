@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+set -e
+node tooling/agent-gate.mjs --hook commit-msg "$1"

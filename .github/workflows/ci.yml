@@ -30,15 +30,31 @@ concurrency:
 
 jobs:
   version:
-    name: version stamp (single source of truth)
+    name: version, contract & multi-agent hygiene gates
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: version stamp check
+      - name: version stamp check (5 sinks)
         run: node tooling/generate-version.mjs --check
+      - name: rust-ts contract wire map freshness check
+        run: node apps/web/src/contract/regenerate.mjs --check
+      - name: multi-agent hygiene & fragment check (push)
+        if: github.event_name != 'pull_request'
+        run: node tooling/agent-gate.mjs --ci
+      - name: multi-agent commit, secret & handoff fragment check (PR)
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: >-
+          node tooling/agent-gate.mjs --ci
+          --base ${{ github.event.pull_request.base.sha }}
+          --head ${{ github.event.pull_request.head.sha }}
 
   rust:
     name: rust (fmt / clippy / test)

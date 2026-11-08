@@ -2,6 +2,22 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.4.0] — 2026-11-08
+
+### 🤝 Agent & Contributor Summaries
+
+- **[core, web, desktop]** Intelligent hybrid email extraction: deterministic course-code/name matching in core to avoid Gemini token waste, Gemini for fuzzy dates/times, AI extraction cache table, and UI transparency in assessment detail
+
+### 🚀 New Features
+
+- `9f9d066` feat(email-pipeline): merge hybrid Gemini extraction
+- `7dfc54d` feat(email-pipeline): intelligent hybrid email extraction with Gemini transparency
+
+### 🔧 Maintenance, Docs & Tests
+
+- `6b59a07` style(core): format, fix clippy push, update schema v5 tests
+- `ec1ed8b` ci(landing): add dedicated GitHub Pages deploy workflow
+
 ## [5.3.0] — 2026-11-08
 
 ### 🤝 Agent & Contributor Summaries

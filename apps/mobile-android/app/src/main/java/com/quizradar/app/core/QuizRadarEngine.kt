@@ -217,8 +217,9 @@ class QuizRadarEngine(
         content: String,
         scheduleJson: String,
         refDate: LocalDate,
+        offsetSeconds: Int,
     ): String {
-        return parseIcs(content, scheduleJson, refDate.toString())
+        return com.quizradar.app.core.parseIcs(content, scheduleJson, refDate.toString(), offsetSeconds)
     }
 
     override fun radarOrder(

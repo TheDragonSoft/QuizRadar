@@ -36,6 +36,7 @@ pub const SEARCH_QUERIES: [&str; 5] = [
 ];
 
 pub const MAX_RESULTS_PER_QUERY: usize = 35;
+pub const MAX_PAGES_GMAIL: usize = 5;
 pub const MAX_CACHED_EMAILS: usize = 500;
 /// v4 capped at 4,500 (`03` §C3); v5 keeps 8× more and flags the rest.
 pub const MAX_BODY_CHARS: usize = 30_000;
@@ -105,10 +106,17 @@ pub async fn scan_gmail(
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut first_error: Option<String> = None;
     let mut queries_failed = 0usize;
-    for result in results {
+    let mut notes: Vec<String> = Vec::new();
+
+    for (query, result) in SEARCH_QUERIES.iter().zip(results) {
         match result {
-            Ok(ids) => {
-                for id in ids {
+            Ok(search_res) => {
+                if search_res.truncated {
+                    notes.push(format!(
+                        "Gmail search for '{query}' was truncated at {MAX_PAGES_GMAIL} pages."
+                    ));
+                }
+                for id in search_res.ids {
                     if seen.insert(id.clone()) {
                         message_ids.push(id);
                     }
@@ -129,12 +137,18 @@ pub async fn scan_gmail(
         ..GmailRunStats::default()
     };
 
-    // Honest empty: when every query failed and nothing was found, this scan
-    // failed — never a silent "0 found".
-    if message_ids.is_empty() {
+    // Honest error reporting:
+    // If EVERY query failed, the scan failed completely.
+    // If only some queries failed, continue with the successful ones and record an honest warning note.
+    if queries_failed == SEARCH_QUERIES.len() {
         if let Some(error) = first_error {
             return Err(error);
         }
+    } else if let Some(error) = first_error {
+        notes.push(format!(
+            "{queries_failed} of {} Gmail search queries failed: {error}",
+            SEARCH_QUERIES.len()
+        ));
     }
 
     // 2. Select fetch targets: uncached ids always; cached ids only up to the
@@ -242,36 +256,66 @@ async fn stream_fetch(
         .await;
 }
 
+struct SearchResult {
+    ids: Vec<String>,
+    truncated: bool,
+}
+
 async fn search_message_ids(
     client: &reqwest::Client,
     provider: &dyn TokenProvider,
     capability: ProviderCapability,
     base_url: &str,
     query: &str,
-) -> Result<Vec<String>, String> {
-    let url = format!(
-        "{base_url}/users/me/messages?q={}&maxResults={MAX_RESULTS_PER_QUERY}",
-        crate::auth::providers::percent_encode(query)
-    );
-    let response = authed_get(client, provider, capability, &url).await?;
-    if !response.status().is_success() {
-        return Err(format!("Gmail search failed (HTTP {})", response.status()));
+) -> Result<SearchResult, String> {
+    let mut all_ids = Vec::new();
+    let mut page_token: Option<String> = None;
+    let mut truncated = false;
+    let encoded_query = crate::auth::providers::percent_encode(query);
+
+    for _page in 0..MAX_PAGES_GMAIL {
+        let mut url = format!(
+            "{base_url}/users/me/messages?q={encoded_query}&maxResults={MAX_RESULTS_PER_QUERY}"
+        );
+        if let Some(ref token) = page_token {
+            url.push_str("&pageToken=");
+            url.push_str(&crate::auth::providers::percent_encode(token));
+        }
+        let response = authed_get(client, provider, capability, &url).await?;
+        if !response.status().is_success() {
+            return Err(format!("Gmail search failed (HTTP {})", response.status()));
+        }
+        let value: Value = response
+            .json()
+            .await
+            .map_err(|e| net_err("Gmail search response was not JSON", e))?;
+
+        if let Some(messages) = value.get("messages").and_then(Value::as_array) {
+            for item in messages {
+                if let Some(id) = item.get("id").and_then(Value::as_str) {
+                    all_ids.push(id.to_string());
+                }
+            }
+        }
+
+        page_token = value
+            .get("nextPageToken")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+
+        if page_token.is_none() {
+            break;
+        }
     }
-    let value: Value = response
-        .json()
-        .await
-        .map_err(|e| net_err("Gmail search response was not JSON", e))?;
-    Ok(value
-        .get("messages")
-        .and_then(Value::as_array)
-        .map(|messages| {
-            messages
-                .iter()
-                .filter_map(|item| item.get("id").and_then(Value::as_str))
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_default())
+
+    if page_token.is_some() {
+        truncated = true;
+    }
+
+    Ok(SearchResult {
+        ids: all_ids,
+        truncated,
+    })
 }
 
 /// Fetch + parse one message. `Ok(None)` = Gmail returned a non-success for
@@ -283,7 +327,8 @@ async fn fetch_message(
     base_url: &str,
     msg_id: String,
 ) -> (String, Result<Option<CachedEmail>, String>) {
-    let url = format!("{base_url}/users/me/messages/{msg_id}?format=full");
+    let encoded_id = crate::auth::providers::percent_encode(&msg_id);
+    let url = format!("{base_url}/users/me/messages/{encoded_id}?format=full");
     let response = match authed_get(client, provider, capability, &url).await {
         Ok(response) => response,
         Err(error) => return (msg_id, Err(error)),
@@ -338,6 +383,15 @@ fn parse_gmail_message(msg_id: &str, message: &Value) -> CachedEmail {
         .unwrap_or_default()
         .to_string();
     let (body, body_truncated) = extract_mime_body(payload);
+    let internal_date_ms = message
+        .get("internalDate")
+        .and_then(Value::as_str)
+        .and_then(|s| s.parse::<i64>().ok())
+        .or_else(|| message.get("internalDate").and_then(Value::as_i64));
+    let history_id = message
+        .get("historyId")
+        .and_then(Value::as_str)
+        .map(|s| s.to_string());
 
     CachedEmail {
         id: msg_id.to_string(),
@@ -347,6 +401,8 @@ fn parse_gmail_message(msg_id: &str, message: &Value) -> CachedEmail {
         snippet: Some(snippet),
         body,
         body_truncated,
+        internal_date_ms,
+        history_id,
     }
 }
 
@@ -568,6 +624,8 @@ mod tests {
                 snippet: None,
                 body: "old".to_string(),
                 body_truncated: false,
+                internal_date_ms: None,
+                history_id: None,
             })
             .collect();
 

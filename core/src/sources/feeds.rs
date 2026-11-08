@@ -243,6 +243,7 @@ mod tests {
     fn schedule() -> ScheduleData {
         ScheduleData {
             semester: None,
+            academic_week_start: None,
             courses: vec![Course {
                 id: "MATH201".to_string(),
                 name: "Calculus II".to_string(),

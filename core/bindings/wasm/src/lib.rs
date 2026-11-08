@@ -329,62 +329,10 @@ impl QuizRadarWasm {
             }
         }
 
-        let is_active = |d: NaiveDate| daily_totals.get(&d).copied().unwrap_or(0) >= 1;
-        let current_streak_days = if is_active(date) {
-            let mut streak = 1u32;
-            let mut d = date - chrono::Duration::days(1);
-            while is_active(d) {
-                streak += 1;
-                d -= chrono::Duration::days(1);
-            }
-            streak
-        } else if is_active(date - chrono::Duration::days(1)) {
-            let mut streak = 1u32;
-            let mut d = date - chrono::Duration::days(2);
-            while is_active(d) {
-                streak += 1;
-                d -= chrono::Duration::days(1);
-            }
-            streak
-        } else {
-            0u32
-        };
-
-        let mut active_dates: Vec<NaiveDate> = daily_totals
-            .keys()
-            .copied()
-            .filter(|d| is_active(*d))
-            .collect();
-        active_dates.sort_unstable();
-        let mut best_streak_days = 0u32;
-        let mut current_consecutive = 0u32;
-        let mut prev_date: Option<NaiveDate> = None;
-
-        for d in active_dates {
-            match prev_date {
-                Some(prev) if d == prev + chrono::Duration::days(1) => {
-                    current_consecutive += 1;
-                }
-                _ => {
-                    current_consecutive = 1;
-                }
-            }
-            prev_date = Some(d);
-            best_streak_days = best_streak_days.max(current_consecutive);
-        }
-        best_streak_days = best_streak_days.max(current_streak_days);
-
-        let mut weekly_chart = Vec::with_capacity(7);
-        for i in (0..=6).rev() {
-            let d = date - chrono::Duration::days(i);
-            let mins = daily_totals.get(&d).copied().unwrap_or(0);
-            let day_label = d.format("%a").to_string();
-            weekly_chart.push(quizradar_core::types::DailyFocusStat {
-                date_iso: d,
-                day_label,
-                minutes: mins,
-            });
-        }
+        let (current_streak_days, best_streak_days) =
+            quizradar_core::plan::study::calculate_study_streak(&daily_totals, date);
+        let weekly_chart =
+            quizradar_core::plan::study::calculate_weekly_focus_chart(&daily_totals, date);
 
         let mut course_breakdown = Vec::new();
         for (cid, mins) in course_totals {
@@ -423,24 +371,7 @@ impl QuizRadarWasm {
             .map_err(|e| JsValue::from_str(&format!("Invalid flashcard JSON: {e}")))?;
         let today = NaiveDate::parse_from_str(ref_date_iso, "%Y-%m-%d")
             .map_err(|e| JsValue::from_str(&format!("Invalid ref_date: {e}")))?;
-        if correct {
-            card.box_level = (card.box_level + 1).min(5);
-        } else {
-            card.box_level = 1;
-        }
-        let interval_days = match card.box_level {
-            1 => 1,
-            2 => 3,
-            3 => 7,
-            4 => 14,
-            _ => 30,
-        };
-        card.last_reviewed_iso = Some(today.format("%Y-%m-%d").to_string());
-        card.next_review_iso = Some(
-            (today + chrono::Duration::days(interval_days))
-                .format("%Y-%m-%d")
-                .to_string(),
-        );
+        quizradar_core::plan::study::apply_leitner_review(&mut card, correct, today);
         serde_json::to_string(&card)
             .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
     }

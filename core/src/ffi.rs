@@ -87,11 +87,12 @@ pub fn parse_ics(
     content: String,
     schedule_json: String,
     ref_date_iso: String,
+    offset_seconds: i32,
 ) -> Result<String, QuizRadarFfiError> {
     let schedule: ScheduleData = serde_json::from_str(&schedule_json)?;
     let ref_date = parse_ref_date(&ref_date_iso)?;
     let origin = IcsOrigin::Moodle { portal_url: None };
-    let offset = FixedOffset::east_opt(0).unwrap_or_else(|| unreachable!());
+    let offset = parse_local_offset(offset_seconds)?;
     let (assessments, _stats) =
         parse_ics_assessments(&content, &schedule, &origin, ref_date, offset);
     Ok(serde_json::to_string(&assessments)?)
@@ -433,7 +434,13 @@ pub fn exchange_oauth_code(
         })?;
 
     rt.block_on(async {
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(15))
+            .build()
+            .map_err(|e| QuizRadarFfiError::Store {
+                msg: format!("Failed to build OAuth HTTP client: {e}"),
+            })?;
         let resp = client
             .post(endpoint)
             .form(&form_params)
@@ -777,7 +784,14 @@ impl NativeStore {
         let att_status = match status.trim().to_ascii_lowercase().as_str() {
             "absent" => crate::types::AttendanceStatus::Absent,
             "excused" => crate::types::AttendanceStatus::Excused,
-            _ => crate::types::AttendanceStatus::Attended,
+            "attended" => crate::types::AttendanceStatus::Attended,
+            other => {
+                return Err(QuizRadarFfiError::Validation {
+                    msg: format!(
+                        "unknown attendance status: '{other}' (expected attended, absent, excused)"
+                    ),
+                });
+            }
         };
         let entry = crate::types::AttendanceEntry {
             id: format!("att-{slot_id}-{date_iso}"),
@@ -812,8 +826,10 @@ impl NativeStore {
         updated_at: String,
         ref_date_iso: String,
     ) -> Result<String, QuizRadarFfiError> {
-        let _ = updated_at;
-        let session: crate::types::StudySessionRecord = serde_json::from_str(&session_json)?;
+        let mut session: crate::types::StudySessionRecord = serde_json::from_str(&session_json)?;
+        if !updated_at.trim().is_empty() {
+            session.timestamp = updated_at;
+        }
         let ref_date = parse_ref_date(&ref_date_iso)?;
         let snapshot = self.inner.log_study_session(session, ref_date).await?;
         Ok(serde_json::to_string(&snapshot)?)
@@ -982,6 +998,8 @@ pub enum FfiProviderCapability {
     MicrosoftMailRead,
     MicrosoftCalendarsRead,
     MicrosoftSignIn,
+    MicrosoftGroupRead,
+    MicrosoftFilesRead,
 }
 
 impl From<FfiProviderCapability> for ProviderCapability {
@@ -1001,6 +1019,8 @@ impl From<FfiProviderCapability> for ProviderCapability {
                 MicrosoftCapability::CalendarsRead.into()
             }
             FfiProviderCapability::MicrosoftSignIn => MicrosoftCapability::SignIn.into(),
+            FfiProviderCapability::MicrosoftGroupRead => MicrosoftCapability::GroupRead.into(),
+            FfiProviderCapability::MicrosoftFilesRead => MicrosoftCapability::FilesRead.into(),
         }
     }
 }
@@ -1028,6 +1048,12 @@ impl From<ProviderCapability> for FfiProviderCapability {
                 Self::MicrosoftCalendarsRead
             }
             ProviderCapability::Microsoft(MicrosoftCapability::SignIn) => Self::MicrosoftSignIn,
+            ProviderCapability::Microsoft(MicrosoftCapability::GroupRead) => {
+                Self::MicrosoftGroupRead
+            }
+            ProviderCapability::Microsoft(MicrosoftCapability::FilesRead) => {
+                Self::MicrosoftFilesRead
+            }
         }
     }
 }
@@ -1202,11 +1228,10 @@ impl NativeStore {
             moodle_rest_url: sync_config.moodle_rest_url,
             moodle_rest_token: sync_config.moodle_rest_token,
         };
+        let cached_emails = self.inner.load_cached_emails().await.unwrap_or_default();
         let input = SyncInput {
             schedule: snapshot.schedule,
-            // The store holds no announcement-email cache yet (desktop
-            // parity): Gmail dedupes within this run only.
-            emails_cache: Vec::new(),
+            emails_cache: cached_emails,
             existing_assessments: snapshot.assessments,
             reference_date: today,
             local,
@@ -1226,6 +1251,13 @@ impl NativeStore {
             .await
             .map_err(|e| QuizRadarFfiError::Store { msg: e })?;
 
+        if !report.emails_cache.is_empty() {
+            let _ = self
+                .inner
+                .save_cached_emails(report.emails_cache, now_iso.clone())
+                .await;
+        }
+
         // "Last synced" reflects real fetches only: a scan in which every
         // source was skipped or failed fetched nothing, so no stamp is
         // written (desktop parity).
@@ -1237,6 +1269,10 @@ impl NativeStore {
         if !report.assessments.is_empty() {
             self.inner
                 .replace_assessments(report.assessments, now_iso, today)
+                .await?;
+        } else if fetched_anything {
+            self.inner
+                .replace_assessments_allowing_empty(report.assessments, now_iso, today)
                 .await?;
         }
 
@@ -1317,9 +1353,32 @@ impl NativeStore {
         let offset_fn = move || offset;
         let client =
             crate::sources::http_client().map_err(|e| QuizRadarFfiError::Store { msg: e })?;
-        let base_url = gcal_base_url
-            .filter(|url| !url.trim().is_empty())
-            .unwrap_or_else(|| GCAL_API_BASE.to_string());
+        let base_url = if let Some(ref override_url) = gcal_base_url {
+            let trimmed = override_url.trim();
+            if !trimmed.is_empty() {
+                let parsed =
+                    reqwest::Url::parse(trimmed).map_err(|e| QuizRadarFfiError::Validation {
+                        msg: format!("invalid gcal_base_url '{trimmed}': {e}"),
+                    })?;
+                let host = parsed.host_str().unwrap_or("");
+                let is_allowed = host == "www.googleapis.com"
+                    || host == "localhost"
+                    || host == "127.0.0.1"
+                    || host == "::1";
+                if !is_allowed {
+                    return Err(QuizRadarFfiError::Validation {
+                        msg: format!(
+                            "refusing untrusted gcal_base_url host '{host}': must be www.googleapis.com or loopback"
+                        ),
+                    });
+                }
+                trimmed.to_string()
+            } else {
+                GCAL_API_BASE.to_string()
+            }
+        } else {
+            GCAL_API_BASE.to_string()
+        };
 
         let report = push_assessments_to_google_calendar(
             &client,

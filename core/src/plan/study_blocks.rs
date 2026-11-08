@@ -231,6 +231,7 @@ mod tests {
             slots: vec![slot("Sunday", 0, 8, 10)],
             courses: Vec::new(),
             semester: None,
+            academic_week_start: None,
         };
         let friday = study_block_candidates(&schedule, &[], day(2026, 10, 23));
         assert_eq!(
@@ -261,6 +262,7 @@ mod tests {
             slots: vec![slot("Friday", 5, 9, 10)],
             courses: Vec::new(),
             semester: None,
+            academic_week_start: None,
         };
         let candidates = study_block_candidates(&schedule, &[], day(2026, 10, 23));
         // Blocks 08:00 (09:00 starts inside), 09:30; keeps 11:00 (ends 10:00 ≤ 11:00).
@@ -280,6 +282,7 @@ mod tests {
             slots: vec![slot("Friday", 5, 20, 22)],
             courses: Vec::new(),
             semester: None,
+            academic_week_start: None,
         };
         let late_candidates = study_block_candidates(&late, &[], day(2026, 10, 23));
         assert_eq!(late_candidates.len(), 8);

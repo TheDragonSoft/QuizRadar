@@ -349,7 +349,7 @@ async fn fetch_team_channels_and_tabs(
     base_url: &str,
     team_id: &str,
 ) -> ChannelsAndTabs {
-    let capability = ProviderCapability::Microsoft(MicrosoftCapability::UserProfile);
+    let capability = ProviderCapability::Microsoft(MicrosoftCapability::GroupRead);
     let items = graph_get_all_pages(
         client,
         provider,
@@ -410,7 +410,7 @@ async fn fetch_team_drive(
     base_url: &str,
     team_id: &str,
 ) -> Vec<String> {
-    let capability = ProviderCapability::Microsoft(MicrosoftCapability::UserProfile);
+    let capability = ProviderCapability::Microsoft(MicrosoftCapability::FilesRead);
     let root_items = graph_get_all_pages(
         client,
         provider,
@@ -483,7 +483,7 @@ async fn fetch_team_conversations(
     base_url: &str,
     team_id: &str,
 ) -> Vec<String> {
-    let capability = ProviderCapability::Microsoft(MicrosoftCapability::UserProfile);
+    let capability = ProviderCapability::Microsoft(MicrosoftCapability::GroupRead);
     graph_get_all_pages(
         client,
         provider,

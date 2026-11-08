@@ -56,4 +56,14 @@ describe("weekParity — ISO 8601 week calculations and alternating timetable ma
     expect(slotMatchesParity(slotA, "2026-10-26", "all")).toBe(true);
     expect(slotMatchesParity(slotB, "2026-10-19", "all")).toBe(true);
   });
+
+  it("computes anchored parity with regional week start (Saturday-first)", () => {
+    // Saturday 2026-10-17 and Sunday 2026-10-18 belong to the same week as Monday 2026-10-19
+    const satParity = getWeekParity("2026-10-17", "Saturday");
+    const sunParity = getWeekParity("2026-10-18", "Saturday");
+    const monParity = getWeekParity("2026-10-19", "Saturday");
+
+    expect(satParity).toBe(sunParity);
+    expect(sunParity).toBe(monParity);
+  });
 });

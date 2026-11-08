@@ -12,6 +12,8 @@
 //! dates, counts, countdowns or success messages. Unknown fields stay `None`
 //! and render as "—" in the UI; estimates carry an inference note.
 
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+
 pub mod ai;
 pub mod auth;
 pub mod cal;

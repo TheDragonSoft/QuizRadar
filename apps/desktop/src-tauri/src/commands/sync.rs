@@ -300,6 +300,12 @@ pub async fn run_sync_inner(
             .replace_assessments(report.assessments, now.clone(), today)
             .await
             .map_err(|e| format!("Failed to save merged assessments: {e}"))?;
+    } else if fetched_anything {
+        state
+            .store
+            .replace_assessments_allowing_empty(report.assessments, now.clone(), today)
+            .await
+            .map_err(|e| format!("Failed to save merged assessments: {e}"))?;
     }
 
     let mut notes = report.notes;

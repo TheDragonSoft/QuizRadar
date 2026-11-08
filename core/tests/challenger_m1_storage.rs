@@ -238,6 +238,7 @@ async fn test_study_streak_reference_dates_and_resilience() {
         .save_schedule(
             ScheduleData {
                 semester: Some("Fall 2026".into()),
+                academic_week_start: None,
                 courses: courses.clone(),
                 slots: vec![],
             },

@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useCallback } from "react";
 import { useAppStore } from "../state/store";
 import {
   START_HOUR,
@@ -10,11 +10,7 @@ import {
   matchesGlobalSearch,
 } from "../lib/calendarLanes";
 import { courseAccessibleChip, courseDisplayName } from "../lib/coursePalette";
-import {
-  DayColumn,
-  localUtcOffsetLabel,
-  resolvePalette,
-} from "../views/CalendarView";
+import { DayColumn, localUtcOffsetLabel, resolvePalette } from "../views/CalendarView";
 import type { Assessment, Course } from "../state/types";
 
 export interface CalendarGridProps {
@@ -67,11 +63,14 @@ export const CalendarGrid: React.FC<CalendarGridProps> = ({
     return map;
   }, [schedule.courses]);
 
-  const isCourseSelected = (courseId?: string | null) => {
-    if (!courseId) return true;
-    if (selectedCourseIds === null) return true;
-    return selectedCourseIds.includes(courseId);
-  };
+  const isCourseSelected = useCallback(
+    (courseId?: string | null) => {
+      if (!courseId) return true;
+      if (selectedCourseIds === null) return true;
+      return selectedCourseIds.includes(courseId);
+    },
+    [selectedCourseIds],
+  );
 
   const hours = useMemo(() => {
     const list: number[] = [];
@@ -95,7 +94,7 @@ export const CalendarGrid: React.FC<CalendarGridProps> = ({
       map.set(a.dateIso, list);
     });
     return map;
-  }, [assessments, layers.exams, selectedCourseIds, searchQuery]);
+  }, [assessments, layers.exams, searchQuery, isCourseSelected]);
 
   const handleAssessmentClick = (id: string) => {
     if (onSelectAssessment) {

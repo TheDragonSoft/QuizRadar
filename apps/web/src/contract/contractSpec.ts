@@ -172,6 +172,17 @@ export const RUST_TO_TS_MAPPINGS: RustToTsMapping[] = [
   { rustStruct: "DesktopConfig", tsInterface: "DesktopConfig" },
   { rustStruct: "DesktopAuthProfile", tsInterface: "DesktopAuthProfile" },
   { rustStruct: "GetStatePayload", tsInterface: "GetStatePayload" },
+  { rustStruct: "GradeRecord", tsInterface: "GradeRecord" },
+  { rustStruct: "AttendanceEntry", tsInterface: "AttendanceEntry" },
+  { rustStruct: "CourseAttendanceSummary", tsInterface: "CourseAttendanceSummary" },
+  { rustStruct: "Flashcard", tsInterface: "Flashcard" },
+  { rustStruct: "QuizAttempt", tsInterface: "QuizAttempt" },
+  { rustStruct: "MistakeRecord", tsInterface: "MistakeRecord" },
+  { rustStruct: "StudySessionRecord", tsInterface: "StudySessionRecord" },
+  { rustStruct: "CourseFocusStat", tsInterface: "CourseFocusStat" },
+  { rustStruct: "DailyFocusStat", tsInterface: "DailyFocusStat" },
+  { rustStruct: "StudyAnalytics", tsInterface: "StudyAnalytics" },
+  { rustStruct: "DailyStudyCushion", tsInterface: "DailyStudyCushion" },
 ];
 
 export interface KnownFieldGap {
@@ -242,6 +253,16 @@ export const KNOWN_TS_ONLY_FIELDS: KnownTsOnlyField[] = [
     tsInterface: "DesktopConfig",
     tsField: "gradingScale",
     reason: "grading scale preference managed in UI state and local configuration",
+  },
+  {
+    tsInterface: "Flashcard",
+    tsField: "reviewCount",
+    reason: "client-side flashcard review session counter",
+  },
+  {
+    tsInterface: "Flashcard",
+    tsField: "review_count",
+    reason: "snake_case alias for client-side review count",
   },
 ];
 

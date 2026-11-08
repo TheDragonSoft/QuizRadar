@@ -439,6 +439,8 @@ impl AppState {
             MicrosoftCapability::UserProfile,
             MicrosoftCapability::MailRead,
             MicrosoftCapability::CalendarsRead,
+            MicrosoftCapability::GroupRead,
+            MicrosoftCapability::FilesRead,
         ]);
         let params = refresh_token_params(&client_id, &refresh_token, &scopes);
 

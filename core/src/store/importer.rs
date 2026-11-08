@@ -178,6 +178,16 @@ pub fn import_v4_backup_json(
                 Some(text) => meta.set("schedule_semester", Some(text))?,
                 None => meta.set("schedule_semester", None)?,
             }
+            match backup
+                .schedule
+                .academic_week_start
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                Some(text) => meta.set("schedule_academic_week_start", Some(text))?,
+                None => meta.set("schedule_academic_week_start", None)?,
+            }
         }
 
         // Radar replacement: v4's assessments arrive as the scanned snapshot.
@@ -473,6 +483,7 @@ mod tests {
         // Schedule landed (courses + slots + semester stamp).
         let schedule = ScheduleData {
             semester: None,
+            academic_week_start: None,
             courses: Vec::new(),
             slots: Vec::new(),
         };

@@ -28,7 +28,7 @@ use crate::plan;
 use crate::types::{
     AcademicTrack, Assessment, AssessmentType, AttendanceEntry, AttendanceStatus, CachedEmail,
     CompletedTopics, Course, CourseAttendanceSummary, CourseFocusStat, CustomCalendarEvent,
-    DailyFocusStat, FeedConfig, Flashcard, GradeRecord, MistakeRecord, QuizAttempt, ScheduleData,
+    FeedConfig, Flashcard, GradeRecord, MistakeRecord, QuizAttempt, ScheduleData,
     ScheduleSlot, StudyAnalytics, StudySessionRecord, UrgencyLevel,
 };
 
@@ -169,10 +169,14 @@ pub fn load_schedule(conn: &Connection) -> Result<ScheduleData, StoreError> {
     let semester = meta
         .get("schedule_semester")?
         .filter(|s| !s.trim().is_empty());
+    let academic_week_start = meta
+        .get("schedule_academic_week_start")?
+        .filter(|s| !s.trim().is_empty());
     let courses = CourseRepo::new(conn).list()?;
     let slots = CourseRepo::new(conn).all_slots()?;
     Ok(ScheduleData {
         semester,
+        academic_week_start,
         courses,
         slots,
     })
@@ -289,7 +293,9 @@ impl<'a> CourseRepo<'a> {
                 bg: row.get(3)?,
                 border: row.get(4)?,
                 credits: row.get(5)?,
-                max_absences: row.get::<_, Option<i64>>(6)?.map(|v| v as u32),
+                max_absences: row
+                    .get::<_, Option<i64>>(6)?
+                    .map(|v| u32::try_from(v).unwrap_or(0)),
             })
         })?;
         let mut courses = Vec::new();
@@ -311,7 +317,9 @@ impl<'a> CourseRepo<'a> {
                 bg: row.get(3)?,
                 border: row.get(4)?,
                 credits: row.get(5)?,
-                max_absences: row.get::<_, Option<i64>>(6)?.map(|v| v as u32),
+                max_absences: row
+                    .get::<_, Option<i64>>(6)?
+                    .map(|v| u32::try_from(v).unwrap_or(0)),
             })
         })?;
         if let Some(r) = rows.next() {
@@ -742,11 +750,32 @@ impl<'a> AssessmentRepo<'a> {
                 }
             };
         }
-        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-        let sql = format!("DELETE FROM assessments WHERE id NOT IN ({placeholders})");
-        let params_vec: Vec<&dyn rusqlite::ToSql> =
-            ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
-        self.conn.execute(&sql, params_vec.as_slice())?;
+        if ids.len() <= 500 {
+            let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+            let sql = format!("DELETE FROM assessments WHERE id NOT IN ({placeholders})");
+            let params_vec: Vec<&dyn rusqlite::ToSql> =
+                ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+            self.conn.execute(&sql, params_vec.as_slice())?;
+        } else {
+            self.conn.execute_batch(
+                "CREATE TEMP TABLE IF NOT EXISTS _keep_assessment_ids (id TEXT PRIMARY KEY);
+                 DELETE FROM _keep_assessment_ids;",
+            )?;
+            {
+                let mut insert_stmt = self
+                    .conn
+                    .prepare("INSERT INTO _keep_assessment_ids (id) VALUES (?1)")?;
+                for id in ids {
+                    insert_stmt.execute([id])?;
+                }
+            }
+            self.conn.execute(
+                "DELETE FROM assessments WHERE id NOT IN (SELECT id FROM _keep_assessment_ids)",
+                [],
+            )?;
+            self.conn
+                .execute("DROP TABLE IF EXISTS _keep_assessment_ids", [])?;
+        }
         Ok(())
     }
 }
@@ -1792,12 +1821,24 @@ impl<'a> AttendanceRepo<'a> {
 
 fn row_to_attendance(row: &rusqlite::Row<'_>) -> rusqlite::Result<AttendanceEntry> {
     let date_str: String = row.get(3)?;
-    let date_iso = NaiveDate::parse_from_str(date_str.trim(), "%Y-%m-%d").unwrap_or(NaiveDate::MIN);
+    let date_iso = NaiveDate::parse_from_str(date_str.trim(), "%Y-%m-%d").map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text, Box::new(e))
+    })?;
     let status_str: String = row.get(4)?;
     let status = match status_str.trim().to_ascii_lowercase().as_str() {
         "absent" => AttendanceStatus::Absent,
         "excused" => AttendanceStatus::Excused,
-        _ => AttendanceStatus::Attended,
+        "attended" => AttendanceStatus::Attended,
+        unknown => {
+            return Err(rusqlite::Error::FromSqlConversionFailure(
+                4,
+                rusqlite::types::Type::Text,
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("unknown attendance status '{unknown}'"),
+                )),
+            ));
+        }
     };
     Ok(AttendanceEntry {
         id: row.get(0)?,
@@ -1921,24 +1962,7 @@ impl<'a> FlashcardRepo<'a> {
         let Some(mut card) = self.get(id)? else {
             return Ok(None);
         };
-        if correct {
-            card.box_level = (card.box_level + 1).min(5);
-        } else {
-            card.box_level = 1;
-        }
-        let interval_days = match card.box_level {
-            1 => 1,
-            2 => 3,
-            3 => 7,
-            4 => 14,
-            _ => 30,
-        };
-        card.last_reviewed_iso = Some(today.format("%Y-%m-%d").to_string());
-        card.next_review_iso = Some(
-            (today + chrono::Duration::days(interval_days))
-                .format("%Y-%m-%d")
-                .to_string(),
-        );
+        crate::plan::study::apply_leitner_review(&mut card, correct, today);
         self.upsert(&card, updated_at)?;
         Ok(Some(card))
     }
@@ -2026,8 +2050,8 @@ fn row_to_attempt(row: &rusqlite::Row<'_>) -> rusqlite::Result<QuizAttempt> {
         assessment_id: row.get(1)?,
         course_id: row.get(2)?,
         timestamp: row.get(3)?,
-        score: row.get::<_, i64>(4)? as u32,
-        total_questions: row.get::<_, i64>(5)? as u32,
+        score: u32::try_from(row.get::<_, i64>(4)?).unwrap_or(0),
+        total_questions: u32::try_from(row.get::<_, i64>(5)?).unwrap_or(0),
         passed: row.get::<_, i64>(6)? != 0,
     })
 }
@@ -2213,73 +2237,20 @@ impl<'a> StudySessionRepo<'a> {
         let mut course_totals: HashMap<String, u32> = HashMap::new();
 
         for s in &sessions {
-            total_focus_minutes += s.duration_minutes;
-            *daily_totals.entry(s.date_iso).or_insert(0) += s.duration_minutes;
+            total_focus_minutes = total_focus_minutes.saturating_add(s.duration_minutes);
+            let day_entry = daily_totals.entry(s.date_iso).or_insert(0);
+            *day_entry = day_entry.saturating_add(s.duration_minutes);
             if let Some(ref cid) = s.course_id {
-                *course_totals.entry(cid.clone()).or_insert(0) += s.duration_minutes;
+                let course_entry = course_totals.entry(cid.clone()).or_insert(0);
+                *course_entry = course_entry.saturating_add(s.duration_minutes);
             }
         }
 
-        // Streak calculation (anchored to ref_date)
-        let is_active = |d: NaiveDate| daily_totals.get(&d).copied().unwrap_or(0) >= 1;
-
-        let current_streak_days = if is_active(ref_date) {
-            let mut streak = 1u32;
-            let mut d = ref_date - chrono::Duration::days(1);
-            while is_active(d) {
-                streak += 1;
-                d -= chrono::Duration::days(1);
-            }
-            streak
-        } else if is_active(ref_date - chrono::Duration::days(1)) {
-            let mut streak = 1u32;
-            let mut d = ref_date - chrono::Duration::days(2);
-            while is_active(d) {
-                streak += 1;
-                d -= chrono::Duration::days(1);
-            }
-            streak
-        } else {
-            0u32
-        };
-
-        // Best streak calculation across all historical active dates
-        let mut active_dates: Vec<NaiveDate> = daily_totals
-            .keys()
-            .copied()
-            .filter(|d| is_active(*d))
-            .collect();
-        active_dates.sort_unstable();
-        let mut best_streak_days = 0u32;
-        let mut current_consecutive = 0u32;
-        let mut prev_date: Option<NaiveDate> = None;
-
-        for d in active_dates {
-            match prev_date {
-                Some(prev) if d == prev + chrono::Duration::days(1) => {
-                    current_consecutive += 1;
-                }
-                _ => {
-                    current_consecutive = 1;
-                }
-            }
-            prev_date = Some(d);
-            best_streak_days = best_streak_days.max(current_consecutive);
-        }
-        best_streak_days = best_streak_days.max(current_streak_days);
-
-        // Weekly chart (last 7 days: ref_date - 6d ..= ref_date)
-        let mut weekly_chart = Vec::with_capacity(7);
-        for i in (0..=6).rev() {
-            let d = ref_date - chrono::Duration::days(i);
-            let mins = daily_totals.get(&d).copied().unwrap_or(0);
-            let day_label = d.format("%a").to_string();
-            weekly_chart.push(DailyFocusStat {
-                date_iso: d,
-                day_label,
-                minutes: mins,
-            });
-        }
+        // Streak & weekly chart calculations (anchored to ref_date via shared core::plan::study)
+        let (current_streak_days, best_streak_days) =
+            crate::plan::study::calculate_study_streak(&daily_totals, ref_date);
+        let weekly_chart =
+            crate::plan::study::calculate_weekly_focus_chart(&daily_totals, ref_date);
 
         // Course breakdown
         let mut course_breakdown = Vec::new();
@@ -2310,13 +2281,15 @@ impl<'a> StudySessionRepo<'a> {
 
 fn row_to_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<StudySessionRecord> {
     let date_str: String = row.get(6)?;
-    let date_iso = NaiveDate::parse_from_str(date_str.trim(), "%Y-%m-%d").unwrap_or(NaiveDate::MIN);
+    let date_iso = NaiveDate::parse_from_str(date_str.trim(), "%Y-%m-%d").map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, Box::new(e))
+    })?;
     Ok(StudySessionRecord {
         id: row.get(0)?,
         course_id: row.get(1)?,
         assessment_id: row.get(2)?,
         topic: row.get(3)?,
-        duration_minutes: row.get::<_, i64>(4)? as u32,
+        duration_minutes: u32::try_from(row.get::<_, i64>(4)?).unwrap_or(0),
         timestamp: row.get(5)?,
         date_iso,
     })
@@ -2375,6 +2348,8 @@ impl<'a> CachedEmailRepo<'a> {
                 snippet: row.get(4)?,
                 body: row.get(5)?,
                 body_truncated: truncated != 0,
+                internal_date_ms: None,
+                history_id: None,
             })
         })?;
         let mut result = Vec::new();
@@ -2471,6 +2446,15 @@ pub mod ops {
             {
                 Some(text) => meta.set("schedule_semester", Some(text))?,
                 None => meta.set("schedule_semester", None)?,
+            }
+            match schedule
+                .academic_week_start
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                Some(text) => meta.set("schedule_academic_week_start", Some(text))?,
+                None => meta.set("schedule_academic_week_start", None)?,
             }
             tx.commit()?;
         }
@@ -3121,6 +3105,7 @@ mod tests {
         let db = mem_db();
         let schedule = ScheduleData {
             semester: Some("Fall 2026".to_string()),
+            academic_week_start: None,
             courses: vec![
                 course("CSE241", "Digital Design"),
                 course("MTH115", "Linear Algebra"),
@@ -3651,6 +3636,7 @@ mod tests {
             &db,
             &ScheduleData {
                 semester: Some("Fall 2026".into()),
+                academic_week_start: None,
                 courses: vec![course("CSE241", "Digital Design")],
                 slots: Vec::new(),
             },
@@ -3704,6 +3690,7 @@ mod tests {
             &db,
             &ScheduleData {
                 semester: Some("Fall 2026".into()),
+                academic_week_start: None,
                 courses: vec![Course {
                     id: "CSE241".into(),
                     name: "Digital Design".into(),
@@ -3791,7 +3778,7 @@ mod tests {
         assert_eq!(summary.absent, 3);
         assert_eq!(summary.excused, 0);
         assert_eq!(summary.max_absences, Some(4));
-        assert_eq!(summary.is_critical, false);
+        assert!(!summary.is_critical);
         assert_eq!(
             summary.warning_chip.as_deref(),
             Some("1 Absence Left (3/4)")
@@ -3812,7 +3799,7 @@ mod tests {
 
         let crit_summary = att_repo.course_summary("CSE241").unwrap();
         assert_eq!(crit_summary.absent, 4);
-        assert_eq!(crit_summary.is_critical, true);
+        assert!(crit_summary.is_critical);
         assert_eq!(
             crit_summary.warning_chip.as_deref(),
             Some("Limit Reached! (4/4)")
@@ -3823,7 +3810,7 @@ mod tests {
         course_repo.set_max_absences("CSE241", Some(6)).unwrap();
         let updated_summary = att_repo.course_summary("CSE241").unwrap();
         assert_eq!(updated_summary.max_absences, Some(6));
-        assert_eq!(updated_summary.is_critical, false);
+        assert!(!updated_summary.is_critical);
     }
 
     #[test]
@@ -3940,7 +3927,7 @@ mod tests {
 
         let all = mb_repo.list_all().unwrap();
         assert_eq!(all.len(), 1);
-        assert_eq!(all[0].resolved, true);
+        assert!(all[0].resolved);
     }
 
     #[test]
@@ -3954,6 +3941,7 @@ mod tests {
             &db,
             &ScheduleData {
                 semester: Some("Fall 2026".into()),
+                academic_week_start: None,
                 courses: courses.clone(),
                 slots: Vec::new(),
             },
@@ -4121,6 +4109,8 @@ mod tests {
             snippet: Some("Please prepare chapters 1 and 2".into()),
             body: "Quiz 1 will be held in the lecture hall.".into(),
             body_truncated: false,
+            internal_date_ms: None,
+            history_id: None,
         };
         ops::save_cached_emails(&db, &[email1.clone()], "t1").unwrap();
 

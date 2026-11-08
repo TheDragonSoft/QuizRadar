@@ -37,6 +37,7 @@ pub mod cushion;
 pub mod dashboard;
 pub mod gpa;
 pub mod parity;
+pub mod study;
 pub mod study_blocks;
 pub mod tasks;
 

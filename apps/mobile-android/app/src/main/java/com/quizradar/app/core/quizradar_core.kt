@@ -994,7 +994,7 @@ internal interface UniffiLib : Library {
     ): Pointer
     fun uniffi_quizradar_core_fn_func_parse_email(`emailJson`: RustBuffer.ByValue,`scheduleJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    fun uniffi_quizradar_core_fn_func_parse_ics(`content`: RustBuffer.ByValue,`scheduleJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_quizradar_core_fn_func_parse_ics(`content`: RustBuffer.ByValue,`scheduleJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,`offsetSeconds`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_radar_order_list(`assessmentsJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1291,7 +1291,7 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_quizradar_core_checksum_func_parse_email() != 6698.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_quizradar_core_checksum_func_parse_ics() != 23197.toShort()) {
+    if (lib.uniffi_quizradar_core_checksum_func_parse_ics() != 45175.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_func_radar_order_list() != 15281.toShort()) {
@@ -2952,7 +2952,9 @@ enum class FfiProviderCapability {
     MICROSOFT_USER_PROFILE,
     MICROSOFT_MAIL_READ,
     MICROSOFT_CALENDARS_READ,
-    MICROSOFT_SIGN_IN;
+    MICROSOFT_SIGN_IN,
+    MICROSOFT_GROUP_READ,
+    MICROSOFT_FILES_READ;
     companion object
 }
 
@@ -3614,11 +3616,11 @@ public object FfiConverterOptionalTypeFfiTokenProvider: FfiConverterRustBuffer<F
     }
     
 
-    @Throws(QuizRadarFfiException::class) fun `parseIcs`(`content`: kotlin.String, `scheduleJson`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String {
+    @Throws(QuizRadarFfiException::class) fun `parseIcs`(`content`: kotlin.String, `scheduleJson`: kotlin.String, `refDateIso`: kotlin.String, `offsetSeconds`: kotlin.Int): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCallWithError(QuizRadarFfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_parse_ics(
-        FfiConverterString.lower(`content`),FfiConverterString.lower(`scheduleJson`),FfiConverterString.lower(`refDateIso`),_status)
+        FfiConverterString.lower(`content`),FfiConverterString.lower(`scheduleJson`),FfiConverterString.lower(`refDateIso`),FfiConverterInt.lower(`offsetSeconds`),_status)
 }
     )
     }

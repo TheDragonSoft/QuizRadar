@@ -174,6 +174,8 @@ fn arb_email() -> impl Strategy<Value = CachedEmail> {
             snippet: None,
             body,
             body_truncated: false,
+            internal_date_ms: None,
+            history_id: None,
         })
 }
 
@@ -233,6 +235,7 @@ fn arb_schedule() -> impl Strategy<Value = ScheduleData> {
         }
         ScheduleData {
             semester: Some("Fall 2026".to_string()),
+            academic_week_start: None,
             courses,
             slots: built,
         }
@@ -283,6 +286,8 @@ fn arb_email_for(schedule: &ScheduleData) -> impl Strategy<Value = CachedEmail> 
             snippet: None,
             body,
             body_truncated: false,
+            internal_date_ms: None,
+            history_id: None,
         }
     });
 
@@ -608,6 +613,8 @@ proptest! {
             snippet: None,
             body: format!("The quiz will be held on {date_text}. Bring your student id."),
             body_truncated: false,
+            internal_date_ms: None,
+            history_id: None,
         };
         let assessment = parse_email_announcement(&email, &ScheduleData::default(), ref_date());
         prop_assert!(
@@ -676,6 +683,7 @@ proptest! {
 fn control_schedule() -> ScheduleData {
     ScheduleData {
         semester: Some("Fall 2026".to_string()),
+        academic_week_start: None,
         courses: vec![Course {
             id: "CSE241".to_string(),
             name: "Object-Oriented Programming".to_string(),
@@ -716,6 +724,8 @@ fn p2_control_room_group_and_instructor_are_populated() {
         snippet: None,
         body: "Quiz 1 for CSE241 will be held on 21 October 2026.".to_string(),
         body_truncated: false,
+        internal_date_ms: None,
+        history_id: None,
     };
 
     let assessment = parse_email_announcement(&email, &control_schedule(), ref_date());
@@ -746,6 +756,8 @@ fn p3_control_valid_date_is_parsed_and_impossible_date_is_not() {
         snippet: None,
         body: "The quiz will be held on 21 October 2026.".to_string(),
         body_truncated: false,
+        internal_date_ms: None,
+        history_id: None,
     };
     let impossible = CachedEmail {
         body: "The quiz will be held on 31 February 2026.".to_string(),
@@ -777,6 +789,8 @@ fn p4_overnight_slot_times_are_preserved_verbatim() {
         snippet: None,
         body: "Quiz 1 for CSE241 will be held on 21 October 2026.".to_string(),
         body_truncated: false,
+        internal_date_ms: None,
+        history_id: None,
     };
 
     let assessment = parse_email_announcement(&email, &schedule, ref_date());

@@ -374,9 +374,19 @@ impl Db {
         }
         // Migration 3 is a DATA migration (positional topic keys →
         // content-addressed keys through each assessment's current topic
-        // list); it needs Rust, not SQL, and runs once, right after the
-        // ladder crosses version 3.
-        if from < 3 {
+        // list); it needs Rust, not SQL. It is tracked idempotently in `kv_meta`
+        // via 'topic_key_migration_v3' so a crash between schema v4 pragma update
+        // and data migration re-runs and never drops topic completion state.
+        let v3_data_migrated: bool = self
+            .conn
+            .query_row(
+                "SELECT 1 FROM kv_meta WHERE key = 'topic_key_migration_v3'",
+                [],
+                |_| Ok(true),
+            )
+            .unwrap_or(false);
+
+        if (from < 3 || !v3_data_migrated) && self.schema_version()? >= 3 {
             migrate_topic_keys_to_content_addressing(&self.conn)?;
         }
         Ok(())

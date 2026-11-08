@@ -34,6 +34,8 @@ export interface ScheduleSlot {
 
 export interface ScheduleData {
   semester?: string | null;
+  academicWeekStart?: string | null;
+  academic_week_start?: string | null;
   courses: Course[];
   slots: ScheduleSlot[];
 }
@@ -596,3 +598,139 @@ export interface MistakeItem {
   resolved: boolean;
 }
 
+export interface GradeRecord {
+  weightagePercent?: number | null;
+  achievedScore?: number | null;
+  maxScore?: number | null;
+  weightage_percent?: number | null;
+  achieved_score?: number | null;
+  max_score?: number | null;
+}
+
+export interface AttendanceEntry {
+  id: string;
+  slotId: string;
+  courseId: string;
+  dateIso: string;
+  status: string;
+  updatedAt: string;
+  slot_id?: string;
+  course_id?: string;
+  date_iso?: string;
+  updated_at?: string;
+}
+
+export interface CourseAttendanceSummary {
+  courseId: string;
+  totalClasses: number;
+  attended: number;
+  absent: number;
+  excused: number;
+  maxAbsences?: number | null;
+  warningChip?: string | null;
+  isCritical: boolean;
+  course_id?: string;
+  total_classes?: number;
+  max_absences?: number | null;
+  warning_chip?: string | null;
+  is_critical?: boolean;
+}
+
+export interface QuizAttempt {
+  id: string;
+  assessmentId: string;
+  courseId?: string | null;
+  timestamp: string;
+  score: number;
+  totalQuestions: number;
+  passed: boolean;
+  assessment_id?: string;
+  course_id?: string | null;
+  total_questions?: number;
+}
+
+export interface MistakeRecord {
+  id: string;
+  attemptId?: string | null;
+  assessmentId: string;
+  courseId?: string | null;
+  questionId: string;
+  questionText: string;
+  options: string[];
+  selectedIndex: number;
+  correctIndex: number;
+  explanation: string;
+  timestamp: string;
+  resolved: boolean;
+  attempt_id?: string | null;
+  assessment_id?: string;
+  course_id?: string | null;
+  question_id?: string;
+  question_text?: string;
+  selected_index?: number;
+  correct_index?: number;
+}
+
+export interface StudySessionRecord {
+  id: string;
+  courseId?: string | null;
+  assessmentId?: string | null;
+  topic?: string | null;
+  durationMinutes: number;
+  timestamp: string;
+  dateIso: string;
+  course_id?: string | null;
+  assessment_id?: string | null;
+  duration_minutes?: number;
+  date_iso?: string;
+}
+
+export interface CourseFocusStat {
+  courseId: string;
+  courseName: string;
+  minutes: number;
+  color?: string | null;
+  course_id?: string;
+  course_name?: string;
+}
+
+export interface DailyFocusStat {
+  dateIso: string;
+  dayLabel: string;
+  minutes: number;
+  date_iso?: string;
+  day_label?: string;
+}
+
+export interface StudyAnalytics {
+  currentStreakDays: number;
+  bestStreakDays: number;
+  totalFocusMinutes: number;
+  weeklyChart: DailyFocusStat[];
+  courseBreakdown: CourseFocusStat[];
+  current_streak_days?: number;
+  best_streak_days?: number;
+  total_focus_minutes?: number;
+  weekly_chart?: DailyFocusStat[];
+  course_breakdown?: CourseFocusStat[];
+}
+
+export interface DailyStudyCushion {
+  date: string;
+  wakingHours: number;
+  committedHours: number;
+  availableHours: number;
+  requiredHours?: number | null;
+  cushionHours?: number | null;
+  isDeficit: boolean;
+  deficitHours?: number | null;
+  warningNote?: string | null;
+  waking_hours?: number;
+  committed_hours?: number;
+  available_hours?: number;
+  required_hours?: number | null;
+  cushion_hours?: number | null;
+  is_deficit?: boolean;
+  deficit_hours?: number | null;
+  warning_note?: string | null;
+}

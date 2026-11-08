@@ -24,6 +24,7 @@ export default tseslint.config(
       "**/gen/**",
       "apps/web/public/**",
       "apps/web/src/generated/**",
+      "apps/web/e2e/**",
       ".agents/**",
       ".zcode/**",
       // Reference dumps and scratch — not project code (AGENTS §3.8).

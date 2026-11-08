@@ -584,6 +584,11 @@ impl Store {
                  DELETE FROM config_kv;
                  DELETE FROM tokens_meta;
                  DELETE FROM kv_meta;
+                 DELETE FROM attendance;
+                 DELETE FROM flashcards;
+                 DELETE FROM quiz_attempts;
+                 DELETE FROM mistake_bank;
+                 DELETE FROM study_sessions;
                  DELETE FROM cached_emails;
                  DELETE FROM email_ai_extractions;",
             )?;

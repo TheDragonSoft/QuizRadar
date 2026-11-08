@@ -1,0 +1,74 @@
+name: Pages
+# Deploys the Astro landing site with the Web Companion PWA mounted at /app/
+# to GitHub Pages. Same build recipe as release.yml's deploy-pwa job, without
+# requiring a full desktop/android release.
+#
+# Reuse the `github-pages` environment so deployments appear at
+# https://thedragonsoft.github.io/QuizRadar/
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "apps/web/**"
+      - "apps/landing/**"
+      - "tooling/build-site.mjs"
+      - ".github/workflows/pages.yml"
+
+# Least-privilege default permissions — the deploy job grants write as needed
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-pages:
+    name: Build & Deploy Landing + PWA to GitHub Pages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      # The web build compiles the WASM core (build-wasm.mjs): it needs the
+      # wasm32 target and the version-pinned wasm-bindgen CLI, exactly like
+      # the release.yml deploy-pwa job.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: install wasm-bindgen-cli (version pinned by Cargo.lock)
+        run: |
+          WASM_BINDGEN_VERSION="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep '^version' | head -1 | cut -d'"' -f2)"
+          echo "wasm-bindgen-cli ${WASM_BINDGEN_VERSION}"
+          cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build Web Bundle
+        run: pnpm --filter @quizradar/web build
+      - name: Build Landing Site & Mount Web Companion at /app/
+        env:
+          ASTRO_SITE: https://thedragonsoft.github.io
+          ASTRO_BASE: /QuizRadar
+        run: node tooling/build-site.mjs --skip-web-build
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/landing/dist
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

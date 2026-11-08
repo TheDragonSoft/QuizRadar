@@ -5,6 +5,7 @@ import CelestialSky from "../components/CelestialSky.astro";
 import {
   ANCHOR_STEPS,
   FAQ_ITEMS,
+  GITHUB_REPO_URL,
   INGESTION_SOURCES,
   PLATFORM_DOWNLOADS,
   PRODUCT_VIEWS,
@@ -505,12 +506,47 @@ function splitHighlight(text: string, highlight?: string) {
        6. FREQUENTLY ASKED QUESTIONS (`#faq`)
        ===================================================================== -->
   <section id="faq" class="page-section">
-    <div class="container faq-container">
-      <div class="section-head text-center animate-on-scroll">
+    <div class="container faq-layout">
+      <!-- Left Column: Context, Privacy Guarantees & Support -->
+      <aside class="faq-sidebar animate-on-scroll">
         <h2 class="section-title">Everything about QuizRadar, answered.</h2>
-      </div>
+        <p class="section-lead">
+          Can't find what you're looking for? QuizRadar is fully open-source and built from the ground up for student privacy.
+        </p>
 
-      <div class="faq-list faq-list-centered animate-on-scroll" style="--reveal-delay: 80ms;">
+        <div class="faq-guarantees">
+          <div class="faq-guarantee-row">
+            <BrandIcon name="shield" size={18} />
+            <div>
+              <strong>Private & Zero-Telemetry</strong>
+              <p>Your access tokens and timetable data never leave your device.</p>
+            </div>
+          </div>
+
+          <div class="faq-guarantee-row">
+            <BrandIcon name="sparkles" size={18} />
+            <div>
+              <strong>100% Offline-Capable</strong>
+              <p>Schedule detection and study planning work without any AI keys or accounts.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="faq-action-row">
+          <a
+            href={`${GITHUB_REPO_URL}/issues`}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn btn-secondary btn-sm"
+          >
+            <BrandIcon name="github" size={15} />
+            <span>Ask on GitHub Discussions</span>
+          </a>
+        </div>
+      </aside>
+
+      <!-- Right Column: Accordion List -->
+      <div class="faq-list animate-on-scroll" style="--reveal-delay: 80ms;">
         {
           FAQ_ITEMS.map((item, idx) => (
             <details class="faq-item" open={idx === 0}>
@@ -1463,15 +1499,66 @@ function splitHighlight(text: string, highlight?: string) {
   }
 
   /* -------------------------------------------------------------------------
-     6. Frequently Asked Questions
+     6. Frequently Asked Questions (2-Column Balanced Layout)
      ------------------------------------------------------------------------- */
-  .faq-container {
-    max-width: 840px;
-    margin-inline: auto;
+  .faq-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 0.88fr) minmax(0, 1.12fr);
+    gap: 48px;
+    align-items: start;
   }
 
-  .faq-list-centered {
-    margin-block-start: 28px;
+  .faq-sidebar {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 18px;
+    position: sticky;
+    top: 96px;
+  }
+
+  .faq-guarantees {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px 18px;
+    background-color: var(--surface);
+    border: 1px solid var(--surface-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    width: 100%;
+  }
+
+  .faq-guarantee-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .faq-guarantee-row :global(svg) {
+    color: var(--accent-ink);
+    margin-block-start: 2px;
+    flex-shrink: 0;
+  }
+
+  .faq-guarantee-row strong {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: var(--text);
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  .faq-guarantee-row p {
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+  }
+
+  .faq-action-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
   }
 
   .faq-list {
@@ -1622,8 +1709,13 @@ function splitHighlight(text: string, highlight?: string) {
 
     .step-grid,
     .workflow-split,
-    .android-grid {
+    .android-grid,
+    .faq-layout {
       grid-template-columns: minmax(0, 1fr);
+    }
+
+    .faq-sidebar {
+      position: static;
     }
 
     .sources-ledger {

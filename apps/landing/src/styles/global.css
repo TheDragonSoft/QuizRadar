@@ -32,7 +32,7 @@
   --amber-pill: #fbbf24;
   --amber-ink: #0f172a;
   --status-ok: #0f9d58;
-  --status-warn: #d97706;
+  --status-warn: #b45309;
   --exam-red: #dc2626;
   --exam-glow: 0 3px 12px rgba(220, 38, 38, 0.18);
 
@@ -277,17 +277,6 @@ h4 {
 
 .tabular {
   font-variant-numeric: tabular-nums;
-}
-
-.eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent-ink);
 }
 
 .section-title {

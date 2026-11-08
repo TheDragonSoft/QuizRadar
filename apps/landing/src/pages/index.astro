@@ -49,12 +49,13 @@ function splitHighlight(text: string, highlight?: string) {
 
           <div class="hero-actions">
             <a
-              href={PLATFORM_DOWNLOADS.windows.primaryUrl}
+              href={downloadHref}
               class="btn btn-sky-primary btn-lg"
               data-dl-cta
+              data-default-href={downloadHref}
             >
               <BrandIcon name="download" size={18} />
-              <span data-dl-label>{PLATFORM_DOWNLOADS.windows.label}</span>
+              <span data-dl-label>Download QuizRadar</span>
             </a>
 
             <a href={webAppHref} class="btn btn-sky-secondary btn-lg">
@@ -75,7 +76,7 @@ function splitHighlight(text: string, highlight?: string) {
       <div id="views" class="stage-wrap">
         <div class="gradient-stage app-stage">
           <div class="stage-toolbar">
-            <div class="stage-tablist" role="tablist" aria-label="QuizRadar application views">
+            <div class="stage-tablist" role="tablist" aria-orientation="horizontal" aria-label="QuizRadar application views">
               {
                 PRODUCT_VIEWS.map((view, idx) => (
                   <button
@@ -682,7 +683,7 @@ function splitHighlight(text: string, highlight?: string) {
   }
 
   .hero-title {
-    font-size: clamp(2.25rem, 4.9vw, 3.85rem);
+    font-size: clamp(1.85rem, 5.2vw, 3.85rem);
     font-weight: 800;
     line-height: 1.06;
     letter-spacing: -0.032em;
@@ -832,6 +833,27 @@ function splitHighlight(text: string, highlight?: string) {
 
   :global(html.dark) .switch-moon {
     display: none;
+  }
+
+  .stage-panel:not([hidden]) {
+    animation: stagePanelIn 220ms var(--ease-snappy);
+  }
+
+  @keyframes stagePanelIn {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .stage-panel:not([hidden]) {
+      animation: none;
+    }
   }
 
   .stage-frame {
@@ -1067,11 +1089,17 @@ function splitHighlight(text: string, highlight?: string) {
   }
 
   .phrase-mark {
-    background-color: rgba(251, 191, 36, 0.22);
+    background-color: rgba(245, 158, 11, 0.16);
+    border: 1px solid rgba(245, 158, 11, 0.35);
     color: inherit;
     padding: 1px 5px;
     border-radius: 4px;
     font-weight: 600;
+  }
+
+  :global(html.dark) .phrase-mark {
+    background-color: rgba(251, 191, 36, 0.22);
+    border-color: rgba(251, 191, 36, 0.4);
   }
 
   .resolved-grid {
@@ -1477,6 +1505,11 @@ function splitHighlight(text: string, highlight?: string) {
     display: none;
   }
 
+  .faq-summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+
   .faq-summary :global(.faq-chevron) {
     color: var(--text-muted);
     transition-property: transform, color;
@@ -1569,6 +1602,10 @@ function splitHighlight(text: string, highlight?: string) {
     .stage-sky-switch:hover {
       border-color: var(--border-strong);
       color: var(--text);
+    }
+
+    .faq-summary:hover {
+      background-color: var(--surface-hover);
     }
   }
 

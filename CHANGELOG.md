@@ -2,6 +2,21 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.2.0] — 2026-11-08
+
+### 🤝 Agent & Contributor Summaries
+
+- **[web, tooling, docs]** Unify NextUp and TimelineHorizon upcoming pipelines, implement adaptive parallax canopy collapse, widescreen study deck de-duplication, academic timeline jargon calibration, and toast concurrency cap with auto-dismiss
+
+### 🚀 New Features
+
+- `82128aa` feat(dashboard): refine parallax canopy, soften horizon jargon, and cap toast notifications
+- `9c775e1` feat(observatory): position hero at top of canopy and implement proactive balanced conflict scheduler
+
+### 🔧 Maintenance, Docs & Tests
+
+- `a8357f8` phase(dogfood): verify live Android emulator and Desktop test suite
+
 ## [5.1.0] — 2026-11-08
 
 ### 🤝 Agent & Contributor Summaries

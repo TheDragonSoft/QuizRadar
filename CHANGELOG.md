@@ -2,6 +2,23 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.3.0] — 2026-11-08
+
+### 🤝 Agent & Contributor Summaries
+
+- **[web, tooling, ci, docs]** - Add an Astro marketing & downloads site (`apps/landing`) with a product tour, per-platform download
+    matrix, FAQ, and honest product copy sourced from `tooling/version.json`.
+  - Add `tooling/build-site.mjs`, a unified public build that emits the marketing site and mounts the
+    Web Companion PWA at `/app/` inside it.
+  - Wire the landing package into the pnpm workspace, eslint/prettier ignores, CI (static build step),
+    and the GitHub Pages release workflow (now deploying `apps/landing/dist`).
+  - Regenerate the desktop Tauri icon set to match the current brand artwork.
+
+### 🚀 New Features
+
+- `4c4fd89` feat(landing): add Astro marketing site and unified public build
+- `3c45337` feat(landing): add Astro marketing site and unified public build
+
 ## [5.2.0] — 2026-11-08
 
 ### 🤝 Agent & Contributor Summaries

@@ -2,6 +2,36 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.1.0] — 2026-11-08
+
+### 🤝 Agent & Contributor Summaries
+
+- **[tooling, ci, docs, web]** Add conflict-free multi-agent handoff fragments (changes/*.md), worktree conflict-radar preflight CLI, local git hooks + CI hygiene gates, tag-aware changelog generation, slimmed STATUS.md (with 2,088-line v5.0 log archived), and automatic GitHub Actions SemVer rollup on merge to main
+
+### 🚀 New Features
+
+- `03b57d7` feat(tooling): add multi-agent versioning, preflight radar, and changelog rollup
+- `1a8d607` feat(suite): implement full non-ai feature suite for web, desktop and android
+- `a836beb` feat(observatory): implement astronomical timeline horizon and widescreen mission control
+- `1a8e170` feat(redesign): execute cross-platform UI/UX redesign and non-ai suite integration
+- `db1048d` feat(oauth): bake the maintainer Google client into desktop and android
+
+### 🐛 Fixes & Performance
+
+- `be9ae0b` fix(rust): complete the academic-track refactor; land the settings-page migration (green tree)
+- `cdf0728` fix(android): oauth client ids auto-save + inline in onboarding; regenerate stale uniffi bindings
+
+### 🔧 Maintenance, Docs & Tests
+
+- `e174ff1` chore(web): harden testids, add defensive null checks to FocusView, and update non-ai suite showcase captures
+- `374877e` chore(test): add testid to sidebar navigation buttons
+- `54acaa0` chore: setup feature/non-ai-suite branch and initial PROJECT.md
+- `d1e5aec` chore: preserve uncommitted observatory and theme updates as baseline
+- `8446a16` chore: format the swept impeccable critique notes
+- `abfd939` chore: remove a stray shell-artifact file
+- `08d208d` docs: STATUS round 13 - content-addressed topic keys, rhythm wiring, settings-page redesign
+- `93f736f` docs: STATUS round 12 - v5.0.0 released, artifacts and updater manifest verified
+
 ## [5.0.0] — 2026-11-03
 
 **QuizRadar** is a local-first, zero-server academic radar and calendar for university students.

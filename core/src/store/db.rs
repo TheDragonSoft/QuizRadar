@@ -44,7 +44,7 @@ pub enum StoreError {
 }
 
 /// The schema this build ships. Written by [`Db::apply_migrations`].
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;
 
 pub(crate) const INITIAL_SCHEMA_SQL: &str = "
 CREATE TABLE courses (
@@ -270,6 +270,29 @@ pub const MIGRATIONS: &[(u32, &str)] = &[
          );
          CREATE INDEX idx_study_sessions_date ON study_sessions(date_iso);
          CREATE INDEX idx_study_sessions_course ON study_sessions(course_id);",
+    ),
+    (
+        5,
+        "CREATE TABLE cached_emails (
+             id TEXT PRIMARY KEY NOT NULL,
+             subject TEXT NOT NULL,
+             sender TEXT NOT NULL,
+             sent_date TEXT NOT NULL,
+             snippet TEXT,
+             body TEXT NOT NULL,
+             body_truncated INTEGER NOT NULL DEFAULT 0,
+             updated_at TEXT NOT NULL
+         );
+         CREATE INDEX idx_cached_emails_sent ON cached_emails(sent_date);
+
+         CREATE TABLE email_ai_extractions (
+             cache_key TEXT PRIMARY KEY NOT NULL,
+             email_id TEXT NOT NULL,
+             extraction_json TEXT NOT NULL,
+             model_id TEXT NOT NULL,
+             created_at TEXT NOT NULL
+         );
+         CREATE INDEX idx_email_ai_extractions_email ON email_ai_extractions(email_id);",
     ),
 ];
 

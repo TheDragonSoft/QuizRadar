@@ -14,6 +14,7 @@ import {
   HelpCircle,
   Timer,
   X,
+  Mail,
 } from "lucide-react";
 import { copy } from "../copy";
 import { safeExternalUrl } from "../lib/safeUrl";
@@ -183,6 +184,26 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
               <span className="px-2 py-0.5 rounded-full bg-[var(--surface-hover)] text-[var(--text-muted)] text-[11px] font-semibold">
                 {assessment.source || copy.assessmentDetail.defaultSource}
               </span>
+              {assessment.aiInferenceNote ? (
+                assessment.aiInferenceNote.includes("[AI unavailable") ||
+                assessment.aiInferenceNote.toLowerCase().startsWith("estimated") ? (
+                  <span
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[11px] font-semibold"
+                    title={assessment.aiInferenceNote}
+                  >
+                    <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" />
+                    <span>Heuristic Estimate</span>
+                  </span>
+                ) : (
+                  <span
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 text-[11px] font-bold shadow-2xs"
+                    title={assessment.aiInferenceNote}
+                  >
+                    <Sparkles className="h-3 w-3 shrink-0 text-purple-600 dark:text-purple-400" aria-hidden="true" />
+                    <span>AI-Verified</span>
+                  </span>
+                )
+              ) : null}
               {isGraded ? (
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold">
                   {copy.assessmentDetail.recordedStatus(
@@ -272,6 +293,51 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
           </div>
         </div>
 
+        {/* Source Announcement Context (if email derived) */}
+        {(assessment.emailSubject || assessment.source === "Gmail" || assessment.elearningUrl) && (
+          <div className="space-y-2 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-hover)] p-3.5 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 font-bold text-[var(--text)]">
+                <Mail className="h-4 w-4 text-[var(--accent-ink)] shrink-0" aria-hidden="true" />
+                <span>Source Email Announcement</span>
+              </div>
+              {assessment.emailSentDate && (
+                <span className="text-[11px] text-[var(--text-muted)] font-mono">
+                  {assessment.emailSentDate}
+                </span>
+              )}
+            </div>
+
+            {assessment.emailSubject && (
+              <div className="mt-1">
+                <span className="text-[11px] text-[var(--text-muted)] block font-semibold">Subject</span>
+                <p className="font-medium text-[var(--text)] select-text">{assessment.emailSubject}</p>
+              </div>
+            )}
+
+            {assessment.instructor && (
+              <div>
+                <span className="text-[11px] text-[var(--text-muted)] block font-semibold">Sender</span>
+                <p className="text-[var(--text)]">{assessment.instructor}</p>
+              </div>
+            )}
+
+            {safeExternalUrl(assessment.elearningUrl) && (
+              <div className="pt-1">
+                <a
+                  href={safeExternalUrl(assessment.elearningUrl)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-[var(--accent-ink)] hover:underline font-semibold text-xs"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>Open LMS / Announcement Link</span>
+                </a>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Warnings & Alerts */}
         {(assessment.warnings?.length > 0 || assessment.conflictWarning) && (
           <div className="space-y-1.5 rounded-xl border border-amber-300 dark:border-amber-700/80 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
@@ -359,23 +425,50 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
           )}
         </div>
 
-        {/* Study Strategy / Guidance */}
-        <div className="space-y-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-hover)] p-3 text-xs">
-          <div className="flex items-center gap-1.5 font-bold text-[var(--accent-ink)]">
-            <Sparkles className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span>{copy.assessmentDetail.studyStrategyHeader}</span>
+        {/* AI Extraction Reasoning & Study Guidance */}
+        {(assessment.aiInferenceNote || assessment.aiStudyPlan || rec?.whyStudyNow) && (
+          <div className="space-y-2 rounded-xl border border-purple-500/20 bg-purple-500/5 p-3.5 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 font-bold text-purple-700 dark:text-purple-300">
+                <Sparkles className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <span>AI Reasoning & Study Roadmap</span>
+              </div>
+              {assessment.estimatedStudyHours != null && assessment.estimatedStudyHours > 0 && (
+                <span className="px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 font-semibold text-[11px]">
+                  ~{assessment.estimatedStudyHours}h prep recommended
+                </span>
+              )}
+            </div>
+
+            {assessment.aiInferenceNote && (
+              <div className="space-y-0.5">
+                <span className="text-[11px] text-purple-800/80 dark:text-purple-300/80 font-semibold block">
+                  Extraction Derivation:
+                </span>
+                <p className="text-[var(--text)] leading-relaxed italic bg-[var(--surface)]/70 p-2 rounded-lg border border-purple-500/10">
+                  {assessment.aiInferenceNote}
+                </p>
+              </div>
+            )}
+
+            {assessment.aiStudyPlan && (
+              <div className="space-y-0.5">
+                <span className="text-[11px] text-purple-800/80 dark:text-purple-300/80 font-semibold block">
+                  Recommended Study Plan:
+                </span>
+                <p className="text-[var(--text)] leading-relaxed">
+                  {assessment.aiStudyPlan}
+                </p>
+              </div>
+            )}
+
+            {rec?.whyStudyNow && !assessment.aiStudyPlan && (
+              <p className="text-[var(--text-muted)] leading-relaxed">
+                {rec.whyStudyNow}
+              </p>
+            )}
           </div>
-          <p className="text-[var(--text)] leading-relaxed">
-            {rec?.whyStudyNow ||
-              assessment.aiInferenceNote ||
-              copy.assessmentDetail.aiGuidanceFallback}
-          </p>
-          {assessment.aiStudyPlan && (
-            <p className="text-[var(--text-muted)] leading-relaxed mt-1">
-              {assessment.aiStudyPlan}
-            </p>
-          )}
-        </div>
+        )}
 
         {/* Actions: Google Calendar & ICS Export */}
         <div className="space-y-2">

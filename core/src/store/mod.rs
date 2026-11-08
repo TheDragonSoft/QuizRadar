@@ -523,6 +523,50 @@ impl Store {
             .await
     }
 
+    /// Loads all announcement emails cached on this device.
+    pub async fn load_cached_emails(&self) -> Result<Vec<crate::types::CachedEmail>, StoreError> {
+        self.run(repo::ops::load_cached_emails).await
+    }
+
+    /// Persists announcement emails to the local device cache.
+    pub async fn save_cached_emails(
+        &self,
+        emails: Vec<crate::types::CachedEmail>,
+        updated_at: String,
+    ) -> Result<(), StoreError> {
+        self.run(move |db| repo::ops::save_cached_emails(db, &emails, &updated_at))
+            .await
+    }
+
+    /// Fetches an AI assessment extraction by its email content hash.
+    pub async fn get_email_ai_extraction(
+        &self,
+        cache_key: &str,
+    ) -> Result<Option<crate::ai::tasks::ExtractedAssessment>, StoreError> {
+        let key = cache_key.to_string();
+        self.run(move |db| repo::ops::get_email_ai_extraction(db, &key))
+            .await
+    }
+
+    /// Persists an AI assessment extraction result.
+    pub async fn save_email_ai_extraction(
+        &self,
+        cache_key: &str,
+        email_id: &str,
+        extraction: &crate::ai::tasks::ExtractedAssessment,
+        model_id: &str,
+        created_at: String,
+    ) -> Result<(), StoreError> {
+        let key = cache_key.to_string();
+        let id = email_id.to_string();
+        let ext = extraction.clone();
+        let mid = model_id.to_string();
+        self.run(move |db| {
+            repo::ops::save_email_ai_extraction(db, &key, &id, &ext, &mid, &created_at)
+        })
+        .await
+    }
+
     /// Permanently wipes all tables and records, recreating a clean database state.
     pub async fn reset_all(&self) -> Result<(), StoreError> {
         self.run(move |db| {
@@ -539,7 +583,9 @@ impl Store {
                  DELETE FROM feeds;
                  DELETE FROM config_kv;
                  DELETE FROM tokens_meta;
-                 DELETE FROM kv_meta;",
+                 DELETE FROM kv_meta;
+                 DELETE FROM cached_emails;
+                 DELETE FROM email_ai_extractions;",
             )?;
             tx.commit()?;
             Ok(())

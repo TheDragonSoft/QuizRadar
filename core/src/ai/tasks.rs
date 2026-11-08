@@ -165,7 +165,7 @@ fn normalize_ai_type(label: &str) -> Option<AssessmentType> {
 /// The AI's extraction of one announcement email, field-compatible with
 /// `parse::email` output. Every unknown stays `None`; junk values are
 /// discarded at parse time, never coerced.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExtractedAssessment {
     /// `false` = the model judged this a non-assessment email — the caller
     /// drops it (`05` §4 merge rule).
@@ -190,14 +190,16 @@ pub struct ExtractedAssessment {
 const EXTRACT_INSTRUCTION: &str = r#"You are an intelligent university academic assistant inside QuizRadar.
 Analyze the following university announcement email and determine the exact assessment details by cross-referencing the email's sent date and body with the student's enrolled weekly class schedule.
 
-Note on Schedule Matching:
-- Always match "during the lecture", "in tutorial", or "in lab" to the student's actual scheduled slot for that course to determine the exact date_iso (YYYY-MM-DD), start_time (HH:MM), end_time (HH:MM), room, and group.
-- Anchor relative phrases like "this week", "next week", or "next Wednesday" to the email's Sent Date.
+Core Objectives:
+1. Assessment Intent: Determine if this email announces an upcoming quiz, exam, test, or assignment deadline ("is_assessment": true). If it is purely grades, results, lecture slides upload, or generic chat, set "is_assessment": false and leave all other fields null/empty.
+2. Intelligent Date & Time Reasoning: Understand complex natural language ("next Wednesday", "postponed to Monday at 10 AM", "during our regular lecture"). Cross-reference with the email's Sent Date and the course's weekly slots to find the exact date_iso (YYYY-MM-DD), start_time (HH:MM), and end_time (HH:MM).
+3. Honest Fact Extraction: Extract room, group, instructor, syllabus topics, and rules/warnings (e.g., "bring calculator", "closed book", "printed template required").
+4. High-Value Actionable Guidance: Provide a concise 2-sentence study plan and honest estimated study hours (1.0 to 15.0).
 
 HONESTY RULES (strict):
+- If pre-matched course details are provided below, stick to them. Do not invent or guess different course codes.
 - Use null for any field the announcement and schedule do not establish. NEVER guess rooms, instructors, groups, times or dates.
-- If the email is not an assessment announcement (grades, results, cancellations, material uploads), set "is_assessment": false and leave every other field null or empty.
-- "ai_inference_note" must explain exactly how the date, time and room were derived; prefix it with "Estimated:" whenever the date was not explicit in the announcement.
+- "ai_inference_note" must explain exactly how the date, time, and room were derived; prefix with "Estimated:" whenever the date was not explicit in the announcement.
 - "topics" and "warnings" must quote what the announcement actually says — never invent syllabus content.
 - "assessment_type" must be one of: "Class Quiz", "Online Quiz", "Midterm Exam", "Final Exam", "Lab Assessment", "Assignment".
 
@@ -222,16 +224,40 @@ Return ONLY a valid JSON object matching this exact structure (null when unknown
 }"#;
 
 /// Extracts one announcement email into a validated draft (FlashLite,
-/// temperature 0.1, v4's prompt with strict null semantics). The draft merges
+/// temperature 0.1, strict null semantics). The draft merges
 /// into the radar via [`merge_extraction`].
 pub async fn extract_assessment(
     provider: &dyn AiProvider,
     email: &CachedEmail,
     schedule: &ScheduleData,
 ) -> Result<ExtractedAssessment, AiUnavailable> {
-    let slots_json = serde_json::to_string(&schedule.slots).unwrap_or_else(|_| "[]".to_string());
+    // Pre-match course deterministically via QuizRadar code to prevent LLM token waste
+    let subj_and_body = format!("{} {}", email.subject, email.body);
+    let matched_course =
+        crate::parse::email::match_course_from_text(&subj_and_body, schedule).map(|(c, _)| c);
+
+    let course_header = match matched_course {
+        Some(course) => {
+            let course_slots: Vec<_> = schedule
+                .slots
+                .iter()
+                .filter(|s| s.course_id.eq_ignore_ascii_case(&course.id))
+                .cloned()
+                .collect();
+            let json = serde_json::to_string(&course_slots).unwrap_or_else(|_| "[]".to_string());
+            format!(
+                "PRE-MATCHED COURSE (Determined by QuizRadar code):\n- Course ID: {}\n- Course Name: {}\n\nRELEVANT CLASS SLOTS FOR THIS COURSE:\n{json}\n",
+                course.id, course.name
+            )
+        }
+        None => {
+            let json = serde_json::to_string(&schedule.slots).unwrap_or_else(|_| "[]".to_string());
+            format!("STUDENT'S WEEKLY CLASS SCHEDULE:\n{json}\n")
+        }
+    };
+
     let mut metadata = format!(
-        "STUDENT'S WEEKLY CLASS SCHEDULE:\n{slots_json}\n\nEMAIL METADATA:\n- Subject: {}\n- From: {}\n- Sent Date: {}\n- Body:\n{}",
+        "{course_header}\nEMAIL METADATA:\n- Subject: {}\n- From: {}\n- Sent Date: {}\n- Body:\n{}",
         email.subject, email.from, email.date, email.body
     );
     if email.body_truncated {
@@ -248,10 +274,18 @@ pub async fn extract_assessment(
         AiError::BadResponse(format!("extraction JSON did not match the schema: {error}"))
     })?;
 
+    let (final_course_id, final_course_name) = match matched_course {
+        Some(c) => (Some(c.id.clone()), Some(c.name.clone())),
+        None => (
+            de_optional(raw.course_id.as_deref()),
+            de_optional(raw.course_name.as_deref()),
+        ),
+    };
+
     Ok(ExtractedAssessment {
         is_assessment: raw.is_assessment,
-        course_id: de_optional(raw.course_id.as_deref()),
-        course_name: de_optional(raw.course_name.as_deref()),
+        course_id: final_course_id,
+        course_name: final_course_name,
         title: de_optional(raw.title.as_deref()),
         assessment_type: raw.assessment_type.as_deref().and_then(normalize_ai_type),
         date: raw.date_iso.as_deref().and_then(parse_iso_date),

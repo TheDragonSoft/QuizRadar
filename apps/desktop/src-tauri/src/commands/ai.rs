@@ -121,7 +121,7 @@ pub async fn ai_quota_usage(state: State<'_, AppState>) -> Result<AiQuotaUsage, 
 /// scripted IPC call send topics or timetable images to Gemini. Default
 /// mirrors the state reader (`state.rs`): a desktop user who seeded their own
 /// key has opted in; the v4 importer and the PWA force it off explicitly.
-async fn gemini_consent(state: &AppState) -> Result<bool, String> {
+pub(crate) async fn gemini_consent(state: &AppState) -> Result<bool, String> {
     state
         .store
         .get_config_bool("gemini_enabled".to_string(), true)

@@ -6,10 +6,14 @@
 //! Announcements outside the 60-day recency window (`01` §4.2) are skipped
 //! and counted in the notes — never dropped silently.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use chrono::{FixedOffset, NaiveDate};
+use sha2::{Digest, Sha256};
 
+use crate::ai::provider::AiProvider;
+use crate::ai::tasks::{extract_assessment, merge_extraction, ExtractedAssessment};
 use crate::parse::email::{parse_emails_from_source, ScanStats, MAX_EMAIL_AGE_DAYS};
 use crate::sources::classroom::{scan_classroom, ClassroomScan};
 use crate::sources::feeds::{scan_feeds, FeedScan};
@@ -21,6 +25,17 @@ use crate::sources::{
     SourceRun, SourceStatus, TokenProvider,
 };
 use crate::types::{Assessment, AssessmentSource, CachedEmail, FeedConfig, ScheduleData};
+
+/// Deterministic SHA-256 hash of an email's identity and content for AI extraction caching.
+#[must_use]
+pub fn compute_email_hash(email: &CachedEmail) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(email.id.as_bytes());
+    hasher.update(email.date.as_bytes());
+    hasher.update(email.subject.as_bytes());
+    hasher.update(email.body.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
 
 /// Everything the caller enables for this run. Tokens are per-call bearer
 /// suppliers — the core never persists or transports them.
@@ -115,6 +130,8 @@ pub struct SyncInput {
     pub reference_date: NaiveDate,
     /// The caller's local UTC offset (drives honest UTC→local conversion).
     pub local: FixedOffset,
+    /// In-memory cache of previously computed AI extractions keyed by email content hash.
+    pub cached_extractions: HashMap<String, ExtractedAssessment>,
 }
 
 /// The full, honest outcome of one sync run.
@@ -133,6 +150,8 @@ pub struct SyncReport {
     /// Teams course discovery — adoption into the schedule is ALWAYS the
     /// user's explicit decision (never auto-merged, `03` §A3).
     pub discovered_teams: Option<TeamsDiscovery>,
+    /// Newly computed AI extractions (cache_key, email_id, extraction) to persist.
+    pub new_extractions: Vec<(String, String, ExtractedAssessment)>,
 }
 
 /// Runs one full sync. `ai` is the optional Teams-discovery hook (phase 06
@@ -142,6 +161,17 @@ pub async fn run_sync(
     config: &SyncConfig,
     input: &SyncInput,
     ai: Option<&dyn TeamsAiDiscovery>,
+    progress: &(dyn Fn(crate::sources::SourceProgress) + Send + Sync),
+) -> Result<SyncReport, String> {
+    run_sync_with_ai(config, input, ai, None, progress).await
+}
+
+/// Runs one full sync with optional AI email reasoning via Gemini Flash-Lite.
+pub async fn run_sync_with_ai(
+    config: &SyncConfig,
+    input: &SyncInput,
+    ai: Option<&dyn TeamsAiDiscovery>,
+    email_ai: Option<&dyn AiProvider>,
     progress: &(dyn Fn(crate::sources::SourceProgress) + Send + Sync),
 ) -> Result<SyncReport, String> {
     let client = http_client()?;
@@ -160,6 +190,7 @@ pub async fn run_sync(
     let mut per_source: Vec<SourceRun> = Vec::new();
     let mut notes: Vec<String> = Vec::new();
     let mut scanned: Vec<Assessment> = Vec::new();
+    let mut all_new_extractions: Vec<(String, String, ExtractedAssessment)> = Vec::new();
 
     match gmail {
         (run, Some(gmail_scan)) => {
@@ -169,12 +200,83 @@ pub async fn run_sync(
                 notes: scan_notes,
             } = gmail_scan;
             emails_cache = cache;
-            let (mut assessments, parse_stats) = parse_emails_from_source(
+            let (raw_assessments, parse_stats) = parse_emails_from_source(
                 &emails_cache,
                 &input.schedule,
                 input.reference_date,
                 AssessmentSource::Gmail,
             );
+
+            let mut assessments = Vec::new();
+            if let Some(ai_prov) = email_ai {
+                let mut ai_enhanced = 0usize;
+                let mut ai_dropped_non_assessment = 0usize;
+                let mut ai_fallback = 0usize;
+
+                for assessment in raw_assessments {
+                    if let Some(email) = emails_cache.iter().find(|e| e.id == assessment.id) {
+                        let hash = compute_email_hash(email);
+                        if let Some(cached) = input.cached_extractions.get(&hash) {
+                            if cached.is_assessment {
+                                assessments.push(merge_extraction(
+                                    assessment,
+                                    cached,
+                                    input.reference_date,
+                                ));
+                                ai_enhanced += 1;
+                            } else {
+                                ai_dropped_non_assessment += 1;
+                            }
+                            continue;
+                        }
+
+                        match extract_assessment(ai_prov, email, &input.schedule).await {
+                            Ok(extraction) => {
+                                all_new_extractions.push((
+                                    hash.clone(),
+                                    email.id.clone(),
+                                    extraction.clone(),
+                                ));
+                                if extraction.is_assessment {
+                                    assessments.push(merge_extraction(
+                                        assessment,
+                                        &extraction,
+                                        input.reference_date,
+                                    ));
+                                    ai_enhanced += 1;
+                                } else {
+                                    ai_dropped_non_assessment += 1;
+                                }
+                            }
+                            Err(e) => {
+                                ai_fallback += 1;
+                                let mut fallback = assessment;
+                                let note =
+                                    fallback.ai_inference_note.get_or_insert_with(String::new);
+                                if !note.is_empty() {
+                                    note.push(' ');
+                                }
+                                note.push_str(&format!(
+                                    "[AI unavailable: {e}; used local heuristic]"
+                                ));
+                                assessments.push(fallback);
+                            }
+                        }
+                    } else {
+                        assessments.push(assessment);
+                    }
+                }
+
+                if ai_enhanced > 0 || ai_dropped_non_assessment > 0 || ai_fallback > 0 {
+                    notes.push(format!(
+                        "AI Email Reasoning: {} announcement(s) verified by Gemini Flash-Lite ({} non-assessment(s) filtered, {} fallback(s) to heuristics).",
+                        ai_enhanced, ai_dropped_non_assessment, ai_fallback
+                    ));
+                }
+            } else {
+                assessments = raw_assessments;
+            }
+
             // Provenance: this run of Gmail is what last reported these items.
             stamp_source_run(&mut assessments, run.run_id.as_deref());
             let gmail_assessment_count = assessments.len();
@@ -342,6 +444,7 @@ pub async fn run_sync(
         assessments,
         emails_cache,
         discovered_teams,
+        new_extractions: all_new_extractions,
     })
 }
 
@@ -656,6 +759,7 @@ mod tests {
             existing_assessments: Vec::new(),
             reference_date: ref_date(),
             local: utc(),
+            cached_extractions: HashMap::new(),
         }
     }
 
@@ -993,5 +1097,27 @@ mod tests {
             }
             other => panic!("Moodle should be skipped, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn compute_email_hash_is_deterministic_sha256() {
+        let email = CachedEmail {
+            id: "msg-1".to_string(),
+            subject: "CSE241 Quiz 1".to_string(),
+            from: "prof@univ.edu".to_string(),
+            date: "Sat, 17 Oct 2026 10:00:00 +0000".to_string(),
+            snippet: None,
+            body: "CSE241 quiz 1 on 25 October 2026".to_string(),
+            body_truncated: false,
+        };
+        let hash1 = compute_email_hash(&email);
+        let hash2 = compute_email_hash(&email);
+        assert_eq!(hash1, hash2);
+        assert_eq!(hash1.len(), 64);
+
+        let mut email2 = email.clone();
+        email2.body.push_str(" altered");
+        let hash3 = compute_email_hash(&email2);
+        assert_ne!(hash1, hash3);
     }
 }

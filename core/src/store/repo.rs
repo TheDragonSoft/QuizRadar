@@ -26,10 +26,10 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::plan;
 use crate::types::{
-    AcademicTrack, Assessment, AssessmentType, AttendanceEntry, AttendanceStatus, CompletedTopics,
-    Course, CourseAttendanceSummary, CourseFocusStat, CustomCalendarEvent, DailyFocusStat,
-    FeedConfig, Flashcard, GradeRecord, MistakeRecord, QuizAttempt, ScheduleData, ScheduleSlot,
-    StudyAnalytics, StudySessionRecord, UrgencyLevel,
+    AcademicTrack, Assessment, AssessmentType, AttendanceEntry, AttendanceStatus, CachedEmail,
+    CompletedTopics, Course, CourseAttendanceSummary, CourseFocusStat, CustomCalendarEvent,
+    DailyFocusStat, FeedConfig, Flashcard, GradeRecord, MistakeRecord, QuizAttempt, ScheduleData,
+    ScheduleSlot, StudyAnalytics, StudySessionRecord, UrgencyLevel,
 };
 
 use super::db::{Db, StoreError};
@@ -2322,6 +2322,119 @@ fn row_to_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<StudySessionRecor
     })
 }
 
+pub struct CachedEmailRepo<'a> {
+    conn: &'a Connection,
+}
+
+impl<'a> CachedEmailRepo<'a> {
+    pub fn new(conn: &'a Connection) -> Self {
+        Self { conn }
+    }
+
+    pub fn save_all(&self, emails: &[CachedEmail], updated_at: &str) -> Result<(), StoreError> {
+        let mut stmt = self.conn.prepare(
+            "INSERT INTO cached_emails (id, subject, sender, sent_date, snippet, body, body_truncated, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(id) DO UPDATE SET
+                subject = excluded.subject,
+                sender = excluded.sender,
+                sent_date = excluded.sent_date,
+                snippet = excluded.snippet,
+                body = excluded.body,
+                body_truncated = excluded.body_truncated,
+                updated_at = excluded.updated_at",
+        )?;
+        for email in emails {
+            stmt.execute(params![
+                email.id,
+                email.subject,
+                email.from,
+                email.date,
+                email.snippet.as_deref(),
+                email.body,
+                if email.body_truncated { 1 } else { 0 },
+                updated_at,
+            ])?;
+        }
+        Ok(())
+    }
+
+    pub fn list(&self) -> Result<Vec<CachedEmail>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, subject, sender, sent_date, snippet, body, body_truncated
+             FROM cached_emails
+             ORDER BY sent_date DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let truncated: i64 = row.get(6)?;
+            Ok(CachedEmail {
+                id: row.get(0)?,
+                subject: row.get(1)?,
+                from: row.get(2)?,
+                date: row.get(3)?,
+                snippet: row.get(4)?,
+                body: row.get(5)?,
+                body_truncated: truncated != 0,
+            })
+        })?;
+        let mut result = Vec::new();
+        for email in rows {
+            result.push(email?);
+        }
+        Ok(result)
+    }
+}
+
+pub struct EmailAiExtractionRepo<'a> {
+    conn: &'a Connection,
+}
+
+impl<'a> EmailAiExtractionRepo<'a> {
+    pub fn new(conn: &'a Connection) -> Self {
+        Self { conn }
+    }
+
+    pub fn get(
+        &self,
+        cache_key: &str,
+    ) -> Result<Option<crate::ai::tasks::ExtractedAssessment>, StoreError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT extraction_json FROM email_ai_extractions WHERE cache_key = ?1")?;
+        let row = stmt
+            .query_row(params![cache_key], |r| r.get::<_, String>(0))
+            .optional()?;
+        match row {
+            Some(json) => {
+                let parsed: crate::ai::tasks::ExtractedAssessment = serde_json::from_str(&json)?;
+                Ok(Some(parsed))
+            }
+            None => Ok(None),
+        }
+    }
+
+    pub fn put(
+        &self,
+        cache_key: &str,
+        email_id: &str,
+        extraction: &crate::ai::tasks::ExtractedAssessment,
+        model_id: &str,
+        created_at: &str,
+    ) -> Result<(), StoreError> {
+        let json = serde_json::to_string(extraction)?;
+        self.conn.execute(
+            "INSERT INTO email_ai_extractions (cache_key, email_id, extraction_json, model_id, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(cache_key) DO UPDATE SET
+                extraction_json = excluded.extraction_json,
+                model_id = excluded.model_id,
+                created_at = excluded.created_at",
+            params![cache_key, email_id, json, model_id, created_at],
+        )?;
+        Ok(())
+    }
+}
+
 // ---------------------------------------------------------------------------
 // ops — the transactional mutations every shell calls
 // ---------------------------------------------------------------------------
@@ -2700,6 +2813,43 @@ pub mod ops {
         let res = FlashcardRepo::new(&tx).review(id, correct, today, updated_at)?;
         tx.commit()?;
         Ok(res)
+    }
+
+    pub fn save_cached_emails(
+        db: &Db,
+        emails: &[CachedEmail],
+        updated_at: &str,
+    ) -> Result<(), StoreError> {
+        let tx = db.transaction()?;
+        CachedEmailRepo::new(&tx).save_all(emails, updated_at)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn load_cached_emails(db: &Db) -> Result<Vec<CachedEmail>, StoreError> {
+        CachedEmailRepo::new(db.conn()).list()
+    }
+
+    pub fn get_email_ai_extraction(
+        db: &Db,
+        cache_key: &str,
+    ) -> Result<Option<crate::ai::tasks::ExtractedAssessment>, StoreError> {
+        EmailAiExtractionRepo::new(db.conn()).get(cache_key)
+    }
+
+    pub fn save_email_ai_extraction(
+        db: &Db,
+        cache_key: &str,
+        email_id: &str,
+        extraction: &crate::ai::tasks::ExtractedAssessment,
+        model_id: &str,
+        created_at: &str,
+    ) -> Result<(), StoreError> {
+        let tx = db.transaction()?;
+        EmailAiExtractionRepo::new(&tx)
+            .put(cache_key, email_id, extraction, model_id, created_at)?;
+        tx.commit()?;
+        Ok(())
     }
 }
 
@@ -3958,5 +4108,65 @@ mod tests {
             [],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn cached_emails_and_ai_extractions_crud() {
+        let db = mem_db();
+        let email1 = CachedEmail {
+            id: "msg-1".into(),
+            subject: "CSE241 Quiz 1 on Monday".into(),
+            from: "prof@university.edu".into(),
+            date: "2026-10-24T10:00:00Z".into(),
+            snippet: Some("Please prepare chapters 1 and 2".into()),
+            body: "Quiz 1 will be held in the lecture hall.".into(),
+            body_truncated: false,
+        };
+        ops::save_cached_emails(&db, &[email1.clone()], "t1").unwrap();
+
+        let loaded = ops::load_cached_emails(&db).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].id, "msg-1");
+        assert_eq!(loaded[0].subject, "CSE241 Quiz 1 on Monday");
+        assert_eq!(
+            loaded[0].snippet.as_deref(),
+            Some("Please prepare chapters 1 and 2")
+        );
+
+        let extraction = crate::ai::tasks::ExtractedAssessment {
+            is_assessment: true,
+            course_id: Some("CSE241".into()),
+            course_name: Some("Digital Design".into()),
+            title: Some("Quiz 1".into()),
+            assessment_type: Some(AssessmentType::ClassQuiz),
+            date: Some(on("2026-10-26")),
+            start_time: Some(NaiveTime::from_hms_opt(9, 0, 0).unwrap()),
+            end_time: Some(NaiveTime::from_hms_opt(10, 0, 0).unwrap()),
+            room: Some("Hall 101".into()),
+            group: None,
+            instructor: Some("Prof. Turing".into()),
+            topics: vec!["Logic Gates".into()],
+            warnings: vec!["Closed Book".into()],
+            ai_inference_note: Some("Scheduled during Monday lecture slot".into()),
+            ai_study_plan: Some("Review binary logic.".into()),
+            estimated_study_hours: Some(2.0),
+        };
+
+        let cache_key = "hash-12345";
+        ops::save_email_ai_extraction(
+            &db,
+            cache_key,
+            "msg-1",
+            &extraction,
+            "gemini-2.5-flash-lite",
+            "t1",
+        )
+        .unwrap();
+
+        let loaded_ext = ops::get_email_ai_extraction(&db, cache_key).unwrap();
+        assert_eq!(loaded_ext, Some(extraction));
+
+        let miss = ops::get_email_ai_extraction(&db, "nonexistent-hash").unwrap();
+        assert_eq!(miss, None);
     }
 }

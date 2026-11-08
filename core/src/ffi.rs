@@ -1210,6 +1210,7 @@ impl NativeStore {
             existing_assessments: snapshot.assessments,
             reference_date: today,
             local,
+            cached_extractions: std::collections::HashMap::new(),
         };
 
         let progress_cb = move |pulse: SourceProgress| {

@@ -16,8 +16,8 @@
     "core/src/plan/tasks.rs": "393b8f8badc358a850fe51df90c9b907be10749c1dd4f886bfd4e78d3a5dabba",
     "core/src/plan/conflicts.rs": "a953cf743da6a8fc45b43bc6c2dfd716c6842a65a2d4311b08c56a19e8729e74",
     "apps/desktop/src-tauri/src/commands/state.rs": "cc0a9e43c5254a35700bc5ed9f3ed7e04be17b75800b5f63172a5faca533dc3e",
-    "core/src/store/repo.rs": "3d5a2e9644bd99792fc7fd075808b270319615bf8c0f11effd74cfce33a4a17e",
-    "core/src/ffi.rs": "7662b0034e5587493af69280c0c7e208e7a1218d6f30b3362d93cb8bad4d4ea6"
+    "core/src/store/repo.rs": "9deeda5ca34b1fe5eb06492ec76513b9f0aa3a572fb083dc95549489703f6b67",
+    "core/src/ffi.rs": "b0c425985d045a9412cd6bc75283786232ecfdbbfeaec870cb59b2ed156a7c54"
   },
   "structs": {
     "CachedEmail": {

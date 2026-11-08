@@ -38,13 +38,13 @@ function splitHighlight(text: string, highlight?: string) {
         <CelestialSky showRadarArcs={true} />
 
         <div class="hero-sky-content">
-          <h1 class="hero-title">Never miss a quiz hidden in a professor’s post.</h1>
+          <h1 class="hero-title">Turn chaotic class announcements into a calm semester schedule.</h1>
 
           <p class="hero-sub">
-            QuizRadar scans your Gmail, Microsoft Teams, Moodle, and Google Classroom directly on
-            your device and anchors fuzzy announcements against your weekly class timetable. Every
-            quiz, conflict alert, and study block lands on one starry radar — free, MIT-licensed,
-            and zero-server.
+            QuizRadar reviews course updates from Gmail, Microsoft Teams, Moodle, and Google Classroom
+            directly on your device, matching fuzzy dates against your enrolled class timetable. Every
+            quiz, conflict warning, and study session appears on one clear calendar — completely private,
+            free, and zero-server.
           </p>
 
           <div class="hero-actions">
@@ -59,13 +59,13 @@ function splitHighlight(text: string, highlight?: string) {
 
             <a href={webAppHref} class="btn btn-sky-secondary btn-lg">
               <BrandIcon name="globe" size={18} />
-              <span>Open Web App — No Install</span>
+              <span>Try Web App in Browser</span>
             </a>
           </div>
 
           <div class="hero-foot-strip">
             <a href={downloadHref} class="sky-foot-link">
-              Windows · macOS · Linux · Android APK →
+              Available for Windows, macOS, Linux, and Android &rarr;
             </a>
           </div>
         </div>
@@ -167,11 +167,11 @@ function splitHighlight(text: string, highlight?: string) {
     <div class="container">
       <div class="section-head animate-on-scroll">
         <span class="eyebrow">Timetable-Anchored Parsing</span>
-        <h2 class="section-title">How a fuzzy email becomes an exact exam slot.</h2>
+        <h2 class="section-title">How fuzzy class messages become an exact study schedule.</h2>
         <p class="section-lead">
-          Professors rarely attach an <code>.ics</code> invite. QuizRadar reads announcements the way
-          students do — cross-referencing relative dates against your enrolled lectures, tutorials, and
-          labs.
+          Professors rarely send clean calendar invites. QuizRadar reads announcements the way
+          students do &mdash; matching casual phrases against your weekly lectures, tutorials, and
+          lab times.
         </p>
       </div>
 
@@ -267,11 +267,11 @@ function splitHighlight(text: string, highlight?: string) {
     <div class="container">
       <div class="section-head animate-on-scroll">
         <span class="eyebrow">Zero-Relay Integrations</span>
-        <h2 class="section-title">Connects straight to your campus tools — never through us.</h2>
+        <h2 class="section-title">Connects directly to your university tools &mdash; never through our servers.</h2>
         <p class="section-lead">
-          Each device talks directly to Google, Microsoft, or your university’s Moodle instance via
-          secret-free PKCE OAuth. Credentials stay in your OS keyring and never touch an external
-          relay.
+          Your device connects straight to Google, Microsoft, or your campus Moodle portal.
+          Your passwords and access tokens stay locked in your device's secure vault and never
+          pass through an outside relay.
         </p>
       </div>
 
@@ -303,10 +303,10 @@ function splitHighlight(text: string, highlight?: string) {
     <div class="container">
       <div class="section-head animate-on-scroll">
         <span class="eyebrow">From Detection to Exam Day</span>
-        <h2 class="section-title">Everything around the countdown, built into one workspace.</h2>
+        <h2 class="section-title">Everything you need for exam week, built into one calm workspace.</h2>
         <p class="section-lead">
-          Once an announcement is anchored, QuizRadar maps conflicts, schedules study blocks into
-          your open hours, and tracks topic mastery without clutter.
+          Once an exam is scheduled, QuizRadar flags tight deadlines, sets aside focused study blocks in
+          your free hours, and tracks topic progress without clutter.
         </p>
       </div>
 
@@ -320,12 +320,12 @@ function splitHighlight(text: string, highlight?: string) {
                 Press <kbd class="keycap">/</kbd> to filter any course
               </span>
             </div>
-            <h3>Classes, glowing exams, and study blocks on one 8 AM – 8 PM grid</h3>
+            <h3>Classes, confirmed exams, and dedicated study time on one clear weekly grid</h3>
             <p>
-              Anchored quizzes light up inside the exact lecture or lab slot where they happen. When
-              two assessments land within 26 hours, one click carves out conflict-free evening study
-              blocks — ready for explicit one-way Google Calendar push or standard <code>.ics</code>
-              export.
+              Anchored quizzes appear inside the exact lecture or lab slot where they take place. When
+              two exams or major deadlines land close together, one click schedules quiet study sessions
+              in your free time &mdash; ready to export to Google Calendar or save as an <code>.ics</code>
+              file.
             </p>
           </div>
           <div class="workflow-shot-wrap">
@@ -357,13 +357,13 @@ function splitHighlight(text: string, highlight?: string) {
           <div class="workflow-copy">
             <div class="workflow-tag-row">
               <span class="mini-pill">25m Focus Timer</span>
-              <span class="mini-pill">Offline + BYOK Practice</span>
+              <span class="mini-pill">Offline Practice</span>
             </div>
             <h3>Checkable syllabus topics, Pomodoro focus, and Grade What-If</h3>
             <p>
-              Break each exam into concrete topics, run a built-in 25-minute focus session, drill
-              deterministic practice questions offline (or connect your own Gemini key), and compute
-              the exact final-exam score needed for your target grade.
+              Break each exam into concrete topics, launch a built-in 25-minute focus session, drill
+              sample questions offline (or connect an optional AI key), and calculate the exact
+              exam score needed for your target grade.
             </p>
           </div>
           <div class="workflow-shot-wrap">
@@ -397,28 +397,28 @@ function splitHighlight(text: string, highlight?: string) {
   <section id="android" class="page-section">
     <div class="container android-grid">
       <div class="android-copy animate-on-scroll">
-        <span class="eyebrow">Android · Kotlin + Jetpack Compose + UniFFI</span>
-        <h2 class="section-title">Pinned right to your Android home screen.</h2>
+        <span class="eyebrow">Native Android App</span>
+        <h2 class="section-title">Your exam countdown right on your Android home screen.</h2>
         <p class="section-lead">
-          Not a mobile web wrapper. QuizRadar for Android is a first-party Material 3 Jetpack
-          Compose app bound directly to <code>quizradar-core</code> via UniFFI.
+          Built as a fast, native Android app designed for students on the move, with instant
+          glanceable countdowns and private on-device study reminders.
         </p>
 
         <!-- Authentic 2x1 Starry Android Glance Home-Screen Widget Preview -->
         <div class="glance-widget-wrap">
-          <span class="glance-caption">2×1 Android Glance Home-Screen Widget</span>
+          <span class="glance-caption">2&times;1 Android Glance Home-Screen Widget</span>
           <div class="glance-widget">
             <CelestialSky showRadarArcs={false} />
             <div class="glance-inner">
               <div class="glance-top">
                 <span class="amber-pill glance-pill">
                   <BrandIcon name="zap" size={11} />
-                  <span>Up next · In 3d</span>
+                  <span>Up next &middot; In 3d</span>
                 </span>
                 <span class="glance-course">CSE 341</span>
               </div>
-              <div class="glance-title">Class Quiz 2 — CPU Scheduling</div>
-              <div class="glance-meta tabular">Thu, Nov 5 · 10:00 AM · CS Lab 3</div>
+              <div class="glance-title">Class Quiz 2 &mdash; CPU Scheduling</div>
+              <div class="glance-meta tabular">Thu, Nov 5 &middot; 10:00 AM &middot; CS Lab 3</div>
             </div>
           </div>
         </div>
@@ -427,22 +427,22 @@ function splitHighlight(text: string, highlight?: string) {
           <li>
             <BrandIcon name="check" size={16} />
             <span>
-              <strong>Android Share-Sheet ingest:</strong> share any message from WhatsApp, Telegram,
-              or Discord class chats straight into QuizRadar to anchor it instantly.
+              <strong>Share-Sheet Quick Add:</strong> Share messages from WhatsApp, Telegram,
+              or class group chats directly into QuizRadar to add exam dates in one tap.
             </span>
           </li>
           <li>
             <BrandIcon name="check" size={16} />
             <span>
-              <strong>WorkManager T-24h reminders:</strong> local exam notifications scheduled on-device
-              with zero push servers.
+              <strong>On-Device Reminders:</strong> Receive timely study and exam alerts scheduled
+              locally on your phone &mdash; no push servers or data collection.
             </span>
           </li>
           <li>
             <BrandIcon name="check" size={16} />
             <span>
-              <strong>Hardware-backed storage:</strong> OAuth tokens stay inside Android
-              <code>EncryptedSharedPreferences</code>.
+              <strong>Hardware-Backed Protection:</strong> Your login credentials stay protected
+              inside Android's secure system vault.
             </span>
           </li>
         </ul>
@@ -541,8 +541,8 @@ function splitHighlight(text: string, highlight?: string) {
           <BrandIcon name="quizradar" size={56} animated={true} class="finale-logo" />
           <h2 class="finale-title">Put your semester on the radar.</h2>
           <p class="finale-sub">
-            Free and open source under the MIT License. Install natively for background scans and
-            OS keyring storage, or open the WebAssembly companion right now.
+            Free, private, and open source under the MIT License. Install on your laptop or phone
+            for automatic schedule checks, or try the Web App instantly in your browser.
           </p>
           <div class="finale-actions">
             <a

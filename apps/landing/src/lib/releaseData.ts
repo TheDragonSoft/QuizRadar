@@ -33,9 +33,9 @@ export const PLATFORM_DOWNLOADS: Record<PlatformKey, PlatformDownload> = {
     secondaryArtifact: `QuizRadar_${APP_VERSION}_x64-portable.zip`,
     secondaryLabel: "Portable .zip",
     secondaryUrl: `${GITHUB_DOWNLOAD_BASE}/QuizRadar_${APP_VERSION}_x64-portable.zip`,
-    requirements: "Windows 10 / 11 · 64-bit WebView2",
+    requirements: "Windows 10 / 11 · 64-bit",
     notes:
-      "Signed NSIS installer with OS Keyring token storage and minisign-verified in-app updates.",
+      "Full desktop app with automatic schedule sync, system keyring protection, and verified updates.",
   },
   mac: {
     key: "mac",
@@ -45,7 +45,7 @@ export const PLATFORM_DOWNLOADS: Record<PlatformKey, PlatformDownload> = {
     primaryArtifact: `QuizRadar_${APP_VERSION}_aarch64.dmg`,
     primaryUrl: `${GITHUB_DOWNLOAD_BASE}/QuizRadar_${APP_VERSION}_aarch64.dmg`,
     requirements: "macOS 13 Ventura or newer · Apple Silicon",
-    notes: "Native Tauri 2 WebKit shell with macOS Keychain token storage and background sync.",
+    notes: "Native macOS app with Keychain security, menu bar access, and quiet background sync.",
   },
   linux: {
     key: "linux",
@@ -57,8 +57,8 @@ export const PLATFORM_DOWNLOADS: Record<PlatformKey, PlatformDownload> = {
     secondaryArtifact: `QuizRadar_${APP_VERSION}_amd64.deb`,
     secondaryLabel: "Debian / Ubuntu (.deb)",
     secondaryUrl: `${GITHUB_DOWNLOAD_BASE}/QuizRadar_${APP_VERSION}_amd64.deb`,
-    requirements: "x86_64 · WebKitGTK 4.1 & Secret Service keyring",
-    notes: "Portable AppImage or Debian package with libsecret keyring integration.",
+    requirements: "x86_64 · Desktop Linux",
+    notes: "Self-contained AppImage or Debian package with native system keyring integration.",
   },
   android: {
     key: "android",
@@ -67,9 +67,9 @@ export const PLATFORM_DOWNLOADS: Record<PlatformKey, PlatformDownload> = {
     badge: "Android 8.0+ (arm64 & x86_64)",
     primaryArtifact: `QuizRadar-v${APP_VERSION}.apk`,
     primaryUrl: `${GITHUB_DOWNLOAD_BASE}/QuizRadar-v${APP_VERSION}.apk`,
-    requirements: "Android 8.0 (API 26) or newer",
+    requirements: "Android 8.0 or newer",
     notes:
-      "First-party Kotlin + Jetpack Compose M3 app bound to quizradar-core via UniFFI, with a 2×1 Glance countdown widget, T-24h notifications, and Share-Sheet ingest.",
+      "Native Android app featuring a 2×1 home-screen countdown widget, exam reminders, and share-sheet quick import.",
   },
 };
 
@@ -101,7 +101,7 @@ export const PRODUCT_VIEWS: ProductViewItem[] = [
     tabLabel: "Week Calendar",
     badge: "Exam Glow + Study Blocks",
     caption:
-      "Weekly classes, glowing crimson exam slots, and auto-scheduled study sessions share one 8 AM – 8 PM timetable — ready for one-way Google Calendar push or .ics export.",
+      "Weekly classes, highlighted exam slots, and auto-scheduled study sessions share one unified timetable — ready for Google Calendar push or .ics export.",
     darkSrc: "/screenshots/app-calendar-dark.webp",
     lightSrc: "/screenshots/app-calendar-light.webp",
     alt: "QuizRadar week calendar showing colour-coded university lectures, a glowing red Class Quiz 2 slot on Thursday at 10 AM, and scheduled evening study blocks.",
@@ -121,7 +121,7 @@ export const PRODUCT_VIEWS: ProductViewItem[] = [
     tabLabel: "Study Plan & What-If",
     badge: "Topics · Pomodoro · Grades",
     caption:
-      "Open any assessment to check off topics, launch a 25-minute Focus Pomodoro, generate a local or BYOK practice quiz, or project your What-If course grade.",
+      "Open any assessment to check off topics, launch a 25-minute Focus Pomodoro, practice sample questions offline, or project your What-If target grade.",
     darkSrc: "/screenshots/app-detail-dark.webp",
     lightSrc: "/screenshots/app-detail-light.webp",
     alt: "QuizRadar Assessment Detail modal for Class Quiz 2 — CPU Scheduling showing syllabus topic checkboxes, Pomodoro and Practice Quiz buttons, and Grade What-If inputs.",
@@ -129,9 +129,9 @@ export const PRODUCT_VIEWS: ProductViewItem[] = [
   {
     id: "conflict",
     tabLabel: "Conflict Radar",
-    badge: "26h Cluster Warning",
+    badge: "Cluster Warning",
     caption:
-      "When two exams or major deadlines land within 26 hours, Conflict Radar flags the cluster above your dashboard and carves out free study blocks in one click.",
+      "When two exams or major deadlines land within 26 hours, Conflict Radar flags the pileup above your dashboard and carves out dedicated study blocks in one click.",
     darkSrc: "/screenshots/app-conflict-dark.webp",
     lightSrc: "/screenshots/app-conflict-light.webp",
     alt: "QuizRadar Exam Overload and Schedule Conflict banner warning about clustered assessments within 26 hours alongside the Auto-Schedule Study Blocks button.",
@@ -159,9 +159,9 @@ export const ANCHOR_STEPS: AnchorStep[] = [
   {
     number: "01",
     id: "ingest",
-    kicker: "Direct On-Device Scan",
-    title: "Your professor posts a fuzzy date in an email or channel.",
-    body: "Announcements rarely include an ISO calendar invite. Professors write relative phrases in Gmail, Microsoft Teams, Moodle, or Google Classroom — and QuizRadar scans them locally on your device via PKCE OAuth.",
+    kicker: "Direct On-Device Check",
+    title: "Your professor posts an announcement with a fuzzy date.",
+    body: "Announcements rarely include a clean calendar invite. Professors write relative dates across Gmail, Microsoft Teams, Moodle, or Google Classroom — and QuizRadar checks them privately on your device without your passwords leaving your computer.",
     courseCode: "CSE 341",
     courseName: "Operating Systems",
     courseColor: "#8e24aa",
@@ -169,41 +169,41 @@ export const ANCHOR_STEPS: AnchorStep[] = [
     snippetText:
       "Class Quiz 2 on CPU Scheduling is moved to next week’s Thursday lecture, not this week.",
     highlight: "next week’s Thursday lecture, not this week",
-    resolvedDate: "Relative phrase detected (+7d skip)",
-    resolvedRoom: "Pending slot lookup",
-    honestyNote: "5 targeted Gmail queries · Deduplicated locally in SQLite",
+    resolvedDate: "Relative date recognized (+7d shift)",
+    resolvedRoom: "Pending timetable match",
+    honestyNote: "Direct inbox scan · Verified privately on your device",
   },
   {
     number: "02",
     id: "cross-reference",
-    kicker: "Timetable Cross-Reference",
-    title: "The Rust core matches the course against your weekly class slots.",
-    body: "Instead of guessing midnight or dropping an all-day reminder, quizradar-core looks up your enrolled lecture, tutorial, or lab slot for that exact course and section.",
+    kicker: "Class Timetable Match",
+    title: "Matches the course against your enrolled class schedule.",
+    body: "Instead of defaulting to midnight or dropping a vague all-day reminder, QuizRadar looks up your enrolled lecture, tutorial, or lab slot for that exact course and section.",
     courseCode: "CSE 341",
     courseName: "Operating Systems · Sec 1",
     courseColor: "#8e24aa",
-    snippetLabel: "Enrolled Weekly Slot",
+    snippetLabel: "Enrolled Class Slot",
     snippetText: "Thursday Lecture · 10:00 AM – 11:30 AM · CS Lab 3",
     resolvedDate: "Thu, Nov 5 · 10:00 – 10:45 AM",
     resolvedRoom: "CS Lab 3",
-    honestyNote: "Exact lecture start time & room inherited from your timetable",
+    honestyNote: "Exact lecture time & room inherited from your timetable",
   },
   {
     number: "03",
     id: "honest-radar",
-    kicker: "Honest Output & Conflict Check",
-    title: "Pinned to your starry radar — with zero fabricated details.",
-    body: "If an exam hall hasn’t been announced yet, QuizRadar renders “—” rather than inventing a room. If another quiz lands within 26 hours, Conflict Radar offers to schedule free study blocks.",
+    kicker: "Clear Schedule & Honest Details",
+    title: "Pinned to your schedule — without guessing missing details.",
+    body: "If an exam room hasn’t been announced yet, QuizRadar clearly displays “—” so you always know what is confirmed. When two quizzes land close together, Conflict Radar helps you carve out focused study time.",
     courseCode: "MTH 203",
     courseName: "Linear Algebra · Midterm",
     courseColor: "#ea8600",
-    snippetLabel: "Microsoft Teams · Unassigned Hall",
+    snippetLabel: "Microsoft Teams · Room Pending",
     snippetText:
       "Midterm confirmed for the Tuesday after next during tutorial time. Exam hall TBA by registrar.",
     highlight: "the Tuesday after next during tutorial time",
     resolvedDate: "Tue, Nov 10 · 1:00 – 2:30 PM",
     resolvedRoom: "—",
-    honestyNote: "Missing room stays “—” · Inference note preserved verbatim",
+    honestyNote: "Unannounced room stays “—” · Original announcement preserved",
   },
 ];
 
@@ -218,43 +218,43 @@ export const INGESTION_SOURCES: IngestionSource[] = [
   {
     id: "gmail",
     name: "Gmail",
-    protocol: "PKCE OAuth 2.0",
+    protocol: "Direct & Private",
     summary:
-      "Runs targeted course & quiz queries directly on your device with message deduplication.",
+      "Searches course and quiz updates directly on your device. Your emails never leave your computer.",
   },
   {
     id: "teams",
     name: "Microsoft Teams",
-    protocol: "Graph PKCE",
-    summary: "Scans enrolled class channel threads and announcements for quiz shifts and midterms.",
+    protocol: "Class Channels",
+    summary: "Reads class announcements and channel posts to detect date changes and upcoming midterms.",
   },
   {
     id: "moodle",
     name: "Moodle LMS",
-    protocol: "REST Token + .ics",
+    protocol: "Campus Portal",
     summary:
-      "Imports quizzes, assignment deadlines, and private calendar feeds from your campus Moodle.",
+      "Imports quizzes, assignment deadlines, and private calendar feeds directly from your university Moodle.",
   },
   {
     id: "classroom",
     name: "Google Classroom",
-    protocol: "Coursework API",
+    protocol: "Coursework Feed",
     summary:
-      "Pulls active coursework deadlines and syllabus topics straight from your enrolled classes.",
+      "Pulls active coursework deadlines, assignments, and syllabus topics from your enrolled classes.",
   },
   {
     id: "gcal",
     name: "Google Calendar",
-    protocol: "One-Way Push",
+    protocol: "One-Way Export",
     summary:
-      "Pushes verified exams out to your calendar or exports standard .ics files — never reads personal events.",
+      "Exports confirmed exams to your calendar or downloads standard .ics files — never reads personal events.",
   },
   {
     id: "drive",
     name: "Drive AppData",
-    protocol: "Secret-Free Backup",
+    protocol: "Private Backup",
     summary:
-      "Optional data-only snapshot of courses, topics, and grades in your private AppData folder.",
+      "Optional backup of your courses, topics, and study progress stored safely in your personal Google Drive.",
   },
 ];
 
@@ -267,32 +267,32 @@ export const FAQ_ITEMS: FaqItem[] = [
   {
     question: "Does QuizRadar send my emails, grades, or tokens to a server?",
     answer:
-      "Never. QuizRadar has zero backend servers, zero user accounts, and zero telemetry. Every OAuth token stays in your OS Keyring (Desktop), EncryptedSharedPreferences (Android), or browser tab memory (Web Companion), and announcements are parsed locally on your device.",
+      "Never. QuizRadar has zero backend servers, zero user accounts, and zero telemetry. Your access tokens stay protected inside your device's secure vault (Windows Credential Manager, macOS Keychain, Linux Secret Service, or Android Keystore), and all announcements are processed locally on your machine.",
   },
   {
     question: "Do I need a Gemini API key for QuizRadar to work?",
     answer:
-      "No. Every core feature — fuzzy announcement parsing, timetable anchoring, conflict detection, study block scheduling, Grade What-If projections, and topic-based practice quizzes — works 100% offline using deterministic Rust rules. Adding your own Gemini key (sent via x-goog-api-key) is strictly optional.",
+      "No. Every core feature — announcement parsing, timetable matching, conflict detection, study session scheduling, Grade What-If projections, and flashcard quizzes — works 100% offline using built-in rules. Adding an optional AI key is completely up to you.",
   },
   {
     question: "What happens when a professor hasn’t announced the exam room yet?",
     answer:
-      "QuizRadar follows a strict Honesty Doctrine: unannounced rooms render as “—”, never a placeholder string, and every anchored date carries a transparent Focus note showing which phrase and timetable slot produced it.",
+      "QuizRadar follows a strict Honesty Doctrine: unannounced rooms render as “—”, never a fabricated placeholder, and every anchored date displays the original announcement quote so you can verify the details yourself.",
   },
   {
     question: "Will Google Calendar sync overwrite or read my personal events?",
     answer:
-      "No. Google Calendar sync is explicit-off by default and strictly one-way: when you click Push, QuizRadar writes only the assessments you choose (or exports a standard .ics file) and never imports or inspects your personal calendar.",
+      "No. Calendar export is strictly one-way and requires your explicit action. When you choose to export, QuizRadar only writes the specific study events or exams you confirm, and never reads or touches your personal calendar.",
   },
   {
     question: "How do I move my semester schedule between Desktop, Web, and Android?",
     answer:
-      "Open Data & Backup to export a secret-free JSON snapshot (or use Google Drive AppData on Desktop/Android) and import it on your other device. Each device authenticates its own scanning sources independently so OAuth tokens never cross a network.",
+      "Use Data & Backup to export an encrypted snapshot file (or use your private Google Drive backup) and open it on your other device. Each device connects to your class sources independently, so your passwords never travel across the internet.",
   },
   {
     question: "What is the difference between the Desktop/Android apps and the Web Companion?",
     answer:
-      "All three run the exact same quizradar-core Rust engine. Desktop (Tauri 2) and Android (Kotlin + UniFFI) add persistent OS keyring storage, background scanning, T-24h notifications, and the 2×1 Android Glance widget, while the Web Companion runs instantly in any browser via WebAssembly + IndexedDB.",
+      "All three versions share the exact same core scheduling engine. The Desktop and Android apps add persistent on-device background checks, lock-screen notifications, and the Android home-screen widget, while the Web Companion runs instantly in any modern browser with zero installation.",
   },
 ];
 

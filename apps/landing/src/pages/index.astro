@@ -2,8 +2,10 @@
 import Layout from "../layouts/Layout.astro";
 import BrandIcon from "../components/BrandIcon.astro";
 import CelestialSky from "../components/CelestialSky.astro";
+import QRCode from "qrcode";
 import {
   ANCHOR_STEPS,
+  APP_VERSION,
   FAQ_ITEMS,
   INGESTION_SOURCES,
   PLATFORM_DOWNLOADS,
@@ -14,6 +16,16 @@ import {
 const base = import.meta.env.BASE_URL;
 const downloadHref = withBase(base, "/download/");
 const webAppHref = withBase(base, "/app/");
+
+const androidQrSvg = await QRCode.toString(PLATFORM_DOWNLOADS.android.primaryUrl, {
+  type: "svg",
+  margin: 1,
+  width: 108,
+  color: {
+    dark: "#0f172a",
+    light: "#ffffff",
+  },
+});
 
 function splitHighlight(text: string, highlight?: string) {
   if (!highlight || !text.includes(highlight)) {
@@ -311,13 +323,6 @@ function splitHighlight(text: string, highlight?: string) {
       <div class="workflow-split">
         <article class="workflow-card workflow-card-wide animate-on-scroll">
           <div class="workflow-copy">
-            <div class="workflow-tag-row">
-              <span class="mini-pill mini-pill-red">Exam Glow</span>
-              <span class="mini-pill">Auto Study Blocks</span>
-              <span class="shortcut-hint">
-                Press <kbd class="keycap">/</kbd> to filter any course
-              </span>
-            </div>
             <h3>Classes, confirmed exams, and dedicated study time on one clear weekly grid</h3>
             <p>
               Anchored quizzes appear inside the exact lecture or lab slot where they take place. When
@@ -353,10 +358,6 @@ function splitHighlight(text: string, highlight?: string) {
           style="--reveal-delay: 80ms;"
         >
           <div class="workflow-copy">
-            <div class="workflow-tag-row">
-              <span class="mini-pill">25m Focus Timer</span>
-              <span class="mini-pill">Offline Practice</span>
-            </div>
             <h3>Checkable syllabus topics, Pomodoro focus, and Grade What-If</h3>
             <p>
               Break each exam into concrete topics, launch a built-in 25-minute focus session, drill
@@ -390,119 +391,7 @@ function splitHighlight(text: string, highlight?: string) {
   </section>
 
   <!-- =====================================================================
-       5. NATIVE ANDROID + 2x1 STARRY GLANCE WIDGET (`#android`)
-       ===================================================================== -->
-  <section id="android" class="page-section">
-    <div class="container android-grid">
-      <div class="android-copy animate-on-scroll">
-        <h2 class="section-title">Your exam countdown right on your Android home screen.</h2>
-        <p class="section-lead">
-          Built as a fast, native Android app designed for students on the move, with instant
-          glanceable countdowns and private on-device study reminders.
-        </p>
-
-        <!-- Authentic 2x1 Starry Android Glance Home-Screen Widget Preview -->
-        <div class="glance-widget-wrap">
-          <span class="glance-caption">2&times;1 Android Glance Home-Screen Widget</span>
-          <div class="glance-widget">
-            <CelestialSky showRadarArcs={false} />
-            <div class="glance-inner">
-              <div class="glance-top">
-                <span class="amber-pill glance-pill">
-                  <BrandIcon name="zap" size={11} />
-                  <span>Up next &middot; In 3d</span>
-                </span>
-                <span class="glance-course">CSE 341</span>
-              </div>
-              <div class="glance-title">Class Quiz 2 &mdash; CPU Scheduling</div>
-              <div class="glance-meta tabular">Thu, Nov 5 &middot; 10:00 AM &middot; CS Lab 3</div>
-            </div>
-          </div>
-        </div>
-
-        <ul class="android-points">
-          <li>
-            <BrandIcon name="check" size={16} />
-            <span>
-              <strong>Share-Sheet Quick Add:</strong> Share messages from WhatsApp, Telegram,
-              or class group chats directly into QuizRadar to add exam dates in one tap.
-            </span>
-          </li>
-          <li>
-            <BrandIcon name="check" size={16} />
-            <span>
-              <strong>On-Device Reminders:</strong> Receive timely study and exam alerts scheduled
-              locally on your phone &mdash; no push servers or data collection.
-            </span>
-          </li>
-          <li>
-            <BrandIcon name="check" size={16} />
-            <span>
-              <strong>Hardware-Backed Protection:</strong> Your login credentials stay protected
-              inside Android's secure system vault.
-            </span>
-          </li>
-        </ul>
-
-        <div class="android-cta-row">
-          <a href={PLATFORM_DOWNLOADS.android.primaryUrl} class="btn btn-primary">
-            <BrandIcon name="android" size={17} />
-            <span>{PLATFORM_DOWNLOADS.android.label}</span>
-          </a>
-          <a href={downloadHref} class="btn btn-secondary">
-            <span>View SHA-256 Checksums</span>
-          </a>
-        </div>
-      </div>
-
-      <div class="android-phones animate-on-scroll" style="--reveal-delay: 90ms;">
-        <div class="phone-frame phone-primary">
-          <img
-            class="theme-shot-dark phone-img"
-            src={withBase(base, "/screenshots/android-dashboard-dark.webp")}
-            alt="QuizRadar native Android Jetpack Compose app in dark mode showing the starry Next-Up hero and upcoming exams."
-            width="960"
-            height="2133"
-            loading="lazy"
-            decoding="async"
-          />
-          <img
-            class="theme-shot-light phone-img"
-            src={withBase(base, "/screenshots/android-dashboard-light.webp")}
-            alt="QuizRadar native Android Jetpack Compose app in light mode showing the sunlit Next-Up hero and upcoming exams."
-            width="960"
-            height="2133"
-            loading="lazy"
-            decoding="async"
-          />
-        </div>
-
-        <div class="phone-frame phone-secondary">
-          <img
-            class="theme-shot-dark phone-img"
-            src={withBase(base, "/screenshots/android-focus-dark.webp")}
-            alt="QuizRadar Android Focus timer and study readiness view in dark mode."
-            width="960"
-            height="2155"
-            loading="lazy"
-            decoding="async"
-          />
-          <img
-            class="theme-shot-light phone-img"
-            src={withBase(base, "/screenshots/android-focus-light.webp")}
-            alt="QuizRadar Android Focus timer and study readiness view in light mode."
-            width="960"
-            height="2155"
-            loading="lazy"
-            decoding="async"
-          />
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- =====================================================================
-       6. FREQUENTLY ASKED QUESTIONS (`#faq`)
+       5. FREQUENTLY ASKED QUESTIONS (`#faq`)
        ===================================================================== -->
   <section id="faq" class="page-section">
     <div class="container faq-container">
@@ -522,6 +411,59 @@ function splitHighlight(text: string, highlight?: string) {
             </details>
           ))
         }
+      </div>
+    </div>
+  </section>
+
+  <!-- =====================================================================
+       6. MOBILE COMPANION (PLATFORM-SPECIFIC BOTTOM CARD WITH QR CODE) (`#android`)
+       ===================================================================== -->
+  <section id="android" class="page-section companion-section">
+    <div class="container companion-container">
+      <div class="companion-card animate-on-scroll">
+        <!-- Desktop / Laptop View with QR Code -->
+        <div class="companion-desktop">
+          <div class="companion-qr-box">
+            <div class="companion-qr-svg" set:html={androidQrSvg} aria-label="QR code to download QuizRadar Android APK" />
+            <span class="companion-qr-label">Scan to install</span>
+          </div>
+
+          <div class="companion-content">
+            <div class="companion-tag">
+              <BrandIcon name="android" size={15} />
+              <span>Android Companion</span>
+            </div>
+            <h3 class="companion-title">Take your countdown with you.</h3>
+            <p class="companion-desc">
+              Scan the QR code with your phone camera to install the native Android app &mdash; with 2&times;1 home-screen countdown widgets, local 24h exam notifications, and WhatsApp/Telegram class chat share-sheet ingest.
+            </p>
+            <div class="companion-links">
+              <a href={PLATFORM_DOWNLOADS.android.primaryUrl} class="btn btn-secondary btn-sm">
+                <BrandIcon name="download" size={15} />
+                <span>Direct APK (v{APP_VERSION})</span>
+              </a>
+              <a href={downloadHref} class="companion-alt-link">
+                All platform downloads &rarr;
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mobile / Touch View (Direct 1-Tap) -->
+        <div class="companion-mobile">
+          <div class="companion-tag">
+            <BrandIcon name="android" size={15} />
+            <span>Android App</span>
+          </div>
+          <h3 class="companion-title">QuizRadar for Android</h3>
+          <p class="companion-desc">
+            Fast, native Material 3 app with 2&times;1 home-screen countdown widgets and on-device exam reminders.
+          </p>
+          <a href={PLATFORM_DOWNLOADS.android.primaryUrl} class="btn btn-primary btn-lg">
+            <BrandIcon name="download" size={18} />
+            <span>Download Android APK</span>
+          </a>
+        </div>
       </div>
     </div>
   </section>
@@ -784,7 +726,7 @@ function splitHighlight(text: string, highlight?: string) {
   .stage-tab.is-active {
     background-color: var(--accent-fill);
     color: #ffffff;
-    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.32);
+    box-shadow: var(--shadow-sm);
   }
 
   .stage-sky-switch {
@@ -1073,7 +1015,7 @@ function splitHighlight(text: string, highlight?: string) {
   }
 
   .snippet-source {
-    font-size: 0.74rem;
+    font-size: 0.8125rem;
     font-weight: 600;
     color: var(--text-muted);
   }
@@ -1248,38 +1190,6 @@ function splitHighlight(text: string, highlight?: string) {
     gap: 11px;
   }
 
-  .workflow-tag-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .mini-pill {
-    font-size: 0.72rem;
-    font-weight: 600;
-    padding: 3px 9px;
-    border-radius: 999px;
-    background-color: var(--surface-elevated);
-    border: 1px solid var(--surface-border);
-    color: var(--text-secondary);
-  }
-
-  .mini-pill-red {
-    background-color: rgba(220, 38, 38, 0.12);
-    border-color: rgba(239, 68, 68, 0.35);
-    color: var(--exam-red);
-    box-shadow: var(--exam-glow);
-  }
-
-  .shortcut-hint {
-    font-size: 0.76rem;
-    color: var(--text-muted);
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-  }
-
   .workflow-copy h3 {
     font-size: 1.25rem;
     font-weight: 700;
@@ -1314,152 +1224,136 @@ function splitHighlight(text: string, highlight?: string) {
   }
 
   /* -------------------------------------------------------------------------
-     5. Native Android & 2x1 Starry Glance Widget
+     5. Platform-Specific Mobile Companion (Small Bottom Card with QR Code)
      ------------------------------------------------------------------------- */
-  .android-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-    gap: 44px;
-    align-items: center;
+  .companion-section {
+    padding-block: 20px 44px;
   }
 
-  .android-copy {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 16px;
+  .companion-container {
+    max-width: 820px;
+    margin-inline: auto;
   }
 
-  .glance-widget-wrap {
-    width: 100%;
-    max-width: 390px;
-    display: flex;
-    flex-direction: column;
-    gap: 7px;
-    margin-block: 6px;
+  .companion-card {
+    background-color: var(--surface);
+    border: 1px solid var(--surface-border);
+    border-radius: 20px;
+    padding: 24px 28px;
+    box-shadow: var(--shadow-sm);
   }
 
-  .glance-caption {
-    font-size: 0.72rem;
-    font-weight: 600;
-    color: var(--text-muted);
-  }
-
-  .glance-widget {
-    position: relative;
-    border-radius: 22px;
-    overflow: hidden;
-    padding: 16px 18px;
-    color: #ffffff;
-    box-shadow: var(--shadow-md);
-    border: 1px solid rgba(255, 255, 255, 0.16);
-  }
-
-  .glance-inner {
-    position: relative;
-    z-index: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .glance-top {
+  .companion-desktop {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 28px;
+  }
+
+  .companion-mobile {
+    display: none;
+  }
+
+  .companion-qr-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     gap: 8px;
+    padding: 10px;
+    background-color: #ffffff;
+    border-radius: 12px;
+    flex-shrink: 0;
   }
 
-  .glance-pill {
-    padding: 3px 9px;
-    font-size: 0.7rem;
-  }
-
-  .glance-course {
-    font-size: 0.74rem;
-    font-weight: 700;
-    color: rgba(255, 255, 255, 0.88);
-  }
-
-  .glance-title {
-    font-size: 0.98rem;
-    font-weight: 750;
-    letter-spacing: -0.015em;
-    color: #ffffff;
-  }
-
-  .glance-meta {
-    font-size: 0.76rem;
-    color: rgba(226, 232, 240, 0.88);
-  }
-
-  .android-points {
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 11px;
-    margin-block: 4px;
-  }
-
-  .android-points li {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    font-size: 0.9rem;
-    line-height: 1.55;
-    color: var(--text-secondary);
-  }
-
-  .android-points li :global(svg) {
-    color: var(--status-ok);
-    margin-block-start: 3px;
-  }
-
-  .android-points code {
-    font-size: 0.8rem;
-    padding: 1px 5px;
-    border-radius: 4px;
-    background-color: var(--accent-soft);
-    color: var(--accent-ink);
-  }
-
-  .android-cta-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 10px;
-    margin-block-start: 4px;
-  }
-
-  .android-phones {
+  .companion-qr-svg {
+    width: 108px;
+    height: 108px;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 20px;
   }
 
-  .phone-frame {
-    border-radius: 30px;
-    padding: 8px;
-    background-color: #0f172a;
-    border: 1px solid rgba(148, 163, 184, 0.28);
-    box-shadow: var(--shadow-lg);
-    overflow: hidden;
-  }
-
-  .phone-primary {
-    width: min(260px, 54%);
-  }
-
-  .phone-secondary {
-    width: min(224px, 44%);
-    margin-block-start: 38px;
-  }
-
-  .phone-img {
+  .companion-qr-svg :global(svg) {
     width: 100%;
-    height: auto;
-    border-radius: 22px;
+    height: 100%;
+    display: block;
+    border-radius: 4px;
+  }
+
+  .companion-qr-label {
+    font-size: 0.75rem;
+    font-weight: 750;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #0f172a;
+  }
+
+  .companion-content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .companion-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--accent-ink);
+  }
+
+  .companion-title {
+    font-size: 1.25rem;
+    font-weight: 750;
+    letter-spacing: -0.02em;
+    color: var(--text);
+  }
+
+  .companion-desc {
+    font-size: 0.88rem;
+    line-height: 1.56;
+    color: var(--text-muted);
+  }
+
+  .companion-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
+    margin-block-start: 4px;
+  }
+
+  .companion-alt-link {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--accent-ink);
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    transition-property: text-decoration-color;
+    transition-duration: 150ms;
+    transition-timing-function: var(--ease-snappy);
+  }
+
+  .companion-alt-link:hover {
+    text-decoration-color: var(--accent-ink);
+  }
+
+  @media (max-width: 768px) {
+    .companion-desktop {
+      display: none;
+    }
+
+    .companion-mobile {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .companion-mobile .btn {
+      width: 100%;
+      justify-content: center;
+    }
   }
 
   /* -------------------------------------------------------------------------

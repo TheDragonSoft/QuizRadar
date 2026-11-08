@@ -147,6 +147,7 @@ pub fn calculate_daily_cushion(
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
     use crate::types::{AssessmentType, UrgencyLevel};
     use chrono::NaiveTime;

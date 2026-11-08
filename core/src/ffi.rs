@@ -433,7 +433,13 @@ pub fn exchange_oauth_code(
         })?;
 
     rt.block_on(async {
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(15))
+            .build()
+            .map_err(|e| QuizRadarFfiError::Store {
+                msg: format!("Failed to build OAuth HTTP client: {e}"),
+            })?;
         let resp = client
             .post(endpoint)
             .form(&form_params)
@@ -982,6 +988,8 @@ pub enum FfiProviderCapability {
     MicrosoftMailRead,
     MicrosoftCalendarsRead,
     MicrosoftSignIn,
+    MicrosoftGroupRead,
+    MicrosoftFilesRead,
 }
 
 impl From<FfiProviderCapability> for ProviderCapability {
@@ -1001,6 +1009,8 @@ impl From<FfiProviderCapability> for ProviderCapability {
                 MicrosoftCapability::CalendarsRead.into()
             }
             FfiProviderCapability::MicrosoftSignIn => MicrosoftCapability::SignIn.into(),
+            FfiProviderCapability::MicrosoftGroupRead => MicrosoftCapability::GroupRead.into(),
+            FfiProviderCapability::MicrosoftFilesRead => MicrosoftCapability::FilesRead.into(),
         }
     }
 }
@@ -1028,6 +1038,12 @@ impl From<ProviderCapability> for FfiProviderCapability {
                 Self::MicrosoftCalendarsRead
             }
             ProviderCapability::Microsoft(MicrosoftCapability::SignIn) => Self::MicrosoftSignIn,
+            ProviderCapability::Microsoft(MicrosoftCapability::GroupRead) => {
+                Self::MicrosoftGroupRead
+            }
+            ProviderCapability::Microsoft(MicrosoftCapability::FilesRead) => {
+                Self::MicrosoftFilesRead
+            }
         }
     }
 }

@@ -564,6 +564,8 @@ pub async fn start_microsoft_scanning_consent(
         MicrosoftCapability::OfflineAccess,
         MicrosoftCapability::MailRead,
         MicrosoftCapability::CalendarsRead,
+        MicrosoftCapability::GroupRead,
+        MicrosoftCapability::FilesRead,
     ]);
     start_microsoft_login_with(state, app, scopes, "consent").await
 }

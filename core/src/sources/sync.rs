@@ -146,11 +146,86 @@ pub async fn run_sync(
 ) -> Result<SyncReport, String> {
     let client = http_client()?;
 
-    let gmail_fut = run_gmail_source(config, input, &client, progress);
-    let teams_fut = run_teams_source(config, &client, ai, progress);
-    let moodle_fut = run_moodle_source(config, input, &client, progress);
-    let classroom_fut = run_classroom_source(config, input, &client, progress);
-    let feeds_fut = run_feeds_source(config, input, &client, progress);
+    // Wrap token providers with SingleFlightTokenProvider to eliminate
+    // refresh thundering herds across concurrent requests.
+    let wrapped_google: Option<Arc<dyn TokenProvider>> = config.google.as_ref().map(|p| {
+        Arc::new(crate::sources::SingleFlightTokenProvider::new(p.clone()))
+            as Arc<dyn TokenProvider>
+    });
+    let wrapped_microsoft: Option<Arc<dyn TokenProvider>> = config.microsoft.as_ref().map(|p| {
+        Arc::new(crate::sources::SingleFlightTokenProvider::new(p.clone()))
+            as Arc<dyn TokenProvider>
+    });
+
+    let effective_config = SyncConfig {
+        google: wrapped_google,
+        microsoft: wrapped_microsoft,
+        ..config.clone()
+    };
+
+    const SOURCE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(35);
+
+    let gmail_fut = async {
+        match tokio::time::timeout(
+            SOURCE_TIMEOUT,
+            run_gmail_source(&effective_config, input, &client, progress),
+        )
+        .await
+        {
+            Ok(res) => res,
+            Err(_) => (failed_run("Gmail", "request timed out after 35s"), None),
+        }
+    };
+    let teams_fut = async {
+        match tokio::time::timeout(
+            SOURCE_TIMEOUT,
+            run_teams_source(&effective_config, &client, ai, progress),
+        )
+        .await
+        {
+            Ok(res) => res,
+            Err(_) => (
+                failed_run("Microsoft Teams", "request timed out after 35s"),
+                None,
+            ),
+        }
+    };
+    let moodle_fut = async {
+        match tokio::time::timeout(
+            SOURCE_TIMEOUT,
+            run_moodle_source(&effective_config, input, &client, progress),
+        )
+        .await
+        {
+            Ok(res) => res,
+            Err(_) => Err(failed_run("Moodle", "request timed out after 35s")),
+        }
+    };
+    let classroom_fut = async {
+        match tokio::time::timeout(
+            SOURCE_TIMEOUT,
+            run_classroom_source(&effective_config, input, &client, progress),
+        )
+        .await
+        {
+            Ok(res) => res,
+            Err(_) => Err(failed_run(
+                "Google Classroom",
+                "request timed out after 35s",
+            )),
+        }
+    };
+    let feeds_fut = async {
+        match tokio::time::timeout(
+            SOURCE_TIMEOUT,
+            run_feeds_source(&effective_config, input, &client, progress),
+        )
+        .await
+        {
+            Ok(res) => res,
+            Err(_) => Err(failed_run("Calendar feeds", "request timed out after 35s")),
+        }
+    };
 
     let (gmail, teams, moodle, classroom, feeds) =
         tokio::join!(gmail_fut, teams_fut, moodle_fut, classroom_fut, feeds_fut);

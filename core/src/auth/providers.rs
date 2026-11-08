@@ -29,7 +29,7 @@ pub const MICROSOFT_TOKEN_URL: &str = "https://login.microsoftonline.com/common/
 // ---------------------------------------------------------------------------
 
 /// Google capabilities, each mapped to its exact scope list.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GoogleCapability {
     /// Gmail announcement scanning (the radar's five queries).
     GmailRead,
@@ -64,7 +64,7 @@ impl GoogleCapability {
 }
 
 /// Microsoft (Graph) capabilities; v4 parity scope set (`02` §5.3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MicrosoftCapability {
     /// Refresh-token grant (required for silent renewal; token never leaves
     /// the device).
@@ -81,6 +81,10 @@ pub enum MicrosoftCapability {
     /// high-impact mail/calendar scopes are requested separately, only when
     /// the user actually asks to scan those sources.
     SignIn,
+    /// Group reads (teams, channels, tabs, conversations).
+    GroupRead,
+    /// Group drive and file reads.
+    FilesRead,
 }
 
 impl MicrosoftCapability {
@@ -92,12 +96,14 @@ impl MicrosoftCapability {
             Self::MailRead => &["Mail.Read"],
             Self::CalendarsRead => &["Calendars.Read"],
             Self::SignIn => &["openid", "profile", "email", "User.Read"],
+            Self::GroupRead => &["Group.Read.All"],
+            Self::FilesRead => &["Files.Read.All"],
         }
     }
 }
 
 /// One capability as handed to the platform's [`crate::sources::TokenProvider`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProviderCapability {
     Google(GoogleCapability),
     Microsoft(MicrosoftCapability),
@@ -441,6 +447,15 @@ mod tests {
         assert!(url.contains("Calendars.Read"));
         assert!(url.contains("prompt=select_account"));
         assert!(!url.contains("client_secret"));
+    }
+
+    #[test]
+    fn microsoft_teams_and_groups_scopes_carry_group_and_files_read() {
+        let scopes = microsoft_union_scopes(&[
+            MicrosoftCapability::GroupRead,
+            MicrosoftCapability::FilesRead,
+        ]);
+        assert_eq!(scopes, vec!["Group.Read.All", "Files.Read.All"]);
     }
 
     #[test]

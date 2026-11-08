@@ -45,6 +45,7 @@ pub fn slot_matches_date(slot: &ScheduleSlot, date: NaiveDate) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
     use chrono::NaiveTime;
 

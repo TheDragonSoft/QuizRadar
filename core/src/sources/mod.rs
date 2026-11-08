@@ -48,6 +48,10 @@ pub trait TokenProvider: Send + Sync {
         &'a self,
         capability: ProviderCapability,
     ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>>;
+
+    /// Signals that `bad_token` returned a 401 for `capability`. Implementations
+    /// with internal token caches can invalidate their cache to force a fresh refresh.
+    fn invalidate(&self, _capability: ProviderCapability, _bad_token: &str) {}
 }
 
 /// Trivial provider for platforms that hold a per-call access token (tests,
@@ -65,17 +69,80 @@ impl TokenProvider for FixedTokenProvider {
     }
 }
 
+/// Wraps a [`TokenProvider`] with single-flight locking and cached bearer tokens.
+/// Prevents the thundering-herd refresh problem where multiple concurrent tasks
+/// trigger parallel refresh requests using the same refresh token, causing
+/// OAuth rotation race conditions (`invalid_grant`).
+#[cfg(not(target_arch = "wasm32"))]
+pub struct SingleFlightTokenProvider {
+    inner: std::sync::Arc<dyn TokenProvider>,
+    tokens: std::sync::Mutex<HashMap<ProviderCapability, String>>,
+    refresh_lock: tokio::sync::Mutex<()>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl SingleFlightTokenProvider {
+    #[must_use]
+    pub fn new(inner: std::sync::Arc<dyn TokenProvider>) -> Self {
+        Self {
+            inner,
+            tokens: std::sync::Mutex::new(HashMap::new()),
+            refresh_lock: tokio::sync::Mutex::new(()),
+        }
+    }
+
+    pub async fn bearer_token(&self, capability: ProviderCapability) -> Result<String, String> {
+        {
+            let guard = self.tokens.lock().unwrap_or_else(recover);
+            if let Some(tok) = guard.get(&capability) {
+                return Ok(tok.clone());
+            }
+        }
+        let _guard = self.refresh_lock.lock().await;
+        {
+            let guard = self.tokens.lock().unwrap_or_else(recover);
+            if let Some(tok) = guard.get(&capability) {
+                return Ok(tok.clone());
+            }
+        }
+        let fresh = self.inner.bearer(capability).await?;
+        let mut guard = self.tokens.lock().unwrap_or_else(recover);
+        guard.insert(capability, fresh.clone());
+        Ok(fresh)
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl TokenProvider for SingleFlightTokenProvider {
+    fn bearer<'a>(
+        &'a self,
+        capability: ProviderCapability,
+    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>> {
+        Box::pin(self.bearer_token(capability))
+    }
+
+    fn invalidate(&self, capability: ProviderCapability, bad_token: &str) {
+        let mut guard = self.tokens.lock().unwrap_or_else(recover);
+        if let Some(current) = guard.get(&capability) {
+            if current == bad_token {
+                guard.remove(&capability);
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Shared HTTP plumbing
 // ---------------------------------------------------------------------------
 
-/// `reqwest` client with v4's timeouts (10 s connect / 30 s total). Built per
-/// sync run — no `expect()` panics on the fetch path.
+/// `reqwest` client with bounded connection pool and timeouts (10 s connect / 25 s total).
+/// Built per sync run — no `expect()` panics on the fetch path.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(25))
+        .pool_max_idle_per_host(8)
         .build()
         .map_err(|e| format!("failed to build the shared HTTP client: {e}"))
 }
@@ -110,10 +177,23 @@ pub(crate) fn enforce_https(url: &str, insecure_message: &str) -> Result<(), Str
     Err(insecure_message.to_string())
 }
 
-/// GET with the platform's one silent-refresh chance: a 401 re-asks the
-/// [`TokenProvider`]; only a genuinely different token triggers one retry.
-/// A still-401 response (or an unchanged token) surfaces honestly to the
-/// caller, which reports "reconnect your account" instead of pretending.
+#[cfg(not(target_arch = "wasm32"))]
+fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
+    let header_val = headers
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim();
+    if let Ok(seconds) = header_val.parse::<u64>() {
+        return Some(Duration::from_secs(seconds.min(10)));
+    }
+    None
+}
+
+/// GET with token refresh and resilient retry:
+/// - 401 triggers one silent refresh attempt via [`TokenProvider::bearer`]
+/// - 429 and transient 5xx server errors retry with exponential backoff / `Retry-After` (up to 3 times)
+/// - Transient connection drops retry up to 3 times before failing
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) async fn authed_get(
     client: &reqwest::Client,
@@ -121,26 +201,56 @@ pub(crate) async fn authed_get(
     capability: ProviderCapability,
     url: &str,
 ) -> Result<reqwest::Response, String> {
-    let token = provider.bearer(capability).await?;
-    let first = client
-        .get(url)
-        .bearer_auth(&token)
-        .send()
-        .await
-        .map_err(|e| net_err("network request failed", e))?;
-    if first.status().as_u16() != 401 {
-        return Ok(first);
+    let mut token = provider.bearer(capability).await?;
+    let mut has_refreshed_401 = false;
+    let mut attempt = 0usize;
+    const MAX_TRANSIENT_RETRIES: usize = 3;
+
+    loop {
+        let send_res = client.get(url).bearer_auth(&token).send().await;
+
+        match send_res {
+            Ok(resp) => {
+                let status = resp.status().as_u16();
+
+                // 401 handling: single-shot token refresh
+                if status == 401 && !has_refreshed_401 {
+                    has_refreshed_401 = true;
+                    provider.invalidate(capability, &token);
+                    if let Ok(refreshed) = provider.bearer(capability).await {
+                        if refreshed != token {
+                            token = refreshed;
+                            continue;
+                        }
+                    }
+                    return Ok(resp);
+                }
+
+                // 429 or 5xx handling: exponential backoff retry up to 3 times
+                if (status == 429 || (500..=504).contains(&status))
+                    && attempt < MAX_TRANSIENT_RETRIES
+                {
+                    let delay = parse_retry_after(resp.headers())
+                        .unwrap_or_else(|| Duration::from_millis(500 * (1 << attempt)));
+                    attempt += 1;
+                    tokio::time::sleep(delay).await;
+                    continue;
+                }
+
+                return Ok(resp);
+            }
+            Err(e) => {
+                // Retry transient connection/timeout errors up to MAX_TRANSIENT_RETRIES
+                if (e.is_connect() || e.is_timeout()) && attempt < MAX_TRANSIENT_RETRIES {
+                    let delay = Duration::from_millis(500 * (1 << attempt));
+                    attempt += 1;
+                    tokio::time::sleep(delay).await;
+                    continue;
+                }
+                return Err(net_err("network request failed", e));
+            }
+        }
     }
-    let refreshed = provider.bearer(capability).await?;
-    if refreshed == token {
-        return Ok(first);
-    }
-    client
-        .get(url)
-        .bearer_auth(&refreshed)
-        .send()
-        .await
-        .map_err(|e| net_err("network request failed after token refresh", e))
 }
 
 // ---------------------------------------------------------------------------

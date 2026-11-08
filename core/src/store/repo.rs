@@ -3641,7 +3641,7 @@ mod tests {
         assert_eq!(summary.absent, 3);
         assert_eq!(summary.excused, 0);
         assert_eq!(summary.max_absences, Some(4));
-        assert_eq!(summary.is_critical, false);
+        assert!(!summary.is_critical);
         assert_eq!(
             summary.warning_chip.as_deref(),
             Some("1 Absence Left (3/4)")
@@ -3662,7 +3662,7 @@ mod tests {
 
         let crit_summary = att_repo.course_summary("CSE241").unwrap();
         assert_eq!(crit_summary.absent, 4);
-        assert_eq!(crit_summary.is_critical, true);
+        assert!(crit_summary.is_critical);
         assert_eq!(
             crit_summary.warning_chip.as_deref(),
             Some("Limit Reached! (4/4)")
@@ -3673,7 +3673,7 @@ mod tests {
         course_repo.set_max_absences("CSE241", Some(6)).unwrap();
         let updated_summary = att_repo.course_summary("CSE241").unwrap();
         assert_eq!(updated_summary.max_absences, Some(6));
-        assert_eq!(updated_summary.is_critical, false);
+        assert!(!updated_summary.is_critical);
     }
 
     #[test]
@@ -3790,7 +3790,7 @@ mod tests {
 
         let all = mb_repo.list_all().unwrap();
         assert_eq!(all.len(), 1);
-        assert_eq!(all[0].resolved, true);
+        assert!(all[0].resolved);
     }
 
     #[test]

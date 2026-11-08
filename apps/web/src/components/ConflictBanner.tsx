@@ -10,6 +10,7 @@ export const ConflictBanner: React.FC = () => {
   const customEvents = useAppStore((s) => s.data.config.customEvents) || [];
   const dismissConflicts = useAppStore((s) => s.dismissConflicts);
   const scheduleStudyBlocks = useAppStore((s) => s.scheduleStudyBlocks);
+  const draftBalancedFlightPath = useAppStore((s) => s.draftBalancedFlightPath);
   const setView = useAppStore((s) => s.setView);
 
   // Hidden when dismissed or when no conflict alerts exist
@@ -137,13 +138,20 @@ export const ConflictBanner: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-2 shrink-0 flex-wrap">
         <button
           type="button"
-          onClick={() => scheduleStudyBlocks()}
-          className="px-3 py-1.5 rounded-lg bg-amber-700 hover:bg-amber-800 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+          onClick={() => void draftBalancedFlightPath()}
+          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
         >
-          <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+          <Sparkles className="h-3.5 w-3.5 text-emerald-200" aria-hidden="true" />
+          <span>{copy.dashboard.conflictBanner.balancedFlightPathAction}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => void scheduleStudyBlocks()}
+          className="px-3 py-1.5 rounded-lg bg-amber-700/80 hover:bg-amber-800 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+        >
           <span>{copy.dashboard.conflictBanner.autoScheduleAction}</span>
         </button>
         <button

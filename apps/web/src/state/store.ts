@@ -1255,7 +1255,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
           }
         }
         for (const ev of existingEvents) {
-          if (ev.dateIso === dateIso || ev.date === dateIso) {
+          if (ev.dateIso === dateIso) {
             if (ev.startTime && ev.endTime) {
               const eStart = parseInt(ev.startTime.slice(0, 2), 10) * 60 + parseInt(ev.startTime.slice(3, 5), 10);
               const eEnd = parseInt(ev.endTime.slice(0, 2), 10) * 60 + parseInt(ev.endTime.slice(3, 5), 10);
@@ -1296,8 +1296,8 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         if (!a1 || !a2 || !a1.dateIso || !a2.dateIso) continue;
 
         const [first, second] = a1.dateIso <= a2.dateIso ? [a1, a2] : [a2, a1];
-        const firstDate = first.dateIso;
-        const secondDate = second.dateIso;
+        const firstDate: string = first.dateIso!;
+        const secondDate: string = second.dateIso!;
 
         const planSchedule = [
           { target: first, dayOffset: 3, label: "Deep Focus Review", blockId: `study-block-${first.id}` },
@@ -1325,7 +1325,6 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
               title: `Study: ${item.target.title} (${item.label})`,
               courseId: item.target.courseId ?? null,
               eventType: "Study Session",
-              date: targetDateIso,
               dateIso: targetDateIso,
               startTime: freeWin.start,
               endTime: freeWin.end,

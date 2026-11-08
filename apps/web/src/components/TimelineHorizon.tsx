@@ -81,6 +81,7 @@ export const TimelineHorizon: React.FC<TimelineHorizonProps> = ({
 }) => {
   const theme = useAppStore((s) => s.theme);
   const courses = useAppStore((s) => s.data.schedule.courses);
+  const draftBalancedFlightPath = useAppStore((s) => s.draftBalancedFlightPath);
 
   // Map recommendations by assessment id for quick topic lookup
   const recMap = useMemo(() => {
@@ -334,9 +335,21 @@ export const TimelineHorizon: React.FC<TimelineHorizonProps> = ({
           <div className="space-y-4">
             {/* Horizon Temporal Scale Labels */}
             <div className="relative flex items-center justify-between text-[11px] font-bold tracking-wider uppercase text-[var(--text-muted)] px-2">
-              <div className="flex items-center gap-1.5 text-rose-500 dark:text-rose-400">
-                <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-ping" />
-                <span>T-0 / 48H Crunch Orbit</span>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 text-rose-500 dark:text-rose-400">
+                  <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-ping" />
+                  <span>T-0 / 48H Crunch Orbit</span>
+                </div>
+                {conflictAlerts.some((c) => !c.isMitigated) && (
+                  <button
+                    type="button"
+                    onClick={() => void draftBalancedFlightPath()}
+                    className="cursor-pointer inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-600 dark:text-rose-300 transition"
+                  >
+                    <Sparkles className="h-2.5 w-2.5 text-rose-400" aria-hidden="true" />
+                    <span>Balance 48h Flight Path</span>
+                  </button>
+                )}
               </div>
               <div className="hidden sm:block text-amber-500 dark:text-amber-400">
                 <span>7-Day Proximity</span>

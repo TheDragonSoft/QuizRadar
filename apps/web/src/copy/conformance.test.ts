@@ -83,6 +83,7 @@ const FUNCTION_SAMPLES: ReadonlyArray<{ path: string; args: unknown[] }> = [
   { path: "dashboard.conflictBanner.mitigatedBody", args: [1] },
   { path: "dashboard.conflictBanner.partiallyMitigatedNote", args: [2] },
   { path: "dashboard.conflictBanner.blocksCreated", args: [2] },
+  { path: "dashboard.conflictBanner.balancedPathCreated", args: [3] },
   { path: "dashboard.conflictBanner.blocksSkippedUndated", args: [1] },
   { path: "dashboard.topicsCompletedProgress", args: [1, 4] },
   { path: "tasks.summaryLine", args: [3, 2, 4.5] },

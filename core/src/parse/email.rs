@@ -33,7 +33,7 @@ use crate::parse::util::{
     urgency_for, weekday_index, weekday_to_index,
 };
 use crate::types::{
-    Assessment, AssessmentSource, AssessmentType, CachedEmail, ScheduleData, ScheduleSlot,
+    Assessment, AssessmentSource, AssessmentType, CachedEmail, Course, ScheduleData, ScheduleSlot,
 };
 
 /// v4 forwarded-announcement separator (69 dashes) professors use to quote
@@ -724,6 +724,42 @@ pub fn find_course_code(text: &str) -> Option<String> {
     None
 }
 
+/// Match a course from text against the student's enrolled schedule courses.
+/// Deterministic matching order:
+/// 1. Course ID match (e.g. "CSE241" or "cse 241")
+/// 2. Course Name match (case-insensitive substring, requiring at least 3 characters)
+/// 3. Hand-written course code regex scanner (`find_course_code`), matched against `schedule.courses`.
+#[must_use]
+pub fn match_course_from_text<'a>(
+    text: &str,
+    schedule: &'a ScheduleData,
+) -> Option<(&'a Course, &'static str)> {
+    let text_lower = text.to_ascii_lowercase();
+    // 1. Direct course ID match
+    for course in &schedule.courses {
+        if !course.id.is_empty() {
+            let id_lower = course.id.to_ascii_lowercase();
+            if text_lower.contains(&id_lower) {
+                return Some((course, "id-match"));
+            }
+        }
+    }
+    // 2. Direct course Name match
+    for course in &schedule.courses {
+        let name_lower = course.name.trim().to_ascii_lowercase();
+        if name_lower.len() >= 3 && text_lower.contains(&name_lower) {
+            return Some((course, "name-match"));
+        }
+    }
+    // 3. Fallback to course code scanner (e.g. spaced codes like "CSE 241")
+    if let Some(code) = find_course_code(text) {
+        if let Some(course) = schedule.find_course(&code) {
+            return Some((course, "code-scanner"));
+        }
+    }
+    None
+}
+
 // ---------------------------------------------------------------------------
 // Announcement wording helpers
 // ---------------------------------------------------------------------------
@@ -788,7 +824,7 @@ fn find_week_phrase(lower: &str) -> Option<WeekPhrase> {
 /// `body_lower` all lower-cased by the caller). The literal `"lecture 1
 /// slides"` reject is kept for parity and flagged in STATUS as the one
 /// literal-based filter that deserves a generic pass later.
-fn is_candidate_assessment_email(subject_lower: &str, from_lower: &str, body_lower: &str) -> bool {
+pub fn is_candidate_assessment_email(subject_lower: &str, from_lower: &str, body_lower: &str) -> bool {
     // Filter out the student's own outgoing replies
     if subject_lower.starts_with("re:") {
         return false;
@@ -822,12 +858,52 @@ fn is_candidate_assessment_email(subject_lower: &str, from_lower: &str, body_low
         }
     }
 
-    subject_lower.contains("quiz")
-        || subject_lower.contains("midterm")
-        || subject_lower.contains("exam")
-        || subject_lower.contains("assignment")
-        || subject_lower.contains("assessment")
-        || (body_lower.contains("quiz") && from_lower.contains("e-learning"))
+    let has_assessment_keyword = |s: &str| {
+        s.contains("quiz")
+            || s.contains("midterm")
+            || s.contains("exam")
+            || s.contains("assignment")
+            || s.contains("assessment")
+            || s.contains("test")
+    };
+
+    if has_assessment_keyword(subject_lower) {
+        return true;
+    }
+
+    if has_assessment_keyword(body_lower) {
+        if from_lower.contains("e-learning")
+            || from_lower.contains("canvas")
+            || from_lower.contains("moodle")
+            || from_lower.contains("blackboard")
+        {
+            return true;
+        }
+        let body_has_scheduling = body_lower.contains("held")
+            || body_lower.contains("take place")
+            || body_lower.contains("due")
+            || body_lower.contains("scheduled")
+            || body_lower.contains("deadline")
+            || body_lower.contains("submission")
+            || body_lower.contains("room")
+            || body_lower.contains("hall")
+            || body_lower.contains("pm")
+            || body_lower.contains("am")
+            || body_lower.contains("next week")
+            || body_lower.contains("tomorrow")
+            || body_lower.contains("monday")
+            || body_lower.contains("tuesday")
+            || body_lower.contains("wednesday")
+            || body_lower.contains("thursday")
+            || body_lower.contains("friday")
+            || body_lower.contains("saturday")
+            || body_lower.contains("sunday");
+        if body_has_scheduling {
+            return true;
+        }
+    }
+
+    false
 }
 
 /// Which weekly slot kind this announcement is about (v4 ladder).
@@ -1244,12 +1320,15 @@ pub fn parse_email_announcement_from_source(
     let anchor = sent_date.unwrap_or(ref_date);
 
     let subj_and_announcement = format!("{} {announcement}", email.subject);
-    let raw_course = find_course_code(&subj_and_announcement);
-    let course = raw_course
-        .as_deref()
-        .and_then(|code| schedule.find_course(code));
-    let course_id = raw_course.clone();
-    let course_name = course.map(|c| c.name.clone());
+    let matched = match_course_from_text(&subj_and_announcement, schedule);
+    let course = matched.map(|(c, _)| c);
+    let (course_id, course_name) = match course {
+        Some(c) => (Some(c.id.clone()), Some(c.name.clone())),
+        None => {
+            let raw_code = find_course_code(&subj_and_announcement);
+            (raw_code, None)
+        }
+    };
     let instructor = instructor_from(&email.from);
 
     // Date ladder: explicit → week-phrase estimate (snapped forward to the
@@ -2458,5 +2537,46 @@ mod tests {
             note.contains("Study time is a flat 2.5 h local heuristic estimate"),
             "the flat estimate must be labeled: {note}"
         );
+    }
+
+    #[test]
+    fn match_course_by_name_and_id_and_scanner() {
+        let schedule = fixture_schedule();
+        // 1. By ID
+        let m1 = match_course_from_text("Midterm in CSE241 next week", &schedule);
+        assert!(m1.is_some());
+        assert_eq!(m1.unwrap().0.id, "CSE241");
+        assert_eq!(m1.unwrap().1, "id-match");
+
+        // 2. By Name
+        let m2 = match_course_from_text("Midterm in Object-Oriented Programming next week", &schedule);
+        assert!(m2.is_some());
+        assert_eq!(m2.unwrap().0.id, "CSE241");
+        assert_eq!(m2.unwrap().1, "name-match");
+
+        // 3. Spaced code via scanner
+        let m3 = match_course_from_text("Quiz in CSE 346 tomorrow", &schedule);
+        assert!(m3.is_some());
+        assert_eq!(m3.unwrap().0.id, "CSE346");
+
+        // 4. Non-matching text
+        let m4 = match_course_from_text("Welcome back everyone", &schedule);
+        assert!(m4.is_none());
+    }
+
+    #[test]
+    fn candidate_filter_catches_assessment_in_body_with_schedule() {
+        // Generic subject, but body clearly announces a scheduled quiz
+        assert!(is_candidate_assessment_email(
+            "class announcement",
+            "prof@university.edu",
+            "Dear students, please note that quiz 2 will take place on Wednesday at 10 am in hall 101."
+        ));
+        // Random body mention without scheduling should NOT match
+        assert!(!is_candidate_assessment_email(
+            "class announcement",
+            "prof@university.edu",
+            "Hope you enjoyed yesterday's lecture slides."
+        ));
     }
 }

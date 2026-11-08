@@ -3,13 +3,18 @@
 //! Bridges the core sync orchestrator, Google Calendar push, and Google Drive
 //! appDataFolder cloud backup to Tauri IPC with live progress streaming.
 
+use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+use quizradar_core::ai::gemini::GeminiProvider;
+use quizradar_core::ai::provider::QuotaLedger;
 use quizradar_core::cal::gcal::{
     push_assessments_to_google_calendar, GCalSyncReport, GCAL_API_BASE,
 };
-use quizradar_core::sources::sync::{run_sync as core_run_sync, SyncConfig, SyncInput};
+use quizradar_core::sources::sync::{
+    compute_email_hash, run_sync_with_ai as core_run_sync_with_ai, SyncConfig, SyncInput,
+};
 use quizradar_core::sources::{SourceProgress, SourceStatus, TokenProvider};
 use quizradar_core::store::backup::{DriveBackupClient, MergeReport, PushOutcome};
 use quizradar_core::types::Course;
@@ -225,12 +230,23 @@ pub async fn run_sync_inner(
         moodle_rest_token: None,
     };
 
+    // Load persisted email cache and prior AI extractions
+    let cached_emails = state.store.load_cached_emails().await.unwrap_or_default();
+    let mut cached_extractions = HashMap::new();
+    for email in &cached_emails {
+        let hash = compute_email_hash(email);
+        if let Ok(Some(ext)) = state.store.get_email_ai_extraction(&hash).await {
+            cached_extractions.insert(hash, ext);
+        }
+    }
+
     let input = SyncInput {
         schedule: snapshot.schedule,
-        emails_cache: Vec::new(),
+        emails_cache: cached_emails,
         existing_assessments: snapshot.assessments,
         reference_date: today,
         local: state.local_offset(),
+        cached_extractions,
     };
 
     let progress_cb = move |progress: SourceProgress| {
@@ -238,6 +254,18 @@ pub async fn run_sync_inner(
             emit(progress);
         }
     };
+
+    let consent = crate::commands::ai::gemini_consent(state).await.unwrap_or(false);
+    let gemini_key = if consent {
+        state.get_gemini_api_key().ok().flatten()
+    } else {
+        None
+    };
+    let clock = Arc::new(chrono::Utc::now);
+    let ledger = Arc::new(QuotaLedger::new(Arc::new(state.store.quota_kv()), None));
+    let email_ai = gemini_key.and_then(|k| {
+        GeminiProvider::production(Some(k), clock, Some(Arc::clone(&ledger))).ok()
+    });
 
     // The user may abort the scan from the overlay's Cancel button. The abort
     // is honoured during the fetch phase only — the merge into the store
@@ -249,7 +277,13 @@ pub async fn run_sync_inner(
         _ = cancel_rx.changed() => {
             return Err(SCAN_CANCELED_MESSAGE.to_string());
         }
-        result = core_run_sync(&config, &input, None, &progress_cb) => result?,
+        result = core_run_sync_with_ai(
+            &config,
+            &input,
+            None,
+            email_ai.as_ref().map(|p| p as &dyn quizradar_core::ai::provider::AiProvider),
+            &progress_cb,
+        ) => result?,
     };
 
     // "Last synced" reflects real fetches only: a scan in which every source
@@ -262,12 +296,35 @@ pub async fn run_sync_inner(
     if !report.assessments.is_empty() {
         state
             .store
-            .replace_assessments(report.assessments, now, today)
+            .replace_assessments(report.assessments, now.clone(), today)
             .await
             .map_err(|e| format!("Failed to save merged assessments: {e}"))?;
     }
 
     let mut notes = report.notes;
+
+    if !report.emails_cache.is_empty() {
+        if let Err(e) = state
+            .store
+            .save_cached_emails(report.emails_cache.clone(), now.clone())
+            .await
+        {
+            notes.push(format!("Notice: could not persist email cache: {e}"));
+        }
+    }
+
+    for (cache_key, email_id, extraction) in &report.new_extractions {
+        let _ = state
+            .store
+            .save_email_ai_extraction(
+                cache_key,
+                email_id,
+                extraction,
+                "gemini-2.5-flash-lite",
+                now.clone(),
+            )
+            .await;
+    }
     if fetched_anything {
         if let Err(e) = state
             .store

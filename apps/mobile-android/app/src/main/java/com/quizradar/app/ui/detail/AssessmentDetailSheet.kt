@@ -557,9 +557,9 @@ fun AssessmentDetailSheet(
                 )
             }
 
-            if (gradeError != null) {
+            gradeError?.let { errText ->
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(text = gradeError!!, fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                Text(text = errText, fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
             }
 
             // A write that failed says so, in the same error language as the

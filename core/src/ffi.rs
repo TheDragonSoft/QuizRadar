@@ -422,9 +422,33 @@ pub fn exchange_oauth_code(
         }
     };
 
-    let endpoint = token_endpoint_override
-        .as_deref()
-        .unwrap_or(default_endpoint);
+    let endpoint = if let Some(ref override_url) = token_endpoint_override {
+        let trimmed = override_url.trim();
+        if !trimmed.is_empty() {
+            let parsed =
+                reqwest::Url::parse(trimmed).map_err(|e| QuizRadarFfiError::Validation {
+                    msg: format!("Invalid token_endpoint_override '{trimmed}': {e}"),
+                })?;
+            let host = parsed.host_str().unwrap_or("");
+            let is_allowed = host == "oauth2.googleapis.com"
+                || host == "login.microsoftonline.com"
+                || host == "localhost"
+                || host == "127.0.0.1"
+                || host == "::1";
+            if !is_allowed {
+                return Err(QuizRadarFfiError::Validation {
+                    msg: format!(
+                        "Refusing untrusted token_endpoint_override host '{host}': must be Google, Microsoft, or loopback"
+                    ),
+                });
+            }
+            trimmed
+        } else {
+            default_endpoint
+        }
+    } else {
+        default_endpoint
+    };
 
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -452,9 +476,8 @@ pub fn exchange_oauth_code(
 
         if !resp.status().is_success() {
             let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
             return Err(QuizRadarFfiError::Validation {
-                msg: format!("OAuth token exchange returned {status}: {body}"),
+                msg: format!("OAuth token exchange returned HTTP {status}"),
             });
         }
 
@@ -1228,7 +1251,7 @@ impl NativeStore {
             moodle_rest_url: sync_config.moodle_rest_url,
             moodle_rest_token: sync_config.moodle_rest_token,
         };
-        let cached_emails = self.inner.load_cached_emails().await.unwrap_or_default();
+        let cached_emails = self.inner.load_cached_emails().await?;
         let input = SyncInput {
             schedule: snapshot.schedule,
             emails_cache: cached_emails,
@@ -1252,10 +1275,9 @@ impl NativeStore {
             .map_err(|e| QuizRadarFfiError::Store { msg: e })?;
 
         if !report.emails_cache.is_empty() {
-            let _ = self
-                .inner
+            self.inner
                 .save_cached_emails(report.emails_cache, now_iso.clone())
-                .await;
+                .await?;
         }
 
         // "Last synced" reflects real fetches only: a scan in which every

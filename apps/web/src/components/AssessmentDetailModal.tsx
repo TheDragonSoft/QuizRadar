@@ -199,7 +199,10 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
                     className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 text-[11px] font-bold shadow-2xs"
                     title={assessment.aiInferenceNote}
                   >
-                    <Sparkles className="h-3 w-3 shrink-0 text-purple-600 dark:text-purple-400" aria-hidden="true" />
+                    <Sparkles
+                      className="h-3 w-3 shrink-0 text-purple-600 dark:text-purple-400"
+                      aria-hidden="true"
+                    />
                     <span>AI-Verified</span>
                   </span>
                 )
@@ -310,14 +313,20 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
 
             {assessment.emailSubject && (
               <div className="mt-1">
-                <span className="text-[11px] text-[var(--text-muted)] block font-semibold">Subject</span>
-                <p className="font-medium text-[var(--text)] select-text">{assessment.emailSubject}</p>
+                <span className="text-[11px] text-[var(--text-muted)] block font-semibold">
+                  Subject
+                </span>
+                <p className="font-medium text-[var(--text)] select-text">
+                  {assessment.emailSubject}
+                </p>
               </div>
             )}
 
             {assessment.instructor && (
               <div>
-                <span className="text-[11px] text-[var(--text-muted)] block font-semibold">Sender</span>
+                <span className="text-[11px] text-[var(--text-muted)] block font-semibold">
+                  Sender
+                </span>
                 <p className="text-[var(--text)]">{assessment.instructor}</p>
               </div>
             )}
@@ -327,7 +336,7 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
                 <a
                   href={safeExternalUrl(assessment.elearningUrl)}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-[var(--accent-ink)] hover:underline font-semibold text-xs"
                 >
                   <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
@@ -456,16 +465,12 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
                 <span className="text-[11px] text-purple-800/80 dark:text-purple-300/80 font-semibold block">
                   Recommended Study Plan:
                 </span>
-                <p className="text-[var(--text)] leading-relaxed">
-                  {assessment.aiStudyPlan}
-                </p>
+                <p className="text-[var(--text)] leading-relaxed">{assessment.aiStudyPlan}</p>
               </div>
             )}
 
             {rec?.whyStudyNow && !assessment.aiStudyPlan && (
-              <p className="text-[var(--text-muted)] leading-relaxed">
-                {rec.whyStudyNow}
-              </p>
+              <p className="text-[var(--text-muted)] leading-relaxed">{rec.whyStudyNow}</p>
             )}
           </div>
         )}
@@ -485,7 +490,7 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
               <a
                 href={safeExternalUrl(assessment.googleCalUrl)}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 onClick={() => analytics.calendarExport("gcal", 1)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text)] transition"
               >
@@ -536,10 +541,7 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text)] transition cursor-pointer"
             >
-              <HelpCircle
-                className="h-4 w-4 text-[var(--accent)]"
-                aria-hidden="true"
-              />
+              <HelpCircle className="h-4 w-4 text-[var(--accent)]" aria-hidden="true" />
               <span>{copy.practice.practiceQuizAction}</span>
             </button>
 
@@ -547,7 +549,7 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
               <a
                 href={safeExternalUrl(assessment.elearningUrl)}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text)] transition"
               >
                 <ExternalLink className="h-4 w-4 text-[var(--accent-ink)]" aria-hidden="true" />

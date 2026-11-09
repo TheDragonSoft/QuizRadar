@@ -28,8 +28,8 @@ use crate::plan;
 use crate::types::{
     AcademicTrack, Assessment, AssessmentType, AttendanceEntry, AttendanceStatus, CachedEmail,
     CompletedTopics, Course, CourseAttendanceSummary, CourseFocusStat, CustomCalendarEvent,
-    FeedConfig, Flashcard, GradeRecord, MistakeRecord, QuizAttempt, ScheduleData,
-    ScheduleSlot, StudyAnalytics, StudySessionRecord, UrgencyLevel,
+    FeedConfig, Flashcard, GradeRecord, MistakeRecord, QuizAttempt, ScheduleData, ScheduleSlot,
+    StudyAnalytics, StudySessionRecord, UrgencyLevel,
 };
 
 use super::db::{Db, StoreError};
@@ -4112,7 +4112,7 @@ mod tests {
             internal_date_ms: None,
             history_id: None,
         };
-        ops::save_cached_emails(&db, &[email1.clone()], "t1").unwrap();
+        ops::save_cached_emails(&db, std::slice::from_ref(&email1), "t1").unwrap();
 
         let loaded = ops::load_cached_emails(&db).unwrap();
         assert_eq!(loaded.len(), 1);

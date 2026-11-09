@@ -457,14 +457,15 @@ impl AssessmentSource {
     /// user's feed label (`02` §3.3: feed items carry the feed's own name).
     #[must_use]
     pub fn from_label(label: &str) -> Self {
-        match label.trim() {
-            "Gmail" => Self::Gmail,
-            "Moodle" => Self::Moodle,
-            "Microsoft Teams" => Self::MicrosoftTeams,
-            "Microsoft Outlook" => Self::MicrosoftOutlook,
-            "Google Classroom" => Self::GoogleClassroom,
-            "Custom" => Self::Custom,
-            other => Self::Feed(other.to_string()),
+        let trimmed = label.trim();
+        match trimmed.to_ascii_lowercase().as_str() {
+            "gmail" => Self::Gmail,
+            "moodle" => Self::Moodle,
+            "microsoft teams" | "teams" => Self::MicrosoftTeams,
+            "microsoft outlook" | "outlook" => Self::MicrosoftOutlook,
+            "google classroom" | "classroom" => Self::GoogleClassroom,
+            "custom" => Self::Custom,
+            _ => Self::Feed(trimmed.to_string()),
         }
     }
 
@@ -924,4 +925,53 @@ pub struct DailyStudyCushion {
     pub deficit_hours: Option<f32>,
     #[serde(default)]
     pub warning_note: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_label_is_case_insensitive_and_handles_aliases() {
+        assert_eq!(
+            AssessmentSource::from_label("gmail"),
+            AssessmentSource::Gmail
+        );
+        assert_eq!(
+            AssessmentSource::from_label("Gmail "),
+            AssessmentSource::Gmail
+        );
+        assert_eq!(
+            AssessmentSource::from_label("MOODLE"),
+            AssessmentSource::Moodle
+        );
+        assert_eq!(
+            AssessmentSource::from_label("teams"),
+            AssessmentSource::MicrosoftTeams
+        );
+        assert_eq!(
+            AssessmentSource::from_label("Microsoft Teams"),
+            AssessmentSource::MicrosoftTeams
+        );
+        assert_eq!(
+            AssessmentSource::from_label("outlook"),
+            AssessmentSource::MicrosoftOutlook
+        );
+        assert_eq!(
+            AssessmentSource::from_label("Google Classroom"),
+            AssessmentSource::GoogleClassroom
+        );
+        assert_eq!(
+            AssessmentSource::from_label("classroom"),
+            AssessmentSource::GoogleClassroom
+        );
+        assert_eq!(
+            AssessmentSource::from_label("custom"),
+            AssessmentSource::Custom
+        );
+        assert_eq!(
+            AssessmentSource::from_label("Biology 101 Feed"),
+            AssessmentSource::Feed("Biology 101 Feed".to_string())
+        );
+    }
 }

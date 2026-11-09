@@ -288,57 +288,117 @@ pub async fn run_sync_with_ai(
                 let mut ai_dropped_non_assessment = 0usize;
                 let mut ai_fallback = 0usize;
 
+                use futures::stream::{self, StreamExt};
+
+                enum ExtractionWorkItem {
+                    Passthrough(Assessment),
+                    Cached {
+                        assessment: Assessment,
+                        cached: ExtractedAssessment,
+                    },
+                    NeedsAi {
+                        assessment: Assessment,
+                        email: CachedEmail,
+                        hash: String,
+                    },
+                }
+
+                let mut work_items = Vec::new();
                 for assessment in raw_assessments {
                     if let Some(email) = emails_cache.iter().find(|e| e.id == assessment.id) {
                         let hash = compute_email_hash(email);
                         if let Some(cached) = input.cached_extractions.get(&hash) {
-                            if cached.is_assessment {
-                                assessments.push(merge_extraction(
-                                    assessment,
-                                    cached,
-                                    input.reference_date,
-                                ));
-                                ai_enhanced += 1;
-                            } else {
-                                ai_dropped_non_assessment += 1;
-                            }
-                            continue;
-                        }
-
-                        match extract_assessment(ai_prov, email, &input.schedule).await {
-                            Ok(extraction) => {
-                                all_new_extractions.push((
-                                    hash.clone(),
-                                    email.id.clone(),
-                                    extraction.clone(),
-                                ));
-                                if extraction.is_assessment {
-                                    assessments.push(merge_extraction(
-                                        assessment,
-                                        &extraction,
-                                        input.reference_date,
-                                    ));
-                                    ai_enhanced += 1;
-                                } else {
-                                    ai_dropped_non_assessment += 1;
-                                }
-                            }
-                            Err(e) => {
-                                ai_fallback += 1;
-                                let mut fallback = assessment;
-                                let note =
-                                    fallback.ai_inference_note.get_or_insert_with(String::new);
-                                if !note.is_empty() {
-                                    note.push(' ');
-                                }
-                                note.push_str(&format!(
-                                    "[AI unavailable: {e}; used local heuristic]"
-                                ));
-                                assessments.push(fallback);
-                            }
+                            work_items.push(ExtractionWorkItem::Cached {
+                                assessment,
+                                cached: cached.clone(),
+                            });
+                        } else {
+                            work_items.push(ExtractionWorkItem::NeedsAi {
+                                assessment,
+                                email: email.clone(),
+                                hash,
+                            });
                         }
                     } else {
-                        assessments.push(assessment);
+                        work_items.push(ExtractionWorkItem::Passthrough(assessment));
+                    }
+                }
+
+                // Process up to 5 concurrent AI extractions to keep latency low
+                // while respecting provider rate limits.
+                let schedule = &input.schedule;
+                let reference_date = input.reference_date;
+                let processed_results = stream::iter(work_items)
+                    .map(|item| async move {
+                        match item {
+                            ExtractionWorkItem::Passthrough(a) => (Some(a), None, None),
+                            ExtractionWorkItem::Cached { assessment, cached } => {
+                                if cached.is_assessment {
+                                    let merged =
+                                        merge_extraction(assessment, &cached, reference_date);
+                                    (Some(merged), None, Some(true))
+                                } else {
+                                    (None, None, Some(false))
+                                }
+                            }
+                            ExtractionWorkItem::NeedsAi {
+                                assessment,
+                                email,
+                                hash,
+                            } => match extract_assessment(ai_prov, &email, schedule).await {
+                                Ok(extraction) => {
+                                    let new_extraction =
+                                        (hash, email.id.clone(), extraction.clone());
+                                    if extraction.is_assessment {
+                                        let merged = merge_extraction(
+                                            assessment,
+                                            &extraction,
+                                            reference_date,
+                                        );
+                                        (Some(merged), Some(new_extraction), Some(true))
+                                    } else {
+                                        (None, Some(new_extraction), Some(false))
+                                    }
+                                }
+                                Err(e) => {
+                                    let mut fallback = assessment;
+                                    let note =
+                                        fallback.ai_inference_note.get_or_insert_with(String::new);
+                                    if !note.is_empty() {
+                                        note.push(' ');
+                                    }
+                                    note.push_str(&format!(
+                                        "[AI unavailable: {e}; used local heuristic]"
+                                    ));
+                                    (Some(fallback), None, None)
+                                }
+                            },
+                        }
+                    })
+                    .buffered(5)
+                    .collect::<Vec<_>>()
+                    .await;
+
+                for (assessment_opt, new_ext_opt, status) in processed_results {
+                    if let Some(new_ext) = new_ext_opt {
+                        all_new_extractions.push(new_ext);
+                    }
+                    match status {
+                        Some(true) => ai_enhanced += 1,
+                        Some(false) => ai_dropped_non_assessment += 1,
+                        None => {
+                            if assessment_opt.as_ref().is_some_and(|a| {
+                                a.ai_inference_note
+                                    .as_deref()
+                                    .unwrap_or("")
+                                    .contains("[AI unavailable:")
+                            }) {
+                                ai_fallback += 1;
+                            }
+                        }
+                    }
+                    if let Some(a) = assessment_opt {
+                        assessments.push(a);
                     }
                 }
 

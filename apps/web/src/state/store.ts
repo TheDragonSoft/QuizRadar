@@ -1388,21 +1388,40 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         const assessments = assessmentId
           ? get().data.assessments.filter((a) => a.id === assessmentId)
           : get().data.assessments;
+        const escapeIcs = (str: string) =>
+          str
+            .replace(/\\/g, "\\\\")
+            .replace(/;/g, "\\;")
+            .replace(/,/g, "\\,")
+            .replace(/\r?\n/g, "\\n");
+        const nowStamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";
         icsContent = [
           "BEGIN:VCALENDAR",
           "VERSION:2.0",
           "PRODID:-//QuizRadar//v5//EN",
-          ...assessments.map((a) =>
-            [
+          ...assessments.map((a) => {
+            const rawSummary = `${a.courseName || a.courseId ? `${a.courseName || a.courseId}: ` : ""}${a.title}`;
+            const safeUid = a.id.replace(/[\r\n]/g, "");
+            const dateStr = a.dateIso ? a.dateIso.replace(/-/g, "") : "";
+            // Calculate next day for exclusive all-day DTEND
+            let nextDateStr = "";
+            if (a.dateIso) {
+              const d = new Date(a.dateIso + "T00:00:00Z");
+              d.setUTCDate(d.getUTCDate() + 1);
+              nextDateStr = d.toISOString().slice(0, 10).replace(/-/g, "");
+            }
+            return [
               "BEGIN:VEVENT",
-              `UID:quizradar-${a.id}@quizradar.local`,
-              `SUMMARY:${a.courseName || a.courseId ? `${a.courseName || a.courseId}: ` : ""}${a.title}`,
-              a.dateIso ? `DTSTART;VALUE=DATE:${a.dateIso.replace(/-/g, "")}` : "",
+              `UID:quizradar-${safeUid}@quizradar.local`,
+              `DTSTAMP:${nowStamp}`,
+              `SUMMARY:${escapeIcs(rawSummary)}`,
+              dateStr ? `DTSTART;VALUE=DATE:${dateStr}` : "",
+              nextDateStr ? `DTEND;VALUE=DATE:${nextDateStr}` : "",
               "END:VEVENT",
             ]
               .filter(Boolean)
-              .join("\r\n"),
-          ),
+              .join("\r\n");
+          }),
           "END:VCALENDAR",
         ].join("\r\n");
       }
@@ -1930,7 +1949,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   },
 }));
 
-if (typeof window !== "undefined") {
+if (typeof window !== "undefined" && import.meta.env.DEV) {
   (window as unknown as Record<string, unknown>).__QUIZRADAR_STORE__ = useAppStore;
 }
 
@@ -1953,3 +1972,22 @@ export function initDayRolloverWatchdog(): () => void {
     });
   });
 }
+
+// ---------------------------------------------------------------------------
+// Granular Selectors (Sprint 3: State Architecture & Render Performance)
+// Prevents monolithic re-renders across views when unrelated fields change.
+// ---------------------------------------------------------------------------
+
+export const useAppView = () => useAppStore((s) => s.view);
+export const useAppTheme = () => useAppStore((s) => s.theme);
+export const useAppSidebarOpen = () => useAppStore((s) => s.sidebarOpen);
+export const useAppSearchQuery = () => useAppStore((s) => s.searchQuery);
+export const useAppToasts = () => useAppStore((s) => s.toasts);
+export const useAppModals = () => useAppStore((s) => s.openModals);
+export const useAppSyncStatus = () => useAppStore((s) => s.syncStatus);
+export const useAppAssessments = () => useAppStore((s) => s.data.assessments);
+export const useAppDashboard = () => useAppStore((s) => s.data.dashboard);
+export const useAppSchedule = () => useAppStore((s) => s.data.schedule);
+export const useAppConfig = () => useAppStore((s) => s.data.config);
+export const useAppAuth = () => useAppStore((s) => s.data.auth);
+export const useAppStudyTasks = () => useAppStore((s) => s.data.studyTasksPayload);

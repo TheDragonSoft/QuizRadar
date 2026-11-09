@@ -450,7 +450,7 @@ fun FocusScreen(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = activePomodoroTopic!!,
+                                text = activePomodoroTopic ?: "",
                                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
@@ -728,7 +728,7 @@ fun FocusScreen(
                         }
                     }
                 } else if (practiceQuiz != null) {
-                    val quiz = practiceQuiz!!
+                    val quiz = practiceQuiz ?: return@LazyColumn
                     item {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -910,7 +910,7 @@ fun FocusScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Text(
-                                text = practiceQuizError!!,
+                                text = practiceQuizError ?: "Unknown error occurred.",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.error,
                             )

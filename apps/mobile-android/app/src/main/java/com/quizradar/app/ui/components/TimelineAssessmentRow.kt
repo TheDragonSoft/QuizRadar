@@ -201,7 +201,7 @@ fun TimelineAssessmentRow(
                             .clip(RoundedCornerShape(4.dp))
                             .background(Color(0xFFF59E0B).copy(alpha = if (isDark) 0.22f else 0.14f))
                             .padding(horizontal = 7.dp, vertical = 2.dp)
-                            .semantics { contentDescription = assessment.conflictWarning!! },
+                            .semantics { contentDescription = assessment.conflictWarning ?: CONFLICT_CHIP_LABEL },
                 )
             }
 

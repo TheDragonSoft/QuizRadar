@@ -113,23 +113,27 @@ pub async fn scan_feeds(
     let mut duplicate_urls = 0usize;
     let mut disabled = 0usize;
     for feed in feeds {
-        let url = feed.url.trim().to_ascii_lowercase();
-        if !seen_urls.insert(url) {
-            duplicate_urls += 1;
-            continue;
-        }
         // The Settings toggle is an OFF switch, not a label: a disabled feed
         // must not be fetched (its token-bearing URL must not leave the
         // device) and its items must not merge into the radar.
+        // Checking enabled first ensures a disabled feed cannot poison
+        // deduplication for an enabled feed with the same URL.
         if !feed.enabled {
             disabled += 1;
+            continue;
+        }
+        let url = feed.url.trim().to_ascii_lowercase();
+        if !seen_urls.insert(url) {
+            duplicate_urls += 1;
             continue;
         }
         if selected.len() < MAX_FEEDS {
             selected.push(feed.clone());
         }
     }
-    let overflow = feeds.len() - duplicate_urls - disabled - selected.len();
+    let overflow = feeds
+        .len()
+        .saturating_sub(duplicate_urls + disabled + selected.len());
 
     let mut notes = Vec::new();
     if disabled > 0 {
@@ -400,6 +404,47 @@ mod tests {
         assert_eq!(registrar.found, 1);
         let broken = scan.runs.iter().find(|run| run.name == "Broken").unwrap();
         assert!(broken.error.is_some());
+        assert_eq!(scan.assessments.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn disabled_feed_does_not_suppress_enabled_duplicate() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/shared.ics"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(FEED_FIXTURE))
+            .mount(&server)
+            .await;
+
+        let url = format!("{}/shared.ics", server.uri());
+        let feeds = vec![
+            FeedConfig {
+                id: "feed-disabled".to_string(),
+                name: "Disabled Copy".to_string(),
+                url: url.clone(),
+                enabled: false,
+            },
+            FeedConfig {
+                id: "feed-enabled".to_string(),
+                name: "Active Feed".to_string(),
+                url,
+                enabled: true,
+            },
+        ];
+
+        let client = http_client().unwrap();
+        let progress = Progress::new("Calendar feeds", &|_| {});
+        let scan = scan_feeds(&client, &feeds, &schedule(), ref_date(), utc(), &progress)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            scan.runs.len(),
+            1,
+            "enabled feed runs even if preceded by disabled copy"
+        );
+        assert_eq!(scan.runs[0].name, "Active Feed");
+        assert_eq!(scan.runs[0].found, 1);
         assert_eq!(scan.assessments.len(), 1);
     }
 

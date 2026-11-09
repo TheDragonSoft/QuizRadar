@@ -190,6 +190,7 @@ pub async fn fetch_moodle_rest_events(
     local: FixedOffset,
 ) -> Result<(Vec<Assessment>, ScanStats), String> {
     let clean_url = base_url.trim().trim_end_matches('/');
+    let clean_token = wstoken.trim();
     crate::sources::enforce_https(
         clean_url,
         "Moodle site must use HTTPS (http:// would send your web-service token in the clear). Use your portal's https:// address.",
@@ -198,9 +199,9 @@ pub async fn fetch_moodle_rest_events(
 
     let response = client
         .post(&endpoint)
-        .header("Authorization", format!("Bearer {wstoken}"))
+        .header("Authorization", format!("Bearer {clean_token}"))
         .form(&[
-            ("wstoken", wstoken.to_string()),
+            ("wstoken", clean_token.to_string()),
             ("wsfunction", MOODLE_WS_FUNCTION.to_string()),
             ("moodlewsrestformat", "json".to_string()),
         ])

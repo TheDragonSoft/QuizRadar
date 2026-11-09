@@ -35,8 +35,14 @@ object WhatIfCalculator {
             }
 
         val otherPcts =
-            gradedElsewhere.map { x ->
-                (x.achievedScore!! / x.maxScore!!) * 100.0
+            gradedElsewhere.mapNotNull { x ->
+                val achieved = x.achievedScore
+                val max = x.maxScore
+                if (achieved != null && max != null && max > 0.0) {
+                    (achieved / max) * 100.0
+                } else {
+                    null
+                }
             }
 
         val totalItems = otherPcts.size + 1

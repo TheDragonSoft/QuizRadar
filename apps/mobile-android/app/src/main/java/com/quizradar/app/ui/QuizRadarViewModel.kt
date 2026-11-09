@@ -199,6 +199,8 @@ class QuizRadarViewModel(
     private val _isPracticeLoading = MutableStateFlow(false)
     val isPracticeLoading: StateFlow<Boolean> = _isPracticeLoading.asStateFlow()
 
+    private var practiceQuizJob: Job? = null
+
     /**
      * The AI timetable-image import (`01` §4.1). `null` means no import is
      * running; the UI shows the picker, the spinner or the preview from it.
@@ -694,6 +696,7 @@ class QuizRadarViewModel(
     }
 
     fun openPracticeQuiz(assessmentId: String) {
+        practiceQuizJob?.cancel()
         _activePracticeAssessmentId.value = assessmentId
         _practiceQuiz.value = null
         _practiceQuizError.value = null
@@ -713,7 +716,7 @@ class QuizRadarViewModel(
             return
         }
 
-        viewModelScope.launch {
+        practiceQuizJob = viewModelScope.launch {
             try {
                 val assessmentJson =
                     JSONObject().apply {
@@ -743,6 +746,7 @@ class QuizRadarViewModel(
                 val quiz = QuizRadarJsonParser.parsePracticeQuiz(quizJson)
                 _practiceQuiz.value = quiz
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 // A failed generation is a FAILURE, not an empty state: the
                 // Focus screen must show what went wrong (and offer a retry)
                 // instead of the "select an exam" instruction.
@@ -755,9 +759,12 @@ class QuizRadarViewModel(
     }
 
     fun closePracticeQuiz() {
+        practiceQuizJob?.cancel()
+        practiceQuizJob = null
         _activePracticeAssessmentId.value = null
         _practiceQuiz.value = null
         _practiceQuizError.value = null
+        _isPracticeLoading.value = false
     }
 
     /**

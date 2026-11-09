@@ -21,6 +21,7 @@ import { copy } from "../copy";
 import { courseAccessibleChip } from "../lib/coursePalette";
 import { useAppStore } from "../state/store";
 import { isTauriEnvironment } from "../state/rpc";
+import type { ThemeMode } from "../state/types";
 import { APP_VERSION } from "../generated/version";
 import { GoogleMark, MicrosoftMark } from "../components/BrandMarks";
 import {

@@ -144,9 +144,15 @@ fn format_vevent(assessment: &Assessment, date: chrono::NaiveDate) -> String {
     event.push_str(&property("BEGIN", "VEVENT"));
     // UID stability: the assessment id is the identity across re-exports, so
     // re-importing a newer export replaces the same event everywhere.
+    // Strip control characters and escape for safety.
+    let safe_uid: String = assessment
+        .id
+        .chars()
+        .filter(|c| !c.is_control() && *c != '\r' && *c != '\n')
+        .collect();
     event.push_str(&property(
         "UID",
-        &format!("quizradar-{}@quizradar.local", assessment.id),
+        &format!("quizradar-{}@quizradar.local", safe_uid),
     ));
 
     match (assessment.start_time, assessment.end_time) {
@@ -155,9 +161,14 @@ fn format_vevent(assessment: &Assessment, date: chrono::NaiveDate) -> String {
                 "DTSTART",
                 &format!("{}T{}", compact_date(date), compact_time(start)),
             ));
+            let end_date = if end <= start {
+                date.succ_opt().unwrap_or(date)
+            } else {
+                date
+            };
             event.push_str(&property(
                 "DTEND",
-                &format!("{}T{}", compact_date(date), compact_time(end)),
+                &format!("{}T{}", compact_date(end_date), compact_time(end)),
             ));
         }
         (Some(start), None) => {

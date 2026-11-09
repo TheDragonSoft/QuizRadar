@@ -76,6 +76,7 @@ object QuizRadarJsonParser {
             room = optString(obj, "room"),
             instructor = optString(obj, "instructor"),
             group = optString(obj, "group"),
+            weekParity = optString(obj, "week_parity"),
         )
     }
 

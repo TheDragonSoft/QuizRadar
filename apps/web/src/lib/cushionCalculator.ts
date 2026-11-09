@@ -45,46 +45,56 @@ export function calculateDailyStudyCushion(
 ): DailyStudyCushion {
   const waking = Math.max(1.0, Math.min(24.0, wakingHours));
 
-  // 1. Timetabled class slot duration
-  let slotMinutes = 0;
+  // 1. Collect all busy intervals on this date
+  const intervals: [number, number][] = [];
+
+  // Timetabled class slot duration
   for (const slot of slots) {
     if (slotMatchesDate(slot, dateIso)) {
       const startMin = parseTimeToMinutes(slot.startTime);
       const endMin = parseTimeToMinutes(slot.endTime);
       if (startMin !== null && endMin !== null && endMin > startMin) {
-        slotMinutes += endMin - startMin;
+        intervals.push([startMin, endMin]);
       }
     }
   }
 
-  // 2. Timed custom events on this date
-  let eventMinutes = 0;
+  // Timed custom events on this date
   for (const event of customEvents) {
     if (event.dateIso === dateIso) {
       const startMin = parseTimeToMinutes(event.startTime);
       const endMin = parseTimeToMinutes(event.endTime);
       if (startMin !== null && endMin !== null && endMin > startMin) {
-        eventMinutes += endMin - startMin;
+        intervals.push([startMin, endMin]);
       }
     }
   }
 
-  // 3. Scheduled exams / assessments on this date
-  let examMinutes = 0;
+  // Scheduled exams / assessments on this date
   for (const assessment of assessments) {
     if (assessment.dateIso === dateIso && !assessment.retiredSourceRun) {
       const startMin = parseTimeToMinutes(assessment.startTime);
       const endMin = parseTimeToMinutes(assessment.endTime);
       if (startMin !== null && endMin !== null && endMin > startMin) {
-        examMinutes += endMin - startMin;
-      } else {
-        // Untimed assessment on date: count standard 2-hour exam block
-        examMinutes += 120;
+        intervals.push([startMin, endMin]);
       }
+      // Untimed assessment on date: count 0 duration (no fabrication per honesty doctrine)
     }
   }
 
-  const totalCommittedMinutes = slotMinutes + eventMinutes + examMinutes;
+  // Merge overlapping intervals into a unified non-overlapping set
+  intervals.sort((a, b) => a[0] - b[0]);
+  const merged: [number, number][] = [];
+  for (const [start, end] of intervals) {
+    const last = merged[merged.length - 1];
+    if (last && start <= last[1]) {
+      last[1] = Math.max(last[1], end);
+    } else {
+      merged.push([start, end]);
+    }
+  }
+
+  const totalCommittedMinutes = merged.reduce((acc, [s, e]) => acc + (e - s), 0);
   const committedHours = Math.round((totalCommittedMinutes / 60.0) * 10) / 10;
   const availableHours = Math.round(Math.max(0, waking - committedHours) * 10) / 10;
 

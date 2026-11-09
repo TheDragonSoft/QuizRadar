@@ -87,7 +87,11 @@ export function calculateGpa(
   let weightedGpaSum = 0.0;
   let gradedCreditsSum = 0.0;
   let totalCreditsSum = 0.0;
-  let scaleMax = 4.0;
+  const defaultScaleMax =
+    scale.trim().toLowerCase() === "percentage" || scale.trim().toLowerCase() === "percent"
+      ? 100.0
+      : 4.0;
+  let scaleMax = defaultScaleMax;
 
   for (const course of courses) {
     const credits = course.credits !== undefined && course.credits !== null ? Math.max(0.1, course.credits) : 1.0;
@@ -99,12 +103,14 @@ export function calculateGpa(
         (a.course_id && a.course_id.toLowerCase() === course.id.toLowerCase()),
     );
 
-    let accumulatedPoints = 0.0;
-    let totalWeightage = 0.0;
-    let hasAnyGrade = false;
-    let rawAchieved = 0.0;
-    let rawMax = 0.0;
-    let hasExplicitWeights = false;
+    interface GradedItem {
+      ratio: number;
+      achieved: number;
+      max: number;
+      weight?: number;
+    }
+
+    const gradedItems: GradedItem[] = [];
 
     for (const assessment of matchingAssessments) {
       const grade = grades?.[assessment.id];
@@ -113,27 +119,60 @@ export function calculateGpa(
       const weight = grade?.weightagePercent ?? assessment.weightagePercent ?? assessment.weightage_percent;
 
       if (achieved !== undefined && achieved !== null && max !== undefined && max !== null && max > 0) {
-        hasAnyGrade = true;
         const ratio = Math.max(0, Math.min(2.0, achieved / max));
-        rawAchieved += achieved;
-        rawMax += max;
-
-        if (weight !== undefined && weight !== null && weight > 0) {
-          hasExplicitWeights = true;
-          accumulatedPoints += ratio * weight;
-          totalWeightage += weight;
-        }
+        gradedItems.push({
+          ratio,
+          achieved,
+          max,
+          weight: weight !== undefined && weight !== null && weight > 0 ? weight : undefined,
+        });
       }
     }
 
+    let accumulatedPoints = 0.0;
+    let totalWeightage = 0.0;
     let percentage: number | null = null;
-    if (hasAnyGrade) {
-      if (hasExplicitWeights && totalWeightage > 0) {
-        percentage = Math.round((accumulatedPoints / totalWeightage) * 1000) / 10;
-      } else if (rawMax > 0) {
+
+    if (gradedItems.length > 0) {
+      const explicitWeights = gradedItems.filter((g) => g.weight !== undefined);
+      const unweightedCount = gradedItems.length - explicitWeights.length;
+
+      if (explicitWeights.length === 0) {
+        // All unweighted: raw points fallback
+        const rawAchieved = gradedItems.reduce((acc, g) => acc + g.achieved, 0);
+        const rawMax = gradedItems.reduce((acc, g) => acc + g.max, 0);
         accumulatedPoints = rawAchieved;
         totalWeightage = rawMax;
-        percentage = Math.round((rawAchieved / rawMax) * 1000) / 10;
+        if (rawMax > 0) {
+          percentage = Math.round((rawAchieved / rawMax) * 1000) / 10;
+        }
+      } else if (unweightedCount === 0) {
+        // All weighted
+        for (const item of gradedItems) {
+          const w = item.weight ?? 0;
+          accumulatedPoints += item.ratio * w;
+          totalWeightage += w;
+        }
+        if (totalWeightage > 0) {
+          percentage = Math.round((accumulatedPoints / totalWeightage) * 1000) / 10;
+        }
+      } else {
+        // Mixed: some have explicit weights, some do not.
+        // Distribute remaining (or average) weight to unweighted items so they are not dropped.
+        const explicitSum = explicitWeights.reduce((acc, g) => acc + (g.weight ?? 0), 0);
+        const unweightedWeight =
+          explicitSum < 100.0
+            ? (100.0 - explicitSum) / unweightedCount
+            : explicitSum / explicitWeights.length;
+
+        for (const item of gradedItems) {
+          const w = item.weight ?? unweightedWeight;
+          accumulatedPoints += item.ratio * w;
+          totalWeightage += w;
+        }
+        if (totalWeightage > 0) {
+          percentage = Math.round((accumulatedPoints / totalWeightage) * 1000) / 10;
+        }
       }
     }
 

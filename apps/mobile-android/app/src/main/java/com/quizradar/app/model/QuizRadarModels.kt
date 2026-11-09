@@ -20,6 +20,7 @@ data class ScheduleSlotModel(
     val room: String? = null,
     val instructor: String? = null,
     val group: String? = null,
+    val weekParity: String? = null,
 )
 
 data class ScheduleDataModel(

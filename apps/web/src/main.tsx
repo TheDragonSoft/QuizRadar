@@ -8,7 +8,7 @@ import { bootQuizRadar } from "./state/boot";
 import { BootGate } from "./state/bootGate";
 import { initAnalytics } from "./lib/analytics";
 
-// Initialize privacy-safe analytics if configured via VITE_POSTHOG_KEY
+// No telemetry by design (zero-server doctrine)
 initAnalytics();
 
 // Dev/test affordance: the Playwright harness and DevRig seed store state

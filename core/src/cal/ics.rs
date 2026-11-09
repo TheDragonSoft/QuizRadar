@@ -53,6 +53,15 @@ pub fn export_ics_single(assessment: &Assessment) -> Result<String, IcsExportErr
 /// still produced even when that leaves it empty — the count is the
 /// caller's to report honestly.
 pub fn export_ics_all(assessments: &[Assessment]) -> String {
+    export_ics_all_with_ref_date(assessments, None)
+}
+
+/// Exports every dated assessment on or after `ref_date` (or with `is_upcoming == true`
+/// when `ref_date` is `None`) into one calendar.
+pub fn export_ics_all_with_ref_date(
+    assessments: &[Assessment],
+    ref_date: Option<chrono::NaiveDate>,
+) -> String {
     let mut out = format!(
         "BEGIN:VCALENDAR{CRLF}\
          VERSION:2.0{CRLF}\
@@ -61,10 +70,17 @@ pub fn export_ics_all(assessments: &[Assessment]) -> String {
          METHOD:PUBLISH{CRLF}\
          X-WR-CALNAME:{CALENDAR_NAME}{CRLF}"
     );
-    for assessment in assessments
-        .iter()
-        .filter(|item| item.is_upcoming && item.date.is_some())
-    {
+    for assessment in assessments.iter().filter(|item| {
+        if let Some(d) = item.date {
+            if let Some(ref_d) = ref_date {
+                d >= ref_d
+            } else {
+                item.is_upcoming
+            }
+        } else {
+            false
+        }
+    }) {
         // `filter` guarantees the date exists.
         out.push_str(&format_vevent(
             assessment,

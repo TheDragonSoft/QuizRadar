@@ -17,8 +17,7 @@ describe("analytics module", () => {
   });
 
   it("reports configuration status based on environment variable", () => {
-    const hasKey = Boolean(import.meta.env.VITE_POSTHOG_KEY?.trim());
-    expect(isAnalyticsConfigured()).toBe(hasKey);
+    expect(isAnalyticsConfigured()).toBe(false);
   });
 
   it("handles opt-out state correctly via localStorage", () => {

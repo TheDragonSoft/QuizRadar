@@ -11,13 +11,13 @@
     "core/src/types.rs"
   ],
   "sourceHashes": {
-    "core/src/types.rs": "7e5b7cb984fcb7b0bc3a47b875e0228f8dcf2ca9cd4889d6b18c7b85529427d5",
+    "core/src/types.rs": "d643b782670256df0ee3e6859a25760341e98d380661302bdb71f794eef151cc",
     "core/src/plan/dashboard.rs": "7843b341f5c2a41dbd98950d1190d63714614f33f7505a60044136773d340948",
     "core/src/plan/tasks.rs": "393b8f8badc358a850fe51df90c9b907be10749c1dd4f886bfd4e78d3a5dabba",
     "core/src/plan/conflicts.rs": "a953cf743da6a8fc45b43bc6c2dfd716c6842a65a2d4311b08c56a19e8729e74",
     "apps/desktop/src-tauri/src/commands/state.rs": "cc0a9e43c5254a35700bc5ed9f3ed7e04be17b75800b5f63172a5faca533dc3e",
-    "core/src/store/repo.rs": "1e921394572c3afb9318563cd0653c6a7af11d080e86488fc8e7f06d13189fc0",
-    "core/src/ffi.rs": "91f83597db9b3b7293b6a43cd31c34a08699fa4f77bf250dadb1c1f012fef4f5"
+    "core/src/store/repo.rs": "e3a0ab3d52a5750facd5e133c40f1031a52e764fc26961924134a57291c3781f",
+    "core/src/ffi.rs": "d0628158a075032f19e3f05c7b81d7ef7a179cf74133bc3b732a7afc591f104d"
   },
   "structs": {
     "CachedEmail": {

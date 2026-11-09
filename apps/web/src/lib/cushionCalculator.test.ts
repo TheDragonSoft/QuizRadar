@@ -149,4 +149,46 @@ describe("cushionCalculator — deterministic study capacity and deficit detecti
     expect(cushion.isDeficit).toBe(false);
     expect(cushion.warningNote).toBe("Cushion calculation unavailable: 1 task lacks hour estimates");
   });
+
+  it("merges overlapping commitments as interval union without untimed fabrication", () => {
+    // Slot: 09:00 - 12:00 (3.0h)
+    // Custom event: 10:00 - 11:30 (overlaps with slot)
+    // Untimed assessment: 0 duration (honesty doctrine)
+    const untimedAssessment = {
+      id: "a-untimed",
+      title: "Homework Due",
+      courseId: "CS101",
+      assessmentType: "Assignment" as const,
+      dateIso: "2026-10-19",
+      isUpcoming: true,
+      urgencyLevel: "upcoming" as const,
+      priorityScore: 50,
+      topics: [],
+      warnings: [],
+      source: "CUSTOM" as const,
+    };
+
+    const cushion = calculateDailyStudyCushion(
+      "2026-10-19",
+      [sampleSlot],
+      [sampleEvent], // 14:00 - 15:30 (1.5h)
+      [
+        untimedAssessment,
+        {
+          ...untimedAssessment,
+          id: "a-timed",
+          startTime: "11:00",
+          endTime: "13:00", // 11:00 - 13:00 overlaps with slot 09:00-12:00 -> union is 09:00 - 13:00 (4.0h)
+        },
+      ],
+      [],
+      15.0,
+    );
+
+    // Slot (09:00-12:00) + Exam (11:00-13:00) -> union 09:00-13:00 = 4.0h
+    // Custom event (14:00-15:30) -> 1.5h
+    // Total union: 5.5h (NOT 3.0 + 1.5 + 2.0 + 2.0 = 8.5h!)
+    expect(cushion.committedHours).toBe(5.5);
+    expect(cushion.availableHours).toBe(9.5);
+  });
 });

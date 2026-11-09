@@ -260,9 +260,6 @@ dependencies {
     // WorkManager (Widget periodic updates & exam reminders)
     implementation("androidx.work:work-runtime-ktx:2.10.0")
 
-    // PostHog Android: privacy-preserving anonymous telemetry (opt-out respected)
-    implementation("com.posthog:posthog-android:3.75.1")
-
     testImplementation("junit:junit:4.13.2")
     testImplementation("net.java.dev.jna:jna:5.14.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")

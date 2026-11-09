@@ -32,6 +32,7 @@ import com.quizradar.app.MainActivity
 import com.quizradar.app.core.QuizRadarEngine
 import com.quizradar.app.model.AppSnapshotModel
 import com.quizradar.app.model.QuizRadarJsonParser
+import com.quizradar.app.ui.calendar.WeekParityHelper
 import com.quizradar.app.ui.theme.CoursePalette
 import org.json.JSONArray
 import org.json.JSONObject
@@ -161,10 +162,10 @@ data class TodayScheduleWidgetState(
             val dayName = today.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }
             val todayHeader = today.format(DateTimeFormatter.ofPattern("EEEE, MMM d"))
 
-            // Find slots for today
+            // Find slots for today (matching weekday and week parity)
             val todaySlots =
                 snapshot.schedule.slots
-                    .filter { it.day.equals(dayName, ignoreCase = true) }
+                    .filter { WeekParityHelper.slotMatchesDate(it, today) }
                     .sortedBy { it.startTime }
                     .map { slot ->
                         TodaySlotItem(

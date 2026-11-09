@@ -121,7 +121,11 @@ pub fn calculate_gpa(
     let mut weighted_gpa_sum = 0.0;
     let mut graded_credits_sum = 0.0;
     let mut total_credits_sum = 0.0;
-    let mut scale_max = 4.0;
+    let default_scale_max = match scale.trim().to_ascii_lowercase().as_str() {
+        "percentage" | "percent" => 100.0,
+        _ => 4.0,
+    };
+    let mut scale_max = default_scale_max;
 
     for course in courses {
         let credits = course.credits.unwrap_or(1.0).max(0.1);
@@ -138,14 +142,14 @@ pub fn calculate_gpa(
             })
             .collect();
 
-        let mut accumulated_points = 0.0;
-        let mut total_weightage = 0.0;
-        let mut has_any_grade = false;
+        struct GradedItem {
+            ratio: f64,
+            achieved: f64,
+            max: f64,
+            weight: Option<f64>,
+        }
 
-        // Track raw points fallback if assessments don't specify weightages
-        let mut raw_achieved = 0.0;
-        let mut raw_max = 0.0;
-        let mut has_explicit_weights = false;
+        let mut graded_items = Vec::new();
 
         for assessment in matching_assessments {
             let grade = grades.get(&assessment.id);
@@ -159,34 +163,70 @@ pub fn calculate_gpa(
 
             if let (Some(ach), Some(mx)) = (achieved, max) {
                 if mx > 0.0 {
-                    has_any_grade = true;
                     let ratio = (ach / mx).clamp(0.0, 2.0); // allow slight extra credit
-                    raw_achieved += ach;
-                    raw_max += mx;
-
-                    if let Some(w) = weight {
-                        if w > 0.0 {
-                            has_explicit_weights = true;
-                            accumulated_points += ratio * w;
-                            total_weightage += w;
-                        }
-                    }
+                    graded_items.push(GradedItem {
+                        ratio,
+                        achieved: ach,
+                        max: mx,
+                        weight: weight.filter(|&w| w > 0.0),
+                    });
                 }
             }
         }
 
-        let percentage = if has_any_grade {
-            if has_explicit_weights && total_weightage > 0.0 {
-                Some(((accumulated_points / total_weightage) * 100.0 * 10.0).round() / 10.0)
-            } else if raw_max > 0.0 {
+        let mut accumulated_points = 0.0;
+        let mut total_weightage = 0.0;
+
+        let percentage = if graded_items.is_empty() {
+            None
+        } else {
+            let explicit_count = graded_items.iter().filter(|g| g.weight.is_some()).count();
+            let unweighted_count = graded_items.len() - explicit_count;
+
+            if explicit_count == 0 {
+                // All unweighted: raw points fallback
+                let raw_achieved: f64 = graded_items.iter().map(|g| g.achieved).sum();
+                let raw_max: f64 = graded_items.iter().map(|g| g.max).sum();
                 accumulated_points = raw_achieved;
                 total_weightage = raw_max;
-                Some(((raw_achieved / raw_max) * 100.0 * 10.0).round() / 10.0)
+                if raw_max > 0.0 {
+                    Some(((raw_achieved / raw_max) * 100.0 * 10.0).round() / 10.0)
+                } else {
+                    None
+                }
+            } else if unweighted_count == 0 {
+                // All items have explicit weights
+                for item in &graded_items {
+                    let w = item.weight.unwrap_or(0.0);
+                    accumulated_points += item.ratio * w;
+                    total_weightage += w;
+                }
+                if total_weightage > 0.0 {
+                    Some(((accumulated_points / total_weightage) * 100.0 * 10.0).round() / 10.0)
+                } else {
+                    None
+                }
             } else {
-                None
+                // Mixed: some have explicit weights, some do not.
+                // Allocate remaining weight (or average weight if already >= 100%) to unweighted items.
+                let explicit_sum: f64 = graded_items.iter().filter_map(|g| g.weight).sum();
+                let unweighted_weight = if explicit_sum < 100.0 {
+                    (100.0 - explicit_sum) / (unweighted_count as f64)
+                } else {
+                    explicit_sum / (explicit_count as f64)
+                };
+
+                for item in &graded_items {
+                    let w = item.weight.unwrap_or(unweighted_weight);
+                    accumulated_points += item.ratio * w;
+                    total_weightage += w;
+                }
+                if total_weightage > 0.0 {
+                    Some(((accumulated_points / total_weightage) * 100.0 * 10.0).round() / 10.0)
+                } else {
+                    None
+                }
             }
-        } else {
-            None
         };
 
         let (grade_point, letter_grade) = if let Some(p) = percentage {
@@ -382,5 +422,30 @@ mod tests {
         assert_eq!(summary.courses[0].grade_point, Some(4.0));
         assert_eq!(summary.courses[1].percentage, Some(85.0));
         assert_eq!(summary.courses[1].grade_point, Some(3.0));
+    }
+
+    #[test]
+    fn scale_max_defaults_to_scale_ceiling_when_no_grades() {
+        let courses = vec![sample_course("CS101", Some(3.0))];
+        let summary_pct = calculate_gpa(&courses, &[], &HashMap::new(), "percentage");
+        assert_eq!(summary_pct.scale_max, 100.0);
+        assert_eq!(summary_pct.semester_gpa, None);
+
+        let summary_4 = calculate_gpa(&courses, &[], &HashMap::new(), "4.0");
+        assert_eq!(summary_4.scale_max, 4.0);
+    }
+
+    #[test]
+    fn mixed_weights_do_not_drop_unweighted_assessments() {
+        let courses = vec![sample_course("CS101", Some(3.0))];
+        // Midterm: 80/100, weight 50%
+        // Quiz: 100/100, unweighted (should be assigned remaining 50%)
+        // Result: (0.80 * 50 + 1.0 * 50) / 100 = 90.0%
+        let a1 = sample_assessment("a1", "CS101", 80.0, 100.0, 50.0);
+        let mut a2 = sample_assessment("a2", "CS101", 100.0, 100.0, 0.0);
+        a2.weightage_percent = None;
+
+        let summary = calculate_gpa(&courses, &[a1, a2], &HashMap::new(), "4.0");
+        assert_eq!(summary.courses[0].percentage, Some(90.0));
     }
 }

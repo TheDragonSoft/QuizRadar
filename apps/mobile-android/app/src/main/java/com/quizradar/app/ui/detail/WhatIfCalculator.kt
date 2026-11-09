@@ -27,7 +27,8 @@ object WhatIfCalculator {
         val gradedElsewhere =
             allAssessments.filter { x ->
                 x.courseId != null &&
-                    x.courseId == activeAssessment.courseId &&
+                    activeAssessment.courseId != null &&
+                    x.courseId.equals(activeAssessment.courseId, ignoreCase = true) &&
                     x.id != activeAssessment.id &&
                     x.achievedScore != null &&
                     x.maxScore != null &&

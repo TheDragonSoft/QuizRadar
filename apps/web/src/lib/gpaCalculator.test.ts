@@ -173,4 +173,58 @@ describe("gpaCalculator — 4 grading scales and credit-weighted GPA", () => {
     expect(breakdown.unassignedPercent).toBe(50.0);
     expect(breakdown.passingThresholdPercent).toBe(60.0);
   });
+
+  it("defaults scaleMax to scale ceiling when no courses have recorded grades", () => {
+    const courses: Course[] = [
+      { id: "CS101", name: "Intro to CS", color: "#4f46e5", credits: 3.0 },
+    ];
+    const pctResult = calculateGpa(courses, [], undefined, "percentage");
+    expect(pctResult.scaleMax).toBe(100.0);
+    expect(pctResult.semesterGpa).toBeNull();
+
+    const standardResult = calculateGpa(courses, [], undefined, "4.0");
+    expect(standardResult.scaleMax).toBe(4.0);
+  });
+
+  it("preserves unweighted assessments in mixed weighting scenarios", () => {
+    const courses: Course[] = [
+      { id: "CS101", name: "Intro to CS", color: "#4f46e5", credits: 3.0 },
+    ];
+    const assessments: Assessment[] = [
+      {
+        id: "a1",
+        courseId: "CS101",
+        title: "Midterm",
+        assessmentType: "Midterm Exam",
+        isUpcoming: false,
+        urgencyLevel: "past",
+        priorityScore: 0,
+        topics: [],
+        warnings: [],
+        source: "CUSTOM",
+        achievedScore: 80,
+        maxScore: 100,
+        weightagePercent: 50,
+      },
+      {
+        id: "a2",
+        courseId: "CS101",
+        title: "Quiz",
+        assessmentType: "Class Quiz",
+        isUpcoming: false,
+        urgencyLevel: "past",
+        priorityScore: 0,
+        topics: [],
+        warnings: [],
+        source: "CUSTOM",
+        achievedScore: 100,
+        maxScore: 100,
+        // weightagePercent omitted
+      },
+    ];
+
+    const result = calculateGpa(courses, assessments, undefined, "4.0");
+    // (0.8 * 50 + 1.0 * 50) / 100 = 90.0%
+    expect(result.courses[0].percentage).toBe(90.0);
+  });
 });

@@ -9,7 +9,7 @@
 //! - When all pending tasks have hour estimates, if required hours exceed available capacity,
 //!   `is_deficit: true` with honest `deficit_hours: Some(...)`.
 
-use chrono::NaiveDate;
+use chrono::{NaiveDate, Timelike};
 
 use crate::plan::parity::slot_matches_date;
 use crate::plan::tasks::DailyStudyTask;
@@ -32,47 +32,63 @@ pub fn calculate_daily_cushion(
         .unwrap_or(DEFAULT_WAKING_HOURS)
         .clamp(1.0, 24.0);
 
-    // 1. Timetabled class slot duration
-    let mut slot_minutes: i64 = 0;
+    // 1. Collect all busy intervals on this date
+    let mut intervals: Vec<(i32, i32)> = Vec::new();
+
+    // Timetabled class slot duration
     for slot in slots {
         if slot_matches_date(slot, date) {
-            let duration = (slot.end_time - slot.start_time).num_minutes();
-            if duration > 0 {
-                slot_minutes += duration;
+            let start = slot.start_time.hour() as i32 * 60 + slot.start_time.minute() as i32;
+            let end = slot.end_time.hour() as i32 * 60 + slot.end_time.minute() as i32;
+            if end > start {
+                intervals.push((start, end));
             }
         }
     }
 
-    // 2. Timed custom events on this date
-    let mut event_minutes: i64 = 0;
+    // Timed custom events on this date
     for event in custom_events {
         if event.date == Some(date) {
-            if let (Some(start), Some(end)) = (event.start_time, event.end_time) {
-                let duration = (end - start).num_minutes();
-                if duration > 0 {
-                    event_minutes += duration;
+            if let (Some(start_t), Some(end_t)) = (event.start_time, event.end_time) {
+                let start = start_t.hour() as i32 * 60 + start_t.minute() as i32;
+                let end = end_t.hour() as i32 * 60 + end_t.minute() as i32;
+                if end > start {
+                    intervals.push((start, end));
                 }
             }
         }
     }
 
-    // 3. Scheduled exams / assessments on this date
-    let mut exam_minutes: i64 = 0;
+    // Scheduled exams / assessments on this date
     for assessment in assessments {
         if assessment.date == Some(date) && assessment.retired_source_run.is_none() {
-            if let (Some(start), Some(end)) = (assessment.start_time, assessment.end_time) {
-                let duration = (end - start).num_minutes();
-                if duration > 0 {
-                    exam_minutes += duration;
+            if let (Some(start_t), Some(end_t)) = (assessment.start_time, assessment.end_time) {
+                let start = start_t.hour() as i32 * 60 + start_t.minute() as i32;
+                let end = end_t.hour() as i32 * 60 + end_t.minute() as i32;
+                if end > start {
+                    intervals.push((start, end));
                 }
-            } else {
-                // If untimed assessment on date, count 2.0 hours (standard exam block)
-                exam_minutes += 120;
             }
+            // Untimed assessments on date: count 0 duration (no fabrication per honesty doctrine).
         }
     }
 
-    let total_committed_minutes = slot_minutes + event_minutes + exam_minutes;
+    // Merge overlapping intervals into a unified non-overlapping set
+    intervals.sort_by_key(|(s, _)| *s);
+    let mut merged: Vec<(i32, i32)> = Vec::new();
+    for (start, end) in intervals {
+        if let Some(last) = merged.last_mut() {
+            if start <= last.1 {
+                last.1 = last.1.max(end);
+            } else {
+                merged.push((start, end));
+            }
+        } else {
+            merged.push((start, end));
+        }
+    }
+
+    let total_committed_minutes: i64 = merged.iter().map(|(s, e)| (e - s) as i64).sum();
     let committed_hours = ((total_committed_minutes as f32 / 60.0) * 10.0).round() / 10.0;
     let available_hours = (((waking - committed_hours).max(0.0)) * 10.0).round() / 10.0;
 
@@ -262,5 +278,83 @@ mod tests {
             .warning_note
             .unwrap()
             .contains("1 task lacks hour estimates"));
+    }
+
+    #[test]
+    fn overlapping_commitments_are_merged_as_interval_union() {
+        let date = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap(); // Monday
+                                                                   // Slot runs 09:00 to 12:00 (3.0 hours)
+        let slots = vec![sample_slot("Mon", 9, 12)];
+
+        // Custom event runs 10:00 to 11:30 (overlapping with slot)
+        let custom_event = CustomCalendarEvent {
+            id: "ev-1".to_string(),
+            title: "Study Group".to_string(),
+            course_id: None,
+            event_type: None,
+            date: Some(date),
+            start_time: NaiveTime::from_hms_opt(10, 0, 0),
+            end_time: NaiveTime::from_hms_opt(11, 30, 0),
+            room: None,
+            notes: None,
+            color: None,
+        };
+
+        // Untimed assessment on same date (honesty doctrine: no 2h fabrication!)
+        let untimed_assessment = Assessment {
+            id: "ass-untimed".to_string(),
+            course_id: Some("CSE101".to_string()),
+            course_name: Some("Intro to CS".to_string()),
+            title: "Essay Due".to_string(),
+            assessment_type: AssessmentType::ClassQuiz,
+            date: Some(date),
+            day_name: None,
+            start_time: None,
+            end_time: None,
+            display_time: None,
+            room: None,
+            group: None,
+            instructor: None,
+            is_upcoming: true,
+            days_until: Some(1),
+            urgency_level: UrgencyLevel::Upcoming,
+            priority_score: 50,
+            topics: vec![],
+            warnings: vec![],
+            ai_inference_note: None,
+            ai_study_plan: None,
+            estimated_study_hours: None,
+            elearning_url: None,
+            google_cal_url: None,
+            gcal_synced: false,
+            gcal_event_id: None,
+            color: None,
+            bg: None,
+            border: None,
+            semester: None,
+            email_subject: None,
+            email_sent_date: None,
+            source: crate::types::AssessmentSource::Custom,
+            source_icon: None,
+            weightage_percent: None,
+            achieved_score: None,
+            max_score: None,
+            conflict_warning: None,
+            last_seen_source_run: None,
+            retired_source_run: None,
+        };
+
+        let cushion = calculate_daily_cushion(
+            date,
+            &slots,
+            &[custom_event],
+            &[untimed_assessment],
+            &[],
+            Some(15.0),
+        );
+
+        // Union of 09:00..12:00 and 10:00..11:30 is 09:00..12:00 = 3.0h (NOT 4.5h or 6.5h)
+        assert_eq!(cushion.committed_hours, 3.0);
+        assert_eq!(cushion.available_hours, 12.0);
     }
 }

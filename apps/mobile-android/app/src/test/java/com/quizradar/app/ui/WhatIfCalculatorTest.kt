@@ -69,4 +69,29 @@ class WhatIfCalculatorTest {
         val projRose = WhatIfCalculator.calculate(active, listOf(active), 40.0)
         assertEquals(ScoreColorState.ROSE, projRose.colorState)
     }
+
+    @Test
+    fun calculate_matches_courseId_case_insensitively() {
+        val existing =
+            AssessmentModel(
+                id = "quiz-1",
+                title = "Quiz 1",
+                // lowercase
+                courseId = "cs101",
+                achievedScore = 10.0,
+                maxScore = 10.0,
+            )
+        val active =
+            AssessmentModel(
+                id = "midterm",
+                title = "Midterm",
+                // uppercase
+                courseId = "CS101",
+            )
+
+        // Planned score 80%. Average of 100% and 80% = 90%
+        val projection = WhatIfCalculator.calculate(active, listOf(existing, active), 80.0)
+        assertEquals(1, projection.gradedCount)
+        assertEquals(90, projection.projectedAvg)
+    }
 }

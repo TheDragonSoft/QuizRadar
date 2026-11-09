@@ -60,6 +60,7 @@ import com.quizradar.app.ui.calendar.CalendarLanes
 import com.quizradar.app.ui.calendar.END_HOUR
 import com.quizradar.app.ui.calendar.HOUR_HEIGHT_DP
 import com.quizradar.app.ui.calendar.START_HOUR
+import com.quizradar.app.ui.calendar.WeekParityHelper
 import com.quizradar.app.ui.icons.Icons
 import com.quizradar.app.ui.theme.CoursePalette
 import com.quizradar.app.ui.theme.CustomEventPink
@@ -456,7 +457,7 @@ fun CalendarScreen(
 
                             val daySlots =
                                 snapshot.schedule.slots.filter {
-                                    it.day.take(3).equals(dayName, ignoreCase = true)
+                                    WeekParityHelper.slotMatchesDate(it, date)
                                 }
                             val dayAssessments =
                                 snapshot.assessments.filter {

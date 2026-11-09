@@ -716,46 +716,47 @@ class QuizRadarViewModel(
             return
         }
 
-        practiceQuizJob = viewModelScope.launch {
-            try {
-                val assessmentJson =
-                    JSONObject().apply {
-                        put("id", assessment.id)
-                        put("title", assessment.title)
-                        put("course_id", assessment.courseId)
-                        put("course_name", assessment.courseName)
-                        put("assessment_type", assessment.assessmentType)
-                        put("date_iso", assessment.dateIso?.toString())
-                        put("day_name", assessment.dayName)
-                        put("start_time", assessment.startTime)
-                        put("end_time", assessment.endTime)
-                        put("display_time", assessment.displayTime)
-                        put("room", assessment.room)
-                        put("instructor", assessment.instructor)
-                        put("group", assessment.group)
-                        put("is_upcoming", assessment.isUpcoming)
-                        put("days_until", assessment.daysUntil)
-                        put("urgency_level", assessment.urgencyLevel)
-                        put("priority_score", assessment.priorityScore)
-                        put("topics", JSONArray(assessment.topics))
-                        put("warnings", JSONArray(assessment.warnings))
-                        put("source", assessment.source)
-                    }.toString()
+        practiceQuizJob =
+            viewModelScope.launch {
+                try {
+                    val assessmentJson =
+                        JSONObject().apply {
+                            put("id", assessment.id)
+                            put("title", assessment.title)
+                            put("course_id", assessment.courseId)
+                            put("course_name", assessment.courseName)
+                            put("assessment_type", assessment.assessmentType)
+                            put("date_iso", assessment.dateIso?.toString())
+                            put("day_name", assessment.dayName)
+                            put("start_time", assessment.startTime)
+                            put("end_time", assessment.endTime)
+                            put("display_time", assessment.displayTime)
+                            put("room", assessment.room)
+                            put("instructor", assessment.instructor)
+                            put("group", assessment.group)
+                            put("is_upcoming", assessment.isUpcoming)
+                            put("days_until", assessment.daysUntil)
+                            put("urgency_level", assessment.urgencyLevel)
+                            put("priority_score", assessment.priorityScore)
+                            put("topics", JSONArray(assessment.topics))
+                            put("warnings", JSONArray(assessment.warnings))
+                            put("source", assessment.source)
+                        }.toString()
 
-                val quizJson = callCore { core.generatePracticeQuiz(assessmentJson) }
-                val quiz = QuizRadarJsonParser.parsePracticeQuiz(quizJson)
-                _practiceQuiz.value = quiz
-            } catch (e: Exception) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
-                // A failed generation is a FAILURE, not an empty state: the
-                // Focus screen must show what went wrong (and offer a retry)
-                // instead of the "select an exam" instruction.
-                _practiceQuiz.value = null
-                _practiceQuizError.value = "Practice quiz failed: ${e.message ?: "unknown error"}"
-            } finally {
-                _isPracticeLoading.value = false
+                    val quizJson = callCore { core.generatePracticeQuiz(assessmentJson) }
+                    val quiz = QuizRadarJsonParser.parsePracticeQuiz(quizJson)
+                    _practiceQuiz.value = quiz
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    // A failed generation is a FAILURE, not an empty state: the
+                    // Focus screen must show what went wrong (and offer a retry)
+                    // instead of the "select an exam" instruction.
+                    _practiceQuiz.value = null
+                    _practiceQuizError.value = "Practice quiz failed: ${e.message ?: "unknown error"}"
+                } finally {
+                    _isPracticeLoading.value = false
+                }
             }
-        }
     }
 
     fun closePracticeQuiz() {

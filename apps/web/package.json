@@ -10,9 +10,9 @@
     "build": "node ../../tooling/build-wasm.mjs && node ../../tooling/build-sw.mjs && tsc --noEmit -p tsconfig.json && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
-    "test": "node ../../tooling/build-wasm.mjs && vitest run",
-    "test:watch": "node ../../tooling/build-wasm.mjs && vitest",
-    "test:coverage": "node ../../tooling/build-wasm.mjs && vitest run --coverage",
+    "test": "node ../../tooling/build-wasm.mjs && node ../../tooling/build-sw.mjs && vitest run",
+    "test:watch": "node ../../tooling/build-wasm.mjs && node ../../tooling/build-sw.mjs && vitest",
+    "test:coverage": "node ../../tooling/build-wasm.mjs && node ../../tooling/build-sw.mjs && vitest run --coverage",
     "e2e": "playwright test",
     "e2e:update": "playwright test --update-snapshots"
   },
@@ -21,7 +21,6 @@
     "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/plugin-opener": "^2.5.0",
     "lucide-react": "^1.61.0",
-    "posthog-js": "^1.446.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "zustand": "^5.0.0"

@@ -208,8 +208,9 @@ fn adversarial_cushion_extreme_commitments_exceeding_waking_hours() {
         &tasks,
         Some(15.0),
     );
-    // 8h + 6h + 119m (~2.0h) + 120m (2.0h) = ~18.0h
-    assert!(cushion_multi.committed_hours >= 17.9);
+    // 8h (slot 8-16) + 6h (event 16-22) + 119m (exam1 22-23:59) = 15.98h (~16.0h).
+    // Untimed exam2 contributes 0m under the Honesty Doctrine (no fabricated 120m).
+    assert!(cushion_multi.committed_hours >= 15.9);
     assert_eq!(cushion_multi.available_hours, 0.0);
     assert!(cushion_multi.is_deficit);
 }

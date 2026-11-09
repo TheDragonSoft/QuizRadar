@@ -2,6 +2,20 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.6.0] — 2026-11-09
+
+### 🤝 Agent & Contributor Summaries
+
+- **[core, web, android]** Remove external telemetry across Web & Android to uphold local-first privacy doctrine; implement interval union cushion merging and 0-min untimed honesty doctrine; dynamic GPA scale ceilings and mixed weighting non-drop behavior; Android bi-weekly timetable parity and case-insensitive What-If calculation.
+
+### 🐛 Fixes & Performance
+
+- `8452c44` fix(core): cushion interval union, GPA scale ceilings, and zero telemetry
+
+### 🔧 Maintenance, Docs & Tests
+
+- `ed716ff` Merge branch 'fix/telemetry-p0' into main
+
 ## [5.5.0] — 2026-11-09
 
 ### 🤝 Agent & Contributor Summaries

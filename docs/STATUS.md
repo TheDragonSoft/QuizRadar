@@ -4,7 +4,7 @@ _Concise status index for AI agents and maintainers (enforced `<= 250` lines by 
 
 ## Snapshot
 
-- **Current Version:** `5.4.0` (source of truth: `tooling/version.json` -> 5 stamped sinks)
+- **Current Version:** `5.5.0` (source of truth: `tooling/version.json` -> 5 stamped sinks)
 - **Latest Published Release Tag:** `v5.0.0` (Windows NSIS/Portable, macOS ARM64, Linux deb/AppImage, signed Android APK/AAB, GitHub Pages PWA)
 - **Database Schema:** `SCHEMA_VERSION = 3` (SQLite `core/src/store/db.rs` + PWA IndexedDB `apps/web/src/pwadapters/idbStore.ts`; content-addressed topic keys `h<fnv1a64>`)
 - **Post-`v5.0.0` Landed on `main`:** Content-addressed topic completion keys (`v2 -> v3` migration), functional Academic Rhythm planner presets (`med=7d`, `eng=5d`, `biz=3d`), full-page `SettingsView.tsx`, baked Installed-client Google OAuth ID on Desktop + Android, Student Observatory 4-theme UI/UX redesign (`obsidian`, `solar`, `aurora`, `editorial`), and non-AI suite (`TimelineHorizon`, `TodayScheduleWidget`, `PrintScheduleDoc`, `StudyStatsCard`).

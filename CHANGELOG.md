@@ -2,6 +2,33 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.5.0] — 2026-11-09
+
+### 🤝 Agent & Contributor Summaries
+
+- **[core, desktop, android, web, tooling, docs]** Complete audit plan batches 1-6: sync hardening (S1, S2, S3, S6, S12, S14, S19), store safety & migrations (P3, P4, P25, S35, S40, P19, P20, P22), AI honesty & local timezone alignment (P5, P30, P1, S42, S8, P2), announcement email cache with SQLite schema v5 (S37, S39), timetable-derived week start & regional parity anchoring, shared pure study algorithms (streak & Leitner in core::plan::study for Store and WASM parity), contract spec M1 sync, and clippy/ktlint/vitest hardening.
+
+### 🚀 New Features
+
+- `18bdf87` feat(landing): convert FAQ to 2-column balanced layout with sidebar guarantees
+- `7ed0a63` feat(core): complete audit batches 1-6 across sync, store, ai honesty, and wasm parity
+- `dbe20c0` feat(landing): restore android section with qr phone screen, replace slop copy, and 2-column faq
+- `a723c51` feat(landing): platform-specific companion card with qr code & clean workflow cards
+
+### 🐛 Fixes & Performance
+
+- `1916675` fix(core): harden sync security parallelize AI email extraction and optimize selectors
+- `e87a36f` revert(landing): restore standard layout with jargon removed and 10/10 typography craft
+- `cad1808` fix(sync): resolve critical sync pagination, backoff, and token races
+
+### 🔧 Maintenance, Docs & Tests
+
+- `69eb1c8` Merge branch 'fix/sync-criticals-and-hardening' into main
+- `7b881f8` Merge branch 'design/landing-student-clarity' into main
+- `8244d33` style(landing): achieve 10/10 critique with contrast, a11y, and responsive polish
+- `378939c` style(landing): refine typography and remove AI template tells
+- `745f162` style(landing): clarify student copy and replace developer jargon
+
 ## [5.4.0] — 2026-11-08
 
 ### 🤝 Agent & Contributor Summaries

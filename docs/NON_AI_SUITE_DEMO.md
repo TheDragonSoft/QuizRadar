@@ -187,5 +187,5 @@ All layers have passed strict automated testing:
 ## 4. Summary of Deliverables
 
 - **Git Branch**: `feature/non-ai-suite`
-- **Mock App Showcase Gallery**: Saved in `docs/screenshots/non-ai-suite/` and `apps/web/docs/screenshots/non-ai-suite/`
-- **Full Non-AI Suite**: Ready for merge or user review.
+- **Mock App Showcase Gallery**: Saved in `docs/screenshots/non-ai-suite/`
+- **Playwright Automated Artifacts**: Generates visual audit baselines during `pnpm --dir apps/web test:e2e` runs.

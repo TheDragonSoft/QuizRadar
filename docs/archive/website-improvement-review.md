@@ -1,3 +1,8 @@
+> **ARCHIVED 2026-11-10** — executed/reviewed: the actionable items from this review were landed by
+> the landing redesign round (`design/landing-student-clarity`, see `docs/worklog/2026-11.md`).
+> Kept as a historical record; remaining items must be re-validated against the current build
+> before being treated as open work.
+
 # QuizRadar Website & Web Companion — Comprehensive Improvement Review
 
 > **Date**: November 2026  

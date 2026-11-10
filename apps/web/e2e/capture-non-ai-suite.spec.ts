@@ -5,19 +5,14 @@ import * as path from "node:path";
 import * as fs from "node:fs";
 
 const REPO_DOCS = path.resolve(process.cwd(), "../../docs/screenshots/non-ai-suite");
-const WEB_DOCS = path.resolve(process.cwd(), "docs/screenshots/non-ai-suite");
 
-[REPO_DOCS, WEB_DOCS].forEach((dir) => {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-});
+if (!fs.existsSync(REPO_DOCS)) {
+  fs.mkdirSync(REPO_DOCS, { recursive: true });
+}
 
 async function saveScreen(page: any, name: string) {
-  const p1 = path.join(REPO_DOCS, name);
-  const p2 = path.join(WEB_DOCS, name);
-  await page.screenshot({ path: p2 });
-  try {
-    fs.copyFileSync(p2, p1);
-  } catch (_e) {}
+  const target = path.join(REPO_DOCS, name);
+  await page.screenshot({ path: target });
 }
 
 const sampleCourses = [

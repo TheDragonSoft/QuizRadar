@@ -4,13 +4,8 @@ import { LIGHT_PROJECT } from "./helpers/theme";
 import * as path from "node:path";
 import * as fs from "node:fs";
 
-const ARTIFACT_DIR = "C:/Users/ANXOMXR/.gemini/antigravity/brain/e59c741e-6493-4854-9810-af2aa79dd262/screenshots";
-const DOCS_DIR = path.resolve(process.cwd(), "docs/screenshots/redesign");
+const DOCS_DIR = path.resolve(process.cwd(), "../../docs/screenshots/redesign");
 
-// Ensure directories exist
-if (!fs.existsSync(ARTIFACT_DIR)) {
-  fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
-}
 if (!fs.existsSync(DOCS_DIR)) {
   fs.mkdirSync(DOCS_DIR, { recursive: true });
 }
@@ -27,10 +22,8 @@ test("capture comprehensive redesign showcase screenshots", async ({ page }) => 
   await bootApp(page, "dark");
 
   const saveScreenshots = async (filename: string) => {
-    const p1 = path.join(ARTIFACT_DIR, filename);
-    const p2 = path.join(DOCS_DIR, filename);
-    await page.screenshot({ path: p1 });
-    fs.copyFileSync(p1, p2);
+    const target = path.join(DOCS_DIR, filename);
+    await page.screenshot({ path: target });
   };
 
   // 1. Search Palette Modal (Dark Mode) - verifying zero blue outline

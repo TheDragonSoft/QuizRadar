@@ -1,3 +1,7 @@
+> **ARCHIVED 2026-11-10** — executed: the v3 ratified roadmap landed across the Student-Observatory
+> redesign rounds (see `docs/worklog/2026-11.md` / merged `design/landing-student-clarity`). Kept as
+> a historical record; must not be treated as open work.
+
 # QuizRadar UI/UX Audit & Redesign Plan
 **Target Platforms:** Desktop (Tauri 2 + React 19) & Mobile (Android Jetpack Compose M3)
 **Version Evaluated:** v5.0.0 (Rebuild baseline)

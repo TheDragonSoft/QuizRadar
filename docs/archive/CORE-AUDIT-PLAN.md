@@ -1,3 +1,8 @@
+> **ARCHIVED 2026-11-10** — executed: all six batches below were implemented and merged in
+> `7ed0a63 feat(core): complete audit batches 1-6 across sync, store, ai honesty, and wasm parity`
+> (see `docs/worklog/2026-11.md` and the change fragments archived there). Kept as a historical
+> audit record; the finding tables are stale and must not be treated as open work.
+
 # QuizRadar Core Audit — Sync, Email Loop + Core Fixes
 
 > Audit date: 2026-11-08 (Adjusted with technical review & architectural corrections)

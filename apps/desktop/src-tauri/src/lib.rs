@@ -7,6 +7,7 @@ pub mod auth_loopback;
 pub mod commands;
 pub mod keyring;
 pub mod state;
+pub mod tray;
 
 use std::path::PathBuf;
 use tauri::{Emitter, Manager};
@@ -36,6 +37,7 @@ pub fn run() -> tauri::Result<()> {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let sandbox_data_dir = std::env::var("QUIZRADAR_DATA_DIR")
                 .ok()
@@ -76,6 +78,87 @@ pub fn run() -> tauri::Result<()> {
 
             let app_state = AppState::new(store, keyring);
             app.manage(app_state);
+
+            // System tray setup & assessment notification loop
+            #[cfg(desktop)]
+            {
+                use tauri::menu::{Menu, MenuItem};
+                use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+                let open_item = MenuItem::with_id(app, "open", "Open QuizRadar", true, None::<&str>)?;
+                let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+                let tray_menu = Menu::with_items(app, &[&open_item, &quit_item])?;
+
+                let mut builder = TrayIconBuilder::with_id("main_tray")
+                    .tooltip("QuizRadar — No upcoming assessments")
+                    .menu(&tray_menu)
+                    .show_menu_on_left_click(false)
+                    .on_menu_event(|app, event| {
+                        match event.id.as_ref() {
+                            "open" => {
+                                if let Some(window) = app.get_webview_window("main") {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                            "quit" => {
+                                app.exit(0);
+                            }
+                            _ => {}
+                        }
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            let app = tray.app_handle();
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    });
+
+                if let Some(icon) = app.default_window_icon() {
+                    builder = builder.icon(icon.clone());
+                }
+
+                let _tray = builder.build(app)?;
+
+                let app_handle = app.handle().clone();
+                let tracker = std::sync::Arc::new(tokio::sync::Mutex::new(crate::tray::NotificationTracker::new()));
+                tauri::async_runtime::spawn(async move {
+                    loop {
+                        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                        if let Some(state) = app_handle.try_state::<AppState>() {
+                            let now = chrono::Local::now().naive_local();
+                            let today = now.date();
+                            if let Ok(snapshot) = state.store.load_state(today).await {
+                                let next = crate::tray::find_next_assessment(&snapshot.assessments, now);
+                                let tooltip = crate::tray::format_tray_tooltip(next.as_ref());
+                                if let Some(tray) = app_handle.tray_by_id("main_tray") {
+                                    let _ = tray.set_tooltip(Some(tooltip));
+                                }
+                                if let Some(info) = next {
+                                    let mut trk = tracker.lock().await;
+                                    if trk.should_notify(&info) {
+                                        use tauri_plugin_notification::NotificationExt;
+                                        let (title, body) = crate::tray::build_exam_notification_content(&info);
+                                        let _ = app_handle.notification()
+                                            .builder()
+                                            .title(title)
+                                            .body(body)
+                                            .show();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
 
             // Handle deep link passed on initial process launch
             for arg in std::env::args() {

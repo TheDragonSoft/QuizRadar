@@ -24,7 +24,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Custom-scheme PKCE OAuth redirect (RFC 8252) -->
+            <!-- Custom-scheme PKCE OAuth redirect with authority (com.quizradar.app://oauth/...) -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -32,6 +32,16 @@
                 <data
                     android:scheme="com.quizradar.app"
                     android:host="oauth" />
+            </intent-filter>
+
+            <!-- Custom-scheme PKCE OAuth redirect without authority (com.quizradar.app:/oauth/...) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="com.quizradar.app"
+                    android:pathPrefix="/oauth" />
             </intent-filter>
 
             <!-- Share-sheet ingest for announcement text / emails -->

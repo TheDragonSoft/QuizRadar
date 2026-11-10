@@ -121,18 +121,24 @@ class OAuthManager(
             return OAuthRedirectResult.Error("Unsupported URI scheme: ${uri.scheme}")
         }
 
-        if (uri.host == "pair") {
+        if (uri.host == "pair" || uri.path?.removePrefix("/") == "pair") {
             return OAuthRedirectResult.Error(
                 "Desktop LAN pairing is disabled in QuizRadar v5 zero-server mode. Use Backup Export / Import instead.",
             )
         }
 
-        if (uri.host != "oauth") {
-            return OAuthRedirectResult.Error("Unsupported URI host: ${uri.host}")
-        }
+        // Support both RFC 3986 with-authority (com.quizradar.app://oauth/...)
+        // and direct package path without authority (com.quizradar.app:/oauth/...)
+        // required by Google OAuth 2.0 custom scheme policy.
+        val rawPath = uri.path?.removePrefix("/") ?: ""
+        val route =
+            when {
+                uri.host == "oauth" -> rawPath
+                uri.host.isNullOrBlank() && rawPath.startsWith("oauth/") -> rawPath.removePrefix("oauth/")
+                else -> return OAuthRedirectResult.Error("Unsupported URI host: ${uri.host}")
+            }
 
-        val path = uri.path?.removePrefix("/") ?: ""
-        if (path == "cancelled" || uri.getQueryParameter("error") != null) {
+        if (route == "cancelled" || uri.getQueryParameter("error") != null) {
             val reason =
                 uri.getQueryParameter("error_description")
                     ?: uri.getQueryParameter("error")
@@ -142,10 +148,10 @@ class OAuthManager(
         }
 
         val provider =
-            when (path) {
+            when (route) {
                 "google" -> "google"
                 "microsoft" -> "microsoft"
-                else -> return OAuthRedirectResult.Error("Unsupported OAuth path: $path")
+                else -> return OAuthRedirectResult.Error("Unsupported OAuth path: $route")
             }
 
         val returnedState = uri.getQueryParameter("state")
@@ -220,7 +226,12 @@ class OAuthManager(
     }
 
     companion object {
-        const val GOOGLE_REDIRECT_URI = "com.quizradar.app://oauth/google"
+        /**
+         * Google OAuth 2.0 policy requires native Android custom schemes to be
+         * formatted as `package_name:/path` without an authority/host (single slash `:/`).
+         * Double slash (`://`) is rejected by Google with `Error 400: invalid_request`.
+         */
+        const val GOOGLE_REDIRECT_URI = "com.quizradar.app:/oauth/google"
         const val MICROSOFT_REDIRECT_URI = "com.quizradar.app://oauth/microsoft"
 
         /**

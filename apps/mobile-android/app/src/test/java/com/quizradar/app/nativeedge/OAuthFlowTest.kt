@@ -46,7 +46,7 @@ class OAuthFlowTest {
         val state = obj.getString("state")
 
         assertTrue("URL must point to Google", url.startsWith("https://accounts.google.com/o/oauth2/v2/auth"))
-        assertTrue("Must include redirect_uri", url.contains("redirect_uri=com.quizradar.app%3A%2F%2Foauth%2Fgoogle"))
+        assertTrue("Must include redirect_uri", url.contains("redirect_uri=com.quizradar.app%3A%2Foauth%2Fgoogle"))
         assertTrue("Must include client_id", url.contains("client_id=test-client-id"))
         assertTrue("Must include code_challenge", url.contains("code_challenge="))
         assertTrue("Must include state", url.contains("state=$state"))
@@ -149,7 +149,7 @@ class OAuthFlowTest {
                 redirectUri = OAuthManager.GOOGLE_REDIRECT_URI,
             )
 
-            val callbackUri = Uri.parse("com.quizradar.app://oauth/google?code=auth-code-112233&state=$testState")
+            val callbackUri = Uri.parse("com.quizradar.app:/oauth/google?code=auth-code-112233&state=$testState")
             val result = oauthManager.handleRedirect(callbackUri, engine, tokenEndpointOverride = mockEndpoint)
 
             assertTrue("Token exchange must succeed: $result", result is OAuthRedirectResult.Success)
@@ -158,5 +158,30 @@ class OAuthFlowTest {
             // Verify tokens stored securely in TokenProvider
             assertEquals("mock-access-token-98765", tokenStore.getGoogleAccessToken())
             assertEquals("mock-refresh-token-54321", tokenStore.getGoogleRefreshToken())
+        }
+
+    @Test
+    fun testHandleRedirectSupportsBothSingleAndDoubleSlashSchemes() =
+        runBlocking {
+            oauthManager.setPendingStateForTest("google", "v1", "s1", OAuthManager.GOOGLE_REDIRECT_URI)
+            val res1 = oauthManager.handleRedirect(Uri.parse("com.quizradar.app:/oauth/google?code=c1&state=bad"), engine)
+            assertTrue(
+                "Single slash routes to provider and checks state",
+                res1 is OAuthRedirectResult.Error && (res1 as OAuthRedirectResult.Error).error.contains("state mismatch"),
+            )
+
+            oauthManager.setPendingStateForTest("google", "v1", "s1", OAuthManager.GOOGLE_REDIRECT_URI)
+            val res2 = oauthManager.handleRedirect(Uri.parse("com.quizradar.app://oauth/google?code=c1&state=bad"), engine)
+            assertTrue(
+                "Double slash routes to provider and checks state",
+                res2 is OAuthRedirectResult.Error && (res2 as OAuthRedirectResult.Error).error.contains("state mismatch"),
+            )
+
+            oauthManager.setPendingStateForTest("microsoft", "v1", "s1", OAuthManager.MICROSOFT_REDIRECT_URI)
+            val res3 = oauthManager.handleRedirect(Uri.parse("com.quizradar.app://oauth/microsoft?code=c1&state=bad"), engine)
+            assertTrue(
+                "Microsoft double slash routes to provider and checks state",
+                res3 is OAuthRedirectResult.Error && (res3 as OAuthRedirectResult.Error).error.contains("state mismatch"),
+            )
         }
 }

@@ -219,7 +219,14 @@ const ALLOW_LIST: ReadonlyArray<AllowEntry> = [
   },
   {
     patternId: "general-demo-course",
-    file: "views/DashboardView.tsx",
+    file: "views/dashboard/StudyRecommendationCard.tsx",
+    linePattern: /coursePalette\([^)]*\|\|\s*["']GENERAL["']\s*\)/,
+    reason:
+      "Palette SEED for an assessment that has no course id. coursePalette() derives the accent from a hash of the course id (apps/web/src/lib/coursePalette.ts) — there is no hardcoded demo-course palette map and no question bank.",
+  },
+  {
+    patternId: "general-demo-course",
+    file: "views/dashboard/TimelineRow.tsx",
     linePattern: /coursePalette\([^)]*\|\|\s*["']GENERAL["']\s*\)/,
     reason:
       "Palette SEED for an assessment that has no course id. coursePalette() derives the accent from a hash of the course id (apps/web/src/lib/coursePalette.ts) — there is no hardcoded demo-course palette map and no question bank.",

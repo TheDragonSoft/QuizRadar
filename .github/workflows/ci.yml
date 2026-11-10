@@ -141,6 +141,8 @@ jobs:
         run: pnpm typecheck
       - name: vitest
         run: pnpm test
+      - name: tooling meta-tests
+        run: pnpm test:tooling
       - name: landing static build
         run: pnpm --filter @quizradar/landing build
 

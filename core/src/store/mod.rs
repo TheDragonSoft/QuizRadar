@@ -57,11 +57,9 @@ impl Store {
     ) -> Result<Self, StoreError> {
         let path_buf: PathBuf = path.as_ref().to_path_buf();
         let db = if tokio::runtime::Handle::try_current().is_ok() {
-            tokio::task::spawn_blocking(move || {
-                db::Db::open_with_key(&path_buf, key.as_ref())
-            })
-            .await
-            .map_err(flatten_join)??
+            tokio::task::spawn_blocking(move || db::Db::open_with_key(&path_buf, key.as_ref()))
+                .await
+                .map_err(flatten_join)??
         } else {
             db::Db::open_with_key(&path_buf, key.as_ref())?
         };
@@ -610,10 +608,8 @@ impl Store {
         max_age_days: i64,
     ) -> Result<usize, StoreError> {
         let now_iso = now_iso.into();
-        self.run(move |db| {
-            repo::ops::prune_email_ai_extractions_by_age(db, &now_iso, max_age_days)
-        })
-        .await
+        self.run(move |db| repo::ops::prune_email_ai_extractions_by_age(db, &now_iso, max_age_days))
+            .await
     }
 
     /// Rotates AI assessment extractions to only retain entries belonging to the active semester.
@@ -622,10 +618,8 @@ impl Store {
         active_semester: impl Into<String>,
     ) -> Result<usize, StoreError> {
         let active_semester = active_semester.into();
-        self.run(move |db| {
-            repo::ops::rotate_email_ai_extractions_semester(db, &active_semester)
-        })
-        .await
+        self.run(move |db| repo::ops::rotate_email_ai_extractions_semester(db, &active_semester))
+            .await
     }
 
     /// Permanently wipes all tables and records, recreating a clean database state.

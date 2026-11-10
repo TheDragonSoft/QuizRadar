@@ -4296,11 +4296,14 @@ mod tests {
         )
         .unwrap();
 
-        let pruned = ops::prune_email_ai_extractions_by_age(&db, "2026-10-10T12:00:00Z", 60).unwrap();
+        let pruned =
+            ops::prune_email_ai_extractions_by_age(&db, "2026-10-10T12:00:00Z", 60).unwrap();
         assert_eq!(pruned, 1);
 
         assert_eq!(ops::get_email_ai_extraction(&db, "old-hash").unwrap(), None);
-        assert!(ops::get_email_ai_extraction(&db, "recent-hash").unwrap().is_some());
+        assert!(ops::get_email_ai_extraction(&db, "recent-hash")
+            .unwrap()
+            .is_some());
     }
 
     #[test]
@@ -4350,15 +4353,47 @@ mod tests {
 
         ops::save_cached_emails(&db, &[email_fall, email_spring], "t1").unwrap();
 
-        ops::save_email_ai_extraction(&db, "hash-fall", "msg-fall", &extraction, "m1", "2026-10-15T10:00:00Z").unwrap();
-        ops::save_email_ai_extraction(&db, "hash-spring", "msg-spring", &extraction, "m1", "2026-03-15T10:00:00Z").unwrap();
-        ops::save_email_ai_extraction(&db, "hash-orphan", "msg-gone", &extraction, "m1", "2026-10-15T10:00:00Z").unwrap();
+        ops::save_email_ai_extraction(
+            &db,
+            "hash-fall",
+            "msg-fall",
+            &extraction,
+            "m1",
+            "2026-10-15T10:00:00Z",
+        )
+        .unwrap();
+        ops::save_email_ai_extraction(
+            &db,
+            "hash-spring",
+            "msg-spring",
+            &extraction,
+            "m1",
+            "2026-03-15T10:00:00Z",
+        )
+        .unwrap();
+        ops::save_email_ai_extraction(
+            &db,
+            "hash-orphan",
+            "msg-gone",
+            &extraction,
+            "m1",
+            "2026-10-15T10:00:00Z",
+        )
+        .unwrap();
 
         let pruned = ops::rotate_email_ai_extractions_semester(&db, "Fall 2026").unwrap();
         assert_eq!(pruned, 2);
 
-        assert!(ops::get_email_ai_extraction(&db, "hash-fall").unwrap().is_some());
-        assert_eq!(ops::get_email_ai_extraction(&db, "hash-spring").unwrap(), None);
-        assert_eq!(ops::get_email_ai_extraction(&db, "hash-orphan").unwrap(), None);
+        assert!(ops::get_email_ai_extraction(&db, "hash-fall")
+            .unwrap()
+            .is_some());
+        assert_eq!(
+            ops::get_email_ai_extraction(&db, "hash-spring").unwrap(),
+            None
+        );
+        assert_eq!(
+            ops::get_email_ai_extraction(&db, "hash-orphan").unwrap(),
+            None
+        );
     }
 }

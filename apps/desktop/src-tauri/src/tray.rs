@@ -1,4 +1,4 @@
-﻿//! System tray and OS notification manager for QuizRadar desktop.
+//! System tray and OS notification manager for QuizRadar desktop.
 //!
 //! Semantics mirror Android `NotificationHelper.kt`:
 //! - Tray tooltip:
@@ -10,11 +10,11 @@
 //!   - 24h before / morning of upcoming exam (`Today: ...` or `Tomorrow: ...`)
 //!   - Imminent exam countdown (<= 120 minutes)
 
+use chrono::{NaiveDateTime, NaiveTime};
+use quizradar_core::types::Assessment;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use chrono::{NaiveDateTime, NaiveTime};
-use quizradar_core::types::Assessment;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssessmentCountdownInfo {
@@ -58,7 +58,10 @@ pub fn format_tray_tooltip(next: Option<&AssessmentCountdownInfo>) -> String {
                 let days = total_hours / 24;
                 let rem_hours = total_hours % 24;
                 if days > 0 {
-                    format!("QuizRadar — Next: {} in {}d {}h", info.title, days, rem_hours)
+                    format!(
+                        "QuizRadar — Next: {} in {}d {}h",
+                        info.title, days, rem_hours
+                    )
                 } else {
                     format!("QuizRadar — Next: {} in {}h", info.title, rem_hours)
                 }
@@ -110,7 +113,9 @@ pub fn find_next_assessment(
         .filter(|a| a.is_upcoming)
         .filter_map(|a| {
             let assessment_date = a.date?;
-            let start_time = a.start_time.unwrap_or_else(|| NaiveTime::from_hms_opt(9, 0, 0).unwrap_or_default());
+            let start_time = a
+                .start_time
+                .unwrap_or_else(|| NaiveTime::from_hms_opt(9, 0, 0).unwrap_or_default());
             let assessment_dt = NaiveDateTime::new(assessment_date, start_time);
 
             let diff = assessment_dt.signed_duration_since(now);
@@ -125,7 +130,9 @@ pub fn find_next_assessment(
             let is_same_day = assessment_date == today;
             let is_tomorrow = assessment_date == today + chrono::Duration::days(1);
 
-            let course = a.course_name.clone()
+            let course = a
+                .course_name
+                .clone()
                 .or_else(|| a.course_id.clone())
                 .unwrap_or_else(|| "Exam".to_string());
 

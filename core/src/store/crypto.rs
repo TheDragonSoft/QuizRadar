@@ -113,18 +113,23 @@ pub fn detect_db_format(path: &Path) -> Result<DbFileFormat, StoreError> {
     if !path.exists() {
         return Ok(DbFileFormat::NewOrEmpty);
     }
-    let metadata = std::fs::metadata(path)
-        .map_err(|e| StoreError::Validation(format!("failed to stat db at {}: {e}", path.display())))?;
+    let metadata = std::fs::metadata(path).map_err(|e| {
+        StoreError::Validation(format!("failed to stat db at {}: {e}", path.display()))
+    })?;
     if metadata.len() == 0 {
         return Ok(DbFileFormat::NewOrEmpty);
     }
 
-    let mut file = File::open(path)
-        .map_err(|e| StoreError::Validation(format!("failed to open db at {}: {e}", path.display())))?;
+    let mut file = File::open(path).map_err(|e| {
+        StoreError::Validation(format!("failed to open db at {}: {e}", path.display()))
+    })?;
     let mut header = [0u8; 16];
-    let bytes_read = file
-        .read(&mut header)
-        .map_err(|e| StoreError::Validation(format!("failed to read db header at {}: {e}", path.display())))?;
+    let bytes_read = file.read(&mut header).map_err(|e| {
+        StoreError::Validation(format!(
+            "failed to read db header at {}: {e}",
+            path.display()
+        ))
+    })?;
 
     if bytes_read < 16 {
         return Ok(DbFileFormat::Unknown);

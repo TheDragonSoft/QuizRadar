@@ -3,7 +3,6 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { APP_VERSION, SW_CACHE_KEY_PREFIX } from "./generated/version";
 
 /**
  * Every file the version generator stamps. The sandbox mirrors these paths so
@@ -19,7 +18,7 @@ const SINK_PATHS = [
 ] as const;
 
 describe("Version Pipeline Integrity (Phase 15)", () => {
-  const repoRoot = path.resolve(__dirname, "../../..");
+  const repoRoot = path.resolve(__dirname, "../..");
   const generator = path.join(repoRoot, "tooling/generate-version.mjs");
   const versionJsonPath = path.join(repoRoot, "tooling/version.json");
   const versionJson = JSON.parse(readFileSync(versionJsonPath, "utf8"));
@@ -58,9 +57,17 @@ describe("Version Pipeline Integrity (Phase 15)", () => {
     }
   }
 
-  it("stamps APP_VERSION matching tooling/version.json exactly", () => {
-    expect(APP_VERSION).toBe(versionJson.version);
-    expect(SW_CACHE_KEY_PREFIX).toBe(`quizradar-v${versionJson.version}`);
+  it("stamps version.ts with APP_VERSION and the SW cache key from tooling/version.json", () => {
+    const versionTs = readFileSync(
+      path.join(repoRoot, "apps/web/src/generated/version.ts"),
+      "utf8",
+    );
+    const app = /export const APP_VERSION = "([^"]+)";/.exec(versionTs);
+    expect(app).not.toBeNull();
+    expect(app![1]).toBe(versionJson.version);
+    const sw = /export const SW_CACHE_KEY_PREFIX = "([^"]+)";/.exec(versionTs);
+    expect(sw).not.toBeNull();
+    expect(sw![1]).toBe(`quizradar-v${versionJson.version}`);
   });
 
   it("calculates versionCode monotonically from semver", () => {

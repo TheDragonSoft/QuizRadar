@@ -16,6 +16,7 @@
     "lint": "eslint .",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
+    "test:tooling": "pnpm --dir apps/web exec vitest run --config ../../tooling/vitest.config.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "generate:version": "node tooling/generate-version.mjs",

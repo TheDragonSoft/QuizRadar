@@ -21,7 +21,7 @@ const SINK_PATHS = [
 ] as const;
 
 describe("Multi-Agent Versioning & Coordination Suite", { timeout: 30_000 }, () => {
-  const repoRoot = path.resolve(__dirname, "../../..");
+  const repoRoot = path.resolve(__dirname, "../..");
   const agentNote = path.join(repoRoot, "tooling/agent-note.mjs");
   const agentGate = path.join(repoRoot, "tooling/agent-gate.mjs");
   const agentPreflight = path.join(repoRoot, "tooling/agent-preflight.mjs");

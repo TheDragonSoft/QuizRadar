@@ -17,12 +17,13 @@
 //! calendar-fallback sync channel — the Drive file is the only cloud store.
 
 pub mod backup;
+pub mod crypto;
 pub mod db;
 pub mod exporter;
 pub mod importer;
 pub mod repo;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use chrono::NaiveDate;
@@ -46,12 +47,23 @@ pub struct Store {
 impl Store {
     /// Opens (and migrates) the store file: one SQLite file per device.
     pub async fn open(path: impl AsRef<Path> + Send + 'static) -> Result<Self, StoreError> {
+        Self::open_with_key(path, None).await
+    }
+
+    /// Opens the store file, optionally with an OS keyring-held encryption key.
+    pub async fn open_with_key(
+        path: impl AsRef<Path> + Send + 'static,
+        key: Option<crypto::DbEncryptionKey>,
+    ) -> Result<Self, StoreError> {
+        let path_buf: PathBuf = path.as_ref().to_path_buf();
         let db = if tokio::runtime::Handle::try_current().is_ok() {
-            tokio::task::spawn_blocking(move || db::Db::open(path.as_ref()))
-                .await
-                .map_err(flatten_join)??
+            tokio::task::spawn_blocking(move || {
+                db::Db::open_with_key(&path_buf, key.as_ref())
+            })
+            .await
+            .map_err(flatten_join)??
         } else {
-            db::Db::open(path.as_ref())?
+            db::Db::open_with_key(&path_buf, key.as_ref())?
         };
         Ok(Self::wrap(db))
     }
@@ -563,6 +575,31 @@ impl Store {
         let mid = model_id.to_string();
         self.run(move |db| {
             repo::ops::save_email_ai_extraction(db, &key, &id, &ext, &mid, &created_at)
+        })
+        .await
+    }
+
+    /// Prunes AI assessment extractions older than `max_age_days` relative to `now_iso`.
+    pub async fn prune_email_ai_extractions_by_age(
+        &self,
+        now_iso: impl Into<String>,
+        max_age_days: i64,
+    ) -> Result<usize, StoreError> {
+        let now_iso = now_iso.into();
+        self.run(move |db| {
+            repo::ops::prune_email_ai_extractions_by_age(db, &now_iso, max_age_days)
+        })
+        .await
+    }
+
+    /// Rotates AI assessment extractions to only retain entries belonging to the active semester.
+    pub async fn rotate_email_ai_extractions_semester(
+        &self,
+        active_semester: impl Into<String>,
+    ) -> Result<usize, StoreError> {
+        let active_semester = active_semester.into();
+        self.run(move |db| {
+            repo::ops::rotate_email_ai_extractions_semester(db, &active_semester)
         })
         .await
     }

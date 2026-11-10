@@ -2408,6 +2408,79 @@ impl<'a> EmailAiExtractionRepo<'a> {
         )?;
         Ok(())
     }
+
+    /// Prunes AI extractions older than the given ISO 8601/RFC 3339 cutoff timestamp.
+    /// Returns the number of pruned records.
+    pub fn prune_older_than(&self, cutoff_iso: &str) -> Result<usize, StoreError> {
+        let count = self.conn.execute(
+            "DELETE FROM email_ai_extractions WHERE created_at < ?1",
+            params![cutoff_iso],
+        )?;
+        Ok(count)
+    }
+
+    /// Prunes AI extractions whose `created_at` timestamp is older than `max_age_days`
+    /// relative to `now_iso`.
+    pub fn prune_by_age(&self, now_iso: &str, max_age_days: i64) -> Result<usize, StoreError> {
+        let now = chrono::DateTime::parse_from_rfc3339(now_iso)
+            .map(|dt| dt.naive_utc())
+            .or_else(|_| chrono::NaiveDateTime::parse_from_str(now_iso, "%Y-%m-%dT%H:%M:%SZ"))
+            .or_else(|_| {
+                chrono::NaiveDate::parse_from_str(now_iso, "%Y-%m-%d")
+                    .map(|d| d.and_hms_opt(0, 0, 0).unwrap_or_default())
+            })
+            .map_err(|e| StoreError::Validation(format!("invalid timestamp '{now_iso}': {e}")))?;
+
+        let cutoff = now - chrono::Duration::days(max_age_days);
+        let cutoff_str = cutoff.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        self.prune_older_than(&cutoff_str)
+    }
+
+    /// Rotates the AI extractions cache for the given active semester.
+    /// Extractions belonging to earlier/other semesters (determined by the sent date
+    /// of their cached email, or the extraction creation date) are safely deleted.
+    /// Orphaned extractions whose emails no longer exist in `cached_emails` are also pruned.
+    pub fn rotate_semester(&self, active_semester: &str) -> Result<usize, StoreError> {
+        let mut pruned = self.conn.execute(
+            "DELETE FROM email_ai_extractions WHERE email_id NOT IN (SELECT id FROM cached_emails)",
+            [],
+        )?;
+
+        let mut stmt = self.conn.prepare(
+            "SELECT e.cache_key, COALESCE(c.sent_date, e.created_at)
+             FROM email_ai_extractions e
+             LEFT JOIN cached_emails c ON e.email_id = c.id",
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+
+        let mut to_delete = Vec::new();
+        for row in rows {
+            let (cache_key, date_str) = row?;
+            let date_prefix = if date_str.len() >= 10 {
+                &date_str[..10]
+            } else {
+                continue;
+            };
+            if let Ok(d) = chrono::NaiveDate::parse_from_str(date_prefix, "%Y-%m-%d") {
+                let inferred = crate::parse::util::infer_semester_from_date(d);
+                if !inferred.eq_ignore_ascii_case(active_semester) {
+                    to_delete.push(cache_key);
+                }
+            }
+        }
+
+        for key in to_delete {
+            pruned += self.conn.execute(
+                "DELETE FROM email_ai_extractions WHERE cache_key = ?1",
+                params![key],
+            )?;
+        }
+
+        Ok(pruned)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2834,6 +2907,27 @@ pub mod ops {
             .put(cache_key, email_id, extraction, model_id, created_at)?;
         tx.commit()?;
         Ok(())
+    }
+
+    pub fn prune_email_ai_extractions_by_age(
+        db: &Db,
+        now_iso: &str,
+        max_age_days: i64,
+    ) -> Result<usize, StoreError> {
+        let tx = db.transaction()?;
+        let count = EmailAiExtractionRepo::new(&tx).prune_by_age(now_iso, max_age_days)?;
+        tx.commit()?;
+        Ok(count)
+    }
+
+    pub fn rotate_email_ai_extractions_semester(
+        db: &Db,
+        active_semester: &str,
+    ) -> Result<usize, StoreError> {
+        let tx = db.transaction()?;
+        let count = EmailAiExtractionRepo::new(&tx).rotate_semester(active_semester)?;
+        tx.commit()?;
+        Ok(count)
     }
 }
 
@@ -4158,5 +4252,113 @@ mod tests {
 
         let miss = ops::get_email_ai_extraction(&db, "nonexistent-hash").unwrap();
         assert_eq!(miss, None);
+    }
+
+    #[test]
+    fn test_ai_extractions_prune_by_age() {
+        let db = mem_db();
+        let extraction = crate::ai::tasks::ExtractedAssessment {
+            is_assessment: true,
+            course_id: Some("CSE101".into()),
+            course_name: None,
+            title: Some("Quiz".into()),
+            assessment_type: Some(AssessmentType::ClassQuiz),
+            date: Some(on("2026-10-26")),
+            start_time: None,
+            end_time: None,
+            room: None,
+            group: None,
+            instructor: None,
+            topics: vec![],
+            warnings: vec![],
+            ai_inference_note: None,
+            ai_study_plan: None,
+            estimated_study_hours: None,
+        };
+
+        ops::save_email_ai_extraction(
+            &db,
+            "old-hash",
+            "msg-old",
+            &extraction,
+            "model-1",
+            "2026-07-01T12:00:00Z",
+        )
+        .unwrap();
+
+        ops::save_email_ai_extraction(
+            &db,
+            "recent-hash",
+            "msg-recent",
+            &extraction,
+            "model-1",
+            "2026-10-01T12:00:00Z",
+        )
+        .unwrap();
+
+        let pruned = ops::prune_email_ai_extractions_by_age(&db, "2026-10-10T12:00:00Z", 60).unwrap();
+        assert_eq!(pruned, 1);
+
+        assert_eq!(ops::get_email_ai_extraction(&db, "old-hash").unwrap(), None);
+        assert!(ops::get_email_ai_extraction(&db, "recent-hash").unwrap().is_some());
+    }
+
+    #[test]
+    fn test_ai_extractions_rotate_semester() {
+        let db = mem_db();
+        let extraction = crate::ai::tasks::ExtractedAssessment {
+            is_assessment: true,
+            course_id: Some("CSE101".into()),
+            course_name: None,
+            title: Some("Quiz".into()),
+            assessment_type: Some(AssessmentType::ClassQuiz),
+            date: Some(on("2026-10-26")),
+            start_time: None,
+            end_time: None,
+            room: None,
+            group: None,
+            instructor: None,
+            topics: vec![],
+            warnings: vec![],
+            ai_inference_note: None,
+            ai_study_plan: None,
+            estimated_study_hours: None,
+        };
+
+        let email_fall = CachedEmail {
+            id: "msg-fall".into(),
+            subject: "Fall Announcement".into(),
+            from: "prof@edu".into(),
+            date: "2026-10-15T10:00:00Z".into(),
+            snippet: None,
+            body: "Fall quiz details".into(),
+            body_truncated: false,
+            internal_date_ms: None,
+            history_id: None,
+        };
+        let email_spring = CachedEmail {
+            id: "msg-spring".into(),
+            subject: "Spring Announcement".into(),
+            from: "prof@edu".into(),
+            date: "2026-03-15T10:00:00Z".into(),
+            snippet: None,
+            body: "Spring quiz details".into(),
+            body_truncated: false,
+            internal_date_ms: None,
+            history_id: None,
+        };
+
+        ops::save_cached_emails(&db, &[email_fall, email_spring], "t1").unwrap();
+
+        ops::save_email_ai_extraction(&db, "hash-fall", "msg-fall", &extraction, "m1", "2026-10-15T10:00:00Z").unwrap();
+        ops::save_email_ai_extraction(&db, "hash-spring", "msg-spring", &extraction, "m1", "2026-03-15T10:00:00Z").unwrap();
+        ops::save_email_ai_extraction(&db, "hash-orphan", "msg-gone", &extraction, "m1", "2026-10-15T10:00:00Z").unwrap();
+
+        let pruned = ops::rotate_email_ai_extractions_semester(&db, "Fall 2026").unwrap();
+        assert_eq!(pruned, 2);
+
+        assert!(ops::get_email_ai_extraction(&db, "hash-fall").unwrap().is_some());
+        assert_eq!(ops::get_email_ai_extraction(&db, "hash-spring").unwrap(), None);
+        assert_eq!(ops::get_email_ai_extraction(&db, "hash-orphan").unwrap(), None);
     }
 }

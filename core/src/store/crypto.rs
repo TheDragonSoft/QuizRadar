@@ -84,9 +84,7 @@ impl DbEncryptionKey {
 impl Drop for DbEncryptionKey {
     fn drop(&mut self) {
         // Securely scrub key bytes from memory on drop
-        for b in &mut self.bytes {
-            *b = 0;
-        }
+        self.bytes.fill(0);
     }
 }
 
@@ -170,6 +168,7 @@ pub fn backup_unencrypted_if_present(path: &Path) -> Result<Option<PathBuf>, Sto
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 

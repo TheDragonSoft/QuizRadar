@@ -15,7 +15,80 @@ import type {
 import { aliasDeep } from "../state/ipcShape";
 
 export const IDB_DATABASE_NAME = "quizradar";
-export const IDB_SCHEMA_VERSION = 1;
+export const IDB_SCHEMA_VERSION = 5;
+
+export interface IdbMigrationStep {
+  version: number;
+  description: string;
+  migrate?: (db: IDBDatabase, tx?: IDBTransaction | null) => void;
+}
+
+export const IDB_MIGRATIONS: readonly IdbMigrationStep[] = [
+  {
+    version: 1,
+    description: "initial_schema",
+    migrate: (db) => {
+      const initialStores: Record<string, string> = {
+        courses: "id",
+        slots: "id",
+        assessments: "id",
+        topics_done: "key",
+        grades: "assessment_id",
+        events: "id",
+        feeds: "id",
+        config_kv: "key",
+        tokens_meta: "key",
+        kv_meta: "key",
+      };
+      for (const [name, keyPath] of Object.entries(initialStores)) {
+        if (!db.objectStoreNames.contains(name)) {
+          db.createObjectStore(name, { keyPath });
+        }
+      }
+    },
+  },
+  {
+    version: 2,
+    description: "source_provenance",
+    // Assessments are schemaless JSON records in IndexedDB;
+    // last_seen_source_run and retired_source_run properties persist on save.
+  },
+  {
+    version: 3,
+    description: "content_addressed_topic_keys",
+    // Data migration performed idempotently via ensureTopicKeysContentAddressed().
+  },
+  {
+    version: 4,
+    description: "non_ai_suite_extensions",
+    migrate: (db) => {
+      const m4Stores = [
+        "attendance",
+        "flashcards",
+        "quiz_attempts",
+        "mistake_bank",
+        "study_sessions",
+      ] as const;
+      for (const name of m4Stores) {
+        if (!db.objectStoreNames.contains(name)) {
+          db.createObjectStore(name, { keyPath: "id" });
+        }
+      }
+    },
+  },
+  {
+    version: 5,
+    description: "cached_emails_and_ai_extractions",
+    migrate: (db) => {
+      if (!db.objectStoreNames.contains("cached_emails")) {
+        db.createObjectStore("cached_emails", { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains("email_ai_extractions")) {
+        db.createObjectStore("email_ai_extractions", { keyPath: "cache_key" });
+      }
+    },
+  },
+] as const;
 
 export interface IdbGradeRecord {
   assessment_id: string;
@@ -55,6 +128,14 @@ const STORE_NAMES = [
   "feeds",
   "config_kv",
   "tokens_meta",
+  "kv_meta",
+  "attendance",
+  "flashcards",
+  "quiz_attempts",
+  "mistake_bank",
+  "study_sessions",
+  "cached_emails",
+  "email_ai_extractions",
 ] as const;
 
 type StoreName = (typeof STORE_NAMES)[number];
@@ -79,15 +160,11 @@ export function openIdb(): Promise<IDBDatabase> {
 
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
-      for (const name of STORE_NAMES) {
-        if (!db.objectStoreNames.contains(name)) {
-          if (name === "grades") {
-            db.createObjectStore(name, { keyPath: "assessment_id" });
-          } else if (name === "topics_done" || name === "config_kv" || name === "tokens_meta") {
-            db.createObjectStore(name, { keyPath: "key" });
-          } else {
-            db.createObjectStore(name, { keyPath: "id" });
-          }
+      const tx = (event.target as IDBOpenDBRequest).transaction;
+      const oldVersion = event.oldVersion;
+      for (const step of IDB_MIGRATIONS) {
+        if (step.version > oldVersion && step.version <= IDB_SCHEMA_VERSION) {
+          step.migrate?.(db, tx);
         }
       }
     };

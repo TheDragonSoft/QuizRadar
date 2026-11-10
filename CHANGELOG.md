@@ -2,6 +2,41 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.8.0] — 2026-11-10
+
+### 🤝 Agent & Contributor Summaries
+
+- **[core, desktop, web, android]** Resolved Phase 1 backlog trio: wired Android deriveStudyTasks academic track passthrough, built manual standalone assessment creation/edit modal UI across desktop/web, and eliminated first-boot SWR cache flicker for legacy positional keys.
+- **[core, desktop, web]** Implement DB encryption key management and non-destructive migration, prune/rotate Gemini AI cache per semester, add desktop system tray countdown and notification window, and demote Moodle REST tokens in favor of iCal.
+- **[core, web, ci]** Phase 3 Safety Net & CI: SQLite and IndexedDB dual-store migration parity lock contract test and headless Android emulator CI workflow
+
+### 🚀 New Features
+
+- `a6ef6f5` feat(desktop): system tray countdown and notification window
+- `341f022` feat(web): prioritize moodle ical over rest tokens in settings
+- `d927202` feat: backlog trio - android track passthrough, manual assessment UI, swr cache flicker fix
+- `f5e1f70` feat(core): prune and rotate gemini ai cache per semester
+- `8de8e54` feat(core): scaffold db encryption key management and non-destructive migration
+
+### 🐛 Fixes & Performance
+
+- `25c44fd` fix(contract): refresh repo.rs source hash after rustfmt
+- `a36454a` fix(contract): regenerate wire map after backlog trio merge
+
+### 🔧 Maintenance, Docs & Tests
+
+- `82e7635` Merge remote-tracking branch 'origin/main' (release bump v5.7.0)
+- `156ec2a` style(core): rustfmt after privacy-parity merge
+- `ef4176c` Merge branch 'feat/privacy-parity' into main
+- `fdaa40c` docs: record privacy parity change fragment for multi-agent coordination
+- `41f2e75` style(core): clippy clean slice fill and test annotations
+- `0c4f930` style(web): prettier formatting on moodle settings and tests
+- `9575e33` Merge branch 'feat/backlog-trio' into main
+- `e2f72d2` Merge branch 'feat/safety-net-ci' into main
+- `4a7b856` docs(changes): add safety-net-ci handoff note
+- `3306adb` ci(android): headless emulator job
+- `199e6c4` test(contract): lock SQLite and IndexedDB migration parity
+
 ## [5.7.0] — 2026-11-10
 
 ### 🚀 New Features

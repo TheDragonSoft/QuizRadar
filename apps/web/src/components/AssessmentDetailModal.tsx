@@ -15,6 +15,7 @@ import {
   Timer,
   X,
   Mail,
+  Pencil,
 } from "lucide-react";
 import { copy } from "../copy";
 import { safeExternalUrl } from "../lib/safeUrl";
@@ -43,6 +44,7 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
   const addToast = useAppStore((s) => s.addToast);
   const openPracticeQuiz = useAppStore((s) => s.openPracticeQuiz);
   const openPomodoro = useAppStore((s) => s.openPomodoro);
+  const openModal = useAppStore((s) => s.openModal);
   const courses = useAppStore((s) => s.data.schedule.courses);
 
   const assessment = assessments.find((a) => a.id === assessmentId);
@@ -233,14 +235,32 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={copy.common.close}
-            className="shrink-0 rounded-lg p-1.5 text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
-          >
-            <X className="h-5 w-5" aria-hidden="true" />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              data-testid="edit-assessment-btn"
+              onClick={() => {
+                onClose();
+                openModal({
+                  id: "create-edit-assessment",
+                  props: { assessment },
+                });
+              }}
+              aria-label={copy.assessmentModal.titleEdit}
+              title={copy.assessmentModal.titleEdit}
+              className="rounded-lg p-1.5 text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text)] cursor-pointer"
+            >
+              <Pencil className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={copy.common.close}
+              className="rounded-lg p-1.5 text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text)] cursor-pointer"
+            >
+              <X className="h-5 w-5" aria-hidden="true" />
+            </button>
+          </div>
         </div>
       </div>
 

@@ -569,6 +569,36 @@ pub async fn delete_custom_event(
 }
 
 #[tauri::command]
+pub async fn upsert_assessment(
+    state: State<'_, AppState>,
+    assessment: Assessment,
+) -> Result<GetStatePayload, String> {
+    let now = state.now_iso();
+    let today = state.today();
+    state
+        .store
+        .upsert_assessment(assessment, now, today)
+        .await
+        .map_err(|e| format!("Failed to upsert assessment: {e}"))?;
+    build_full_state(&state).await
+}
+
+#[tauri::command]
+pub async fn delete_assessment(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<GetStatePayload, String> {
+    let now = state.now_iso();
+    let today = state.today();
+    state
+        .store
+        .delete_assessment(id, now, today)
+        .await
+        .map_err(|e| format!("Failed to delete assessment: {e}"))?;
+    build_full_state(&state).await
+}
+
+#[tauri::command]
 pub async fn toggle_topic(
     state: State<'_, AppState>,
     assessment_id: String,

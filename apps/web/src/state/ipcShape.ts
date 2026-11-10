@@ -333,3 +333,8 @@ export function toRustSlots(slots: ScheduleSlot[] | undefined): ScheduleSlot[] |
 export function toRustEvent(event: CustomCalendarEvent): CustomCalendarEvent {
   return aliasDeep(event);
 }
+
+/** An assessment the desktop shell can parse (snake_case twins included). */
+export function toRustAssessment(assessment: Assessment): Assessment {
+  return aliasDeep(assessment);
+}

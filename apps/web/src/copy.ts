@@ -608,6 +608,27 @@ export const copy = {
     saveEvent: "Save Event",
   },
 
+  assessmentModal: {
+    titleAdd: "Add Assessment",
+    titleEdit: "Edit Assessment",
+    titleLabel: "Assessment Title",
+    courseLabel: "Associated Course",
+    typeLabel: "Assessment Type",
+    dateLabel: "Date (YYYY-MM-DD)",
+    startTimeLabel: "Start Time",
+    endTimeLabel: "End Time",
+    roomLabel: "Room / Location",
+    instructorLabel: "Instructor",
+    topicsLabel: "Topics Covered (one per line)",
+    weightageLabel: "Weightage (%)",
+    maxScoreLabel: "Maximum Score",
+    saveAssessment: "Save Assessment",
+    deleteAssessment: "Delete Assessment",
+    noValuePlaceholder: "—",
+    provenanceManual: "Manual entry",
+    provenanceEdited: "User edited",
+  },
+
   confirm: {
     defaultTitle: "Are you sure?",
     confirmAction: "Confirm",

@@ -5,6 +5,7 @@ import {
   Calendar as CalendarIcon,
   Download,
   MapPin,
+  Plus,
   Printer,
   X,
 } from "lucide-react";
@@ -139,6 +140,7 @@ export const CalendarView: React.FC = () => {
   const setSelectedCalendarDate = useAppStore((s) => s.setSelectedCalendarDate);
   const openAssessmentDetail = useAppStore((s) => s.openAssessmentDetail);
   const openEventModal = useAppStore((s) => s.openEventModal);
+  const openModal = useAppStore((s) => s.openModal);
   const openSettings = useAppStore((s) => s.openSettings);
   const refreshState = useAppStore((s) => s.refreshState);
   const addToast = useAppStore((s) => s.addToast);
@@ -307,6 +309,18 @@ export const CalendarView: React.FC = () => {
             </select>
           </div>
 
+          {/* Add Assessment Button */}
+          <button
+            type="button"
+            data-testid="add-assessment-btn"
+            onClick={() => openModal({ id: "create-edit-assessment" })}
+            title={copy.assessmentModal.titleAdd}
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--surface-border)] bg-[var(--surface)] px-2.5 text-xs font-medium text-[var(--text)] transition hover:bg-[var(--surface-hover)] active:scale-95 cursor-pointer"
+          >
+            <Plus className="h-3.5 w-3.5 text-[var(--accent-ink)]" aria-hidden="true" />
+            <span className="hidden sm:inline">+ Assessment</span>
+          </button>
+
           {/* Print / Save PDF Button */}
           <button
             type="button"
@@ -395,6 +409,13 @@ export const CalendarView: React.FC = () => {
                 className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] transition cursor-pointer active:scale-95"
               >
                 + Custom Event
+              </button>
+              <button
+                type="button"
+                onClick={() => openModal({ id: "create-edit-assessment" })}
+                className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] transition cursor-pointer active:scale-95"
+              >
+                + Assessment
               </button>
             </div>
           </div>

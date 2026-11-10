@@ -118,4 +118,57 @@ describe("browser tier cold start", () => {
     // The fresh state is cached for the next cold start.
     expect(window.localStorage.getItem(SWR_CACHE_KEY)).toBeTruthy();
   });
+
+  it("treats pre-v3 positional keys as loading so cold frames never paint unchecked stale topics", () => {
+    const legacySnapshot: GetStatePayload = {
+      ...snapshotFixture(),
+      studyTasksPayload: {
+        totalTasks: 1,
+        pendingTasks: 1,
+        completedTasks: 0,
+        aiGenerated: false,
+        days: [
+          {
+            dayOffset: 0,
+            date: "2026-11-01",
+            displayDay: "Nov 1",
+            isToday: false,
+            tasks: [
+              {
+                id: "t1",
+                key: "exam-saved::0", // legacy positional key
+                assessmentId: "exam-saved",
+                title: "Study Scheduling",
+                courseId: "CSE 341",
+                courseName: "OS",
+                topicTitle: "Scheduling",
+                topicIndex: 0,
+                dayOffset: 0,
+                priorityRank: 1,
+                reasoning: "Review CPU scheduling",
+                completed: false,
+              },
+            ],
+          },
+        ],
+        readinessCards: [],
+      },
+    };
+
+    saveCachedState(legacySnapshot);
+
+    const boot = bootQuizRadar();
+
+    // Stale positional snapshot is discarded; treated as loading
+    expect(boot.hasSnapshot).toBe(false);
+
+    render(
+      <BootGate boot={boot}>
+        <div data-testid="app-content">the app</div>
+      </BootGate>,
+    );
+
+    // BootGate displays loading instead of painting stale unchecked state
+    expect(screen.getByTestId("boot-loading")).toBeInTheDocument();
+  });
 });

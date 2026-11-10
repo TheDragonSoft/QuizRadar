@@ -7,6 +7,7 @@ import {
   Sparkles,
   X as XIcon,
   GraduationCap,
+  Plus,
 } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
@@ -40,6 +41,7 @@ export const TasksView: React.FC = () => {
   const activeCourseFilter = useAppStore((s) => s.activeCourseFilterTasks);
   const setActiveCourseFilter = useAppStore((s) => s.setActiveCourseFilterTasks);
   const openAssessmentDetail = useAppStore((s) => s.openAssessmentDetail);
+  const openModal = useAppStore((s) => s.openModal);
   const addToast = useAppStore((s) => s.addToast);
   const gradingScale = useAppStore((s) => s.gradingScale || "4.0");
   const setGradingScale = useAppStore((s) => s.setGradingScale);
@@ -124,7 +126,18 @@ export const TasksView: React.FC = () => {
       }
       return true;
     });
-  }, [assessments, activeCourseFilter, typeFilter, timeWindow, termStartDate, searchQuery, courses, todayIso, past30Iso, past90Iso]);
+  }, [
+    assessments,
+    activeCourseFilter,
+    typeFilter,
+    timeWindow,
+    termStartDate,
+    searchQuery,
+    courses,
+    todayIso,
+    past30Iso,
+    past90Iso,
+  ]);
 
   // AI Semester Term Detection Handler
   const handleAiDetectSemester = async () => {
@@ -146,7 +159,9 @@ export const TasksView: React.FC = () => {
       const detectedTermStart = isSpring ? `${currentYear}-01-15` : `${currentYear}-09-01`;
       const detectedTermName = isSpring ? `Spring ${currentYear}` : `Fall ${currentYear}`;
       setTermStartDate(detectedTermStart);
-      setAiDetectedNote(`Inferred ${detectedTermName} (starts ${detectedTermStart}) from syllabus context.`);
+      setAiDetectedNote(
+        `Inferred ${detectedTermName} (starts ${detectedTermStart}) from syllabus context.`,
+      );
       addToast({
         type: "info",
         message: `Set semester start to ${detectedTermStart} (${detectedTermName})`,
@@ -164,9 +179,7 @@ export const TasksView: React.FC = () => {
       {/* Top Header: Title, Segmented Tab Switcher & Course Filter */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[var(--surface-border)] pb-4">
         <div>
-          <h1 className="text-lg font-bold tracking-tight text-[var(--text)]">
-            {copy.nav.tasks}
-          </h1>
+          <h1 className="text-lg font-bold tracking-tight text-[var(--text)]">{copy.nav.tasks}</h1>
           <p className="text-xs tabular-nums text-[var(--text-muted)] mt-0.5">
             {copy.tasks.summaryLine(pendingCount, upcomingCount, totalHours)}
           </p>
@@ -218,20 +231,32 @@ export const TasksView: React.FC = () => {
             </button>
           </div>
 
-          {/* Course Filter Dropdown */}
-          <select
-            aria-label="Filter study tasks by course"
-            value={activeCourseFilter}
-            onChange={(e) => setActiveCourseFilter(e.target.value)}
-            className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] px-3 py-1.5 text-xs text-[var(--text)] focus:border-[var(--accent)] focus:outline-none cursor-pointer"
-          >
-            <option value="ALL">{copy.tasks.filterAllCourses}</option>
-            {courses.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          {/* Actions & Course Filter */}
+          <div className="flex items-center gap-2">
+            <select
+              aria-label="Filter study tasks by course"
+              value={activeCourseFilter}
+              onChange={(e) => setActiveCourseFilter(e.target.value)}
+              className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] px-3 py-1.5 text-xs text-[var(--text)] focus:border-[var(--accent)] focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">{copy.tasks.filterAllCourses}</option>
+              {courses.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              data-testid="add-assessment-btn"
+              onClick={() => openModal({ id: "create-edit-assessment" })}
+              className="flex items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-3 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-[var(--accent-fill-hover)] transition cursor-pointer active:scale-95 shrink-0"
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>+ Assessment</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -397,21 +422,33 @@ export const TasksView: React.FC = () => {
           <div className="space-y-2">
             {filteredAssessments.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-[var(--surface-border)] p-8 text-center text-xs text-[var(--text-muted)] space-y-2">
-                <div className="font-semibold text-[var(--text)]">No assessments match your active filters</div>
+                <div className="font-semibold text-[var(--text)]">
+                  No assessments match your active filters
+                </div>
                 <p className="text-[11px]">
                   Try adjusting your time horizon or clearing the search query to see older records.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTimeWindow("ALL");
-                    setTypeFilter("ALL");
-                    setSearchQuery("");
-                  }}
-                  className="mt-2 inline-flex items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-3 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-[var(--accent-fill-hover)] transition cursor-pointer"
-                >
-                  Reset All Filters
-                </button>
+                <div className="mt-2 flex items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTimeWindow("ALL");
+                      setTypeFilter("ALL");
+                      setSearchQuery("");
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] transition cursor-pointer"
+                  >
+                    Reset All Filters
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openModal({ id: "create-edit-assessment" })}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-3 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-[var(--accent-fill-hover)] transition cursor-pointer"
+                  >
+                    <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>+ Assessment</span>
+                  </button>
+                </div>
               </div>
             ) : (
               filteredAssessments.map((assessment) => (
@@ -438,13 +475,17 @@ export const TasksView: React.FC = () => {
                   <span>Semester Grade Center & Credit-Weighted GPA</span>
                 </h2>
                 <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                  Honest grade tracking across assessments and credit-weighted cumulative semester calculations.
+                  Honest grade tracking across assessments and credit-weighted cumulative semester
+                  calculations.
                 </p>
               </div>
 
               {/* Grading Scale Dropdown */}
               <div className="flex items-center gap-2">
-                <label htmlFor="grading-scale-select" className="text-xs font-bold text-[var(--text-muted)]">
+                <label
+                  htmlFor="grading-scale-select"
+                  className="text-xs font-bold text-[var(--text-muted)]"
+                >
                   Grading Scale:
                 </label>
                 <select
@@ -452,9 +493,7 @@ export const TasksView: React.FC = () => {
                   aria-label="Select grading scale"
                   value={gradingScale}
                   onChange={(e) =>
-                    setGradingScale(
-                      e.target.value as "4.0" | "uk_honors" | "ects" | "percentage",
-                    )
+                    setGradingScale(e.target.value as "4.0" | "uk_honors" | "ects" | "percentage")
                   }
                   className="rounded-xl border border-[var(--surface-border)] bg-[var(--page)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] focus:border-[var(--accent)] outline-none cursor-pointer"
                 >
@@ -522,7 +561,8 @@ export const TasksView: React.FC = () => {
                   </span>
                 </div>
                 <div className="text-[11px] text-[var(--text-muted)]">
-                  {gpaSummary.courses.filter((c) => c.percentage !== null).length === courses.length && courses.length > 0
+                  {gpaSummary.courses.filter((c) => c.percentage !== null).length ===
+                    courses.length && courses.length > 0
                     ? "All courses have recorded grades"
                     : "Add scores via assessment cards"}
                 </div>
@@ -538,7 +578,9 @@ export const TasksView: React.FC = () => {
               </div>
             ) : (
               courses
-                .filter((course) => activeCourseFilter === "ALL" || course.id === activeCourseFilter)
+                .filter(
+                  (course) => activeCourseFilter === "ALL" || course.id === activeCourseFilter,
+                )
                 .map((course) => {
                   const summary = gpaSummary.courses.find((c) => c.courseId === course.id);
                   const courseAssessments = assessments.filter((a) => a.courseId === course.id);
@@ -663,7 +705,11 @@ export const TasksView: React.FC = () => {
                               const achieved = a.achievedScore ?? a.achieved_score;
                               const max = a.maxScore ?? a.max_score;
                               const weight = a.weightagePercent ?? a.weightage_percent;
-                              const isGraded = achieved !== null && achieved !== undefined && max !== null && max !== undefined;
+                              const isGraded =
+                                achieved !== null &&
+                                achieved !== undefined &&
+                                max !== null &&
+                                max !== undefined;
 
                               return (
                                 <div

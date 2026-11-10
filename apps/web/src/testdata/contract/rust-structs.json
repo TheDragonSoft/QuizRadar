@@ -17,7 +17,7 @@
     "core/src/plan/tasks.rs": "393b8f8badc358a850fe51df90c9b907be10749c1dd4f886bfd4e78d3a5dabba",
     "core/src/plan/conflicts.rs": "a953cf743da6a8fc45b43bc6c2dfd716c6842a65a2d4311b08c56a19e8729e74",
     "apps/desktop/src-tauri/src/commands/state.rs": "3ae67738ab86d92dc8a3aff56a8d984453a414e64fc74bf902e36f521a22c671",
-    "core/src/store/repo.rs": "7de751369fba1a60549229337e2efe496057f1b407f72dbcf719c012f7f93f8a",
+    "core/src/store/repo.rs": "d961c095ac67e7763c2c9e2e911975f9a4db6d7774c2d93359be60583ea0ea82",
     "core/src/ffi.rs": "d0628158a075032f19e3f05c7b81d7ef7a179cf74133bc3b732a7afc591f104d",
     "core/src/store/db.rs": "4625fe24dae9dc60232a5b7d84323ca67b5705a53e5ab257dcf690b268bb8bc7"
   },

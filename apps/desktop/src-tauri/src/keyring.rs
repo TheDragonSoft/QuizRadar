@@ -21,6 +21,8 @@ pub const KEY_GEMINI_API_KEY: &str = "gemini_api_key";
 /// Optional runtime override for the bundled Google client secret (Settings →
 /// Account → Google client secret). Lives in the OS keyring, never in SQLite.
 pub const KEY_GOOGLE_CLIENT_SECRET: &str = "google_client_secret";
+/// 256-bit DB encryption key held in the OS keyring for SQLite at rest.
+pub const KEY_DB_ENCRYPTION_KEY: &str = "db_encryption_key";
 
 #[derive(Debug, Clone)]
 enum KeyringBackend {
@@ -136,6 +138,22 @@ impl KeyringStore {
             }
         }
     }
+
+    /// Retrieves or securely generates a 256-bit DB encryption key (hex-encoded)
+    /// held in the OS keyring.
+    pub fn get_or_create_db_key(&self) -> Result<String, String> {
+        if let Some(existing) = self.get_secret(KEY_DB_ENCRYPTION_KEY)? {
+            let trimmed = existing.trim();
+            if trimmed.len() == 64 && trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
+                return Ok(trimmed.to_string());
+            }
+        }
+        let fresh_key = quizradar_core::store::crypto::DbEncryptionKey::generate()
+            .map_err(|e| format!("failed to generate DB key: {e}"))?;
+        let hex_key = fresh_key.to_hex();
+        self.set_secret(KEY_DB_ENCRYPTION_KEY, &hex_key)?;
+        Ok(hex_key)
+    }
 }
 
 #[cfg(test)]
@@ -172,5 +190,16 @@ mod tests {
                 eprintln!("Keyring roundtrip skipped on this runner (no DPAPI/keychain: {err})");
             }
         }
+    }
+
+    #[test]
+    fn test_get_or_create_db_key_ephemeral() {
+        let store = KeyringStore::ephemeral();
+        let key1 = store.get_or_create_db_key().expect("create key");
+        assert_eq!(key1.len(), 64);
+        assert!(key1.chars().all(|c| c.is_ascii_hexdigit()));
+
+        let key2 = store.get_or_create_db_key().expect("retrieve key");
+        assert_eq!(key1, key2);
     }
 }

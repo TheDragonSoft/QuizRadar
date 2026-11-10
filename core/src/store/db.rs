@@ -307,7 +307,24 @@ impl Db {
     /// schema to [`SCHEMA_VERSION`]. Applies migrations immediately — the
     /// store is always open-and-ready, never "migrate later".
     pub fn open(path: &Path) -> Result<Self, StoreError> {
-        let mut db = Self::initialize(Connection::open(path)?)?;
+        Self::open_with_key(path, None)
+    }
+
+    /// Opens the database at `path`, optionally with an encryption key held in
+    /// secure platform storage (OS keyring).
+    ///
+    /// Non-destructive migration doctrine: if an existing unencrypted database
+    /// is present and an encryption key is supplied, a non-destructive backup
+    /// (`<path>.unencrypted.bak`) is created before opening with the key.
+    pub fn open_with_key(
+        path: &Path,
+        key: Option<&super::crypto::DbEncryptionKey>,
+    ) -> Result<Self, StoreError> {
+        if key.is_some() && path.exists() {
+            let _ = super::crypto::backup_unencrypted_if_present(path)?;
+        }
+        let conn = Connection::open(path)?;
+        let mut db = Self::initialize(conn)?;
         db.apply_migrations()?;
         Ok(db)
     }

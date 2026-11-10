@@ -60,10 +60,20 @@ pub fn run() -> tauri::Result<()> {
             let _ = std::fs::create_dir_all(&data_dir);
             let db_path = data_dir.join("quizradar.db");
 
-            let store = tauri::async_runtime::block_on(async { Store::open(db_path).await })
-                .map_err(|e| format!("Failed to open SQLite store: {e}"))?;
-
             let keyring = KeyringStore::new();
+            let db_key = match keyring.get_or_create_db_key() {
+                Ok(hex) => quizradar_core::store::crypto::DbEncryptionKey::from_hex(&hex).ok(),
+                Err(err) => {
+                    eprintln!("[desktop] warning: could not access OS keyring for DB key ({err}) - proceeding with unkeyed store");
+                    None
+                }
+            };
+
+            let store = tauri::async_runtime::block_on(async {
+                Store::open_with_key(db_path, db_key).await
+            })
+            .map_err(|e| format!("Failed to open SQLite store: {e}"))?;
+
             let app_state = AppState::new(store, keyring);
             app.manage(app_state);
 

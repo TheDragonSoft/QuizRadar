@@ -51,7 +51,8 @@ function main() {
   const enumCount = Object.keys(contract.enums).length;
   process.stdout.write(
     `wrote ${relative(REPO_ROOT, OUTPUT)} (${structCount} structs, ${enumCount} enums, ` +
-      `${Object.keys(contract.ffiExports).length} ffi exports)\n`,
+      `${Object.keys(contract.ffiExports).length} ffi exports, ` +
+      `store v${contract.store?.schemaVersion ?? "?"} [${contract.store?.migrations?.length ?? 0} migrations])\n`,
   );
 }
 

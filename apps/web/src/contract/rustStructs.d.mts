@@ -32,6 +32,17 @@ export interface FfiExport {
   returns: string;
 }
 
+export interface RustStoreMigration {
+  version: number;
+  description: string;
+}
+
+export interface RustStoreContract {
+  source: string;
+  schemaVersion: number;
+  migrations: RustStoreMigration[];
+}
+
 export interface RustContract {
   generatedBy: string;
   note: string;
@@ -41,6 +52,7 @@ export interface RustContract {
   enums: Record<string, RustEnum>;
   enumLabels: Record<string, string[]>;
   ffiExports: Record<string, FfiExport>;
+  store: RustStoreContract;
 }
 
 export declare const STRUCT_SOURCES: string[];
@@ -52,7 +64,9 @@ export declare const LABEL_SOURCES: Array<{
   label: string;
 }>;
 export declare const FFI_SOURCE: string;
+export declare const STORE_SOURCE: string;
 export declare function buildContract(readFile: (file: string) => string): RustContract;
+export declare function extractStoreContract(source: string, file: string): RustStoreContract;
 
 export declare function camelCase(name: string): string;
 export declare function hashSource(text: string): string;

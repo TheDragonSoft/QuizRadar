@@ -56,6 +56,17 @@ export interface FfiExport {
   returns: string;
 }
 
+export interface RustStoreMigration {
+  version: number;
+  description: string;
+}
+
+export interface RustStoreContract {
+  source: string;
+  schemaVersion: number;
+  migrations: RustStoreMigration[];
+}
+
 export interface RustContract {
   generatedBy: string;
   note: string;
@@ -65,6 +76,7 @@ export interface RustContract {
   enums: Record<string, RustEnum>;
   enumLabels: Record<string, string[]>;
   ffiExports: Record<string, FfiExport>;
+  store: RustStoreContract;
 }
 
 function readJson<T>(path: string): T {
@@ -75,6 +87,11 @@ function readJson<T>(path: string): T {
 export const RUST_CONTRACT: RustContract = readJson<RustContract>(
   join(FIXTURE_DIR, "rust-structs.json"),
 );
+
+/** Store contract derived directly from core/src/store/db.rs */
+export const RUST_STORE_CONTRACT: RustStoreContract = RUST_CONTRACT.store;
+export const RUST_STORE_SCHEMA_VERSION: number = RUST_CONTRACT.store?.schemaVersion;
+export const RUST_STORE_MIGRATIONS: RustStoreMigration[] = RUST_CONTRACT.store?.migrations ?? [];
 
 // ---------------------------------------------------------------------------
 // Enum sets — read straight off the Rust source.

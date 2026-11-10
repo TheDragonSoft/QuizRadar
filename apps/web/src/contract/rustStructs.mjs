@@ -360,6 +360,45 @@ export const LABEL_SOURCES = [
 /** The UniFFI surface of the core. */
 export const FFI_SOURCE = "core/src/ffi.rs";
 
+/** The SQLite store source of truth for schema versions and migrations. */
+export const STORE_SOURCE = "core/src/store/db.rs";
+
+/**
+ * Extract SQLite schema version and logical migrations from `core/src/store/db.rs`.
+ */
+export function extractStoreContract(source, file) {
+  const versionMatch = /pub\s+const\s+SCHEMA_VERSION\s*:\s*u32\s*=\s*(\d+);/.exec(source);
+  if (!versionMatch) {
+    throw new Error(`Could not find SCHEMA_VERSION in ${file}`);
+  }
+  const schemaVersion = parseInt(versionMatch[1], 10);
+
+  const migrationsMatch =
+    /pub\s+const\s+LOGICAL_MIGRATIONS\s*:\s*&\[\(u32,\s*&str\)\]\s*=\s*&\[([\s\S]*?)\];/.exec(
+      source,
+    );
+  if (!migrationsMatch) {
+    throw new Error(`Could not find LOGICAL_MIGRATIONS in ${file}`);
+  }
+
+  const migrationsBody = migrationsMatch[1];
+  const itemRegex = /\(\s*(\d+)\s*,\s*"([^"]+)"\s*\)/g;
+  const migrations = [];
+  let match;
+  while ((match = itemRegex.exec(migrationsBody)) !== null) {
+    migrations.push({
+      version: parseInt(match[1], 10),
+      description: match[2],
+    });
+  }
+
+  return {
+    source: file,
+    schemaVersion,
+    migrations,
+  };
+}
+
 /**
  * Build the whole contract map from the Rust sources.
  *
@@ -392,6 +431,7 @@ export function buildContract(readFile) {
   }
 
   const ffiExports = extractFfiExports(read(FFI_SOURCE));
+  const store = extractStoreContract(read(STORE_SOURCE), STORE_SOURCE);
 
   return {
     generatedBy: "apps/web/src/contract/regenerate.mjs",
@@ -402,6 +442,7 @@ export function buildContract(readFile) {
     enums,
     enumLabels,
     ffiExports,
+    store,
   };
 }
 

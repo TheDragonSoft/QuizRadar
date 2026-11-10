@@ -177,6 +177,16 @@ CREATE TABLE kv_meta (
 );
 ";
 
+/// Logical migration steps for cross-platform store contract verification.
+/// Kept strictly migration-locked with `apps/web/src/pwadapters/idbStore.ts`.
+pub const LOGICAL_MIGRATIONS: &[(u32, &str)] = &[
+    (1, "initial_schema"),
+    (2, "source_provenance"),
+    (3, "content_addressed_topic_keys"),
+    (4, "non_ai_suite_extensions"),
+    (5, "cached_emails_and_ai_extractions"),
+];
+
 /// Ordered migration steps. Each entry upgrades a database *at* the previous
 /// version to the recorded one; `m1_upgrades_into(m2)` semantics. Never edit
 /// an applied schema — append a new `(version, sql)` step.
@@ -664,5 +674,23 @@ mod tests {
             .unwrap();
         assert_eq!(room, None, "unknowns stay NULL — the display renders “—”");
         tx.commit().unwrap();
+    }
+
+    #[test]
+    fn logical_migrations_match_applied_migrations() {
+        assert_eq!(SCHEMA_VERSION, 5);
+        assert_eq!(MIGRATIONS.len(), LOGICAL_MIGRATIONS.len());
+        assert_eq!(SCHEMA_VERSION, LOGICAL_MIGRATIONS.last().unwrap().0);
+        for (i, ((m_ver, _), (l_ver, _))) in
+            MIGRATIONS.iter().zip(LOGICAL_MIGRATIONS.iter()).enumerate()
+        {
+            assert_eq!(m_ver, l_ver, "migration index {} version mismatch", i);
+            assert_eq!(
+                *m_ver,
+                (i + 1) as u32,
+                "migration index {} should be sequential",
+                i
+            );
+        }
     }
 }

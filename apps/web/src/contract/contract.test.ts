@@ -42,6 +42,9 @@ import {
   RUST_TO_TS_MAPPINGS,
   RUST_URGENCY_EMIT_LABELS,
   RUST_URGENCY_STORED_LABELS,
+  RUST_STORE_CONTRACT,
+  RUST_STORE_MIGRATIONS,
+  RUST_STORE_SCHEMA_VERSION,
   WEB_SRC,
   type RustToTsMapping,
 } from "./contractSpec";
@@ -58,6 +61,7 @@ import {
 import { validateRustPayload, type GuardCode } from "./contractGuard";
 import { normalizeStatePayload } from "../state/ipcShape";
 import type { GetStatePayload } from "../state/types";
+import { IDB_MIGRATIONS, IDB_SCHEMA_VERSION } from "../pwadapters/idbStore";
 
 /** The parsed TypeScript mirror of the wire structs. */
 const TS_MIRROR_SOURCE = readFileSync(join(WEB_SRC, "state", "types.ts"), "utf8");
@@ -417,5 +421,64 @@ describe("contract: the adapter fills the view model", () => {
     const once = normalizeStatePayload(clone(statePayloadFixture) as unknown as GetStatePayload);
     const twice = normalizeStatePayload(clone(once) as unknown as GetStatePayload);
     expect(twice).toEqual(once);
+  });
+});
+
+// 9 — dual-store migration lock -----------------------------------------------
+
+describe("contract: SQLite and IndexedDB dual-store migration lock", () => {
+  it("logical schema version matches exactly between SQLite and IndexedDB", () => {
+    expect(IDB_SCHEMA_VERSION).toBe(RUST_STORE_SCHEMA_VERSION);
+    expect(IDB_SCHEMA_VERSION).toBe(RUST_STORE_CONTRACT.schemaVersion);
+  });
+
+  it("both stores implement the identical ordered set of logical migrations", () => {
+    expect(IDB_MIGRATIONS.length).toBe(RUST_STORE_MIGRATIONS.length);
+    expect(IDB_MIGRATIONS.length).toBeGreaterThan(0);
+
+    IDB_MIGRATIONS.forEach((idbStep, index) => {
+      const rustStep = RUST_STORE_MIGRATIONS[index];
+      expect(rustStep).toBeDefined();
+      expect(idbStep.version).toBe(rustStep.version);
+      expect(idbStep.description).toBe(rustStep.description);
+      // Strictly sequential 1..N order
+      expect(idbStep.version).toBe(index + 1);
+    });
+  });
+
+  it("schema version equals the latest migration version in both stores", () => {
+    const lastIdbStep = IDB_MIGRATIONS[IDB_MIGRATIONS.length - 1];
+    const lastRustStep = RUST_STORE_MIGRATIONS[RUST_STORE_MIGRATIONS.length - 1];
+    expect(lastIdbStep.version).toBe(IDB_SCHEMA_VERSION);
+    expect(lastRustStep.version).toBe(RUST_STORE_SCHEMA_VERSION);
+  });
+
+  it("IndexedDB migration runners execute without error", () => {
+    const createdStores = new Set<string>();
+    const fakeDb = {
+      objectStoreNames: {
+        contains: (name: string) => createdStores.has(name),
+      },
+      createObjectStore: (name: string) => {
+        createdStores.add(name);
+        return {} as IDBObjectStore;
+      },
+    } as unknown as IDBDatabase;
+
+    for (const step of IDB_MIGRATIONS) {
+      if (step.migrate) {
+        expect(() => step.migrate!(fakeDb)).not.toThrow();
+      }
+    }
+    // All key stores from migrations 1, 4, 5 exist
+    expect(createdStores.has("courses")).toBe(true);
+    expect(createdStores.has("assessments")).toBe(true);
+    expect(createdStores.has("attendance")).toBe(true);
+    expect(createdStores.has("flashcards")).toBe(true);
+    expect(createdStores.has("quiz_attempts")).toBe(true);
+    expect(createdStores.has("mistake_bank")).toBe(true);
+    expect(createdStores.has("study_sessions")).toBe(true);
+    expect(createdStores.has("cached_emails")).toBe(true);
+    expect(createdStores.has("email_ai_extractions")).toBe(true);
   });
 });

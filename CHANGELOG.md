@@ -2,6 +2,12 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.7.0] — 2026-11-10
+
+### 🚀 New Features
+
+- `281a9f4` feat(landing): device notch, highlight swipe, and faq help card polish
+
 ## [5.6.0] — 2026-11-09
 
 ### 🤝 Agent & Contributor Summaries

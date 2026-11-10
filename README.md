@@ -1,92 +1,133 @@
 # QuizRadar
 
-[![CI](https://github.com/TheDragonSoft/QuizRadar/actions/workflows/ci.yml/badge.svg)](https://github.com/TheDragonSoft/QuizRadar/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Desktop%20%7C%20Android%20%7C%20Web%20PWA-blue)](docs/architecture-v5.md)
-[![Rust](https://img.shields.io/badge/Core-Rust%202021-orange.svg)](core/)
-[![Zero Server](https://img.shields.io/badge/Architecture-Zero--Server%20%2F%20Local--First-success)](PRIVACY.md)
+<p align="center">
+  <img src="apps/web/public/icons/icon-512.png" width="96" height="96" alt="QuizRadar Logo" />
+</p>
 
-**QuizRadar** is a local-first, zero-server academic radar for university students. It resolves fuzzy announcements (_"Class Quiz 1 next week, not this week"_) into exact calendar items by cross-referencing each announcement against your weekly timetable, then manages the resulting exam radar — complete with conflict detection, readiness tracking, study recommendations, practice quizzes, grade what-if calculations, and home screen countdown widgets.
+<p align="center">
+  <b>Turn chaotic university class announcements into a calm semester schedule.</b><br/>
+  A local-first, zero-server academic radar for university students.
+</p>
+
+<p align="center">
+  <a href="https://thedragonsoft.github.io/QuizRadar/"><strong>🌐 Official Website</strong></a> •
+  <a href="https://thedragonsoft.github.io/QuizRadar/app/"><strong>📱 Launch Web Companion (PWA)</strong></a> •
+  <a href="https://thedragonsoft.github.io/QuizRadar/download/"><strong>📦 Download Center</strong></a> •
+  <a href="https://github.com/TheDragonSoft/QuizRadar/releases/latest"><strong>🚀 Latest Release</strong></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/TheDragonSoft/QuizRadar/actions/workflows/ci.yml"><img src="https://github.com/TheDragonSoft/QuizRadar/actions/workflows/ci.yml/badge.svg" alt="CI Status" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
+  <a href="docs/architecture-v5.md"><img src="https://img.shields.io/badge/Platform-Desktop%20%7C%20Android%20%7C%20Web%20PWA-blue" alt="Platform Matrix" /></a>
+  <a href="core/"><img src="https://img.shields.io/badge/Core-Rust%202021-orange.svg" alt="Rust Core" /></a>
+  <a href="PRIVACY.md"><img src="https://img.shields.io/badge/Architecture-Zero--Server%20%2F%20Local--First-success" alt="Zero Server" /></a>
+</p>
 
 ---
 
-## 1. Install & Downloads
+## 1. What is QuizRadar?
 
-All official builds are published on the [GitHub Releases](https://github.com/TheDragonSoft/QuizRadar/releases) page and produced by signed CI builds (`SHA256SUMS.txt` verifies every artifact).
+**QuizRadar** is a private, on-device academic radar built for university students. Every semester, students navigate disorganized communication streams: professor emails, LMS posts, Teams chat messages, and PDF lecture slides. Announcements arrive with ambiguous date phrases like _"Class Quiz 1 next Tuesday, not this week"_, causing missed deadlines and exam scheduling panic.
 
-| Platform                | Artifact                                                                        | Notes                                                                                  |
-| ----------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| **Windows**             | `QuizRadar_5.0.0_x64-setup.exe` (NSIS) or `QuizRadar-Portable-win-x64.zip`      | In-app auto-updater (minisign-signed `latest.json`)                                    |
-| **macOS**               | `.dmg` (Apple Silicon)                                                          |                                                                                        |
-| **Linux**               | `.deb` / `.AppImage` (x64)                                                      |                                                                                        |
-| **Android**             | `QuizRadar-v5.0.0.apk` / `.aab`                                                 | arm64-v8a + x86_64; see **Android sign-in setup** below                                |
-| **Web Companion (PWA)** | [thedragonsoft.github.io/QuizRadar](https://thedragonsoft.github.io/QuizRadar/) | Install from your browser ("Add to Home Screen"); runs fully offline after first visit |
+QuizRadar solves this entirely on your device:
+1. **Fuzzy Anchor Engine:** Scans course updates and resolves ambiguous natural language dates into exact timetable lecture and tutorial slots.
+2. **Academic Conflict Radar:** Flags overlapping deadlines, exam pileups, and heavy assessment weeks ahead of time.
+3. **Study Recommendations & Readiness Score:** Computes real-time preparation readiness per course, recommending focused study topics and practice quizzes.
+4. **Zero Server Architecture:** All parsing, OAuth token management, and timetable storage remain strictly on your physical machine. No central server, no telemetry surveillance, and zero cloud lock-in.
 
-### Android sign-in
+---
 
-Google sign-in works out of the box: the app ships a built-in QuizRadar Google client id. **Microsoft (Teams) sign-in needs your own Azure app id** — register one with the redirect `com.quizradar.app://oauth/microsoft` and paste it in Settings → Sources. You can also override the built-in Google id there with your own client.
+## 2. Live Web & Downloads
 
-If you build QuizRadar yourself from source and want your own Google client instead, create one in [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials) and register the redirect `com.quizradar.app://oauth/google` (for an "Android"-type client: package `com.quizradar.app` + your signing SHA-1). The **desktop** tier ships its own configured clients, so Windows/macOS/Linux need none of the above.
+| Platform | Channel / Artifact | Architecture & Notes |
+| :--- | :--- | :--- |
+| **🌐 Official Website** | [thedragonsoft.github.io/QuizRadar](https://thedragonsoft.github.io/QuizRadar/) | Product tour, feature guides, download links, and FAQ |
+| **📱 Web Companion (PWA)** | [thedragonsoft.github.io/QuizRadar/app/](https://thedragonsoft.github.io/QuizRadar/app/) | Zero-install offline web app; runs directly in browser via WebAssembly |
+| **🪟 Windows** | `QuizRadar_x64-setup.exe` / `Portable-win-x64.zip` | Minisign-signed in-app auto-updater (`tauri-plugin-updater`) |
+| **🍏 macOS** | `.dmg` / `.tar.gz` | Apple Silicon & Intel universal packages |
+| **🐧 Linux** | `.deb` / `.AppImage` | x86_64 native packages |
+| **🤖 Android** | `.apk` / `.aab` | Native Kotlin & Jetpack Compose (arm64-v8a, x86_64) |
 
-## 2. Screenshots
+> 📦 **All binary downloads and signed checksums (`SHA256SUMS.txt`) are available on the [GitHub Releases](https://github.com/TheDragonSoft/QuizRadar/releases) page.**
 
-| Desktop (Windows / macOS / Linux)                                          | Android                                                         |
-| -------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| ![Desktop dashboard](docs/screenshots/desktop-dashboard-light.png)         | ![Android dashboard](docs/screenshots/android-dashboard.png)    |
-| ![Desktop week calendar](docs/screenshots/desktop-week-calendar-light.png) | ![Android week calendar](docs/screenshots/android-calendar.png) |
-| ![Desktop settings](docs/screenshots/desktop-settings-light.png)           | ![Android study roadmap](docs/screenshots/android-tasks.png)    |
+### Android Sign-In Setup
+- **Google Sign-In:** Works out of the box with QuizRadar's built-in OAuth credentials.
+- **Microsoft Teams:** Microsoft requires your own Azure Client ID for custom redirect URI handling (`com.quizradar.app://oauth/microsoft`). You can register a free client ID in Azure Portal and paste it in `Settings → Integrations`.
+- **Desktop & Web:** Desktop tiers ship their own loopback PKCE clients, requiring zero manual configuration.
+
+---
+
+## 3. Visual Showcase
+
+### Desktop & Mobile Dashboard
+| Desktop Experience (Tauri 2 + React 19) | Android Native (Jetpack Compose M3) |
+| :---: | :---: |
+| ![Desktop Dashboard](docs/screenshots/desktop-dashboard-light.png) | ![Android Dashboard](docs/screenshots/android-dashboard.png) |
+
+### Timetable & Academic Calendar
+| Weekly Schedule View (Desktop) | Schedule & Assessment Lanes (Android) |
+| :---: | :---: |
+| ![Desktop Week Calendar](docs/screenshots/desktop-week-calendar-light.png) | ![Android Week Calendar](docs/screenshots/android-calendar.png) |
+
+### Assessment Hub & Study Tasks
+| Assessment Radar & Tasks (Desktop) | Study Roadmap & Topic Checklist (Android) |
+| :---: | :---: |
+| ![Desktop Assessments](docs/screenshots/redesign/after-desktop-tasks-assessments.png) | ![Android Study Tasks](docs/screenshots/android-tasks.png) |
 
 <details>
-<summary>More (dark mode, onboarding, focus timer)</summary>
+<summary><b>🎨 Click to expand additional themes (Dark, Solar, Aurora, AMOLED, Focus Timer)</b></summary>
 
-|                                                                                |                                                                        |
-| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
-| ![Desktop dashboard dark](docs/screenshots/desktop-dashboard-dark.png)         | ![Android dashboard dark](docs/screenshots/android-dashboard-dark.png) |
-| ![Android onboarding](docs/screenshots/android-onboarding.png)                 | ![Android focus timer](docs/screenshots/android-focus.png)             |
-| ![Desktop week calendar dark](docs/screenshots/desktop-week-calendar-dark.png) | ![Android settings](docs/screenshots/android-settings.png)             |
+<br/>
+
+| Obsidian / Night Skies | Pure AMOLED Minimal |
+| :---: | :---: |
+| ![Desktop Dashboard Dark](docs/screenshots/desktop-dashboard-dark.png) | ![Android Dashboard AMOLED](docs/screenshots/android-dashboard-dark.png) |
+
+| Solar Golden Hour Theme | Aurora Borealis Gradient |
+| :---: | :---: |
+| ![Desktop Solar](docs/screenshots/redesign/after-desktop-dashboard-solar.png) | ![Desktop Aurora](docs/screenshots/redesign/after-desktop-dashboard-aurora.png) |
+
+| Pomodoro Focus Timer | Settings & Integration Hub |
+| :---: | :---: |
+| ![Android Focus](docs/screenshots/android-focus.png) | ![Android Settings](docs/screenshots/android-settings.png) |
 
 </details>
 
 ---
 
-## 3. Platform Matrix
+## 4. Platform Matrix
 
-| Platform                      | Tier      | Shell Architecture                          | Auth & Storage                                                                        | Native Edge Features                                                                                                                                                                        |
-| ----------------------------- | --------- | ------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Desktop** (Win, Mac, Linux) | Primary   | **Tauri 2** (In-Process IPC) + **React 19** | Loopback PKCE OAuth; OS Keyring (`keyring-rs`); SQLite                                | Signed Auto-Updater (`tauri-plugin-updater`), native menus, system file dialogs                                                                                                             |
-| **Android** (Phone & Tablet)  | Native    | **Kotlin 2.x** + **Jetpack Compose M3**     | Custom-scheme PKCE OAuth (BYO client id); `EncryptedSharedPreferences`; UniFFI SQLite | **On-device announcement scanning**, optional 6-hour background scan, Glance 2x1 AppWidget, T-24/digest notifications, `ACTION_SEND` share-sheet ingest, Google Calendar push, Drive backup |
-| **Web Companion** (PWA)       | Companion | **React 19** + **WebAssembly Core**         | In-memory ephemeral GIS tokens (1-hour lifespan); IndexedDB SQLite                    | Service Worker offline caching (engine + snapshot precached), responsive mobile & desktop web layouts                                                                                       |
-
-> **Note on PWA Limits:** The Web Companion PWA runs entirely in-browser without a backend server. It uses ephemeral 1-hour Google Identity Services tokens (no persistent refresh tokens), performs manual scans only, and pushes calendar data via `.ics` export instead of the Google Calendar API. For background scans and direct Calendar push, use the Desktop or Android app.
+| Platform | Tier | Shell Architecture | Auth & Storage | Native Features |
+| :--- | :--- | :--- | :--- | :--- |
+| **Desktop** (Win, Mac, Linux) | Primary | **Tauri 2** + **React 19** | Loopback PKCE OAuth; OS Keyring (`keyring-rs`); SQLite | Signed Auto-Updater (`tauri-plugin-updater`), native menus, system file dialogs |
+| **Android** (Phone & Tablet) | Native | **Kotlin 2.x** + **Jetpack Compose M3** | Custom-scheme PKCE OAuth; `EncryptedSharedPreferences`; UniFFI SQLite | **On-device announcement scanning**, optional background scan, Glance 2x1 AppWidget, T-24 notifications, Share-sheet ingest, Drive backup |
+| **Web Companion** (PWA) | Companion | **React 19** + **WebAssembly Core** | Ephemeral GIS tokens; IndexedDB SQLite | Service Worker offline caching (engine precached), responsive mobile & desktop web layouts |
 
 ---
 
-## 4. Core Capabilities
+## 5. Core Capabilities
 
-- **Fuzzy Announcement Resolution:** Automatically cross-references email and LMS announcements against your course schedule, anchoring phrases like _"next week"_ or _"the following Tuesday"_ to exact timetable lecture slots.
+- **Fuzzy Announcement Resolution:** Automatically cross-references announcement dates against your weekly timetable, anchoring phrases like _"next week"_ or _\"the following Tuesday\"_ to exact course lecture slots.
 - **Multi-Source Ingestion:**
-  - **Gmail:** Scans recent candidate announcements across 5 targeted queries with deduplication.
+  - **Gmail:** Scans candidate class announcements across targeted queries with intelligent deduplication.
   - **Microsoft Teams:** Microsoft Graph client with heuristics for channel posts.
-  - **Moodle LMS:** Connects via REST API token or private iCalendar (`.ics`) webcal links.
-  - **Google Classroom:** Direct ingestion of active coursework and due dates.
+  - **Moodle LMS:** Connects via REST API token or private iCalendar (`.ics`) webcal subscriptions.
+  - **Google Classroom:** Direct ingestion of active coursework, due dates, and classroom announcements.
 - **Academic Dashboard & Conflict Radar:**
   - 7-day upcoming assessment KPIs and exam-type breakdown pills.
   - Overall exam readiness score dynamically calculated from syllabus topics.
   - Automatic conflict detection with instant scheduling of dedicated study blocks.
 - **What Should I Study?** Prioritized study recommendations with optimistic topic completion checkoffs.
-- **Interactive Calendar & Roadmap:**
-  - 7-day (Desktop) and 3-day (Mobile) overlapping lane timetable views with visual exam glow.
-  - Daily study roadmap and per-course readiness grid.
-  - One-click iCalendar (`.ics`) file export and one-way Google Calendar push (dated assessments — never an import of your calendar).
 - **Grades & What-If Projection:** Record achieved scores and simulate required finals scores to achieve your target letter grades.
 - **Study Support Tools:**
   - AI-assisted practice quiz generator with labeled on-device deterministic fallbacks.
   - Integrated Pomodoro focus timer with audio completion chimes and topic completion links.
-- **v4 Data Migration:** One-click import tool restoring courses, assessments, grades, and topic progress from legacy QuizRadar v4 backup files.
+- **Data Portability:** One-click JSON backup, restore, and v4 migration.
 
 ---
 
-## 5. Privacy & The Honesty Doctrine
+## 6. Privacy & The Honesty Doctrine
 
 QuizRadar is engineered with a strict **Honesty Doctrine**:
 
@@ -99,23 +140,21 @@ See [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md) for full policies.
 
 ---
 
-## 6. Development & Building from Source
+## 7. Development & Building from Source
 
 ### Prerequisites
-
 - **Rust:** Stable toolchain (`rustup update stable`)
 - **Node.js:** Node.js 20+ with `pnpm`
-- **Java:** JDK 21 (Temurin / Adoptium) — Gradle 8.11 rejects Java 25, so point `JAVA_HOME` at the JDK 21 install
-- **Android SDK:** Command-line Tools, API Platform 35, Build-Tools 34.0.0+, and the **NDK r27b** (`sdkmanager "ndk;27.1.12297006"`); the build locates it via `ANDROID_NDK_HOME` or the SDK's `ndk/` directory
-- **wasm-bindgen-cli:** version pinned by `Cargo.lock` (only needed for the PWA tier: `pnpm --dir apps/web build:wasm`)
+- **Java:** JDK 21 (Temurin / Adoptium)
+- **Android SDK:** Command-line Tools, API Platform 35, Build-Tools 34.0.0+, and NDK r27b
 
 ### Build Commands
 
 ```powershell
-# 1. Install frontend dependencies
+# 1. Install workspace dependencies
 pnpm install
 
-# 2. Run Rust Core tests
+# 2. Run Rust Core test suite
 cargo test --workspace
 
 # 3. Typecheck and lint Web UI
@@ -131,10 +170,13 @@ cd apps/mobile-android
 
 ---
 
-## 7. Documentation
+## 8. Documentation
 
+- [Official Landing Website](https://thedragonsoft.github.io/QuizRadar/)
+- [Web Companion PWA](https://thedragonsoft.github.io/QuizRadar/app/)
 - [Architecture Specification (v5)](docs/architecture-v5.md)
 - [Privacy Policy & AI Consent Disclosure](PRIVACY.md)
 - [Security Policy & Vulnerability Reporting](SECURITY.md)
-- [Contributing Guidelines](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
 - [License (MIT)](LICENSE)
+

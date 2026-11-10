@@ -2,6 +2,16 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.10.0] — 2026-11-10
+
+### 🤝 Agent & Contributor Summaries
+
+- **[android]** fix(android): resolve Google OAuth 400 invalid_request error by using RFC 3986 package-path custom scheme (com.quizradar.app:/oauth/google)
+
+### 🐛 Fixes & Performance
+
+- `e7f1cc3` fix(android): resolve Google OAuth 400 invalid_request error with single-slash package scheme
+
 ## [5.9.0] — 2026-11-10
 
 ### 🤝 Agent & Contributor Summaries

@@ -21,8 +21,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // STAMPED by tooling/generate-version.mjs from tooling/version.json — do not edit.
-        versionCode = 50900
-        versionName = "5.9.0"
+        versionCode = 51000
+        versionName = "5.10.0"
 
         // The Kotlin shell alone could run on 32-bit ABIs (JNA ships dispatchers
         // for armeabi-v7a, x86, ...), but the Rust core is only cross-built for

@@ -1299,7 +1299,9 @@ export function SettingsView() {
                     >
                       {copy.settings.moodleIcalPrimaryLabel}
                     </label>
-                    <span className="text-[10px] text-[var(--accent-ink)] font-semibold">Recommended</span>
+                    <span className="text-[10px] text-[var(--accent-ink)] font-semibold">
+                      Recommended
+                    </span>
                   </div>
                   <p className="mb-1.5 text-xs text-[var(--text-muted)]">
                     {copy.settings.moodleIcalPrimaryHelp}
@@ -1365,7 +1367,9 @@ export function SettingsView() {
                       onChange={(e) => updateConfig({ moodleEnabled: e.target.checked })}
                       className="h-4 w-4 rounded border-[var(--border)] accent-[var(--accent-fill)]"
                     />
-                    <span className="text-xs font-semibold text-[var(--text)]">Enable Moodle Sync</span>
+                    <span className="text-xs font-semibold text-[var(--text)]">
+                      Enable Moodle Sync
+                    </span>
                   </label>
 
                   <button

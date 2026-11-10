@@ -5,7 +5,11 @@ import { MobileNav } from "./components/MobileNav";
 import { ModalStack } from "./components/ModalStack";
 import { ToastContainer } from "./components/Toast";
 import { PullToRefresh } from "./components/PullToRefresh";
-import { DashboardView, TasksView, CalendarView, FocusView, HelpView } from "./views/views";
+import { DashboardView } from "./views/DashboardView";
+import { TasksView } from "./views/TasksView";
+import { CalendarView } from "./views/CalendarView";
+import { FocusView } from "./views/FocusView";
+import { HelpView } from "./views/HelpView";
 import { SettingsView } from "./views/SettingsView";
 import { DevRig } from "./dev/DevRig";
 import { useAppStore, applyThemeToDocument, initDayRolloverWatchdog } from "./state/store";
@@ -72,6 +76,19 @@ const VIEWS: Record<View, React.ComponentType> = {
   focus: FocusView,
   help: HelpView,
   settings: SettingsView,
+};
+
+/**
+ * The shell-level view hooks (`view-dashboard`, `view-tasks`, …) used to live
+ * in a `views/views.tsx` wrapper. They are the stable selectors for the
+ * Playwright specs and the App shell test, so they are applied here — the
+ * views themselves are imported directly, without a wrapper module.
+ */
+const VIEW_TEST_IDS: Partial<Record<View, string>> = {
+  dashboard: "view-dashboard",
+  tasks: "view-tasks",
+  calendar: "view-calendar",
+  focus: "view-focus",
 };
 
 export default function App() {
@@ -319,7 +336,13 @@ export default function App() {
                 padding is the only margin (the old max-w-6xl cap stranded
                 half a 1920px window in empty background). */}
             <div key={currentView} className="view-transition w-full">
-              <ActiveViewComponent />
+              {VIEW_TEST_IDS[currentView] ? (
+                <section data-testid={VIEW_TEST_IDS[currentView]} className="view-transition">
+                  <ActiveViewComponent />
+                </section>
+              ) : (
+                <ActiveViewComponent />
+              )}
             </div>
           </main>
         </PullToRefresh>

@@ -21,6 +21,24 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: "./src/test/setup.ts",
     /**
+     * Windows-friendly pool settings: worker threads avoid the process churn
+     * of the default `forks` pool, while per-file isolation keeps every test
+     * file on its own fresh jsdom document and module registry.
+     *
+     * `isolate: false` was measured on this machine and rejected: sharing one
+     * jsdom/module registry across files leaked module-level mocks between
+     * suites (e.g. `googleLogin` from the Chrome flow tests into the auth
+     * tests) and left RTL's `screen` bound to a stale document, which made
+     * the suite both flaky and much slower to settle (~67 s vs ~20 s).
+     */
+    pool: "threads",
+    poolOptions: {
+      threads: {
+        singleThread: false,
+        isolate: true,
+      },
+    },
+    /**
      * The visual-regression suite in `e2e/` is a *Playwright* suite (it runs
      * against a real browser via `apps/web/playwright.config.ts`), not a
      * vitest suite. Vitest's default include pattern would collect those

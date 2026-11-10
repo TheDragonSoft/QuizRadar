@@ -10,9 +10,10 @@
     "build": "node ../../tooling/build-wasm.mjs && node ../../tooling/build-sw.mjs && tsc --noEmit -p tsconfig.json && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
-    "test": "node ../../tooling/build-wasm.mjs && node ../../tooling/build-sw.mjs && vitest run",
-    "test:watch": "node ../../tooling/build-wasm.mjs && node ../../tooling/build-sw.mjs && vitest",
-    "test:coverage": "node ../../tooling/build-wasm.mjs && node ../../tooling/build-sw.mjs && vitest run --coverage",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:full": "node ../../tooling/build-wasm.mjs && node ../../tooling/build-sw.mjs && vitest run",
     "e2e": "playwright test",
     "e2e:update": "playwright test --update-snapshots"
   },

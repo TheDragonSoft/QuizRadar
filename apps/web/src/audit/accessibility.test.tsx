@@ -483,7 +483,7 @@ describe("web shell accessibility (structural assertions)", () => {
   });
 
   it("does not skip heading levels in the dashboard view", async () => {
-    const { DashboardView } = await import("../views/views");
+    const { DashboardView } = await import("../views/DashboardView");
     const { container } = render(<DashboardView />);
 
     const headings = headingsOf(container);
@@ -494,7 +494,7 @@ describe("web shell accessibility (structural assertions)", () => {
   });
 
   it("does not skip heading levels in the calendar view", async () => {
-    const { CalendarView } = await import("../views/views");
+    const { CalendarView } = await import("../views/CalendarView");
     const { container } = render(<CalendarView />);
 
     const headings = headingsOf(container);

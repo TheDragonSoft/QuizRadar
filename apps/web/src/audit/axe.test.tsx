@@ -160,14 +160,14 @@ describe("axe-core audits", () => {
   );
 
   it("the dashboard view has no axe violations", { timeout: 60_000 }, async () => {
-    const { DashboardView } = await import("../views/views");
+    const { DashboardView } = await import("../views/DashboardView");
     const { container } = render(<DashboardView />);
     const results = await audit(container);
     expect(results).toHaveNoViolations();
   });
 
   it("the week calendar has no axe violations", { timeout: 60_000 }, async () => {
-    const { CalendarView } = await import("../views/views");
+    const { CalendarView } = await import("../views/CalendarView");
     const { container } = render(<CalendarView />);
     const results = await audit(container);
     expect(results).toHaveNoViolations();

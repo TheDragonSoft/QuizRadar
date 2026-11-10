@@ -4,7 +4,7 @@
  * The calendar is reached through the real top-bar view switcher (the v4
  * segmented control in `apps/web/src/components/TopBar.tsx`). With an empty
  * IndexedDB there are no classes, no exams and no custom events, so
- * `apps/web/src/views/views.tsx` renders the honest empty week panel
+ * `apps/web/src/views/CalendarView.tsx` renders the honest empty week panel
  * (`empty-calendar`) — no fake timetable is injected.
  *
  * The sidebar mini calendar is part of the same frame, so it doubles as the

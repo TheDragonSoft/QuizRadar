@@ -4,8 +4,8 @@ _How this repo is verified end to end across **Web (PWA + WASM)**, **Desktop (Ta
 and **Mobile (Android Compose + UniFFI)** — designed as a turnkey, drop-in testing architecture
 for other local-first and multi-shell apps._
 
-The system has **seven layers**, ordered from cheapest static invariants to live multi-surface
-visual & interactive sweeps. Every bug found in Layer 6 or 7 is locked down with a deterministic
+The system has **six layers**, ordered from cheapest static invariants to live mobile
+interaction sweeps. Every bug found in Layer 6 is locked down with a deterministic
 regression test in Layers 1–5 so it can never recur silently.
 
 | # | Layer | Catches | Speed |
@@ -15,8 +15,7 @@ regression test in Layers 1–5 so it can never recur silently.
 | 3 | Property tests (`proptest`) | Parser/planner panics and impossible outputs on arbitrary input | seconds |
 | 4 | Cross-language contract tests | Core↔UI wire-shape drift (`serde` ↔ TypeScript ↔ UniFFI) | seconds |
 | 5 | Deterministic visual baselines | Pixel drift on first-run Light & Dark surfaces | ~1 min |
-| 6 | Automated Web + Tauri UI Sweep (`tooling/ui-sweep.mjs`) | Double modal chrome, stacked dialogs, WCAG contrast (`oklch` + gradients), tiny fonts, missing a11y labels, dead controls | ~90 s |
-| 7 | Android Emulator + ARTEMIS Closed-Loop Sweep | Edge-to-edge insets, M3 token drift, clipped icons, sheet interactions, Light/Dark device parity | ~3–5 min |
+| 6 | Android Emulator + ARTEMIS Closed-Loop Sweep | Edge-to-edge insets, M3 token drift, clipped icons, sheet interactions, Light/Dark device parity | ~3–5 min |
 
 ---
 
@@ -91,33 +90,9 @@ pnpm --dir apps/web exec playwright test --update-snapshots=all # Re-stamp inten
 - Baselines live in `apps/web/e2e-baselines/` (genuine first-run Light & Dark states).
 - Frozen clock (`page.clock.setFixedTime`), UTC timezone, `reducedMotion: "reduce"`, and awaited web fonts (`document.fonts.status === "loaded"`) eliminate flake.
 
----
-
-## 6. Automated Web + Desktop UI Sweep (`tooling/ui-sweep.mjs`)
-
-This single-command harness drives every view, sub-tab, responsive breakpoint (`1440×900` desktop + `390×844` mobile), Light & Dark theme, all 13 modals, stacked modal flows, and the live **Tauri 2 WebView2** binary — producing a 1:1 screenshot gallery and a machine-readable JSON audit report.
-
-```powershell
-# 1. Capture baseline BEFORE edits
-node tooling/ui-sweep.mjs --phase=before --out-dir=./screenshots/web/before --report=./audit-before.json
-
-# 2. Apply UI/UX & functional fixes, then capture AFTER
-node tooling/ui-sweep.mjs --phase=after  --out-dir=./screenshots/web/after  --report=./audit-after.json
-```
-
-### Built-In Structural & Visual Invariants Checked on Every Screenshot
-
-1. **`stacked-visible-dialogs` (Critical):** At most **one** `[role="dialog"]` inside `modal-stack-root` may be visible at any instant; parent modals in a LIFO stack must be hidden (`hidden` + `aria-hidden="true"`) until the top modal closes.
-2. **`double-modal-chrome` (Critical):** A modal component rendered inside `ModalStack`'s outer `.modal-panel` shell must never wrap itself in a second bordered/shadowed card ("window-inside-a-window"). Large bespoke layouts opt into `flush: true` in `modalRegistry.ts`.
-3. **`nested-scroll-containers` (High):** Prevents scroll-trapping double vertical scrollbars inside dialogs.
-4. **`contrast-low` (High/Medium):** Uses an offscreen `1×1` HTML5 `<canvas>` (`willReadFrequently: true`) to resolve **any CSS Color 4 value** (`oklch()`, `color-mix()`, `rgb()`) AND parses `linear-gradient(...)` color stops so text over gradients and translucent chips is audited against its worst-case background stop (`>= 4.5:1` body, `>= 3.0:1` large text).
-5. **`offscreen-x` (High):** Flags any visible element extending past `window.innerWidth` outside an intentional horizontal scroll container.
-6. **`tiny-font` (Medium):** Enforces `>= 11px` minimum computed font size across all visible text nodes.
-7. **`missing-a11y-name` (Medium):** Every visible `<button>`, `<input>`, and `<select>` must expose an accessible name (`aria-label`, `aria-labelledby`, `<label for="...">`, wrapping `<label>`, or text content).
-
 ### Zero-PII Desktop Sandbox Protocol (Tauri 2 + WebView2 CDP)
 
-Never attach automated sweeps to a developer's live `%LOCALAPPDATA%` database or OS credential store. `apps/desktop/src-tauri` honors two test-isolation environment variables used automatically by `tooling/ui-sweep.mjs`:
+Never drive automated desktop checks against a developer's live `%LOCALAPPDATA%` database or OS credential store. `apps/desktop/src-tauri` honors test-isolation environment variables:
 
 - `QUIZRADAR_DATA_DIR=<temp-dir>` — redirects SQLite (`quizradar.db`) away from `%LOCALAPPDATA%\com.quizradar.app`.
 - `QUIZRADAR_EPHEMERAL_KEYRING=1` — switches `KeyringStore` to an in-memory map for the process lifetime so Windows Credential Manager / macOS Keychain / Secret Service are never read or mutated.
@@ -125,7 +100,7 @@ Never attach automated sweeps to a developer's live `%LOCALAPPDATA%` database or
 
 ---
 
-## 7. Android Emulator + ARTEMIS Closed-Loop Sweep
+## 6. Android Emulator + ARTEMIS Closed-Loop Sweep
 
 For Android (`apps/mobile-android`) or any native mobile target:
 
@@ -149,7 +124,7 @@ For Android (`apps/mobile-android`) or any native mobile target:
 
 ## Porting This Testing System to Another App
 
-1. Copy `tooling/ui-sweep.mjs` and replace `SEED_DATA` + route/modal selectors with the target app's views and dialogs; keep `runDomAudit()` verbatim (it is framework-agnostic).
+1. Copy the Playwright visual-baseline harness (`apps/web/e2e/`) and replace the seeded fixtures + route/modal selectors with the target app's views and dialogs; keep the frozen clock, reduced-motion and awaited-font setup so the baselines stay deterministic.
 2. Enforce a single outer modal container (`ModalStack` + `modalRegistry` `flush` flag) so child views never draw duplicate dialog borders or simultaneous stacked backdrops.
 3. Add `DATA_DIR` + `EPHEMERAL_KEYRING` env overrides to any desktop shell (Tauri / Electron) so CDP sweeps run in a clean temp directory with zero risk to user data.
 4. Pair every UI sweep with a 1:1 **Before & After** visual artifact (`carousel` slides + JSON issue counts) so human review takes minutes instead of hours.

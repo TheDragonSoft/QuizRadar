@@ -61,6 +61,7 @@ function isStale() {
     newestMtime(path.join(repoRoot, "core", "bindings", "wasm", "src")),
     statSync(path.join(repoRoot, "core", "Cargo.toml")).mtimeMs,
     statSync(path.join(repoRoot, "core", "bindings", "wasm", "Cargo.toml")).mtimeMs,
+    statSync(path.join(repoRoot, "tooling", "version.json")).mtimeMs,
   );
   return sourceAt > builtAt;
 }

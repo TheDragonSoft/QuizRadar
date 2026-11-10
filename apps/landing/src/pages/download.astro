@@ -58,7 +58,7 @@ const verifyShSnippet = `sha256sum --ignore-missing -c SHA256SUMS.txt`;
             </div>
             <h2>Windows</h2>
             <span class="os-badge">{PLATFORM_DOWNLOADS.windows.badge}</span>
-            <span class="detected-pill" data-detected-badge="windows" hidden>Detected OS</span>
+            <span class="detected-pill" data-detected-badge="windows" hidden>For your device</span>
           </div>
           <p class="dl-req">{PLATFORM_DOWNLOADS.windows.requirements}</p>
           <p class="dl-note">{PLATFORM_DOWNLOADS.windows.notes}</p>
@@ -88,7 +88,7 @@ const verifyShSnippet = `sha256sum --ignore-missing -c SHA256SUMS.txt`;
             </div>
             <h2>macOS</h2>
             <span class="os-badge">{PLATFORM_DOWNLOADS.mac.badge}</span>
-            <span class="detected-pill" data-detected-badge="mac" hidden>Detected OS</span>
+            <span class="detected-pill" data-detected-badge="mac" hidden>For your device</span>
           </div>
           <p class="dl-req">{PLATFORM_DOWNLOADS.mac.requirements}</p>
           <p class="dl-note">{PLATFORM_DOWNLOADS.mac.notes}</p>
@@ -111,7 +111,7 @@ const verifyShSnippet = `sha256sum --ignore-missing -c SHA256SUMS.txt`;
             </div>
             <h2>Linux</h2>
             <span class="os-badge">{PLATFORM_DOWNLOADS.linux.badge}</span>
-            <span class="detected-pill" data-detected-badge="linux" hidden>Detected OS</span>
+            <span class="detected-pill" data-detected-badge="linux" hidden>For your device</span>
           </div>
           <p class="dl-req">{PLATFORM_DOWNLOADS.linux.requirements}</p>
           <p class="dl-note">{PLATFORM_DOWNLOADS.linux.notes}</p>
@@ -141,7 +141,7 @@ const verifyShSnippet = `sha256sum --ignore-missing -c SHA256SUMS.txt`;
             </div>
             <h2>Android</h2>
             <span class="os-badge">{PLATFORM_DOWNLOADS.android.badge}</span>
-            <span class="detected-pill" data-detected-badge="android" hidden>Detected OS</span>
+            <span class="detected-pill" data-detected-badge="android" hidden>For your device</span>
           </div>
           <p class="dl-req">{PLATFORM_DOWNLOADS.android.requirements}</p>
           <p class="dl-note">
@@ -306,6 +306,15 @@ const verifyShSnippet = `sha256sum --ignore-missing -c SHA256SUMS.txt`;
     card.classList.toggle("is-detected", card.dataset.platformCard === detected);
   });
 
+  // Move the visitor's platform card to the top so it is first and highlighted.
+  const stack = document.querySelector<HTMLElement>(".dl-stack");
+  const detectedCard = document.querySelector<HTMLElement>(
+    `[data-platform-card="${detected}"]`,
+  );
+  if (stack && detectedCard && detectedCard.parentElement === stack) {
+    stack.prepend(detectedCard);
+  }
+
   document.querySelectorAll<HTMLButtonElement>("[data-copy-cmd]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const cmd = btn.dataset.copyCmd ?? "";
@@ -395,8 +404,15 @@ const verifyShSnippet = `sha256sum --ignore-missing -c SHA256SUMS.txt`;
   }
 
   .dl-card.is-detected {
-    border-color: var(--accent);
-    box-shadow: var(--shadow-md);
+    border-color: var(--accent-fill);
+    box-shadow:
+      0 0 0 2px var(--accent-soft),
+      var(--shadow-md);
+  }
+
+  .dl-card.is-detected .detected-pill {
+    background-color: var(--accent-fill);
+    color: #ffffff;
   }
 
   .dl-meta {

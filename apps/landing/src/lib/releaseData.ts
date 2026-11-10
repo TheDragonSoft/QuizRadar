@@ -171,7 +171,7 @@ export const ANCHOR_STEPS: AnchorStep[] = [
     highlight: "next week’s Thursday lecture, not this week",
     resolvedDate: "Relative date recognized (+7d shift)",
     resolvedRoom: "Pending timetable match",
-    honestyNote: "Direct inbox scan · Verified privately on your device",
+    honestyNote: "Your inbox is scanned locally — nothing leaves this device.",
   },
   {
     number: "02",

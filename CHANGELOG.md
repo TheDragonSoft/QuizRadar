@@ -2,6 +2,70 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.9.0] — 2026-11-10
+
+### 🤝 Agent & Contributor Summaries
+
+- **[docs]** Prune the stale multi-agent fleet: verified all 7 non-active worktrees are clean and content-merged (safety-net-ci 4a7b856, privacy-parity fdaa40c, backlog-trio d927202, sync-criticals 7ed0a63, improvement-plan-v5 e72354e, two detached e72354e scratch trees), removed them (dangling dirs force-deleted after registration), pruned, gc'd (62.18 MiB loose -> 46.22 MiB packed) and cleared the .git garbage-ref warning. Active fleet is now exactly 2 trees: main (here) and design/landing-student-clarity (peer in progress).
+- **[web, docs]** Purge verified binary screenshot duplicates, disposable debug artifacts, and archive stale audit roadmaps:
+  - Removed duplicate screenshot directory `apps/web/docs/screenshots/` (18 files mirror, now writing directly to `docs/screenshots/` without drift).
+  - Purged 11 ephemeral debug/verify screenshots from `docs/screenshots/` (`debug-*.png`, `test-screen.png`, `verify-*.png`).
+  - Fixed hardcoded ephemeral agent brain directory in `apps/web/e2e/capture-showcase.spec.ts` and updated `capture-non-ai-suite.spec.ts` to write directly to `docs/screenshots/`.
+  - Archived completed audit documents `CORE-AUDIT-PLAN.md`, `UI-UX-AUDIT-AND-REDESIGN-PLAN.md`, and `website-improvement-review.md` into `docs/archive/` with explicit historical status banners.
+- **[ci, tooling]** Automate GitHub Releases on version changes: wire version-bump.yml to automatically tag and invoke release.yml reusable pipeline whenever SemVer bumps occur or untagged versions exist on main, add workflow_call support and ref checkout to release.yml, and add --tag flag to version-rollup.mjs
+- **[docs]** Polish README.md with live website links, web companion launch URL, download center links, refreshed screenshots from the UI redesign, and updated feature showcase
+- **[tooling, web, ci]** Move the meta-tests (agentCoordination.test.ts, versionPipeline.test.ts) out of apps/web/src into tooling/__tests__ with a dedicated node-env vitest config wired as root pnpm test:tooling plus a CI web-job step; versionPipeline no longer imports the web app and asserts the generated version.ts file directly. Fixes the recurring 70s vitest-worker timeout that failed every full pnpm test run; web suite drops to ~34s. No behavior or application code changed.
+- **[web]** De-monolithize pps/web/src/views/DashboardView.tsx (reduced from 1,503 lines to 472 lines):
+  - Created pps/web/src/views/dashboard/ directory with dedicated modular components:
+    - ormatters.ts: Date, schedule string, and emoji-stripping helpers (ormatShortDate, ormatCompactCardSchedule, stripRoomPrefix, stripLeadingEmoji, weekRangeLabels)
+    - NextUpHero.tsx: Dynamic parallax sky banner with day/night stars and solar glow animations (NextUpHero, NextUpHeroStars)
+    - StudyRecommendationCard.tsx: Interactive topic readiness card with collapsible checklist and inline Pomodoro / practice launcher
+    - TimelineRow.tsx: Timeline list item with assessment badges, grading chips, and rules display (TimelineRow, SourceIcon)
+    - DashboardEmptyStates.tsx: First-run, search empty, and all-clear states
+    - RemoteAnnouncementBanner.tsx: Remote announcement banner component wired to feature flags
+    - index.ts: Barrel exports
+  - Updated pps/web/src/audit/antipatterns.test.ts allow-list to track coursePalette references in the new modular files.
+  - Preserved backward compatibility for TasksView.tsx by re-exporting TimelineRow and TimelineRowProps.
+- **[web]** De-monolithize pps/web/src/views/SettingsView.tsx (reduced from 1,738 lines to 151 lines):
+  - Created pps/web/src/views/settings/ directory with dedicated modules:
+    - constants.ts: Shared section ID map (ccount, courses, integrations)
+    - SettingsAccountSection.tsx: Profile banner, theme suite (Solar, Obsidian, AMOLED variants), academic rhythm preset selector, OAuth hub cards (Google, Microsoft), and BYOK Gemini configuration
+    - SettingsCoursesSection.tsx: Timetable vision import and course enrollment management grid
+    - SettingsIntegrationsSection.tsx: Google Calendar sync, University sources (Teams, Classroom), LMS setup guides (Moodle, Canvas, Blackboard), external ICS feeds, JSON backup/restore/reset, anonymous telemetry toggle, software updates, and custom OAuth override settings
+    - index.ts: Clean barrel exports
+  - Refactored SettingsView.tsx into a lightweight, readable coordinator shell managing layout and section anchor-scrolling.
+- **[web]** De-monolithize pps/web/src/state/store.ts:
+  - Extracted calendar-date arithmetic and OAuth error classification into pps/web/src/state/dateUtils.ts (ddDaysToIsoDate, getWeekStart, isClientIdSetupError).
+  - Extracted local-storage persistence and theme transitions into pps/web/src/state/storage.ts (THEME_STORAGE_KEY, SIDEBAR_STORAGE_KEY, GRADING_SCALE_STORAGE_KEY, FLASHCARDS_STORAGE_KEY, QUIZ_HISTORY_STORAGE_KEY, MISTAKES_STORAGE_KEY, storage helpers, pplyThemeToDocument, isDarkTheme).
+  - Extracted initial state payload into pps/web/src/state/initialState.ts (initialFullState).
+  - Re-exported all extracted utilities and constants from pps/web/src/state/store.ts for backward compatibility across all consumers.
+
+### 🚀 New Features
+
+- `c778f5c` feat(ci): automate github releases on new version changes
+
+### 🐛 Fixes & Performance
+
+- `5444586` fix(tooling): move meta-tests out of web suite into isolated vitest lane
+
+### 🔧 Maintenance, Docs & Tests
+
+- `a062529` Merge branch 'feat/readme-release-polish' into main
+- `0c26b93` docs(readme): polish with live links, refreshed screenshots, and feature guide
+- `8017255` Merge branch 'feat/automated-version-releases' into main
+- `971bf19` refactor(web): extract dateUtils, storage, and initialState from store (#deslop)
+- `4090d11` refactor(web): extract dateUtils, storage, and initialState from store monolith
+- `972e819` refactor(web): decompose DashboardView into modular components (#deslop)
+- `ac4b443` refactor(web): decompose DashboardView monolith into modular components
+- `af31736` refactor(web): slice SettingsView into modular domain sections (#deslop)
+- `77aad2f` refactor(web): slice SettingsView monolith into focused domain sections
+- `8daef43` Merge branch 'chore/purge-verified-slop' into main
+- `b387a67` chore(repo): purge duplicate screenshots, debug captures, and archive audit plans
+- `c877e52` Merge branch 'chore/purge-stale-fleet' into main
+- `3952780` chore(repo): prune 7 stale worktrees and compact git store
+- `81d138c` Merge remote-tracking branch 'origin/main' (release bump v5.8.0)
+- `01f21cd` Merge branch 'fix/meta-test-eviction' into main
+
 ## [5.8.0] — 2026-11-10
 
 ### 🤝 Agent & Contributor Summaries

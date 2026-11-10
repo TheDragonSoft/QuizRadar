@@ -158,6 +158,8 @@ export function SettingsView() {
   // Moodle state
   const [moodleUrl, setMoodleUrl] = useState(config.moodleUrl || "");
   const [moodleIcalUrl, setMoodleIcalUrl] = useState(config.moodleIcalUrl || "");
+  const [moodleAccordionOpen, setMoodleAccordionOpen] = useState(false);
+  const [moodleAdvancedOpen, setMoodleAdvancedOpen] = useState(false);
 
   // Canvas & Blackboard state
   const canvasFeed = feeds.find(
@@ -1242,72 +1244,144 @@ export function SettingsView() {
           </div>
 
           {/* Moodle LMS Section */}
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                Moodle LMS Integration
-              </h3>
-              <label
-                htmlFor="settings-moodle-toggle"
-                className="flex cursor-pointer items-center gap-2"
-              >
-                <span className="text-xs font-semibold text-[var(--text)]">Enabled</span>
-                <input
-                  id="settings-moodle-toggle"
-                  type="checkbox"
-                  aria-label="Enable Moodle LMS integration"
-                  checked={config.moodleEnabled}
-                  onChange={(e) => updateConfig({ moodleEnabled: e.target.checked })}
-                  className="h-4 w-4 rounded border-[var(--border)] accent-[var(--accent-fill)]"
-                />
-              </label>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label
-                  htmlFor="settings-moodle-url"
-                  className="mb-1 block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]"
-                >
-                  {copy.onboarding.moodleUrlLabel}
-                </label>
-                <input
-                  id="settings-moodle-url"
-                  type="url"
-                  value={moodleUrl}
-                  onChange={(e) => setMoodleUrl(e.target.value)}
-                  placeholder="https://moodle.university.edu"
-                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none"
-                />
+          <div
+            data-testid="settings-moodle-card"
+            className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4"
+          >
+            <button
+              type="button"
+              aria-label="Moodle LMS Calendar Feed"
+              onClick={() => setMoodleAccordionOpen((v) => !v)}
+              className="flex w-full items-center justify-between text-left cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                  {copy.settings.moodleTitle}
+                </h3>
+                {config.moodleEnabled && (moodleIcalUrl || moodleUrl) && (
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300">
+                    Connected
+                  </span>
+                )}
               </div>
-
-              <div>
-                <label
-                  htmlFor="settings-moodle-ical"
-                  className="mb-1 block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]"
-                >
-                  {copy.onboarding.moodleIcalLabel}
-                </label>
-                <input
-                  id="settings-moodle-ical"
-                  type="url"
-                  value={moodleIcalUrl}
-                  onChange={(e) => setMoodleIcalUrl(e.target.value)}
-                  placeholder="https://moodle.university.edu/calendar/export_execute.php?..."
-                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none"
-                />
+              <div className="flex items-center gap-1 text-xs font-semibold text-[var(--accent-ink)]">
+                <span>{moodleAccordionOpen ? "Hide Guide" : "Setup Guide & Feed"}</span>
+                {moodleAccordionOpen ? (
+                  <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                )}
               </div>
+            </button>
 
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={handleSaveMoodle}
-                  className="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] transition hover:bg-[color-mix(in_srgb,var(--border)_30%,transparent)]"
-                >
-                  Save Moodle URLs
-                </button>
+            {moodleAccordionOpen && (
+              <div className="mt-3.5 space-y-3.5 pt-3 border-t border-[var(--border)]">
+                {/* Step-by-step instructions */}
+                <div className="rounded-lg bg-[var(--surface)] p-3 text-xs text-[var(--text)] space-y-1.5 border border-[var(--border)]">
+                  <div className="font-bold text-[var(--text)]">
+                    {copy.settings.moodleGuideTitle}
+                  </div>
+                  <ol className="list-decimal pl-4 space-y-1 text-xs text-[var(--text-muted)]">
+                    <li>{copy.settings.moodleGuideStep1}</li>
+                    <li>{copy.settings.moodleGuideStep2}</li>
+                    <li>{copy.settings.moodleGuideStep3}</li>
+                    <li>{copy.settings.moodleGuideStep4}</li>
+                    <li>{copy.settings.moodleGuideStep5}</li>
+                  </ol>
+                </div>
+
+                {/* Primary: Moodle Personal iCal Feed URL */}
+                <div>
+                  <div className="flex items-baseline justify-between mb-1">
+                    <label
+                      htmlFor="settings-moodle-ical"
+                      className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]"
+                    >
+                      {copy.settings.moodleIcalPrimaryLabel}
+                    </label>
+                    <span className="text-[10px] text-[var(--accent-ink)] font-semibold">
+                      Recommended
+                    </span>
+                  </div>
+                  <p className="mb-1.5 text-xs text-[var(--text-muted)]">
+                    {copy.settings.moodleIcalPrimaryHelp}
+                  </p>
+                  <input
+                    id="settings-moodle-ical"
+                    type="url"
+                    value={moodleIcalUrl}
+                    onChange={(e) => setMoodleIcalUrl(e.target.value)}
+                    placeholder="https://moodle.university.edu/calendar/export_execute.php?..."
+                    className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none"
+                  />
+                </div>
+
+                {/* Demoted / Advanced: REST Web Service URL */}
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setMoodleAdvancedOpen((v) => !v)}
+                    className="flex w-full items-center justify-between text-left cursor-pointer"
+                  >
+                    <span className="text-xs font-semibold text-[var(--text-muted)]">
+                      {copy.settings.moodleAdvancedTitle}
+                    </span>
+                    <span className="text-[11px] text-[var(--accent-ink)] font-medium">
+                      {moodleAdvancedOpen ? "Hide" : "Show"}
+                    </span>
+                  </button>
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    {copy.settings.moodleAdvancedHelp}
+                  </p>
+                  {moodleAdvancedOpen && (
+                    <div className="pt-2">
+                      <label
+                        htmlFor="settings-moodle-url"
+                        className="mb-1 block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]"
+                      >
+                        {copy.settings.moodleRestUrlLabel}
+                      </label>
+                      <input
+                        id="settings-moodle-url"
+                        type="url"
+                        value={moodleUrl}
+                        onChange={(e) => setMoodleUrl(e.target.value)}
+                        placeholder={copy.settings.moodleRestPlaceholder}
+                        className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] px-3 py-2 text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Actions & Enable Toggle */}
+                <div className="flex items-center justify-between pt-1">
+                  <label
+                    htmlFor="settings-moodle-toggle"
+                    className="flex cursor-pointer items-center gap-2"
+                  >
+                    <input
+                      id="settings-moodle-toggle"
+                      type="checkbox"
+                      aria-label="Enable Moodle LMS integration"
+                      checked={config.moodleEnabled}
+                      onChange={(e) => updateConfig({ moodleEnabled: e.target.checked })}
+                      className="h-4 w-4 rounded border-[var(--border)] accent-[var(--accent-fill)]"
+                    />
+                    <span className="text-xs font-semibold text-[var(--text)]">
+                      Enable Moodle Sync
+                    </span>
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveMoodle}
+                    className="rounded-xl bg-[var(--accent-fill)] px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-[var(--accent-fill-hover)] transition cursor-pointer"
+                  >
+                    {copy.settings.saveMoodle}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Canvas LMS Integration Accordion */}

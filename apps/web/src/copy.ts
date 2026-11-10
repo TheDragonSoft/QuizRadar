@@ -396,7 +396,7 @@ export const copy = {
     googleConnect: "Connect Google (Gmail & Calendar)",
     microsoftConnect: "Connect Microsoft Teams",
     moodleConnect: "Connect Moodle LMS",
-    moodleUrlLabel: "Moodle Web Portal URL",
+    moodleUrlLabel: "Moodle Web Service Portal URL (advanced / rare)",
     moodleIcalLabel: "Moodle Personal iCalendar URL (recommended)",
     classroomConnect: "Google Classroom Coursework",
     geminiConnect: "Bring Your Own Gemini API Key (Optional)",
@@ -497,6 +497,23 @@ export const copy = {
     notificationPrefsTitle: "Notification Preferences",
     notificationPrefsNote:
       "[Mobile only] Notification scheduling operates natively on Android with T-24h and morning digest alerts.",
+    moodleTitle: "Moodle LMS Integration",
+    moodleIcalPrimaryLabel: "Moodle Calendar Export URL (.ics — primary)",
+    moodleIcalPrimaryHelp:
+      "Standard calendar export feed supported by virtually all Moodle universities without requiring administrator API permissions.",
+    moodleGuideTitle: "How to extract your private Moodle Calendar export feed:",
+    moodleGuideStep1: "Log into your university Moodle portal in a browser.",
+    moodleGuideStep2: "Navigate to Calendar from the sidebar or user menu.",
+    moodleGuideStep3: "Scroll to the bottom and click Export calendar.",
+    moodleGuideStep4:
+      "Select 'All events' and 'Recent and next 60 days', then click 'Get calendar URL'.",
+    moodleGuideStep5: "Copy the generated private .ics link and paste it below:",
+    moodleAdvancedTitle: "Advanced: Moodle Web Service / REST API (rare)",
+    moodleAdvancedHelp:
+      "Most universities disable student Moodle mobile web services. Only configure this if your institution explicitly issued you a REST token or web service endpoint.",
+    moodleRestUrlLabel: "Moodle Web Service Portal URL (Optional / Advanced)",
+    moodleRestPlaceholder: "https://moodle.university.edu",
+    saveMoodle: "Save Moodle Settings",
     feedsTitle: "Subscribed iCalendar Feeds (.ics)",
     addFeed: "Add Feed",
     feedNamePlaceholder: "Feed Name (e.g. Physics Dept)",

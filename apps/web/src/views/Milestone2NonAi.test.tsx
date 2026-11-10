@@ -336,13 +336,26 @@ describe("Milestone 2: Web & Desktop Non-AI Feature Suite", () => {
     const canvasBtn = screen.getByRole("button", { name: /Canvas LMS Calendar Feed/i });
     expect(canvasBtn).toBeInTheDocument();
     fireEvent.click(canvasBtn);
-    expect(screen.getByText(/How to extract your private Canvas Calendar Feed:/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/How to extract your private Canvas Calendar Feed:/i),
+    ).toBeInTheDocument();
 
     // Blackboard accordion
     const blackboardBtn = screen.getByRole("button", { name: /Blackboard Learn Calendar Feed/i });
     expect(blackboardBtn).toBeInTheDocument();
     fireEvent.click(blackboardBtn);
     expect(screen.getByText(/How to extract your Blackboard Calendar Link:/i)).toBeInTheDocument();
+
+    // Moodle accordion (prioritizes iCal feed and demotes REST)
+    const moodleBtn = screen.getByRole("button", { name: /Moodle LMS Calendar Feed/i });
+    expect(moodleBtn).toBeInTheDocument();
+    fireEvent.click(moodleBtn);
+    expect(
+      screen.getByText(/How to extract your private Moodle Calendar export feed:/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Advanced: Moodle Web Service \/ REST API \(rare\)/i),
+    ).toBeInTheDocument();
   });
 
   it("supports interactive Flashcards review and persistent Mistake Bank in FocusView", () => {

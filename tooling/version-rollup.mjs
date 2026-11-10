@@ -37,6 +37,7 @@ const repoRoot = flags.root
   : path.resolve(scriptDir, "..");
 
 const apply = Boolean(flags.apply);
+const createTag = Boolean(flags.tag);
 const todayIso =
   typeof flags.date === "string" && flags.date.trim()
     ? flags.date.trim()
@@ -343,12 +344,25 @@ if (fragments.length > 0) {
   }
 }
 
+let createdGitTag = null;
+if (createTag && computedBump !== "none") {
+  try {
+    runGit(repoRoot, ["tag", "-a", `v${nextVersion}`, "-m", `Release v${nextVersion}`]);
+    createdGitTag = `v${nextVersion}`;
+  } catch (err) {
+    console.error(`Failed to create git tag v${nextVersion}: ${err.message}`);
+  }
+}
+
 summaryPayload.applied = true;
+if (createdGitTag) {
+  summaryPayload.tag = createdGitTag;
+}
 if (flags.json) {
   console.log(JSON.stringify(summaryPayload, null, 2));
 } else if (computedBump !== "none") {
   console.log(
-    `Rolled up ${fragments.length} fragment(s) and ${commits.length} commit(s): bumped v${currentVersion} -> v${nextVersion}.`,
+    `Rolled up ${fragments.length} fragment(s) and ${commits.length} commit(s): bumped v${currentVersion} -> v${nextVersion}${createdGitTag ? ` (tagged ${createdGitTag})` : ""}.`,
   );
 } else {
   console.log(

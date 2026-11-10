@@ -210,6 +210,30 @@ impl Store {
             .await
     }
 
+    /// Assessment upsert (manual creation / edit).
+    pub async fn upsert_assessment(
+        &self,
+        assessment: crate::types::Assessment,
+        updated_at: String,
+        reference_date: NaiveDate,
+    ) -> Result<repo::AppSnapshot, StoreError> {
+        self.run(move |db| {
+            repo::ops::upsert_assessment(db, &assessment, &updated_at, reference_date)
+        })
+        .await
+    }
+
+    /// Assessment delete.
+    pub async fn delete_assessment(
+        &self,
+        id: String,
+        updated_at: String,
+        reference_date: NaiveDate,
+    ) -> Result<repo::AppSnapshot, StoreError> {
+        self.run(move |db| repo::ops::delete_assessment(db, &id, &updated_at, reference_date))
+            .await
+    }
+
     /// Topic toggle (`/api/study/toggle`).
     pub async fn set_topic_done(
         &self,

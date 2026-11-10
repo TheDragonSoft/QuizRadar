@@ -7,6 +7,7 @@ import { applyOptimistic } from "./optimistic";
 import { analytics } from "../lib/analytics";
 import type {
   AiQuotaUsage,
+  Assessment,
   ConfigUpdate,
   Course,
   CustomCalendarEvent,
@@ -32,7 +33,7 @@ import type {
   View,
 } from "./types";
 import { getLocalDateString, startDayRolloverWatchdog } from "./watchdog";
-import { toRustEvent, toRustSchedule, toRustSlots } from "./ipcShape";
+import { toRustAssessment, toRustEvent, toRustSchedule, toRustSlots } from "./ipcShape";
 
 /**
  * True when an OAuth failure is a *setup* problem (no client id configured,
@@ -454,6 +455,8 @@ export interface AppStoreState {
   upsertCourse: (course: Course, slots?: ScheduleSlot[]) => Promise<void>;
   deleteCourse: (code: string) => Promise<void>;
   saveSchedule: (schedule: ScheduleData) => Promise<void>;
+  upsertAssessment: (assessment: Assessment) => Promise<void>;
+  deleteAssessment: (id: string) => Promise<void>;
   addCustomEvent: (event: CustomCalendarEvent) => Promise<void>;
   deleteCustomEvent: (id: string) => Promise<void>;
   upsertFeed: (feed: FeedConfig) => Promise<void>;
@@ -1523,6 +1526,44 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       get().addToast({
         type: "error",
         message: `Failed to save schedule: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      throw err;
+    }
+  },
+
+  upsertAssessment: async (assessment) => {
+    try {
+      const fresh = await rpc<GetStatePayload>("upsert_assessment", {
+        assessment: toRustAssessment(assessment),
+      });
+      saveCachedState(fresh);
+      set({ data: fresh });
+      get().addToast({
+        type: "success",
+        message: "Assessment saved",
+      });
+    } catch (err) {
+      get().addToast({
+        type: "error",
+        message: `Failed to save assessment: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      throw err;
+    }
+  },
+
+  deleteAssessment: async (id) => {
+    try {
+      const fresh = await rpc<GetStatePayload>("delete_assessment", { id });
+      saveCachedState(fresh);
+      set({ data: fresh });
+      get().addToast({
+        type: "success",
+        message: "Assessment deleted",
+      });
+    } catch (err) {
+      get().addToast({
+        type: "error",
+        message: `Failed to delete assessment: ${err instanceof Error ? err.message : String(err)}`,
       });
       throw err;
     }

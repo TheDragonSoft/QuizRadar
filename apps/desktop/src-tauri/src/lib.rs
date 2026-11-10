@@ -85,6 +85,8 @@ pub fn run() -> tauri::Result<()> {
             commands::update_config,
             commands::add_custom_event,
             commands::delete_custom_event,
+            commands::upsert_assessment,
+            commands::delete_assessment,
             commands::toggle_topic,
             commands::save_grade,
             commands::dismiss_conflicts,

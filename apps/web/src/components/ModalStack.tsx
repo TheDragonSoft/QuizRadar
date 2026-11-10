@@ -17,6 +17,7 @@ const FOCUSABLE_SELECTOR =
  */
 const MODAL_TITLE_IDS: Record<string, string> = {
   "assessment-detail": "assessment-detail-title",
+  "create-edit-assessment": "assessment-modal-title",
   onboarding: "onboarding-wizard-title",
   "practice-quiz": "practice-quiz-title",
   pomodoro: "pomodoro-modal-title",

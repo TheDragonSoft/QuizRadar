@@ -138,4 +138,53 @@ class QuizRadarEngineSmokeTest {
             assertNotNull(practice)
             assertTrue("Practice quiz must contain questions", practice.contains("questions"))
         }
+
+    @Test
+    fun deriveStudyTasks_differentiates_academic_tracks() =
+        runTest {
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = Dispatchers.Unconfined)
+
+            // Assessment 10 days out from ref date (2026-10-20 -> 2026-10-30), with 8 topics
+            val assessmentsJson =
+                """
+                [
+                    {
+                        "id": "exam-1",
+                        "title": "Comprehensive Midterm",
+                        "course_id": "CS101",
+                        "course_name": "Computer Science",
+                        "assessment_type": "Midterm Exam",
+                        "date_iso": "2026-10-30",
+                        "day_name": "Friday",
+                        "start_time": "09:00",
+                        "end_time": "11:00",
+                        "display_time": "09:00 – 11:00",
+                        "room": "Hall A",
+                        "is_upcoming": true,
+                        "days_until": 10,
+                        "urgency_level": "medium",
+                        "priority_score": 90,
+                        "topics": [
+                            "Topic 1", "Topic 2", "Topic 3", "Topic 4",
+                            "Topic 5", "Topic 6", "Topic 7", "Topic 8"
+                        ],
+                        "warnings": [],
+                        "source": "Gmail"
+                    }
+                ]
+                """.trimIndent()
+
+            val refDate = LocalDate.parse("2026-10-20")
+            val tasksMed = engine.deriveStudyTasks(assessmentsJson, "{}", refDate, "med")
+            val tasksEng = engine.deriveStudyTasks(assessmentsJson, "{}", refDate, "eng")
+            val tasksBiz = engine.deriveStudyTasks(assessmentsJson, "{}", refDate, "biz")
+
+            // Med (7d prep), Eng (5d prep), and Biz (3d prep) presets must produce distinct task distributions
+            assertNotNull(tasksMed)
+            assertNotNull(tasksEng)
+            assertNotNull(tasksBiz)
+            org.junit.Assert.assertNotEquals("Med and Eng plans must differ", tasksMed, tasksEng)
+            org.junit.Assert.assertNotEquals("Eng and Biz plans must differ", tasksEng, tasksBiz)
+            org.junit.Assert.assertNotEquals("Med and Biz plans must differ", tasksMed, tasksBiz)
+        }
 }

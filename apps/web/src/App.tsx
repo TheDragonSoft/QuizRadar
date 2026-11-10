@@ -21,6 +21,7 @@ import { PomodoroModal } from "./components/PomodoroModal";
 import { SchedulePreviewModal } from "./components/SchedulePreviewModal";
 import { AddCourseModal } from "./components/AddCourseModal";
 import { CreateEditEventModal } from "./components/CreateEditEventModal";
+import { CreateEditAssessmentModal } from "./components/CreateEditAssessmentModal";
 import { AppConfirmModal } from "./components/AppConfirmModal";
 import { CloudSyncModal } from "./components/CloudSyncModal";
 import { ScanProgressModal } from "./components/ScanProgressModal";
@@ -36,6 +37,10 @@ registerModal("search-palette", SearchPaletteModal as unknown as ModalComponent,
 });
 registerModal("assessment-detail", AssessmentDetailModal as unknown as ModalComponent, {
   size: "lg",
+  flush: true,
+});
+registerModal("create-edit-assessment", CreateEditAssessmentModal as unknown as ModalComponent, {
+  size: "md",
   flush: true,
 });
 registerModal("onboarding", OnboardingWizardModal as unknown as ModalComponent, {

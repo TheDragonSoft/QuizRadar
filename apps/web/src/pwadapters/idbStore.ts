@@ -356,6 +356,42 @@ export async function saveAssessments(assessments: Assessment[]): Promise<void> 
   });
 }
 
+export async function upsertAssessment(assessment: Assessment): Promise<void> {
+  const db = await openIdb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction("assessments", "readwrite");
+    const store = tx.objectStore("assessments");
+    store.put(assessment);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
+  });
+}
+
+export async function deleteAssessment(id: string): Promise<void> {
+  const db = await openIdb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction("assessments", "readwrite");
+    const store = tx.objectStore("assessments");
+    store.delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
+  });
+}
+
+/**
+ * Detects pre-v3 positional topic keys (e.g. `quiz-1::0`).
+ * Content-addressed keys use an `h` prefix for the hash (e.g. `quiz-1::h7b4c8a1f`).
+ */
+export function isLegacyPositionalTopicKey(key: string): boolean {
+  if (!key || typeof key !== "string") return false;
+  const lastSep = key.lastIndexOf("::");
+  if (lastSep === -1) return false;
+  const suffix = key.slice(lastSep + 2);
+  return /^\d+$/.test(suffix);
+}
+
 export async function loadTopicsDone(): Promise<Record<string, boolean>> {
   const records = await idbGetAll<IdbTopicRecord>("topics_done");
   const map: Record<string, boolean> = {};

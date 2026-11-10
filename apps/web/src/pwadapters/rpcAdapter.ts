@@ -19,6 +19,7 @@ import type {
   StudyTasksPayload,
 } from "../state/types";
 import {
+  deleteAssessment,
   deleteCourse,
   deleteCustomEvent,
   deleteFeed,
@@ -38,6 +39,7 @@ import {
   saveScheduleData,
   setConfigValue,
   setTopicDone,
+  upsertAssessment,
   upsertCourse,
   upsertCustomEvent,
   upsertFeed,
@@ -417,6 +419,18 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
     case "delete_custom_event": {
       const id = (args?.id as string) || "";
       await deleteCustomEvent(id);
+      return (await buildFullState()) as T;
+    }
+
+    case "upsert_assessment": {
+      const assessment = (args?.assessment || args) as Assessment;
+      await upsertAssessment(assessment);
+      return (await buildFullState()) as T;
+    }
+
+    case "delete_assessment": {
+      const id = (args?.id as string) || "";
+      await deleteAssessment(id);
       return (await buildFullState()) as T;
     }
 

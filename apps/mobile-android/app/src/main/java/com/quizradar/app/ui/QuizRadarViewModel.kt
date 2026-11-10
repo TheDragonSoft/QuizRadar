@@ -1943,7 +1943,27 @@ class QuizRadarViewModel(
         val value = track?.trim()?.takeIf { it.isNotEmpty() }
         _academicTrack.value = value
         persistConfig("academic_track", value)
+        refreshState()
     }
+
+    /**
+     * Stateless study tasks derivation with the active (or overridden) academic track.
+     */
+    suspend fun deriveStudyTasks(
+        assessmentsJson: String,
+        topicsJson: String,
+        refDate: LocalDate = clockDate(),
+        trackOverride: String? = null,
+    ): String =
+        callCore {
+            val track = trackOverride ?: _academicTrack.value ?: ""
+            core.deriveStudyTasks(
+                assessmentsJson = assessmentsJson,
+                topicsJson = topicsJson,
+                refDate = refDate,
+                academicTrack = track,
+            )
+        }
 
     fun exportBackup(onResult: (String) -> Unit) {
         viewModelScope.launch {

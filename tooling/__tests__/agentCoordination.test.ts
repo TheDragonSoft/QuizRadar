@@ -404,4 +404,42 @@ describe("Multi-Agent Versioning & Coordination Suite", { timeout: 30_000 }, () 
     expect(Array.isArray(payload.worktrees)).toBe(true);
     expect(Array.isArray(payload.requiredGates)).toBe(true);
   });
+
+  it("creates a git tag when --tag is passed with --apply", () => {
+    const sandbox = makeGitSandbox();
+
+    runNode(agentNote, [
+      "--root",
+      sandbox,
+      "--slug",
+      "feat-tag-test",
+      "--bump",
+      "minor",
+      "--surfaces",
+      "core",
+      "--agent",
+      "antigravity",
+      "--branch",
+      "feat/tag-test",
+      "--date",
+      "2026-11-10",
+      "--summary",
+      "Add auto tag capability on rollup",
+      "--verify",
+      "pnpm test:tooling",
+    ]);
+
+    const res = runNode(versionRollup, [
+      "--root",
+      sandbox,
+      "--apply",
+      "--tag",
+      "--date",
+      "2026-11-10",
+    ]);
+    expect(res.ok).toBe(true);
+
+    const tags = git(sandbox, ["tag", "-l"]);
+    expect(tags).toContain("v5.1.0");
+  });
 });

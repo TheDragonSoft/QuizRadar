@@ -125,6 +125,29 @@ For Android (`apps/mobile-android`) or any native mobile target:
 
 ---
 
+## Authenticated UX sweep (manual — real accounts)
+
+A developer-facing harness that drives a real Chromium window against the local web app **while the user is signed in**, so a UX audit is grounded in the user's actual data instead of a mock. It captures, per surface: a full-page screenshot, a DOM outline (roles, accessible names, test ids, disabled state, aria attributes — never input values), an axe-core scan, console/page/network errors and the app's own toast messages. This is not a CI layer and not a gate: it needs real accounts, so it **refuses to start when the `CI` environment variable is set** and never runs in CI.
+
+```powershell
+pnpm e2e:authed                                   # interactive: finish the sign-in in the popups
+pnpm e2e:authed -- --skip-signin --headless      # smoke run, no account needed
+pnpm e2e:authed -- --teams-client-id <your-id>    # Microsoft sign-in (public client id)
+pnpm e2e:authed -- --surfaces dashboard,calendar  # only two surfaces
+```
+
+Output lands in the gitignored `apps/web/e2e-results/authed/<timestamp>/`: `report.json` (machine-readable, with an explicit `honesty` array), `summary.md`, `screenshots/<surface-id>.png`, `dom/<surface-id>.json`, `axe/<surface-id>.json` and `console.txt`. Full flag list and troubleshooting: `apps/web/e2e/authed/README.md`.
+
+Screenshots of signed-in surfaces contain the user's own name and email address, so the output folder is personal data on the user's machine — do not commit it (it is gitignored) and do not share it without reviewing it first. Exit codes are about evidence, not a verdict: `exit 0` means evidence was produced, not that everything passed; a failed sign-in or a skipped surface is recorded in `report.json`, not silently dropped.
+
+**What it does NOT prove:**
+
+1. It exercises the **web tier only**; the desktop Tauri shell was not exercised.
+2. In the web tier the Sync button only fetches the user's **public `.ics` feeds** — the Google and Microsoft tokens were not used to fetch Gmail or Outlook mail. The tier that really scans mail is the desktop shell.
+3. Only the surfaces listed in the report were opened; everything on the blocklist was deliberately not clicked, so those paths are **UNVERIFIED**, not verified-good.
+
+---
+
 ## Porting This Testing System to Another App
 
 1. Copy the Playwright visual-baseline harness (`apps/web/e2e/`) and replace the seeded fixtures + route/modal selectors with the target app's views and dialogs; keep the frozen clock, reduced-motion and awaited-font setup so the baselines stay deterministic.

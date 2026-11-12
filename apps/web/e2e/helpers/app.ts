@@ -97,7 +97,10 @@ export async function bootApp(page: Page, theme: ThemeMode): Promise<void> {
   await applyThemeInitScript(page, theme);
 
   await page.goto("/");
-  await expect(page.getByTestId("app-shell")).toBeVisible();
+  // The mount budget must cover a cold WASM instantiation on a busy dev
+  // server — the 10s `expect` default is occasionally too short there (seen
+  // as a rare blank-page flake). Same budget as `dismissOnboarding` below.
+  await expect(page.getByTestId("app-shell")).toBeVisible({ timeout: 30_000 });
   await dismissOnboarding(page);
   await settleForScreenshot(page, theme);
 }

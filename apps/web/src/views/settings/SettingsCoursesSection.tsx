@@ -1,15 +1,9 @@
 import { useState } from "react";
-import {
-  BookOpen,
-  Plus,
-  Trash2,
-  Edit2,
-  Upload,
-} from "lucide-react";
+import { BookOpen, Plus, Trash2, Edit2, Upload } from "lucide-react";
 import { copy } from "../../copy";
 import { courseAccessibleChip } from "../../lib/coursePalette";
 import { useAppStore } from "../../state/store";
-import { useFeatureFlag } from "../../lib/analytics";
+import { isDarkTheme } from "../../state/storage";
 import type { Course } from "../../state/types";
 import { SECTION_ID } from "./constants";
 
@@ -23,8 +17,6 @@ export function SettingsCoursesSection() {
   const aiQuota = useAppStore((s) => s.aiQuota);
   const openModal = useAppStore((s) => s.openModal);
   const addToast = useAppStore((s) => s.addToast);
-
-  const isVisionEnabled = useFeatureFlag("enable-ai-timetable-vision", true);
 
   // Timetable vision import state
   const [extractingTimetable, setExtractingTimetable] = useState(false);
@@ -79,75 +71,55 @@ export function SettingsCoursesSection() {
           <BookOpen className="h-4 w-4 text-[var(--accent-ink)]" aria-hidden="true" />
           {copy.settings.tabCourses}
         </h2>
-        <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-          {copy.settings.sectionCoursesSub}
-        </p>
+        <p className="mt-0.5 text-xs text-[var(--text-muted)]">{copy.settings.sectionCoursesSub}</p>
       </div>
 
       {/* Timetable vision import (`01` §4.1): image → Gemini Vision →
           preview → apply. The manual editor is always one click away. */}
-      {isVisionEnabled ? (
-        <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--page)] p-4">
-          <div className="flex items-start gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--accent-ink)]">
-              <Upload className="h-4.5 w-4.5" aria-hidden="true" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <h3 className="text-xs font-bold text-[var(--text)]">
-                {copy.settings.timetableImportTitle}
-              </h3>
-              <p className="mt-0.5 text-xs leading-relaxed text-[var(--text-muted)]">
-                {copy.settings.timetableImportSub}
-              </p>
-              {(!config.geminiEnabled || aiQuota?.keyInMemory === false) && (
-                <p className="mt-1.5 text-xs leading-relaxed text-amber-700 dark:text-amber-300">
-                  {copy.settings.timetableImportNoKey}
-                </p>
-              )}
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[var(--accent-fill-hover)]">
-                  <span>
-                    {extractingTimetable
-                      ? copy.settings.timetableImportExtracting
-                      : copy.settings.timetableImportButton}
-                  </span>
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    aria-label={copy.settings.timetableImportButton}
-                    disabled={extractingTimetable}
-                    onChange={handleTimetableImage}
-                    className="hidden"
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={() => openModal({ id: "add-course" })}
-                  className="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] transition hover:bg-[color-mix(in_srgb,var(--border)_30%,transparent)]"
-                >
-                  {copy.settings.timetableImportManual}
-                </button>
-              </div>
-            </div>
+      <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--page)] p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--accent-ink)]">
+            <Upload className="h-4.5 w-4.5" aria-hidden="true" />
           </div>
-        </div>
-      ) : (
-        <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4 flex items-center justify-between">
-          <div>
-            <h3 className="text-xs font-bold text-[var(--text)]">Courses & Timetable</h3>
-            <p className="text-xs text-[var(--text-muted)] mt-0.5">
-              Add and manage courses manually.
+          <div className="min-w-0 flex-1">
+            <h3 className="text-xs font-bold text-[var(--text)]">
+              {copy.settings.timetableImportTitle}
+            </h3>
+            <p className="mt-0.5 text-xs leading-relaxed text-[var(--text-muted)]">
+              {copy.settings.timetableImportSub}
             </p>
+            {(!config.geminiEnabled || aiQuota?.keyInMemory === false) && (
+              <p className="mt-1.5 text-xs leading-relaxed text-amber-700 dark:text-amber-300">
+                {copy.settings.timetableImportNoKey}
+              </p>
+            )}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[var(--accent-fill-hover)]">
+                <span>
+                  {extractingTimetable
+                    ? copy.settings.timetableImportExtracting
+                    : copy.settings.timetableImportButton}
+                </span>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  aria-label={copy.settings.timetableImportButton}
+                  disabled={extractingTimetable}
+                  onChange={handleTimetableImage}
+                  className="hidden"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => openModal({ id: "add-course" })}
+                className="rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] transition hover:bg-[color-mix(in_srgb,var(--border)_30%,transparent)]"
+              >
+                {copy.settings.timetableImportManual}
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={() => openModal({ id: "add-course" })}
-            className="rounded-xl bg-[var(--accent-fill)] px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[var(--accent-fill-hover)]"
-          >
-            {copy.settings.timetableImportManual}
-          </button>
         </div>
-      )}
+      </div>
 
       <div className="flex items-center justify-between">
         <div>
@@ -187,7 +159,7 @@ export function SettingsCoursesSection() {
             const courseSlots = slots.filter(
               (s) => s.courseId.toLowerCase() === c.id.toLowerCase(),
             );
-            const chip = courseAccessibleChip(c.color || "#1a73e8", theme === "dark");
+            const chip = courseAccessibleChip(c.color || "#1a73e8", isDarkTheme(theme));
             return (
               <div
                 key={c.id}
@@ -201,9 +173,7 @@ export function SettingsCoursesSection() {
                     {c.name.slice(0, 2).toUpperCase()}
                   </span>
                   <div className="min-w-0">
-                    <div className="truncate text-xs font-bold text-[var(--text)]">
-                      {c.name}
-                    </div>
+                    <div className="truncate text-xs font-bold text-[var(--text)]">{c.name}</div>
                     <div className="truncate text-xs text-[var(--text-muted)]">{c.id}</div>
                     <div className="mt-0.5 text-xs tabular-nums text-[var(--text-muted)]">
                       {courseSlots.length} weekly slot

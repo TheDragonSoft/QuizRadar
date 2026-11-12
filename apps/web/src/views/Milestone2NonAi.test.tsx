@@ -187,7 +187,7 @@ describe("Milestone 2: Web & Desktop Non-AI Feature Suite", () => {
   });
 
   // 2. GPA & Course Grade Center
-  it("renders Grade Center tab with GPA calculations across multiple grading scales", () => {
+  it("renders Grade Center tab with GPA calculations across multiple grading scales", async () => {
     render(<TasksView />);
 
     // Click 3rd sub-tab: Grade Center & GPA
@@ -195,10 +195,12 @@ describe("Milestone 2: Web & Desktop Non-AI Feature Suite", () => {
     expect(gradesTab).toBeInTheDocument();
     fireEvent.click(gradesTab);
 
-    // Verify GPA summary card and enrolled credits
+    // Verify GPA summary card and enrolled credits. GPA is now derived by the
+    // Rust core through the WASM engine (async init), so the derived numbers
+    // land one microtask after first paint — awaited with findBy.
     expect(screen.getByText("Semester GPA")).toBeInTheDocument();
     expect(screen.getByText("Total Enrolled Credits")).toBeInTheDocument();
-    expect(screen.getByText("7.0")).toBeInTheDocument(); // 4 + 3 credits
+    await screen.findByText("7.0"); // 4 + 3 credits
 
     // Grading scale dropdown
     const scaleSelect = screen.getByLabelText("Select grading scale") as HTMLSelectElement;
@@ -220,7 +222,7 @@ describe("Milestone 2: Web & Desktop Non-AI Feature Suite", () => {
     // Course Grade Card: Digital Design points breakdown
     expect(screen.getAllByText("Digital Design").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/4\.0 Credits/i)).toBeInTheDocument();
-    expect(screen.getByText("18 / 20")).toBeInTheDocument(); // 18 out of 20 score
+    await screen.findByText("18 / 20"); // 18 out of 20 score
   });
 
   it("renders course credits input and slot parity selector in AddCourseModal", () => {
@@ -313,6 +315,28 @@ describe("Milestone 2: Web & Desktop Non-AI Feature Suite", () => {
     render(<CalendarView />);
     const printBtn = screen.getByTestId("print-schedule-btn");
     expect(printBtn).toBeInTheDocument();
+  });
+
+  // 4b. Core stores v4 3-letter day names ("Mon", "Wed", …) while manual web
+  // entry uses full names — the print doc must group by normalized day index
+  // so either form renders a populated timetable, never a fabricated empty one.
+  it("renders the print timetable for 3-letter (v4) day names", () => {
+    const shortDayState = JSON.parse(JSON.stringify(sampleState)) as GetStatePayload;
+    shortDayState.schedule.slots = shortDayState.schedule.slots.map((s) => ({
+      ...s,
+      day: s.day.slice(0, 3), // "Monday" -> "Mon", "Wednesday" -> "Wed"
+    }));
+    useAppStore.setState({ data: shortDayState });
+
+    render(<PrintScheduleDoc />);
+
+    expect(screen.queryByText(/No regular weekly classes scheduled/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Monday")).toBeInTheDocument();
+    expect(screen.getByText("Wednesday")).toBeInTheDocument();
+    // The course rows themselves render (code appears in the timetable and
+    // again in the cram sheet lines).
+    expect(screen.getAllByText("CSE241").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("MAT102").length).toBeGreaterThan(0);
   });
 
   // 5. Cross-Platform Web Implementations

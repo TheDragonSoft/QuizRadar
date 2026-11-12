@@ -1913,6 +1913,13 @@ impl<'a> FlashcardRepo<'a> {
         Ok(self.conn.changes() > 0)
     }
 
+    /// Whole-collection clear for backup restore (replace semantics). The
+    /// caller owns the transaction, so clear + re-insert stays all-or-nothing.
+    pub fn delete_all(&self) -> Result<usize, StoreError> {
+        self.conn.execute("DELETE FROM flashcards", [])?;
+        Ok(self.conn.changes() as usize)
+    }
+
     pub fn list_all(&self) -> Result<Vec<Flashcard>, StoreError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, course_id, assessment_id, topic, front, back, box_level, next_review_iso, last_reviewed_iso \
@@ -2017,6 +2024,19 @@ impl<'a> QuizAttemptRepo<'a> {
         self.record(attempt)
     }
 
+    pub fn delete(&self, id: &str) -> Result<bool, StoreError> {
+        self.conn
+            .execute("DELETE FROM quiz_attempts WHERE id = ?1", [id.trim()])?;
+        Ok(self.conn.changes() > 0)
+    }
+
+    /// Whole-collection clear for backup restore (replace semantics). The
+    /// caller owns the transaction, so clear + re-insert stays all-or-nothing.
+    pub fn delete_all(&self) -> Result<usize, StoreError> {
+        self.conn.execute("DELETE FROM quiz_attempts", [])?;
+        Ok(self.conn.changes() as usize)
+    }
+
     pub fn list_all(&self) -> Result<Vec<QuizAttempt>, StoreError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, assessment_id, course_id, timestamp, score, total_questions, passed \
@@ -2092,6 +2112,19 @@ impl<'a> MistakeRepo<'a> {
 
     pub fn save(&self, mistake: &MistakeRecord, updated_at: &str) -> Result<(), StoreError> {
         self.record(mistake, updated_at)
+    }
+
+    pub fn delete(&self, id: &str) -> Result<bool, StoreError> {
+        self.conn
+            .execute("DELETE FROM mistake_bank WHERE id = ?1", [id.trim()])?;
+        Ok(self.conn.changes() > 0)
+    }
+
+    /// Whole-collection clear for backup restore (replace semantics). The
+    /// caller owns the transaction, so clear + re-insert stays all-or-nothing.
+    pub fn delete_all(&self) -> Result<usize, StoreError> {
+        self.conn.execute("DELETE FROM mistake_bank", [])?;
+        Ok(self.conn.changes() as usize)
     }
 
     pub fn list_all(&self) -> Result<Vec<MistakeRecord>, StoreError> {
@@ -2196,6 +2229,13 @@ impl<'a> StudySessionRepo<'a> {
 
     pub fn log(&self, session: &StudySessionRecord) -> Result<(), StoreError> {
         self.record(session)
+    }
+
+    /// Whole-collection clear for backup restore (replace semantics). The
+    /// caller owns the transaction, so clear + re-insert stays all-or-nothing.
+    pub fn delete_all(&self) -> Result<usize, StoreError> {
+        self.conn.execute("DELETE FROM study_sessions", [])?;
+        Ok(self.conn.changes() as usize)
     }
 
     pub fn list_all(&self) -> Result<Vec<StudySessionRecord>, StoreError> {
@@ -2491,6 +2531,19 @@ impl<'a> EmailAiExtractionRepo<'a> {
 /// Each opens one transaction (`04` §4.5 item 5), performs its repository
 /// calls, commits, then returns a full [`AppSnapshot`] at the reference
 /// date — shells never re-derive dashboard/tasks separately.
+/// What a whole-collection study write (desktop migration bridge or purge)
+/// did. camelCase wire: the desktop `study_migrate`/`study_purge` commands
+/// serialize this verbatim.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StudyCollectionsReport {
+    pub flashcards: usize,
+    pub quiz_attempts: usize,
+    pub mistakes: usize,
+    pub study_sessions: usize,
+    pub study_stats_restored: bool,
+}
+
 pub mod ops {
     use super::*;
 
@@ -2870,6 +2923,104 @@ pub mod ops {
         let res = FlashcardRepo::new(&tx).review(id, correct, today, updated_at)?;
         tx.commit()?;
         Ok(res)
+    }
+
+    pub fn save_mistake(
+        db: &Db,
+        mistake: &MistakeRecord,
+        updated_at: &str,
+    ) -> Result<(), StoreError> {
+        let tx = db.transaction()?;
+        MistakeRepo::new(&tx).record(mistake, updated_at)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn delete_mistake(db: &Db, mistake_id: &str) -> Result<bool, StoreError> {
+        let tx = db.transaction()?;
+        let res = MistakeRepo::new(&tx).delete(mistake_id)?;
+        tx.commit()?;
+        Ok(res)
+    }
+
+    pub fn list_quiz_attempts(db: &Db) -> Result<Vec<QuizAttempt>, StoreError> {
+        QuizAttemptRepo::new(db.conn()).list_all()
+    }
+
+    pub fn delete_quiz_attempt(db: &Db, attempt_id: &str) -> Result<bool, StoreError> {
+        let tx = db.transaction()?;
+        let res = QuizAttemptRepo::new(&tx).delete(attempt_id)?;
+        tx.commit()?;
+        Ok(res)
+    }
+
+    /// Desktop study bridge, migration write: whole-collection REPLACE of the
+    /// four study collections plus the transparent stats passthrough, inside
+    /// ONE transaction — the same all-or-nothing rule the backup importer
+    /// applies to these sections. `study_stats` is a passthrough (never
+    /// interpreted); a shape-invalid ledger is skipped with
+    /// `study_stats_restored: false` instead of failing the whole migration.
+    pub fn replace_study_collections(
+        db: &Db,
+        flashcards: &[Flashcard],
+        quiz_attempts: &[QuizAttempt],
+        mistakes: &[MistakeRecord],
+        study_sessions: &[StudySessionRecord],
+        study_stats: Option<&serde_json::Value>,
+        updated_at: &str,
+    ) -> Result<StudyCollectionsReport, StoreError> {
+        let tx = db.transaction()?;
+        FlashcardRepo::new(&tx).delete_all()?;
+        for card in flashcards {
+            FlashcardRepo::new(&tx).upsert(card, updated_at)?;
+        }
+        QuizAttemptRepo::new(&tx).delete_all()?;
+        for attempt in quiz_attempts {
+            QuizAttemptRepo::new(&tx).record(attempt)?;
+        }
+        MistakeRepo::new(&tx).delete_all()?;
+        for mistake in mistakes {
+            MistakeRepo::new(&tx).record(mistake, updated_at)?;
+        }
+        StudySessionRepo::new(&tx).delete_all()?;
+        for session in study_sessions {
+            StudySessionRepo::new(&tx).record(session)?;
+        }
+        let mut study_stats_restored = false;
+        if let Some(stats) = study_stats {
+            if crate::store::importer::is_shape_valid_study_stats(stats) {
+                ConfigRepo::new(&tx)
+                    .set_raw(crate::store::importer::STUDY_STATS_CONFIG_KEY, stats)?;
+                study_stats_restored = true;
+            }
+        }
+        tx.commit()?;
+        Ok(StudyCollectionsReport {
+            flashcards: flashcards.len(),
+            quiz_attempts: quiz_attempts.len(),
+            mistakes: mistakes.len(),
+            study_sessions: study_sessions.len(),
+            study_stats_restored,
+        })
+    }
+
+    /// Desktop study bridge, purge write: all four study collections cleared
+    /// inside ONE transaction (an autocommit-per-table wipe that fails halfway
+    /// would leave a half-purged store).
+    pub fn purge_study_collections(db: &Db) -> Result<StudyCollectionsReport, StoreError> {
+        let tx = db.transaction()?;
+        let flashcards = FlashcardRepo::new(&tx).delete_all()?;
+        let quiz_attempts = QuizAttemptRepo::new(&tx).delete_all()?;
+        let mistakes = MistakeRepo::new(&tx).delete_all()?;
+        let study_sessions = StudySessionRepo::new(&tx).delete_all()?;
+        tx.commit()?;
+        Ok(StudyCollectionsReport {
+            flashcards,
+            quiz_attempts,
+            mistakes,
+            study_sessions,
+            study_stats_restored: false,
+        })
     }
 
     pub fn save_cached_emails(

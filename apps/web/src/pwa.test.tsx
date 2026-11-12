@@ -450,6 +450,534 @@ describe("Phase 11: PWA Companion Tier", () => {
       expect(state.schedule.slots[0].courseId).toBe("CSE241");
       expect(state.schedule.slots[0].dayIndex).toBe(5);
     });
+
+    it("exports flashcards, quiz attempts and the mistake bank in the backup", async () => {
+      const { putFlashcardRecord, putQuizAttemptRecord, putMistakeRecord } =
+        await import("./pwadapters/idbStore");
+      await putFlashcardRecord({
+        id: "card-1",
+        front: "f",
+        back: "b",
+        boxLevel: 2,
+        courseId: "CS101",
+      });
+      await putQuizAttemptRecord({
+        id: "attempt-1",
+        assessmentId: "a-1",
+        assessmentTitle: "Quiz 1",
+        timestamp: "2026-11-10T10:00:00.000Z",
+        score: 3,
+        totalQuestions: 5,
+        percentage: 60,
+        passed: false,
+      });
+      await putMistakeRecord({
+        id: "mistake-1",
+        assessmentId: "a-1",
+        questionId: "q-1",
+        questionText: "q",
+        options: ["a", "b"],
+        selectedIndex: 1,
+        correctIndex: 0,
+        explanation: "e",
+        timestamp: "2026-11-10T10:00:00.000Z",
+        resolved: false,
+      });
+
+      const backup = JSON.parse(await pwaRpcHandler<string>("export_backup_file"));
+      expect(backup.flashcards).toHaveLength(1);
+      // Both naming twins ship per entry (core contract reads snake_case).
+      expect(backup.flashcards[0].course_id).toBe("CS101");
+      expect(backup.flashcards[0].courseId).toBe("CS101");
+      expect(backup.quiz_attempts).toHaveLength(1);
+      expect(backup.mistake_bank).toHaveLength(1);
+      // A schedule with real times keeps every slot in the domain shape —
+      // nothing to preserve outside it.
+      expect(backup.unscheduled_slots).toEqual([]);
+      // Stats ride along when a ledger exists.
+      window.localStorage.setItem(
+        "quizradar_local_study_stats_v1",
+        JSON.stringify({
+          totalMinutes: 25,
+          totalSessions: 1,
+          dailyMinutes: {},
+          lastUpdated: "2026-11-10",
+        }),
+      );
+      const withStats = JSON.parse(await pwaRpcHandler<string>("export_backup_file"));
+      expect(withStats.study_stats.totalSessions).toBe(1);
+    });
+
+    it("imports the study sections, tolerating malformed entries into warnings", async () => {
+      const backup = {
+        schema_version: 1,
+        tier: "pwa",
+        schedule: {
+          semester: "Fall 2026",
+          courses: [{ id: "CS101", name: "Intro CS", color: "#1a73e8" }],
+          slots: [],
+        },
+        assessments: [],
+        flashcards: [
+          { id: "card-1", front: "f", back: "b", boxLevel: 3 },
+          { front: "missing id" }, // malformed → warning
+          "not an object", // malformed → warning
+        ],
+        quiz_attempts: [
+          {
+            id: "a1",
+            assessmentId: "x",
+            assessmentTitle: "T",
+            timestamp: "2026-11-10T10:00:00.000Z",
+            score: 1,
+            totalQuestions: 2,
+            percentage: 50,
+            passed: false,
+          },
+        ],
+        mistake_bank: [
+          {
+            id: "m1",
+            assessmentId: "x",
+            questionText: "q",
+            options: ["a"],
+            selectedIndex: 0,
+            correctIndex: 0,
+            explanation: "e",
+            timestamp: "2026-11-10T10:00:00.000Z",
+            resolved: false,
+          },
+        ],
+        study_stats: {
+          totalMinutes: 30,
+          totalSessions: 2,
+          dailyMinutes: {},
+          lastUpdated: "2026-11-10",
+        },
+      };
+
+      const report = await pwaRpcHandler<{ flashcardsImported: number; warnings: string[] }>(
+        "import_backup_file",
+        { jsonContent: JSON.stringify(backup) },
+      );
+
+      expect(report.flashcardsImported).toBe(1);
+      expect(report.warnings.some((w) => w.includes("flashcard"))).toBe(true);
+      const { loadFlashcardRecords, loadQuizAttemptRecords, loadMistakeRecords } =
+        await import("./pwadapters/idbStore");
+      expect(await loadFlashcardRecords()).toHaveLength(1);
+      expect(await loadQuizAttemptRecords()).toHaveLength(1);
+      expect(await loadMistakeRecords()).toHaveLength(1);
+      const stats = JSON.parse(
+        window.localStorage.getItem("quizradar_local_study_stats_v1") ?? "null",
+      );
+      expect(stats.totalSessions).toBe(2);
+    });
+
+    it("skips time-less slots with a warning instead of inventing 09:00/10:30", async () => {
+      const backup = {
+        schema_version: 1,
+        tier: "pwa",
+        schedule: {
+          semester: "Fall 2026",
+          courses: [{ id: "CS101", name: "Intro CS", color: "#1a73e8" }],
+          slots: [
+            {
+              id: "slot-timeless",
+              day: "Monday",
+              dayIndex: 1,
+              courseId: "CS101",
+              courseName: "Intro CS",
+              type: "Lecture",
+              // no startTime / start_time — nothing honest to import
+            },
+            {
+              id: "slot-real",
+              day: "Tuesday",
+              dayIndex: 2,
+              courseId: "CS101",
+              courseName: "Intro CS",
+              type: "Lecture",
+              startTime: "14:00",
+              endTime: "15:30",
+              displayTime: "14:00 – 15:30",
+            },
+          ],
+        },
+        assessments: [],
+      };
+
+      const report = await pwaRpcHandler<{
+        slotsImported: number;
+        slotsSkipped: number;
+        warnings: string[];
+      }>("import_backup_file", { jsonContent: JSON.stringify(backup) });
+
+      expect(report.slotsImported).toBe(1);
+      expect(report.slotsSkipped).toBe(1);
+      expect(report.warnings.some((w) => w.includes("without valid start/end times"))).toBe(true);
+      const state = await pwaRpcHandler<GetStatePayload>("get_state");
+      // Only the real slot exists — the 09:00/10:30 fabrication is gone.
+      expect(state.schedule.slots).toHaveLength(1);
+      expect(state.schedule.slots[0].id).toBe("slot-real");
+      expect(state.schedule.slots[0].startTime).toBe("14:00");
+    });
+
+    it("skips slots a PWA exporter marked as invented placeholder times", async () => {
+      const backup = {
+        schema_version: 1,
+        tier: "pwa",
+        schedule: {
+          semester: null,
+          courses: [{ id: "CS101", name: "Intro CS", color: "#1a73e8" }],
+          slots: [
+            {
+              id: "slot-invented",
+              day: "Friday",
+              dayIndex: 5,
+              courseId: "CS101",
+              courseName: "Intro CS",
+              type: "Lecture",
+              // The exporter had to write these for the core's NaiveTime
+              // contract, but flagged the slot in invented_slot_times.
+              startTime: "09:00",
+              endTime: "10:30",
+              displayTime: "",
+            },
+          ],
+        },
+        assessments: [],
+        invented_slot_times: ["slot-invented"],
+      };
+
+      const report = await pwaRpcHandler<{ slotsImported: number; warnings: string[] }>(
+        "import_backup_file",
+        { jsonContent: JSON.stringify(backup) },
+      );
+
+      expect(report.slotsImported).toBe(0);
+      expect(report.warnings.some((w) => w.includes("placeholder values"))).toBe(true);
+      const state = await pwaRpcHandler<GetStatePayload>("get_state");
+      expect(state.schedule.slots).toHaveLength(0);
+    });
+
+    it("PWA→desktop export contract: no fabricated times — time-less and malformed slots are preserved as non-domain metadata", async () => {
+      await pwaRpcHandler("save_schedule", {
+        schedule: {
+          semester: "Fall 2026",
+          courses: [{ id: "CS101", name: "Intro CS", color: "#1a73e8" }],
+          slots: [
+            {
+              id: "slot-timed",
+              day: "Monday",
+              dayIndex: 1,
+              courseId: "CS101",
+              courseName: "Intro CS",
+              type: "Lecture",
+              startTime: "09:00",
+              endTime: "10:30",
+            },
+            {
+              id: "slot-timeless",
+              day: "Tuesday",
+              dayIndex: 2,
+              courseId: "CS101",
+              courseName: "Intro CS",
+              type: "Lab",
+              // no times at all
+            },
+            {
+              id: "slot-malformed",
+              day: "Wednesday",
+              dayIndex: 3,
+              courseId: "CS101",
+              courseName: "Intro CS",
+              type: "Tutorial",
+              startTime: "25:99", // malformed clock string — NOT a time
+              endTime: "10:30",
+            },
+          ],
+        },
+      });
+
+      const backup = JSON.parse(await pwaRpcHandler<string>("export_backup_file"));
+
+      // Only honestly-timed rows enter the domain shape the desktop core
+      // deserializes (its ScheduleSlot REQUIRES a parseable HH:MM time).
+      expect(backup.schedule.slots.map((s: { id: string }) => s.id)).toEqual(["slot-timed"]);
+      // The other two are preserved VERBATIM in non-domain metadata — never
+      // dropped, never given invented clock values.
+      expect(backup.unscheduled_slots.map((s: { id: string }) => s.id)).toEqual([
+        "slot-timeless",
+        "slot-malformed",
+      ]);
+      const timeless = backup.unscheduled_slots.find(
+        (s: { id: string }) => s.id === "slot-timeless",
+      );
+      const malformed = backup.unscheduled_slots.find(
+        (s: { id: string }) => s.id === "slot-malformed",
+      );
+      expect(timeless.start_time).toBeNull();
+      expect(timeless.end_time).toBeNull();
+      expect(malformed.start_time).toBe("25:99"); // the raw value, not a placeholder
+      // The legacy fabrication flag has no producer anymore.
+      expect(backup.invented_slot_times).toBeUndefined();
+    });
+
+    it("PWA→desktop export contract: quiz attempts and mistakes carry the snake_case fields the core deserializes", async () => {
+      const { putQuizAttemptRecord, putMistakeRecord } = await import("./pwadapters/idbStore");
+      await putQuizAttemptRecord({
+        id: "attempt-1",
+        assessmentId: "a-1",
+        assessmentTitle: "Quiz 1",
+        timestamp: "2026-11-11T10:00:00.000Z",
+        score: 3,
+        totalQuestions: 5,
+        percentage: 60,
+        passed: false,
+      });
+      await putMistakeRecord({
+        id: "mistake-1",
+        assessmentId: "a-1",
+        questionId: "q-1",
+        questionText: "q",
+        options: ["a", "b"],
+        selectedIndex: 1,
+        correctIndex: 0,
+        explanation: "e",
+        timestamp: "2026-11-11T10:00:00.000Z",
+        resolved: false,
+      });
+
+      const backup = JSON.parse(await pwaRpcHandler<string>("export_backup_file"));
+      // The core's `QuizAttempt`/`MistakeRecord` serde structs read snake_case
+      // required fields (assessment_id, question_id, …) — without these twins
+      // a desktop import would refuse the whole file.
+      expect(backup.quiz_attempts[0].assessment_id).toBe("a-1");
+      expect(backup.quiz_attempts[0].total_questions).toBe(5);
+      expect(backup.quiz_attempts[0].score).toBe(3);
+      expect(backup.quiz_attempts[0].passed).toBe(false);
+      expect(backup.mistake_bank[0].assessment_id).toBe("a-1");
+      expect(backup.mistake_bank[0].question_id).toBe("q-1");
+      expect(backup.mistake_bank[0].selected_index).toBe(1);
+      expect(backup.mistake_bank[0].correct_index).toBe(0);
+    });
+
+    it("desktop→PWA import contract: the core V4BackupFile shape restores study collections (percentage derived, stats preserved)", async () => {
+      // This is what `core/src/store/exporter.rs` serializes: snake_case core
+      // records, study sections ALWAYS present, no percentage on attempts,
+      // unscheduled slot metadata, and the transparent study-stats ledger.
+      const desktopBackup = {
+        schema_version: 1,
+        client_device_id: "desktop-1",
+        generated_at: "2026-11-11T08:00:00Z",
+        assessments: [],
+        schedule: {
+          semester: "Fall 2026",
+          courses: [{ id: "CSE241", name: "Digital Design", color: "#2563EB" }],
+          slots: [],
+        },
+        completed_topics: {},
+        grades: {},
+        custom_events: [],
+        feeds: [],
+        flashcards: [
+          {
+            id: "card-core",
+            course_id: "CSE241",
+            front: "What is a MUX?",
+            back: "A multiplexer",
+            box_level: 3,
+            next_review_iso: "2026-11-15",
+          },
+        ],
+        quiz_attempts: [
+          {
+            id: "attempt-core",
+            assessment_id: "a-9",
+            timestamp: "2026-11-11T09:00:00.000Z",
+            score: 7,
+            total_questions: 10,
+            passed: true,
+          },
+        ],
+        mistake_bank: [],
+        study_sessions: [],
+        study_stats: {
+          totalMinutes: 90,
+          totalSessions: 4,
+          dailyMinutes: { "2026-11-11": 25 },
+          lastUpdated: "2026-11-11",
+        },
+        unscheduled_slots: [
+          { id: "slot-preserved", day: "Friday", day_index: 5, course_id: "CSE241" },
+        ],
+      };
+
+      const report = await pwaRpcHandler<{
+        flashcardsImported: number;
+        quizAttemptsImported: number;
+        mistakesImported: number;
+        studyStatsRestored: boolean;
+        unscheduledSlotsPreserved: number;
+        slotsSkipped: number;
+      }>("import_backup_file", { jsonContent: JSON.stringify(desktopBackup) });
+
+      expect(report.flashcardsImported).toBe(1);
+      expect(report.quizAttemptsImported).toBe(1);
+      expect(report.mistakesImported).toBe(0);
+      expect(report.studyStatsRestored).toBe(true);
+      expect(report.unscheduledSlotsPreserved).toBe(1);
+      expect(report.slotsSkipped).toBe(0);
+
+      const { loadFlashcardRecords, loadQuizAttemptRecords } =
+        await import("./pwadapters/idbStore");
+      const cards = await loadFlashcardRecords();
+      expect(cards).toHaveLength(1);
+      expect(cards[0].boxLevel).toBe(3);
+      expect(cards[0].courseId).toBe("CSE241");
+      const attempts = await loadQuizAttemptRecords();
+      expect(attempts).toHaveLength(1);
+      // The core record has no percentage — derived from score/total (7/10).
+      expect(attempts[0].percentage).toBe(70);
+      const { loadStoredStudyStats } = await import("./lib/studyStats");
+      expect(loadStoredStudyStats().totalSessions).toBe(4);
+
+      // Round-trip: the preserved metadata re-exports (by id, not dropped).
+      const reexport = JSON.parse(await pwaRpcHandler<string>("export_backup_file"));
+      expect(reexport.unscheduled_slots.map((s: { id: string }) => s.id)).toContain(
+        "slot-preserved",
+      );
+    });
+
+    it("backup import REPLACES study collections (present section) and leaves them untouched (absent section)", async () => {
+      const { putFlashcardRecord, putMistakeRecord, loadFlashcardRecords, loadMistakeRecords } =
+        await import("./pwadapters/idbStore");
+      // Live local data that a merge-style restore would leave stale.
+      await putFlashcardRecord({ id: "stale-card", front: "old", back: "old", boxLevel: 5 });
+      await putMistakeRecord({
+        id: "stale-mistake",
+        assessmentId: "a-1",
+        questionId: "q-1",
+        questionText: "old",
+        options: ["a"],
+        selectedIndex: 0,
+        correctIndex: 0,
+        explanation: "",
+        timestamp: "2026-11-01T10:00:00.000Z",
+        resolved: false,
+      });
+
+      const base = {
+        schema_version: 1,
+        tier: "pwa",
+        schedule: {
+          semester: null,
+          courses: [{ id: "CS101", name: "Intro CS", color: "#1a73e8" }],
+          slots: [],
+        },
+        assessments: [],
+      };
+
+      // Present-but-EMPTY sections are honest "nothing here" → the restore
+      // CLEARS the local collections instead of mixing stale records in.
+      await pwaRpcHandler("import_backup_file", {
+        jsonContent: JSON.stringify({ ...base, flashcards: [], mistake_bank: [] }),
+      });
+      expect(await loadFlashcardRecords()).toEqual([]);
+      expect(await loadMistakeRecords()).toEqual([]);
+
+      // A section the file does NOT carry (v4 export) leaves data untouched.
+      await putFlashcardRecord({ id: "kept-card", front: "f", back: "b", boxLevel: 1 });
+      await pwaRpcHandler("import_backup_file", { jsonContent: JSON.stringify(base) });
+      const kept = await loadFlashcardRecords();
+      expect(kept.map((c) => c.id)).toEqual(["kept-card"]);
+    });
+
+    it("rejects an invalid import BEFORE any mutation — live data survives untouched", async () => {
+      await pwaRpcHandler("save_schedule", {
+        schedule: {
+          semester: "Existing",
+          courses: [{ id: "EXIST", name: "Existing Course", color: "#123456" }],
+          slots: [
+            {
+              id: "slot-live",
+              day: "Monday",
+              dayIndex: 1,
+              courseId: "EXIST",
+              courseName: "Existing Course",
+              type: "Lecture",
+              startTime: "08:00",
+              endTime: "09:00",
+            },
+          ],
+        },
+      });
+
+      // A corrupt grade record: the Rust importer refuses this loudly BEFORE
+      // writing — the web importer must too, and must not have already
+      // replaced the schedule when it throws.
+      const corrupt = {
+        schema_version: 1,
+        schedule: {
+          semester: "Bad",
+          courses: [{ id: "BAD", name: "Bad Course", color: "#000" }],
+          slots: [],
+        },
+        assessments: [],
+        grades: { "a-1": { assessment_id: "a-1", max_score: 0 } },
+      };
+      await expect(
+        pwaRpcHandler("import_backup_file", { jsonContent: JSON.stringify(corrupt) }),
+      ).rejects.toThrow(/invalid grade record/);
+
+      const state = await pwaRpcHandler<GetStatePayload>("get_state");
+      expect(state.schedule.courses.map((c) => c.id)).toEqual(["EXIST"]);
+      expect(state.schedule.slots.map((s) => s.id)).toEqual(["slot-live"]);
+      expect(state.schedule.semester).toBe("Existing");
+    });
+
+    it("skips a slot with a MALFORMED time on import (no coercion, honest warning)", async () => {
+      const backup = {
+        schema_version: 1,
+        schedule: {
+          semester: null,
+          courses: [{ id: "CS101", name: "Intro CS", color: "#1a73e8" }],
+          slots: [
+            {
+              id: "slot-bad",
+              day: "Monday",
+              dayIndex: 1,
+              courseId: "CS101",
+              courseName: "Intro CS",
+              type: "Lecture",
+              startTime: "7pm", // malformed
+              endTime: "21:00",
+            },
+            {
+              id: "slot-good",
+              day: "Tuesday",
+              dayIndex: 2,
+              courseId: "CS101",
+              courseName: "Intro CS",
+              type: "Lecture",
+              startTime: "14:00",
+              endTime: "15:30",
+            },
+          ],
+        },
+        assessments: [],
+      };
+
+      const report = await pwaRpcHandler<{ slotsImported: number; slotsSkipped: number }>(
+        "import_backup_file",
+        { jsonContent: JSON.stringify(backup) },
+      );
+      expect(report.slotsImported).toBe(1);
+      expect(report.slotsSkipped).toBe(1);
+      const state = await pwaRpcHandler<GetStatePayload>("get_state");
+      expect(state.schedule.slots.map((s) => s.id)).toEqual(["slot-good"]);
+    });
   });
 
   describe("3. Service Worker & Offline Precache", () => {

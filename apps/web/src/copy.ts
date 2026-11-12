@@ -428,6 +428,8 @@ export const copy = {
     quotaCapNote: "Free tier quota resets every day at midnight Pacific Time (PT).",
     quotaLimitNote:
       "Google sets the free-tier daily limit per project — see your project in AI Studio.",
+    getKeyCta: "Get a free key at AI Studio",
+    getKeyUrl: "https://aistudio.google.com/apikey",
     keyPlaceholder: "Paste AI Studio API key (AIzaSy… or AQ…)",
     validateButton: "Validate Key",
     keyValid: "Key validated & stored in OS Keyring",
@@ -529,7 +531,10 @@ export const copy = {
     updaterHeader: "Software Updates",
     checkUpdates: "Check for Updates",
     resetDatabase: "Reset All Local Data",
-    resetDatabaseWarn: "Permanently wipe all courses, assessments, and cached data on this device.",
+    resetDatabaseWarn:
+      "Permanently erase all courses, timetable slots, assessments, cached items, flashcards, quiz history, the mistake bank and study stats on this device.",
+    resetDatabaseWarnFinal:
+      "All courses, timetable slots, assessments, cached items, flashcards, quiz history, mistake bank and study stats will be permanently erased. This cannot be undone.",
   },
 
   search: {

@@ -83,12 +83,15 @@ Validates field presence, optionality parity, enum variants, and snake_case/came
 ## 5. Deterministic Visual Regression Baselines (Playwright)
 
 ```powershell
-pnpm --dir apps/web exec playwright test                       # Compare against baselines
+pnpm --dir apps/web exec playwright test                        # Full suite incl. pixel comparison
+pnpm --dir apps/web exec playwright test --grep-invert @visual  # Behavioral smoke only (no snapshots)
+pnpm --dir apps/web exec playwright test --grep @visual         # Visual baselines only
 pnpm --dir apps/web exec playwright test --update-snapshots=all # Re-stamp intentional UI updates
 ```
 
 - Baselines live in `apps/web/e2e-baselines/` (genuine first-run Light & Dark states).
 - Frozen clock (`page.clock.setFixedTime`), UTC timezone, `reducedMotion: "reduce"`, and awaited web fonts (`document.fonts.status === "loaded"`) eliminate flake.
+- CI split (`ci.yml`): every snapshot assertion is tagged `@visual`. The **`browser`** job is a BLOCKING behavioral smoke (`--grep-invert @visual` — DOM assertions only, platform-independent). The **`browser-visual`** job runs the pixel comparison (`--grep @visual`) and is **non-blocking** (`continue-on-error: true`) until the committed baselines are regenerated/verified on the CI runner — they were produced on dev machines, and glyph rasterisation can differ per platform. A red `browser` job is a real regression; a red `browser-visual` job is a signal to re-stamp baselines deliberately (never silently), then promote it to blocking. An optional failure is never reported as a gate.
 
 ### Zero-PII Desktop Sandbox Protocol (Tauri 2 + WebView2 CDP)
 

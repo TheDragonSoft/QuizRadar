@@ -13,12 +13,6 @@ import { copy } from "../../copy";
 import { useAppStore } from "../../state/store";
 import { isTauriEnvironment } from "../../state/rpc";
 import { APP_VERSION } from "../../generated/version";
-import {
-  analytics,
-  isAnalyticsConfigured,
-  isAnalyticsOptedOut,
-  setAnalyticsOptOut,
-} from "../../lib/analytics";
 import type { FeedConfig } from "../../state/types";
 import { SECTION_ID } from "./constants";
 
@@ -37,8 +31,6 @@ export function SettingsIntegrationsSection() {
   const addToast = useAppStore((s) => s.addToast);
 
   const backupFileInputRef = useRef<HTMLInputElement>(null);
-  const [telemetryOptedOut, setTelemetryOptedOut] = useState(isAnalyticsOptedOut());
-  const hasAnalyticsKey = isAnalyticsConfigured();
   const isBrowserTier = !isTauriEnvironment();
 
   // Moodle state
@@ -74,7 +66,6 @@ export function SettingsIntegrationsSection() {
     try {
       const jsonText = await file.text();
       const report = await importBackupFile(undefined, jsonText);
-      analytics.backupAction("import");
       // A quiet import contradicts the honesty doctrine — surface the real
       // counts and any partial-failure warnings, like the backup modal does.
       addToast({
@@ -198,8 +189,9 @@ export function SettingsIntegrationsSection() {
             id: "app-confirm",
             props: {
               title: "Are you absolutely sure?",
-              message:
-                "All courses, timetable slots, assessments, and cached items will be permanently erased. This cannot be undone.",
+              // Same copy source as the first dialog: one wipe-scope
+              // statement, so the two confirms can never drift apart again.
+              message: copy.settings.resetDatabaseWarnFinal,
               destructive: true,
               confirmLabel: "Yes, Permanently Delete",
               onConfirm: async () => {
@@ -208,7 +200,6 @@ export function SettingsIntegrationsSection() {
                 // freshly emptied state is honest evidence enough.)
                 const wiped = await resetDatabase();
                 if (!wiped) return;
-                analytics.backupAction("reset");
                 addToast({
                   type: "info",
                   message: "All application data reset. Fresh database initialized.",
@@ -281,9 +272,9 @@ export function SettingsIntegrationsSection() {
             />
           </label>
           <p className="text-xs text-[var(--text-muted)]">
-            Pushes the fresh radar to Google Calendar after every scan that found something. A
-            scan that fetched nothing, or a Calendar scope refusal, is reported in the scan
-            notes — never silently skipped.
+            Pushes the fresh radar to Google Calendar after every scan that found something. A scan
+            that fetched nothing, or a Calendar scope refusal, is reported in the scan notes — never
+            silently skipped.
           </p>
         </div>
       </div>
@@ -336,9 +327,8 @@ export function SettingsIntegrationsSection() {
             />
           </label>
           <p className="text-xs text-[var(--text-muted)]">
-            Gmail scans run whenever the Google account is connected. These toggles exclude a
-            source from the next scan; an excluded source never retires its earlier
-            announcements.
+            Gmail scans run whenever the Google account is connected. These toggles exclude a source
+            from the next scan; an excluded source never retires its earlier announcements.
           </p>
         </div>
       </div>
@@ -378,9 +368,7 @@ export function SettingsIntegrationsSection() {
           <div className="mt-3.5 space-y-3.5 pt-3 border-t border-[var(--border)]">
             {/* Step-by-step instructions */}
             <div className="rounded-lg bg-[var(--surface)] p-3 text-xs text-[var(--text)] space-y-1.5 border border-[var(--border)]">
-              <div className="font-bold text-[var(--text)]">
-                {copy.settings.moodleGuideTitle}
-              </div>
+              <div className="font-bold text-[var(--text)]">{copy.settings.moodleGuideTitle}</div>
               <ol className="list-decimal pl-4 space-y-1 text-xs text-[var(--text-muted)]">
                 <li>{copy.settings.moodleGuideStep1}</li>
                 <li>{copy.settings.moodleGuideStep2}</li>
@@ -412,7 +400,7 @@ export function SettingsIntegrationsSection() {
                 value={moodleIcalUrl}
                 onChange={(e) => setMoodleIcalUrl(e.target.value)}
                 placeholder="https://moodle.university.edu/calendar/export_execute.php?..."
-                className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none"
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-base sm:text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none"
               />
             </div>
 
@@ -447,7 +435,7 @@ export function SettingsIntegrationsSection() {
                     value={moodleUrl}
                     onChange={(e) => setMoodleUrl(e.target.value)}
                     placeholder={copy.settings.moodleRestPlaceholder}
-                    className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] px-3 py-2 text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none"
+                    className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] px-3 py-2 text-base sm:text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none"
                   />
                 </div>
               )}
@@ -467,9 +455,7 @@ export function SettingsIntegrationsSection() {
                   onChange={(e) => updateConfig({ moodleEnabled: e.target.checked })}
                   className="h-4 w-4 rounded border-[var(--border)] accent-[var(--accent-fill)]"
                 />
-                <span className="text-xs font-semibold text-[var(--text)]">
-                  Enable Moodle Sync
-                </span>
+                <span className="text-xs font-semibold text-[var(--text)]">Enable Moodle Sync</span>
               </label>
 
               <button
@@ -551,7 +537,7 @@ export function SettingsIntegrationsSection() {
                 value={canvasIcalUrl}
                 onChange={(e) => setCanvasIcalUrl(e.target.value)}
                 placeholder="https://canvas.institution.edu/feeds/calendars/user_...ics"
-                className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none"
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-base sm:text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none"
               />
             </div>
 
@@ -609,8 +595,8 @@ export function SettingsIntegrationsSection() {
               <ol className="list-decimal pl-4 space-y-1 text-xs text-[var(--text-muted)]">
                 <li>Log into your university Blackboard Learn portal.</li>
                 <li>
-                  Navigate to the <strong>Calendar</strong> tool from the base navigation or
-                  course list.
+                  Navigate to the <strong>Calendar</strong> tool from the base navigation or course
+                  list.
                 </li>
                 <li>
                   At the bottom or under the gear icon, click <strong>Share Calendar</strong> or{" "}
@@ -618,8 +604,8 @@ export function SettingsIntegrationsSection() {
                 </li>
                 <li>
                   Copy the generated{" "}
-                  <code className="text-[var(--accent-ink)] font-mono">.ics</code> webcal or
-                  https link and paste it below:
+                  <code className="text-[var(--accent-ink)] font-mono">.ics</code> webcal or https
+                  link and paste it below:
                 </li>
               </ol>
             </div>
@@ -637,7 +623,7 @@ export function SettingsIntegrationsSection() {
                 value={blackboardIcalUrl}
                 onChange={(e) => setBlackboardIcalUrl(e.target.value)}
                 placeholder="https://blackboard.institution.edu/webapps/calendar/export/..."
-                className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none"
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-base sm:text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none"
               />
             </div>
 
@@ -659,9 +645,7 @@ export function SettingsIntegrationsSection() {
         <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
           {copy.settings.notificationPrefsTitle}
         </h3>
-        <p className="text-xs text-[var(--text-muted)]">
-          {copy.settings.notificationPrefsNote}
-        </p>
+        <p className="text-xs text-[var(--text-muted)]">{copy.settings.notificationPrefsNote}</p>
       </div>
 
       {/* External ICS Feeds Section */}
@@ -678,7 +662,7 @@ export function SettingsIntegrationsSection() {
             value={newFeedName}
             onChange={(e) => setNewFeedName(e.target.value)}
             placeholder={copy.settings.feedNamePlaceholder}
-            className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none sm:w-1/3"
+            className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-base sm:text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none sm:w-1/3"
           />
           <input
             type="url"
@@ -687,7 +671,7 @@ export function SettingsIntegrationsSection() {
             value={newFeedUrl}
             onChange={(e) => setNewFeedUrl(e.target.value)}
             placeholder={copy.settings.feedUrlPlaceholder}
-            className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none"
+            className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-base sm:text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none"
           />
           <button
             type="submit"
@@ -707,9 +691,7 @@ export function SettingsIntegrationsSection() {
                 className="flex items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2.5"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs font-bold text-[var(--text)]">
-                    {feed.name}
-                  </div>
+                  <div className="truncate text-xs font-bold text-[var(--text)]">{feed.name}</div>
                   <div className="truncate text-xs text-[var(--text-muted)]">{feed.url}</div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
@@ -720,9 +702,7 @@ export function SettingsIntegrationsSection() {
                     aria-label={`Enable feed ${feed.name}`}
                     onClick={() => upsertFeed({ ...feed, enabled: !feed.enabled })}
                     className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors ${
-                      feed.enabled
-                        ? "bg-[var(--accent-fill)]"
-                        : "bg-slate-300 dark:bg-slate-700"
+                      feed.enabled ? "bg-[var(--accent-fill)]" : "bg-slate-300 dark:bg-slate-700"
                     }`}
                   >
                     <span
@@ -756,7 +736,6 @@ export function SettingsIntegrationsSection() {
             type="button"
             onClick={() => {
               exportBackupFile();
-              analytics.backupAction("export");
             }}
             className="flex items-center gap-1.5 rounded-xl border border-[var(--border)] px-3 py-2 text-xs font-semibold text-[var(--text)] transition hover:bg-[color-mix(in_srgb,var(--border)_30%,transparent)]"
           >
@@ -771,7 +750,6 @@ export function SettingsIntegrationsSection() {
                 backupFileInputRef.current?.click();
               } else {
                 void importBackupFile();
-                analytics.backupAction("import");
               }
             }}
             className="flex items-center gap-1.5 rounded-xl border border-[var(--border)] px-3 py-2 text-xs font-semibold text-[var(--text)] transition hover:bg-[color-mix(in_srgb,var(--border)_30%,transparent)]"
@@ -796,49 +774,6 @@ export function SettingsIntegrationsSection() {
             <RotateCcw className="h-4 w-4" aria-hidden="true" />
             <span>{copy.settings.resetDatabase}</span>
           </button>
-        </div>
-      </div>
-
-      {/* Usage Analytics & Privacy Section */}
-      <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                Anonymous Analytics & Health
-              </h3>
-              {hasAnalyticsKey && (
-                <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                  PostHog Active
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-              Help improve QuizRadar by sharing anonymous scan reliability and feature usage. We
-              strictly NEVER collect student grades, course titles, email contents, or schedule
-              details.
-            </p>
-          </div>
-          <label className="relative inline-flex cursor-pointer items-center shrink-0">
-            <input
-              type="checkbox"
-              checked={!telemetryOptedOut}
-              onChange={(e) => {
-                const enabled = e.target.checked;
-                setTelemetryOptedOut(!enabled);
-                setAnalyticsOptOut(!enabled);
-                addToast({
-                  type: "info",
-                  message: enabled
-                    ? "Anonymous analytics enabled"
-                    : "Analytics disabled (opted out)",
-                });
-              }}
-              className="peer sr-only"
-              aria-label="Toggle anonymous usage analytics"
-            />
-            <div className="peer h-5 w-9 rounded-full bg-[var(--border)] after:absolute after:top-[2px] after:left-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:bg-[var(--accent)] peer-checked:after:translate-x-full peer-focus:outline-hidden"></div>
-          </label>
         </div>
       </div>
 
@@ -875,36 +810,40 @@ export function SettingsIntegrationsSection() {
         </summary>
         <div className="mt-4 pt-3 border-t border-[var(--border)] space-y-3">
           <p className="text-xs text-[var(--text-muted)]">
-            The app ships with working built-in Google OAuth credentials out-of-the-box. Only
-            enter custom client IDs below if you wish to override the built-in configuration
-            with your own Google Cloud Console or Microsoft Azure tenant app.
+            The app ships with working built-in Google OAuth credentials out-of-the-box. Only enter
+            custom client IDs below if you wish to override the built-in configuration with your own
+            Google Cloud Console or Microsoft Azure tenant app.
           </p>
           <div>
-            <label className="block text-xs font-semibold text-[var(--text)] mb-1">
+            <label
+              htmlFor="settings-google-client-id"
+              className="block text-xs font-semibold text-[var(--text)] mb-1"
+            >
               Google Client ID (Optional Override)
             </label>
             <input
+              id="settings-google-client-id"
               type="text"
               placeholder="Leave empty to use built-in Google client"
               value={config.googleClientId || ""}
-              onChange={(e) =>
-                updateConfig({ googleClientId: e.target.value.trim() || undefined })
-              }
-              className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs text-[var(--text)] focus:border-[var(--accent)] focus:outline-none"
+              onChange={(e) => updateConfig({ googleClientId: e.target.value.trim() || undefined })}
+              className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-base sm:text-xs text-[var(--text)] focus:border-[var(--accent)] focus:outline-none"
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-[var(--text)] mb-1">
+            <label
+              htmlFor="settings-ms-client-id"
+              className="block text-xs font-semibold text-[var(--text)] mb-1"
+            >
               Microsoft Azure Client ID (Optional Override)
             </label>
             <input
+              id="settings-ms-client-id"
               type="text"
               placeholder="Leave empty to use built-in Microsoft client"
               value={config.teamsClientId || ""}
-              onChange={(e) =>
-                updateConfig({ teamsClientId: e.target.value.trim() || undefined })
-              }
-              className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs text-[var(--text)] focus:border-[var(--accent)] focus:outline-none"
+              onChange={(e) => updateConfig({ teamsClientId: e.target.value.trim() || undefined })}
+              className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-base sm:text-xs text-[var(--text)] focus:border-[var(--accent)] focus:outline-none"
             />
           </div>
         </div>

@@ -1,20 +1,21 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   Radar as RadarIcon,
   BookOpen,
   Search as SearchIcon,
   Calendar,
-  Sparkles,
   X as XIcon,
   GraduationCap,
   Plus,
 } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
+import { isDarkTheme } from "../state/storage";
 import { courseAccessibleChip, courseDisplayName, coursePalette } from "../lib/coursePalette";
 import { TimelineRow } from "./DashboardView";
 import { DailyStudyRoadmap } from "../components/DailyStudyRoadmap";
-import { calculateGpa, getAccumulatedPointsBreakdown } from "../lib/gpaCalculator";
+import { getAccumulatedPointsBreakdown } from "../lib/gpaCalculator";
+import { calculateGpaCore, emptyGpaSummary } from "../lib/gpaEngine";
 import type { ExamReadinessCard } from "../state/types";
 
 type TimeWindowOption = "RECENT_UPCOMING" | "UPCOMING" | "TERM" | "PAST_MONTH" | "ALL";
@@ -31,13 +32,11 @@ export const TasksView: React.FC = () => {
     d.setDate(d.getDate() - 60);
     return d.toISOString().slice(0, 10);
   });
-  const [aiDetecting, setAiDetecting] = useState<boolean>(false);
-  const [aiDetectedNote, setAiDetectedNote] = useState<string | null>(null);
+  const [termNote, setTermNote] = useState<string | null>(null);
 
   const tasksPayload = useAppStore((s) => s.data.studyTasksPayload);
   const assessments = useAppStore((s) => s.data.assessments || []);
   const courses = useAppStore((s) => s.data.schedule.courses);
-  const config = useAppStore((s) => s.data.config);
   const activeCourseFilter = useAppStore((s) => s.activeCourseFilterTasks);
   const setActiveCourseFilter = useAppStore((s) => s.setActiveCourseFilterTasks);
   const openAssessmentDetail = useAppStore((s) => s.openAssessmentDetail);
@@ -46,8 +45,26 @@ export const TasksView: React.FC = () => {
   const gradingScale = useAppStore((s) => s.gradingScale || "4.0");
   const setGradingScale = useAppStore((s) => s.setGradingScale);
 
-  const gpaSummary = useMemo(() => {
-    return calculateGpa(courses, assessments, undefined, gradingScale);
+  // GPA is derived by the Rust core (single implementation for every tier),
+  // reached through the WASM engine. The engine initializes asynchronously,
+  // so the summary starts empty-honest (nothing invented) and fills in as
+  // soon as the core answers; the last good summary is kept while a
+  // re-computation for new inputs is in flight.
+  const [gpaSummary, setGpaSummary] = useState(() => emptyGpaSummary(gradingScale));
+  useEffect(() => {
+    let cancelled = false;
+    calculateGpaCore(courses, assessments, undefined, gradingScale)
+      .then((summary) => {
+        if (!cancelled) setGpaSummary(summary);
+      })
+      .catch(() => {
+        // Engine unavailable or payload rejected: keep the previous summary
+        // instead of fabricating one. The grade cards below render their own
+        // honest "No Graded Items" fallbacks per course.
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [courses, assessments, gradingScale]);
 
   // Filter readiness cards
@@ -139,39 +156,24 @@ export const TasksView: React.FC = () => {
     past90Iso,
   ]);
 
-  // AI Semester Term Detection Handler
-  const handleAiDetectSemester = async () => {
-    if (!config.geminiEnabled) {
-      addToast({
-        type: "warning",
-        message: "Gemini AI is disabled. Enable it in Settings → AI to use term auto-detection.",
-        duration: 3500,
-      });
-      return;
-    }
-    setAiDetecting(true);
-    setAiDetectedNote(null);
-    try {
-      await new Promise((res) => setTimeout(res, 800));
-      const now = new Date();
-      const currentYear = now.getFullYear();
-      const isSpring = now.getMonth() < 6;
-      const detectedTermStart = isSpring ? `${currentYear}-01-15` : `${currentYear}-09-01`;
-      const detectedTermName = isSpring ? `Spring ${currentYear}` : `Fall ${currentYear}`;
-      setTermStartDate(detectedTermStart);
-      setAiDetectedNote(
-        `Inferred ${detectedTermName} (starts ${detectedTermStart}) from syllabus context.`,
-      );
-      addToast({
-        type: "info",
-        message: `Set semester start to ${detectedTermStart} (${detectedTermName})`,
-        duration: 3000,
-      });
-    } catch {
-      setAiDetectedNote("Could not detect semester dates automatically.");
-    } finally {
-      setAiDetecting(false);
-    }
+  // Semester term-start estimate. This is a pure date heuristic (today's
+  // month), NOT AI — the note and button label say so explicitly (honesty
+  // doctrine: an estimate is labeled with its real inference basis).
+  const handleSetCurrentTerm = () => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const isSpring = now.getMonth() < 6;
+    const detectedTermStart = isSpring ? `${currentYear}-01-15` : `${currentYear}-09-01`;
+    const detectedTermName = isSpring ? `Spring ${currentYear}` : `Fall ${currentYear}`;
+    setTermStartDate(detectedTermStart);
+    setTermNote(
+      `Estimated ${detectedTermName} (starts ${detectedTermStart}) from today's date — not AI.`,
+    );
+    addToast({
+      type: "info",
+      message: `Set semester start to ${detectedTermStart} (${detectedTermName}, estimated from today's date)`,
+      duration: 3000,
+    });
   };
 
   return (
@@ -399,21 +401,20 @@ export const TasksView: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={handleAiDetectSemester}
-                  disabled={aiDetecting}
-                  className="flex items-center gap-1 rounded-xl border border-amber-300/40 bg-amber-500/10 px-2.5 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition cursor-pointer"
-                  title="Use Gemini AI to detect your academic semester start date from course announcements"
+                  onClick={handleSetCurrentTerm}
+                  className="flex items-center gap-1 rounded-xl border border-[var(--surface-border)] bg-[var(--page)] px-2.5 py-1.5 text-xs font-semibold text-[var(--text-muted)] hover:text-[var(--text)] transition cursor-pointer"
+                  title="Sets the term start date to the current term, estimated from today's date — not AI"
                 >
-                  <Sparkles className={`h-3 w-3 ${aiDetecting ? "animate-spin" : ""}`} />
-                  <span className="hidden sm:inline">AI Auto-Detect</span>
+                  <Calendar className="h-3 w-3" />
+                  <span className="hidden sm:inline">Set to current term (estimated — not AI)</span>
                 </button>
               </div>
             </div>
 
-            {aiDetectedNote && (
-              <div className="text-[11px] font-medium text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
-                <Sparkles className="h-3 w-3 shrink-0" />
-                <span>{aiDetectedNote}</span>
+            {termNote && (
+              <div className="text-[11px] font-medium text-[var(--text-muted)] flex items-center gap-1.5">
+                <Calendar className="h-3 w-3 shrink-0" />
+                <span>{termNote}</span>
               </div>
             )}
           </div>
@@ -777,7 +778,7 @@ const ReadinessCard: React.FC<{ card: ExamReadinessCard; onClick: () => void }> 
   const courses = useAppStore((s) => s.data.schedule.courses);
   const palette = coursePalette(card.courseId || "GENERAL");
   const enrolled = courses.find((c) => c.id === card.courseId);
-  const chip = courseAccessibleChip(enrolled?.color || palette.color, theme === "dark");
+  const chip = courseAccessibleChip(enrolled?.color || palette.color, isDarkTheme(theme));
   const hasTopics = card.totalCount > 0;
   const pct = hasTopics ? Math.min(100, Math.max(0, card.readinessPercent)) : null;
   const statusColor =

@@ -1,23 +1,13 @@
-import { useState, useEffect } from "react";
 import { Play, Pause, RotateCcw, CheckCircle2, Timer, X } from "lucide-react";
 import { copy } from "../copy";
-import { useAppStore } from "../state/store";
+import { useAppStore, POMODORO_DURATIONS } from "../state/store";
 import { stripCoursePrefix } from "../lib/calendarLanes";
-import { analytics } from "../lib/analytics";
-import { recordPomodoroSession } from "../lib/studyStats";
 
 export interface PomodoroModalProps {
   assessmentId?: string;
   topicIndex?: number;
   topicTitle?: string;
 }
-
-type TimerMode = "pomodoro" | "shortBreak" | "longBreak";
-const DURATIONS: Record<TimerMode, number> = {
-  pomodoro: 25 * 60,
-  shortBreak: 5 * 60,
-  longBreak: 15 * 60,
-};
 
 export function PomodoroModal({
   props,
@@ -36,85 +26,26 @@ export function PomodoroModal({
   const assessments = useAppStore((s) => s.data.assessments);
   const addToast = useAppStore((s) => s.addToast);
 
+  // The modal is pure presentation over the SINGLE store timer — the same
+  // timer the Focus view and the global Space key control. It used to carry
+  // a fully independent local timer (own state, own interval, own chime, own
+  // session recording), so two timers could run concurrently and a session
+  // completed in the modal was recorded while the store timer kept running.
+  const mode = useAppStore((s) => s.pomodoroMode);
+  const timeLeft = useAppStore((s) => s.pomodoroSecondsLeft);
+  const isRunning = useAppStore((s) => s.pomodoroIsRunning);
+  const togglePomodoro = useAppStore((s) => s.togglePomodoro);
+  const resetPomodoro = useAppStore((s) => s.resetPomodoro);
+  const setPomodoroMode = useAppStore((s) => s.setPomodoroMode);
+
   const matchedAssessment = assessments.find((a) => a.id === assessmentId);
 
-  const [mode, setMode] = useState<TimerMode>("pomodoro");
-  const [timeLeft, setTimeLeft] = useState<number>(DURATIONS.pomodoro);
-  const [isRunning, setIsRunning] = useState<boolean>(false);
-
-  // WebAudio chime synthesizer
-  const playChime = () => {
-    try {
-      const AudioCtx =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const now = ctx.currentTime;
-
-      // Note 1: 587.33 Hz (D5)
-      const osc1 = ctx.createOscillator();
-      const gain1 = ctx.createGain();
-      osc1.type = "sine";
-      osc1.frequency.setValueAtTime(587.33, now);
-      gain1.gain.setValueAtTime(0, now);
-      gain1.gain.linearRampToValueAtTime(0.2, now + 0.05);
-      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
-      osc1.connect(gain1);
-      gain1.connect(ctx.destination);
-      osc1.start(now);
-      osc1.stop(now + 0.8);
-
-      // Note 2: 880.00 Hz (A5)
-      const osc2 = ctx.createOscillator();
-      const gain2 = ctx.createGain();
-      osc2.type = "sine";
-      osc2.frequency.setValueAtTime(880.0, now + 0.2);
-      gain2.gain.setValueAtTime(0, now + 0.2);
-      gain2.gain.linearRampToValueAtTime(0.25, now + 0.25);
-      gain2.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
-      osc2.connect(gain2);
-      gain2.connect(ctx.destination);
-      osc2.start(now + 0.2);
-      osc2.stop(now + 1.2);
-    } catch {
-      // AudioContext unavailable or blocked by autoplay policy
-    }
-  };
-
-  useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
-    if (isRunning && timeLeft > 0) {
-      interval = setInterval(() => {
-        setTimeLeft((prev) => prev - 1);
-      }, 1000);
-    } else if (isRunning && timeLeft === 0) {
-      setIsRunning(false);
-      playChime();
-      const minutes = Math.round(DURATIONS[mode] / 60);
-      if (mode === "pomodoro") {
-        recordPomodoroSession(minutes);
-      }
-      analytics.pomodoroFinished(minutes, Boolean(topicTitle || topicIndex !== undefined));
-      addToast({
-        type: "success",
-        message: copy.pomodoro.sessionComplete,
-      });
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isRunning, timeLeft, addToast, mode, topicTitle, topicIndex]);
-
-  const switchMode = (newMode: TimerMode) => {
-    setMode(newMode);
-    setTimeLeft(DURATIONS[newMode]);
-    setIsRunning(false);
+  const switchMode = (newMode: keyof typeof POMODORO_DURATIONS) => {
+    setPomodoroMode(newMode);
   };
 
   const handleReset = () => {
-    setIsRunning(false);
-    setTimeLeft(DURATIONS[mode]);
+    resetPomodoro();
   };
 
   const formatTime = (seconds: number) => {
@@ -123,7 +54,7 @@ export function PomodoroModal({
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  const totalDuration = DURATIONS[mode];
+  const totalDuration = POMODORO_DURATIONS[mode];
   const progressFraction = Math.max(0, Math.min(1, (totalDuration - timeLeft) / totalDuration));
   const ringRadius = 84;
   const ringCircumference = 2 * Math.PI * ringRadius;
@@ -297,7 +228,7 @@ export function PomodoroModal({
         </button>
         <button
           type="button"
-          onClick={() => setIsRunning(!isRunning)}
+          onClick={togglePomodoro}
           className="flex h-14 w-28 items-center justify-center gap-2 rounded-2xl bg-[var(--accent-fill)] font-semibold text-white shadow-lg shadow-blue-500/20 hover:bg-[var(--accent-fill-hover)] transition"
         >
           {isRunning ? (

@@ -93,7 +93,9 @@ input[type="search"]::-webkit-search-decoration {
 
 /* Focus ring: visible for keyboard users, invisible for pointer users.
    Explicitly exempt search inputs that manage their own focus affordance. */
-:focus-visible:not(.search-palette-input):not([aria-controls="topbar-search-results"]):not([aria-controls="search-palette-results"]) {
+:focus-visible:not(.search-palette-input):not([aria-controls="topbar-search-results"]):not(
+    [aria-controls="search-palette-results"]
+  ) {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -496,6 +498,37 @@ h4 {
   60%,
   100% {
     background-position: -60% 0;
+  }
+}
+
+/* Hero scroll compositing: the sticky dashboard canopy backdrop-blurs the
+   hero's infinitely animating gradient layers, and on Windows the
+   repaint-then-blur cycle over those huge background-image stacks flickers
+   while scrolling. translateZ(0) promotes each animated surface (the canopy,
+   the twinkle/sun/sheen layers) to its own compositing layer so the opacity
+   and background-position animations run on the GPU and the backdrop beneath
+   them is never repainted. */
+.composite-layer {
+  transform: translateZ(0);
+}
+
+/* Sticky dashboard canopy tint. Tailwind v3 cannot apply an opacity modifier
+   to a var() color: `bg-[var(--page)]/95` compiled to NO rule at all (the
+   arbitrary-value alpha path assumes channel-based vars, so the declaration
+   was dropped and the sticky canopy rendered with no painted background —
+   scrolled content shone straight through it). The canopy paints a plain,
+   fully opaque var(--page): per user feedback the earlier 95% color-mix tint
+   still let scrolled content ghost through it, blurred but legible, and the
+   canopy must fully occlude everything behind the hero. It stays theme-
+   driven: every Observatory variant overrides --page, so light, dark and
+   amoled all follow automatically. */
+.canopy-tint {
+  background: var(--page);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .canopy-tint {
+    background-color: var(--page);
   }
 }
 

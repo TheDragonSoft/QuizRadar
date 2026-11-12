@@ -25,14 +25,22 @@ export interface CourseColors {
   border: string;
 }
 
-/** Stable FNV-1a over the course id — same id ⇒ same palette entry forever. */
+/**
+ * Stable FNV-1a over the course id's UTF-8 bytes — same id ⇒ same palette
+ * entry forever, and the SAME entry as the Rust core's
+ * `preset_course_colors` (core/src/sources/mod.rs): bytes (not UTF-16 code
+ * units) and unsigned 32-bit wrap (`>>> 0`, not Math.abs — the signed
+ * variant picks a different preset for ~37% of ids whose hash has the high
+ * bit set, so a course could color differently on web vs desktop).
+ */
 function hashCourseId(id: string): number {
+  const bytes = new TextEncoder().encode(id);
   let hash = 0x811c9dc5;
-  for (let i = 0; i < id.length; i += 1) {
-    hash ^= id.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
+  for (const byte of bytes) {
+    hash ^= byte;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
   }
-  return Math.abs(hash);
+  return hash;
 }
 
 /**

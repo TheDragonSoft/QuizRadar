@@ -6,6 +6,7 @@ pub mod ai;
 pub mod auth;
 pub mod backup;
 pub mod state;
+pub mod study;
 pub mod sync;
 pub mod updater;
 
@@ -13,6 +14,7 @@ pub use ai::*;
 pub use auth::*;
 pub use backup::*;
 pub use state::*;
+pub use study::*;
 pub use sync::*;
 pub use updater::*;
 

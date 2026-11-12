@@ -10,6 +10,7 @@ import { PomodoroModal } from "./components/PomodoroModal";
 import { TopBar } from "./components/TopBar";
 import { useAppStore, initialFullState } from "./state/store";
 import { setRpcMockHandler } from "./state/rpc";
+import { setupMockIndexedDb } from "./test/mockIndexedDb";
 import { copy } from "./copy";
 import type { GetStatePayload, PracticeQuizPayload, UpdateCheckResult } from "./state/types";
 
@@ -202,6 +203,19 @@ describe("Web UI Flows & Modals (Phase 10)", () => {
         expect(payload.onboardingCompleted).toBe(true);
       });
     });
+
+    it("links the Gemini key card to AI Studio key creation", () => {
+      render(<OnboardingWizardModal modalId="onboarding" onClose={vi.fn()} />);
+
+      // Advance to Step 2 (Connect Sources), where the Gemini key card lives
+      fireEvent.click(screen.getByRole("button", { name: new RegExp(copy.onboarding.next, "i") }));
+      expect(screen.getByText(copy.onboarding.geminiConnect)).toBeInTheDocument();
+
+      const studioLink = screen.getByRole("link", { name: copy.ai.getKeyCta });
+      expect(studioLink).toHaveAttribute("href", copy.ai.getKeyUrl);
+      expect(studioLink).toHaveAttribute("target", "_blank");
+      expect(studioLink).toHaveAttribute("rel", "noopener noreferrer");
+    });
   });
 
   // 2. Settings Page: one scrollable surface (the old tabbed modal is gone),
@@ -234,6 +248,12 @@ describe("Web UI Flows & Modals (Phase 10)", () => {
       expect(
         screen.getByText(/Google sets the free-tier daily limit per project/i),
       ).toBeInTheDocument();
+
+      // …and offers the key-creation page directly — same link as onboarding.
+      const studioLink = screen.getByRole("link", { name: copy.ai.getKeyCta });
+      expect(studioLink).toHaveAttribute("href", copy.ai.getKeyUrl);
+      expect(studioLink).toHaveAttribute("target", "_blank");
+      expect(studioLink).toHaveAttribute("rel", "noopener noreferrer");
     });
 
     it("rejects non-https URLs when adding an external calendar feed", async () => {
@@ -553,6 +573,11 @@ describe("Web UI Flows & Modals (Phase 10)", () => {
   // 6. Backup Export: Secrets scrubbed
   describe("Backup Export", () => {
     it("ensures exported backup contains no credentials or secret keys", async () => {
+      // exportBackupFile now collects the webview's study collections
+      // (browser IndexedDB) for the desktop command's study payload — this
+      // test env needs a mock IDB or the honest loud failure ("cannot read
+      // study data") fires instead of the export.
+      const teardownIdb = setupMockIndexedDb();
       let exportPayload: Record<string, unknown> = {};
 
       setRpcMockHandler(<T,>(fn: string): Promise<T> | null => {
@@ -590,6 +615,7 @@ describe("Web UI Flows & Modals (Phase 10)", () => {
       expect(parsed).not.toHaveProperty("access_token");
       expect(parsed.config).not.toHaveProperty("geminiKey");
       expect(parsed.config).not.toHaveProperty("token");
+      teardownIdb();
     });
   });
 

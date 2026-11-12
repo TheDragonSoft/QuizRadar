@@ -26,6 +26,7 @@ use std::collections::{HashMap, HashSet};
 use chrono::{Duration, NaiveDate, NaiveTime};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use crate::ai::provider::{
     AiCreditNote, AiError, AiModel, AiProvider, AiUnavailable, StructuredPrompt, VisionRequest,
@@ -223,6 +224,47 @@ Return ONLY a valid JSON object matching this exact structure (null when unknown
   "estimated_study_hours": 3.5
 }"#;
 
+/// Stable, privacy-safe identity of the email-extraction TASK: a SHA-256
+/// digest over the full instruction text plus the wire-schema field list the
+/// response is parsed against. The prompt TEXT never leaves this function —
+/// callers embed the digest in cache keys (extraction-cache identity), so a
+/// changed prompt or schema re-computes every cached extraction instead of
+/// serving one produced under different instructions.
+#[must_use]
+pub fn extract_assessment_task_identity() -> String {
+    /// The exact field set `RawExtraction` parses (the response schema). A
+    /// test pins this list against the struct, so the identity can never
+    /// silently drift from what the parser actually accepts.
+    const SCHEMA_FIELDS: &[&str] = &[
+        "is_assessment",
+        "course_id",
+        "course_name",
+        "title",
+        "assessment_type",
+        "date_iso",
+        "start_time",
+        "end_time",
+        "room",
+        "group",
+        "instructor",
+        "topics",
+        "warnings",
+        "ai_inference_note",
+        "ai_study_plan",
+        "estimated_study_hours",
+    ];
+    let mut hasher = Sha256::new();
+    hasher.update(b"quizradar-extract-assessment-task-v1");
+    hasher.update([0]);
+    hasher.update(EXTRACT_INSTRUCTION.as_bytes());
+    hasher.update([0]);
+    for field in SCHEMA_FIELDS {
+        hasher.update(field.as_bytes());
+        hasher.update([0]);
+    }
+    format!("extract-assessment/{:x}", hasher.finalize())
+}
+
 /// Extracts one announcement email into a validated draft (FlashLite,
 /// temperature 0.1, strict null semantics). The draft merges
 /// into the radar via [`merge_extraction`].
@@ -302,7 +344,7 @@ pub async fn extract_assessment(
     })
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 #[serde(default)]
 struct RawExtraction {
     #[serde(default = "default_true")]
@@ -1116,6 +1158,56 @@ mod tests {
             ),
             None,
         )
+    }
+
+    #[test]
+    fn extraction_task_identity_is_stable_and_schema_pinned() {
+        let id1 = extract_assessment_task_identity();
+        let id2 = extract_assessment_task_identity();
+        assert_eq!(id1, id2, "identical prompt + schema → identical identity");
+        assert!(id1.starts_with("extract-assessment/"), "{id1}");
+        // A digest, not the prompt: the instruction text must never leak into
+        // keys that end up in the store or the desktop logs.
+        assert!(!id1.contains("university"), "{id1}");
+        assert_eq!(id1.len(), "extract-assessment/".len() + 64);
+
+        // The identity's schema field list must equal EXACTLY what
+        // RawExtraction parses — a struct field added/removed without
+        // updating SCHEMA_FIELDS fails here instead of silently keeping the
+        // old cache identity.
+        let fields = serde_json::to_value(RawExtraction::default())
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect::<std::collections::HashSet<_>>();
+        let expected: std::collections::HashSet<&str> = [
+            "is_assessment",
+            "course_id",
+            "course_name",
+            "title",
+            "assessment_type",
+            "date_iso",
+            "start_time",
+            "end_time",
+            "room",
+            "group",
+            "instructor",
+            "topics",
+            "warnings",
+            "ai_inference_note",
+            "ai_study_plan",
+            "estimated_study_hours",
+        ]
+        .into_iter()
+        .collect();
+        let expected: std::collections::HashSet<String> =
+            expected.into_iter().map(String::from).collect();
+        assert_eq!(
+            fields, expected,
+            "RawExtraction schema drifted from the pinned identity list"
+        );
     }
 
     fn gemini_body(text: &str) -> serde_json::Value {

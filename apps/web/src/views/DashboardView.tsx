@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart2,
   BrainCircuit,
@@ -17,7 +17,6 @@ import { assessmentKind } from "../lib/assessmentKind";
 import { matchesGlobalSearch } from "../lib/calendarLanes";
 import { computeActiveSourceCount, formatLastSynced } from "../state/syncStatus";
 import {
-  RemoteAnnouncementBanner,
   NextUpHero,
   StudyRecommendationCard,
   FirstRunEmpty,
@@ -27,6 +26,7 @@ import {
   TimelineRow,
   type TimelineRowProps,
 } from "./dashboard";
+import { resolveScrollContainer } from "./settings/scrollSpy";
 
 // Re-export for callers like TasksView.tsx
 export { TimelineRow };
@@ -67,6 +67,29 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
     }
     return false;
   });
+
+  // Canopy pinned state: the sticky Observatory canopy only casts its top-edge
+  // shadow once it is actually stuck under the topbar. At rest (scrollTop 0)
+  // the band above the hero is empty page padding, and painting the shadow
+  // there would alter the at-rest render that the committed visual baselines
+  // capture — so the shadow is gated on real scroll. Measured straight from
+  // the scroll handler for the same reasons the settings scroll-spy does (see
+  // ./settings/scrollSpy.ts); React bails out when the value is unchanged, so
+  // steady scrolling re-renders nothing.
+  const canopyRef = useRef<HTMLDivElement>(null);
+  const [canopyPinned, setCanopyPinned] = useState(false);
+
+  useEffect(() => {
+    const wrapper = canopyRef.current;
+    if (!wrapper) return;
+    const container = resolveScrollContainer(wrapper);
+    const update = () => {
+      setCanopyPinned(container instanceof HTMLElement && container.scrollTop > 0);
+    };
+    update();
+    container.addEventListener("scroll", update, { passive: true });
+    return () => container.removeEventListener("scroll", update);
+  }, []);
 
   useEffect(() => {
     if (forceWidescreen !== undefined) {
@@ -192,40 +215,60 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
     (dash.allUpcoming || []).find((a) => isCourseSelected(a.courseId)) ??
     null;
 
-  // Track scroll position for adaptive parallax canopy collapse
-  const [isScrolled, setIsScrolled] = useState(false);
-  useEffect(() => {
-    const handleScroll = () => {
-      const main = document.querySelector("main");
-      const scrollY = main ? main.scrollTop : window.scrollY;
-      setIsScrolled(scrollY > 50);
-    };
-    const main = document.querySelector("main");
-    if (main) {
-      main.addEventListener("scroll", handleScroll, { passive: true });
-    }
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => {
-      if (main) main.removeEventListener("scroll", handleScroll);
-      window.removeEventListener("scroll", handleScroll);
-    };
-  }, []);
-
   return (
     <div data-testid="dashboard-view" className="w-full relative space-y-6">
-      {/* Sticky Observatory Canopy Hero Banner — Parallax Anchor */}
-      <div className="sticky top-0 z-20 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 pt-1 pb-3 bg-[var(--page)]/90 backdrop-blur-md transition-all space-y-3">
-        <RemoteAnnouncementBanner />
-        <ConflictBanner />
-        <NextUpHero
-          assessment={nextUp}
-          testId={isWidescreen ? "dashboard-next-up-hero-top" : "dashboard-next-up-hero"}
-          isScrolled={isScrolled}
-          onOpenDetail={() => nextUp && openAssessmentDetail(nextUp.id)}
-          onOpenCalendar={() => setView("calendar")}
-          onConnect={() => openSettings("account")}
-          onSync={() => void triggerSync()}
+      {/* Sticky Observatory Canopy Hero Banner — content scrolls BEHIND the
+          pinned full-size hero. The hero never folds; `composite-layer` keeps
+          the canopy on its own compositing layer so the backdrop-blur does not
+          flicker over the hero's infinitely animating gradient layers, and
+          only colors transition (no transition-all style recalcs).
+
+          The tint is `.canopy-tint` (index.css), NOT `bg-[var(--page)]/95`:
+          Tailwind v3 cannot apply an opacity modifier to a var() color — that
+          class compiled to no rule at all and the canopy painted no background
+          whatsoever, leaking every scrolled pixel straight through the pt-1 /
+          pb-3 strips around the hero. */}
+      <div
+        ref={canopyRef}
+        data-canopy-pinned={canopyPinned ? "true" : "false"}
+        className="composite-layer sticky top-0 z-20 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 pt-1 pb-3 canopy-tint backdrop-blur-md transition-colors"
+      >
+        {/* Canopy dissolve skirt — extends the canopy's painted coverage above
+            the wrapper's border box so scrolling content is occluded the
+            moment it passes the scrollport's top edge: the sticky wrapper
+            itself stops at the scroll container's 24px top padding (main's
+            `py-6`, App.tsx), which used to leave a 24px band of raw scrolling
+            content visible above the hero. The skirt paints the same fully
+            opaque var(--page) as `.canopy-tint` (per user feedback the earlier
+            transparent→page gradient still let content show through its top
+            half), and the inset shadow gives the top edge depth (only while
+            pinned — at rest the band is empty page padding, and the shadow
+            would alter the render the committed baselines capture). A static
+            opaque band revealed by scrolling is inherently motion-safe: no
+            time-based animation here, and the shadow appears without a
+            transition. The skirt sits OUTSIDE the banner/hero `space-y-3`
+            group below: as an absolutely positioned child it would still
+            match the `> * + *` margin rule and push the hero 12px down. */}
+        <div
+          aria-hidden="true"
+          data-testid="dashboard-canopy-dissolve"
+          className="composite-layer pointer-events-none absolute inset-x-0 -top-6 h-7"
+          style={{
+            background: "var(--page)",
+            boxShadow: canopyPinned ? "inset 0 16px 16px -14px var(--border-strong)" : "none",
+          }}
         />
+        <div className="space-y-3">
+          <ConflictBanner />
+          <NextUpHero
+            assessment={nextUp}
+            testId={isWidescreen ? "dashboard-next-up-hero-top" : "dashboard-next-up-hero"}
+            onOpenDetail={() => nextUp && openAssessmentDetail(nextUp.id)}
+            onOpenCalendar={() => setView("calendar")}
+            onConnect={() => openSettings("account")}
+            onSync={() => void triggerSync()}
+          />
+        </div>
       </div>
 
       {/* Mobile Segmented Sub-Navigation Switcher (< 1024px) */}
@@ -392,16 +435,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
         </section>
       )}
 
-      {/* Multi-Pane Widescreen Density (≥1200px) */}
+      {/* Multi-Pane Widescreen Density (≥1200px). Fixed 700px shared row height
+          (+ items-stretch) so both panes share the same top and bottom edge. */}
       {isWidescreen && (
         <section
           data-testid="dashboard-widescreen-split"
-          className="grid grid-cols-12 gap-6 items-start relative z-10"
+          className="grid h-[700px] grid-cols-12 gap-6 items-stretch relative z-10"
         >
           {/* Left Pane (~58% width / col-span-7): Embedded Weekly Class Schedule & Calendar Grid */}
           <div
             data-testid="dashboard-widescreen-left-pane"
-            className="col-span-7 flex flex-col rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 shadow-xs"
+            className="col-span-7 flex h-full min-h-0 flex-col rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 shadow-xs"
           >
             <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-200 dark:border-slate-800">
               <div className="flex items-center gap-2">
@@ -419,7 +463,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
                 <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto max-h-[700px] pr-1">
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
               <CalendarGrid compactMode />
             </div>
           </div>
@@ -427,17 +471,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
           {/* Right Pane (~42% width / col-span-5): Upcoming Assessments Radar & Daily Study Roadmap */}
           <div
             data-testid="dashboard-widescreen-right-pane"
-            className="col-span-5 flex flex-col space-y-4"
+            className="col-span-5 flex h-full min-h-0 flex-col gap-4"
           >
-            {/* Widescreen NextUp test anchor */}
-            <div data-testid="dashboard-next-up-hero" className="sr-only" aria-hidden="true">
+            {/* Widescreen NextUp test anchor — sr-only + absolute keeps it out of
+                layout flow (gap-4 only spaces in-flow children), so the
+                recommendations card below starts at the same y as the left pane. */}
+            <div
+              data-testid="dashboard-next-up-hero"
+              className="sr-only absolute"
+              aria-hidden="true"
+            >
               {nextUp ? `Up next: ${nextUp.title}` : "No Upcoming Quizzes Scheduled"}
             </div>
 
             {/* Prioritized Study Recommendations & Topic Mastery (Preserved on Widescreen!) */}
             <div
               data-testid="dashboard-widescreen-recommendations"
-              className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 shadow-xs space-y-3"
+              className="flex min-h-0 flex-1 flex-col rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 shadow-xs space-y-3"
             >
               <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2.5">
                 <div className="flex items-center gap-1.5">
@@ -450,8 +500,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
                   {filteredRecs.length} plans
                 </span>
               </div>
-              <div className="space-y-3 max-h-[440px] overflow-y-auto pr-1">
-                {filteredRecs.length === 0 ? (
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+                {!hasCourses ? (
+                  // Same honest first-run state as the <1200px study panel: with
+                  // zero courses "no plans matching your filters" would falsely
+                  // imply pending plans were hidden by a filter (§3.1).
+                  <FirstRunEmpty
+                    onAddCourse={() => openModal("add-course")}
+                    onConnect={() => openSettings("account")}
+                  />
+                ) : filteredRecs.length === 0 ? (
                   <p className="py-4 text-center text-xs text-slate-500">
                     No active study plans matching your filters.
                   </p>

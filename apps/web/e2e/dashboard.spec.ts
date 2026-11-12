@@ -13,6 +13,10 @@ import { expect, test } from "@playwright/test";
 import { bootApp, type ToHaveScreenshotOptions } from "./helpers/app";
 import { themeForProject } from "./helpers/theme";
 
+// Behavioral smoke (BLOCKING in CI): DOM assertions only — the pixel
+// comparison lives in the `@visual`-tagged test below, which CI runs in the
+// optional `browser-visual` job (`--grep @visual`) because rasterisation is
+// platform-sensitive while these DOM assertions are not.
 test("dashboard renders the honest empty state", async ({ page }, testInfo) => {
   const theme = themeForProject(testInfo.project.name);
 
@@ -27,14 +31,29 @@ test("dashboard renders the honest empty state", async ({ page }, testInfo) => {
   await expect(empty.getByRole("button", { name: "Add Course" })).toBeVisible();
   await expect(empty.getByRole("button", { name: "Connect Account" })).toBeVisible();
 
-  // The hero carries the honest "nothing scheduled yet" state.
-  const hero = page.getByTestId("dashboard-next-up-hero");
+  // The hero carries the honest "nothing scheduled yet" state. At ≥1200px the
+  // widescreen layout renders the VISIBLE hero under the `-top` testid
+  // (`DashboardView` picks the testid from its `matchMedia("(min-width:
+  // 1200px)")` query); the plain `dashboard-next-up-hero` testid then belongs
+  // to the sr-only scroll anchor, which `getByRole` cannot see inside.
+  const viewportWidth = page.viewportSize()?.width ?? 0;
+  const heroTestId =
+    viewportWidth >= 1200 ? "dashboard-next-up-hero-top" : "dashboard-next-up-hero";
+  const hero = page.getByTestId(heroTestId);
+  await expect(hero).toBeVisible();
   await expect(hero).toContainText("No Upcoming Quizzes Scheduled");
   await expect(hero.getByRole("button", { name: "Sync Radar" })).toBeVisible();
 
   // Nothing was fabricated: the radar really is empty.
   await expect(page.getByTestId("sidebar-week-exam-count")).toHaveText("0");
   await expect(page.getByTestId("app-sidebar")).toContainText("No courses enrolled");
+});
+
+// `@visual` tag: CI runs this ONLY in the non-blocking `browser-visual` job.
+test("dashboard visual baseline", { tag: "@visual" }, async ({ page }, testInfo) => {
+  const theme = themeForProject(testInfo.project.name);
+  await bootApp(page, theme);
+  await expect(page.getByTestId("view-dashboard")).toBeVisible();
 
   await expect(page).toHaveScreenshot({
     name: `dashboard-${theme}.png`,

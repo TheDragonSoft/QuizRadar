@@ -104,6 +104,7 @@ const ModalLayer: React.FC<ModalLayerProps> = ({ modal, index, isTop, onClose })
   const zIndex = 50 + index * 5;
   const resolvedSize = modal.size ?? meta?.size ?? "md";
   const resolvedFlush = modal.flush ?? meta?.flush ?? false;
+  const resolvedBorderless = meta?.borderless ?? false;
   const panelWidth =
     resolvedSize === "xl"
       ? "max-w-3xl"
@@ -134,7 +135,9 @@ const ModalLayer: React.FC<ModalLayerProps> = ({ modal, index, isTop, onClose })
         aria-labelledby={MODAL_TITLE_IDS[modal.id]}
         tabIndex={-1}
         data-testid={`modal-${modal.id}`}
-        className={`modal-panel relative flex max-h-[92vh] w-full ${panelWidth} flex-col overflow-clip rounded-t-[28px] border border-[var(--surface-border)] bg-[var(--surface)] shadow-2xl focus:outline-none md:max-h-[85vh] md:rounded-2xl transition-all duration-300 ${
+        className={`modal-panel relative flex max-h-[92vh] w-full ${panelWidth} flex-col overflow-clip rounded-t-[28px] ${
+          resolvedBorderless ? "" : "border border-[var(--surface-border)]"
+        } bg-[var(--surface)] shadow-2xl focus:outline-none md:max-h-[85vh] md:rounded-2xl transition-all duration-300 ${
           isTop ? "" : "scale-[0.96] -translate-y-2.5 opacity-60 brightness-90 pointer-events-none"
         } ${resolvedFlush ? "" : "p-6"}`}
       >

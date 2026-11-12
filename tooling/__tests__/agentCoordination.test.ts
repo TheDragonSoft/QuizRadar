@@ -11,6 +11,16 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { runGit } from "../lib/agent-utils.mjs";
+
+// Fake-shaped client_secret/API-key fixtures for the scanner tests below,
+// assembled at runtime so the verbatim key shapes never appear in this
+// committed source (the agent-gate secret scan covers this test file too).
+// Neither half alone matches the scanner's patterns (`GOCSPX-` / `AIzaSy`
+// followed by a long alphanumeric body).
+const FAKE_SECRET = ["GOCSPX-", "abcdefghijklmnopqrstuvwx"].join("");
+const FAKE_SECRET_ALT = ["GOCSPX-", "zyxwvutsrqponmlkjihg"].join("");
+const FAKE_API_KEY = ["AIzaSy", "A0000000000000000000000000000000000a"].join("");
 
 const SINK_PATHS = [
   "apps/web/package.json",
@@ -441,5 +451,396 @@ describe("Multi-Agent Versioning & Coordination Suite", { timeout: 30_000 }, () 
 
     const tags = git(sandbox, ["tag", "-l"]);
     expect(tags).toContain("v5.1.0");
+  });
+
+  it("push-mode --ci without --base still runs branch-range checks (secret scan + fragment requirement)", () => {
+    const sandbox = makeGitSandbox();
+    git(sandbox, ["checkout", "-b", "feat/push-mode-coverage"]);
+
+    // A key-shaped literal in a non-test shipped file must be caught even
+    // though the CI push path historically invoked the gate with no --base,
+    // which silently skipped checkBranchRange (and therefore the secret scan
+    // and commit validation) entirely.
+    mkdirSync(path.join(sandbox, "apps/web/src"), { recursive: true });
+    writeFileSync(
+      path.join(sandbox, "apps/web/src/leaked.ts"),
+      `export const dummy = "${FAKE_SECRET}";\n`,
+      "utf8",
+    );
+    git(sandbox, ["add", "apps/web/src/leaked.ts"]);
+    git(sandbox, ["commit", "-m", "feat(web): add helper"]);
+
+    const pushRes = runNode(agentGate, ["--root", sandbox, "--ci"]);
+    expect(pushRes.ok).toBe(false);
+    expect(pushRes.stderr).toContain("OAuth client_secret literal detected");
+  });
+
+  it("treats the all-zero github.event.before base as absent and derives the real base", () => {
+    const sandbox = makeGitSandbox();
+    git(sandbox, ["checkout", "-b", "feat/new-branch-push"]);
+
+    // Simulates a brand-new branch push: `github.event.before` is the all-zero
+    // SHA, so without the sentinel fallback the scan would be skipped.
+    mkdirSync(path.join(sandbox, "core/src"), { recursive: true });
+    writeFileSync(
+      path.join(sandbox, "core/src/leaked.rs"),
+      `pub const DUMMY: &str = "${FAKE_API_KEY}";\n`,
+      "utf8",
+    );
+    git(sandbox, ["add", "core/src/leaked.rs"]);
+    git(sandbox, ["commit", "-m", "feat(core): add helper"]);
+
+    const zeroBase = "0".repeat(40);
+    const res = runNode(agentGate, ["--root", sandbox, "--ci", "--base", zeroBase]);
+    expect(res.ok).toBe(false);
+    expect(res.stderr).toContain("Potential Google API key literal detected");
+  });
+
+  it("scans test files for secret-shaped literals but does not flag truncated placeholders", () => {
+    const sandbox = makeGitSandbox();
+    git(sandbox, ["checkout", "-b", "test/secret-scan-covers-tests"]);
+
+    // 1. A realistic key literal inside a *.test.ts file is NOT exempt — the
+    //    blanket test-file content-scan exemption was removed (narrow dummy
+    //    exemptions: only genuinely non-key-shaped placeholders pass).
+    mkdirSync(path.join(sandbox, "core/src/__tests__"), { recursive: true });
+    writeFileSync(
+      path.join(sandbox, "core/src/__tests__/leaky.test.ts"),
+      `it("leaks", () => expect(1).toBe("${FAKE_SECRET}"));\n`,
+      "utf8",
+    );
+    git(sandbox, ["add", "core/src/__tests__/leaky.test.ts"]);
+    git(sandbox, ["commit", "-m", "test(core): add leaky fixture"]);
+
+    const leakRes = runNode(agentGate, ["--root", sandbox, "--ci"]);
+    expect(leakRes.ok).toBe(false);
+    expect(leakRes.stderr).toContain("OAuth client_secret literal detected");
+
+    // 2. Truncated, non-key-shaped placeholder text in a test file passes all
+    //    checks (fragment supplied because the branch touches core/).
+    git(sandbox, ["reset", "--hard", "HEAD~1"]);
+    mkdirSync(path.join(sandbox, "core/src/__tests__"), { recursive: true });
+    writeFileSync(
+      path.join(sandbox, "core/src/__tests__/placeholder.test.ts"),
+      'it("shows a placeholder", () => expect(1).toBe("AIzaSy…"));\n',
+      "utf8",
+    );
+    git(sandbox, ["add", "core/src/__tests__/placeholder.test.ts"]);
+    git(sandbox, ["commit", "-m", "test(core): add placeholder fixture"]);
+
+    expect(
+      runNode(agentNote, [
+        "--root",
+        sandbox,
+        "--bump",
+        "none",
+        "--surfaces",
+        "core",
+        "--agent",
+        "vitest",
+        "--summary",
+        "Add a placeholder-only test fixture for the secret scan",
+        "--verify",
+        "pnpm test:tooling",
+      ]).ok,
+    ).toBe(true);
+    git(sandbox, ["add", "changes/"]);
+    git(sandbox, ["commit", "-m", "docs(changes): record placeholder fixture handoff"]);
+
+    const cleanRes = runNode(agentGate, ["--root", sandbox, "--ci"]);
+    expect(cleanRes.ok).toBe(true);
+  });
+
+  it("requires a branch-owned handoff fragment for ci/tooling-only branches", () => {
+    const sandbox = makeGitSandbox();
+    git(sandbox, ["checkout", "-b", "ci/standalone-gate-change"]);
+
+    mkdirSync(path.join(sandbox, ".github/workflows"), { recursive: true });
+    writeFileSync(
+      path.join(sandbox, ".github/workflows/sandbox-only.yml"),
+      "name: sandbox\non: workflow_dispatch\njobs:\n  noop:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n",
+      "utf8",
+    );
+    mkdirSync(path.join(sandbox, "tooling"), { recursive: true });
+    writeFileSync(path.join(sandbox, "tooling/example.mjs"), "export const ok = true;\n", "utf8");
+    git(sandbox, ["add", ".github/workflows/sandbox-only.yml", "tooling/example.mjs"]);
+    git(sandbox, ["commit", "-m", "ci(gate): adjust sandbox workflow"]);
+
+    // No shipped code (core/ or apps/) touched, yet the fragment requirement
+    // must still fire — coordination surfaces are branch-owned too.
+    const res = runNode(agentGate, ["--root", sandbox, "--ci"]);
+    expect(res.ok).toBe(false);
+    expect(res.stderr).toContain("Missing agent handoff & version fragment");
+    expect(res.stderr).toContain("--surfaces tooling,ci");
+  });
+
+  it("explicit --base/--head range: fragment ownership covers .github/tooling branches and passes once the fragment lands", () => {
+    // Range-based (the exact shape CI passes on push: --base <event.before>
+    // --head <sha>), not a whole-repo snapshot: the verdict must come from the
+    // files the BRANCH changed, which is what makes fragment ownership
+    // per-branch rather than per-repo.
+    const sandbox = makeGitSandbox();
+    const baseSha = git(sandbox, ["rev-parse", "HEAD"]);
+    git(sandbox, ["checkout", "-b", "ci/explicit-range"]);
+
+    mkdirSync(path.join(sandbox, "tooling"), { recursive: true });
+    writeFileSync(
+      path.join(sandbox, "tooling/range-only-change.mjs"),
+      "export const changed = true;\n",
+      "utf8",
+    );
+    git(sandbox, ["add", "tooling/range-only-change.mjs"]);
+    git(sandbox, ["commit", "-m", "chore(tooling): touch one tooling file"]);
+
+    const headSha = git(sandbox, ["rev-parse", "HEAD"]);
+
+    // 1. The explicit range without a fragment fails.
+    const missing = runNode(agentGate, [
+      "--root",
+      sandbox,
+      "--ci",
+      "--base",
+      baseSha,
+      "--head",
+      headSha,
+    ]);
+    expect(missing.ok).toBe(false);
+    expect(missing.stderr).toContain("Missing agent handoff & version fragment");
+    // The suggested command names the surfaces the RANGE touched.
+    expect(missing.stderr).toContain("--surfaces tooling");
+
+    // 2. A fragment committed IN the range satisfies this exact range…
+    const headWithNote = (() => {
+      runNode(agentNote, [
+        "--root",
+        sandbox,
+        "--slug",
+        "explicit-range-branch",
+        "--bump",
+        "none",
+        "--surfaces",
+        "tooling",
+        "--agent",
+        "range-tester",
+        "--branch",
+        "ci/explicit-range",
+        "--summary",
+        "Range-based fragment ownership test for a tooling-only branch",
+        "--verify",
+        "pnpm test:tooling",
+      ]);
+      git(sandbox, ["add", "changes/"]);
+      git(sandbox, ["commit", "-m", "docs(changes): record tooling range handoff"]);
+      return git(sandbox, ["rev-parse", "HEAD"]);
+    })();
+
+    const passes = runNode(agentGate, [
+      "--root",
+      sandbox,
+      "--ci",
+      "--base",
+      baseSha,
+      "--head",
+      headWithNote,
+    ]);
+    expect(passes.ok).toBe(true);
+
+    // 3. …and an EMPTY range (base == head, e.g. a repush of the same tip)
+    // requires nothing: the verdict is range-relative, not repo-wide.
+    const emptyRange = runNode(agentGate, [
+      "--root",
+      sandbox,
+      "--ci",
+      "--base",
+      headWithNote,
+      "--head",
+      headWithNote,
+    ]);
+    expect(emptyRange.ok).toBe(true);
+  });
+
+  it("a pre-existing UNRELATED fragment does NOT satisfy a branch's handoff; release bots stay exempt", () => {
+    // Regression: the gate used to check `fragments.length === 0` over the
+    // whole working tree, so ANY fragment — even one committed for a
+    // different branch before this range even started — satisfied the
+    // handoff. The requirement is a VALID fragment ADDED or MODIFIED inside
+    // the committed branch range.
+    const sandbox = makeGitSandbox();
+
+    // 1. An unrelated, perfectly VALID fragment committed on the BASE side of
+    //    the range (another agent's work, already on main).
+    runNode(agentNote, [
+      "--root",
+      sandbox,
+      "--slug",
+      "someone-elses-branch",
+      "--bump",
+      "none",
+      "--surfaces",
+      "core",
+      "--agent",
+      "other-agent",
+      "--branch",
+      "feat/someone-else",
+      "--summary",
+      "Another agent's handoff that predates the range under test",
+      "--verify",
+      "pnpm test",
+    ]);
+    git(sandbox, ["add", "changes/"]);
+    git(sandbox, ["commit", "-m", "docs(changes): record someone else's handoff"]);
+    const baseSha = git(sandbox, ["rev-parse", "HEAD"]);
+
+    // 2. This branch touches a coordination surface but adds NO fragment.
+    git(sandbox, ["checkout", "-b", "feat/free-rider"]);
+    mkdirSync(path.join(sandbox, "core/src"), { recursive: true });
+    writeFileSync(path.join(sandbox, "core/src/free_rider.rs"), "pub fn x() {}\n", "utf8");
+    git(sandbox, ["add", "core/src/free_rider.rs"]);
+    git(sandbox, ["commit", "-m", "feat(core): free-ride on the other agent's fragment"]);
+    const headSha = git(sandbox, ["rev-parse", "HEAD"]);
+
+    const freeRide = runNode(agentGate, [
+      "--root",
+      sandbox,
+      "--ci",
+      "--base",
+      baseSha,
+      "--head",
+      headSha,
+    ]);
+    expect(freeRide.ok).toBe(false);
+    expect(freeRide.stderr).toContain("Missing agent handoff & version fragment");
+    expect(freeRide.stderr).toContain("ADDED or MODIFIED");
+
+    // 3. The release-bot exceptions still bypass the requirement entirely.
+    const dependabot = runNode(
+      agentGate,
+      ["--root", sandbox, "--ci", "--base", baseSha, "--head", headSha],
+      { GITHUB_ACTOR: "dependabot[bot]" },
+    );
+    expect(dependabot.ok).toBe(true);
+    const skipNote = runNode(
+      agentGate,
+      ["--root", sandbox, "--ci", "--base", baseSha, "--head", headSha],
+      { PR_TITLE: "chore: routine dependency bump [skip-note]" },
+    );
+    expect(skipNote.ok).toBe(true);
+
+    // 4. Committing THIS branch's own fragment satisfies the same range.
+    runNode(agentNote, [
+      "--root",
+      sandbox,
+      "--slug",
+      "free-rider",
+      "--bump",
+      "none",
+      "--surfaces",
+      "core",
+      "--agent",
+      "range-tester",
+      "--branch",
+      "feat/free-rider",
+      "--summary",
+      "This branch's own handoff — the only one that can satisfy its range",
+      "--verify",
+      "pnpm test",
+    ]);
+    git(sandbox, ["add", "changes/"]);
+    git(sandbox, ["commit", "-m", "docs(changes): record this branch's handoff"]);
+    const headWithOwnNote = git(sandbox, ["rev-parse", "HEAD"]);
+
+    const passes = runNode(agentGate, [
+      "--root",
+      sandbox,
+      "--ci",
+      "--base",
+      baseSha,
+      "--head",
+      headWithOwnNote,
+    ]);
+    expect(passes.ok).toBe(true);
+  });
+
+  it("secret scan is line-scoped on the desktop state.rs exception, not a whole-file skip", () => {
+    const sandbox = makeGitSandbox();
+    git(sandbox, ["checkout", "-b", "fix/state-rs-scan"]);
+
+    const stateDir = path.join(sandbox, "apps/desktop/src-tauri/src");
+    mkdirSync(stateDir, { recursive: true });
+
+    // 1. The two AGENTS.md §3.2-authorized constant lines pass…
+    writeFileSync(
+      path.join(stateDir, "state.rs"),
+      [
+        "pub struct AppState;",
+        'pub const DEFAULT_GOOGLE_CLIENT_ID: &str = "341760934836-test.apps.googleusercontent.com";',
+        `pub const DEFAULT_GOOGLE_CLIENT_SECRET: &str = "${FAKE_SECRET}";`,
+        "pub fn bundled() -> Option<&'static str> { Some(DEFAULT_GOOGLE_CLIENT_ID) }",
+      ].join("\n"),
+      "utf8",
+    );
+    git(sandbox, ["add", "apps/desktop/src-tauri/src/state.rs"]);
+    git(sandbox, ["commit", "-m", "fix(desktop): ship bundled oauth constants"]);
+
+    // …but a NEW secret-shaped literal anywhere else in the same file is
+    // caught (the old whole-file allowlist would have missed this).
+    writeFileSync(
+      path.join(stateDir, "state.rs"),
+      [
+        "pub struct AppState;",
+        'pub const DEFAULT_GOOGLE_CLIENT_ID: &str = "341760934836-test.apps.googleusercontent.com";',
+        `pub const DEFAULT_GOOGLE_CLIENT_SECRET: &str = "${FAKE_SECRET}";`,
+        "pub fn bundled() -> Option<&'static str> { Some(DEFAULT_GOOGLE_CLIENT_ID) }",
+        `pub const LEAKED: &str = "${FAKE_SECRET_ALT}";`,
+      ].join("\n"),
+      "utf8",
+    );
+    git(sandbox, ["add", "apps/desktop/src-tauri/src/state.rs"]);
+    git(sandbox, ["commit", "-m", "fix(desktop): add a second constant"]);
+
+    const leakRes = runNode(agentGate, ["--root", sandbox, "--ci"]);
+    expect(leakRes.ok).toBe(false);
+    expect(leakRes.stderr).toContain("OAuth client_secret literal detected");
+    expect(leakRes.stderr).toContain("state.rs");
+  });
+
+  it("preserves the leading XY field of the first `git status --porcelain` line in runGit", () => {
+    const sandbox = makeGitSandbox();
+    git(sandbox, ["checkout", "-b", "ci/rungit-trim"]);
+
+    // An unstaged modification to the alphabetically-first tracked path makes
+    // it the FIRST status line, whose XY field is ` M` (leading space). A full
+    // .trim() in runGit used to strip that space, so `line.slice(3)` parsers
+    // in preflight/agent-note ate one character of the path and misclassified
+    // `.github/...` as `github/...` (surface `tooling` instead of `ci`).
+    mkdirSync(path.join(sandbox, ".github/workflows"), { recursive: true });
+    writeFileSync(path.join(sandbox, ".github/workflows/ci.yml"), "name: sandbox\n", "utf8");
+    git(sandbox, ["add", ".github/workflows/ci.yml"]);
+    git(sandbox, ["commit", "-m", "ci(gate): add sandbox workflow baseline"]);
+    writeFileSync(
+      path.join(sandbox, ".github/workflows/ci.yml"),
+      "name: sandbox-touched\n",
+      "utf8",
+    );
+
+    const status = runGit(sandbox, ["status", "--porcelain"]);
+    const firstLine = status.split("\n")[0];
+    expect(firstLine).toMatch(/^ M \.github\/workflows\/ci\.yml$/);
+  });
+
+  it("preflight maps dirty .github files to the ci surface and requires the tooling meta-tests gate", () => {
+    const sandbox = makeGitSandbox();
+    git(sandbox, ["checkout", "-b", "ci/preflight-gates"]);
+
+    mkdirSync(path.join(sandbox, ".github/workflows"), { recursive: true });
+    writeFileSync(path.join(sandbox, ".github/workflows/ci.yml"), "name: sandbox\n", "utf8");
+    git(sandbox, ["add", ".github/workflows/ci.yml"]);
+    git(sandbox, ["commit", "-m", "ci(gate): add sandbox workflow"]);
+
+    const res = runNode(agentPreflight, ["--root", sandbox, "--json"]);
+    expect(res.ok).toBe(true);
+    const payload = JSON.parse(res.stdout);
+    expect(payload.workspace.touchedSurfaces).toContain("ci");
+    expect(payload.requiredGates).toContain("pnpm test:tooling");
   });
 });

@@ -2,6 +2,7 @@ import { Calendar, AlertCircle, Check, X, Edit3 } from "lucide-react";
 import { copy } from "../copy";
 import { courseAccessibleChip } from "../lib/coursePalette";
 import { useAppStore } from "../state/store";
+import { isDarkTheme } from "../state/storage";
 import type { DesktopExtractedTimetable } from "../state/types";
 
 export interface SchedulePreviewModalProps {
@@ -96,7 +97,7 @@ export function SchedulePreviewModal({
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {schedule.courses.map((course) => {
-              const chip = courseAccessibleChip(course.color || "#1a73e8", theme === "dark");
+              const chip = courseAccessibleChip(course.color || "#1a73e8", isDarkTheme(theme));
               return (
                 <div
                   key={course.id}
@@ -110,9 +111,7 @@ export function SchedulePreviewModal({
                   </span>
                   <div className="min-w-0">
                     <div className="text-xs font-bold text-[var(--text)] truncate">{course.id}</div>
-                    <div className="text-xs text-[var(--text-muted)] truncate">
-                      {course.name}
-                    </div>
+                    <div className="text-xs text-[var(--text-muted)] truncate">{course.name}</div>
                   </div>
                 </div>
               );

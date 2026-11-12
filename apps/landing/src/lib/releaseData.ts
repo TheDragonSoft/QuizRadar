@@ -226,7 +226,8 @@ export const INGESTION_SOURCES: IngestionSource[] = [
     id: "teams",
     name: "Microsoft Teams",
     protocol: "Class Channels",
-    summary: "Reads class announcements and channel posts to detect date changes and upcoming midterms.",
+    summary:
+      "Reads class announcements and channel posts to detect date changes and upcoming midterms.",
   },
   {
     id: "moodle",

@@ -22,9 +22,9 @@ import { safeExternalUrl } from "../lib/safeUrl";
 import { stripRoomPrefix } from "../lib/calendarLanes";
 import { formatIsoShortDate } from "../lib/weekRange";
 import { useAppStore } from "../state/store";
+import { isDarkTheme } from "../state/storage";
 import { calculateWhatIf } from "../lib/whatIf";
 import { courseAccessibleChip, courseDisplayName, coursePalette } from "../lib/coursePalette";
-import { analytics } from "../lib/analytics";
 
 interface AssessmentDetailModalProps {
   modalId: string;
@@ -60,6 +60,12 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
   const [weightInput, setWeightInput] = useState<string>(
     assessment?.weightagePercent != null ? String(assessment.weightagePercent) : "",
   );
+  // In-session completion state for topics with no recommendation entry (a
+  // past assessment never appears in study_recommendations, so this tier's
+  // state snapshot carries no mirror of its persisted topic state). Tracking
+  // the user's own toggles here keeps the checkbox truthful instead of a
+  // constant unchecked — which would show a completed topic as clearable.
+  const [untrackedTopicDone, setUntrackedTopicDone] = useState<Record<number, boolean>>({});
 
   // What-if planned score input (default 85%)
   const [whatIfScore, setWhatIfScore] = useState<number>(() => {
@@ -81,6 +87,7 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
     setScoreInput(assessment?.achievedScore != null ? String(assessment.achievedScore) : "");
     setMaxInput(assessment?.maxScore != null ? String(assessment.maxScore) : "");
     setWeightInput(assessment?.weightagePercent != null ? String(assessment.weightagePercent) : "");
+    setUntrackedTopicDone({});
     if (
       assessment?.achievedScore != null &&
       assessment?.maxScore != null &&
@@ -110,10 +117,12 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
 
   const palette = coursePalette(assessment.courseId || "GENERAL");
   const enrolledCourse = courses.find((c) => c.id === assessment.courseId);
-  const chip = courseAccessibleChip(enrolledCourse?.color || palette.color, theme === "dark");
+  const chip = courseAccessibleChip(enrolledCourse?.color || palette.color, isDarkTheme(theme));
   const rawTopics =
     assessment.topics?.length > 0 ? assessment.topics : rec?.topics?.map((t) => t.title) || [];
-  const completedTopicsCount = rec?.topics?.filter((t) => t.completed).length || 0;
+  const completedTopicsCount = rec
+    ? rec.topics?.filter((t) => t.completed).length || 0
+    : Object.values(untrackedTopicDone).filter(Boolean).length;
   const totalTopicsCount = rawTopics.length;
 
   const handleSaveGrade = async (e: React.FormEvent) => {
@@ -402,7 +411,11 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
           {totalTopicsCount > 0 ? (
             <div className="space-y-1.5">
               {rawTopics.map((topic, idx) => {
-                const isDone = rec?.topics?.find((t) => t.topicIndex === idx)?.completed ?? false;
+                const recTopic = rec?.topics?.find((t) => t.topicIndex === idx);
+                // Tracked topic: the recommendation mirrors the persisted
+                // state. Untracked (past assessment): the session-local
+                // override is the only truthful value this tier has.
+                const isDone = recTopic ? recTopic.completed : (untrackedTopicDone[idx] ?? false);
                 return (
                   <div
                     key={idx}
@@ -412,7 +425,15 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
                       <input
                         type="checkbox"
                         checked={isDone}
-                        onChange={() => toggleTopic(assessment.id, idx)}
+                        onChange={() => {
+                          if (!recTopic) {
+                            setUntrackedTopicDone((prev) => ({
+                              ...prev,
+                              [idx]: !(prev[idx] ?? false),
+                            }));
+                          }
+                          toggleTopic(assessment.id, idx);
+                        }}
                         className="h-4 w-4 rounded accent-[var(--accent-fill)] cursor-pointer shrink-0"
                       />
                       <span
@@ -511,7 +532,6 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
                 href={safeExternalUrl(assessment.googleCalUrl)}
                 target="_blank"
                 rel="noopener noreferrer"
-                onClick={() => analytics.calendarExport("gcal", 1)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text)] transition"
               >
                 <Calendar className="h-4 w-4 text-[var(--accent-ink)]" aria-hidden="true" />
@@ -521,10 +541,7 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
 
             <button
               type="button"
-              onClick={() => {
-                exportIcs(assessment.id);
-                analytics.calendarExport("ics", 1);
-              }}
+              onClick={() => exportIcs(assessment.id)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-xs font-semibold text-[var(--text)] transition cursor-pointer"
             >
               <Download className="h-4 w-4 text-[var(--accent-ink)]" aria-hidden="true" />

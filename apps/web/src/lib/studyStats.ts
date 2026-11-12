@@ -10,7 +10,8 @@
 import { useEffect, useState } from "react";
 import type { Assessment, StudyRecommendation } from "../state/types";
 
-const STUDY_STATS_STORAGE_KEY = "quizradar_local_study_stats_v1";
+/** The single localStorage ledger key — exported so adapters/store never mirror the literal. */
+export const STUDY_STATS_STORAGE_KEY = "quizradar_local_study_stats_v1";
 
 export interface StoredStudyStats {
   totalMinutes: number;
@@ -88,6 +89,29 @@ export function saveStoredStudyStats(stats: StoredStudyStats): void {
     window.dispatchEvent(new Event("quizradar:study-stats-updated"));
   } catch {
     // Ignore storage quota errors
+  }
+}
+
+/**
+ * Validates and restores a focus-minutes ledger payload (backup import).
+ * Returns false when the payload is not a shape-valid ledger — the caller
+ * reports that honestly instead of trusting the file. On success the ledger
+ * is written and the UI's update event fires.
+ */
+export function writeStoredStudyStats(value: unknown): boolean {
+  if (typeof window === "undefined" || !window.localStorage) return false;
+  if (!value || typeof value !== "object") return false;
+  const raw = value as Record<string, unknown>;
+  if (!Number.isFinite(Number(raw.totalMinutes)) || !Number.isFinite(Number(raw.totalSessions))) {
+    return false;
+  }
+  if (!raw.dailyMinutes || typeof raw.dailyMinutes !== "object") return false;
+  try {
+    window.localStorage.setItem(STUDY_STATS_STORAGE_KEY, JSON.stringify(raw));
+    window.dispatchEvent(new Event("quizradar:study-stats-updated"));
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -195,12 +219,17 @@ export function computeStudyStatsSummary(
   const gradedAssessments = assessments.filter(
     (a) => a.achievedScore !== undefined && a.achievedScore !== null,
   );
+  // Achieved scores are raw points out of `maxScore`, so the average must be
+  // taken over per-assessment percentages — averaging raw points mixes
+  // incompatible scales whenever graded assessments have different maxScore.
+  const gradedPercents: number[] = [];
+  gradedAssessments.forEach((a) => {
+    if (a.maxScore === undefined || a.maxScore === null || a.maxScore <= 0) return;
+    gradedPercents.push(((a.achievedScore ?? 0) / a.maxScore) * 100);
+  });
   const averageAchievedScore =
-    gradedAssessments.length > 0
-      ? Math.round(
-          gradedAssessments.reduce((sum, a) => sum + (a.achievedScore ?? 0), 0) /
-            gradedAssessments.length,
-        )
+    gradedPercents.length > 0
+      ? Math.round(gradedPercents.reduce((sum, p) => sum + p, 0) / gradedPercents.length)
       : null;
 
   return {

@@ -2,9 +2,8 @@ import { create } from "zustand";
 import { copy } from "../copy";
 import { getModalMeta } from "../components/modalRegistry";
 import { rpc } from "./rpc";
-import { loadCachedState, saveCachedState } from "./swr";
+import { clearCachedState, loadCachedState, saveCachedState } from "./swr";
 import { applyOptimistic } from "./optimistic";
-import { analytics } from "../lib/analytics";
 import type {
   AiQuotaUsage,
   Assessment,
@@ -42,23 +41,257 @@ export * from "./initialState";
 import { addDaysToIsoDate, getWeekStart, isClientIdSetupError } from "./dateUtils";
 import {
   SIDEBAR_STORAGE_KEY,
+  FLASHCARDS_STORAGE_KEY,
+  QUIZ_HISTORY_STORAGE_KEY,
+  MISTAKES_STORAGE_KEY,
+  setStorageFailureReporter,
+  reportStorageFailure,
+  resetStorageFailureDedup,
   getInitialGradingScale,
   saveGradingScale,
   loadStoredFlashcards,
-  saveStoredFlashcards,
   loadStoredQuizHistory,
-  saveStoredQuizHistory,
   loadStoredMistakes,
-  saveStoredMistakes,
+  purgeLegacyStudyKeys,
+  sanitizeFlashcards,
+  sanitizeQuizAttempts,
+  sanitizeMistakes,
   getInitialSidebarOpen,
   getInitialTheme,
   isDarkTheme,
+  getPreferredDarkTheme,
+  getPreferredLightTheme,
   applyThemeToDocument,
 } from "./storage";
+import {
+  getConfigValue,
+  idbClear,
+  idbReplaceAll,
+  importLegacyStudyData,
+  loadFlashcardRecords,
+  loadMistakeRecords,
+  loadQuizAttemptRecords,
+} from "../pwadapters/idbStore";
+import {
+  activeStudyBridge,
+  buildStudyExportOverride,
+  ensureDesktopStudyMigrated,
+  isDesktopNativeStudy,
+  resetDesktopStudyMigrationMemo,
+} from "../pwadapters/studyBridge";
 import { initialFullState } from "./initialState";
+import {
+  recordPomodoroSession,
+  STUDY_STATS_STORAGE_KEY,
+  writeStoredStudyStats,
+} from "../lib/studyStats";
 
 /** Auto-idle timer for the sync outcome banner — cleared at every new scan. */
 let syncIdleTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Pomodoro durations — single source of truth. FocusView and PomodoroModal
+ * used to each carry their own copy and the two had already started to
+ * duplicate the whole timer (two concurrent intervals, two chime paths).
+ */
+export const POMODORO_DURATIONS = {
+  pomodoro: 25 * 60,
+  shortBreak: 5 * 60,
+  longBreak: 15 * 60,
+} as const;
+
+export type PomodoroMode = keyof typeof POMODORO_DURATIONS;
+
+const STUDY_MIGRATION_MARKER = "legacy_study_data_migrated_v1";
+
+/**
+ * One-shot localStorage → IndexedDB study-data migration, memoized like
+ * `ensureTopicKeysContentAddressed` (rpcAdapter.ts): the marker lives in the
+ * IDB `config_kv` store, so a cleared localStorage with intact IDB never
+ * re-imports stale data, and a fresh IDB with intact legacy keys still
+ * imports. Marker is stamped inside the same transaction as the records, so
+ * a half-applied migration cannot exist.
+ */
+let studyDataMigration: Promise<void> | null = null;
+let studyMigrationFailed = false;
+
+/** Test hook: clears the memoized migration so a fresh IDB re-imports. */
+export function __resetStudyMigrationForTests(): void {
+  studyDataMigration = null;
+  studyMigrationFailed = false;
+}
+
+export function ensureStudyDataMigrated(): Promise<void> {
+  if (studyMigrationFailed) return Promise.resolve();
+  studyDataMigration ??= (async () => {
+    if (await getConfigValue<boolean>(STUDY_MIGRATION_MARKER, false)) {
+      return;
+    }
+    // Reads validate + report corrupt entries on their own.
+    const cards = loadStoredFlashcards();
+    const attempts = loadStoredQuizHistory();
+    const mistakes = loadStoredMistakes();
+    if (cards.length === 0 && attempts.length === 0 && mistakes.length === 0) {
+      // Nothing to import — still stamp the marker so this read set is never
+      // re-imported over newer IDB records later in the session.
+      await importLegacyStudyData([], [], [], STUDY_MIGRATION_MARKER);
+      return;
+    }
+    await importLegacyStudyData(cards, attempts, mistakes, STUDY_MIGRATION_MARKER);
+    // Legacy keys are now superseded: remove them so a cold start never
+    // paints stale localStorage data ahead of the IDB hydration.
+    purgeLegacyStudyKeys();
+  })().catch((error) => {
+    studyDataMigration = null; // retry on the next study action
+    // Only surface once: a persisting IDB outage must not toast every action.
+    if (!studyMigrationFailed) {
+      studyMigrationFailed = true;
+      reportStorageFailure("migrate", "study-data", error);
+    }
+    throw error;
+  });
+  return studyDataMigration;
+}
+
+/**
+ * Both one-shot study migrations, in order: legacy localStorage → IDB (every
+ * tier), then — on the desktop tier only — the browser-local IDB collections
+ * → core SQLite (the authoritative native store). Each stamps its marker
+ * only after its write resolved durably; a failure is reported once and
+ * retried by the next study action.
+ */
+async function ensureStudyStoresReady(): Promise<void> {
+  await ensureStudyDataMigrated();
+  await ensureDesktopStudyMigrated((op, key, error) => reportStorageFailure(op, key, error));
+}
+
+/**
+ * Replaces the in-memory study slices with backend truth. Called after the
+ * migrations settle at boot and after a backup import wrote the study stores
+ * directly. On the desktop tier (native migration stamped) the truth is the
+ * core SQLite store; otherwise the IDB adapters.
+ */
+export async function hydrateStudyCollections(): Promise<void> {
+  await ensureStudyStoresReady().catch(() => {});
+  if (isDesktopNativeStudy()) {
+    try {
+      const native = await activeStudyBridge().list();
+      useAppStore.setState({
+        flashcards: native.flashcards,
+        quizHistory: native.quizHistory,
+        mistakeBank: native.mistakeBank,
+      });
+    } catch (error) {
+      // Native read failed: keep the current in-memory state and surface it —
+      // silently "falling back" to cleared browser mirrors would lie.
+      reportStorageFailure("load", "desktop-study-native", error);
+    }
+    return;
+  }
+  const [cards, attempts, mistakes] = await Promise.all([
+    loadFlashcardRecords().catch((e) => {
+      reportStorageFailure("load", FLASHCARDS_STORAGE_KEY, e);
+      return null;
+    }),
+    loadQuizAttemptRecords().catch((e) => {
+      reportStorageFailure("load", QUIZ_HISTORY_STORAGE_KEY, e);
+      return null;
+    }),
+    loadMistakeRecords().catch((e) => {
+      reportStorageFailure("load", MISTAKES_STORAGE_KEY, e);
+      return null;
+    }),
+  ]);
+  useAppStore.setState({
+    ...(cards ? { flashcards: sanitizeFlashcards(cards) } : {}),
+    ...(attempts ? { quizHistory: sanitizeQuizAttempts(attempts) } : {}),
+    ...(mistakes ? { mistakeBank: sanitizeMistakes(mistakes) } : {}),
+  });
+}
+
+/**
+ * Monotonic purge epoch. Bumped at the START of every `purgeLocalStudyData`,
+ * before any store is cleared. Every study write action captures the epoch
+ * before its optimistic in-memory set and skips its IndexedDB write when the
+ * epoch moved — otherwise an in-flight `putFlashcardRecord` (the write may
+ * begin seconds before the user hits "Reset Everything") would land AFTER
+ * the `idbClear` and resurrect a purged record.
+ */
+let studyPurgeEpoch = 0;
+
+/** Test hook: observes the epoch without reaching into module internals. */
+export function __getStudyPurgeEpochForTests(): number {
+  return studyPurgeEpoch;
+}
+
+/**
+ * Full local study-data wipe for "Reset Everything": legacy localStorage
+ * keys, the local study-stats ledger, the SWR state cache and the IDB study
+ * stores. Runs regardless of which backend `reset_database` hit, because the
+ * desktop Rust reset can never reach browser-side storage.
+ *
+ * Honesty: a store that cannot be cleared REJECTS the purge (after each
+ * failure is reported) so `resetDatabase` can never claim a clean success
+ * while purged-shaped data survives on disk.
+ */
+export async function purgeLocalStudyData(): Promise<void> {
+  // First: invalidate every in-flight study write (see the epoch contract).
+  studyPurgeEpoch += 1;
+  purgeLegacyStudyKeys();
+  try {
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.removeItem(STUDY_STATS_STORAGE_KEY);
+      window.sessionStorage.removeItem("quizradar_onboarding_dismissed");
+    }
+  } catch (error) {
+    reportStorageFailure("purge", STUDY_STATS_STORAGE_KEY, error);
+  }
+  clearCachedState();
+  // allSettled so EVERY store gets its clear attempt and every failure is
+  // named — then the failures decide the outcome, loudly.
+  const results = await Promise.allSettled([
+    idbClear("flashcards"),
+    idbClear("quiz_attempts"),
+    idbClear("mistake_bank"),
+    idbClear("study_sessions"),
+  ]);
+  const storeNames = ["flashcards", "quiz_attempts", "mistake_bank", "study_sessions"] as const;
+  const failures: string[] = [];
+  results.forEach((result, index) => {
+    if (result.status === "rejected") {
+      const name = storeNames[index];
+      failures.push(name);
+      reportStorageFailure("purge", name, result.reason);
+    }
+  });
+  // The marker is gone with config_kv (PWA reset) or stale (desktop reset) —
+  // either way the next study action must not treat migration as pending.
+  // The desktop-native marker itself survives (native AND browser study data
+  // are both empty after a reset); only the memoized attempt is cleared.
+  studyDataMigration = null;
+  studyMigrationFailed = false;
+  resetDesktopStudyMigrationMemo();
+  resetStorageFailureDedup();
+  if (failures.length > 0) {
+    throw new Error(
+      `${failures.length} study store${failures.length === 1 ? "" : "s"} (${failures.join(", ")}) could not be wiped`,
+    );
+  }
+}
+
+// Wire storage failures to the visible toast surface. The study collections
+// used to fail silently (quota, blocked store) — honesty doctrine requires a
+// visible error, first failure per key per session only.
+setStorageFailureReporter((op, key, error) => {
+  const detail = error instanceof Error ? error.message : String(error);
+  useAppStore.getState().addToast({
+    type: "error",
+    message:
+      op === "migrate"
+        ? `Study data migration failed — legacy entries stay in browser storage: ${detail}`
+        : `Study data was not saved (${key}): ${detail} — your in-app list still shows it for this session.`,
+  });
+});
 
 export interface AppStoreState {
   // Core derived data
@@ -204,12 +437,33 @@ export interface AppStoreState {
   // Pomodoro
   pomodoroIsRunning: boolean;
   pomodoroSecondsLeft: number;
+  /**
+   * Epoch ms when the running session ends — the timer is timestamp-based so
+   * tab throttling can never accumulate per-second decrement drift.
+   * `null` = not running.
+   */
+  pomodoroEndsAt: number | null;
+  /** Remaining seconds captured when paused; resume restores this remainder. */
+  pomodoroPausedRemainingSec: number | null;
+  /** Epoch ms when the current pause began; `null` when not paused. */
+  pomodoroPausedAtMs: number | null;
+  /**
+   * Wall-clock pause time banked into the current session, in ms. Completion
+   * credits the focused time (nominal block minus this), never the nominal
+   * block — a user who paused 10 of 25 focus minutes earns 15, not 25.
+   */
+  pomodoroPausedMsTotal: number;
+  /**
+   * Consumable completion token: incremented exactly once per completed
+   * session, in the same transition that records the session. Observers
+   * (views) never perform completion side effects themselves.
+   */
+  pomodoroSessionId: number;
   pomodoroMode: "pomodoro" | "shortBreak" | "longBreak";
   togglePomodoro: () => void;
   resetPomodoro: () => void;
   setPomodoroMode: (mode: "pomodoro" | "shortBreak" | "longBreak") => void;
   tickPomodoro: () => void;
-  setPomodoroSecondsLeft: (seconds: number) => void;
 
   // Grading scale
   gradingScale: "4.0" | "uk_honors" | "ects" | "percentage";
@@ -221,16 +475,16 @@ export interface AppStoreState {
 
   // Flashcards & Mistake Bank & Quiz History
   flashcards: Flashcard[];
-  upsertFlashcard: (card: Omit<Flashcard, "id"> & { id?: string }) => void;
-  deleteFlashcard: (id: string) => void;
-  reviewFlashcard: (id: string, correct: boolean) => void;
+  upsertFlashcard: (card: Omit<Flashcard, "id"> & { id?: string }) => Promise<void>;
+  deleteFlashcard: (id: string) => Promise<void>;
+  reviewFlashcard: (id: string, correct: boolean) => Promise<void>;
 
   quizHistory: QuizAttemptRecord[];
-  recordQuizAttempt: (attempt: Omit<QuizAttemptRecord, "id">) => void;
+  recordQuizAttempt: (attempt: Omit<QuizAttemptRecord, "id">) => Promise<void>;
 
   mistakeBank: MistakeItem[];
-  addMistake: (mistake: Omit<MistakeItem, "id">) => void;
-  resolveMistake: (id: string) => void;
+  addMistake: (mistake: Omit<MistakeItem, "id">) => Promise<void>;
+  resolveMistake: (id: string) => Promise<void>;
 }
 
 export const useAppStore = create<AppStoreState>((set, get) => ({
@@ -286,37 +540,84 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
 
   // Pomodoro
   pomodoroIsRunning: false,
-  pomodoroSecondsLeft: 25 * 60,
+  pomodoroSecondsLeft: POMODORO_DURATIONS.pomodoro,
+  pomodoroEndsAt: null,
+  pomodoroPausedRemainingSec: null,
+  pomodoroPausedAtMs: null,
+  pomodoroPausedMsTotal: 0,
+  pomodoroSessionId: 0,
   pomodoroMode: "pomodoro",
-  togglePomodoro: () => set((state) => ({ pomodoroIsRunning: !state.pomodoroIsRunning })),
-  resetPomodoro: () => {
-    const mode = get().pomodoroMode;
-    const seconds = mode === "pomodoro" ? 25 * 60 : mode === "shortBreak" ? 5 * 60 : 15 * 60;
+  // Space-key (App) and view/modal buttons all toggle the SAME store timer.
+  togglePomodoro: () => {
+    const state = get();
+    if (state.pomodoroIsRunning && state.pomodoroEndsAt !== null) {
+      // Pause: capture the actual remainder, not the wall clock — and stamp
+      // when the pause began so resume can bank the paused wall-clock time.
+      const remainingSec = Math.max(0, Math.ceil((state.pomodoroEndsAt - Date.now()) / 1000));
+      set({
+        pomodoroIsRunning: false,
+        pomodoroEndsAt: null,
+        pomodoroPausedRemainingSec: remainingSec,
+        pomodoroSecondsLeft: remainingSec,
+        pomodoroPausedAtMs: Date.now(),
+      });
+      return;
+    }
+    // Resume: bank the paused wall-clock time (if this resume ends a pause)
+    // so completion credits focused time, not the nominal block. A fresh
+    // start (no captured remainder) begins with an empty pause ledger.
+    const nowMs = Date.now();
+    const resumingPause = state.pomodoroPausedRemainingSec !== null;
+    const pausedMsTotal = resumingPause
+      ? state.pomodoroPausedMsTotal +
+        (state.pomodoroPausedAtMs !== null ? Math.max(0, nowMs - state.pomodoroPausedAtMs) : 0)
+      : 0;
+    const remaining = state.pomodoroPausedRemainingSec ?? POMODORO_DURATIONS[state.pomodoroMode];
     set({
-      pomodoroIsRunning: false,
-      pomodoroSecondsLeft: seconds,
+      pomodoroIsRunning: true,
+      pomodoroEndsAt: nowMs + remaining * 1000,
+      pomodoroPausedRemainingSec: null,
+      pomodoroPausedAtMs: null,
+      pomodoroPausedMsTotal: pausedMsTotal,
     });
   },
+  resetPomodoro: () => {
+    const mode = get().pomodoroMode;
+    set({
+      pomodoroIsRunning: false,
+      pomodoroEndsAt: null,
+      pomodoroPausedRemainingSec: null,
+      pomodoroPausedAtMs: null,
+      pomodoroPausedMsTotal: 0,
+      pomodoroSecondsLeft: POMODORO_DURATIONS[mode],
+    });
+  },
+  // A mode switch cancels the running session WITHOUT completing it —
+  // a half-run focus block must never record a study session.
   setPomodoroMode: (mode) => {
-    const seconds = mode === "pomodoro" ? 25 * 60 : mode === "shortBreak" ? 5 * 60 : 15 * 60;
     set({
       pomodoroMode: mode,
-      pomodoroSecondsLeft: seconds,
+      pomodoroSecondsLeft: POMODORO_DURATIONS[mode],
       pomodoroIsRunning: false,
+      pomodoroEndsAt: null,
+      pomodoroPausedRemainingSec: null,
+      pomodoroPausedAtMs: null,
+      pomodoroPausedMsTotal: 0,
     });
   },
   tickPomodoro: () => {
-    const current = get().pomodoroSecondsLeft;
-    if (current <= 1) {
-      set({
-        pomodoroSecondsLeft: 0,
-        pomodoroIsRunning: false,
-      });
-    } else {
-      set({ pomodoroSecondsLeft: current - 1 });
+    const state = get();
+    if (!state.pomodoroIsRunning || state.pomodoroEndsAt === null) return;
+    const remainingMs = state.pomodoroEndsAt - Date.now();
+    if (remainingMs <= 0) {
+      completePomodoroSession();
+      return;
+    }
+    const remainingSec = Math.ceil(remainingMs / 1000);
+    if (remainingSec !== state.pomodoroSecondsLeft) {
+      set({ pomodoroSecondsLeft: remainingSec });
     }
   },
-  setPomodoroSecondsLeft: (seconds) => set({ pomodoroSecondsLeft: seconds }),
 
   // Grading scale
   gradingScale: getInitialGradingScale(),
@@ -330,8 +631,14 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   setWeekParityFilter: (weekParityFilter) => set({ weekParityFilter }),
 
   // Flashcards & Mistake Bank & Quiz History
+  // Optimistic in-memory set + durable write through the study bridge: the
+  // PWA tier persists to IndexedDB, the desktop tier to the authoritative
+  // core SQLite store (`study_*` commands, `pwadapters/studyBridge.ts`). A
+  // failed write keeps the in-session state honest and surfaces a visible
+  // error toast (first failure per key per session) instead of silently
+  // losing data.
   flashcards: loadStoredFlashcards(),
-  upsertFlashcard: (card) => {
+  upsertFlashcard: async (card) => {
     const current = get().flashcards;
     const id = card.id || `card-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const now = new Date().toISOString().slice(0, 10);
@@ -349,17 +656,44 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     const next = current.some((c) => c.id === id)
       ? current.map((c) => (c.id === id ? updatedCard : c))
       : [updatedCard, ...current];
-    saveStoredFlashcards(next);
+    const epoch = studyPurgeEpoch;
     set({ flashcards: next });
+    await ensureStudyStoresReady().catch(() => {});
+    if (epoch !== studyPurgeEpoch) return; // a reset raced this write — purged state wins
+    const bridge = activeStudyBridge();
+    try {
+      await bridge.upsertCard(updatedCard);
+    } catch (error) {
+      reportStorageFailure("save", FLASHCARDS_STORAGE_KEY, error);
+    }
+    // Post-write check too: a put that was already in flight when the reset
+    // cleared the stores can COMMIT after the wipe (IndexedDB serializes the
+    // transactions; an IPC write can land after the native wipe). The purged
+    // state wins — remove whatever landed late.
+    if (epoch !== studyPurgeEpoch) {
+      try {
+        await bridge.deleteCard(updatedCard.id);
+      } catch (error) {
+        reportStorageFailure("purge", FLASHCARDS_STORAGE_KEY, error);
+      }
+    }
   },
-  deleteFlashcard: (id) => {
+  deleteFlashcard: async (id) => {
     const next = get().flashcards.filter((c) => c.id !== id);
-    saveStoredFlashcards(next);
+    const epoch = studyPurgeEpoch;
     set({ flashcards: next });
+    await ensureStudyStoresReady().catch(() => {});
+    if (epoch !== studyPurgeEpoch) return; // a reset raced this write
+    try {
+      await activeStudyBridge().deleteCard(id);
+    } catch (error) {
+      reportStorageFailure("save", FLASHCARDS_STORAGE_KEY, error);
+    }
   },
-  reviewFlashcard: (id, correct) => {
+  reviewFlashcard: async (id, correct) => {
     const now = new Date();
     const todayIso = now.toISOString().slice(0, 10);
+    const reviewedCards: Flashcard[] = [];
     const next = get().flashcards.map((card) => {
       if (card.id !== id) return card;
       let newBox = card.boxLevel;
@@ -370,37 +704,124 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       }
       const days = newBox === 1 ? 1 : newBox === 2 ? 2 : newBox === 3 ? 4 : newBox === 4 ? 7 : 14;
       const nextDate = new Date(now.getTime() + days * 86400000).toISOString().slice(0, 10);
-      return {
+      const updated: Flashcard = {
         ...card,
         boxLevel: newBox,
         reviewCount: (card.reviewCount || 0) + 1,
         lastReviewedIso: todayIso,
         nextReviewIso: nextDate,
       };
+      reviewedCards.push(updated);
+      return updated;
     });
-    saveStoredFlashcards(next);
+    const epoch = studyPurgeEpoch;
     set({ flashcards: next });
+    await ensureStudyStoresReady().catch(() => {});
+    if (epoch !== studyPurgeEpoch) return; // a reset raced this write
+    const bridge = activeStudyBridge();
+    for (const reviewed of reviewedCards) {
+      let canonical: Flashcard | null = null;
+      try {
+        // Native tier: the Leitner math runs in CORE and the canonical card
+        // comes back for adoption. IDB tier: null — the computed record is
+        // the persisted truth.
+        canonical = await bridge.reviewCard(reviewed.id, correct, reviewed);
+      } catch (error) {
+        reportStorageFailure("save", FLASHCARDS_STORAGE_KEY, error);
+      }
+      if (canonical && epoch === studyPurgeEpoch) {
+        const sanitized = sanitizeFlashcards([canonical])[0];
+        if (sanitized) {
+          set({
+            flashcards: get().flashcards.map((c) => (c.id === sanitized.id ? sanitized : c)),
+          });
+        }
+      }
+      if (epoch !== studyPurgeEpoch) {
+        try {
+          await bridge.deleteCard(reviewed.id);
+        } catch (error) {
+          reportStorageFailure("purge", FLASHCARDS_STORAGE_KEY, error);
+        }
+      }
+    }
   },
 
   quizHistory: loadStoredQuizHistory(),
-  recordQuizAttempt: (attempt) => {
-    const id = `attempt-${Date.now()}`;
-    const next = [{ ...attempt, id }, ...get().quizHistory];
-    saveStoredQuizHistory(next);
+  recordQuizAttempt: async (attempt) => {
+    // The backend store keys on `id`: a bare Date.now() suffix would silently
+    // OVERWRITE the first attempt when two are recorded in the same
+    // millisecond — the random tail keeps every attempt distinct.
+    const id = `attempt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const record: QuizAttemptRecord = { ...attempt, id };
+    const next = [record, ...get().quizHistory];
+    const epoch = studyPurgeEpoch;
     set({ quizHistory: next });
+    await ensureStudyStoresReady().catch(() => {});
+    if (epoch !== studyPurgeEpoch) return; // a reset raced this write
+    try {
+      await activeStudyBridge().saveQuizAttempt(record);
+    } catch (error) {
+      reportStorageFailure("save", QUIZ_HISTORY_STORAGE_KEY, error);
+    }
+    if (epoch !== studyPurgeEpoch) {
+      // A late-committing write must not resurrect purged state.
+      try {
+        await activeStudyBridge().deleteQuizAttempt(record.id);
+      } catch (error) {
+        reportStorageFailure("purge", QUIZ_HISTORY_STORAGE_KEY, error);
+      }
+    }
   },
 
   mistakeBank: loadStoredMistakes(),
-  addMistake: (mistake) => {
+  addMistake: async (mistake) => {
     const id = `mistake-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const next = [{ ...mistake, id }, ...get().mistakeBank];
-    saveStoredMistakes(next);
+    const record: MistakeItem = { ...mistake, id };
+    const next = [record, ...get().mistakeBank];
+    const epoch = studyPurgeEpoch;
     set({ mistakeBank: next });
+    await ensureStudyStoresReady().catch(() => {});
+    if (epoch !== studyPurgeEpoch) return; // a reset raced this write
+    try {
+      await activeStudyBridge().upsertMistake(record);
+    } catch (error) {
+      reportStorageFailure("save", MISTAKES_STORAGE_KEY, error);
+    }
+    if (epoch !== studyPurgeEpoch) {
+      try {
+        await activeStudyBridge().deleteMistake(record.id);
+      } catch (error) {
+        reportStorageFailure("purge", MISTAKES_STORAGE_KEY, error);
+      }
+    }
   },
-  resolveMistake: (id) => {
-    const next = get().mistakeBank.map((m) => (m.id === id ? { ...m, resolved: true } : m));
-    saveStoredMistakes(next);
+  resolveMistake: async (id) => {
+    const resolvedItems: MistakeItem[] = [];
+    const next = get().mistakeBank.map((m) => {
+      if (m.id !== id) return m;
+      const updated = { ...m, resolved: true };
+      resolvedItems.push(updated);
+      return updated;
+    });
+    const epoch = studyPurgeEpoch;
     set({ mistakeBank: next });
+    await ensureStudyStoresReady().catch(() => {});
+    if (epoch !== studyPurgeEpoch) return; // a reset raced this write
+    for (const resolved of resolvedItems) {
+      try {
+        await activeStudyBridge().resolveMistake(resolved);
+      } catch (error) {
+        reportStorageFailure("save", MISTAKES_STORAGE_KEY, error);
+      }
+      if (epoch !== studyPurgeEpoch) {
+        try {
+          await activeStudyBridge().deleteMistake(resolved.id);
+        } catch (error) {
+          reportStorageFailure("purge", MISTAKES_STORAGE_KEY, error);
+        }
+      }
+    }
   },
 
   setActiveSourceFilter: (activeSourceFilter) => set({ activeSourceFilter }),
@@ -429,7 +850,14 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   toggleTheme: () => {
     const current = get().theme;
     const isDark = isDarkTheme(current);
-    const next: ThemeMode = isDark ? "light" : "dark";
+    // A mode flip must land on the user's *preferred* theme for that mode —
+    // the generic "dark"/"light" ids would always render the default tokens
+    // (Obsidian/Solar) and silently discard the AMOLED Cosmic Stardust (or
+    // any other) pick from Settings. The getters resolve to the defaults
+    // when nothing valid is stored, and the applied theme is re-recorded by
+    // `applyThemeToDocument`, so the settings pickers and this toggle share
+    // one source of truth: the resolved id in `theme`.
+    const next: ThemeMode = isDark ? getPreferredLightTheme() : getPreferredDarkTheme();
     applyThemeToDocument(next);
     set({ theme: next });
   },
@@ -564,6 +992,11 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     // 3. Mark the first load as done — first-run gating waits for this so a
     //    returning user never gets the onboarding wizard flashed at them.
     set({ hasLoaded: true });
+    // 4. Study collections: the slices painted at module init come from the
+    //    legacy localStorage snapshot (stale-while-revalidate, same as the
+    //    SWR cache); IDB truth replaces it once the one-shot migration
+    //    settles. A failed migration is reported by its own path.
+    await hydrateStudyCollections();
   },
 
   refreshState: async () => {
@@ -615,7 +1048,6 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       syncOutcome: null,
       cancelRequested: false,
     });
-    const syncStartTime = typeof performance !== "undefined" ? performance.now() : Date.now();
     try {
       const result = await rpc<{
         success: boolean;
@@ -631,14 +1063,6 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         notes: result?.notes ?? [],
       };
       set({ syncStatus: "success", syncProgressMessage: null, syncOutcome: outcome });
-      analytics.scanCompleted({
-        source: "all",
-        assessmentCount: outcome.totalNew + outcome.totalUpdated,
-        durationMs: Math.round(
-          (typeof performance !== "undefined" ? performance.now() : Date.now()) - syncStartTime,
-        ),
-        success: true,
-      });
       get().addToast({
         type: "success",
         message: copy.topBar.syncSyncedSummary(outcome.totalNew, outcome.totalUpdated),
@@ -679,14 +1103,6 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
           message: msg,
         },
       });
-      analytics.scanCompleted({
-        source: "all",
-        assessmentCount: 0,
-        durationMs: Math.round(
-          (typeof performance !== "undefined" ? performance.now() : Date.now()) - syncStartTime,
-        ),
-        success: false,
-      });
       get().addToast({
         type: "error",
         message: `${copy.topBar.syncFailed}: ${msg}`,
@@ -714,13 +1130,19 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   toggleTopic: async (assessmentId, topicIdx) => {
     const prevData = get().data;
     const addToast = get().addToast;
-    let intendedCompleted = false;
+    // `undefined` when this store snapshot has no record of the topic (past
+    // assessments never appear in study_recommendations): the backend then
+    // inverts the topic's OWN persisted state instead of receiving an
+    // absolute `false` that would silently no-op a check or clear a
+    // completed topic.
+    let intendedCompleted: boolean | undefined = undefined;
 
     await applyOptimistic(
       // 1. Synchronous optimistic update
       () => {
         const nextData = JSON.parse(JSON.stringify(prevData)) as GetStatePayload;
         let toggledDone = false;
+        let topicFound = false;
 
         // In study recommendations
         const rec = nextData.dashboard.studyRecommendations.find(
@@ -731,6 +1153,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
           if (item) {
             item.completed = !item.completed;
             toggledDone = item.completed;
+            topicFound = true;
           }
           // The card's own percentage must move with the checkbox instead of
           // waiting for the server round-trip.
@@ -745,6 +1168,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
             if (task.assessmentId === assessmentId && task.topicIndex === topicIdx) {
               task.completed = !task.completed;
               toggledDone = task.completed;
+              topicFound = true;
             }
           });
         });
@@ -767,7 +1191,9 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         // assessment's topics (core `build_dashboard_summary`), while the
         // readiness cards only cover the 14-day study horizon - summing the
         // cards made the KPI jump to a different population after a toggle.
-        intendedCompleted = toggledDone;
+        if (topicFound) {
+          intendedCompleted = toggledDone;
+        }
         let totalCompleted = 0;
         let totalTopics = 0;
         nextData.dashboard.studyRecommendations.forEach((rec) => {
@@ -1001,11 +1427,10 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         return null;
       };
 
-      const dateMinusDays = (baseIso: string, days: number) => {
-        const d = new Date(baseIso + "T00:00:00");
-        d.setDate(d.getDate() - days);
-        return d.toISOString().slice(0, 10);
-      };
+      // Anchored at UTC noon (addDaysToIsoDate) so the date never shifts with
+      // the device timezone — a local-midnight toISOString() round-trip moved
+      // every study block one day early for users east of UTC.
+      const dateMinusDays = (baseIso: string, days: number) => addDaysToIsoDate(baseIso, -days);
 
       for (const alert of unresolved) {
         const a1 = assessments.find((a) => a.id === alert.assessmentAId);
@@ -1362,13 +1787,24 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
         success: boolean;
         created: number;
         updated: number;
+        needsScope?: boolean;
         message: string;
       }>("run_gcal_sync");
       await get().refreshState();
-      get().addToast({
-        type: "success",
-        message: res.message || "Google Calendar sync completed",
-      });
+      // The desktop tier returns Ok with success=false for a missing scope or
+      // a partial push (core sets an explanatory message) — a failed push must
+      // never be displayed with success styling.
+      if (res.success) {
+        get().addToast({
+          type: "success",
+          message: res.message || "Google Calendar sync completed",
+        });
+      } else {
+        get().addToast({
+          type: res.needsScope ? "warning" : "error",
+          message: res.message || "Google Calendar sync failed",
+        });
+      }
     } catch (err) {
       get().addToast({
         type: "error",
@@ -1617,7 +2053,18 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   },
 
   exportBackupFile: async (path) => {
-    const raw = await rpc<ExportBackupResult | string>("export_backup_file", { path });
+    // Thin web wrapper around the desktop file dialog. Tier-aware: before the
+    // desktop study migration the webview's browser-side collections ARE the
+    // study data (the core can never read them) and ride into the command as
+    // the full override payload; after the migration the core SQLite store is
+    // authoritative and ONLY the focus-minutes ledger (webview-localStorage)
+    // rides along — overriding the core's own collections with the cleared
+    // browser mirrors would fabricate empty study data in the backup.
+    const studyPayload = await buildStudyExportOverride();
+    const raw = await rpc<ExportBackupResult | string>("export_backup_file", {
+      path,
+      studyPayload,
+    });
     const res: ExportBackupResult =
       typeof raw === "string" ? { saved: false, path: null, json: raw } : raw;
     // If browser fallback without saved file path:
@@ -1636,22 +2083,96 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   },
 
   importBackupFile: async (path, jsonContent) => {
-    const report = await rpc<ImportReport>("import_backup_file", { path, jsonContent });
+    const report = await rpc<
+      ImportReport & {
+        // Desktop-tier extras (tauri `import_backup_file` wrapper): the
+        // backup file's study sections + focus-minutes ledger, mirrored back
+        // into the webview's own stores — the core importer restored them
+        // into SQLite, and the web UI reads study collections from here.
+        studyStats?: unknown;
+        studyImport?: {
+          flashcards?: unknown;
+          quiz_attempts?: unknown;
+          mistake_bank?: unknown;
+          study_sessions?: unknown;
+          study_stats?: unknown;
+        } | null;
+      }
+    >("import_backup_file", { path, jsonContent });
+
+    // Desktop cross-tier restore: the PWA tier's pwaRpcHandler writes the
+    // study stores itself (no `studyImport`), but the desktop command only
+    // reaches SQLite. When the native store is authoritative (migration
+    // stamped) the core importer ALREADY restored these sections there and
+    // hydration below re-reads them — mirroring into the browser mirrors
+    // would only recreate a stale copy. Pre-migration (or PWA), the mirror
+    // is what keeps the UI working.
+    if (report.studyImport && !isDesktopNativeStudy()) {
+      const sections = report.studyImport;
+      // An absent section leaves the local collection untouched (same rule
+      // as the core importer); a present section REPLACES it.
+      if (sections.flashcards !== undefined) {
+        await idbReplaceAll("flashcards", sanitizeFlashcards(sections.flashcards));
+      }
+      if (sections.quiz_attempts !== undefined) {
+        await idbReplaceAll("quiz_attempts", sanitizeQuizAttempts(sections.quiz_attempts));
+      }
+      if (sections.mistake_bank !== undefined) {
+        await idbReplaceAll("mistake_bank", sanitizeMistakes(sections.mistake_bank));
+      }
+    }
+    const stats = report.studyStats ?? report.studyImport?.study_stats;
+    if (stats !== undefined && stats !== null) {
+      writeStoredStudyStats(stats);
+    }
+
     await get().refreshState();
+    // Both importers write the study stores directly — re-hydrate the
+    // in-memory slices or the UI keeps showing the pre-import study state
+    // until the next reload.
+    await hydrateStudyCollections();
     return report;
   },
 
   resetDatabase: async () => {
     try {
       const fresh = await rpc<GetStatePayload>("reset_database");
+      // Web-side study-data wipe: the IDB reset covers the PWA tier's study
+      // stores, but the desktop tier's Rust reset can never reach browser
+      // storage — so the legacy localStorage keys, the local study-stats
+      // ledger and the SWR cache are purged HERE, tier-agnostically. Without
+      // this, a "Reset Everything" user sees pre-reset flashcards, history
+      // and mistakes flash back (in-memory slices included).
+      let purgeFailure: string | null = null;
+      try {
+        await purgeLocalStudyData();
+      } catch (purgeError) {
+        purgeFailure = purgeError instanceof Error ? purgeError.message : String(purgeError);
+      }
       saveCachedState(fresh);
-      set({ data: fresh });
+      set({
+        data: fresh,
+        flashcards: [],
+        quizHistory: [],
+        mistakeBank: [],
+      });
       // The session flag suppresses the first-run wizard — a wipe must let
       // it return, or a "fresh database" never re-onboards this session.
       try {
         sessionStorage.removeItem("quizradar_onboarding_dismissed");
       } catch {
         // ignore
+      }
+      if (purgeFailure !== null) {
+        // Honesty: the schedule database WAS reset, but claiming a clean
+        // "everything wiped" while study data survived on disk would be a
+        // lie. The failure is surfaced; the caller does not show a success
+        // toast (resetDatabase reports false).
+        get().addToast({
+          type: "error",
+          message: `Reset incomplete — the schedule database was wiped, but ${purgeFailure}. Retry the reset, or clear this site's data.`,
+        });
+        return false;
       }
       return true;
     } catch (err) {
@@ -1701,6 +2222,84 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
 
 if (typeof window !== "undefined" && import.meta.env.DEV) {
   (window as unknown as Record<string, unknown>).__QUIZRADAR_STORE__ = useAppStore;
+}
+
+// ---------------------------------------------------------------------------
+// Pomodoro completion — exactly once, in the store.
+//
+// FocusView used to own the completion branch but early-returned on
+// `if (!isRunning)` BEFORE its `timeLeft <= 0` check, while tickPomodoro
+// atomically set `secondsLeft: 0, isRunning: false` — so on the Focus view
+// the chime / session record / toast NEVER fired. The PomodoroModal carried
+// a fully independent second timer that DID complete (its effect checked
+// `isRunning && timeLeft === 0` before clearing). Both bugs disappear when
+// the single completion transition lives here: `pomodoroIsRunning` flips to
+// false inside the same synchronous `set`, so any number of racing ticks or
+// observers can observe zero, but the side effects run exactly once.
+// ---------------------------------------------------------------------------
+
+function playPomodoroChime(): void {
+  try {
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(587.33, now);
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.2, now + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    // Release the audio hardware: each chime used to leak one AudioContext
+    // (browsers cap concurrent contexts, so repeated sessions eventually
+    // muted the chime). Close once the oscillator has actually finished.
+    osc.onended = () => {
+      void ctx.close().catch(() => {
+        // Closing is best-effort; an already-closed context is fine.
+      });
+    };
+    osc.start(now);
+    osc.stop(now + 0.8);
+  } catch {
+    // AudioContext unavailable or blocked by autoplay policy — silent here
+    // is honest: the chime is enhancement, the toast carries the signal.
+  }
+}
+
+function completePomodoroSession(): void {
+  const state = useAppStore.getState();
+  // Consumable guard: only the tick that sees a still-running session with
+  // an elapsed deadline completes it. After this `set`, every later observer
+  // sees isRunning=false / endsAt=null and can never re-complete.
+  if (!state.pomodoroIsRunning || state.pomodoroEndsAt === null) return;
+  const mode = state.pomodoroMode;
+  // Honesty: credit the actual focused time — the nominal block minus every
+  // wall-clock millisecond spent paused — never the nominal block. A user
+  // who paused 10 of 25 focus minutes earns 15.
+  const focusedMs = Math.max(0, POMODORO_DURATIONS[mode] * 1000 - state.pomodoroPausedMsTotal);
+  const minutes = Math.round(focusedMs / 60000);
+  useAppStore.setState({
+    pomodoroIsRunning: false,
+    pomodoroEndsAt: null,
+    pomodoroPausedRemainingSec: null,
+    pomodoroPausedAtMs: null,
+    pomodoroPausedMsTotal: 0,
+    pomodoroSecondsLeft: POMODORO_DURATIONS[mode],
+    pomodoroSessionId: state.pomodoroSessionId + 1,
+  });
+  if (mode === "pomodoro") {
+    recordPomodoroSession(minutes);
+  }
+  playPomodoroChime();
+  useAppStore.getState().addToast({
+    type: "success",
+    message: copy.pomodoro.sessionComplete,
+  });
 }
 
 // Day-rollover watchdog initialization helper.

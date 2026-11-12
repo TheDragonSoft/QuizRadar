@@ -55,6 +55,13 @@ export default defineConfig({
   // Committed baselines live next to the suite, outside the spec files.
   snapshotPathTemplate: "{testDir}/../e2e-baselines/{arg}{ext}",
 
+  // The `capture-*.spec.ts` showcase scripts write marketing/demo screenshots
+  // into `docs/screenshots/` — they are NOT acceptance tests. They never run
+  // under `pnpm e2e`; they run explicitly via `pnpm e2e:showcase`
+  // (`playwright.showcase.config.ts`), so an acceptance run can never rewrite
+  // tracked documentation screenshots.
+  testIgnore: /capture-.*\.spec\.ts/,
+
   // A fresh browser context per test (Playwright's default) is what keeps
   // the IndexedDB-backed state empty and deterministic.
   fullyParallel: false,

@@ -36,8 +36,18 @@ const FORBIDDEN_FILE_PATTERNS = [
   /(^|\/)client_secret[^/]*\.json$/i,
 ];
 
-// Documented maintainer exception in AGENTS.md §3.2 (desktop shell only).
-const SECRET_SCAN_ALLOWLIST = new Set(["apps/desktop/src-tauri/src/state.rs"]);
+// Documented maintainer exception in AGENTS.md §3.2 (desktop shell only):
+// the bundled OAuth client id + secret live in `state.rs`. The exemption is
+// LINE-scoped: the file IS content-scanned, minus exactly the lines that
+// reference the two authorized constants — any OTHER secret-shaped literal
+// anywhere else in that file still fails the gate. (Previously the whole
+// file was skipped, which let any new leak in it through unnoticed.)
+const SECRET_SCAN_EXEMPT_LINES = new Map([
+  [
+    "apps/desktop/src-tauri/src/state.rs",
+    ["DEFAULT_GOOGLE_CLIENT_ID", "DEFAULT_GOOGLE_CLIENT_SECRET"],
+  ],
+]);
 
 function isAllowedEnvExample(relPath) {
   return /(^|\/)\.env\.example$/i.test(relPath);
@@ -89,8 +99,14 @@ function checkSecretHygiene(relPaths, errors) {
       );
       continue;
     }
-    if (SECRET_SCAN_ALLOWLIST.has(norm)) continue;
-    if (/\.(test|spec)\.[jt]sx?$/.test(norm) || norm.startsWith("core/tests/")) continue;
+    // NOTE: test/spec files are deliberately NOT exempt from the content scan.
+    // A real-looking key pasted into a `*.test.*` file or `core/tests/` fixture
+    // is exactly the leak this gate exists to catch, and the repo currently
+    // contains no test fixture that matches either detector (verified 2026-11-10
+    // over all 600 tracked files). If a future fixture genuinely needs a
+    // key-shaped literal, use a truncated placeholder (e.g. `AIzaSy…`) or add
+    // a LINE-scoped entry to SECRET_SCAN_EXEMPT_LINES above with a documented
+    // reason — never widen the detectors.
 
     const full = path.join(repoRoot, norm);
     if (!existsSync(full)) continue;
@@ -99,6 +115,15 @@ function checkSecretHygiene(relPaths, errors) {
       content = readFileSync(full, "utf8");
     } catch {
       continue;
+    }
+    // Line-scoped maintainer exception (AGENTS.md §3.2): drop only the lines
+    // that reference the authorized constants, then scan the REST of the file.
+    const exemptMarkers = SECRET_SCAN_EXEMPT_LINES.get(norm);
+    if (exemptMarkers) {
+      content = content
+        .split("\n")
+        .filter((line) => !exemptMarkers.some((marker) => line.includes(marker)))
+        .join("\n");
     }
     if (/AIzaSy[A-Za-z0-9_-]{33}/.test(content)) {
       errors.push(`Potential Google API key literal detected in \`${norm}\` (AGENTS.md §3.2).`);
@@ -112,7 +137,14 @@ function checkSecretHygiene(relPaths, errors) {
 }
 
 function resolveBaseRef(explicitBase) {
-  if (explicitBase) return explicitBase;
+  // GitHub Actions passes `github.event.before` as the base on push events.
+  // For a brand-new branch (or the first push after a force-push prune) that
+  // SHA is the all-zero sentinel and resolves to nothing — treat it as "no
+  // explicit base" so the branch range is derived from main instead of being
+  // silently skipped.
+  if (explicitBase && !/^0+$/.test(explicitBase.trim())) {
+    return explicitBase.trim();
+  }
   for (const candidate of ["origin/main", "main"]) {
     if (runGit(repoRoot, ["rev-parse", "--verify", candidate], { allowFailure: true }) !== null) {
       return candidate;
@@ -180,21 +212,50 @@ function checkBranchRange({ baseRef, headRef, errors }) {
 
   checkSecretHygiene(changedFiles, errors);
 
-  const touchesShippedCode = changedFiles.some(
-    (f) => f.startsWith("core/") || f.startsWith("apps/"),
+  // CI (`ci.yml`), gate/tooling scripts and shipped code all affect other
+  // agents' workflow, so every such branch must own a `changes/<slug>.md`
+  // handoff fragment (AGENTS.md §3.6) — previously a `ci:`/`chore(tooling):`
+  // branch could merge with no handoff record at all because the fragment
+  // requirement keyed only on `core/`+`apps/`.
+  const touchesCoordinationSurface = changedFiles.some(
+    (f) =>
+      f.startsWith("core/") ||
+      f.startsWith("apps/") ||
+      f.startsWith(".github/") ||
+      f.startsWith("tooling/"),
   );
   const inferredBump = classifyCommitsBump(commits);
-  const needsFragment = (touchesShippedCode || inferredBump !== "none") && !hasSkipNote;
+  const needsFragment = (touchesCoordinationSurface || inferredBump !== "none") && !hasSkipNote;
 
-  if (needsFragment && fragments.length === 0) {
+  // A handoff requirement is satisfied only by a VALID fragment ADDED or
+  // MODIFIED inside this branch's committed range — a fragment that merely
+  // exists in the working tree (left over from ANOTHER agent's branch) must
+  // never satisfy this branch's handoff. Previously the check was
+  // `fragments.length === 0`, which accepted any pre-existing fragment.
+  const rangeFragmentRaw =
+    runGit(
+      repoRoot,
+      ["diff", "--name-only", "--diff-filter=AM", `${mergeBase}...${headRef}`, "--", "changes/"],
+      { allowFailure: true },
+    ) ?? "";
+  const validFragmentNames = new Set(
+    fragments.filter((f) => f.valid).map((f) => `changes/${f.fileName}`),
+  );
+  const hasValidFragmentInRange = rangeFragmentRaw
+    .split("\n")
+    .map((s) => s.trim().replace(/\\/g, "/"))
+    .some((name) => validFragmentNames.has(name));
+
+  if (needsFragment && !hasValidFragmentInRange) {
     const suggestedBump = inferredBump !== "none" ? inferredBump : "patch";
     const surfaces = inferSurfacesFromPaths(changedFiles);
     const surfArg = surfaces.length > 0 ? surfaces.join(",") : "core";
     errors.push(
       [
-        "Missing agent handoff & version fragment in `changes/<slug>.md`.",
-        "  Parallel agents communicate changes through per-branch fragments instead of editing STATUS.md or version.json.",
-        "  Create one now with:",
+        "Missing agent handoff & version fragment for this branch range.",
+        "  The gate requires a VALID `changes/<slug>.md` ADDED or MODIFIED by commits in this branch's range —",
+        "  a fragment left over from another branch does not satisfy this handoff.",
+        "  Create and COMMIT one now with:",
         `    pnpm agent:note --bump ${suggestedBump} --surfaces ${surfArg} --summary "<what changed & why>" --verify "<commands run>"`,
         "  (Or include `[skip-note]` in the commit/PR body for trivial non-release housekeeping.)",
       ].join("\n"),
@@ -278,7 +339,13 @@ if (hook === "pre-commit") {
   checkStatusLineCap(errors);
   const headRef = typeof flags.head === "string" ? flags.head : "HEAD";
   const baseRef = resolveBaseRef(typeof flags.base === "string" ? flags.base : null);
-  if (baseRef && flags.base) {
+  if (baseRef) {
+    // Run the branch-range checks whenever a base can be resolved — with or
+    // without an explicit `--base`. Historically push-mode `--ci` without
+    // `--base` skipped this entire block, which meant commit validation,
+    // the secret scan and the fragment requirement NEVER ran on `push`
+    // events (only on pull_request). This now matches the `--hook pre-push`
+    // path above, which has always derived the base itself.
     checkBranchRange({ baseRef, headRef, errors });
   } else {
     checkFragmentsValidity(errors);

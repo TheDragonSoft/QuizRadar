@@ -17,6 +17,18 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(version),
   },
+  server: {
+    watch: {
+      // The Playwright output dir lives inside `apps/web`, so the dev server
+      // (which the e2e harness reuses) watches it. Playwright writes browser
+      // download artifacts (.crdownload → final) there mid-run, and a Windows
+      // fs.watch on a file being renamed KILLS Vite with an unhandled EBUSY —
+      // which then makes every subsequent e2e test fail with
+      // ERR_CONNECTION_REFUSED. The e2e results are not app source; ignore
+      // them (same rule the gitignore applies).
+      ignored: ["**/e2e-results/**"],
+    },
+  },
   test: {
     environment: "jsdom",
     setupFiles: "./src/test/setup.ts",

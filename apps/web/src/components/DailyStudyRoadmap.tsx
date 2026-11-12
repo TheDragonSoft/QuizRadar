@@ -1,10 +1,10 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Check, ChevronRight, Clock, AlertTriangle, ShieldCheck } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
 import { courseAccessibleChip, courseDisplayName, coursePalette } from "../lib/coursePalette";
-import { calculateDailyStudyCushion } from "../lib/cushionCalculator";
-import type { Course, DailyStudyDayGroup, DailyStudyTask } from "../state/types";
+import { calculateDailyStudyCushionCore } from "../lib/cushionEngine";
+import type { Course, DailyStudyCushion, DailyStudyDayGroup, DailyStudyTask } from "../state/types";
 
 export interface DailyStudyRoadmapProps {
   days?: DailyStudyDayGroup[];
@@ -33,18 +33,60 @@ export const DailyStudyRoadmap: React.FC<DailyStudyRoadmapProps> = ({
   const rawDays = propDays ?? storeDays;
 
   // Filter roadmap tasks by course
-  const filteredDays = rawDays
-    .map((day) => {
-      const dayTasks = (day.tasks || []).filter((task) => {
-        if (activeCourseFilter === "ALL") return true;
-        return task.courseId === activeCourseFilter;
-      });
-      return {
-        ...day,
-        tasks: dayTasks,
-      };
-    })
-    .filter((day) => day.tasks.length > 0);
+  const filteredDays = useMemo(
+    () =>
+      rawDays
+        .map((day) => {
+          const dayTasks = (day.tasks || []).filter((task) => {
+            if (activeCourseFilter === "ALL") return true;
+            return task.courseId === activeCourseFilter;
+          });
+          return {
+            ...day,
+            tasks: dayTasks,
+          };
+        })
+        .filter((day) => day.tasks.length > 0),
+    [rawDays, activeCourseFilter],
+  );
+
+  // Cushions are derived by the Rust core (single implementation for every
+  // tier), computed over the course-filtered task subset exactly as before —
+  // reached through the WASM engine, which initializes asynchronously. The
+  // map starts empty (no badge is invented for an unknown day) and fills as
+  // the core answers.
+  const [cushionsByDate, setCushionsByDate] = useState<Record<string, DailyStudyCushion | null>>(
+    {},
+  );
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const entries = await Promise.all(
+        filteredDays.map(async (day) => {
+          try {
+            const cushion = await calculateDailyStudyCushionCore(
+              day.date,
+              scheduleSlots,
+              customEvents,
+              assessments,
+              day.tasks,
+              15.0,
+            );
+            return [day.date, cushion] as const;
+          } catch {
+            // Engine unavailable or the day's payload could not cross the
+            // wire: no cushion badge for this day rather than a fabricated
+            // number (honesty doctrine, AGENTS §3.1).
+            return [day.date, null] as const;
+          }
+        }),
+      );
+      if (!cancelled) setCushionsByDate(Object.fromEntries(entries));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [filteredDays, scheduleSlots, customEvents, assessments]);
 
   if (filteredDays.length === 0) {
     return (
@@ -60,15 +102,8 @@ export const DailyStudyRoadmap: React.FC<DailyStudyRoadmapProps> = ({
   return (
     <div data-testid="daily-study-roadmap" className={`space-y-4 ${className}`}>
       {filteredDays.map((day) => {
-        // Calculate cushion for this specific day
-        const cushion = calculateDailyStudyCushion(
-          day.date,
-          scheduleSlots,
-          customEvents,
-          assessments,
-          day.tasks,
-          15.0,
-        );
+        // Core-derived cushion for this specific day (see the effect above).
+        const cushion = cushionsByDate[day.date] ?? null;
 
         return (
           <div
@@ -90,8 +125,11 @@ export const DailyStudyRoadmap: React.FC<DailyStudyRoadmapProps> = ({
                   </span>
                 )}
 
-                {/* Study Cushion / Deficit Chip */}
-                {cushion.isDeficit && cushion.deficitHours !== undefined && cushion.deficitHours !== null ? (
+                {/* Study Cushion / Deficit Chip (absent until the core answers) */}
+                {cushion !== null &&
+                cushion.isDeficit &&
+                cushion.deficitHours !== undefined &&
+                cushion.deficitHours !== null ? (
                   <span
                     data-testid="study-deficit-badge"
                     title={cushion.warningNote ?? "Study tasks exceed available free hours"}
@@ -100,7 +138,9 @@ export const DailyStudyRoadmap: React.FC<DailyStudyRoadmapProps> = ({
                     <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" />
                     <span>⚠️ Study Time Deficit: -{cushion.deficitHours.toFixed(1)} hrs</span>
                   </span>
-                ) : cushion.cushionHours !== undefined && cushion.cushionHours !== null ? (
+                ) : cushion !== null &&
+                  cushion.cushionHours !== undefined &&
+                  cushion.cushionHours !== null ? (
                   <span
                     data-testid="study-cushion-badge"
                     title={`Available waking capacity after classes: ${cushion.availableHours}h`}
@@ -138,9 +178,7 @@ export const DailyStudyRoadmap: React.FC<DailyStudyRoadmapProps> = ({
                     task.topicIndex != null &&
                     void toggleTopic(task.assessmentId, task.topicIndex)
                   }
-                  onOpenDetail={() =>
-                    task.assessmentId && openAssessmentDetail(task.assessmentId)
-                  }
+                  onOpenDetail={() => task.assessmentId && openAssessmentDetail(task.assessmentId)}
                 />
               ))}
             </div>

@@ -10,6 +10,13 @@ export type ModalComponent = React.ComponentType<{
 export interface ModalMeta {
   size?: "sm" | "md" | "lg" | "xl";
   flush?: boolean;
+  /**
+   * Drop the panel's 1px surface hairline. For modals whose first child is a
+   * colored header band that bleeds to the panel's top edge (Onboarding), the
+   * hairline rings the band and reads as a white border against the dimmed
+   * backdrop; shadow-2xl + the dimmed backdrop carry the separation instead.
+   */
+  borderless?: boolean;
 }
 
 interface ModalRegistration {

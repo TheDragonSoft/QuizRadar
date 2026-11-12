@@ -1,12 +1,5 @@
 import React from "react";
-import {
-  CalendarClock,
-  CheckCircle2,
-  Flame,
-  ShieldCheck,
-  Timer,
-  Zap,
-} from "lucide-react";
+import { CalendarClock, CheckCircle2, Flame, ShieldCheck, Timer, Zap } from "lucide-react";
 import { useAppStore } from "../state/store";
 import { useLocalStudyStats } from "../lib/studyStats";
 
@@ -25,7 +18,8 @@ export const StudyStatsCard: React.FC<StudyStatsCardProps> = ({
   const storeTotalTopics = useAppStore((s) => s.data.dashboard.totalTopicsCount);
 
   const stats = useLocalStudyStats(assessments, recommendations, storeReadiness);
-  const isZeroTopics = storeTotalTopics !== undefined ? storeTotalTopics === 0 : stats.totalTopicsCount === 0;
+  const isZeroTopics =
+    storeTotalTopics !== undefined ? storeTotalTopics === 0 : stats.totalTopicsCount === 0;
 
   const formatMinutes = (totalMinutes: number) => {
     if (totalMinutes < 60) return `${totalMinutes}m`;
@@ -48,9 +42,7 @@ export const StudyStatsCard: React.FC<StudyStatsCardProps> = ({
             <span className="font-bold tabular-nums text-slate-900 dark:text-white">
               {formatMinutes(stats.focusMinutesTotal)}
             </span>
-            <span className="ml-1 text-[11px] text-slate-500 dark:text-slate-400">
-              focused
-            </span>
+            <span className="ml-1 text-[11px] text-slate-500 dark:text-slate-400">focused</span>
           </div>
         </div>
 
@@ -62,9 +54,7 @@ export const StudyStatsCard: React.FC<StudyStatsCardProps> = ({
             <span className="font-bold tabular-nums text-slate-900 dark:text-white">
               {isZeroTopics ? "—" : `${stats.readinessPercent}%`}
             </span>
-            <span className="ml-1 text-[11px] text-slate-500 dark:text-slate-400">
-              ready
-            </span>
+            <span className="ml-1 text-[11px] text-slate-500 dark:text-slate-400">ready</span>
           </div>
         </div>
 
@@ -76,9 +66,7 @@ export const StudyStatsCard: React.FC<StudyStatsCardProps> = ({
             <span className="font-bold tabular-nums text-slate-900 dark:text-white">
               {stats.studyStreakDays}d
             </span>
-            <span className="ml-1 text-[11px] text-slate-500 dark:text-slate-400">
-              streak
-            </span>
+            <span className="ml-1 text-[11px] text-slate-500 dark:text-slate-400">streak</span>
           </div>
         </div>
       </div>
@@ -130,7 +118,8 @@ export const StudyStatsCard: React.FC<StudyStatsCardProps> = ({
               {formatMinutes(stats.focusMinutesTotal)}
             </div>
             <div className="mt-0.5 text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
-              {stats.focusSessionsTotal} {stats.focusSessionsTotal === 1 ? "session" : "sessions"} · {stats.focusMinutesToday}m today
+              {stats.focusSessionsTotal} {stats.focusSessionsTotal === 1 ? "session" : "sessions"} ·{" "}
+              {stats.focusMinutesToday}m today
             </div>
           </div>
         </div>

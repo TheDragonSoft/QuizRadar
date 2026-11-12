@@ -4,7 +4,13 @@ import { LIGHT_PROJECT } from "./helpers/theme";
 import * as path from "node:path";
 import * as fs from "node:fs";
 
-const DOCS_DIR = path.resolve(process.cwd(), "../../docs/screenshots/redesign");
+// OPT-IN capture script (run via `pnpm e2e:showcase`). Output lands in the
+// untracked staging dir unless the operator explicitly points
+// QUIZRADAR_SHOWCASE_DIR at a tracked folder — a run in this repo must never
+// rewrite `docs/screenshots/` as a side effect.
+const DOCS_DIR = process.env.QUIZRADAR_SHOWCASE_DIR
+  ? path.resolve(process.env.QUIZRADAR_SHOWCASE_DIR)
+  : path.resolve(process.cwd(), "e2e-results/showcase/redesign");
 
 if (!fs.existsSync(DOCS_DIR)) {
   fs.mkdirSync(DOCS_DIR, { recursive: true });
@@ -60,42 +66,15 @@ test("capture comprehensive redesign showcase screenshots", async ({ page }) => 
   await page.waitForTimeout(600);
   await saveScreenshots("after-desktop-settings-appearance.png");
 
-  // Return to Dashboard for AMOLED Showcase
+  // Return to Dashboard for the Astronomical Timeline showcase
   await page.getByRole("button", { name: "Back to dashboard" }).click();
   await page.waitForTimeout(400);
 
-  // 5. AMOLED Variant 1: Pure Starlight (amoled-minimal)
-  await page.evaluate(() => {
-    document.documentElement.dataset.theme = "amoled-minimal";
-    document.documentElement.classList.add("dark");
-    localStorage.setItem("quizradar_theme", "amoled-minimal");
-  });
-  await page.waitForTimeout(500);
-  await saveScreenshots("after-desktop-amoled-minimal.png");
-
-  // 6. AMOLED Variant 2: Constellation Sparkles (amoled-sparkle)
-  await page.evaluate(() => {
-    document.documentElement.dataset.theme = "amoled-sparkle";
-    document.documentElement.classList.add("dark");
-    localStorage.setItem("quizradar_theme", "amoled-sparkle");
-  });
-  await page.waitForTimeout(500);
-  await saveScreenshots("after-desktop-amoled-sparkle.png");
-
-  // 7. AMOLED Variant 3: Cosmic Stardust (amoled-nebula)
-  await page.evaluate(() => {
-    document.documentElement.dataset.theme = "amoled-nebula";
-    document.documentElement.classList.add("dark");
-    localStorage.setItem("quizradar_theme", "amoled-nebula");
-  });
-  await page.waitForTimeout(500);
-  await saveScreenshots("after-desktop-amoled-nebula.png");
-
-  // 8. Astronomical Timeline Horizon on Dashboard (Populated with honest courses & events)
+  // 5. Astronomical Timeline Horizon on Dashboard (Populated with honest courses & events)
   await page.evaluate(async () => {
-    document.documentElement.dataset.theme = "amoled-sparkle";
+    document.documentElement.dataset.theme = "obsidian";
     document.documentElement.classList.add("dark");
-    localStorage.setItem("quizradar_theme", "amoled-sparkle");
+    localStorage.setItem("quizradar_theme", "obsidian");
 
     const store = (window as unknown as Record<string, unknown>).__QUIZRADAR_STORE__ as {
       getState: () => {
@@ -106,9 +85,9 @@ test("capture comprehensive redesign showcase screenshots", async ({ page }) => 
     };
     if (store) {
       store.getState().setView("dashboard");
-      await store.getState().upsertCourse(
-        { id: "CSE241", name: "Digital Systems", color: "#3b82f6", credits: 4 },
-        [
+      await store
+        .getState()
+        .upsertCourse({ id: "CSE241", name: "Digital Systems", color: "#3b82f6", credits: 4 }, [
           {
             id: "slot-1",
             courseId: "CSE241",
@@ -121,11 +100,10 @@ test("capture comprehensive redesign showcase screenshots", async ({ page }) => 
             endTime: "10:30",
             displayTime: "09:00 - 10:30",
           },
-        ],
-      );
-      await store.getState().upsertCourse(
-        { id: "MAT102", name: "Calculus II", color: "#f59e0b", credits: 4 },
-        [
+        ]);
+      await store
+        .getState()
+        .upsertCourse({ id: "MAT102", name: "Calculus II", color: "#f59e0b", credits: 4 }, [
           {
             id: "slot-2",
             courseId: "MAT102",
@@ -138,8 +116,7 @@ test("capture comprehensive redesign showcase screenshots", async ({ page }) => 
             endTime: "12:30",
             displayTime: "11:00 - 12:30",
           },
-        ],
-      );
+        ]);
       await store.getState().addCustomEvent({
         id: "exam-1",
         title: "Midterm: Circuit Synthesis",

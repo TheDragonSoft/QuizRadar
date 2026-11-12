@@ -376,15 +376,7 @@ export type View = "dashboard" | "tasks" | "calendar" | "focus" | "help" | "sett
  */
 export type SettingsSection = "account" | "courses" | "integrations";
 
-export type ThemeMode =
-  | "light"
-  | "dark"
-  | "obsidian"
-  | "solar"
-  | "amoled"
-  | "amoled-minimal"
-  | "amoled-sparkle"
-  | "amoled-nebula";
+export type ThemeMode = "light" | "dark" | "obsidian" | "solar" | "amoled-nebula";
 
 export type SyncStatus = "idle" | "syncing" | "success" | "error";
 
@@ -514,11 +506,17 @@ export interface ImportReport {
   assessmentsImported: number;
   coursesImported: number;
   slotsImported: number;
+  /** Slots skipped on restore (missing or placeholder times) — honest count. */
+  slotsSkipped?: number;
   gradesImported: number;
   topicsImported: number;
   eventsImported: number;
   customEventsImported?: number;
   feedsImported: number;
+  flashcardsImported?: number;
+  quizAttemptsImported?: number;
+  mistakesImported?: number;
+  studyStatsRestored?: boolean;
   secretsIgnored: string[];
   warnings: string[];
 }

@@ -13,6 +13,7 @@ import { HelpView } from "./views/HelpView";
 import { SettingsView } from "./views/SettingsView";
 import { DevRig } from "./dev/DevRig";
 import { useAppStore, applyThemeToDocument, initDayRolloverWatchdog } from "./state/store";
+import { startPomodoroTicker } from "./state/pomodoroTicker";
 import { PrintScheduleDoc } from "./components/PrintScheduleDoc";
 import { isTauriEnvironment } from "./state/rpc";
 import { copy } from "./copy";
@@ -42,6 +43,9 @@ registerModal("search-palette", SearchPaletteModal as unknown as ModalComponent,
 registerModal("assessment-detail", AssessmentDetailModal as unknown as ModalComponent, {
   size: "lg",
   flush: true,
+  // Same defect as onboarding: the full-width course-color strip is the panel's
+  // first child, so the 1px surface hairline rings it. See modalRegistry.ts.
+  borderless: true,
 });
 registerModal("create-edit-assessment", CreateEditAssessmentModal as unknown as ModalComponent, {
   size: "md",
@@ -50,6 +54,7 @@ registerModal("create-edit-assessment", CreateEditAssessmentModal as unknown as 
 registerModal("onboarding", OnboardingWizardModal as unknown as ModalComponent, {
   size: "xl",
   flush: true,
+  borderless: true,
 });
 registerModal("practice-quiz", PracticeQuizModal as unknown as ModalComponent, { size: "lg" });
 registerModal("pomodoro", PomodoroModal as unknown as ModalComponent, { size: "sm" });
@@ -122,8 +127,13 @@ export default function App() {
       }
     }
     const stopWatchdog = initDayRolloverWatchdog();
+    // App-level Pomodoro driver: ONE ticker for the whole shell, independent
+    // of which view is mounted (the old driver lived inside FocusView, so the
+    // session froze on navigation). Deadline-based — see pomodoroTicker.ts.
+    const stopPomodoroTicker = startPomodoroTicker();
     return () => {
       stopWatchdog();
+      stopPomodoroTicker();
     };
   }, [loadInitialData]);
 

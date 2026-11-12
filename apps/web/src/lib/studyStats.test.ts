@@ -91,6 +91,7 @@ describe("studyStats", () => {
         isUpcoming: false,
         daysUntil: -5,
         achievedScore: 85,
+        maxScore: 100,
         urgencyLevel: "past",
         priorityScore: 0,
         topics: [],
@@ -129,5 +130,37 @@ describe("studyStats", () => {
     expect(summary.completedTopicsCount).toBe(1);
     expect(summary.totalTopicsCount).toBe(2);
     expect(summary.readinessPercent).toBe(50);
+  });
+
+  it("averages achieved scores as percents of maxScore, not raw points", () => {
+    const mkGraded = (id: string, achievedScore: number, maxScore: number | null): Assessment => ({
+      id,
+      courseId: "CS101",
+      title: `Assessment ${id}`,
+      assessmentType: "Quiz",
+      dateIso: "2026-11-01",
+      startTime: "09:00",
+      source: "moodle",
+      isUpcoming: false,
+      daysUntil: -5,
+      achievedScore,
+      maxScore,
+      urgencyLevel: "past",
+      priorityScore: 0,
+      topics: [],
+      warnings: [],
+    });
+
+    // 80/100 = 80%, 18/20 = 90% -> average 85% (a raw-points average would
+    // give (80 + 18) / 2 = 49, which is meaningless across scales).
+    const summary = computeStudyStatsSummary([mkGraded("g1", 80, 100), mkGraded("g2", 18, 20)], []);
+    expect(summary.gradedAssessmentsCount).toBe(2);
+    expect(summary.averageAchievedScore).toBe(85);
+
+    // A graded assessment without a usable maxScore has no percent basis and
+    // is excluded from the average rather than folded in as raw points.
+    const noMax = computeStudyStatsSummary([mkGraded("g1", 80, null)], []);
+    expect(noMax.gradedAssessmentsCount).toBe(1);
+    expect(noMax.averageAchievedScore).toBe(null);
   });
 });

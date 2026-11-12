@@ -4,10 +4,14 @@
 # here means a clean checkout is actually green:
 #
 #   version  — the single-source-of-truth gate (tooling/version.json → 5 sinks)
-#   rust     — fmt / clippy / test for the whole Rust workspace
+#   rust     — fmt / clippy / test for the whole Rust workspace (this includes
+#              the Tauri desktop shell: `apps/desktop/src-tauri` is a workspace
+#              member, so `cargo test --workspace` runs its tests — there is no
+#              separate desktop job to keep green)
 #   web      — eslint / prettier / tsc / vitest / WASM build
-#   desktop          — the Tauri shell's own Rust tests (they are not part of
-#                      `cargo test --workspace` output today, so they get their own job)
+#   browser  — Playwright behavioral smoke (BLOCKING: every e2e DOM assertion)
+#   browser-visual — Playwright pixel comparison vs committed baselines
+#              (non-blocking until the baselines prove stable on ubuntu-latest)
 #   android          — ktlint / assembleDebug / testDebugUnitTest
 #   android-emulator — headless Android emulator (API 35), testDebugUnitTest, ktlintCheck, assembleDebug, screenshots & APK upload
 #   coverage         — the two coverage producers plus the ratchet that fails when
@@ -45,9 +49,19 @@ jobs:
         run: node tooling/generate-version.mjs --check
       - name: rust-ts contract wire map freshness check
         run: node apps/web/src/contract/regenerate.mjs --check
+      # Push mode: `github.event.before` is the previous tip — essential here,
+      # because with fetch-depth: 0 the freshly pushed commit IS origin/main by
+      # the time this runs, so a derived base would always produce an empty
+      # range. For workflow_dispatch (and new branches) `before` is empty or
+      # the all-zero sentinel; both are treated by agent-gate.mjs as "no
+      # explicit base" and fall back to deriving origin/main. Env vars (not
+      # inline expansion) keep an empty value from collapsing into
+      # `--base --head`.
       - name: multi-agent hygiene & fragment check (push)
         if: github.event_name != 'pull_request'
-        run: node tooling/agent-gate.mjs --ci
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+        run: node tooling/agent-gate.mjs --ci --base "$EVENT_BEFORE" --head "$GITHUB_SHA"
       - name: multi-agent commit, secret & handoff fragment check (PR)
         if: github.event_name == 'pull_request'
         env:
@@ -146,29 +160,78 @@ jobs:
       - name: landing static build
         run: pnpm --filter @quizradar/landing build
 
-  desktop:
-    name: desktop (tauri shell tests)
+  # Playwright split into TWO jobs (docs/TESTING-PLAYBOOK.md §5):
+  #   browser        — BLOCKING behavioral smoke: every spec WITHOUT a visual
+  #                    snapshot (`--grep-invert @visual`). DOM assertions
+  #                    (honest empty states, modals, labels) are
+  #                    platform-independent, so a failure here is a real
+  #                    regression, not rasteriser noise.
+  #   browser-visual — OPTIONAL platform-sensitive pixel comparison
+  #                    (`--grep @visual`), still `continue-on-error` until the
+  #                    committed baselines in `apps/web/e2e-baselines/` are
+  #                    regenerated/verified on the CI runner (they were made
+  #                    on dev machines; glyph rasterisation can differ per
+  #                    platform). An optional failure is reported as such —
+  #                    it is NOT a gate and must never be called one.
+  # Both jobs share the setup below via the YAML anchor. Promote
+  # browser-visual to blocking only after a verified runner run, and keep the
+  # playbook's claim about what CI runs in sync with that change.
+  browser:
+    name: browser (behavioral smoke, blocking)
     needs: version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - name: install Tauri Linux build dependencies
+      # The Playwright webServer command runs `tooling/build-wasm.mjs` itself,
+      # which hard-fails when the wasm-bindgen CLI is missing or mismatched.
+      - name: install wasm-bindgen-cli (version pinned by Cargo.lock)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
-      - name: desktop shell tests
-        run: cargo test -p quizradar-desktop
+          WASM_BINDGEN_VERSION="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep '^version' | head -1 | cut -d'"' -f2)"
+          echo "wasm-bindgen-cli ${WASM_BINDGEN_VERSION}"
+          cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked
+      - name: install
+        run: pnpm install --frozen-lockfile
+      - name: install playwright chromium
+        run: pnpm --dir apps/web exec playwright install --with-deps chromium
+      - name: playwright behavioral smoke (no pixel comparison)
+        run: pnpm --dir apps/web exec playwright test --grep-invert @visual
+
+  browser-visual:
+    name: browser (visual baselines, non-blocking)
+    needs: version
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: install wasm-bindgen-cli (version pinned by Cargo.lock)
+        run: |
+          WASM_BINDGEN_VERSION="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep '^version' | head -1 | cut -d'"' -f2)"
+          echo "wasm-bindgen-cli ${WASM_BINDGEN_VERSION}"
+          cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked
+      - name: install
+        run: pnpm install --frozen-lockfile
+      - name: install playwright chromium
+        run: pnpm --dir apps/web exec playwright install --with-deps chromium
+      - name: playwright visual baseline comparison
+        run: pnpm --dir apps/web exec playwright test --grep @visual
 
   android:
     name: android (ktlint / assembleDebug / test)
@@ -371,6 +434,13 @@ jobs:
             librsvg2-dev
       - name: rust coverage
         run: pnpm coverage:rust
+      # `coverage:web` runs the vitest suite, and `wasmBridge.ts` statically
+      # imports the generated `public/wasm/quizradar_wasm.js` — without this
+      # build step a fresh checkout fails at import time, exactly like the web
+      # job's ordering fix above. The wasm-bindgen-cli install step in this job
+      # already pins the version Cargo.lock requires.
+      - name: wasm build
+        run: pnpm --dir apps/web build:wasm
       - name: web coverage
         run: pnpm coverage:web
       - name: coverage ratchet

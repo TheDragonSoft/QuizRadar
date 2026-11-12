@@ -60,8 +60,10 @@ pub struct GmailRunStats {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GmailScan {
-    /// The updated cache: merged old + newly fetched, newest-first by id
-    /// (Gmail hex ids sort chronologically), capped at [`MAX_CACHED_EMAILS`].
+    /// The updated cache: merged old + newly fetched, newest-first by
+    /// internal date with the id as a deterministic tiebreak (Gmail ids are
+    /// NOT a documented chronological ordering), capped at
+    /// [`MAX_CACHED_EMAILS`].
     pub cache: Vec<CachedEmail>,
     pub stats: GmailRunStats,
     pub notes: Vec<String>,
@@ -104,8 +106,7 @@ pub async fn scan_gmail(
 
     let mut message_ids: Vec<String> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut first_error: Option<String> = None;
-    let mut queries_failed = 0usize;
+    let mut query_errors: Vec<(String, String)> = Vec::new();
     let mut notes: Vec<String> = Vec::new();
 
     for (query, result) in SEARCH_QUERIES.iter().zip(results) {
@@ -122,14 +123,12 @@ pub async fn scan_gmail(
                     }
                 }
             }
-            Err(error) => {
-                queries_failed += 1;
-                if first_error.is_none() {
-                    first_error = Some(error);
-                }
-            }
+            // Every failed query is kept — one shared failure mode must not
+            // erase four distinct ones from the caller's notes.
+            Err(error) => query_errors.push(((*query).to_string(), error)),
         }
     }
+    let queries_failed = query_errors.len();
     let stats = GmailRunStats {
         queries_run: SEARCH_QUERIES.len() - queries_failed,
         queries_failed,
@@ -139,30 +138,53 @@ pub async fn scan_gmail(
 
     // Honest error reporting:
     // If EVERY query failed, the scan failed completely.
-    // If only some queries failed, continue with the successful ones and record an honest warning note.
+    // If only some queries failed, continue with the successful ones and record an honest warning
+    // note naming EVERY failed query, not just the first error.
     if queries_failed == SEARCH_QUERIES.len() {
-        if let Some(error) = first_error {
-            return Err(error);
+        if let Some((_, error)) = query_errors.first() {
+            return Err(error.clone());
         }
-    } else if let Some(error) = first_error {
+    } else if !query_errors.is_empty() {
+        let details = query_errors
+            .iter()
+            .map(|(query, error)| format!("'{query}': {error}"))
+            .collect::<Vec<_>>()
+            .join("; ");
         notes.push(format!(
-            "{queries_failed} of {} Gmail search queries failed: {error}",
+            "{queries_failed} of {} Gmail search queries failed: {details}",
             SEARCH_QUERIES.len()
         ));
     }
 
     // 2. Select fetch targets: uncached ids always; cached ids only up to the
     //    refresh cap (v4 parity — keeps a 500-message cache from refetching).
+    //    The cap keeps the NEWEST cached emails, ranked by internal date with
+    //    the id as tiebreak — never "the first ten encountered": each search
+    //    query is newest-first, but their concatenation is not, and Gmail ids
+    //    are not a documented chronological ordering.
     let mut by_id: std::collections::HashMap<String, CachedEmail> = cached
         .iter()
         .map(|email| (email.id.clone(), email.clone()))
         .collect();
+    let mut refresh_candidates: Vec<&CachedEmail> =
+        message_ids.iter().filter_map(|id| by_id.get(id)).collect();
+    refresh_candidates.sort_by(|a, b| {
+        b.internal_date_ms
+            .cmp(&a.internal_date_ms)
+            .then_with(|| b.id.cmp(&a.id))
+    });
+    let refresh_ids: std::collections::HashSet<String> = refresh_candidates
+        .into_iter()
+        .take(CACHED_REFRESH_LIMIT)
+        .map(|email| email.id.clone())
+        .collect();
+
     let mut to_fetch: Vec<String> = Vec::new();
     let mut cache_refreshed = 0usize;
     let mut cache_skipped = 0usize;
     for id in &message_ids {
         if by_id.contains_key(id) {
-            if cache_refreshed >= CACHED_REFRESH_LIMIT {
+            if !refresh_ids.contains(id) {
                 cache_skipped += 1;
                 continue;
             }
@@ -186,10 +208,12 @@ pub async fn scan_gmail(
     stream_fetch(&ctx, to_fetch, &fetched, &done).await;
     let fetched = Mutex::into_inner(fetched).unwrap_or_else(crate::sources::recover);
 
+    // `notes` is deliberately NOT redeclared here: the search-phase warnings
+    // above (truncated queries, partial query failures) must survive into the
+    // returned scan.
     let mut stats = stats;
     stats.cache_refreshed = cache_refreshed;
     stats.cache_skipped = cache_skipped;
-    let mut notes: Vec<String> = Vec::new();
     let mut fetch_failures = 0usize;
 
     for (id, outcome) in fetched {
@@ -219,10 +243,16 @@ pub async fn scan_gmail(
         ));
     }
 
-    // 4. Assemble the cache: newest-first by id, capped. Persistence is the
-    //    caller's job (platform-side storage).
+    // 4. Assemble the cache: newest-first by internal date, id as the
+    //    deterministic tiebreak (Gmail ids are not a documented chronological
+    //    ordering), capped. Persistence is the caller's job (platform-side
+    //    storage).
     let mut cache: Vec<CachedEmail> = by_id.into_values().collect();
-    cache.sort_by(|a, b| b.id.cmp(&a.id));
+    cache.sort_by(|a, b| {
+        b.internal_date_ms
+            .cmp(&a.internal_date_ms)
+            .then_with(|| b.id.cmp(&a.id))
+    });
     if cache.len() > MAX_CACHED_EMAILS {
         cache.truncate(MAX_CACHED_EMAILS);
     }
@@ -508,7 +538,7 @@ mod tests {
     use crate::sources::{http_client, FixedTokenProvider};
     use base64::engine::general_purpose::STANDARD;
     use wiremock::matchers::{method, path_regex};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
     fn provider() -> FixedTokenProvider {
         FixedTokenProvider {
@@ -571,7 +601,8 @@ mod tests {
         // Deduped: "id-b" appeared twice in the search results.
         assert_eq!(scan.stats.unique_ids, 2);
         assert_eq!(scan.stats.fetched, 2);
-        // Newest-first by id (hex-ish descending).
+        // Fixtures carry no internalDate: the date sort ties and the id
+        // tiebreak orders them (descending).
         assert_eq!(scan.cache[0].id, "id-b");
         assert_eq!(scan.cache[1].id, "id-a");
         let first = &scan.cache[0];
@@ -644,6 +675,113 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn cache_orders_by_internal_date_not_id() {
+        let server = MockServer::start().await;
+        mount_search(&server, &["b-old", "a-new"]).await;
+        // Lexicographic id order contradicts the internal dates: ids are not
+        // a chronological ordering, dates are.
+        let messages = serde_json::json!({
+            "b-old": {
+                "id": "b-old",
+                "internalDate": "1000",
+                "payload": {
+                    "headers": [{"name": "Subject", "value": "old"}],
+                    "body": {"mimeType": "text/plain", "data": STANDARD.encode("old body")}
+                }
+            },
+            "a-new": {
+                "id": "a-new",
+                "internalDate": "9000",
+                "payload": {
+                    "headers": [{"name": "Subject", "value": "new"}],
+                    "body": {"mimeType": "text/plain", "data": STANDARD.encode("new body")}
+                }
+            }
+        });
+        let closure: Box<dyn Fn(&wiremock::Request) -> serde_json::Value + Send + Sync> =
+            Box::new(move |request| {
+                let id = last_path_segment(request);
+                messages
+                    .get(id.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({ "id": id }))
+            });
+        Mock::given(method("GET"))
+            .and(path_regex(r"^/users/me/messages/(?<id>[^/]+)$"))
+            .respond_with(JsonResponder(closure))
+            .mount(&server)
+            .await;
+
+        let client = http_client().unwrap();
+        let progress = Progress::new("Gmail", &|_| {});
+        let scan = scan_gmail(&client, &provider(), &server.uri(), &[], &progress)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            scan.cache[0].id, "a-new",
+            "the newer internal date wins over lexicographic id order"
+        );
+        assert_eq!(scan.cache[1].id, "b-old");
+    }
+
+    #[tokio::test]
+    async fn refresh_cap_keeps_the_newest_cached_not_the_first_seen() {
+        let server = MockServer::start().await;
+        // Search returns the cached ids oldest-first, so "first ten seen"
+        // would refresh the oldest half and skip the two newest — backwards.
+        let ids: Vec<String> = (0..12).map(|i| format!("m-{i:02}")).collect();
+        let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+        mount_search(&server, &id_refs).await;
+        mount_fetch(&server, "refreshed").await;
+
+        let cached: Vec<CachedEmail> = ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| CachedEmail {
+                id: id.clone(),
+                subject: "old".to_string(),
+                from: "old".to_string(),
+                date: String::new(),
+                snippet: None,
+                body: "old".to_string(),
+                body_truncated: false,
+                // Dates ascend with the index: m-00 is the oldest, m-11 newest.
+                internal_date_ms: Some(1_000 + i as i64),
+                history_id: None,
+            })
+            .collect();
+
+        let client = http_client().unwrap();
+        let progress = Progress::new("Gmail", &|_| {});
+        let scan = scan_gmail(&client, &provider(), &server.uri(), &cached, &progress)
+            .await
+            .unwrap();
+
+        assert_eq!(scan.stats.cache_refreshed, CACHED_REFRESH_LIMIT);
+        assert_eq!(scan.stats.cache_skipped, 2);
+        let body_of = |id: &str| {
+            scan.cache
+                .iter()
+                .find(|email| email.id == id)
+                .map(|email| email.body.as_str())
+                .unwrap_or("MISSING")
+        };
+        assert_eq!(
+            body_of("m-11"),
+            "refreshed",
+            "the newest cached email must be refreshed"
+        );
+        assert_eq!(body_of("m-02"), "refreshed");
+        assert_eq!(
+            body_of("m-01"),
+            "old",
+            "the second-oldest cached email is skipped"
+        );
+        assert_eq!(body_of("m-00"), "old", "the oldest cached email is skipped");
+    }
+
+    #[tokio::test]
     async fn all_queries_failing_is_a_loud_error_not_empty_success() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
@@ -657,6 +795,89 @@ mod tests {
         let result = scan_gmail(&client, &provider(), &server.uri(), &[], &progress).await;
         let error = result.unwrap_err();
         assert!(error.contains("HTTP 500"), "honest failure: {error}");
+    }
+
+    /// Responds 500 for the `quiz` query, one id for every other — a single
+    /// dispatcher so the partial-failure scenario never depends on mock
+    /// mounting order.
+    struct PartialFailureSearch;
+    impl Respond for PartialFailureSearch {
+        fn respond(&self, request: &Request) -> ResponseTemplate {
+            let query = request
+                .url
+                .query_pairs()
+                .find(|(key, _)| key == "q")
+                .map(|(_, value)| value.to_string())
+                .unwrap_or_default();
+            if query == "quiz" {
+                return ResponseTemplate::new(500);
+            }
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "messages": [{ "id": "ok-1" }]
+            }))
+        }
+    }
+
+    #[tokio::test]
+    async fn partial_query_failure_warning_survives_in_notes() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path_regex(r"^/users/me/messages$"))
+            .respond_with(PartialFailureSearch)
+            .mount(&server)
+            .await;
+        mount_fetch(&server, "body").await;
+
+        let client = http_client().unwrap();
+        let progress = Progress::new("Gmail", &|_| {});
+        let scan = scan_gmail(&client, &provider(), &server.uri(), &[], &progress)
+            .await
+            .unwrap();
+
+        assert_eq!(scan.stats.queries_run, 4);
+        assert_eq!(scan.stats.queries_failed, 1);
+        let warning = scan
+            .notes
+            .iter()
+            .find(|note| note.contains("queries failed"))
+            .expect("the partial-failure warning must survive in scan.notes");
+        assert!(
+            warning.contains("'quiz'"),
+            "the failed query is named: {warning}"
+        );
+        assert!(
+            warning.contains("HTTP 500"),
+            "the error detail is kept: {warning}"
+        );
+    }
+
+    #[tokio::test]
+    async fn truncated_search_note_survives() {
+        let server = MockServer::start().await;
+        // Every page advertises a nextPageToken, so every query runs into the
+        // 5-page cap and must report truncation.
+        Mock::given(method("GET"))
+            .and(path_regex(r"^/users/me/messages$"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "messages": [{ "id": "t-1" }],
+                "nextPageToken": "always-more"
+            })))
+            .mount(&server)
+            .await;
+        mount_fetch(&server, "body").await;
+
+        let client = http_client().unwrap();
+        let progress = Progress::new("Gmail", &|_| {});
+        let scan = scan_gmail(&client, &provider(), &server.uri(), &[], &progress)
+            .await
+            .unwrap();
+
+        assert!(scan
+            .notes
+            .iter()
+            .any(|note| note.contains("was truncated at 5 pages")));
+        assert_eq!(scan.stats.unique_ids, 1);
+        assert_eq!(scan.stats.fetched, 1);
     }
 
     #[tokio::test]

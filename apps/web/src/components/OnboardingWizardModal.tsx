@@ -3,6 +3,7 @@ import {
   ArrowRight,
   ArrowLeft,
   Check,
+  ExternalLink,
   Upload,
   LogOut,
   X,
@@ -13,10 +14,10 @@ import {
 } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
+import { isDarkTheme } from "../state/storage";
 import { COURSE_PALETTE_PRESETS, courseAccessibleChip } from "../lib/coursePalette";
 import { GoogleMark, MicrosoftMark, RadarMark } from "./BrandMarks";
 import type { Course } from "../state/types";
-import { analytics, useFeatureFlag } from "../lib/analytics";
 
 export function OnboardingWizardModal({
   onClose,
@@ -45,8 +46,6 @@ export function OnboardingWizardModal({
   const extractSchedule = useAppStore((s) => s.extractSchedule);
   const openModal = useAppStore((s) => s.openModal);
   const addToast = useAppStore((s) => s.addToast);
-
-  const isVisionEnabled = useFeatureFlag("enable-ai-timetable-vision", true);
 
   // Step 1: Profile & Rhythm State
   const [userName, setUserName] = useState(config.userName || auth.name || "");
@@ -163,8 +162,6 @@ export function OnboardingWizardModal({
         academicTrack: selectedTrack,
         onboardingCompleted: true,
       });
-
-      analytics.onboardingCompleted(courses.length, selectedTrack || "standard");
 
       // Run honest first scan
       await triggerSync();
@@ -408,7 +405,7 @@ export function OnboardingWizardModal({
           <div className="onboard-step-panel space-y-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {/* Google Card */}
-              <div className="flex flex-col justify-between space-y-3 rounded-2xl border border-[var(--border)] bg-[var(--page)] p-4">
+              <div className="flex flex-col justify-between gap-3 rounded-2xl border border-[var(--border)] bg-[var(--page)] p-4">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
@@ -439,31 +436,31 @@ export function OnboardingWizardModal({
                     Link your Gmail for automated assessment detection from course emails, and
                     one-way push of your exams into Google Calendar.
                   </p>
-
-                  {auth.authenticated ? (
-                    <button
-                      type="button"
-                      onClick={googleLogout}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-xs font-bold text-[var(--text)] transition hover:bg-[var(--surface-hover)]"
-                    >
-                      <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
-                      <span>Disconnect Google</span>
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={googleLogin}
-                      className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-xs font-bold text-slate-800 shadow-xs transition hover:bg-slate-50 active:scale-[0.99] dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:hover:bg-slate-750"
-                    >
-                      <GoogleMark className="h-4 w-4" />
-                      <span>Sign in with Google</span>
-                    </button>
-                  )}
                 </div>
+
+                {auth.authenticated ? (
+                  <button
+                    type="button"
+                    onClick={googleLogout}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-xs font-bold text-[var(--text)] transition hover:bg-[var(--surface-hover)]"
+                  >
+                    <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Disconnect Google</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={googleLogin}
+                    className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-xs font-bold text-slate-800 shadow-xs transition hover:bg-slate-50 active:scale-[0.99] dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:hover:bg-slate-750"
+                  >
+                    <GoogleMark className="h-4 w-4" />
+                    <span>Sign in with Google</span>
+                  </button>
+                )}
               </div>
 
               {/* Microsoft Card */}
-              <div className="flex flex-col justify-between space-y-3 rounded-2xl border border-[var(--border)] bg-[var(--page)] p-4">
+              <div className="flex flex-col justify-between gap-3 rounded-2xl border border-[var(--border)] bg-[var(--page)] p-4">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
@@ -495,27 +492,27 @@ export function OnboardingWizardModal({
                     calendar permissions are requested separately, because many tenants require an
                     administrator to approve them.
                   </p>
-
-                  {auth.hasTeamsAuth ? (
-                    <button
-                      type="button"
-                      onClick={microsoftLogout}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-xs font-bold text-[var(--text)] transition hover:bg-[var(--surface-hover)]"
-                    >
-                      <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
-                      <span>Disconnect Microsoft</span>
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={microsoftLogin}
-                      className="flex w-full items-center justify-center gap-2.5 rounded-xl bg-[#1e293b] px-3 py-2.5 text-xs font-bold text-white shadow-xs transition hover:bg-[#0f172a] active:scale-[0.99]"
-                    >
-                      <MicrosoftMark className="h-4 w-4" />
-                      <span>Sign in with Microsoft (Teams & 365)</span>
-                    </button>
-                  )}
                 </div>
+
+                {auth.hasTeamsAuth ? (
+                  <button
+                    type="button"
+                    onClick={microsoftLogout}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-xs font-bold text-[var(--text)] transition hover:bg-[var(--surface-hover)]"
+                  >
+                    <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Disconnect Microsoft</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={microsoftLogin}
+                    className="flex w-full items-center justify-center gap-2.5 rounded-xl bg-[#1e293b] px-3 py-2.5 text-xs font-bold text-white shadow-xs transition hover:bg-[#0f172a] active:scale-[0.99]"
+                  >
+                    <MicrosoftMark className="h-4 w-4" />
+                    <span>Sign in with Microsoft (Teams & 365)</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -583,43 +580,51 @@ export function OnboardingWizardModal({
                   {geminiValidating ? "Checking…" : "Validate"}
                 </button>
               </div>
-              <div className="text-[11px] text-[var(--text-muted)]">{copy.ai.quotaLimitNote}</div>
+              <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[11px] text-[var(--text-muted)]">
+                <span>{copy.ai.quotaLimitNote}</span>
+                <a
+                  href={copy.ai.getKeyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--accent-ink)] hover:underline"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>{copy.ai.getKeyCta}</span>
+                </a>
+              </div>
             </div>
 
             {/* Timetable Image Upload Card — every tier can read a timetable
                 image now: the desktop shell runs the task through the Rust
                 core, the browser tier calls Gemini Vision directly with the
-                same prompt and the same drop rules. Gated by PostHog feature flag. */}
-            {isVisionEnabled && (
-              <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--page)] p-4 text-center">
-                <Upload
-                  className="h-6 w-6 text-[var(--accent-ink)] mx-auto mb-2"
-                  aria-hidden="true"
-                />
-                <div className="text-xs font-bold text-[var(--text)]">
-                  {copy.onboarding.timetableUpload}
-                </div>
-                <p className="text-[11px] text-[var(--text-muted)] mt-1 mb-3">
-                  {copy.onboarding.timetableUploadSub}
-                </p>
-                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[var(--accent-fill-hover)] transition">
-                  <span>
-                    {extractingTimetable
-                      ? copy.onboarding.timetableExtracting
-                      : copy.onboarding.timetableUploadButton}
-                  </span>
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    aria-label={copy.onboarding.timetableUploadButton}
-                    disabled={extractingTimetable}
-                    onChange={handleTimetableFile}
-                    className="hidden"
-                  />
-                </label>
+                same prompt and the same drop rules. */}
+            <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--page)] p-4 text-center">
+              <Upload
+                className="h-6 w-6 text-[var(--accent-ink)] mx-auto mb-2"
+                aria-hidden="true"
+              />
+              <div className="text-xs font-bold text-[var(--text)]">
+                {copy.onboarding.timetableUpload}
               </div>
-            )}
-
+              <p className="text-[11px] text-[var(--text-muted)] mt-1 mb-3">
+                {copy.onboarding.timetableUploadSub}
+              </p>
+              <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[var(--accent-fill-hover)] transition">
+                <span>
+                  {extractingTimetable
+                    ? copy.onboarding.timetableExtracting
+                    : copy.onboarding.timetableUploadButton}
+                </span>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  aria-label={copy.onboarding.timetableUploadButton}
+                  disabled={extractingTimetable}
+                  onChange={handleTimetableFile}
+                  className="hidden"
+                />
+              </label>
+            </div>
             {/* Consents-First Auto GCal */}
             <label className="flex items-center gap-2 text-xs text-[var(--text)] cursor-pointer pt-2">
               <input
@@ -699,7 +704,7 @@ export function OnboardingWizardModal({
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
                   {courses.map((c) => {
-                    const chip = courseAccessibleChip(c.color || "#1a73e8", theme === "dark");
+                    const chip = courseAccessibleChip(c.color || "#1a73e8", isDarkTheme(theme));
                     return (
                       <div
                         key={c.id}
@@ -764,7 +769,6 @@ export function OnboardingWizardModal({
             onClick={() => {
               const next = (step + 1) as 1 | 2 | 3;
               setStep(next);
-              analytics.onboardingStep(next, "next");
             }}
             className="flex items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-5 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[var(--accent-fill-hover)] active:scale-[0.98]"
           >

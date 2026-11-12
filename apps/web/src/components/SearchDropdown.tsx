@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Search as SearchIcon, X, BookOpen, ArrowRight, History } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
+import { isDarkTheme } from "../state/storage";
 import { courseAccessibleChip, courseDisplayName, coursePalette } from "../lib/coursePalette";
 
 const RECENTS_STORAGE_KEY = "quizradar_recent_searches";
@@ -391,7 +392,7 @@ export const SearchDropdown: React.FC = () => {
                 {results.map((item, index) => {
                   const colorInfo = item.courseId ? coursePalette(item.courseId) : null;
                   const chip = colorInfo
-                    ? courseAccessibleChip(colorInfo.color, theme === "dark")
+                    ? courseAccessibleChip(colorInfo.color, isDarkTheme(theme))
                     : null;
                   const isActive = index === activeIndex;
                   return (

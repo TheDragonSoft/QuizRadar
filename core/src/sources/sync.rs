@@ -37,6 +37,66 @@ pub fn compute_email_hash(email: &CachedEmail) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+/// CONTEXT-SENSITIVE extraction cache key: the email identity PLUS every
+/// part of the extraction context that can change the produced draft.
+///
+/// The cache must never serve an extraction across a change of the context
+/// that produced it. The context is:
+/// 1. the email identity (the inner [`compute_email_hash`]),
+/// 2. the announcement-extraction model ladder (`AiModel::FlashLite`),
+///    identified by its full preference-ordered id list,
+/// 3. the extraction TASK identity (prompt text + response schema, via
+///    [`crate::ai::tasks::extract_assessment_task_identity`] — a digest only,
+///    the prompt text itself never leaves the core),
+/// 4. the canonical JSON of the schedule the prompt is cross-referenced
+///    against (`extract_assessment` reasons about the email's course's weekly
+///    slots, so a timetable edit changes the correct output and must
+///    invalidate the cache — otherwise an edited timetable keeps serving
+///    drafts derived from the OLD schedule).
+///
+/// Any context change shifts every key, so stale extractions are re-computed
+/// instead of silently served. The domain tag separates this key space from
+/// any other SHA-256 use. The desktop pre-scan cache hydration
+/// (`apps/desktop` `commands/sync.rs`) computes the SAME key over the SAME
+/// schedule snapshot it hands to [`run_sync_with_ai`].
+#[must_use]
+pub fn compute_extraction_cache_key(email: &CachedEmail, schedule: &ScheduleData) -> String {
+    let email_hash = compute_email_hash(email);
+    let model_context = crate::ai::provider::AiModel::FlashLite
+        .model_ids()
+        .join(",");
+    let task_identity = crate::ai::tasks::extract_assessment_task_identity();
+    let schedule_canonical =
+        serde_json::to_string(schedule).unwrap_or_else(|_| "SERIALIZATION-FAILED".to_string());
+    hash_extraction_context(
+        &email_hash,
+        &model_context,
+        &task_identity,
+        &schedule_canonical,
+    )
+}
+
+/// The one-way hash over the extraction context parts. Separated out so the
+/// context-sensitivity tests can drive each part directly.
+fn hash_extraction_context(
+    email_hash: &str,
+    model_context: &str,
+    task_identity: &str,
+    schedule_canonical: &str,
+) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"quizradar-email-extraction-cache-v3");
+    hasher.update([0]);
+    hasher.update(email_hash.as_bytes());
+    hasher.update([0]);
+    hasher.update(model_context.as_bytes());
+    hasher.update([0]);
+    hasher.update(task_identity.as_bytes());
+    hasher.update([0]);
+    hasher.update(schedule_canonical.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
 /// Everything the caller enables for this run. Tokens are per-call bearer
 /// suppliers — the core never persists or transports them.
 #[derive(Clone, Default)]
@@ -306,7 +366,7 @@ pub async fn run_sync_with_ai(
                 let mut work_items = Vec::new();
                 for assessment in raw_assessments {
                     if let Some(email) = emails_cache.iter().find(|e| e.id == assessment.id) {
-                        let hash = compute_email_hash(email);
+                        let hash = compute_extraction_cache_key(email, &input.schedule);
                         if let Some(cached) = input.cached_extractions.get(&hash) {
                             work_items.push(ExtractionWorkItem::Cached {
                                 assessment,
@@ -1257,5 +1317,111 @@ mod tests {
         email2.body.push_str(" altered");
         let hash3 = compute_email_hash(&email2);
         assert_ne!(hash1, hash3);
+    }
+
+    #[test]
+    fn extraction_cache_key_is_context_sensitive() {
+        let email = CachedEmail {
+            id: "msg-1".to_string(),
+            subject: "CSE241 Quiz 1".to_string(),
+            from: "prof@univ.edu".to_string(),
+            date: "Sat, 17 Oct 2026 10:00:00 +0000".to_string(),
+            snippet: None,
+            body: "CSE241 quiz 1 on 25 October 2026".to_string(),
+            body_truncated: false,
+            internal_date_ms: None,
+            history_id: None,
+        };
+
+        let key1 = compute_extraction_cache_key(&email, &schedule());
+        let key2 = compute_extraction_cache_key(&email, &schedule());
+        assert_eq!(key1, key2, "same email + same context → same key");
+        assert_eq!(key1.len(), 64);
+        assert_ne!(
+            key1,
+            compute_email_hash(&email),
+            "the context key must never collide with the legacy email-only hash: \
+             pre-existing extractions are re-computed under the new key instead \
+             of being served across an extraction-context change"
+        );
+
+        let mut email2 = email.clone();
+        email2.subject.push_str(" (edited)");
+        assert_ne!(
+            key1,
+            compute_extraction_cache_key(&email2, &schedule()),
+            "a changed email is a different cache entry"
+        );
+    }
+
+    #[test]
+    fn extraction_cache_key_changes_with_the_timetable() {
+        let email = CachedEmail {
+            id: "msg-1".to_string(),
+            subject: "CSE241 Quiz 1".to_string(),
+            from: "prof@univ.edu".to_string(),
+            date: "Sat, 17 Oct 2026 10:00:00 +0000".to_string(),
+            snippet: None,
+            body: "CSE241 quiz 1 during our regular lecture".to_string(),
+            body_truncated: false,
+            internal_date_ms: None,
+            history_id: None,
+        };
+        let base = schedule();
+        let key_before = compute_extraction_cache_key(&email, &base);
+
+        // The user edits their timetable (slot time + course name): the
+        // extraction prompt is cross-referenced against these rows, so the
+        // cached draft produced under the OLD schedule must never be served.
+        let mut edited = base.clone();
+        edited.slots.push(crate::types::ScheduleSlot {
+            id: "slot-1".to_string(),
+            day: "Thursday".to_string(),
+            day_index: 4,
+            course_id: "CSE241".to_string(),
+            course_name: "Object-Oriented Programming".to_string(),
+            slot_type: "Lecture".to_string(),
+            group: None,
+            room: None,
+            start_time: chrono::NaiveTime::from_hms_opt(9, 30, 0).unwrap(),
+            end_time: chrono::NaiveTime::from_hms_opt(10, 45, 0).unwrap(),
+            display_time: "09:30–10:45".to_string(),
+            has_quiz: false,
+            quiz_title: None,
+            week_parity: None,
+        });
+        let key_after = compute_extraction_cache_key(&email, &edited);
+        assert_ne!(
+            key_before, key_after,
+            "a changed timetable is a different extraction context"
+        );
+    }
+
+    #[test]
+    fn extraction_cache_key_changes_with_prompt_and_schema_identity() {
+        // The prompt text and response schema are hashed into the task
+        // identity; driving the internal context hash directly proves that a
+        // changed identity re-keys the cache (the public fn pins it through
+        // `extract_assessment_task_identity`, whose stability is asserted in
+        // `ai::tasks`).
+        let different_identity =
+            hash_extraction_context("email-hash", "models", "task-identity-A", "{}");
+        let changed_prompt =
+            hash_extraction_context("email-hash", "models", "task-identity-B", "{}");
+        let changed_schema =
+            hash_extraction_context("email-hash", "models", "task-identity-A", r#"{"x":1}"#);
+        assert_ne!(
+            different_identity, changed_prompt,
+            "a prompt change re-keys the cache"
+        );
+        assert_ne!(
+            different_identity, changed_schema,
+            "a schema change re-keys the cache"
+        );
+        assert_eq!(
+            hash_extraction_context("email-hash", "models", "task-identity-A", "{}"),
+            different_identity,
+            "identical context → identical key"
+        );
     }
 }

@@ -22,20 +22,13 @@ import {
 import { copy } from "../copy";
 import { stripCoursePrefix } from "../lib/calendarLanes";
 import { courseAccessibleChip, courseDisplayName, coursePalette } from "../lib/coursePalette";
-import { useAppStore } from "../state/store";
-import { analytics } from "../lib/analytics";
-import { recordPomodoroSession } from "../lib/studyStats";
+import { useAppStore, POMODORO_DURATIONS } from "../state/store";
+import { isDarkTheme } from "../state/storage";
 import { StudyStatsCard } from "../components/StudyStatsCard";
 import type { PracticeQuizPayload } from "../state/types";
 
 type FocusTab = "pomodoro" | "practice" | "flashcards" | "mistakes";
 type TimerMode = "pomodoro" | "shortBreak" | "longBreak";
-
-const DURATIONS: Record<TimerMode, number> = {
-  pomodoro: 25 * 60,
-  shortBreak: 5 * 60,
-  longBreak: 15 * 60,
-};
 
 export const FocusView: React.FC = () => {
   const theme = useAppStore((s) => s.theme);
@@ -55,7 +48,6 @@ export const FocusView: React.FC = () => {
   const togglePomodoro = useAppStore((s) => s.togglePomodoro);
   const resetPomodoro = useAppStore((s) => s.resetPomodoro);
   const setPomodoroMode = useAppStore((s) => s.setPomodoroMode);
-  const tickPomodoro = useAppStore((s) => s.tickPomodoro);
 
   // Flashcards state
   const flashcards = useAppStore((s) => s.flashcards ?? []);
@@ -93,48 +85,10 @@ export const FocusView: React.FC = () => {
 
   const [customIntention, setCustomIntention] = useState("");
 
-  const playChime = () => {
-    try {
-      const AudioCtx =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const now = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(587.33, now);
-      gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.2, now + 0.05);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now);
-      osc.stop(now + 0.8);
-    } catch {
-      // AudioContext unavailable
-    }
-  };
-
-  useEffect(() => {
-    if (!isRunning) return;
-    if (timeLeft <= 0) {
-      playChime();
-      const minutes = Math.round(DURATIONS[timerMode] / 60);
-      if (timerMode === "pomodoro") {
-        recordPomodoroSession(minutes);
-      }
-      analytics.pomodoroFinished(minutes, Boolean(activeAssessment || customIntention));
-      addToast({ type: "success", message: copy.pomodoro.sessionComplete });
-      resetPomodoro();
-      return;
-    }
-    const id = setInterval(() => {
-      tickPomodoro();
-    }, 1000);
-    return () => clearInterval(id);
-  }, [isRunning, timeLeft, timerMode, activeAssessment, customIntention, addToast, resetPomodoro, tickPomodoro]);
+  // Pure presentation over the SINGLE store timer. The tick driver is
+  // app-level (startPomodoroTicker in App.tsx) — this view used to own the
+  // only setInterval, which froze the session the moment the user navigated
+  // away. Completion lives in the store transition (exactly once).
 
   const switchTimerMode = (next: TimerMode) => {
     setPomodoroMode(next);
@@ -150,7 +104,7 @@ export const FocusView: React.FC = () => {
     return `${String(mins).padStart(2, "0")}:${String(rem).padStart(2, "0")}`;
   };
 
-  const totalSecs = DURATIONS[timerMode];
+  const totalSecs = POMODORO_DURATIONS[timerMode];
   const progressFraction = totalSecs > 0 ? (totalSecs - timeLeft) / totalSecs : 0;
   const ringRadius = 86;
   const ringCircumference = 2 * Math.PI * ringRadius;
@@ -243,8 +197,7 @@ export const FocusView: React.FC = () => {
   const unresolvedMistakes = relevantMistakes.filter((m) => !m.resolved);
   const [mistakeFilter, setMistakeFilter] = useState<"unresolved" | "all">("unresolved");
 
-  const displayedMistakes =
-    mistakeFilter === "unresolved" ? unresolvedMistakes : relevantMistakes;
+  const displayedMistakes = mistakeFilter === "unresolved" ? unresolvedMistakes : relevantMistakes;
 
   // Seed flashcards from syllabus topics
   const handleSeedTopics = () => {
@@ -269,7 +222,7 @@ export const FocusView: React.FC = () => {
     e.preventDefault();
     if (!newCardFront.trim() || !newCardBack.trim()) return;
     upsertFlashcard({
-      courseId: activeAssessment?.courseId || (courses[0]?.id || "study"),
+      courseId: activeAssessment?.courseId || courses[0]?.id || "study",
       assessmentId: activeAssessment?.id || undefined,
       topic: newCardTopic.trim() || "General Concept",
       front: newCardFront.trim(),
@@ -293,7 +246,8 @@ export const FocusView: React.FC = () => {
         <div>
           <h1 className="text-xl font-bold tracking-tight text-[var(--text)]">{copy.nav.focus}</h1>
           <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-            Deep-work Pomodoro sessions, interactive flashcards, practice quizzes, and mistake revision.
+            Deep-work Pomodoro sessions, interactive flashcards, practice quizzes, and mistake
+            revision.
           </p>
         </div>
 
@@ -497,7 +451,9 @@ export const FocusView: React.FC = () => {
                   {formatTime(timeLeft)}
                 </span>
                 <span className="mt-1 text-xs font-semibold text-[var(--text-muted)]">
-                  {isRunning ? "Session in progress (Space to pause)" : "Ready to focus (Space to start)"}
+                  {isRunning
+                    ? "Session in progress (Space to pause)"
+                    : "Ready to focus (Space to start)"}
                 </span>
               </div>
             </div>
@@ -639,7 +595,7 @@ export const FocusView: React.FC = () => {
                     const enrolled = courses.find((c) => c.id === a.courseId);
                     const chip = courseAccessibleChip(
                       enrolled?.color || basePalette.color,
-                      theme === "dark",
+                      isDarkTheme(theme),
                     );
                     const isSelected = a.id === activeAssessment.id;
                     return (
@@ -805,11 +761,15 @@ export const FocusView: React.FC = () => {
                                       assessmentId: activeAssessment.id,
                                       topic: activeRec?.topics[0]?.title || undefined,
                                       questionId: q.id,
-                                      questionText: q.question || (q as unknown as { text?: string }).text || "",
+                                      questionText:
+                                        q.question ||
+                                        (q as unknown as { text?: string }).text ||
+                                        "",
                                       options: q.options,
                                       selectedIndex: optIdx,
                                       correctIndex: correctIdx,
-                                      explanation: q.explanation || "Review key concepts from this chapter.",
+                                      explanation:
+                                        q.explanation || "Review key concepts from this chapter.",
                                       timestamp: new Date().toISOString(),
                                       resolved: false,
                                     });
@@ -846,7 +806,8 @@ export const FocusView: React.FC = () => {
                                   assessmentId: activeAssessment.id,
                                   topic: activeRec?.topics[0]?.title || undefined,
                                   questionId: q.id,
-                                  questionText: q.question || (q as unknown as { text?: string }).text || "",
+                                  questionText:
+                                    q.question || (q as unknown as { text?: string }).text || "",
                                   options: q.options,
                                   selectedIndex: selectedIdx,
                                   correctIndex: correctIdx,
@@ -878,7 +839,10 @@ export const FocusView: React.FC = () => {
 
       {/* TAB 3: INTERACTIVE FLASHCARD REVIEW */}
       {activeTab === "flashcards" && (
-        <div data-testid="flashcards-section" className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface)] p-5 sm:p-6 shadow-xs space-y-6">
+        <div
+          data-testid="flashcards-section"
+          className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface)] p-5 sm:p-6 shadow-xs space-y-6"
+        >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--surface-border)] pb-4">
             <div>
               <h2 className="text-base font-bold text-[var(--text)] flex items-center gap-2">
@@ -886,7 +850,8 @@ export const FocusView: React.FC = () => {
                 <span>Leitner Spaced Repetition Flashcards</span>
               </h2>
               <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                Active recall with 5-box spaced repetition. Mastered cards advance to higher boxes with longer intervals.
+                Active recall with 5-box spaced repetition. Mastered cards advance to higher boxes
+                with longer intervals.
               </p>
             </div>
 
@@ -923,7 +888,10 @@ export const FocusView: React.FC = () => {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label htmlFor="card-topic" className="block text-[11px] font-bold text-[var(--text)] mb-1">
+                  <label
+                    htmlFor="card-topic"
+                    className="block text-[11px] font-bold text-[var(--text)] mb-1"
+                  >
                     Topic / Concept Area
                   </label>
                   <input
@@ -937,7 +905,10 @@ export const FocusView: React.FC = () => {
                 </div>
               </div>
               <div>
-                <label htmlFor="card-front" className="block text-[11px] font-bold text-[var(--text)] mb-1">
+                <label
+                  htmlFor="card-front"
+                  className="block text-[11px] font-bold text-[var(--text)] mb-1"
+                >
                   Card Front (Question / Term) *
                 </label>
                 <textarea
@@ -951,7 +922,10 @@ export const FocusView: React.FC = () => {
                 />
               </div>
               <div>
-                <label htmlFor="card-back" className="block text-[11px] font-bold text-[var(--text)] mb-1">
+                <label
+                  htmlFor="card-back"
+                  className="block text-[11px] font-bold text-[var(--text)] mb-1"
+                >
                   Card Back (Answer / Explanation) *
                 </label>
                 <textarea
@@ -984,10 +958,14 @@ export const FocusView: React.FC = () => {
 
           {relevantCards.length === 0 ? (
             <div className="py-12 text-center space-y-3">
-              <Layers className="h-10 w-10 text-[var(--text-muted)] mx-auto opacity-50" aria-hidden="true" />
+              <Layers
+                className="h-10 w-10 text-[var(--text-muted)] mx-auto opacity-50"
+                aria-hidden="true"
+              />
               <div className="text-sm font-bold text-[var(--text)]">No Flashcards in this Deck</div>
               <p className="text-xs text-[var(--text-muted)] max-w-md mx-auto">
-                Seed cards directly from your syllabus topics or create custom cards to begin active recall practice.
+                Seed cards directly from your syllabus topics or create custom cards to begin active
+                recall practice.
               </p>
               {rawTopics.length > 0 && (
                 <button
@@ -1063,9 +1041,7 @@ export const FocusView: React.FC = () => {
                     <RotateCw className="h-3.5 w-3.5" aria-hidden="true" />
                     <span>Click or press Enter/Space to flip</span>
                   </span>
-                  <span className="text-[11px] font-medium">
-                    {isFlipped ? "Side B" : "Side A"}
-                  </span>
+                  <span className="text-[11px] font-medium">{isFlipped ? "Side B" : "Side A"}</span>
                 </div>
               </div>
 
@@ -1077,8 +1053,9 @@ export const FocusView: React.FC = () => {
                     onClick={() => {
                       reviewFlashcard(currentCard.id, false);
                       addMistake({
-                        courseId: currentCard.courseId || (courses[0]?.id || "study"),
-                        assessmentId: currentCard.assessmentId || activeAssessment?.id || "flashcards",
+                        courseId: currentCard.courseId || courses[0]?.id || "study",
+                        assessmentId:
+                          currentCard.assessmentId || activeAssessment?.id || "flashcards",
                         topic: currentCard.topic || undefined,
                         questionId: currentCard.id,
                         questionText: currentCard.front,
@@ -1171,7 +1148,10 @@ export const FocusView: React.FC = () => {
 
       {/* TAB 4: MISTAKE BANK & ERROR LOG */}
       {activeTab === "mistakes" && (
-        <div data-testid="mistake-bank-section" className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface)] p-5 sm:p-6 shadow-xs space-y-5">
+        <div
+          data-testid="mistake-bank-section"
+          className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface)] p-5 sm:p-6 shadow-xs space-y-5"
+        >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--surface-border)] pb-4">
             <div>
               <h2 className="text-base font-bold text-[var(--text)] flex items-center gap-2">
@@ -1179,7 +1159,8 @@ export const FocusView: React.FC = () => {
                 <span>Mistake Bank &amp; Revision Log</span>
               </h2>
               <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                Automatically records questions and concepts missed during practice quizzes and flashcard reviews.
+                Automatically records questions and concepts missed during practice quizzes and
+                flashcard reviews.
               </p>
             </div>
 
@@ -1211,7 +1192,10 @@ export const FocusView: React.FC = () => {
 
           {displayedMistakes.length === 0 ? (
             <div className="py-12 text-center space-y-3">
-              <CheckCircle2 className="h-10 w-10 text-emerald-500 mx-auto opacity-70" aria-hidden="true" />
+              <CheckCircle2
+                className="h-10 w-10 text-emerald-500 mx-auto opacity-70"
+                aria-hidden="true"
+              />
               <div className="text-sm font-bold text-[var(--text)]">No Mistakes Found</div>
               <p className="text-xs text-[var(--text-muted)] max-w-md mx-auto">
                 {mistakeFilter === "unresolved"
@@ -1223,8 +1207,11 @@ export const FocusView: React.FC = () => {
             <div className="space-y-4">
               {displayedMistakes.map((m) => {
                 const course = courses.find((c) => c.id === m.courseId);
-                const palette = coursePalette(m.courseId || (courses[0]?.id || "study"));
-                const chip = courseAccessibleChip(course?.color || palette.color, theme === "dark");
+                const palette = coursePalette(m.courseId || courses[0]?.id || "study");
+                const chip = courseAccessibleChip(
+                  course?.color || palette.color,
+                  isDarkTheme(theme),
+                );
 
                 return (
                   <div
@@ -1249,7 +1236,8 @@ export const FocusView: React.FC = () => {
                           {courseDisplayName(m.courseId, courses)}
                         </span>
                         <span className="text-[11px] text-[var(--text-muted)]">
-                          Recorded {m.timestamp ? new Date(m.timestamp).toLocaleDateString() : "Recently"}
+                          Recorded{" "}
+                          {m.timestamp ? new Date(m.timestamp).toLocaleDateString() : "Recently"}
                         </span>
                       </div>
 

@@ -1,8 +1,22 @@
 import React from "react";
 import { useAppStore } from "../state/store";
 import { courseDisplayName } from "../lib/coursePalette";
+import { normalizeDayIndex } from "../lib/weekParity";
 
-const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+// Weekday display order (Monday-first) with the JS weekday index each name
+// maps to (Sunday = 0), so grouping is by the normalized day index — core
+// stores v4 3-letter day names ("Sun", "Mon", …) while manual web entry uses
+// full names, and raw string comparison silently drops whichever form a slot
+// uses.
+const WEEKDAY_GROUPS: { name: string; index: number }[] = [
+  { name: "Monday", index: 1 },
+  { name: "Tuesday", index: 2 },
+  { name: "Wednesday", index: 3 },
+  { name: "Thursday", index: 4 },
+  { name: "Friday", index: 5 },
+  { name: "Saturday", index: 6 },
+  { name: "Sunday", index: 0 },
+];
 
 export const PrintScheduleDoc: React.FC<{ className?: string }> = ({ className = "" }) => {
   const courses = useAppStore((s) => s.data.schedule.courses || []);
@@ -21,10 +35,14 @@ export const PrintScheduleDoc: React.FC<{ className?: string }> = ({ className =
     day: "numeric",
   });
 
-  // Group slots by weekday
-  const slotsByDay = WEEKDAYS.map((dayName) => {
+  // Group slots by normalized weekday index (Sunday = 0) instead of comparing
+  // raw day strings, so "Mon" and "Monday" both land on Monday.
+  const slotsByDay = WEEKDAY_GROUPS.map(({ name: dayName, index }) => {
     const daySlots = slots
-      .filter((s) => s.day.toLowerCase() === dayName.toLowerCase())
+      .filter((s) => {
+        const slotIndex = normalizeDayIndex(s.day) ?? s.dayIndex;
+        return slotIndex === index;
+      })
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
     return { dayName, slots: daySlots };
   }).filter((group) => group.slots.length > 0);
@@ -133,9 +151,8 @@ export const PrintScheduleDoc: React.FC<{ className?: string }> = ({ className =
           <div className="space-y-4">
             {sortedAssessments.map((a, idx) => {
               const rec = recommendations.find((r) => r.assessmentId === a.id);
-              const topics = (a.topics && a.topics.length > 0)
-                ? a.topics
-                : (rec?.topics.map((t) => t.title) || []);
+              const topics =
+                a.topics && a.topics.length > 0 ? a.topics : rec?.topics.map((t) => t.title) || [];
 
               return (
                 <div
@@ -154,7 +171,9 @@ export const PrintScheduleDoc: React.FC<{ className?: string }> = ({ className =
                     <div className="text-right text-xs">
                       <div className="font-bold">{a.dateIso}</div>
                       <div className="text-[10px] text-gray-600">
-                        {a.startTime ? `${a.startTime}${a.endTime ? ` – ${a.endTime}` : ""}` : "All day"}
+                        {a.startTime
+                          ? `${a.startTime}${a.endTime ? ` – ${a.endTime}` : ""}`
+                          : "All day"}
                         {a.room ? ` · Room: ${a.room}` : ""}
                       </div>
                     </div>

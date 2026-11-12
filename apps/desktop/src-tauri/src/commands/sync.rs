@@ -8,12 +8,12 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use quizradar_core::ai::gemini::GeminiProvider;
-use quizradar_core::ai::provider::QuotaLedger;
+use quizradar_core::ai::provider::{AiModel, QuotaLedger};
 use quizradar_core::cal::gcal::{
     push_assessments_to_google_calendar, GCalSyncReport, GCAL_API_BASE,
 };
 use quizradar_core::sources::sync::{
-    compute_email_hash, run_sync_with_ai as core_run_sync_with_ai, SyncConfig, SyncInput,
+    compute_extraction_cache_key, run_sync_with_ai as core_run_sync_with_ai, SyncConfig, SyncInput,
 };
 use quizradar_core::sources::{SourceProgress, SourceStatus, TokenProvider};
 use quizradar_core::store::backup::{DriveBackupClient, MergeReport, PushOutcome};
@@ -230,13 +230,18 @@ pub async fn run_sync_inner(
         moodle_rest_token: None,
     };
 
-    // Load persisted email cache and prior AI extractions
+    // Load persisted email cache and prior AI extractions. The lookup key is
+    // the core's CONTEXT-SENSITIVE extraction cache key (email identity + the
+    // extraction model ladder + the prompt/schema identity + the canonical
+    // schedule), computed over the SAME schedule snapshot the scan receives —
+    // so a ladder, prompt or timetable change invalidates the cache honestly
+    // instead of serving stale extractions.
     let cached_emails = state.store.load_cached_emails().await.unwrap_or_default();
     let mut cached_extractions = HashMap::new();
     for email in &cached_emails {
-        let hash = compute_email_hash(email);
-        if let Ok(Some(ext)) = state.store.get_email_ai_extraction(&hash).await {
-            cached_extractions.insert(hash, ext);
+        let cache_key = compute_extraction_cache_key(email, &snapshot.schedule);
+        if let Ok(Some(ext)) = state.store.get_email_ai_extraction(&cache_key).await {
+            cached_extractions.insert(cache_key, ext);
         }
     }
 
@@ -321,13 +326,19 @@ pub async fn run_sync_inner(
     }
 
     for (cache_key, email_id, extraction) in &report.new_extractions {
+        // Honest provenance: name the model the core REQUESTS for extraction
+        // (the head of the FlashLite ladder), not a stale hardcoded legacy id.
+        // The actually-served id after a ladder fallback lives inside
+        // `ai::tasks::extract_assessment` and is not threaded out yet — that
+        // needs a small core API change (recorded as an integration note).
+        let requested_model_id = AiModel::FlashLite.model_id();
         let _ = state
             .store
             .save_email_ai_extraction(
                 cache_key,
                 email_id,
                 extraction,
-                "gemini-2.5-flash-lite",
+                requested_model_id,
                 now.clone(),
             )
             .await;

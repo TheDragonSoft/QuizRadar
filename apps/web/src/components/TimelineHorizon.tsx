@@ -18,6 +18,7 @@ import {
 import { copy } from "../copy";
 import { courseAccessibleChip, coursePalette } from "../lib/coursePalette";
 import { useAppStore } from "../state/store";
+import { isDarkTheme } from "../state/storage";
 import type {
   Assessment,
   DesktopAuthProfile,
@@ -405,7 +406,7 @@ export const TimelineHorizon: React.FC<TimelineHorizonProps> = ({
                   const enrolled = courses.find((c) => c.id === a.courseId);
                   const palette = coursePalette(a.courseId || "");
                   const accentColor = a.color || enrolled?.color || palette.color;
-                  const chipStyle = courseAccessibleChip(accentColor, theme === "dark");
+                  const chipStyle = courseAccessibleChip(accentColor, isDarkTheme(theme));
 
                   // Urgency-based styling
                   const cardBorderClass = isCrunch48h

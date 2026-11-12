@@ -496,6 +496,27 @@ describe("Web UI Views & Assessment Detail (Phase 09 Full Behavior)", () => {
     expect(todayBadges.length).toBeGreaterThan(0);
   });
 
+  // 3f. Honesty doctrine: the term-start button is a date heuristic, not AI —
+  // it must not claim Gemini inference or gate on the AI config.
+  it("labels the current-term button as a date-based estimate, not AI", () => {
+    render(<TasksView />);
+
+    // The term-start row lives on the assessments ledger tab.
+    fireEvent.click(screen.getByRole("button", { name: /All Assessments/i }));
+
+    const termButton = screen.getByTitle(/estimated from today's date/i);
+    expect(termButton.textContent).not.toMatch(/AI Auto-Detect/);
+    expect(termButton.textContent).not.toMatch(/Gemini/i);
+
+    fireEvent.click(termButton);
+
+    // The note states the real inference basis (today's date), never "AI" or
+    // "syllabus context".
+    const note = screen.getByText(/Estimated .* from today's date — not AI\./i);
+    expect(note.textContent).toMatch(/Estimated (Spring|Fall) \d{4}/);
+    expect(screen.queryByText(/syllabus context/i)).not.toBeInTheDocument();
+  });
+
   // 3b. Phase-19: the summary line follows the course filter — it must never
   // contradict the (empty) sections below it.
   it("tasks summary line reflects the active course filter, not the wider payload", () => {
@@ -622,5 +643,64 @@ describe("Web UI Views & Assessment Detail (Phase 09 Full Behavior)", () => {
     // Re-rendering with identical props does not re-execute component body
     rerender(<InstrumentedColumn dateIso="2026-10-21" />);
     expect(renderCount).toBe(1);
+  });
+});
+
+// Regression: the Focus view's completion branch early-returned on
+// `if (!isRunning)` BEFORE its `timeLeft <= 0` check, while the tick
+// atomically set `secondsLeft: 0, isRunning: false` — so the chime, the
+// session record and the completion toast NEVER fired on the Focus view.
+// Completion lives in one store transition; the tick driver is now the
+// app-level ticker (mounted in App.tsx, NOT inside the view). This test
+// mounts FocusView, starts the same app-level controller, and asserts the
+// rendered view reflects a completion driven entirely by the shared ticker.
+describe("FocusView pomodoro completion (exactly once, store-owned)", () => {
+  it("records one session and one completion toast when the timer hits zero", async () => {
+    const { FocusView } = await import("./FocusView");
+    const { startPomodoroTicker } = await import("../state/pomodoroTicker");
+    const { loadStoredStudyStats } = await import("../lib/studyStats");
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-10T12:00:00Z"));
+    window.localStorage.removeItem("quizradar_local_study_stats_v1");
+
+    act(() => {
+      useAppStore.setState({
+        data: initialFullState,
+        pomodoroMode: "pomodoro",
+        pomodoroIsRunning: true,
+        pomodoroEndsAt: Date.now() + 2000,
+        pomodoroSecondsLeft: 2,
+        pomodoroPausedRemainingSec: null,
+        pomodoroSessionId: 0,
+        toasts: [],
+      });
+    });
+    render(<FocusView />);
+    const stopTicker = startPomodoroTicker();
+
+    // Advance through the deadline: the app-level interval ticks and the store
+    // completes the session exactly once — with the view merely a subscriber.
+    act(() => {
+      vi.advanceTimersByTime(4000);
+    });
+
+    const stats = loadStoredStudyStats();
+    expect(stats.totalSessions).toBe(1);
+    expect(stats.totalMinutes).toBe(25);
+    expect(useAppStore.getState().pomodoroSessionId).toBe(1);
+    expect(useAppStore.getState().pomodoroIsRunning).toBe(false);
+    const toasts = useAppStore.getState().toasts;
+    expect(
+      toasts.some((t) => t.type === "success" && t.message === copy.pomodoro.sessionComplete),
+    ).toBe(true);
+
+    // Continuing to tick (a late interval, a second observer) records nothing.
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(loadStoredStudyStats().totalSessions).toBe(1);
+    expect(useAppStore.getState().pomodoroSessionId).toBe(1);
+
+    stopTicker();
   });
 });

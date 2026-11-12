@@ -1,5 +1,6 @@
 import React, { useMemo, useCallback } from "react";
 import { useAppStore } from "../state/store";
+import { isDarkTheme } from "../state/storage";
 import {
   START_HOUR,
   END_HOUR,
@@ -10,7 +11,8 @@ import {
   matchesGlobalSearch,
 } from "../lib/calendarLanes";
 import { courseAccessibleChip, courseDisplayName } from "../lib/coursePalette";
-import { DayColumn, localUtcOffsetLabel, resolvePalette } from "../views/CalendarView";
+import { DayColumn } from "../views/CalendarView";
+import { localUtcOffsetLabel, resolvePalette } from "../views/calendar/shared";
 import type { Assessment, Course } from "../state/types";
 
 export interface CalendarGridProps {
@@ -196,7 +198,7 @@ export const CalendarGrid: React.FC<CalendarGridProps> = ({
                           bg: ex.bg,
                           border: ex.border,
                         });
-                        const chip = courseAccessibleChip(palette.color, theme === "dark");
+                        const chip = courseAccessibleChip(palette.color, isDarkTheme(theme));
                         return (
                           <div
                             key={ex.id}

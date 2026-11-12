@@ -24,10 +24,10 @@ All notable changes to QuizRadar will be documented in this file.
   - Archived completed audit documents `CORE-AUDIT-PLAN.md`, `UI-UX-AUDIT-AND-REDESIGN-PLAN.md`, and `website-improvement-review.md` into `docs/archive/` with explicit historical status banners.
 - **[ci, tooling]** Automate GitHub Releases on version changes: wire version-bump.yml to automatically tag and invoke release.yml reusable pipeline whenever SemVer bumps occur or untagged versions exist on main, add workflow_call support and ref checkout to release.yml, and add --tag flag to version-rollup.mjs
 - **[docs]** Polish README.md with live website links, web companion launch URL, download center links, refreshed screenshots from the UI redesign, and updated feature showcase
-- **[tooling, web, ci]** Move the meta-tests (agentCoordination.test.ts, versionPipeline.test.ts) out of apps/web/src into tooling/__tests__ with a dedicated node-env vitest config wired as root pnpm test:tooling plus a CI web-job step; versionPipeline no longer imports the web app and asserts the generated version.ts file directly. Fixes the recurring 70s vitest-worker timeout that failed every full pnpm test run; web suite drops to ~34s. No behavior or application code changed.
+- **[tooling, web, ci]** Move the meta-tests (agentCoordination.test.ts, versionPipeline.test.ts) out of apps/web/src into tooling/**tests** with a dedicated node-env vitest config wired as root pnpm test:tooling plus a CI web-job step; versionPipeline no longer imports the web app and asserts the generated version.ts file directly. Fixes the recurring 70s vitest-worker timeout that failed every full pnpm test run; web suite drops to ~34s. No behavior or application code changed.
 - **[web]** De-monolithize pps/web/src/views/DashboardView.tsx (reduced from 1,503 lines to 472 lines):
   - Created pps/web/src/views/dashboard/ directory with dedicated modular components:
-    - ormatters.ts: Date, schedule string, and emoji-stripping helpers (ormatShortDate, ormatCompactCardSchedule, stripRoomPrefix, stripLeadingEmoji, weekRangeLabels)
+    - ormatters.ts: Date, schedule string, and emoji-stripping helpers (ormatShortDate, ormatCompactCardSchedule, stripRoomPrefix, stripLeadingEmoji, weekRangeLabels)
     - NextUpHero.tsx: Dynamic parallax sky banner with day/night stars and solar glow animations (NextUpHero, NextUpHeroStars)
     - StudyRecommendationCard.tsx: Interactive topic readiness card with collapsible checklist and inline Pomodoro / practice launcher
     - TimelineRow.tsx: Timeline list item with assessment badges, grading chips, and rules display (TimelineRow, SourceIcon)
@@ -179,7 +179,7 @@ All notable changes to QuizRadar will be documented in this file.
 ### 🤝 Agent & Contributor Summaries
 
 - **[web, tooling, ci, docs]** - Add an Astro marketing & downloads site (`apps/landing`) with a product tour, per-platform download
-    matrix, FAQ, and honest product copy sourced from `tooling/version.json`.
+  matrix, FAQ, and honest product copy sourced from `tooling/version.json`.
   - Add `tooling/build-site.mjs`, a unified public build that emits the marketing site and mounts the
     Web Companion PWA at `/app/` inside it.
   - Wire the landing package into the pnpm workspace, eslint/prettier ignores, CI (static build step),

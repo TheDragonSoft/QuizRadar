@@ -17,6 +17,7 @@ import { RadarMark } from "./BrandMarks";
 import { copy } from "../copy";
 import { getSearchShortcutLabel } from "../lib/platform";
 import { useAppStore } from "../state/store";
+import { isDarkTheme } from "../state/storage";
 import type { UpdateCheckResult, View } from "../state/types";
 
 interface TopBarProps {
@@ -404,7 +405,10 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenAuth }) =>
           className="group flex h-9 w-full max-w-md items-center justify-between rounded-xl border border-[var(--surface-border)] bg-[var(--page)] px-3 text-xs text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)] active:scale-[0.99] cursor-pointer"
         >
           <div className="flex items-center gap-2 truncate">
-            <SearchIcon className="h-4 w-4 shrink-0 text-[var(--text-muted)] group-hover:text-[var(--accent)]" aria-hidden="true" />
+            <SearchIcon
+              className="h-4 w-4 shrink-0 text-[var(--text-muted)] group-hover:text-[var(--accent)]"
+              aria-hidden="true"
+            />
             <span className="truncate">Search assessments, courses, topics...</span>
           </div>
           <kbd className="ml-2 hidden sm:inline-flex items-center rounded-md border border-[var(--surface-border)] bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-muted)]">
@@ -448,8 +452,8 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenAuth }) =>
         <button
           type="button"
           onClick={toggleTheme}
-          aria-label={theme === "dark" ? copy.topBar.themeLight : copy.topBar.themeDark}
-          title={theme === "dark" ? copy.topBar.themeLight : copy.topBar.themeDark}
+          aria-label={isDarkTheme(theme) ? copy.topBar.themeLight : copy.topBar.themeDark}
+          title={isDarkTheme(theme) ? copy.topBar.themeLight : copy.topBar.themeDark}
           className="flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--surface-border)] text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] active:scale-95 dark:text-amber-300"
         >
           <span className="theme-toggle-stage" aria-hidden="true">

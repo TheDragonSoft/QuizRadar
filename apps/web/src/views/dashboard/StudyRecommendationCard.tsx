@@ -1,14 +1,8 @@
 import React, { useState } from "react";
-import {
-  AlertCircle,
-  BookOpen,
-  Calendar,
-  ChevronRight,
-  Sparkles,
-  Timer,
-} from "lucide-react";
+import { AlertCircle, BookOpen, Calendar, ChevronRight, Sparkles, Timer } from "lucide-react";
 import { copy } from "../../copy";
 import { useAppStore } from "../../state/store";
+import { isDarkTheme } from "../../state/storage";
 import { courseAccessibleChip, courseDisplayName, coursePalette } from "../../lib/coursePalette";
 import type { StudyRecommendation } from "../../state/types";
 import { formatCompactCardSchedule } from "./formatters";
@@ -35,7 +29,7 @@ export const StudyRecommendationCard: React.FC<RecommendationCardProps> = ({
   const palette = coursePalette(rec.courseId || "GENERAL");
   const enrolled = courses.find((c) => c.id === rec.courseId);
   const accent = rec.color || enrolled?.color || palette.color;
-  const chip = courseAccessibleChip(accent, theme === "dark");
+  const chip = courseAccessibleChip(accent, isDarkTheme(theme));
   const completedCount = rec.topics.filter((t) => t.completed).length;
   const totalCount = rec.topics.length;
   // 0 tracked topics means there is no readiness number to show at all. The

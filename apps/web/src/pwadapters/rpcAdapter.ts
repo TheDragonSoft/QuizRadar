@@ -5,6 +5,7 @@
  */
 
 import { APP_VERSION } from "../generated/version";
+import { STUDY_STATS_STORAGE_KEY, writeStoredStudyStats } from "../lib/studyStats";
 import { getLocalDateString } from "../state/watchdog";
 import type {
   Assessment,
@@ -24,13 +25,18 @@ import {
   deleteCustomEvent,
   deleteFeed,
   getConfigValue,
+  idbReplaceAll,
   idbResetAll,
   loadAllConfig,
   loadAssessments,
   loadCustomEvents,
   loadFeeds,
+  loadFlashcardRecords,
   loadGrades,
+  loadMistakeRecords,
+  loadQuizAttemptRecords,
   loadScheduleData,
+  loadStudySessionRecords,
   loadTopicRecords,
   loadTopicsDone,
   rewriteTopicKeys,
@@ -47,6 +53,7 @@ import {
 } from "./idbStore";
 import { getWasmEngine } from "./wasmBridge";
 import { toRustEvent } from "../state/ipcShape";
+import { sanitizeFlashcards, sanitizeQuizAttempts, sanitizeMistakes } from "../state/storage";
 import {
   DEFAULT_BROWSER_GOOGLE_CLIENT_ID,
   getMemoryGeminiKey,
@@ -144,12 +151,27 @@ export function toJsAssessment(a: Record<string, unknown>): Assessment {
 }
 
 /**
+ * An honest slot time: a well-formed `HH:MM` (or `HH:MM:SS`) clock string.
+ * Anything else — missing, empty, or malformed like "25:99" — is NOT a time
+ * and is never coerced into one (no 09:00/10:30 placeholder, ever).
+ */
+export function parseSlotTime(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  if (!/^([01]?\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(text)) return null;
+  return text;
+}
+
+/**
  * The core's slot shape, exactly as `core/src/types.rs` declares it. Used
  * for the backup export so the browser tier writes the same snake_case
- * contract the desktop tier does (the core ignores unknown fields, but the
- * file is user-visible and should stay clean).
+ * contract the desktop tier does. A slot without WELL-FORMED times keeps its
+ * raw time value (or `null` when absent) — the exporter never invents a
+ * placeholder clock value.
  */
 function toRustSlotPayload(slot: Record<string, unknown>): Record<string, unknown> {
+  const startRaw = slot.start_time ?? slot.startTime;
+  const endRaw = slot.end_time ?? slot.endTime;
   return {
     id: slot.id,
     day: slot.day,
@@ -159,28 +181,136 @@ function toRustSlotPayload(slot: Record<string, unknown>): Record<string, unknow
     type: slot.type ?? slot.slotType ?? "Lecture",
     group: slot.group ?? null,
     room: slot.room ?? null,
-    start_time: slot.start_time ?? slot.startTime ?? "09:00",
-    end_time: slot.end_time ?? slot.endTime ?? "10:30",
+    start_time:
+      parseSlotTime(startRaw) ??
+      (typeof startRaw === "string" && startRaw.trim() ? startRaw.trim() : null),
+    end_time:
+      parseSlotTime(endRaw) ?? (typeof endRaw === "string" && endRaw.trim() ? endRaw.trim() : null),
     display_time: slot.display_time ?? slot.displayTime ?? "",
     has_quiz: slot.has_quiz ?? slot.hasQuiz ?? false,
     quiz_title: slot.quiz_title ?? slot.quizTitle ?? null,
   };
 }
 
-/** A schedule in the core's wire shape (snake_case), for the backup export. */
-export function toRustSchedulePayload(schedule: ScheduleData): Record<string, unknown> {
+/**
+ * A schedule in the core's wire shape (snake_case), for the backup export.
+ *
+ * Slots WITHOUT well-formed times cannot honestly enter the typed domain
+ * shape (the core's `ScheduleSlot` requires `HH:MM`), so they are partitioned
+ * out into the explicit non-domain `unscheduled_slots` metadata — preserved
+ * verbatim (raw malformed time strings included, never a fabricated value)
+ * instead of being dropped or invented. The two lists together are lossless.
+ */
+export function toRustSchedulePayload(schedule: ScheduleData): {
+  schedule: Record<string, unknown>;
+  unscheduled_slots: Record<string, unknown>[];
+} {
+  const timedSlots: Record<string, unknown>[] = [];
+  const unscheduledSlots: Record<string, unknown>[] = [];
+  for (const slot of schedule.slots || []) {
+    const raw = slot as unknown as Record<string, unknown>;
+    const payload = toRustSlotPayload(raw);
+    if (parseSlotTime(payload.start_time) !== null && parseSlotTime(payload.end_time) !== null) {
+      timedSlots.push(payload);
+    } else {
+      unscheduledSlots.push(payload);
+    }
+  }
   return {
-    semester: schedule.semester ?? null,
-    courses: (schedule.courses || []).map((c) => ({
-      id: c.id,
-      name: c.name,
-      color: c.color,
-      bg: c.bg ?? null,
-      border: c.border ?? null,
+    schedule: {
+      semester: schedule.semester ?? null,
+      courses: (schedule.courses || []).map((c) => ({
+        id: c.id,
+        name: c.name,
+        color: c.color,
+        bg: c.bg ?? null,
+        border: c.border ?? null,
+      })),
+      slots: timedSlots,
+    },
+    unscheduled_slots: unscheduledSlots,
+  };
+}
+
+/**
+ * The local study-stats ledger (lib/studyStats.ts owns the read/write API and
+ * the key constant, imported here so the backup exporter can never diverge
+ * from it). Returns the raw parsed value or null — the importer validates
+ * the shape.
+ */
+
+function readStoredStudyStatsRaw(): unknown {
+  if (typeof window === "undefined" || !window.localStorage) return null;
+  try {
+    const raw = window.localStorage.getItem(STUDY_STATS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The webview's actual study collections in the wire shape the core
+ * deserializes (snake_case twins on every record, `lib/studyStats.ts` ledger
+ * as non-domain metadata). Used by BOTH backup producers:
+ *  - the PWA `export_backup_file` (this adapter), and
+ *  - the DESKTOP tier, where the study data lives in browser-side
+ *    IndexedDB/localStorage the Rust core can never read — `store.ts`
+ *    passes this payload into the Tauri command, which merges it over the
+ *    core-generated JSON (thin web wrapper around the native file dialog).
+ * Sections are ALWAYS present (an empty list is honest "nothing here", which
+ * a restore must honor by clearing, not merging).
+ */
+export async function buildStudyBackupSections(): Promise<{
+  flashcards: Record<string, unknown>[];
+  quiz_attempts: Record<string, unknown>[];
+  mistake_bank: Record<string, unknown>[];
+  study_sessions: unknown[];
+  study_stats: unknown;
+}> {
+  const flashcards = await loadFlashcardRecords();
+  const quizAttempts = await loadQuizAttemptRecords();
+  const mistakeBank = await loadMistakeRecords();
+  const studySessions = await loadStudySessionRecords();
+  return {
+    flashcards: flashcards.map((c) => ({
+      ...c,
+      // Both naming twins, mirroring the custom_events mapping: the web
+      // store persists camelCase, the core contracts speak snake_case.
+      course_id: c.courseId ?? null,
+      assessment_id: c.assessmentId ?? null,
+      box_level: c.boxLevel,
+      next_review_iso: c.nextReviewIso ?? null,
+      last_reviewed_iso: c.lastReviewedIso ?? null,
     })),
-    slots: (schedule.slots || []).map((s) =>
-      toRustSlotPayload(s as unknown as Record<string, unknown>),
-    ),
+    quiz_attempts: quizAttempts.map((a) => {
+      const r = a as unknown as Record<string, unknown>;
+      return {
+        ...a,
+        // Both naming twins (core contract reads snake_case, the web
+        // store persists camelCase) — same rule as the flashcards map.
+        assessment_id: r.assessment_id ?? a.assessmentId ?? null,
+        course_id: r.course_id ?? a.courseId ?? null,
+        assessment_title: r.assessment_title ?? a.assessmentTitle ?? null,
+        total_questions: r.total_questions ?? a.totalQuestions,
+        percentage: r.percentage ?? a.percentage ?? null,
+      };
+    }),
+    mistake_bank: mistakeBank.map((m) => {
+      const r = m as unknown as Record<string, unknown>;
+      return {
+        ...m,
+        attempt_id: r.attempt_id ?? m.attemptId ?? null,
+        assessment_id: r.assessment_id ?? m.assessmentId ?? null,
+        course_id: r.course_id ?? m.courseId ?? null,
+        question_id: r.question_id ?? m.questionId ?? null,
+        question_text: r.question_text ?? m.questionText ?? null,
+        selected_index: r.selected_index ?? m.selectedIndex,
+        correct_index: r.correct_index ?? m.correctIndex,
+      };
+    }),
+    study_sessions: studySessions,
+    study_stats: readStoredStudyStatsRaw(),
   };
 }
 
@@ -548,14 +678,35 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
       const feeds = await loadFeeds();
       const config = await loadAllConfig();
 
+      // No time fabrication: slots without well-formed times are partitioned
+      // into the explicit non-domain `unscheduled_slots` metadata (preserved
+      // verbatim), so the domain schedule the desktop tier imports contains
+      // only honestly-timed rows. There is no `invented_slot_times` list
+      // anymore because there is nothing invented to flag. Metadata preserved
+      // by a previous import rides along again (by id, never duplicated).
+      const { schedule: schedulePayload, unscheduled_slots: liveUnscheduled } =
+        toRustSchedulePayload(schedule);
+      const liveSlotIds = new Set((schedule.slots || []).map((s) => String(s.id)));
+      const preservedUnscheduled = (
+        (await getConfigValue<unknown[]>("quizradar_unscheduled_slots_v1", [])) ?? []
+      ).filter(
+        (s) =>
+          s !== null &&
+          typeof s === "object" &&
+          !liveSlotIds.has(String((s as { id?: unknown }).id)),
+      );
+      const unscheduled_slots = [...liveUnscheduled, ...preservedUnscheduled];
+
       const backup = {
         schema_version: 1,
         generated_at: new Date().toISOString(),
         tier: "pwa",
-        schedule: toRustSchedulePayload(schedule),
+        schedule: schedulePayload,
+        unscheduled_slots,
         assessments: assessments.map(toRustAssessment),
         completed_topics: topicsDone,
         grades,
+        ...(await buildStudyBackupSections()),
         custom_events: events.map((ev) => {
           const r = ev as unknown as Record<string, unknown>;
           // Study blocks generated in-browser persist snake-only; read both
@@ -615,6 +766,14 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
         /(?:_token|_api_key|pairing_pin|teams_client_id|moodle_ical_url)$/i.test(key),
       );
 
+      // ------------------------------------------------------------------
+      // Phase 1 — pure normalization & validation. EVERYTHING below runs
+      // before the first destructive write, so a structurally invalid file is
+      // rejected before any local data is touched (no destructive partial
+      // imports). Only tolerate-and-warn skips (malformed per-entry records)
+      // are pre-computed here too; nothing writes yet.
+      // ------------------------------------------------------------------
+
       const normalizedCourses: Course[] = (
         rawSchedule.courses as Array<Record<string, unknown>>
       ).map((c) => ({
@@ -627,42 +786,91 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
       const rawSlots = Array.isArray(rawSchedule.slots)
         ? (rawSchedule.slots as Array<Record<string, unknown>>)
         : [];
-      const normalizedSlots: ScheduleSlot[] = rawSlots.map((s, idx) => ({
-        id: String(s.id ?? `slot-${idx}`),
-        day: String(s.day ?? "Sun"),
-        dayIndex: Number(s.dayIndex ?? s.day_index ?? 0),
-        courseId: String(s.courseId ?? s.course_id ?? ""),
-        courseName: String(s.courseName ?? s.course_name ?? ""),
-        type: String(s.type ?? "Lecture"),
-        group: (s.group as string | null) ?? null,
-        room: (s.room as string | null) ?? null,
-        startTime: String(s.startTime ?? s.start_time ?? "09:00"),
-        endTime: String(s.endTime ?? s.end_time ?? "10:30"),
-        displayTime: String(s.displayTime ?? s.display_time ?? ""),
-        hasQuiz: Boolean(s.hasQuiz ?? s.has_quiz ?? false),
-        quizTitle: (s.quizTitle ?? s.quiz_title ?? null) as string | null,
-      }));
-
-      await saveScheduleData({
-        semester: (rawSchedule.semester as string | null) ?? null,
-        courses: normalizedCourses,
-        slots: normalizedSlots,
-      });
+      // Legacy tolerance: v5.10 PWA exporters flagged the slots whose
+      // 09:00/10:30 times the exporter itself had invented. Those rows are
+      // skipped on restore — importing them would re-invent a schedule that
+      // never existed. (Current exporters no longer invent times at all.)
+      const inventedSlotTimeIds = new Set(
+        Array.isArray(parsed.invented_slot_times)
+          ? (parsed.invented_slot_times as unknown[]).map(String)
+          : [],
+      );
+      const warnings: string[] = [];
+      const normalizedSlots: ScheduleSlot[] = [];
+      // Skipped slots are preserved (raw times included) as non-domain
+      // metadata — never silently dropped from the data realm.
+      const skippedSlotPayloads: Record<string, unknown>[] = [];
+      let slotsSkipped = 0;
+      for (let idx = 0; idx < rawSlots.length; idx++) {
+        const s = rawSlots[idx];
+        // No String() coercion with "09:00"/"10:30" fallbacks: a slot without
+        // a WELL-FORMED time (missing, empty or malformed like "25:99") has
+        // no honest representation in the core contract (required NaiveTime),
+        // so it is skipped into the warnings list.
+        const start = parseSlotTime(s.startTime ?? s.start_time);
+        const end = parseSlotTime(s.endTime ?? s.end_time);
+        if (start === null || end === null) {
+          warnings.push(
+            `A class slot without valid start/end times was skipped (${String(s.id ?? `index ${idx}`)}) — the timetable format requires HH:MM times.`,
+          );
+          skippedSlotPayloads.push({
+            id: s.id ?? `slot-${idx}`,
+            day: s.day ?? null,
+            day_index: s.day_index ?? s.dayIndex ?? 0,
+            course_id: s.course_id ?? s.courseId ?? "",
+            course_name: s.course_name ?? s.courseName ?? "",
+            type: s.type ?? s.slotType ?? "Lecture",
+            group: s.group ?? null,
+            room: s.room ?? null,
+            start_time:
+              typeof (s.start_time ?? s.startTime) === "string"
+                ? (s.start_time ?? s.startTime)
+                : null,
+            end_time:
+              typeof (s.end_time ?? s.endTime) === "string" ? (s.end_time ?? s.endTime) : null,
+            display_time: s.display_time ?? s.displayTime ?? "",
+            has_quiz: s.has_quiz ?? s.hasQuiz ?? false,
+            quiz_title: s.quiz_title ?? s.quizTitle ?? null,
+          });
+          slotsSkipped += 1;
+          continue;
+        }
+        if (inventedSlotTimeIds.has(String(s.id ?? ""))) {
+          warnings.push(
+            `A class slot whose times were placeholder values in the backup was skipped (${String(s.id ?? "")}).`,
+          );
+          slotsSkipped += 1;
+          continue;
+        }
+        normalizedSlots.push({
+          id: String(s.id ?? `slot-${idx}`),
+          day: String(s.day ?? "Sun"),
+          dayIndex: Number(s.dayIndex ?? s.day_index ?? 0),
+          courseId: String(s.courseId ?? s.course_id ?? ""),
+          courseName: String(s.courseName ?? s.course_name ?? ""),
+          type: String(s.type ?? "Lecture"),
+          group: (s.group as string | null) ?? null,
+          room: (s.room as string | null) ?? null,
+          startTime: start,
+          endTime: end,
+          displayTime: String(s.displayTime ?? s.display_time ?? ""),
+          hasQuiz: Boolean(s.hasQuiz ?? s.has_quiz ?? false),
+          quizTitle: (s.quizTitle ?? s.quiz_title ?? null) as string | null,
+        });
+      }
 
       const normalizedAssessments = (parsed.assessments as Array<Record<string, unknown>>).map(
         toJsAssessment,
       );
-      await saveAssessments(normalizedAssessments);
 
-      let topicsImported = 0;
-      const warnings: string[] = [];
       const rawTopics = (parsed.completed_topics ?? parsed.topics_done) as
         Record<string, boolean> | undefined;
+      // v4 / pre-migration v5 backups key topics by POSITION inside the
+      // backup's own topic lists — remap into content keys through the
+      // backup's assessments BEFORE any write (same rule as the Rust
+      // importer), so a reordered announcement keeps its checkmarks.
+      let migratedTopics: Array<{ key: string; done: boolean }> = [];
       if (rawTopics && typeof rawTopics === "object") {
-        // v4 / pre-migration v5 backups key topics by POSITION inside the
-        // backup's own topic lists — remap into content keys through the
-        // just-imported assessments before writing (same rule as the Rust
-        // importer), so a reordered announcement keeps its checkmarks.
         const wasm = await getWasmEngine();
         const migrated = JSON.parse(
           wasm.migrate_topic_keys(
@@ -676,48 +884,53 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
             JSON.stringify(normalizedAssessments.map(toRustAssessment)),
           ),
         ) as { entries: Array<{ key: string; done: boolean }> };
-        for (const entry of migrated.entries) {
-          if (entry.done) {
-            await setTopicDone(entry.key, true);
-            topicsImported += 1;
-          }
-        }
+        migratedTopics = migrated.entries;
       }
 
-      let gradesImported = 0;
+      const gradesToImport: Array<{ record: IdbGradeRecord; id: string }> = [];
       if (parsed.grades && typeof parsed.grades === "object") {
         for (const [mapId, rawG] of Object.entries(parsed.grades as Record<string, unknown>)) {
           const g = rawG as Record<string, unknown>;
-          const assessmentId = String(g.assessment_id ?? g.assessmentId ?? mapId);
-          await saveGrade({
-            assessment_id: assessmentId,
-            achieved_score:
-              g.achieved_score !== undefined
-                ? (g.achieved_score as number | null)
-                : ((g.achievedScore as number | null) ?? null),
-            max_score:
-              g.max_score !== undefined
-                ? (g.max_score as number | null)
-                : ((g.maxScore as number | null) ?? null),
-            weightage_percent:
-              g.weightage_percent !== undefined
-                ? (g.weightage_percent as number | null)
-                : ((g.weightagePercent as number | null) ?? null),
-          } as IdbGradeRecord);
-          gradesImported += 1;
+          const achieved = g.achieved_score !== undefined ? g.achieved_score : g.achievedScore;
+          const max = g.max_score !== undefined ? g.max_score : g.maxScore;
+          const weightage =
+            g.weightage_percent !== undefined ? g.weightage_percent : g.weightagePercent;
+          // The Rust importer refuses corrupt grades loudly BEFORE writing —
+          // same rule here, and same moment (before any local mutation).
+          const finiteOrNull = (v: unknown) =>
+            v === null || v === undefined || (typeof v === "number" && Number.isFinite(v));
+          if (
+            !finiteOrNull(achieved) ||
+            !finiteOrNull(max) ||
+            !finiteOrNull(weightage) ||
+            (typeof max === "number" && max !== null && max <= 0)
+          ) {
+            throw new Error(
+              `This backup has an invalid grade record (${mapId}) — nothing was imported.`,
+            );
+          }
+          gradesToImport.push({
+            id: mapId,
+            record: {
+              assessment_id: String(g.assessment_id ?? g.assessmentId ?? mapId),
+              achieved_score: (achieved as number | null) ?? null,
+              max_score: (max as number | null) ?? null,
+              weightage_percent: (weightage as number | null) ?? null,
+            } as IdbGradeRecord,
+          });
         }
       }
 
-      let eventsImported = 0;
+      const eventsToImport: Array<ReturnType<typeof toRustEvent>> = [];
       const rawEvents = Array.isArray(parsed.custom_events)
         ? (parsed.custom_events as Array<Record<string, unknown>>)
         : Array.isArray(parsed.events)
           ? (parsed.events as Array<Record<string, unknown>>)
           : [];
       for (const ev of rawEvents) {
-        await upsertCustomEvent(
+        eventsToImport.push(
           toRustEvent({
-            id: String(ev.id ?? `evt-${eventsImported}`),
+            id: String(ev.id ?? `evt-${eventsToImport.length}`),
             title: String(ev.title ?? ""),
             courseId: (ev.courseId ?? ev.course_id ?? null) as string | null,
             eventType: (ev.eventType ?? ev.event_type ?? "Custom") as string | null,
@@ -729,10 +942,9 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
             color: (ev.color ?? "#db2777") as string | null,
           }),
         );
-        eventsImported += 1;
       }
 
-      let feedsImported = 0;
+      const feedsToImport: FeedConfig[] = [];
       if (Array.isArray(parsed.feeds)) {
         for (const f of parsed.feeds as FeedConfig[]) {
           // A feed without an id would throw a DataError mid-import, after
@@ -742,9 +954,147 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
             warnings.push("A feed entry without an id was skipped.");
             continue;
           }
-          await upsertFeed(f);
-          feedsImported += 1;
+          feedsToImport.push(f);
         }
+      }
+
+      // Study collections: validated per entry with the same tolerate-and-warn
+      // rule — malformed entries are counted into `warnings`, the file is
+      // never trusted, and NONE of this touches the stores yet.
+      const flashcardsSectionPresent =
+        parsed.flashcards !== undefined || parsed.study_flashcards !== undefined;
+      const rawFlashcards = Array.isArray(parsed.flashcards)
+        ? (parsed.flashcards as unknown[])
+        : Array.isArray(parsed.study_flashcards)
+          ? (parsed.study_flashcards as unknown[])
+          : [];
+      const validFlashcards = sanitizeFlashcards(rawFlashcards);
+      const flashcardsImported = validFlashcards.length;
+      if (flashcardsSectionPresent && validFlashcards.length !== rawFlashcards.length) {
+        warnings.push(
+          `${rawFlashcards.length - validFlashcards.length} malformed flashcard entr${rawFlashcards.length - validFlashcards.length === 1 ? "y was" : "ies were"} skipped.`,
+        );
+      }
+
+      const attemptsSectionPresent =
+        parsed.quiz_attempts !== undefined || parsed.quiz_history !== undefined;
+      const rawAttempts = Array.isArray(parsed.quiz_attempts)
+        ? (parsed.quiz_attempts as unknown[])
+        : Array.isArray(parsed.quiz_history)
+          ? (parsed.quiz_history as unknown[])
+          : [];
+      const validAttempts = sanitizeQuizAttempts(rawAttempts);
+      const quizAttemptsImported = validAttempts.length;
+      if (attemptsSectionPresent && validAttempts.length !== rawAttempts.length) {
+        warnings.push(
+          `${rawAttempts.length - validAttempts.length} malformed quiz attempt entr${rawAttempts.length - validAttempts.length === 1 ? "y was" : "ies were"} skipped.`,
+        );
+      }
+
+      const mistakesSectionPresent =
+        parsed.mistake_bank !== undefined || parsed.mistakes !== undefined;
+      const rawMistakes = Array.isArray(parsed.mistake_bank)
+        ? (parsed.mistake_bank as unknown[])
+        : Array.isArray(parsed.mistakes)
+          ? (parsed.mistakes as unknown[])
+          : [];
+      const validMistakes = sanitizeMistakes(rawMistakes);
+      const mistakesImported = validMistakes.length;
+      if (mistakesSectionPresent && validMistakes.length !== rawMistakes.length) {
+        warnings.push(
+          `${rawMistakes.length - validMistakes.length} malformed mistake entr${rawMistakes.length - validMistakes.length === 1 ? "y was" : "ies were"} skipped.`,
+        );
+      }
+
+      // Non-domain metadata: slots the exporter could not honestly type,
+      // plus the slots this import skipped (raw times preserved above).
+      const declaredUnscheduled = Array.isArray(parsed.unscheduled_slots)
+        ? (parsed.unscheduled_slots as unknown[])
+        : [];
+      const importedSlotIds = new Set(normalizedSlots.map((s) => String(s.id)));
+      const unscheduledSlots = [
+        ...declaredUnscheduled.filter(
+          (s) =>
+            s !== null &&
+            typeof s === "object" &&
+            !importedSlotIds.has(String((s as { id?: unknown }).id ?? "")),
+        ),
+        ...skippedSlotPayloads,
+      ];
+      if (unscheduledSlots.length > 0) {
+        warnings.push(
+          `${unscheduledSlots.length} slot${unscheduledSlots.length === 1 ? "" : "s"} without valid times ${unscheduledSlots.length === 1 ? "was" : "were"} kept as backup metadata (not on the timetable until real times are known).`,
+        );
+      }
+
+      // Local study stats (focus minutes ledger): restore only a shape-valid
+      // payload; a malformed ledger is skipped with a warning, not trusted.
+      let studyStatsRestored = false;
+      if (parsed.study_stats !== undefined && parsed.study_stats !== null) {
+        if (writeStoredStudyStats(parsed.study_stats)) {
+          studyStatsRestored = true;
+        } else {
+          warnings.push("A malformed study-stats entry was skipped.");
+        }
+      }
+
+      // ------------------------------------------------------------------
+      // Phase 2 — writes. Validation is done; nothing below is expected to
+      // reject the file (only storage-level failures can abort mid-way, and
+      // those surface as storage errors, never as silent partial imports).
+      // ------------------------------------------------------------------
+
+      await saveScheduleData({
+        semester: (rawSchedule.semester as string | null) ?? null,
+        courses: normalizedCourses,
+        slots: normalizedSlots,
+      });
+
+      await saveAssessments(normalizedAssessments);
+
+      let topicsImported = 0;
+      for (const entry of migratedTopics) {
+        if (entry.done) {
+          await setTopicDone(entry.key, true);
+          topicsImported += 1;
+        }
+      }
+
+      let gradesImported = 0;
+      for (const { record } of gradesToImport) {
+        await saveGrade(record);
+        gradesImported += 1;
+      }
+
+      let eventsImported = 0;
+      for (const event of eventsToImport) {
+        await upsertCustomEvent(event);
+        eventsImported += 1;
+      }
+
+      let feedsImported = 0;
+      for (const feed of feedsToImport) {
+        await upsertFeed(feed);
+        feedsImported += 1;
+      }
+
+      // Study collections: a present section REPLACES the whole collection
+      // (restore semantics — merging would mix stale backup records into live
+      // data); an absent section (v4 file) leaves the collection untouched.
+      if (flashcardsSectionPresent) {
+        await idbReplaceAll("flashcards", validFlashcards);
+      }
+      if (attemptsSectionPresent) {
+        await idbReplaceAll("quiz_attempts", validAttempts);
+      }
+      if (mistakesSectionPresent) {
+        await idbReplaceAll("mistake_bank", validMistakes);
+      }
+
+      // Preserve (never interpret) the backup's non-domain slot metadata so a
+      // round-trip re-exports the same rows instead of silently dropping them.
+      if (unscheduledSlots.length > 0) {
+        await setConfigValue("quizradar_unscheduled_slots_v1", unscheduledSlots);
       }
 
       // Restore non-secret profile & preference flags; auto_sync_gcal stays false.
@@ -779,11 +1129,17 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
         assessmentsImported: normalizedAssessments.length,
         coursesImported: normalizedCourses.length,
         slotsImported: normalizedSlots.length,
+        slotsSkipped,
+        unscheduledSlotsPreserved: unscheduledSlots.length,
         topicsImported,
         gradesImported,
         eventsImported,
         customEventsImported: eventsImported,
         feedsImported,
+        flashcardsImported,
+        quizAttemptsImported,
+        mistakesImported,
+        studyStatsRestored,
         secretsIgnored,
         warnings,
       } as T;

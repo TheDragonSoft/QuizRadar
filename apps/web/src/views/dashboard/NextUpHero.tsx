@@ -4,7 +4,6 @@ import {
   Calendar,
   CalendarDays,
   CalendarPlus,
-  ChevronRight,
   MapPin,
   RefreshCw,
   Sparkles,
@@ -21,7 +20,6 @@ import { stripRoomPrefix } from "./formatters";
 export interface NextUpHeroProps {
   assessment: Assessment | null;
   testId?: string;
-  isScrolled?: boolean;
   onOpenDetail: () => void;
   onOpenCalendar: () => void;
   onConnect: () => void;
@@ -37,7 +35,10 @@ const HERO_SHELL =
  * brighter field split across two layers that pulse against each other (a
  * pure-CSS shimmer — no per-star DOM, no JS timer). All layers sit behind
  * the content via the shell's `isolate` + `-z-10`; reduced-motion users get
- * a static sky.
+ * a static sky. Each animated layer is also promoted to its own compositing
+ * layer (`composite-layer`) so its infinite opacity pulse runs on the GPU
+ * instead of repainting the backdrop beneath the sticky canopy (Windows
+ * flicker guard).
  */
 const DAY_STARS: ReadonlyArray<[x: number, y: number, size: number, opacity: number]> = [
   [7, 24, 1, 0.28],
@@ -133,7 +134,7 @@ export const NextUpHeroStars: React.FC = () => (
     {/* Radiant glowing Sun in light themes */}
     <div
       aria-hidden="true"
-      className="pointer-events-none absolute inset-0 -z-10 animate-[heroSunGlow_5s_ease-in-out_infinite] dark:hidden motion-reduce:animate-none"
+      className="composite-layer pointer-events-none absolute inset-0 -z-10 animate-[heroSunGlow_5s_ease-in-out_infinite] dark:hidden motion-reduce:animate-none"
       style={{
         backgroundImage: [
           // Expansive warm golden atmospheric corona
@@ -157,19 +158,19 @@ export const NextUpHeroStars: React.FC = () => (
     {/* Night sky: two bright sparkling star layers pulsing against each other */}
     <div
       aria-hidden="true"
-      className="pointer-events-none absolute inset-0 -z-10 hidden animate-[heroTwinkleA_4.5s_ease-in-out_infinite] dark:block motion-reduce:animate-none"
+      className="composite-layer pointer-events-none absolute inset-0 -z-10 hidden animate-[heroTwinkleA_4.5s_ease-in-out_infinite] dark:block motion-reduce:animate-none"
       style={{ backgroundImage: starsToGradients(NIGHT_STARS_A, true) }}
     />
     <div
       aria-hidden="true"
-      className="pointer-events-none absolute inset-0 -z-10 hidden animate-[heroTwinkleB_5.6s_ease-in-out_0.9s_infinite] dark:block motion-reduce:animate-none"
+      className="composite-layer pointer-events-none absolute inset-0 -z-10 hidden animate-[heroTwinkleB_5.6s_ease-in-out_0.9s_infinite] dark:block motion-reduce:animate-none"
       style={{ backgroundImage: starsToGradients(NIGHT_STARS_B, true) }}
     />
     {/* Sheen: one diagonal light band sweeps the card every few seconds, over
         both the day and the night sky. */}
     <div
       aria-hidden="true"
-      className="hero-sheen pointer-events-none absolute inset-0 -z-10 motion-reduce:animate-none"
+      className="hero-sheen composite-layer pointer-events-none absolute inset-0 -z-10 motion-reduce:animate-none"
     />
   </>
 );
@@ -177,102 +178,12 @@ export const NextUpHeroStars: React.FC = () => (
 export const NextUpHero: React.FC<NextUpHeroProps> = ({
   assessment,
   testId = "dashboard-next-up-hero",
-  isScrolled = false,
   onOpenDetail,
   onOpenCalendar,
   onConnect,
   onSync,
 }) => {
   const courses = useAppStore((s) => s.data.schedule.courses);
-
-  if (isScrolled) {
-    if (!assessment) {
-      return (
-        <section
-          data-testid={testId}
-          className="relative overflow-hidden rounded-xl border border-blue-900/40 bg-slate-950/85 px-4 py-2 shadow-md backdrop-blur-md transition-all duration-300"
-        >
-          <NextUpHeroStars />
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-xs font-semibold text-white">
-              <Sparkles className="h-3.5 w-3.5 text-amber-300" aria-hidden="true" />
-              <span>{copy.dashboard.heroEmptyTitle}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={onConnect}
-                className="flex cursor-pointer items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11px] font-bold text-[#1557b0] transition hover:bg-blue-50"
-              >
-                <UserCheck className="h-3 w-3" aria-hidden="true" />
-                <span>{copy.dashboard.heroConnectAccount}</span>
-              </button>
-              <button
-                type="button"
-                onClick={onSync}
-                className="flex cursor-pointer items-center gap-1 rounded-lg bg-slate-900/60 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-slate-900"
-              >
-                <RefreshCw className="h-3 w-3" aria-hidden="true" />
-                <span>{copy.dashboard.heroSyncRadar}</span>
-              </button>
-            </div>
-          </div>
-        </section>
-      );
-    }
-
-    const days = assessment.daysUntil ?? null;
-    const countdownLabel =
-      days === 0
-        ? copy.dashboard.heroToday
-        : days === 1
-          ? copy.dashboard.heroTomorrow
-          : days !== null
-            ? copy.dashboard.heroInDays(days)
-            : "";
-    const room = assessment.room?.trim();
-    const heroCourseBadge = assessment.courseId
-      ? `${courseDisplayName(assessment.courseId, courses)} · ${assessment.assessmentType}`
-      : assessment.assessmentType;
-
-    return (
-      <section
-        data-testid={testId}
-        className="relative overflow-hidden rounded-xl border border-blue-900/40 bg-slate-950/85 px-4 py-2 shadow-md backdrop-blur-md transition-all duration-300"
-      >
-        <NextUpHeroStars />
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            {countdownLabel && (
-              <span className="flex items-center gap-1 rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-extrabold text-slate-950 shrink-0">
-                <Zap className="h-2.5 w-2.5" aria-hidden="true" />
-                <span>{copy.dashboard.heroUpNext(countdownLabel)}</span>
-              </span>
-            )}
-            <span className="truncate text-xs font-bold text-white">
-              {heroCourseBadge}: {assessment.title}
-            </span>
-            {room && (
-              <span className="hidden md:inline-flex items-center gap-1 text-[11px] text-emerald-300 shrink-0">
-                <MapPin className="h-2.5 w-2.5" />
-                <span>{copy.dashboard.roomLabel(stripRoomPrefix(room))}</span>
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={onOpenDetail}
-              className="flex cursor-pointer items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11px] font-bold text-[#1557b0] transition hover:bg-blue-50"
-            >
-              <span>{copy.dashboard.heroStudyPlan}</span>
-              <ChevronRight className="h-3 w-3" aria-hidden="true" />
-            </button>
-          </div>
-        </div>
-      </section>
-    );
-  }
 
   if (!assessment) {
     return (

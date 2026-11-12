@@ -12,8 +12,11 @@ use rusqlite::Connection;
 
 use crate::store::db::{Db, StoreError};
 
-use super::importer::V4BackupFile;
-use super::repo::{read_snapshot, ConfigRepo, EventRepo, FeedRepo, GradeRepo, TopicRepo};
+use super::importer::{V4BackupFile, STUDY_STATS_CONFIG_KEY, UNSCHEDULED_SLOTS_CONFIG_KEY};
+use super::repo::{
+    read_snapshot, ConfigRepo, EventRepo, FeedRepo, FlashcardRepo, GradeRepo, MistakeRepo,
+    QuizAttemptRepo, StudySessionRepo, TopicRepo,
+};
 
 /// Assembles the current data realm as a v4-readable backup file. The
 /// snapshot (for derived fields on `assessments`) is refreshed at
@@ -37,6 +40,14 @@ pub(crate) fn build_v4_backup_conn(
     let topic_repo = TopicRepo::new(conn);
     let grade_repo = GradeRepo::new(conn);
 
+    // Non-domain metadata passthroughs (imported from a cross-tier backup).
+    // `None` = this store never received one — the sections stay absent so a
+    // v4 consumer sees the same shape it always did.
+    let study_stats = config.get_raw(STUDY_STATS_CONFIG_KEY)?;
+    let unscheduled_slots = config
+        .get_raw(UNSCHEDULED_SLOTS_CONFIG_KEY)?
+        .and_then(|v| v.as_array().cloned());
+
     Ok(V4BackupFile {
         generated_at: Some(updated_at.to_string()),
         // The assessments refresh keeps derived fields honest at export time.
@@ -46,6 +57,17 @@ pub(crate) fn build_v4_backup_conn(
         grades: grade_repo.all()?,
         custom_events: EventRepo::new(conn).list()?,
         feeds: FeedRepo::new(conn).list()?,
+        // Study collections always ship (an empty list is honest "nothing
+        // here", which a restore must honor by clearing, not merging).
+        flashcards: Some(FlashcardRepo::new(conn).list_all()?),
+        quiz_attempts: Some(QuizAttemptRepo::new(conn).list_all()?),
+        mistake_bank: Some(MistakeRepo::new(conn).list_all()?),
+        study_sessions: Some(StudySessionRepo::new(conn).list_all()?),
+        study_stats,
+        unscheduled_slots: unscheduled_slots.unwrap_or_default(),
+        // This exporter never invents slot times, so the legacy placeholder
+        // list is always empty (and skipped in the serialized file).
+        invented_slot_times: Vec::new(),
         user_email: config.get_string("user_email")?,
         user_name: config.get_string("user_name")?,
         user_picture: config.get_string("user_picture")?,

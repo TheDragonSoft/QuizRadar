@@ -1,14 +1,9 @@
 import { useState } from "react";
-import {
-  User,
-  LogOut,
-  Sparkles,
-  ShieldCheck,
-  ChevronRight,
-} from "lucide-react";
+import { User, LogOut, Sparkles, ShieldCheck, ChevronRight, ExternalLink } from "lucide-react";
 import { copy } from "../../copy";
 import { useAppStore } from "../../state/store";
 import { isTauriEnvironment } from "../../state/rpc";
+import { getPreferredDarkTheme, getPreferredLightTheme, isDarkTheme } from "../../state/storage";
 import type { ThemeMode } from "../../state/types";
 import { GoogleMark, MicrosoftMark } from "../../components/BrandMarks";
 import { SECTION_ID } from "./constants";
@@ -106,9 +101,7 @@ export function SettingsAccountSection() {
           <User className="h-4 w-4 text-[var(--accent-ink)]" aria-hidden="true" />
           {copy.settings.tabAccount}
         </h2>
-        <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-          {copy.settings.sectionAccountSub}
-        </p>
+        <p className="mt-0.5 text-xs text-[var(--text-muted)]">{copy.settings.sectionAccountSub}</p>
       </div>
 
       {/* Identity banner — v4 profile card, opens the account manager */}
@@ -143,8 +136,8 @@ export function SettingsAccountSection() {
             Appearance &amp; Observatory Themes
           </h3>
           <p className="text-xs text-[var(--text-muted)]">
-            Configure your active appearance mode and select your preferred Light and Dark
-            themes for daytime and nighttime studying.
+            Configure your active appearance mode and select your preferred Light and Dark themes
+            for daytime and nighttime studying.
           </p>
         </div>
 
@@ -165,7 +158,9 @@ export function SettingsAccountSection() {
                     typeof window !== "undefined" &&
                     window.matchMedia &&
                     window.matchMedia("(prefers-color-scheme: dark)").matches;
-                  setTheme(isDark ? "obsidian" : "solar");
+                  // Same resolution as the TopBar toggle: the user's preferred
+                  // theme for the mode, not the generic default.
+                  setTheme(isDark ? getPreferredDarkTheme() : getPreferredLightTheme());
                 },
               },
               {
@@ -173,14 +168,14 @@ export function SettingsAccountSection() {
                 label: "Light Mode",
                 icon: "☀️",
                 active: theme === "light" || theme === "solar",
-                onClick: () => setTheme("solar"),
+                onClick: () => setTheme(getPreferredLightTheme()),
               },
               {
                 id: "dark",
                 label: "Dark Mode",
                 icon: "🌙",
-                active: theme === "dark" || theme === "obsidian" || theme.startsWith("amoled"),
-                onClick: () => setTheme("obsidian"),
+                active: isDarkTheme(theme),
+                onClick: () => setTheme(getPreferredDarkTheme()),
               },
             ].map((mode) => (
               <button
@@ -203,9 +198,7 @@ export function SettingsAccountSection() {
         {/* Light Theme Collection (Extensible for future light themes) */}
         <div>
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-semibold text-[var(--text)]">
-              Preferred Light Theme
-            </span>
+            <span className="text-xs font-semibold text-[var(--text)]">Preferred Light Theme</span>
             <span className="text-[10px] text-[var(--text-muted)]">Active during daytime</span>
           </div>
           <div className="grid grid-cols-1 gap-2">
@@ -258,12 +251,8 @@ export function SettingsAccountSection() {
         {/* Dark Theme Collection (Extensible for future dark themes) */}
         <div>
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-semibold text-[var(--text)]">
-              Preferred Dark Theme
-            </span>
-            <span className="text-[10px] text-[var(--text-muted)]">
-              Active during nighttime
-            </span>
+            <span className="text-xs font-semibold text-[var(--text)]">Preferred Dark Theme</span>
+            <span className="text-[10px] text-[var(--text-muted)]">Active during nighttime</span>
           </div>
           <div className="grid grid-cols-1 gap-2">
             {[
@@ -276,22 +265,6 @@ export function SettingsAccountSection() {
                 tag: "Default Dark",
               },
               {
-                id: "amoled-minimal",
-                name: "AMOLED Pure Starlight",
-                bg: "#000000",
-                accent: "#3B82F6",
-                desc: "Pitch black (#000000) OLED canvas with subtle, clean micro-starlight pinpricks across the whole UI",
-                tag: "AMOLED v1",
-              },
-              {
-                id: "amoled-sparkle",
-                name: "AMOLED Constellation Sparkles",
-                bg: "#000000",
-                accent: "#60A5FA",
-                desc: "Pure OLED black with prominent scattered 4-point sparkle cross stars and celestial clusters",
-                tag: "AMOLED v2",
-              },
-              {
                 id: "amoled-nebula",
                 name: "AMOLED Cosmic Stardust",
                 bg: "#000000",
@@ -300,10 +273,7 @@ export function SettingsAccountSection() {
                 tag: "AMOLED v3",
               },
             ].map((t) => {
-              const isSelected =
-                theme === t.id ||
-                (t.id === "obsidian" && theme === "dark") ||
-                (t.id === "amoled-sparkle" && theme === "amoled");
+              const isSelected = theme === t.id || (t.id === "obsidian" && theme === "dark");
               return (
                 <button
                   key={t.id}
@@ -343,9 +313,7 @@ export function SettingsAccountSection() {
       {/* Academic rhythm preset — persisted (`01` §4.1) and now WIRED:
           it tunes the roadmap's prep-day spread (see the disclosure). */}
       <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
-        <div className="text-xs font-bold text-[var(--text)]">
-          {copy.onboarding.tracksTitle}
-        </div>
+        <div className="text-xs font-bold text-[var(--text)]">{copy.onboarding.tracksTitle}</div>
         <div className="mt-0.5 text-xs text-[var(--text-muted)]">{savedTrackLabel}</div>
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
           {TRACK_OPTIONS.map((track) => {
@@ -378,9 +346,7 @@ export function SettingsAccountSection() {
               <GoogleMark className="h-4 w-4" />
             </div>
             <div>
-              <div className="text-xs font-bold text-[var(--text)]">
-                Personal Google Account
-              </div>
+              <div className="text-xs font-bold text-[var(--text)]">Personal Google Account</div>
               <div className="text-xs text-[var(--text-muted)]">
                 Gmail scanning, Calendar push & Drive backup
               </div>
@@ -431,9 +397,7 @@ export function SettingsAccountSection() {
               <div className="text-xs font-bold text-[var(--text)]">
                 University Account (Microsoft 365)
               </div>
-              <div className="text-xs text-[var(--text-muted)]">
-                Teams, Outlook & campus feeds
-              </div>
+              <div className="text-xs text-[var(--text-muted)]">Teams, Outlook & campus feeds</div>
             </div>
           </div>
           {auth.hasTeamsAuth ? (
@@ -508,7 +472,7 @@ export function SettingsAccountSection() {
             value={geminiKeyInput}
             onChange={(e) => setGeminiKeyInput(e.target.value)}
             placeholder={copy.ai.keyPlaceholder}
-            className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none focus:border-[var(--accent)]"
+            className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-base sm:text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none focus:border-[var(--accent)]"
           />
           <button
             type="button"
@@ -549,7 +513,18 @@ export function SettingsAccountSection() {
             </span>
             <span>{copy.ai.quotaCapNote}</span>
           </div>
-          <div className="text-xs">{copy.ai.quotaLimitNote}</div>
+          <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs">
+            <span>{copy.ai.quotaLimitNote}</span>
+            <a
+              href={copy.ai.getKeyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--accent-ink)] hover:underline"
+            >
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>{copy.ai.getKeyCta}</span>
+            </a>
+          </div>
         </div>
       </div>
     </section>

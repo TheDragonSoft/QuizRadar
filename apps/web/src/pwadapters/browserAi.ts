@@ -18,6 +18,7 @@
  */
 
 import type { Course, DesktopExtractedTimetable, ScheduleData, ScheduleSlot } from "../state/types";
+import { coursePalette } from "../lib/coursePalette";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -73,18 +74,6 @@ Return ONLY a valid JSON object matching this exact structure:
     { "id": "slot-1", "course_id": "ECE210", "day": "Sunday", "start_time": "09:00", "end_time": "10:30", "display_time": "9:00 AM - 10:30 AM", "room": null, "type": "Lecture", "group": null }
   ]
 }`;
-
-/** The 8 v4 preset accents (`core/src/sources/mod.rs`). */
-const PALETTE_PRESETS: ReadonlyArray<string> = [
-  "#1a73e8",
-  "#0f9d58",
-  "#ea8600",
-  "#d93025",
-  "#8e24aa",
-  "#00acc1",
-  "#e67c73",
-  "#3949ab",
-];
 
 // ---------------------------------------------------------------------------
 // Session-scoped AI call counter
@@ -174,18 +163,12 @@ export function validHexColor(value: unknown): string | null {
 }
 
 /**
- * Deterministic preset accent for a course id — FNV-1a over the id's UTF-8
- * bytes, exactly like `core/src/sources/mod.rs::preset_course_colors`.
+ * Deterministic preset accent for a course id — the single web FNV-1a copy
+ * lives in `lib/coursePalette.ts` (kept byte-equivalent with
+ * `core/src/sources/mod.rs::preset_course_colors` by browserAiCoreParity.test.ts).
  */
 export function presetCourseColors(id: string): { color: string; bg: string; border: string } {
-  const bytes = new TextEncoder().encode(id);
-  let hash = 0x811c9dc5;
-  for (const byte of bytes) {
-    hash ^= byte;
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  const color = PALETTE_PRESETS[hash % PALETTE_PRESETS.length];
-  return { color, bg: `${color}18`, border: `${color}55` };
+  return coursePalette(id);
 }
 
 /** Strips a `data:<mime>;base64,` prefix (the desktop shell does the same). */

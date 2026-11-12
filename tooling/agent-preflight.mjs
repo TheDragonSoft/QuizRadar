@@ -224,7 +224,13 @@ if (mySurfaces.includes("web") || mySurfaces.includes("tooling")) {
   requiredGates.push("pnpm test");
 }
 if (mySurfaces.includes("desktop")) {
+  // The Tauri shell is a workspace member; `cargo test --workspace` above
+  // already covers it — this targeted pass gives faster feedback on
+  // desktop-only branches.
   requiredGates.push("cargo test -p quizradar-desktop");
+}
+if (mySurfaces.includes("ci")) {
+  requiredGates.push("pnpm test:tooling");
 }
 if (mySurfaces.includes("android")) {
   requiredGates.push("cd apps/mobile-android; .\\gradlew.bat ktlintCheck testDebugUnitTest");
@@ -256,10 +262,18 @@ for (const wt of worktrees) {
     );
   }
 }
-const touchesShippedCode = myFiles.some((f) => f.startsWith("core/") || f.startsWith("apps/"));
-if (touchesShippedCode && localFragments.length === 0) {
+// Mirrors agent-gate.mjs: CI workflows, gate/tooling scripts and shipped code
+// all require a branch-owned handoff fragment before merge.
+const touchesCoordinationSurface = myFiles.some(
+  (f) =>
+    f.startsWith("core/") ||
+    f.startsWith("apps/") ||
+    f.startsWith(".github/") ||
+    f.startsWith("tooling/"),
+);
+if (touchesCoordinationSurface && localFragments.length === 0) {
   warnings.push(
-    "Shipped code (`core/` or `apps/`) is modified on this branch, but no `changes/<slug>.md` handoff note exists yet. Run `pnpm agent:note ...` before pushing.",
+    "Shipped code (`core/`, `apps/`) or coordination surface (`.github/`, `tooling/`) is modified on this branch, but no `changes/<slug>.md` handoff note exists yet. Run `pnpm agent:note ...` before pushing.",
   );
 }
 

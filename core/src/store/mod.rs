@@ -395,6 +395,62 @@ impl Store {
             .await
     }
 
+    pub async fn save_mistake(
+        &self,
+        mistake: crate::types::MistakeRecord,
+        updated_at: String,
+    ) -> Result<(), StoreError> {
+        self.run(move |db| repo::ops::save_mistake(db, &mistake, &updated_at))
+            .await
+    }
+
+    pub async fn delete_mistake(&self, mistake_id: String) -> Result<bool, StoreError> {
+        self.run(move |db| repo::ops::delete_mistake(db, &mistake_id))
+            .await
+    }
+
+    pub async fn list_quiz_attempts(&self) -> Result<Vec<crate::types::QuizAttempt>, StoreError> {
+        self.run(repo::ops::list_quiz_attempts).await
+    }
+
+    pub async fn delete_quiz_attempt(&self, attempt_id: String) -> Result<bool, StoreError> {
+        self.run(move |db| repo::ops::delete_quiz_attempt(db, &attempt_id))
+            .await
+    }
+
+    /// Desktop study bridge, migration write: one-transaction whole-collection
+    /// replace (see [`repo::ops::replace_study_collections`]).
+    pub async fn replace_study_collections(
+        &self,
+        flashcards: Vec<crate::types::Flashcard>,
+        quiz_attempts: Vec<crate::types::QuizAttempt>,
+        mistakes: Vec<crate::types::MistakeRecord>,
+        study_sessions: Vec<crate::types::StudySessionRecord>,
+        study_stats: Option<serde_json::Value>,
+        updated_at: String,
+    ) -> Result<repo::StudyCollectionsReport, StoreError> {
+        self.run(move |db| {
+            repo::ops::replace_study_collections(
+                db,
+                &flashcards,
+                &quiz_attempts,
+                &mistakes,
+                &study_sessions,
+                study_stats.as_ref(),
+                &updated_at,
+            )
+        })
+        .await
+    }
+
+    /// Desktop study bridge, purge write: all four study collections cleared
+    /// in one transaction (see [`repo::ops::purge_study_collections`]).
+    pub async fn purge_study_collections(
+        &self,
+    ) -> Result<repo::StudyCollectionsReport, StoreError> {
+        self.run(repo::ops::purge_study_collections).await
+    }
+
     /// Dismiss the conflict banner (`/api/conflicts/dismiss`).
     pub async fn dismiss_conflicts(&self) -> Result<(), StoreError> {
         self.run(move |db| {
@@ -471,6 +527,20 @@ impl Store {
             let conn = db.conn();
             let config = repo::ConfigRepo::new(conn);
             config.get_string(&key)
+        })
+        .await
+    }
+
+    /// Read a configuration property as raw JSON (passthrough keys like the
+    /// study-stats ledger are objects, not strings).
+    pub async fn get_config_raw(
+        &self,
+        key: String,
+    ) -> Result<Option<serde_json::Value>, StoreError> {
+        self.run(move |db| {
+            let conn = db.conn();
+            let config = repo::ConfigRepo::new(conn);
+            config.get_raw(&key)
         })
         .await
     }

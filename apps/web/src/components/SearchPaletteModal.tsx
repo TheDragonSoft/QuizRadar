@@ -1,12 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Search as SearchIcon,
-  X,
-  BookOpen,
-  ArrowRight,
-  History,
-} from "lucide-react";
+import { Search as SearchIcon, X, BookOpen, ArrowRight, History } from "lucide-react";
 import { useAppStore } from "../state/store";
+import { isDarkTheme } from "../state/storage";
 import { courseAccessibleChip, courseDisplayName, coursePalette } from "../lib/coursePalette";
 
 const RECENTS_STORAGE_KEY = "quizradar_recent_searches";
@@ -102,7 +97,15 @@ export const SearchPaletteModal: React.FC<{
         const roomMatch = a.room?.toLowerCase().includes(q) ?? false;
         const dateMatch = a.dateIso?.includes(q) ?? false;
 
-        if (titleMatch || typeMatch || courseMatch || instructorMatch || topicMatch || roomMatch || dateMatch) {
+        if (
+          titleMatch ||
+          typeMatch ||
+          courseMatch ||
+          instructorMatch ||
+          topicMatch ||
+          roomMatch ||
+          dateMatch
+        ) {
           matches.push({
             id: a.id,
             type: "ASSESSMENT",
@@ -325,8 +328,9 @@ export const SearchPaletteModal: React.FC<{
             {results.map((res, idx) => {
               const isActive = idx === activeIndex;
               const course = res.courseId ? courses.find((c) => c.id === res.courseId) : null;
-              const hex = course?.color || (res.courseId ? coursePalette(res.courseId).color : "#1a73e8");
-              const chip = res.courseId ? courseAccessibleChip(hex, theme === "dark") : null;
+              const hex =
+                course?.color || (res.courseId ? coursePalette(res.courseId).color : "#1a73e8");
+              const chip = res.courseId ? courseAccessibleChip(hex, isDarkTheme(theme)) : null;
 
               return (
                 <div
@@ -345,7 +349,11 @@ export const SearchPaletteModal: React.FC<{
                   <div className="flex items-center gap-3 min-w-0">
                     {res.courseId && chip ? (
                       <span
-                        style={{ backgroundColor: chip.bg, color: chip.text, borderColor: chip.border }}
+                        style={{
+                          backgroundColor: chip.bg,
+                          color: chip.text,
+                          borderColor: chip.border,
+                        }}
                         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border text-[10px] font-bold"
                       >
                         {courseDisplayName(res.courseId, courses).slice(0, 3)}
@@ -382,9 +390,15 @@ export const SearchPaletteModal: React.FC<{
       {/* Footer Navigation Hints */}
       <div className="flex items-center justify-between border-t border-[var(--surface-border)] px-4 py-2 bg-[var(--page)] text-[10px] text-[var(--text-muted)]">
         <div className="flex items-center gap-3">
-          <span><kbd className="font-semibold">↑↓</kbd> navigate</span>
-          <span><kbd className="font-semibold">↵</kbd> select</span>
-          <span><kbd className="font-semibold">esc</kbd> close</span>
+          <span>
+            <kbd className="font-semibold">↑↓</kbd> navigate
+          </span>
+          <span>
+            <kbd className="font-semibold">↵</kbd> select
+          </span>
+          <span>
+            <kbd className="font-semibold">esc</kbd> close
+          </span>
         </div>
         <span>QuizRadar Search</span>
       </div>

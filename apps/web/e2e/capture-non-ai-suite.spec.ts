@@ -4,7 +4,13 @@ import { LIGHT_PROJECT } from "./helpers/theme";
 import * as path from "node:path";
 import * as fs from "node:fs";
 
-const REPO_DOCS = path.resolve(process.cwd(), "../../docs/screenshots/non-ai-suite");
+// OPT-IN capture script (run via `pnpm e2e:showcase`). Output lands in the
+// untracked staging dir unless the operator explicitly points
+// QUIZRADAR_SHOWCASE_DIR at a tracked folder — a run in this repo must never
+// rewrite `docs/screenshots/` as a side effect.
+const REPO_DOCS = process.env.QUIZRADAR_SHOWCASE_DIR
+  ? path.resolve(process.env.QUIZRADAR_SHOWCASE_DIR)
+  : path.resolve(process.cwd(), "e2e-results/showcase/non-ai-suite");
 
 if (!fs.existsSync(REPO_DOCS)) {
   fs.mkdirSync(REPO_DOCS, { recursive: true });
@@ -15,19 +21,79 @@ async function saveScreen(page: any, name: string) {
   await page.screenshot({ path: target });
 }
 
+// Seed shapes mirror the CURRENT app state schema (apps/web/src/state/types.ts):
+// Course.color, ScheduleSlot.dayIndex/displayTime, Assessment
+// urgencyLevel/priorityScore/warnings/source/topics: string[],
+// Flashcard.front/back/boxLevel and the MistakeItem
+// questionText/options/selectedIndex/correctIndex/explanation shape.
 const sampleCourses = [
-  { id: "CS301", name: "Data Structures & Algorithms", instructor: "Prof. Dijkstra", credits: 4, targetGrade: "A" },
-  { id: "MATH220", name: "Linear Algebra & Differential Eq", instructor: "Prof. Gauss", credits: 4, targetGrade: "A-" },
-  { id: "PHYS150", name: "University Physics: Mechanics", instructor: "Prof. Newton", credits: 3, targetGrade: "B+" },
-  { id: "ENG102", name: "Technical Writing & Ethics", instructor: "Prof. Orwell", credits: 2, targetGrade: "A" },
+  { id: "CS301", name: "Data Structures & Algorithms", color: "#3b82f6", credits: 4 },
+  { id: "MATH220", name: "Linear Algebra & Differential Eq", color: "#f59e0b", credits: 4 },
+  { id: "PHYS150", name: "University Physics: Mechanics", color: "#10b981", credits: 3 },
+  { id: "ENG102", name: "Technical Writing & Ethics", color: "#8b5cf6", credits: 2 },
 ];
 
 const sampleSlots = [
-  { id: "slot-1", courseId: "CS301", courseName: "Data Structures", day: "Monday", startTime: "10:00", endTime: "11:30", room: "Hall B-101", type: "Lecture" },
-  { id: "slot-2", courseId: "MATH220", courseName: "Linear Algebra", day: "Monday", startTime: "13:00", endTime: "14:30", room: "Turing 204", type: "Lecture" },
-  { id: "slot-3", courseId: "PHYS150", courseName: "Physics", day: "Tuesday", startTime: "09:00", endTime: "10:30", room: "Science 310", type: "Lecture" },
-  { id: "slot-4", courseId: "CS301", courseName: "Data Structures Lab", day: "Wednesday", startTime: "14:00", endTime: "16:00", room: "Lab C-12", type: "Lab" },
-  { id: "slot-5", courseId: "ENG102", courseName: "Tech Writing", day: "Thursday", startTime: "11:00", endTime: "12:30", room: "Humanities 105", type: "Seminar" },
+  {
+    id: "slot-1",
+    courseId: "CS301",
+    courseName: "Data Structures",
+    day: "Monday",
+    dayIndex: 1,
+    startTime: "10:00",
+    endTime: "11:30",
+    displayTime: "10:00 - 11:30",
+    room: "Hall B-101",
+    type: "Lecture",
+  },
+  {
+    id: "slot-2",
+    courseId: "MATH220",
+    courseName: "Linear Algebra",
+    day: "Monday",
+    dayIndex: 1,
+    startTime: "13:00",
+    endTime: "14:30",
+    displayTime: "13:00 - 14:30",
+    room: "Turing 204",
+    type: "Lecture",
+  },
+  {
+    id: "slot-3",
+    courseId: "PHYS150",
+    courseName: "Physics",
+    day: "Tuesday",
+    dayIndex: 2,
+    startTime: "09:00",
+    endTime: "10:30",
+    displayTime: "09:00 - 10:30",
+    room: "Science 310",
+    type: "Lecture",
+  },
+  {
+    id: "slot-4",
+    courseId: "CS301",
+    courseName: "Data Structures Lab",
+    day: "Wednesday",
+    dayIndex: 3,
+    startTime: "14:00",
+    endTime: "16:00",
+    displayTime: "14:00 - 16:00",
+    room: "Lab C-12",
+    type: "Lab",
+  },
+  {
+    id: "slot-5",
+    courseId: "ENG102",
+    courseName: "Tech Writing",
+    day: "Thursday",
+    dayIndex: 4,
+    startTime: "11:00",
+    endTime: "12:30",
+    displayTime: "11:00 - 12:30",
+    room: "Humanities 105",
+    type: "Seminar",
+  },
 ];
 
 const sampleAssessments = [
@@ -44,11 +110,15 @@ const sampleAssessments = [
     displayTime: "10:00 - 12:00",
     room: "Auditorium A",
     requiredStudyHours: 18,
+    urgencyLevel: "high",
+    priorityScore: 90,
+    warnings: [],
+    source: "showcase",
     topics: [
-      { id: "t1", title: "Binary Search Trees & AVL Balancing", completed: true },
-      { id: "t2", title: "Dijkstra & Prim Graph Algorithms", completed: true },
-      { id: "t3", title: "Memoization & DP Table Optimization", completed: false },
-      { id: "t4", title: "Amortized Analysis & Fibonacci Heaps", completed: false },
+      "Binary Search Trees & AVL Balancing",
+      "Dijkstra & Prim Graph Algorithms",
+      "Memoization & DP Table Optimization",
+      "Amortized Analysis & Fibonacci Heaps",
     ],
   },
   {
@@ -64,10 +134,11 @@ const sampleAssessments = [
     displayTime: "13:00 - 14:00",
     room: "Turing 204",
     requiredStudyHours: 8,
-    topics: [
-      { id: "t5", title: "Characteristic Polynomials & Determinants", completed: true },
-      { id: "t6", title: "Eigenspaces & Geometric Multiplicity", completed: false },
-    ],
+    urgencyLevel: "high",
+    priorityScore: 80,
+    warnings: [],
+    source: "showcase",
+    topics: ["Characteristic Polynomials & Determinants", "Eigenspaces & Geometric Multiplicity"],
   },
   {
     id: "asm-3",
@@ -82,9 +153,11 @@ const sampleAssessments = [
     displayTime: "09:00 - 11:00",
     room: "Science 310",
     requiredStudyHours: 6,
-    topics: [
-      { id: "t7", title: "Elastic and Inelastic Collisions", completed: true },
-    ],
+    urgencyLevel: "medium",
+    priorityScore: 60,
+    warnings: [],
+    source: "showcase",
+    topics: ["Elastic and Inelastic Collisions"],
   },
 ];
 
@@ -92,48 +165,66 @@ const sampleFlashcards = [
   {
     id: "fc-1",
     courseId: "CS301",
-    question: "What is the worst-case time complexity of lookup in an unbalanced BST vs an AVL tree?",
-    answer: "Unbalanced BST: O(n) when degenerated into a linked list. AVL Tree: Strictly guaranteed O(log n) via rotations.",
-    box: 3,
+    topic: "Binary Search Trees & AVL Balancing",
+    front: "What is the worst-case time complexity of lookup in an unbalanced BST vs an AVL tree?",
+    back: "Unbalanced BST: O(n) when degenerated into a linked list. AVL Tree: Strictly guaranteed O(log n) via rotations.",
+    boxLevel: 3,
     reviewCount: 4,
-    nextReviewDate: "2026-10-30",
+    nextReviewIso: "2026-10-30",
   },
   {
     id: "fc-2",
     courseId: "MATH220",
-    question: "Under what exact condition is an n x n square matrix diagonalizable?",
-    answer: "It must have n linearly independent eigenvectors (or the sum of dimensions of its eigenspaces equals n).",
-    box: 2,
+    topic: "Eigenspaces & Geometric Multiplicity",
+    front: "Under what exact condition is an n x n square matrix diagonalizable?",
+    back: "It must have n linearly independent eigenvectors (or the sum of dimensions of its eigenspaces equals n).",
+    boxLevel: 2,
     reviewCount: 2,
-    nextReviewDate: "2026-10-29",
+    nextReviewIso: "2026-10-29",
   },
   {
     id: "fc-3",
     courseId: "PHYS150",
-    question: "In an inelastic collision between two isolated bodies, which quantities are conserved?",
-    answer: "Total linear momentum is always conserved; kinetic energy is NOT conserved (dissipated as thermal/sound energy).",
-    box: 1,
+    topic: "Elastic and Inelastic Collisions",
+    front: "In an inelastic collision between two isolated bodies, which quantities are conserved?",
+    back: "Total linear momentum is always conserved; kinetic energy is NOT conserved (dissipated as thermal/sound energy).",
+    boxLevel: 1,
     reviewCount: 1,
-    nextReviewDate: "2026-10-29",
+    nextReviewIso: "2026-10-29",
   },
 ];
 
 const sampleMistakes = [
   {
     id: "mst-1",
-    question: "Failed to perform a double left-right rotation when balance factor was +2 and left child was -1.",
-    userAnswer: "Performed single right rotation",
-    correctAnswer: "Left rotate left child first, then right rotate root node",
+    assessmentId: "asm-1",
     courseId: "CS301",
+    topic: "Binary Search Trees & AVL Balancing",
+    questionId: "mst-1-q",
+    questionText:
+      "Failed to perform a double left-right rotation when balance factor was +2 and left child was -1.",
+    options: [
+      "Left rotate left child first, then right rotate root node",
+      "Performed single right rotation",
+    ],
+    selectedIndex: 1,
+    correctIndex: 0,
+    explanation:
+      "A balance factor of +2 with a left child of -1 is the LR case: rotate the left child left, then the root right.",
     timestamp: "2026-10-28T16:30:00Z",
     resolved: false,
   },
   {
     id: "mst-2",
-    question: "Assumed zero eigenvalue means matrix has no inverse.",
-    userAnswer: "False",
-    correctAnswer: "True: det(A) = product of eigenvalues = 0, so A is singular",
+    assessmentId: "asm-2",
     courseId: "MATH220",
+    topic: "Characteristic Polynomials & Determinants",
+    questionId: "mst-2-q",
+    questionText: "Assumed zero eigenvalue means matrix has no inverse.",
+    options: ["True: det(A) = product of eigenvalues = 0, so A is singular", "False"],
+    selectedIndex: 1,
+    correctIndex: 0,
+    explanation: "A zero eigenvalue makes the determinant zero, so the matrix is singular.",
     timestamp: "2026-10-27T11:15:00Z",
     resolved: true,
   },
@@ -151,44 +242,60 @@ test("capture desktop non-ai suite showcase", async ({ page }) => {
 
   await bootApp(page, "dark");
 
-  // Seed data
-  await page.evaluate(({ courses, slots, assessments, flashcards, mistakes }: any) => {
-    const store = (window as any).__QUIZRADAR_STORE__;
-    if (!store) return;
-    store.setState((prev: any) => ({
-      ...prev,
-      data: {
-        ...prev.data,
-        dashboard: {
-          ...(prev.data?.dashboard || {}),
-          studyRecommendations: [],
+  // Seed data. Store keys that no longer exist (`studyStreakDays`,
+  // `studyMinutesByCourse`) were removed — study metrics now come from the
+  // localStorage ledger key `quizradar_local_study_stats_v1`
+  // (apps/web/src/lib/studyStats.ts), which is seeded below and announced via
+  // the same event the app itself dispatches on a recorded session.
+  await page.evaluate(
+    ({ courses, slots, assessments, flashcards, mistakes, studyStats }: any) => {
+      const store = (window as any).__QUIZRADAR_STORE__;
+      if (!store) return;
+      store.setState((prev: any) => ({
+        ...prev,
+        data: {
+          ...prev.data,
+          dashboard: {
+            ...(prev.data?.dashboard || {}),
+            studyRecommendations: [],
+          },
+          schedule: {
+            ...prev.data.schedule,
+            semester: "Fall 2026",
+            courses,
+            slots,
+          },
+          assessments,
         },
-        schedule: {
-          ...prev.data.schedule,
-          semester: "Fall 2026",
-          courses,
-          slots,
+        flashcards,
+        mistakeBank: mistakes,
+        gradingScale: "4.0",
+      }));
+      localStorage.setItem("quizradar_local_study_stats_v1", JSON.stringify(studyStats));
+      window.dispatchEvent(new Event("quizradar:study-stats-updated"));
+    },
+    {
+      courses: sampleCourses,
+      slots: sampleSlots,
+      assessments: sampleAssessments,
+      flashcards: sampleFlashcards,
+      mistakes: sampleMistakes,
+      studyStats: {
+        totalMinutes: 950,
+        totalSessions: 23,
+        dailyMinutes: {
+          "2026-10-23": 120,
+          "2026-10-24": 95,
+          "2026-10-25": 140,
+          "2026-10-26": 160,
+          "2026-10-27": 150,
+          "2026-10-28": 165,
+          "2026-10-29": 120,
         },
-        assessments,
+        lastUpdated: "2026-10-29",
       },
-      flashcards,
-      mistakeBank: mistakes,
-      gradingScale: "4.0",
-      studyStreakDays: 6,
-      studyMinutesByCourse: {
-        CS301: 420,
-        MATH220: 280,
-        PHYS150: 190,
-        ENG102: 60,
-      },
-    }));
-  }, {
-    courses: sampleCourses,
-    slots: sampleSlots,
-    assessments: sampleAssessments,
-    flashcards: sampleFlashcards,
-    mistakes: sampleMistakes,
-  });
+    },
+  );
 
   await page.waitForTimeout(400);
 
@@ -197,13 +304,19 @@ test("capture desktop non-ai suite showcase", async ({ page }) => {
   await page.waitForTimeout(400);
 
   // 1. Calendar View
-  await page.getByTestId("topbar-view-switcher").getByRole("tab", { name: "Calendar", exact: true }).click();
+  await page
+    .getByTestId("topbar-view-switcher")
+    .getByRole("tab", { name: "Calendar", exact: true })
+    .click();
   await page.waitForSelector('[data-testid="calendar-view"]', { state: "visible" });
   await page.waitForTimeout(500);
   await saveScreen(page, "desktop-01-calendar-week-grid.png");
 
   // 2. Tasks View -> Daily Study Roadmap
-  await page.getByTestId("topbar-view-switcher").getByRole("tab", { name: "Tasks", exact: true }).click();
+  await page
+    .getByTestId("topbar-view-switcher")
+    .getByRole("tab", { name: "Tasks", exact: true })
+    .click();
   await page.waitForSelector('[data-testid="tasks-view"]', { state: "visible" });
   await page.waitForTimeout(500);
   await saveScreen(page, "desktop-02-tasks-study-roadmap.png");

@@ -22,11 +22,12 @@ use std::collections::HashMap;
 
 use crate::store::db::{Db, StoreError};
 use crate::store::repo::{
-    AssessmentRepo, CourseRepo, EmptyReplace, EventRepo, FeedRepo, GradeRepo, MetaRepo, TopicRepo,
+    AssessmentRepo, ConfigRepo, CourseRepo, EmptyReplace, EventRepo, FeedRepo, FlashcardRepo,
+    GradeRepo, MetaRepo, MistakeRepo, QuizAttemptRepo, StudySessionRepo, TopicRepo,
 };
 use crate::types::{
-    Assessment, AssessmentType, CompletedTopics, CustomCalendarEvent, FeedConfig, GradeRecord,
-    ScheduleData,
+    Assessment, AssessmentType, CompletedTopics, CustomCalendarEvent, FeedConfig, Flashcard,
+    GradeRecord, MistakeRecord, QuizAttempt, ScheduleData, StudySessionRecord,
 };
 
 /// One v4 export file as typed v5 structs. **Secret-carrying v4 fields are
@@ -59,6 +60,37 @@ pub struct V4BackupFile {
     pub synced_gcal_map: HashMap<String, String>,
     /// Export stamp (v5-added; absent in original v4 exports).
     pub generated_at: Option<String>,
+    // --- v5 study collections (`None` = the file simply does not carry the
+    // section, e.g. an original v4 export; `Some(list)` = a full replace on
+    // restore). A present-but-EMPTY list is meaningful: it means the exporting
+    // tier really had no flashcards/attempts/mistakes, so a restore must clear
+    // the local ones instead of merging stale records in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flashcards: Option<Vec<Flashcard>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quiz_attempts: Option<Vec<QuizAttempt>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mistake_bank: Option<Vec<MistakeRecord>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub study_sessions: Option<Vec<StudySessionRecord>>,
+    /// Non-domain metadata passthrough: the web tier's focus-minutes ledger
+    /// (lib/studyStats.ts). Carried transparently — the core never
+    /// interprets it, it only round-trips it so a cross-tier move cannot
+    /// silently drop it. `None` = section absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub study_stats: Option<serde_json::Value>,
+    /// Non-domain metadata passthrough: schedule slots whose times the
+    /// exporting tier could not honestly represent in the typed domain shape
+    /// (the core's `ScheduleSlot` requires `HH:MM` times). Carried verbatim so
+    /// a backup round-trip never fabricates times or silently drops the rows.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unscheduled_slots: Vec<serde_json::Value>,
+    /// Legacy v5.10 PWA exporters flagged slots whose 09:00/10:30 placeholder
+    /// times the exporter itself had invented. On restore those slots are
+    /// SKIPPED (with a warning) instead of applied — the placeholders were
+    /// never real user data. Never re-serialized.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub invented_slot_times: Vec<String>,
 }
 
 /// v4 field names that hold credentials or credentials-adjacent secrets.
@@ -73,6 +105,16 @@ pub const V4_SECRET_KEYS: &[&str] = &[
     "moodle_ical_url",
 ];
 
+/// `config_kv` key preserving a backup's non-domain `unscheduled_slots`
+/// metadata so a backup round-trip can re-export the same rows instead of
+/// dropping them (honesty doctrine: nothing silently vanishes).
+pub const UNSCHEDULED_SLOTS_CONFIG_KEY: &str = "quizradar_unscheduled_slots_v1";
+
+/// `config_kv` key mirroring the web tier's focus-minutes ledger
+/// (`lib/studyStats.ts` `STUDY_STATS_STORAGE_KEY`) so a cross-tier backup move
+/// keeps the stats without the core interpreting them.
+pub const STUDY_STATS_CONFIG_KEY: &str = "quizradar_local_study_stats_v1";
+
 /// What one import did. Counts are the honest summary a success toast may
 /// quote; `secrets_ignored` lists the v4 keys present-and-dropped.
 /// camelCase wire: the desktop command serializes this struct verbatim and
@@ -83,10 +125,26 @@ pub struct ImportReport {
     pub assessments_imported: usize,
     pub courses_imported: usize,
     pub slots_imported: usize,
+    /// Slots refused on restore (missing/placeholder times). They are never
+    /// silently dropped: the honest count lands here and, when the file
+    /// carried them as `unscheduled_slots` metadata, they are preserved in
+    /// the store's non-domain config for a later re-export.
+    #[serde(default)]
+    pub slots_skipped: usize,
     pub topics_imported: usize,
     pub grades_imported: usize,
     pub custom_events_imported: usize,
     pub feeds_imported: usize,
+    #[serde(default)]
+    pub flashcards_imported: usize,
+    #[serde(default)]
+    pub quiz_attempts_imported: usize,
+    #[serde(default)]
+    pub mistakes_imported: usize,
+    #[serde(default)]
+    pub study_sessions_imported: usize,
+    #[serde(default)]
+    pub study_stats_restored: bool,
     pub secrets_ignored: Vec<String>,
     /// Partial-failure notices. The web ImportReport declares these; the v4
     /// importer keeps them empty because every skip there is fatal.
@@ -160,11 +218,45 @@ pub fn import_v4_backup_json(
     let backup = parse_v4_backup(json)?;
     let report_secrets = collect_secret_keys(json);
 
+    // Legacy v5.10 PWA exporters flagged the slots whose 09:00/10:30 times the
+    // exporter itself had invented. Those placeholders are NOT user data —
+    // applying them here would re-fabricate a schedule that never existed —
+    // so they are skipped into the honest warnings list.
+    let mut warnings: Vec<String> = Vec::new();
+    let mut schedule = backup.schedule.clone();
+    let invented: std::collections::HashSet<&str> = backup
+        .invented_slot_times
+        .iter()
+        .map(String::as_str)
+        .collect();
+    let original_slot_count = schedule.slots.len();
+    if !invented.is_empty() {
+        schedule.slots.retain(|slot| {
+            if invented.contains(slot.id.as_str()) {
+                warnings.push(format!(
+                    "A class slot whose times were placeholder values in the backup was skipped ({}).",
+                    slot.id
+                ));
+                false
+            } else {
+                true
+            }
+        });
+    }
+    let slots_skipped = original_slot_count - schedule.slots.len();
+
     {
         let tx = db.transaction()?;
 
         // Schedule (courses + slots + semester) — full replace as v4 restore.
-        CourseRepo::new(&tx).save_all(&backup.schedule, updated_at)?;
+        CourseRepo::new(&tx).save_all(&schedule, updated_at)?;
+
+        // Preserve (not interpret) the backup's non-domain slot metadata so a
+        // round-trip re-exports the same rows instead of dropping them.
+        if !backup.unscheduled_slots.is_empty() {
+            let payload = serde_json::to_value(&backup.unscheduled_slots)?;
+            ConfigRepo::new(&tx).set_raw(UNSCHEDULED_SLOTS_CONFIG_KEY, &payload)?;
+        }
         {
             let meta = MetaRepo::new(&tx);
             meta.set_schedule_updated_at(updated_at)?;
@@ -231,6 +323,64 @@ pub fn import_v4_backup_json(
             feed_repo.save(feed, updated_at)?;
         }
 
+        // Study collections: `Some(list)` = full REPLACE (restore semantics —
+        // merging would resurrect stale records over live data); `None` = the
+        // file predates the section (v4) and the local collection stays
+        // untouched. All inside the same all-or-nothing transaction.
+        let flashcards_imported = match &backup.flashcards {
+            Some(cards) => {
+                FlashcardRepo::new(&tx).delete_all()?;
+                for card in cards {
+                    FlashcardRepo::new(&tx).upsert(card, updated_at)?;
+                }
+                cards.len()
+            }
+            None => 0,
+        };
+        let quiz_attempts_imported = match &backup.quiz_attempts {
+            Some(attempts) => {
+                QuizAttemptRepo::new(&tx).delete_all()?;
+                for attempt in attempts {
+                    QuizAttemptRepo::new(&tx).record(attempt)?;
+                }
+                attempts.len()
+            }
+            None => 0,
+        };
+        let mistakes_imported = match &backup.mistake_bank {
+            Some(mistakes) => {
+                MistakeRepo::new(&tx).delete_all()?;
+                for mistake in mistakes {
+                    MistakeRepo::new(&tx).record(mistake, updated_at)?;
+                }
+                mistakes.len()
+            }
+            None => 0,
+        };
+        let study_sessions_imported = match &backup.study_sessions {
+            Some(sessions) => {
+                StudySessionRepo::new(&tx).delete_all()?;
+                for session in sessions {
+                    StudySessionRepo::new(&tx).record(session)?;
+                }
+                sessions.len()
+            }
+            None => 0,
+        };
+
+        // Focus-minutes ledger (web tier's localStorage shape): validated,
+        // then preserved verbatim as non-domain metadata. A malformed ledger
+        // is skipped with a warning, never trusted.
+        let mut study_stats_restored = false;
+        if let Some(stats) = &backup.study_stats {
+            if is_shape_valid_study_stats(stats) {
+                ConfigRepo::new(&tx).set_raw(STUDY_STATS_CONFIG_KEY, stats)?;
+                study_stats_restored = true;
+            } else {
+                warnings.push("A malformed study-stats entry was skipped.".to_string());
+            }
+        }
+
         // Config anchors + profile metadata (no credentials).
         write_config_slice(&tx, &backup, updated_at)?;
 
@@ -239,17 +389,42 @@ pub fn import_v4_backup_json(
         Ok(ImportReport {
             assessments_imported: backup.assessments.len(),
             courses_imported: backup.schedule.courses.len(),
-            slots_imported: backup.schedule.slots.len(),
+            slots_imported: schedule.slots.len(),
+            slots_skipped,
             topics_imported: topics_merged,
             grades_imported,
             custom_events_imported: backup.custom_events.len(),
             feeds_imported: backup.feeds.len(),
+            flashcards_imported,
+            quiz_attempts_imported,
+            mistakes_imported,
+            study_sessions_imported,
+            study_stats_restored,
             secrets_ignored: report_secrets,
-            // Every skip in this importer is a hard failure, so a returned
-            // report carries no partial-failure notices.
-            warnings: Vec::new(),
+            warnings,
         })
     }
+}
+
+/// Mirrors the web tier's ledger validation (`lib/studyStats.ts`): an object
+/// with finite `totalMinutes`/`totalSessions` numbers and an object
+/// `dailyMinutes`. The core never interprets the payload beyond this shape
+/// gate — it is a passthrough, not a domain record.
+pub(crate) fn is_shape_valid_study_stats(value: &serde_json::Value) -> bool {
+    let Some(obj) = value.as_object() else {
+        return false;
+    };
+    let finite_number = |key: &str| {
+        obj.get(key)
+            .and_then(serde_json::Value::as_f64)
+            .is_some_and(|v| v.is_finite())
+    };
+    finite_number("totalMinutes")
+        && finite_number("totalSessions")
+        && obj
+            .get("dailyMinutes")
+            .map(serde_json::Value::is_object)
+            .unwrap_or(false)
 }
 
 fn write_config_slice(
@@ -589,5 +764,296 @@ mod tests {
             courses.is_empty(),
             "a failed import wrote nothing (one transaction)"
         );
+    }
+
+    // --- cross-tier study collections (PWA ⇄ desktop contract) --------------
+
+    #[test]
+    fn pwa_backup_shape_imports_study_collections_and_never_applies_invented_times() {
+        // The PWA export shape (`apps/web/src/pwadapters/rpcAdapter.ts`):
+        // dual-named study records, non-domain `unscheduled_slots` metadata,
+        // a transparent `study_stats` ledger, and (from v5.10 exporters only)
+        // the legacy `invented_slot_times` flag.
+        let json = r##"{
+            "schema_version": 1,
+            "tier": "pwa",
+            "schedule": {
+                "semester": "Fall 2026",
+                "courses": [{ "id": "CSE241", "name": "Digital Design", "color": "#2563EB" }],
+                "slots": [
+                    { "id": "slot-1", "day": "Thursday", "day_index": 4, "course_id": "CSE241",
+                      "course_name": "Digital Design", "type": "Lecture",
+                      "start_time": "09:30", "end_time": "10:45", "display_time": "" }
+                ]
+            },
+            "assessments": [],
+            "flashcards": [
+                { "id": "card-1", "front": "f", "back": "b", "boxLevel": 2,
+                  "courseId": "CSE241", "course_id": "CSE241" }
+            ],
+            "quiz_attempts": [
+                { "id": "attempt-1", "assessmentId": "a-1", "assessment_id": "a-1",
+                  "timestamp": "2026-11-11T10:00:00.000Z", "score": 3,
+                  "totalQuestions": 5, "total_questions": 5, "percentage": 60, "passed": false }
+            ],
+            "mistake_bank": [
+                { "id": "m-1", "assessmentId": "a-1", "assessment_id": "a-1",
+                  "questionId": "q-1", "question_id": "q-1", "questionText": "q",
+                  "question_text": "q", "options": ["a"], "selectedIndex": 1, "selected_index": 1,
+                  "correctIndex": 0, "correct_index": 0, "explanation": "e",
+                  "timestamp": "2026-11-11T10:00:00.000Z", "resolved": false }
+            ],
+            "study_stats": { "totalMinutes": 50, "totalSessions": 2, "dailyMinutes": {}, "lastUpdated": "2026-11-11" },
+            "unscheduled_slots": [
+                { "id": "slot-timeless", "day": "Monday", "course_id": "CSE241",
+                  "start_time": null, "end_time": null }
+            ],
+            "invented_slot_times": ["slot-legacy"]
+        }"##;
+        // The legacy flagged slot still carries its (invented) times in the
+        // domain schedule — applying it would re-fabricate a schedule.
+        let json = json.replace(
+            r#""start_time": "09:30", "end_time": "10:45", "display_time": "" }"#,
+            r#""start_time": "09:30", "end_time": "10:45", "display_time": "" },
+                    { "id": "slot-legacy", "day": "Friday", "day_index": 5, "course_id": "CSE241",
+                      "course_name": "Digital Design", "type": "Lecture",
+                      "start_time": "09:00", "end_time": "10:30", "display_time": "" }"#,
+        );
+
+        let db = mem_db();
+        let report = import_v4_backup_json(&db, &json, "2026-11-11T08:00:00Z").unwrap();
+
+        assert_eq!(report.flashcards_imported, 1);
+        assert_eq!(report.quiz_attempts_imported, 1);
+        assert_eq!(report.mistakes_imported, 1);
+        assert!(report.study_stats_restored);
+        assert_eq!(report.slots_imported, 1, "only the honest slot lands");
+        assert_eq!(
+            report.slots_skipped, 1,
+            "the invented placeholder slot is skipped"
+        );
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|w| w.contains("placeholder values")),
+            "the skip is named: {:?}",
+            report.warnings
+        );
+
+        // The store really holds the collections and the passthrough metadata.
+        use crate::store::repo::{FlashcardRepo, MistakeRepo, QuizAttemptRepo};
+        assert_eq!(FlashcardRepo::new(db.conn()).list_all().unwrap().len(), 1);
+        assert_eq!(QuizAttemptRepo::new(db.conn()).list_all().unwrap().len(), 1);
+        assert_eq!(MistakeRepo::new(db.conn()).list_all().unwrap().len(), 1);
+        let config = ConfigRepo::new(db.conn());
+        let stats = config.get_raw(STUDY_STATS_CONFIG_KEY).unwrap().unwrap();
+        assert_eq!(stats["totalSessions"], 2);
+        let unscheduled = config
+            .get_raw(UNSCHEDULED_SLOTS_CONFIG_KEY)
+            .unwrap()
+            .unwrap();
+        assert_eq!(unscheduled.as_array().unwrap().len(), 1);
+        assert_eq!(unscheduled[0]["id"], "slot-timeless");
+        // ...and never the invented slot.
+        assert_ne!(unscheduled[0]["id"], "slot-legacy");
+    }
+
+    #[test]
+    fn v4_file_without_study_sections_leaves_local_collections_untouched() {
+        use crate::store::repo::FlashcardRepo;
+        use crate::types::Flashcard;
+        let db = mem_db();
+        FlashcardRepo::new(db.conn())
+            .upsert(
+                &Flashcard {
+                    id: "local-1".to_string(),
+                    course_id: None,
+                    assessment_id: None,
+                    topic: None,
+                    front: "keep me".to_string(),
+                    back: "b".to_string(),
+                    box_level: 1,
+                    next_review_iso: None,
+                    last_reviewed_iso: None,
+                },
+                "t",
+            )
+            .unwrap();
+
+        import_v4_backup_json(
+            &db,
+            r#"{ "assessments": [], "schedule": { "courses": [] } }"#,
+            "t",
+        )
+        .unwrap();
+
+        assert_eq!(
+            FlashcardRepo::new(db.conn()).list_all().unwrap().len(),
+            1,
+            "an absent study section (v4 file) never clears local data"
+        );
+    }
+
+    #[test]
+    fn v4_backup_export_import_round_trips_study_collections() {
+        use crate::store::exporter::build_v4_backup;
+        use crate::store::repo::{FlashcardRepo, MistakeRepo, QuizAttemptRepo, StudySessionRepo};
+        use crate::types::{Flashcard, MistakeRecord, QuizAttempt, StudySessionRecord};
+
+        let db = mem_db();
+        let now = "2026-11-11T08:00:00Z";
+        {
+            let tx = db.transaction().unwrap();
+            FlashcardRepo::new(&tx)
+                .upsert(
+                    &Flashcard {
+                        id: "c1".to_string(),
+                        course_id: Some("CSE241".to_string()),
+                        assessment_id: None,
+                        topic: None,
+                        front: "front".to_string(),
+                        back: "back".to_string(),
+                        box_level: 3,
+                        next_review_iso: Some("2026-11-15".to_string()),
+                        last_reviewed_iso: Some("2026-11-11".to_string()),
+                    },
+                    now,
+                )
+                .unwrap();
+            QuizAttemptRepo::new(&tx)
+                .record(&QuizAttempt {
+                    id: "a1".to_string(),
+                    assessment_id: "a-1".to_string(),
+                    course_id: None,
+                    timestamp: "2026-11-11T09:00:00.000Z".to_string(),
+                    score: 7,
+                    total_questions: 10,
+                    passed: true,
+                })
+                .unwrap();
+            MistakeRepo::new(&tx)
+                .record(
+                    &MistakeRecord {
+                        id: "m1".to_string(),
+                        attempt_id: Some("a1".to_string()),
+                        assessment_id: "a-1".to_string(),
+                        course_id: None,
+                        question_id: "q1".to_string(),
+                        question_text: "q".to_string(),
+                        options: vec!["a".to_string(), "b".to_string()],
+                        selected_index: 1,
+                        correct_index: 0,
+                        explanation: "e".to_string(),
+                        timestamp: "2026-11-11T09:00:00.000Z".to_string(),
+                        resolved: false,
+                    },
+                    now,
+                )
+                .unwrap();
+            StudySessionRepo::new(&tx)
+                .record(&StudySessionRecord {
+                    id: "s1".to_string(),
+                    course_id: None,
+                    assessment_id: None,
+                    topic: None,
+                    duration_minutes: 25,
+                    timestamp: "2026-11-11T09:00:00.000Z".to_string(),
+                    date_iso: chrono::NaiveDate::from_ymd_opt(2026, 11, 11).unwrap(),
+                })
+                .unwrap();
+            ConfigRepo::new(&tx)
+                .set_raw(
+                    STUDY_STATS_CONFIG_KEY,
+                    &serde_json::json!({
+                        "totalMinutes": 90, "totalSessions": 4,
+                        "dailyMinutes": {"2026-11-11": 25}, "lastUpdated": "2026-11-11"
+                    }),
+                )
+                .unwrap();
+            ConfigRepo::new(&tx)
+                .set_raw(
+                    UNSCHEDULED_SLOTS_CONFIG_KEY,
+                    &serde_json::json!([{ "id": "slot-preserved", "start_time": null }]),
+                )
+                .unwrap();
+            tx.commit().unwrap();
+        }
+
+        // Export (desktop → file) …
+        let file = build_v4_backup(
+            &db,
+            now,
+            chrono::NaiveDate::from_ymd_opt(2026, 11, 11).unwrap(),
+        )
+        .unwrap();
+        let file_json = serde_json::to_string(&file).unwrap();
+        // The exported file names every study collection (never drops it).
+        for section in [
+            "flashcards",
+            "quiz_attempts",
+            "mistake_bank",
+            "study_sessions",
+        ] {
+            assert!(
+                file_json.contains(section),
+                "export must carry the {section} section"
+            );
+        }
+
+        // … import into a FRESH device (desktop ← file): restore is a replace.
+        let fresh = mem_db();
+        // Seed stale local study rows: a restore must REPLACE, not merge.
+        {
+            let tx = fresh.transaction().unwrap();
+            FlashcardRepo::new(&tx)
+                .upsert(
+                    &Flashcard {
+                        id: "stale".to_string(),
+                        course_id: None,
+                        assessment_id: None,
+                        topic: None,
+                        front: "old".to_string(),
+                        back: "old".to_string(),
+                        box_level: 5,
+                        next_review_iso: None,
+                        last_reviewed_iso: None,
+                    },
+                    now,
+                )
+                .unwrap();
+            tx.commit().unwrap();
+        }
+        let report = import_v4_backup_json(&fresh, &file_json, now).unwrap();
+        assert_eq!(report.flashcards_imported, 1);
+        assert_eq!(report.quiz_attempts_imported, 1);
+        assert_eq!(report.mistakes_imported, 1);
+        assert_eq!(report.study_sessions_imported, 1);
+        assert!(report.study_stats_restored);
+
+        let cards = FlashcardRepo::new(fresh.conn()).list_all().unwrap();
+        assert_eq!(cards.len(), 1, "replace, not merge: the stale card is gone");
+        assert_eq!(cards[0].id, "c1");
+        assert_eq!(cards[0].box_level, 3);
+        assert_eq!(
+            QuizAttemptRepo::new(fresh.conn()).list_all().unwrap().len(),
+            1
+        );
+        assert_eq!(MistakeRepo::new(fresh.conn()).list_all().unwrap().len(), 1);
+        assert_eq!(
+            StudySessionRepo::new(fresh.conn())
+                .list_all()
+                .unwrap()
+                .len(),
+            1
+        );
+        let config = ConfigRepo::new(fresh.conn());
+        let stats = config.get_raw(STUDY_STATS_CONFIG_KEY).unwrap().unwrap();
+        assert_eq!(stats["totalMinutes"], 90);
+        let unscheduled = config
+            .get_raw(UNSCHEDULED_SLOTS_CONFIG_KEY)
+            .unwrap()
+            .unwrap();
+        assert_eq!(unscheduled[0]["id"], "slot-preserved");
     }
 }

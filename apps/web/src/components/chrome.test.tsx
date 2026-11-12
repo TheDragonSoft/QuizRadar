@@ -5,7 +5,12 @@ import { Sidebar } from "./Sidebar";
 import { MobileNav } from "./MobileNav";
 import { ModalStack } from "./ModalStack";
 import { PullToRefresh } from "./PullToRefresh";
-import { useAppStore, initialFullState, THEME_STORAGE_KEY } from "../state/store";
+import {
+  useAppStore,
+  initialFullState,
+  THEME_STORAGE_KEY,
+  PREFERRED_DARK_THEME_STORAGE_KEY,
+} from "../state/store";
 import { computeSyncStatusSummary } from "../state/syncStatus";
 import { startDayRolloverWatchdog } from "../state/watchdog";
 import { loadCachedState, saveCachedState, SWR_CACHE_KEY } from "../state/swr";
@@ -14,6 +19,7 @@ describe("Web UI Foundation & Chrome Components", () => {
   beforeEach(() => {
     window.localStorage.clear();
     document.documentElement.className = "";
+    document.documentElement.removeAttribute("data-theme");
     useAppStore.setState({
       view: "dashboard",
       theme: "light",
@@ -33,16 +39,36 @@ describe("Web UI Foundation & Chrome Components", () => {
 
     fireEvent.click(themeBtn);
 
-    expect(useAppStore.getState().theme).toBe("dark");
-    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
+    // The toggle resolves the user's *preferred* theme for the mode it flips
+    // into — never the generic "dark" id. With nothing stored that is
+    // Obsidian Cosmic ("obsidian") for dark and Solar Dawn ("solar") for
+    // light (state/storage.ts: getPreferredDarkTheme / getPreferredLightTheme).
+    expect(useAppStore.getState().theme).toBe("obsidian");
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("obsidian");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("obsidian");
     expect(document.documentElement.classList.contains("dark")).toBe(true);
 
     const lightBtn = screen.getByLabelText(/switch to light mode/i);
     fireEvent.click(lightBtn);
 
-    expect(useAppStore.getState().theme).toBe("light");
-    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
+    expect(useAppStore.getState().theme).toBe("solar");
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("solar");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("solar");
     expect(document.documentElement.classList.contains("dark")).toBe(false);
+  });
+
+  // 1b. The toggle honours the concrete theme picked in Settings instead of
+  //     silently falling back to the generic/default id.
+  it("theme toggle honours the preferred dark theme stored in Settings", () => {
+    window.localStorage.setItem(PREFERRED_DARK_THEME_STORAGE_KEY, "amoled-nebula");
+
+    render(<TopBar />);
+    fireEvent.click(screen.getByLabelText(/switch to dark mode/i));
+
+    expect(useAppStore.getState().theme).toBe("amoled-nebula");
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("amoled-nebula");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("amoled-nebula");
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
   });
 
   // 2. Modal stack escape ordering
@@ -233,6 +259,26 @@ describe("Web UI Foundation & Chrome Components", () => {
     const modal = screen.getByTestId("modal-add-course");
     const closeButtons = modal.querySelectorAll('button[aria-label="Close"]');
     expect(closeButtons).toHaveLength(1);
+  });
+
+  // 10b. Per-modal border state: assessment-detail's first child is the
+  // full-width course-color strip, so it is registered borderless (no 1px
+  // hairline ring above the strip) while framed modals keep their border.
+  it("resolves borderless only for modals registered borderless", { timeout: 20_000 }, async () => {
+    // Importing App registers every modal component in the registry
+    // (idempotent: registerModal overwrites by id).
+    await import("../App");
+
+    render(<ModalStack />);
+    act(() => {
+      useAppStore.getState().openModal({ id: "add-course" });
+      useAppStore.getState().openModal({ id: "assessment-detail" });
+    });
+
+    const detailPanel = screen.getByTestId("modal-assessment-detail");
+    const coursePanel = screen.getByTestId("modal-add-course");
+    expect(detailPanel.className).not.toContain("border-[var(--surface-border)]");
+    expect(coursePanel.className).toContain("border-[var(--surface-border)]");
   });
 
   // 11. Sign-in buttons sign in (they never dump the user on a settings page)

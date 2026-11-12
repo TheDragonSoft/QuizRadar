@@ -31,6 +31,7 @@
 **QuizRadar** is a private, on-device academic radar built for university students. Every semester, students navigate disorganized communication streams: professor emails, LMS posts, Teams chat messages, and PDF lecture slides. Announcements arrive with ambiguous date phrases like _"Class Quiz 1 next Tuesday, not this week"_, causing missed deadlines and exam scheduling panic.
 
 QuizRadar solves this entirely on your device:
+
 1. **Fuzzy Anchor Engine:** Scans course updates and resolves ambiguous natural language dates into exact timetable lecture and tutorial slots.
 2. **Academic Conflict Radar:** Flags overlapping deadlines, exam pileups, and heavy assessment weeks ahead of time.
 3. **Study Recommendations & Readiness Score:** Computes real-time preparation readiness per course, recommending focused study topics and practice quizzes.
@@ -40,18 +41,19 @@ QuizRadar solves this entirely on your device:
 
 ## 2. Live Web & Downloads
 
-| Platform | Channel / Artifact | Architecture & Notes |
-| :--- | :--- | :--- |
-| **🌐 Official Website** | [thedragonsoft.github.io/QuizRadar](https://thedragonsoft.github.io/QuizRadar/) | Product tour, feature guides, download links, and FAQ |
+| Platform                   | Channel / Artifact                                                                       | Architecture & Notes                                                   |
+| :------------------------- | :--------------------------------------------------------------------------------------- | :--------------------------------------------------------------------- |
+| **🌐 Official Website**    | [thedragonsoft.github.io/QuizRadar](https://thedragonsoft.github.io/QuizRadar/)          | Product tour, feature guides, download links, and FAQ                  |
 | **📱 Web Companion (PWA)** | [thedragonsoft.github.io/QuizRadar/app/](https://thedragonsoft.github.io/QuizRadar/app/) | Zero-install offline web app; runs directly in browser via WebAssembly |
-| **🪟 Windows** | `QuizRadar_x64-setup.exe` / `Portable-win-x64.zip` | Minisign-signed in-app auto-updater (`tauri-plugin-updater`) |
-| **🍏 macOS** | `.dmg` / `.tar.gz` | Apple Silicon & Intel universal packages |
-| **🐧 Linux** | `.deb` / `.AppImage` | x86_64 native packages |
-| **🤖 Android** | `.apk` / `.aab` | Native Kotlin & Jetpack Compose (arm64-v8a, x86_64) |
+| **🪟 Windows**             | `QuizRadar_x64-setup.exe` / `Portable-win-x64.zip`                                       | Minisign-signed in-app auto-updater (`tauri-plugin-updater`)           |
+| **🍏 macOS**               | `.dmg` / `.tar.gz`                                                                       | Apple Silicon & Intel universal packages                               |
+| **🐧 Linux**               | `.deb` / `.AppImage`                                                                     | x86_64 native packages                                                 |
+| **🤖 Android**             | `.apk` / `.aab`                                                                          | Native Kotlin & Jetpack Compose (arm64-v8a, x86_64)                    |
 
 > 📦 **All binary downloads and signed checksums (`SHA256SUMS.txt`) are available on the [GitHub Releases](https://github.com/TheDragonSoft/QuizRadar/releases) page.**
 
 ### Android Sign-In Setup
+
 - **Google Sign-In:** Works out of the box with QuizRadar's built-in OAuth credentials.
 - **Microsoft Teams:** Microsoft requires your own Azure Client ID for custom redirect URI handling (`com.quizradar.app://oauth/microsoft`). You can register a free client ID in Azure Portal and paste it in `Settings → Integrations`.
 - **Desktop & Web:** Desktop tiers ship their own loopback PKCE clients, requiring zero manual configuration.
@@ -61,18 +63,21 @@ QuizRadar solves this entirely on your device:
 ## 3. Visual Showcase
 
 ### Desktop & Mobile Dashboard
-| Desktop Experience (Tauri 2 + React 19) | Android Native (Jetpack Compose M3) |
-| :---: | :---: |
+
+|              Desktop Experience (Tauri 2 + React 19)               |             Android Native (Jetpack Compose M3)              |
+| :----------------------------------------------------------------: | :----------------------------------------------------------: |
 | ![Desktop Dashboard](docs/screenshots/desktop-dashboard-light.png) | ![Android Dashboard](docs/screenshots/android-dashboard.png) |
 
 ### Timetable & Academic Calendar
-| Weekly Schedule View (Desktop) | Schedule & Assessment Lanes (Android) |
-| :---: | :---: |
+
+|                       Weekly Schedule View (Desktop)                       |              Schedule & Assessment Lanes (Android)              |
+| :------------------------------------------------------------------------: | :-------------------------------------------------------------: |
 | ![Desktop Week Calendar](docs/screenshots/desktop-week-calendar-light.png) | ![Android Week Calendar](docs/screenshots/android-calendar.png) |
 
 ### Assessment Hub & Study Tasks
-| Assessment Radar & Tasks (Desktop) | Study Roadmap & Topic Checklist (Android) |
-| :---: | :---: |
+
+|                          Assessment Radar & Tasks (Desktop)                           |         Study Roadmap & Topic Checklist (Android)          |
+| :-----------------------------------------------------------------------------------: | :--------------------------------------------------------: |
 | ![Desktop Assessments](docs/screenshots/redesign/after-desktop-tasks-assessments.png) | ![Android Study Tasks](docs/screenshots/android-tasks.png) |
 
 <details>
@@ -80,16 +85,16 @@ QuizRadar solves this entirely on your device:
 
 <br/>
 
-| Obsidian / Night Skies | Pure AMOLED Minimal |
-| :---: | :---: |
+|                         Obsidian / Night Skies                         |                           Pure AMOLED Minimal                            |
+| :--------------------------------------------------------------------: | :----------------------------------------------------------------------: |
 | ![Desktop Dashboard Dark](docs/screenshots/desktop-dashboard-dark.png) | ![Android Dashboard AMOLED](docs/screenshots/android-dashboard-dark.png) |
 
-| Solar Golden Hour Theme | Aurora Borealis Gradient |
-| :---: | :---: |
+|                            Solar Golden Hour Theme                            |                            Aurora Borealis Gradient                             |
+| :---------------------------------------------------------------------------: | :-----------------------------------------------------------------------------: |
 | ![Desktop Solar](docs/screenshots/redesign/after-desktop-dashboard-solar.png) | ![Desktop Aurora](docs/screenshots/redesign/after-desktop-dashboard-aurora.png) |
 
-| Pomodoro Focus Timer | Settings & Integration Hub |
-| :---: | :---: |
+|                 Pomodoro Focus Timer                 |                 Settings & Integration Hub                 |
+| :--------------------------------------------------: | :--------------------------------------------------------: |
 | ![Android Focus](docs/screenshots/android-focus.png) | ![Android Settings](docs/screenshots/android-settings.png) |
 
 </details>
@@ -98,11 +103,11 @@ QuizRadar solves this entirely on your device:
 
 ## 4. Platform Matrix
 
-| Platform | Tier | Shell Architecture | Auth & Storage | Native Features |
-| :--- | :--- | :--- | :--- | :--- |
-| **Desktop** (Win, Mac, Linux) | Primary | **Tauri 2** + **React 19** | Loopback PKCE OAuth; OS Keyring (`keyring-rs`); SQLite | Signed Auto-Updater (`tauri-plugin-updater`), native menus, system file dialogs |
-| **Android** (Phone & Tablet) | Native | **Kotlin 2.x** + **Jetpack Compose M3** | Custom-scheme PKCE OAuth; `EncryptedSharedPreferences`; UniFFI SQLite | **On-device announcement scanning**, optional background scan, Glance 2x1 AppWidget, T-24 notifications, Share-sheet ingest, Drive backup |
-| **Web Companion** (PWA) | Companion | **React 19** + **WebAssembly Core** | Ephemeral GIS tokens; IndexedDB SQLite | Service Worker offline caching (engine precached), responsive mobile & desktop web layouts |
+| Platform                      | Tier      | Shell Architecture                      | Auth & Storage                                                        | Native Features                                                                                                                           |
+| :---------------------------- | :-------- | :-------------------------------------- | :-------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------- |
+| **Desktop** (Win, Mac, Linux) | Primary   | **Tauri 2** + **React 19**              | Loopback PKCE OAuth; OS Keyring (`keyring-rs`); SQLite                | Signed Auto-Updater (`tauri-plugin-updater`), native menus, system file dialogs                                                           |
+| **Android** (Phone & Tablet)  | Native    | **Kotlin 2.x** + **Jetpack Compose M3** | Custom-scheme PKCE OAuth; `EncryptedSharedPreferences`; UniFFI SQLite | **On-device announcement scanning**, optional background scan, Glance 2x1 AppWidget, T-24 notifications, Share-sheet ingest, Drive backup |
+| **Web Companion** (PWA)       | Companion | **React 19** + **WebAssembly Core**     | Ephemeral GIS tokens; IndexedDB SQLite                                | Service Worker offline caching (engine precached), responsive mobile & desktop web layouts                                                |
 
 ---
 
@@ -143,6 +148,7 @@ See [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md) for full policies.
 ## 7. Development & Building from Source
 
 ### Prerequisites
+
 - **Rust:** Stable toolchain (`rustup update stable`)
 - **Node.js:** Node.js 20+ with `pnpm`
 - **Java:** JDK 21 (Temurin / Adoptium)
@@ -179,4 +185,3 @@ cd apps/mobile-android
 - [Security Policy & Vulnerability Reporting](SECURITY.md)
 - [Changelog](CHANGELOG.md)
 - [License (MIT)](LICENSE)
-

@@ -159,14 +159,20 @@ describe("Adversarial Verification — Milestone 2: UI, Shortcuts & Density", ()
       expect(useAppStore.getState().selectedCalendarDate).toBe(todayIso);
 
       // Test 'n' and 'N' -> openEventModal() (opens 'create-edit-event')
-      expect(useAppStore.getState().openModals.some((m) => m.id === "create-edit-event")).toBe(false);
+      expect(useAppStore.getState().openModals.some((m) => m.id === "create-edit-event")).toBe(
+        false,
+      );
       fireEvent.keyDown(window, { key: "n" });
-      expect(useAppStore.getState().openModals.some((m) => m.id === "create-edit-event")).toBe(true);
+      expect(useAppStore.getState().openModals.some((m) => m.id === "create-edit-event")).toBe(
+        true,
+      );
 
       // Close modal to test uppercase 'N'
       useAppStore.setState({ openModals: [] });
       fireEvent.keyDown(window, { key: "N" });
-      expect(useAppStore.getState().openModals.some((m) => m.id === "create-edit-event")).toBe(true);
+      expect(useAppStore.getState().openModals.some((m) => m.id === "create-edit-event")).toBe(
+        true,
+      );
       useAppStore.setState({ openModals: [] });
 
       // Test ' ' and 'Space' code -> togglePomodoro()

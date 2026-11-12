@@ -181,6 +181,14 @@ const BANNED_PATTERNS: ReadonlyArray<BannedPattern> = [
     reason: "a Google API key must never be committed (BYOK: the user pastes their own).",
     source: "AGENTS §3 rule 2 / §8 security checklist",
   },
+  {
+    id: "posthog-telemetry",
+    regex: /posthog/i,
+    needle: "posthog",
+    reason:
+      "01-product-spec §7 bans analytics/telemetry. The PostHog integration was deleted in the 2026-11 deslop: it was never configured (isAnalyticsConfigured() was hardwired false) while settings copy promised 'sharing anonymous scan reliability' — a dishonesty-doctrine violation. No analytics SDK may ship in the web bundle.",
+    source: "01-product-spec §7 / AGENTS §3 rules 1+4",
+  },
 ];
 
 interface AllowEntry {

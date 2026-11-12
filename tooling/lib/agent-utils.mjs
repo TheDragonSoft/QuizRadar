@@ -59,6 +59,13 @@ export function parseCliArgs(argv) {
 
 /**
  * Execute git safely via `execFileSync` (never invokes a shell).
+ *
+ * Only TRAILING whitespace is trimmed. A full `.trim()` corrupts the first
+ * line of porcelain output whose XY field starts with a space (e.g.
+ * `git status --porcelain` returning ` M path`), which made parsers using
+ * `line.slice(3)` eat one extra character of the first path — silently
+ * misclassifying `.github/...` as `tooling` in preflight/agent-note surface
+ * detection and conflict radar.
  */
 export function runGit(repoRoot, args, { allowFailure = false } = {}) {
   try {
@@ -66,7 +73,7 @@ export function runGit(repoRoot, args, { allowFailure = false } = {}) {
       cwd: repoRoot,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
-    }).trim();
+    }).replace(/\s+$/, "");
   } catch (err) {
     if (allowFailure) return null;
     const stderr = err && typeof err === "object" && "stderr" in err ? String(err.stderr) : "";

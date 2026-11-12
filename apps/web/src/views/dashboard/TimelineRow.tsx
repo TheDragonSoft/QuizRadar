@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { copy } from "../../copy";
 import { useAppStore } from "../../state/store";
+import { isDarkTheme } from "../../state/storage";
 import { courseAccessibleChip, courseDisplayName, coursePalette } from "../../lib/coursePalette";
 import type { Assessment } from "../../state/types";
 import { formatShortDate, stripLeadingEmoji } from "./formatters";
@@ -48,7 +49,7 @@ export const TimelineRow: React.FC<TimelineRowProps> = ({ assessment: a, onClick
   const palette = coursePalette(a.courseId || "GENERAL");
   const enrolled = courses.find((c) => c.id === a.courseId);
   const accent = a.color || enrolled?.color || palette.color;
-  const chip = courseAccessibleChip(accent, theme === "dark");
+  const chip = courseAccessibleChip(accent, isDarkTheme(theme));
 
   const uniqueRules = [...new Set(a.warnings || [])];
   const rulesHtml = uniqueRules.slice(0, 2);

@@ -11,6 +11,9 @@ import type {
   ScheduleSlot,
   CustomCalendarEvent,
   FeedConfig,
+  Flashcard,
+  MistakeItem,
+  QuizAttemptRecord,
 } from "../state/types";
 import { aliasDeep } from "../state/ipcShape";
 
@@ -227,6 +230,46 @@ export async function idbDelete(storeName: StoreName, key: IDBValidKey): Promise
   return new Promise<void>((resolve, reject) => {
     const tx = db.transaction(storeName, "readwrite");
     tx.objectStore(storeName).delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
+  });
+}
+
+/**
+ * Bulk put in ONE transaction (upsert by keyPath). A per-item `idbPut` loop
+ * commits N transactions; a quota failure mid-loop would leave the collection
+ * half-written. Same commit-on-complete rule as the single-op helpers.
+ */
+export async function idbPutMany<T>(storeName: StoreName, values: T[]): Promise<void> {
+  if (values.length === 0) return;
+  const db = await openIdb();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(storeName, "readwrite");
+    const store = tx.objectStore(storeName);
+    for (const value of values) {
+      store.put(value);
+    }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
+  });
+}
+
+/**
+ * Replaces a whole collection atomically: clear + bulk put in one
+ * transaction. Used when the in-memory array is the source of truth for the
+ * collection shape (deletions included).
+ */
+export async function idbReplaceAll<T>(storeName: StoreName, values: T[]): Promise<void> {
+  const db = await openIdb();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(storeName, "readwrite");
+    const store = tx.objectStore(storeName);
+    store.clear();
+    for (const value of values) {
+      store.put(value);
+    }
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
@@ -502,4 +545,88 @@ export async function loadAllConfig(): Promise<Record<string, unknown>> {
     config[r.key] = r.value;
   }
   return config;
+}
+
+// ---------------------------------------------------------------------------
+// Study collections (flashcards / quiz_attempts / mistake_bank) — migration v4
+// created these stores but nothing ever read or wrote them before the study
+// persistence batch. Records persist in the camelCase shape the store uses.
+// ---------------------------------------------------------------------------
+
+export async function loadFlashcardRecords(): Promise<Flashcard[]> {
+  return idbGetAll<Flashcard>("flashcards");
+}
+
+export async function loadQuizAttemptRecords(): Promise<QuizAttemptRecord[]> {
+  return idbGetAll<QuizAttemptRecord>("quiz_attempts");
+}
+
+export async function loadMistakeRecords(): Promise<MistakeItem[]> {
+  return idbGetAll<MistakeItem>("mistake_bank");
+}
+
+/**
+ * The migration-v4 `study_sessions` store exists in the browser tier but the
+ * pomodoro ledger lives in localStorage (`lib/studyStats.ts`), so this is
+ * honestly empty today — exported so the backup always declares the section
+ * (a present-empty section restores as "nothing here", not "leave untouched").
+ */
+export async function loadStudySessionRecords(): Promise<unknown[]> {
+  return idbGetAll<unknown>("study_sessions");
+}
+
+export async function putFlashcardRecord(card: Flashcard): Promise<void> {
+  await idbPut("flashcards", card);
+}
+
+export async function deleteFlashcardRecord(id: string): Promise<void> {
+  await idbDelete("flashcards", id);
+}
+
+export async function putQuizAttemptRecord(attempt: QuizAttemptRecord): Promise<void> {
+  await idbPut("quiz_attempts", attempt);
+}
+
+export async function putMistakeRecord(mistake: MistakeItem): Promise<void> {
+  await idbPut("mistake_bank", mistake);
+}
+
+/**
+ * One-transaction legacy import: upserts every legacy study record into its
+ * IDB store and stamps the `config_kv` marker LAST, inside the same
+ * transaction. A half-applied migration can therefore never exist — the
+ * marker only commits once every record is in, and re-running is safe
+ * because puts are upserts (never a destructive clear, so a record already
+ * written by a store action before the migration ran cannot be clobbered).
+ */
+export async function importLegacyStudyData(
+  cards: Flashcard[],
+  attempts: QuizAttemptRecord[],
+  mistakes: MistakeItem[],
+  markerKey: string,
+): Promise<void> {
+  const db = await openIdb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(
+      ["flashcards", "quiz_attempts", "mistake_bank", "config_kv"],
+      "readwrite",
+    );
+    const cardStore = tx.objectStore("flashcards");
+    const attemptStore = tx.objectStore("quiz_attempts");
+    const mistakeStore = tx.objectStore("mistake_bank");
+    for (const card of cards) {
+      cardStore.put(card);
+    }
+    for (const attempt of attempts) {
+      attemptStore.put(attempt);
+    }
+    for (const mistake of mistakes) {
+      mistakeStore.put(mistake);
+    }
+    // Marker last, same transaction: it commits only after every record.
+    tx.objectStore("config_kv").put({ key: markerKey, value: true });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
+  });
 }

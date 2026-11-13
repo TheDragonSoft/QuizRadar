@@ -2,6 +2,27 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.11.1] — 2026-11-13
+
+### 🤝 Agent & Contributor Summaries
+
+- **[web, tooling]** Authenticated UX sweep harness: the app is now served from http://localhost:4317, the one origin both OAuth providers accept, so the signed-in run needs no Azure app registration and no secret. The harness binds Vite to the IPv4 loopback literal and maps the Chromium localhost name to it, so the origin the providers validate stays http://localhost:4317 while the socket reaches the bound address, and it records that origin in the evidence bundle. The public Google and Microsoft client ids are written through the app own Settings form before sign-in. Measured live against the real endpoints: Google GIS accepts the bundled client id at http://127.0.0.1:4317 only and answers Error 400: origin_mismatch at localhost, while an older public client id accepts both; the Microsoft v2 endpoint accepts the desktop shell bundled public Graph CLI client id at http://localhost:PORT/ exactly and rejects 127.0.0.1 (AADSTS50011) and any sub-path. Sign-in failure details now name where the popup had reached, reduced to its origin and path, so a dismissed or stalled popup is diagnosable from the evidence bundle without leaking an OAuth code, a token or a session identifier. Also corrects two false Settings and copy promises about a bundled Microsoft client that the browser tier does not have, plus the stale origin comment in browserSources.ts. Merged main into the branch and repaired two release-pipeline defects the merge exposed: the version rollup wrote a CHANGELOG whose fragment bullets were not Prettier clean, so the release bot broke the repo own format gate, and the tracked service worker was left stamped 5.10.0 by the v5.11.0 bump, which failed the PWA precache test.
+
+### 🐛 Fixes & Performance
+
+- `11fbde4` fix(tooling): restamp the tracked service worker during the version rollup
+- `ba08dbb` fix(web): restamp the tracked service worker for v5.11.0
+- `ee2d0c0` fix(tooling): keep the generated CHANGELOG Prettier-clean
+- `3dfb393` fix(web): name where a sign-in popup reached when the sweep fails
+- `c74372e` fix(web): run the authenticated UX sweep from an origin both OAuth providers accept
+
+### 🔧 Maintenance, Docs & Tests
+
+- `8a8d722` Merge pull request #25 from TheDragonSoft/test/authenticated-ux-audit
+- `12902de` docs(changes): record the merged gate results and the release-pipeline repairs
+- `2ebd0c9` Merge remote-tracking branch 'origin/main' into test/authenticated-ux-audit
+- `47ed7c2` test(web): add the authenticated UX sweep harness (manual, real accounts)
+
 ## [5.11.0] — 2026-11-13
 
 ### 🤝 Agent & Contributor Summaries

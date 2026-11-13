@@ -1,4 +1,4 @@
-const W = "5.11.0", m = "quizradar-v5.11.0", p = `${m}-shell`, g = `${m}-cross-origin`, y = [
+const W = "5.11.1", m = "quizradar-v5.11.1", p = `${m}-shell`, g = `${m}-cross-origin`, y = [
   "./",
   "./index.html",
   "./manifest.webmanifest",

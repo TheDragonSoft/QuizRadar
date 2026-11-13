@@ -129,7 +129,7 @@ async fn replace_swaps_every_collection_and_restores_the_stats_passthrough() {
         vec!["new-1", "new-2"]
     );
     assert_eq!(
-        store.list_quiz_attempts().await.unwrap()[0].id,
+        store.list_quiz_attempts(None).await.unwrap()[0].id,
         "new-attempt"
     );
     assert_eq!(
@@ -187,7 +187,7 @@ async fn a_failing_record_rolls_the_whole_replace_back() {
     );
     assert_eq!(
         store
-            .list_quiz_attempts()
+            .list_quiz_attempts(None)
             .await
             .unwrap()
             .iter()
@@ -240,7 +240,7 @@ async fn purge_clears_every_collection_and_reports_the_counts() {
     assert_eq!(report.mistakes, 1);
     assert_eq!(report.study_sessions, 1);
     assert!(store.list_flashcards(None).await.unwrap().is_empty());
-    assert!(store.list_quiz_attempts().await.unwrap().is_empty());
+    assert!(store.list_quiz_attempts(None).await.unwrap().is_empty());
     assert!(store.list_mistakes(None).await.unwrap().is_empty());
 }
 
@@ -256,6 +256,6 @@ async fn single_record_deletes_report_whether_a_row_vanished() {
     assert!(!store.delete_quiz_attempt("a1".into()).await.unwrap());
     assert!(store.delete_mistake("m1".into()).await.unwrap());
     assert!(!store.delete_mistake("m1".into()).await.unwrap());
-    assert!(store.list_quiz_attempts().await.unwrap().is_empty());
+    assert!(store.list_quiz_attempts(None).await.unwrap().is_empty());
     assert!(store.list_mistakes(None).await.unwrap().is_empty());
 }

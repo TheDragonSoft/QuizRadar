@@ -287,6 +287,10 @@ class QuizRadarViewModelTest {
     fun ai_course_import_without_a_gemini_key_fails_loudly() =
         runTest {
             val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
+            // A07: consent is a SEPARATE switch from the key - the import
+            // refuses while AI is off, so the key hint is only reachable
+            // with the consent turned on.
+            engine.setConfigBool("gemini_enabled", true)
             val core = FakeTimetableImportCore(engine, apiKey = null, response = "{}")
             val viewModel = QuizRadarViewModel(core, clockDate = { testDate }, coreDispatcher = testDispatcher)
             advanceUntilIdle()
@@ -336,6 +340,7 @@ class QuizRadarViewModelTest {
                   "dropped_slots": 2
                 }
                 """.trimIndent()
+            engine.setConfigBool("gemini_enabled", true)
             val core = FakeTimetableImportCore(engine, apiKey = "test-key", response = response)
             val viewModel = QuizRadarViewModel(core, clockDate = { testDate }, coreDispatcher = testDispatcher)
             advanceUntilIdle()
@@ -436,9 +441,78 @@ class QuizRadarViewModelTest {
             advanceUntilIdle()
             assertEquals(false, viewModel.gmailEnabled.value)
 
-            viewModel.setTheme("dark")
+            viewModel.setThemeMode("dark")
             advanceUntilIdle()
-            assertEquals("dark", viewModel.theme.value)
+            assertEquals("dark", viewModel.themeMode.value)
+        }
+
+    @Test
+    fun `preferred dark theme survives appearance mode switches`() =
+        runTest {
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
+            val viewModel = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
+            advanceUntilIdle()
+
+            viewModel.setPreferredDarkTheme("amoled")
+            advanceUntilIdle()
+            assertEquals("amoled", viewModel.preferredDarkTheme.value)
+
+            // The defect this pins: the dark scheme used to be encoded AS the
+            // mode, so switching modes (Dark -> System -> Light -> Dark)
+            // silently reverted an AMOLED pick to Obsidian. The two are now
+            // orthogonal preferences, so the dark choice must survive every
+            // mode change untouched.
+            viewModel.setThemeMode("system")
+            advanceUntilIdle()
+            assertEquals("system", viewModel.themeMode.value)
+            assertEquals("amoled", viewModel.preferredDarkTheme.value)
+
+            viewModel.setThemeMode("light")
+            advanceUntilIdle()
+            assertEquals("light", viewModel.themeMode.value)
+            assertEquals("amoled", viewModel.preferredDarkTheme.value)
+
+            viewModel.setThemeMode("dark")
+            advanceUntilIdle()
+            assertEquals("dark", viewModel.themeMode.value)
+            assertEquals("amoled", viewModel.preferredDarkTheme.value)
+
+            // The split state persists across a reload from the store.
+            val second = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
+            advanceUntilIdle()
+            assertEquals("dark", second.themeMode.value)
+            assertEquals("amoled", second.preferredDarkTheme.value)
+        }
+
+    @Test
+    fun `legacy single-string theme migrates into mode plus dark scheme`() =
+        runTest {
+            // The old `theme` key packed mode AND dark scheme into one
+            // string. Each legacy value must map exactly once into the two
+            // orthogonal keys ("amoled" was a mode that forced dark).
+            val expectations =
+                listOf(
+                    Triple("light", "light", "obsidian"),
+                    Triple("dark", "dark", "obsidian"),
+                    Triple("system", "system", "obsidian"),
+                    Triple("amoled", "dark", "amoled"),
+                )
+            for ((legacy, expectedMode, expectedDark) in expectations) {
+                val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
+                engine.setConfigString("theme", legacy)
+                val viewModel = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
+                advanceUntilIdle()
+
+                assertEquals("mode for legacy '$legacy'", expectedMode, viewModel.themeMode.value)
+                assertEquals("dark theme for legacy '$legacy'", expectedDark, viewModel.preferredDarkTheme.value)
+
+                // The legacy key is dropped after the one-time mapping, so a
+                // fresh load reads the split keys instead of re-migrating.
+                val second = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
+                advanceUntilIdle()
+                assertEquals(expectedMode, second.themeMode.value)
+                assertEquals(expectedDark, second.preferredDarkTheme.value)
+            }
         }
 
     @Test
@@ -1128,13 +1202,17 @@ class QuizRadarViewModelTest {
             assertTrue(
                 !viewModel.isSetupChecklistDismissed.value,
             )
+            // The canonical A05 reset DELETES the config keys (one transaction,
+            // every owned table) instead of writing explicit `false` values, so
+            // the probe default must be false: an absent key reads false, while
+            // a surviving dismissed flag would read true and fail.
             assertEquals(
                 false,
-                engine.getConfigBool("dismiss_conflict_banner", default = true),
+                engine.getConfigBool("dismiss_conflict_banner", default = false),
             )
             assertEquals(
                 false,
-                engine.getConfigBool("dismiss_setup_checklist", default = true),
+                engine.getConfigBool("dismiss_setup_checklist", default = false),
             )
         }
 }

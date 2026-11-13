@@ -19,9 +19,11 @@ import androidx.lifecycle.lifecycleScope
 import com.quizradar.app.analytics.AnalyticsManager
 import com.quizradar.app.auth.OAuthManager
 import com.quizradar.app.auth.OAuthRedirectResult
+import com.quizradar.app.auth.OAuthTransactionStore
 import com.quizradar.app.core.BackgroundScanWorker
 import com.quizradar.app.core.QuizRadarEngine
 import com.quizradar.app.glance.QuizRadarWidget
+import com.quizradar.app.glance.TodayScheduleWidget
 import com.quizradar.app.glance.WidgetUpdateWorker
 import com.quizradar.app.notifications.ExamReminderWorker
 import com.quizradar.app.notifications.NotificationHelper
@@ -36,13 +38,17 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     private lateinit var engine: QuizRadarEngine
     private lateinit var viewModel: QuizRadarViewModel
-    private val oauthManager = OAuthManager()
+    private lateinit var oauthManager: OAuthManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AnalyticsManager.init(this)
         enableEdgeToEdge()
         engine = QuizRadarEngine.create(this)
+        // The pending PKCE transaction persists encrypted (never in
+        // saveable UI state), so a callback returning through an Activity
+        // recreation or process death still validates (audit A04).
+        oauthManager = OAuthManager(transactionStore = OAuthTransactionStore(this))
         viewModel =
             ViewModelProvider(
                 this,
@@ -52,6 +58,28 @@ class MainActivity : ComponentActivity() {
                         lifecycleScope.launch(Dispatchers.IO) {
                             try {
                                 QuizRadarWidget.refreshFromEngine(applicationContext, engine)
+                            } catch (_: Exception) {
+                            }
+                        }
+                    },
+                    // Platform cleanup for "Reset All" (audit A05): invoked by
+                    // the ViewModel only AFTER the transactional wipe + reload
+                    // succeeded. Notification cancel (fast, main thread) then
+                    // the rest off-thread: the pending OAuth transaction is
+                    // dropped, the background scan is rescheduled from the
+                    // now-emptied config and BOTH widgets are re-rendered
+                    // from the emptied store.
+                    onDataReset = {
+                        NotificationHelper.cancelAllOwnedNotifications(applicationContext)
+                        oauthManager.clearPendingState()
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            try {
+                                BackgroundScanWorker.rescheduleFromConfig(applicationContext, engine)
+                            } catch (_: Exception) {
+                            }
+                            try {
+                                QuizRadarWidget.refreshFromEngine(applicationContext, engine)
+                                TodayScheduleWidget.refreshFromEngine(applicationContext, engine)
                             } catch (_: Exception) {
                             }
                         }
@@ -74,12 +102,14 @@ class MainActivity : ComponentActivity() {
         }
 
         // The user's own OAuth client ids (Settings -> Sources) flow into the
-        // manager as they load: a BYO id wins, a blank one falls back to the
-        // shipped Google client id (Microsoft keeps its honest placeholder —
-        // it still needs the user's own Azure app id).
+        // manager as they load: a BYO id wins, a blank (or legacy placeholder)
+        // one falls back to the shipped Google client id via the one central
+        // resolver shared with the silent-refresh path (audit A03). Microsoft
+        // keeps its honest placeholder - it still needs the user's own Azure
+        // app id.
         lifecycleScope.launch {
             viewModel.googleClientId.collect {
-                oauthManager.googleClientId = it.ifBlank { OAuthManager.DEFAULT_GOOGLE_CLIENT_ID }
+                oauthManager.googleClientId = OAuthManager.resolveGoogleClientId(it)
             }
         }
         lifecycleScope.launch {
@@ -89,18 +119,18 @@ class MainActivity : ComponentActivity() {
         handleIncomingIntent(intent)
 
         setContent {
-            // The Settings theme picker (System/Light/Dark) only takes effect
-            // when the persisted mode reaches the theme — it used to be read
-            // and written but never applied.
-            val themeMode by viewModel.theme.collectAsState(initial = "system")
-            val isAmoled = themeMode == "amoled"
+            // The persisted appearance mode and the preferred dark scheme are
+            // two orthogonal preferences: the mode decides whether a dark
+            // scheme renders at all, and only then does the dark preference
+            // pick Obsidian vs AMOLED. (AMOLED used to be encoded as a mode,
+            // so any mode switch silently dropped it and System mode could
+            // never reach the pure-black scheme at all.)
+            val themeMode by viewModel.themeMode.collectAsState(initial = "system")
+            val preferredDarkTheme by viewModel.preferredDarkTheme.collectAsState(initial = "obsidian")
+            val dark = themeMode == "dark" || (themeMode == "system" && isSystemInDarkTheme())
+            val isAmoled = dark && preferredDarkTheme == "amoled"
             QuizRadarTheme(
-                darkTheme =
-                    when (themeMode) {
-                        "dark", "amoled" -> true
-                        "light" -> false
-                        else -> isSystemInDarkTheme()
-                    },
+                darkTheme = dark,
                 isAmoled = isAmoled,
             ) {
                 Box(

@@ -867,6 +867,34 @@ internal open class UniffiVTableCallbackInterfaceFfiTokenProvider(
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -892,15 +920,27 @@ internal interface UniffiLib : Library {
     ): Pointer
     fun uniffi_quizradar_core_fn_free_nativestore(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_quizradar_core_fn_method_nativestore_attendance_summaries(`ptr`: Pointer,
+    ): Long
+    fun uniffi_quizradar_core_fn_method_nativestore_cancel_native_sync(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_quizradar_core_fn_method_nativestore_delete_assessment(`ptr`: Pointer,`id`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
+    ): Long
+    fun uniffi_quizradar_core_fn_method_nativestore_delete_attendance(`ptr`: Pointer,`slotId`: RustBuffer.ByValue,`dateIso`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
+    ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_delete_course(`ptr`: Pointer,`code`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_delete_custom_event(`ptr`: Pointer,`id`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
+    ): Long
+    fun uniffi_quizradar_core_fn_method_nativestore_delete_feed(`ptr`: Pointer,`id`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_delete_flashcard(`ptr`: Pointer,`cardId`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_export_backup(`ptr`: Pointer,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_extract_timetable_from_image(`ptr`: Pointer,`imageB64`: RustBuffer.ByValue,`mime`: RustBuffer.ByValue,`apiKey`: RustBuffer.ByValue,
+    ): Long
+    fun uniffi_quizradar_core_fn_method_nativestore_generate_practice_quiz(`ptr`: Pointer,`assessmentJson`: RustBuffer.ByValue,`geminiApiKey`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_get_config_bool(`ptr`: Pointer,`key`: RustBuffer.ByValue,`default`: Byte,
     ): Long
@@ -912,11 +952,19 @@ internal interface UniffiLib : Library {
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_import_backup(`ptr`: Pointer,`backupJson`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
+    fun uniffi_quizradar_core_fn_method_nativestore_list_attendance(`ptr`: Pointer,`courseId`: RustBuffer.ByValue,
+    ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_list_flashcards(`ptr`: Pointer,`courseId`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_list_mistakes(`ptr`: Pointer,`assessmentId`: RustBuffer.ByValue,
     ): Long
+    fun uniffi_quizradar_core_fn_method_nativestore_list_quiz_attempts(`ptr`: Pointer,`assessmentId`: RustBuffer.ByValue,
+    ): Long
+    fun uniffi_quizradar_core_fn_method_nativestore_list_study_sessions(`ptr`: Pointer,`courseId`: RustBuffer.ByValue,
+    ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_log_study_session(`ptr`: Pointer,`sessionJson`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
+    ): Long
+    fun uniffi_quizradar_core_fn_method_nativestore_optimize_study_plan(`ptr`: Pointer,`refDateIso`: RustBuffer.ByValue,`geminiApiKey`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_pull_native_drive_backup(`ptr`: Pointer,`todayIso`: RustBuffer.ByValue,`nowIso`: RustBuffer.ByValue,`tokens`: Long,
     ): Long
@@ -928,11 +976,15 @@ internal interface UniffiLib : Library {
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_replace_assessments(`ptr`: Pointer,`assessmentsJson`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
+    fun uniffi_quizradar_core_fn_method_nativestore_reset_all(`ptr`: Pointer,
+    ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_resolve_mistake(`ptr`: Pointer,`mistakeId`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_review_flashcard(`ptr`: Pointer,`cardId`: RustBuffer.ByValue,`correct`: Byte,`refDateIso`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,
     ): Long
-    fun uniffi_quizradar_core_fn_method_nativestore_run_native_sync(`ptr`: Pointer,`syncConfig`: RustBuffer.ByValue,`todayIso`: RustBuffer.ByValue,`offsetSeconds`: Int,`nowIso`: RustBuffer.ByValue,`localStamp`: RustBuffer.ByValue,`progress`: Long,`googleTokens`: RustBuffer.ByValue,`microsoftTokens`: RustBuffer.ByValue,
+    fun uniffi_quizradar_core_fn_method_nativestore_run_native_sync(`ptr`: Pointer,`syncConfig`: RustBuffer.ByValue,`todayIso`: RustBuffer.ByValue,`offsetSeconds`: Int,`nowIso`: RustBuffer.ByValue,`localStamp`: RustBuffer.ByValue,`progress`: Long,`googleTokens`: RustBuffer.ByValue,`microsoftTokens`: RustBuffer.ByValue,`geminiApiKey`: RustBuffer.ByValue,
+    ): Long
+    fun uniffi_quizradar_core_fn_method_nativestore_save_feed(`ptr`: Pointer,`feedJson`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_save_quiz_attempt(`ptr`: Pointer,`attemptJson`: RustBuffer.ByValue,`mistakesJson`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
@@ -947,6 +999,8 @@ internal interface UniffiLib : Library {
     fun uniffi_quizradar_core_fn_method_nativestore_toggle_topic(`ptr`: Pointer,`topicKey`: RustBuffer.ByValue,`done`: Byte,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_update_grade(`ptr`: Pointer,`assessmentId`: RustBuffer.ByValue,`achieved`: RustBuffer.ByValue,`max`: RustBuffer.ByValue,`weightage`: RustBuffer.ByValue,`clearAchieved`: Byte,`clearMax`: Byte,`clearWeightage`: Byte,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
+    ): Long
+    fun uniffi_quizradar_core_fn_method_nativestore_upsert_assessment(`ptr`: Pointer,`assessmentJson`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_upsert_course(`ptr`: Pointer,`courseJson`: RustBuffer.ByValue,`slotsJson`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
@@ -963,6 +1017,8 @@ internal interface UniffiLib : Library {
     fun uniffi_quizradar_core_fn_func_build_microsoft_auth_url(`clientId`: RustBuffer.ByValue,`redirectUri`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_calculate_gpa(`coursesJson`: RustBuffer.ByValue,`assessmentsJson`: RustBuffer.ByValue,`gradesJson`: RustBuffer.ByValue,`scale`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_quizradar_core_fn_func_calculate_grade_target(`courseId`: RustBuffer.ByValue,`assessmentsJson`: RustBuffer.ByValue,`gradesJson`: RustBuffer.ByValue,`scale`: RustBuffer.ByValue,`targetLetter`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_calculate_study_cushion(`scheduleJson`: RustBuffer.ByValue,`eventsJson`: RustBuffer.ByValue,`assessmentsJson`: RustBuffer.ByValue,`tasksJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,`wakingHours`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1118,6 +1174,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_quizradar_core_checksum_func_calculate_gpa(
     ): Short
+    fun uniffi_quizradar_core_checksum_func_calculate_grade_target(
+    ): Short
     fun uniffi_quizradar_core_checksum_func_calculate_study_cushion(
     ): Short
     fun uniffi_quizradar_core_checksum_func_core_version(
@@ -1154,15 +1212,27 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_quizradar_core_checksum_func_topic_key(
     ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_attendance_summaries(
+    ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_cancel_native_sync(
+    ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_delete_assessment(
+    ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_delete_attendance(
+    ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_delete_course(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_delete_custom_event(
+    ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_delete_feed(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_delete_flashcard(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_export_backup(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_extract_timetable_from_image(
+    ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_generate_practice_quiz(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_get_config_bool(
     ): Short
@@ -1174,11 +1244,19 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_import_backup(
     ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_list_attendance(
+    ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_list_flashcards(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_list_mistakes(
     ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_list_quiz_attempts(
+    ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_list_study_sessions(
+    ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_log_study_session(
+    ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_optimize_study_plan(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_pull_native_drive_backup(
     ): Short
@@ -1190,11 +1268,15 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_replace_assessments(
     ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_reset_all(
+    ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_resolve_mistake(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_review_flashcard(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_run_native_sync(
+    ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_save_feed(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_save_quiz_attempt(
     ): Short
@@ -1209,6 +1291,8 @@ internal interface UniffiLib : Library {
     fun uniffi_quizradar_core_checksum_method_nativestore_toggle_topic(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_update_grade(
+    ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_upsert_assessment(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_upsert_course(
     ): Short
@@ -1244,6 +1328,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_func_calculate_gpa() != 64656.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_func_calculate_grade_target() != 32907.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_func_calculate_study_cushion() != 36464.toShort()) {
@@ -1300,10 +1387,25 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_quizradar_core_checksum_func_topic_key() != 27437.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_attendance_summaries() != 8129.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_cancel_native_sync() != 22027.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_delete_assessment() != 56915.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_delete_attendance() != 19434.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_delete_course() != 42974.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_delete_custom_event() != 62848.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_delete_feed() != 46678.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_delete_flashcard() != 55727.toShort()) {
@@ -1313,6 +1415,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_extract_timetable_from_image() != 30659.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_generate_practice_quiz() != 47295.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_get_config_bool() != 11697.toShort()) {
@@ -1330,13 +1435,25 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_import_backup() != 57877.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_list_attendance() != 64818.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_list_flashcards() != 37938.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_list_mistakes() != 31341.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_list_quiz_attempts() != 61901.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_list_study_sessions() != 27163.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_log_study_session() != 37497.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_optimize_study_plan() != 20624.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_pull_native_drive_backup() != 57802.toShort()) {
@@ -1354,13 +1471,19 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_replace_assessments() != 34727.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_reset_all() != 65185.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_resolve_mistake() != 23155.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_review_flashcard() != 28064.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_quizradar_core_checksum_method_nativestore_run_native_sync() != 53676.toShort()) {
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_run_native_sync() != 5120.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_save_feed() != 50272.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_save_quiz_attempt() != 27705.toShort()) {
@@ -1382,6 +1505,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_update_grade() != 48002.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_upsert_assessment() != 8094.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_upsert_course() != 53079.toShort()) {
@@ -1825,9 +1951,42 @@ private class JavaLangRefCleanable(
  */
 public interface NativeStoreInterface {
     
+    /**
+     * Per-course attendance summaries derived from the persisted records.
+     */
+    suspend fun `attendanceSummaries`(): kotlin.String
+    
+    /**
+     * Requests cancellation of the in-flight native scan. The abort is
+     * honoured during the fetch phase and re-checked before every persist,
+     * so a cancelled scan leaves the radar, the email cache and the
+     * 'Last synced' stamp exactly as they were. The report of the cancelled
+     * run carries `"cancelled": true` — the shell may show that honestly
+     * instead of a fake success.
+     */
+    fun `cancelNativeSync`()
+    
+    suspend fun `deleteAssessment`(`id`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
+    
+    /**
+     * Deletes the persisted attendance mark for one slot occurrence - the
+     * write half of the toggle cycle's excused -> clear step. The deleted id
+     * is the same deterministic `att-{slot_id}-{date_iso}` that
+     * [`Self::record_attendance`] mints. Returns the post-delete snapshot.
+     */
+    suspend fun `deleteAttendance`(`slotId`: kotlin.String, `dateIso`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
+    
     suspend fun `deleteCourse`(`code`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
     
     suspend fun `deleteCustomEvent`(`id`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
+    
+    /**
+     * Feed delete. A deleted feed stays deleted and touches nothing else —
+     * the snapshot returned is the whole app state, so the caller can see
+     * its unrelated config survived (audit "deleted feed stays deleted
+     * without changing preferences").
+     */
+    suspend fun `deleteFeed`(`id`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
     
     suspend fun `deleteFlashcard`(`cardId`: kotlin.String): kotlin.String
     
@@ -1859,6 +2018,23 @@ public interface NativeStoreInterface {
      */
     suspend fun `extractTimetableFromImage`(`imageB64`: kotlin.String, `mime`: kotlin.String, `apiKey`: kotlin.String): kotlin.String
     
+    /**
+     * Consent-gated practice-quiz generation (audit A07): with the store's
+     * `gemini_enabled` consent flag on AND a BYOK key supplied, the quiz is
+     * authored by Gemini Flash-Lite through the real provider + quota
+     * ledger; anything else (consent off, no key, a provider that cannot be
+     * constructed, provider error, quota, transport) falls back to the
+     * deterministic on-device authoring — the same
+     * [`crate::ai::practice_fallback`] path the free function uses.
+     *
+     * The provenance labels travel in the payload itself
+     * (`generated_by_ai` / `authored_locally` / `credit`), and when the AI
+     * attempt was made but did NOT author the quiz, the extra
+     * `fallback_reason` field names why — a labeled fallback, never a
+     * silent one.
+     */
+    suspend fun `generatePracticeQuiz`(`assessmentJson`: kotlin.String, `geminiApiKey`: kotlin.String?): kotlin.String
+    
     suspend fun `getConfigBool`(`key`: kotlin.String, `default`: kotlin.Boolean): kotlin.Boolean
     
     suspend fun `getConfigString`(`key`: kotlin.String): kotlin.String?
@@ -1869,11 +2045,36 @@ public interface NativeStoreInterface {
     
     suspend fun `importBackup`(`backupJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
     
+    suspend fun `listAttendance`(`courseId`: kotlin.String?): kotlin.String
+    
     suspend fun `listFlashcards`(`courseId`: kotlin.String?): kotlin.String
     
     suspend fun `listMistakes`(`assessmentId`: kotlin.String?): kotlin.String
     
+    /**
+     * The persisted quiz-attempt history (optionally per assessment).
+     */
+    suspend fun `listQuizAttempts`(`assessmentId`: kotlin.String?): kotlin.String
+    
+    /**
+     * The persisted study-session history (optionally per course) — the
+     * read twin of [`Self::log_study_session`].
+     */
+    suspend fun `listStudySessions`(`courseId`: kotlin.String?): kotlin.String
+    
     suspend fun `logStudySession`(`sessionJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
+    
+    /**
+     * Consent-gated "Optimize with AI" study plan (audit A07). With consent
+     * on AND a BYOK key, [`crate::ai::tasks::optimize_plan`] proposes the
+     * roadmap and every readiness/urgency number is re-validated against
+     * the real store state; consent off, a missing key or any provider
+     * error returns the deterministic planner's payload with `source:
+     * "deterministic"` and a note that names what happened. The payload is
+     * `{"source": "ai"|"deterministic", "note": <string|null>, "tasks":
+     * <StudyTasksPayload>}` — the UI can always tell which planner ran.
+     */
+    suspend fun `optimizeStudyPlan`(`refDateIso`: kotlin.String, `geminiApiKey`: kotlin.String?): kotlin.String
     
     /**
      * Pulls the Drive-appDataFolder backup and merges it additively
@@ -1925,6 +2126,15 @@ public interface NativeStoreInterface {
      */
     suspend fun `replaceAssessments`(`assessmentsJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
     
+    /**
+     * The transactional whole-store reset (`store::Store::reset_all`): one
+     * SQLite transaction wipes every owned table — feeds, config, tokens
+     * metadata, attendance, flashcards, quiz attempts, mistake bank, study
+     * sessions, email caches included. The shell must NOT hand-roll a
+     * partial wipe around this (audit A05).
+     */
+    suspend fun `resetAll`()
+    
     suspend fun `resolveMistake`(`mistakeId`: kotlin.String, `updatedAt`: kotlin.String): kotlin.String
     
     suspend fun `reviewFlashcard`(`cardId`: kotlin.String, `correct`: kotlin.Boolean, `refDateIso`: kotlin.String, `updatedAt`: kotlin.String): kotlin.String
@@ -1959,11 +2169,29 @@ public interface NativeStoreInterface {
      * UTC RFC3339 stamp for row mutations, `localStamp` the human-readable
      * "Last synced" stamp (desktop uses `yyyy-MM-dd HH:mm`).
      *
-     * Single-flight: a second overlapping scan/push returns an error. There
-     * is no mid-scan cancel API — a dropped call still finishes its persist
-     * atomically, so the radar is never half-updated.
+     * Single-flight: a second overlapping scan/push returns an error.
+     *
+     * Cancellation (audit A07 follow-up to the desktop parity): the shell
+     * can abort the fetch phase via [`Self::cancel_native_sync`]. A
+     * cancelled scan persists NOTHING — no email cache, no radar replace,
+     * no extraction cache, no 'Last synced' stamp — and reports
+     * `{"success": false, "cancelled": true, ...}` instead of pretending a
+     * half-run succeeded.
+     *
+     * AI enhancement (audit A07): when the store's `gemini_enabled` consent
+     * flag is on AND the shell passes the user's own BYOK key, Gmail
+     * announcements are re-read by Gemini Flash-Lite through the same
+     * extraction pipeline the desktop uses, with the store-backed quota
+     * ledger and the persisted per-email extraction cache. With consent off
+     * NO provider is constructed and NO request leaves the device, even
+     * with a key still saved.
      */
-    suspend fun `runNativeSync`(`syncConfig`: FfiSyncConfig, `todayIso`: kotlin.String, `offsetSeconds`: kotlin.Int, `nowIso`: kotlin.String, `localStamp`: kotlin.String, `progress`: FfiSyncProgressListener, `googleTokens`: FfiTokenProvider?, `microsoftTokens`: FfiTokenProvider?): kotlin.String
+    suspend fun `runNativeSync`(`syncConfig`: FfiSyncConfig, `todayIso`: kotlin.String, `offsetSeconds`: kotlin.Int, `nowIso`: kotlin.String, `localStamp`: kotlin.String, `progress`: FfiSyncProgressListener, `googleTokens`: FfiTokenProvider?, `microsoftTokens`: FfiTokenProvider?, `geminiApiKey`: kotlin.String?): kotlin.String
+    
+    /**
+     * Feed upsert (https-only URL enforced by the store).
+     */
+    suspend fun `saveFeed`(`feedJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
     
     suspend fun `saveQuizAttempt`(`attemptJson`: kotlin.String, `mistakesJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
     
@@ -1978,6 +2206,8 @@ public interface NativeStoreInterface {
     suspend fun `toggleTopic`(`topicKey`: kotlin.String, `done`: kotlin.Boolean, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
     
     suspend fun `updateGrade`(`assessmentId`: kotlin.String, `achieved`: kotlin.Double?, `max`: kotlin.Double?, `weightage`: kotlin.Double?, `clearAchieved`: kotlin.Boolean, `clearMax`: kotlin.Boolean, `clearWeightage`: kotlin.Boolean, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
+    
+    suspend fun `upsertAssessment`(`assessmentJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
     
     suspend fun `upsertCourse`(`courseJson`: kotlin.String, `slotsJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
     
@@ -2073,6 +2303,97 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
     }
 
     
+    /**
+     * Per-course attendance summaries derived from the persisted records.
+     */
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `attendanceSummaries`() : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_attendance_summaries(
+                thisPtr,
+                
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * Requests cancellation of the in-flight native scan. The abort is
+     * honoured during the fetch phase and re-checked before every persist,
+     * so a cancelled scan leaves the radar, the email cache and the
+     * 'Last synced' stamp exactly as they were. The report of the cancelled
+     * run carries `"cancelled": true` — the shell may show that honestly
+     * instead of a fake success.
+     */override fun `cancelNativeSync`()
+        = 
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_cancel_native_sync(
+        it, _status)
+}
+    }
+    
+    
+
+    
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `deleteAssessment`(`id`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_delete_assessment(
+                thisPtr,
+                FfiConverterString.lower(`id`),FfiConverterString.lower(`updatedAt`),FfiConverterString.lower(`refDateIso`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * Deletes the persisted attendance mark for one slot occurrence - the
+     * write half of the toggle cycle's excused -> clear step. The deleted id
+     * is the same deterministic `att-{slot_id}-{date_iso}` that
+     * [`Self::record_attendance`] mints. Returns the post-delete snapshot.
+     */
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `deleteAttendance`(`slotId`: kotlin.String, `dateIso`: kotlin.String, `refDateIso`: kotlin.String) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_delete_attendance(
+                thisPtr,
+                FfiConverterString.lower(`slotId`),FfiConverterString.lower(`dateIso`),FfiConverterString.lower(`refDateIso`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
     @Throws(QuizRadarFfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
     override suspend fun `deleteCourse`(`code`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String) : kotlin.String {
@@ -2100,6 +2421,33 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
         return uniffiRustCallAsync(
         callWithPointer { thisPtr ->
             UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_delete_custom_event(
+                thisPtr,
+                FfiConverterString.lower(`id`),FfiConverterString.lower(`updatedAt`),FfiConverterString.lower(`refDateIso`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * Feed delete. A deleted feed stays deleted and touches nothing else —
+     * the snapshot returned is the whole app state, so the caller can see
+     * its unrelated config survived (audit "deleted feed stays deleted
+     * without changing preferences").
+     */
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `deleteFeed`(`id`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_delete_feed(
                 thisPtr,
                 FfiConverterString.lower(`id`),FfiConverterString.lower(`updatedAt`),FfiConverterString.lower(`refDateIso`),
             )
@@ -2189,6 +2537,42 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
             UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_extract_timetable_from_image(
                 thisPtr,
                 FfiConverterString.lower(`imageB64`),FfiConverterString.lower(`mime`),FfiConverterString.lower(`apiKey`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * Consent-gated practice-quiz generation (audit A07): with the store's
+     * `gemini_enabled` consent flag on AND a BYOK key supplied, the quiz is
+     * authored by Gemini Flash-Lite through the real provider + quota
+     * ledger; anything else (consent off, no key, a provider that cannot be
+     * constructed, provider error, quota, transport) falls back to the
+     * deterministic on-device authoring — the same
+     * [`crate::ai::practice_fallback`] path the free function uses.
+     *
+     * The provenance labels travel in the payload itself
+     * (`generated_by_ai` / `authored_locally` / `credit`), and when the AI
+     * attempt was made but did NOT author the quiz, the extra
+     * `fallback_reason` field names why — a labeled fallback, never a
+     * silent one.
+     */
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `generatePracticeQuiz`(`assessmentJson`: kotlin.String, `geminiApiKey`: kotlin.String?) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_generate_practice_quiz(
+                thisPtr,
+                FfiConverterString.lower(`assessmentJson`),FfiConverterOptionalString.lower(`geminiApiKey`),
             )
         },
         { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
@@ -2309,6 +2693,27 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
     
     @Throws(QuizRadarFfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `listAttendance`(`courseId`: kotlin.String?) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_list_attendance(
+                thisPtr,
+                FfiConverterOptionalString.lower(`courseId`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
     override suspend fun `listFlashcards`(`courseId`: kotlin.String?) : kotlin.String {
         return uniffiRustCallAsync(
         callWithPointer { thisPtr ->
@@ -2349,6 +2754,55 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
     }
 
     
+    /**
+     * The persisted quiz-attempt history (optionally per assessment).
+     */
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `listQuizAttempts`(`assessmentId`: kotlin.String?) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_list_quiz_attempts(
+                thisPtr,
+                FfiConverterOptionalString.lower(`assessmentId`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * The persisted study-session history (optionally per course) — the
+     * read twin of [`Self::log_study_session`].
+     */
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `listStudySessions`(`courseId`: kotlin.String?) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_list_study_sessions(
+                thisPtr,
+                FfiConverterOptionalString.lower(`courseId`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
     @Throws(QuizRadarFfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
     override suspend fun `logStudySession`(`sessionJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String) : kotlin.String {
@@ -2357,6 +2811,37 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
             UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_log_study_session(
                 thisPtr,
                 FfiConverterString.lower(`sessionJson`),FfiConverterString.lower(`updatedAt`),FfiConverterString.lower(`refDateIso`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * Consent-gated "Optimize with AI" study plan (audit A07). With consent
+     * on AND a BYOK key, [`crate::ai::tasks::optimize_plan`] proposes the
+     * roadmap and every readiness/urgency number is re-validated against
+     * the real store state; consent off, a missing key or any provider
+     * error returns the deterministic planner's payload with `source:
+     * "deterministic"` and a note that names what happened. The payload is
+     * `{"source": "ai"|"deterministic", "note": <string|null>, "tasks":
+     * <StudyTasksPayload>}` — the UI can always tell which planner ran.
+     */
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `optimizeStudyPlan`(`refDateIso`: kotlin.String, `geminiApiKey`: kotlin.String?) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_optimize_study_plan(
+                thisPtr,
+                FfiConverterString.lower(`refDateIso`),FfiConverterOptionalString.lower(`geminiApiKey`),
             )
         },
         { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
@@ -2515,6 +3000,35 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
     }
 
     
+    /**
+     * The transactional whole-store reset (`store::Store::reset_all`): one
+     * SQLite transaction wipes every owned table — feeds, config, tokens
+     * metadata, attendance, flashcards, quiz attempts, mistake bank, study
+     * sessions, email caches included. The shell must NOT hand-roll a
+     * partial wipe around this (audit A05).
+     */
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `resetAll`() {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_reset_all(
+                thisPtr,
+                
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_void(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_void(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_void(future) },
+        // lift function
+        { Unit },
+        
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
     @Throws(QuizRadarFfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
     override suspend fun `resolveMistake`(`mistakeId`: kotlin.String, `updatedAt`: kotlin.String) : kotlin.String {
@@ -2587,18 +3101,55 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
      * UTC RFC3339 stamp for row mutations, `localStamp` the human-readable
      * "Last synced" stamp (desktop uses `yyyy-MM-dd HH:mm`).
      *
-     * Single-flight: a second overlapping scan/push returns an error. There
-     * is no mid-scan cancel API — a dropped call still finishes its persist
-     * atomically, so the radar is never half-updated.
+     * Single-flight: a second overlapping scan/push returns an error.
+     *
+     * Cancellation (audit A07 follow-up to the desktop parity): the shell
+     * can abort the fetch phase via [`Self::cancel_native_sync`]. A
+     * cancelled scan persists NOTHING — no email cache, no radar replace,
+     * no extraction cache, no 'Last synced' stamp — and reports
+     * `{"success": false, "cancelled": true, ...}` instead of pretending a
+     * half-run succeeded.
+     *
+     * AI enhancement (audit A07): when the store's `gemini_enabled` consent
+     * flag is on AND the shell passes the user's own BYOK key, Gmail
+     * announcements are re-read by Gemini Flash-Lite through the same
+     * extraction pipeline the desktop uses, with the store-backed quota
+     * ledger and the persisted per-email extraction cache. With consent off
+     * NO provider is constructed and NO request leaves the device, even
+     * with a key still saved.
      */
     @Throws(QuizRadarFfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
-    override suspend fun `runNativeSync`(`syncConfig`: FfiSyncConfig, `todayIso`: kotlin.String, `offsetSeconds`: kotlin.Int, `nowIso`: kotlin.String, `localStamp`: kotlin.String, `progress`: FfiSyncProgressListener, `googleTokens`: FfiTokenProvider?, `microsoftTokens`: FfiTokenProvider?) : kotlin.String {
+    override suspend fun `runNativeSync`(`syncConfig`: FfiSyncConfig, `todayIso`: kotlin.String, `offsetSeconds`: kotlin.Int, `nowIso`: kotlin.String, `localStamp`: kotlin.String, `progress`: FfiSyncProgressListener, `googleTokens`: FfiTokenProvider?, `microsoftTokens`: FfiTokenProvider?, `geminiApiKey`: kotlin.String?) : kotlin.String {
         return uniffiRustCallAsync(
         callWithPointer { thisPtr ->
             UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_run_native_sync(
                 thisPtr,
-                FfiConverterTypeFfiSyncConfig.lower(`syncConfig`),FfiConverterString.lower(`todayIso`),FfiConverterInt.lower(`offsetSeconds`),FfiConverterString.lower(`nowIso`),FfiConverterString.lower(`localStamp`),FfiConverterTypeFfiSyncProgressListener.lower(`progress`),FfiConverterOptionalTypeFfiTokenProvider.lower(`googleTokens`),FfiConverterOptionalTypeFfiTokenProvider.lower(`microsoftTokens`),
+                FfiConverterTypeFfiSyncConfig.lower(`syncConfig`),FfiConverterString.lower(`todayIso`),FfiConverterInt.lower(`offsetSeconds`),FfiConverterString.lower(`nowIso`),FfiConverterString.lower(`localStamp`),FfiConverterTypeFfiSyncProgressListener.lower(`progress`),FfiConverterOptionalTypeFfiTokenProvider.lower(`googleTokens`),FfiConverterOptionalTypeFfiTokenProvider.lower(`microsoftTokens`),FfiConverterOptionalString.lower(`geminiApiKey`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * Feed upsert (https-only URL enforced by the store).
+     */
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `saveFeed`(`feedJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_save_feed(
+                thisPtr,
+                FfiConverterString.lower(`feedJson`),FfiConverterString.lower(`updatedAt`),FfiConverterString.lower(`refDateIso`),
             )
         },
         { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
@@ -2748,6 +3299,27 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
             UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_update_grade(
                 thisPtr,
                 FfiConverterString.lower(`assessmentId`),FfiConverterOptionalDouble.lower(`achieved`),FfiConverterOptionalDouble.lower(`max`),FfiConverterOptionalDouble.lower(`weightage`),FfiConverterBoolean.lower(`clearAchieved`),FfiConverterBoolean.lower(`clearMax`),FfiConverterBoolean.lower(`clearWeightage`),FfiConverterString.lower(`updatedAt`),FfiConverterString.lower(`refDateIso`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `upsertAssessment`(`assessmentJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_upsert_assessment(
+                thisPtr,
+                FfiConverterString.lower(`assessmentJson`),FfiConverterString.lower(`updatedAt`),FfiConverterString.lower(`refDateIso`),
             )
         },
         { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
@@ -3463,6 +4035,25 @@ public object FfiConverterOptionalTypeFfiTokenProvider: FfiConverterRustBuffer<F
     uniffiRustCallWithError(QuizRadarFfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_calculate_gpa(
         FfiConverterString.lower(`coursesJson`),FfiConverterString.lower(`assessmentsJson`),FfiConverterString.lower(`gradesJson`),FfiConverterString.lower(`scale`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Thin UI-facing weighted grade-target calculator (`01` §4.2): given one
+         * course's assessments, the recorded grades, the grading scale and the
+         * requested target letter, returns the weighted percentage earned so far
+         * and the average still needed on the remaining weight. Unknown weights are
+         * handled as an honestly-labeled equal-weight assumption (`equal_weight_assumed`
+         * plus `note`) — never silently treated as known. The full result schema
+         * lives in [`crate::plan::grade_target::GradeTargetResult`].
+         */
+    @Throws(QuizRadarFfiException::class) fun `calculateGradeTarget`(`courseId`: kotlin.String, `assessmentsJson`: kotlin.String, `gradesJson`: kotlin.String, `scale`: kotlin.String, `targetLetter`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(QuizRadarFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_calculate_grade_target(
+        FfiConverterString.lower(`courseId`),FfiConverterString.lower(`assessmentsJson`),FfiConverterString.lower(`gradesJson`),FfiConverterString.lower(`scale`),FfiConverterString.lower(`targetLetter`),_status)
 }
     )
     }

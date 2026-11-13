@@ -2,14 +2,23 @@ package com.quizradar.app.ui.theme
 
 import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 
 /*
@@ -107,6 +116,85 @@ private val AmoledColors: ColorScheme =
         onError = Color(0xFF450A0A),
     )
 
+/*
+ * Typography scale — the one hierarchy (docs/ANDROID-DESIGN-SYSTEM.md §2).
+ *
+ * Only the roles the brief names are overridden; every other style keeps its
+ * Material 3 token default, so screens read `MaterialTheme.typography.<role>`
+ * and get the scale for free. Weight/tracking here, colour roles at the call
+ * site (support/muted text pairs bodySmall with onSurfaceVariant).
+ *
+ * - titleLarge 22sp/600, tracking -0.01em: screen titles
+ * - titleMedium 16sp/600: section headers and card titles
+ * - bodyMedium 14sp/400, lineHeight 20sp: body copy
+ * - bodySmall 12sp/400: support/muted text
+ * - labelMedium 12sp/500: meta/labels
+ */
+private val QuizRadarTypography: Typography =
+    Typography(
+        titleLarge =
+            TextStyle(
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 22.sp,
+                lineHeight = 28.sp,
+                letterSpacing = (-0.01).em,
+            ),
+        titleMedium =
+            TextStyle(
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 16.sp,
+                lineHeight = 24.sp,
+            ),
+        bodyMedium =
+            TextStyle(
+                fontWeight = FontWeight.Normal,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+            ),
+        bodySmall =
+            TextStyle(
+                fontWeight = FontWeight.Normal,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+            ),
+        labelMedium =
+            TextStyle(
+                fontWeight = FontWeight.Medium,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+            ),
+    )
+
+/*
+ * Radius system — declared once (docs/ANDROID-DESIGN-SYSTEM.md §1) so the
+ * whole app inherits it without touching call sites. The slots below are
+ * mapped to what each Material 3 component ACTUALLY reads in this version
+ * (compose-bom 2025.01.00 -> material3 1.3.1, verified against the artifact):
+ *
+ * - extraSmall (12dp): OutlinedTextField/TextField (OutlinedTextFieldTokens
+ *   ContainerShape = CornerExtraSmall), Snackbar, DropdownMenu. Text fields
+ *   do NOT share the small slot in this version, so the brief's 12dp field
+ *   radius lands here with no per-screen shape override.
+ * - small (full pill): FilterChip and the other chips (FilterChipTokens
+ *   ContainerShape = CornerSmall). Buttons do NOT read this slot — they
+ *   resolve the hardcoded CornerFull token (CircleShape), so every
+ *   Button/TextButton is already a pill and stays one.
+ * - medium (16dp): Card/ElevatedCard/OutlinedCard (CornerMedium).
+ * - large (28dp): FAB and other large-end surfaces (CornerLarge).
+ * - extraLarge (28dp): ModalBottomSheet and AlertDialog (CornerExtraLarge).
+ *
+ * No screen references `MaterialTheme.shapes` today, so these are the only
+ * radii in force unless a call site passes an explicit shape.
+ */
+private val QuizRadarShapes: Shapes =
+    Shapes(
+        extraSmall = RoundedCornerShape(12.dp),
+        small = CircleShape,
+        medium = RoundedCornerShape(16.dp),
+        large = RoundedCornerShape(28.dp),
+        extraLarge = RoundedCornerShape(28.dp),
+    )
+
 /**
  * QuizRadar theme over Material 3, token-driven (no dynamic color — the
  * brand palette is a locked design decision, 01 §6). Custom-event pink
@@ -184,6 +272,8 @@ fun QuizRadarTheme(
 
     MaterialTheme(
         colorScheme = colors,
+        typography = QuizRadarTypography,
+        shapes = QuizRadarShapes,
         content = content,
     )
 }

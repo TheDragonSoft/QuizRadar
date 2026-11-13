@@ -7,6 +7,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.quizradar.app.analytics.AnalyticsManager
+import com.quizradar.app.auth.OAuthManager
 import com.quizradar.app.model.QuizRadarJsonParser
 import java.util.concurrent.TimeUnit
 
@@ -80,8 +81,14 @@ class BackgroundScanWorker(
             // engine's serialized dispatcher - it must never try to read the
             // config store there (that call would queue behind the running
             // scan and deadlock). The client ids are read BEFORE the run and
-            // captured as plain strings.
-            val googleClientId = engine.getConfigString("google_client_id")
+            // captured as plain strings. The Google id resolves through the
+            // one central rule (audit A03): a blank or legacy placeholder
+            // override falls back to the shipped public client id, so
+            // default-id users keep silent refresh after process restart.
+            val googleClientId =
+                OAuthManager.resolveGoogleClientId(
+                    engine.getConfigString("google_client_id"),
+                )
             val teamsClientId = engine.getConfigString("teams_client_id")
             engine.oauthClientIds =
                 OAuthClientIds(

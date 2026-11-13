@@ -1,41 +1,59 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.quizradar.app.ui.screens
 
+import android.provider.Settings
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -44,106 +62,74 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quizradar.app.model.AppSnapshotModel
-import com.quizradar.app.model.ScheduleSlotModel
 import com.quizradar.app.ui.QuizRadarViewModel
-import com.quizradar.app.ui.calendar.CalendarLaneItem
-import com.quizradar.app.ui.calendar.CalendarLanes
-import com.quizradar.app.ui.calendar.END_HOUR
-import com.quizradar.app.ui.calendar.HOUR_HEIGHT_DP
-import com.quizradar.app.ui.calendar.START_HOUR
-import com.quizradar.app.ui.calendar.WeekParityHelper
+import com.quizradar.app.ui.calendar.CalendarDayContents
+import com.quizradar.app.ui.calendar.CalendarDayResolver
+import com.quizradar.app.ui.calendar.CalendarGrid
 import com.quizradar.app.ui.icons.Icons
+import com.quizradar.app.ui.share.SharedEventDraft
 import com.quizradar.app.ui.theme.CoursePalette
 import com.quizradar.app.ui.theme.CustomEventPink
+import com.quizradar.app.ui.theme.StatusColors
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
-private data class CalendarUiBlock(
-    override val id: String,
-    override val topPx: Int,
-    override val heightPx: Int,
-    override var laneIndex: Int = 0,
-    override var laneCount: Int = 1,
-    val kind: BlockKind,
-    val title: String,
-    val courseId: String?,
-    val displayTime: String,
-    val room: String?,
-    val assessmentId: String?,
-) : CalendarLaneItem
+private const val DAY_STRIP_TAG = "calendar_day_strip"
 
-private enum class BlockKind {
-    MERGED_EXAM,
-    CLASS_SLOT,
-    STANDALONE_EXAM,
-    CUSTOM_EVENT,
+/** One authored motion token: 200ms, exponential ease-out (brief §6). */
+private const val CALENDAR_MOTION_MILLIS = 200
+private val CalendarEaseOutExpo = CubicBezierEasing(0.19f, 1f, 0.22f, 1f)
+
+private const val MILLIS_PER_DAY = 86_400_000L
+
+private val DayCellShape = RoundedCornerShape(percent = 50)
+private val DayCellLabelFormatter = DateTimeFormatter.ofPattern("EEEE, d MMMM")
+private val MonthDayFormatter = DateTimeFormatter.ofPattern("MMM d")
+private val DayFormatter = DateTimeFormatter.ofPattern("d")
+
+/** The three chrome modes behind the Day / 3-Day / Week segmented control. */
+private enum class CalendarViewMode(val label: String) {
+    DAY("Day"),
+    THREE_DAY("3-Day"),
+    WEEK("Week"),
 }
 
 /**
- * Merge rule for the week grid: a class slot and an exam are the SAME block
- * only when they share the course AND the start time (web parity -
- * `apps/web/src/views/CalendarView.tsx`).
- *
- * Merging on the course alone deleted every class of that course on that
- * day: a 09:00 lecture and a 16:00 exam are two different blocks, and the
- * lecture must still render.
+ * Centered window offset for a [dayCount]-day view over a 7-day week: the
+ * selected day sits in the middle, clamped to the week edges, so tapping a
+ * day header or jumping via the date picker always brings that day INTO the
+ * window. The old clamp (`selectedIdx.coerceIn(0, 7 - dayCount)`) pinned the
+ * window to the week's right edge and made Sun-Wed unreachable.
  */
-fun shouldMergeExamWithSlot(
-    examCourseId: String?,
-    examStartTime: String?,
-    slotCourseId: String?,
-    slotStartTime: String?,
-): Boolean {
-    val examCourse = examCourseId?.trim().orEmpty()
-    val slotCourse = slotCourseId?.trim().orEmpty()
-    if (examCourse.isEmpty() || slotCourse.isEmpty()) return false
-    if (!examCourse.equals(slotCourse, ignoreCase = true)) return false
-
-    val examStart = examStartTime?.trim().orEmpty()
-    val slotStart = slotStartTime?.trim().orEmpty()
-    // No known time on either side: there is nothing proving they are the
-    // same block, so both stay separate (never guess a merge).
-    if (examStart.isEmpty() || slotStart.isEmpty()) return false
-    return normalizeClockTime(examStart) == normalizeClockTime(slotStart)
-}
-
-/** "09:00" and "9:00" are the same clock time; anything else stays as-is. */
-private fun normalizeClockTime(value: String): String {
-    val parts = value.split(":")
-    val hours = parts.getOrNull(0)?.trim()?.toIntOrNull()
-    if (hours == null) return value.trim()
-    val minutes = parts.getOrNull(1)?.trim()?.toIntOrNull() ?: 0
-    return "%02d:%02d".format(hours, minutes)
-}
+private fun windowOffsetFor(
+    selectedIdx: Int,
+    dayCount: Int,
+    weekSize: Int = 7,
+): Int = (selectedIdx.coerceAtLeast(0) - (dayCount - 1) / 2).coerceIn(0, weekSize - dayCount)
 
 /**
- * Honest time label for a custom calendar event: the real clock range when
- * the event has one, the em dash when it has none. The old label printed an
- * empty "–" pair for a time-less event, which read like broken data.
+ * Calendar screen, rebuilt per docs/ANDROID-DESIGN-SYSTEM.md §6 ("Quiet
+ * instrument"): ONE title row (range -> DatePickerDialog, muted semester
+ * subtitle, Today pill, Day/3-Day/Week segments, week arrows) and ONE day
+ * strip that IS the only pager. Grid/agenda content is unchanged behavior,
+ * resolved through [CalendarDayResolver] so the grid and the agenda can
+ * never disagree about what is on a day (WeekParityHelper parity included).
  */
-fun formatCustomEventTime(
-    startTime: String?,
-    endTime: String?,
-): String {
-    val start = startTime?.trim()?.takeIf { it.isNotEmpty() }
-    val end = endTime?.trim()?.takeIf { it.isNotEmpty() }
-    return when {
-        start != null && end != null -> "$start–$end"
-        start != null -> start
-        end != null -> "Until $end"
-        else -> "—"
-    }
-}
-
 @Composable
 fun CalendarScreen(
     snapshot: AppSnapshotModel,
@@ -152,581 +138,542 @@ fun CalendarScreen(
 ) {
     val currentWeekStart by viewModel.currentWeekStart.collectAsState()
     val selectedDate by viewModel.selectedCalendarDate.collectAsState()
-    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    var isAgendaMode by remember { mutableStateOf(false) }
+    // The ViewModel's injected clock (production: the real "today"), so the
+    // Today marks match what the core computed against - never a second,
+    // un-injected clock reading in the UI layer.
+    val today = viewModel.today
+    var viewMode by remember { mutableStateOf(CalendarViewMode.THREE_DAY) }
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    // Reduced motion (`Settings.Global.ANIMATOR_DURATION_SCALE == 0`) turns
+    // every calendar motion into an instant swap — the calendar must never
+    // animate for a user whose device says don't.
+    val context = LocalContext.current
+    val animationsEnabled =
+        remember {
+            Settings.Global.getFloat(
+                context.contentResolver,
+                Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f,
+            ) > 0f
+        }
 
     val weekDates =
         remember(currentWeekStart) {
             (0..6).map { currentWeekStart.plusDays(it.toLong()) }
         }
 
-    val headerFormatter = remember { DateTimeFormatter.ofPattern("MMM d") }
+    // ONE resolution pass per week: the day strip dots, the grid and the
+    // agenda all read the exact same CalendarDayContents.
+    val weekContents =
+        remember(weekDates, snapshot) {
+            weekDates.map { date ->
+                CalendarDayResolver.resolve(
+                    date = date,
+                    slots = snapshot.schedule.slots,
+                    assessments = snapshot.assessments,
+                    customEvents = snapshot.customEvents,
+                )
+            }
+        }
+
     val headerRange =
-        "${weekDates.first().format(headerFormatter)} – " +
-            "${weekDates.last().format(headerFormatter)}, ${weekDates.last().year}"
+        remember(weekDates) {
+            val first = weekDates.first()
+            val last = weekDates.last()
+            if (first.month == last.month) {
+                "${first.format(MonthDayFormatter)} – ${last.format(DayFormatter)}"
+            } else {
+                "${first.format(MonthDayFormatter)} – ${last.format(MonthDayFormatter)}"
+            }
+        }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val isNarrow = maxWidth < 600.dp
-        val dayCount = if (isNarrow) 3 else 7
+        val visibleCellCount = if (isNarrow) 3 else 7
+        val cellWidth = (maxWidth - 40.dp) / visibleCellCount
 
-        val dayOffset =
-            if (isNarrow) {
-                val selectedIdx = weekDates.indexOf(selectedDate).coerceAtLeast(0)
-                selectedIdx.coerceIn(0, 7 - dayCount)
-            } else {
-                0
-            }
-
-        val displayedDates = weekDates.subList(dayOffset, dayOffset + dayCount)
-
-        var totalDragX by remember { mutableFloatStateOf(0f) }
-        val swipeModifier =
-            if (isNarrow) {
-                Modifier.pointerInput(selectedDate, currentWeekStart) {
-                    detectHorizontalDragGestures(
-                        onDragStart = { totalDragX = 0f },
-                        onDragEnd = {
-                            if (totalDragX < -50f) {
-                                // Swiped left -> advance forward
-                                val nextDate = selectedDate.plusDays(1)
-                                viewModel.setSelectedCalendarDate(nextDate)
-                                if (nextDate.isAfter(weekDates.last())) {
-                                    viewModel.shiftWeek(1)
-                                }
-                            } else if (totalDragX > 50f) {
-                                // Swiped right -> go back
-                                val prevDate = selectedDate.minusDays(1)
-                                viewModel.setSelectedCalendarDate(prevDate)
-                                if (prevDate.isBefore(weekDates.first())) {
-                                    viewModel.shiftWeek(-1)
-                                }
-                            }
-                        },
-                        onHorizontalDrag = { _, dragAmount ->
-                            totalDragX += dragAmount
-                        },
-                    )
-                }
-            } else {
-                Modifier
-            }
+        val selectedIdx = weekDates.indexOf(selectedDate)
+        val stripAnchor = windowOffsetFor(selectedIdx, visibleCellCount)
 
         Column(modifier = Modifier.fillMaxSize()) {
-            // Header Controls: Week title + Jump Today + Shift Prev/Next
-            Row(
+            // ---- Title row (48dp): range -> DatePickerDialog, muted semester
+            // subtitle under the range; trailing side: Today pill, the
+            // Day/3-Day/Week segments and the week paging arrows.
+            Column(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Box(
-                        modifier =
-                            Modifier
-                                .size(34.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(MaterialTheme.colorScheme.secondaryContainer),
-                        contentAlignment = Alignment.Center,
+                if (isNarrow) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.CalendarMonth,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier.size(18.dp),
+                        CalendarRangeTitle(
+                            headerRange = headerRange,
+                            semesterLabel = snapshot.schedule.semester ?: "Semester Schedule",
+                            onOpenDatePicker = { showDatePicker = true },
+                            modifier = Modifier.weight(1f),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        CalendarTodayButton(onClick = { viewModel.jumpToToday() })
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CalendarModeSegments(
+                            mode = viewMode,
+                            onSelectMode = { viewMode = it },
+                        )
+                        CalendarWeekArrows(
+                            onPreviousWeek = { viewModel.shiftWeek(-1) },
+                            onNextWeek = { viewModel.shiftWeek(1) },
                         )
                     }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Text(
-                            text = headerRange,
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = snapshot.schedule.semester ?: "Semester Schedule",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                        )
-                    }
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Button(
-                        onClick = { viewModel.jumpToToday() },
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = ButtonDefaults.TextButtonContentPadding,
-                        colors =
-                            ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.surface,
-                                contentColor = MaterialTheme.colorScheme.onSurface,
-                            ),
-                        modifier =
-                            Modifier
-                                .defaultMinSize(minHeight = 38.dp)
-                                .border(
-                                    1.dp,
-                                    MaterialTheme.colorScheme.outline,
-                                    RoundedCornerShape(8.dp),
-                                ),
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = "Today",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
+                        CalendarRangeTitle(
+                            headerRange = headerRange,
+                            semesterLabel = snapshot.schedule.semester ?: "Semester Schedule",
+                            onOpenDatePicker = { showDatePicker = true },
+                            modifier = Modifier.weight(1f),
                         )
-                    }
-                    Spacer(modifier = Modifier.width(2.dp))
-                    IconButton(
-                        onClick = { viewModel.shiftWeek(-1) },
-                        // 48dp minimum touch target (Material a11y guideline);
-                        // the arrow icon inside stays 18dp.
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Previous Week",
-                            modifier = Modifier.size(18.dp),
+                        Spacer(modifier = Modifier.width(8.dp))
+                        CalendarTodayButton(onClick = { viewModel.jumpToToday() })
+                        Spacer(modifier = Modifier.width(8.dp))
+                        CalendarModeSegments(
+                            mode = viewMode,
+                            onSelectMode = { viewMode = it },
                         )
-                    }
-                    IconButton(
-                        onClick = { viewModel.shiftWeek(1) },
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                            contentDescription = "Next Week",
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                    IconButton(
-                        onClick = { isAgendaMode = !isAgendaMode },
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Icon(
-                            imageVector = if (isAgendaMode) Icons.Outlined.CalendarMonth else Icons.Outlined.Checklist,
-                            contentDescription = if (isAgendaMode) "Switch to Grid View" else "Switch to Agenda View",
-                            modifier = Modifier.size(18.dp),
+                        Spacer(modifier = Modifier.width(8.dp))
+                        CalendarWeekArrows(
+                            onPreviousWeek = { viewModel.shiftWeek(-1) },
+                            onNextWeek = { viewModel.shiftWeek(1) },
                         )
                     }
                 }
             }
 
-            if (isAgendaMode) {
-                CalendarAgendaView(
-                    displayedDates = displayedDates,
+            // ---- Day strip: THE ONLY pager. Horizontally paged windows with
+            // snapping; tapping a cell selects it and the grid/agenda follow.
+            CalendarDayStrip(
+                weekDates = weekDates,
+                weekContents = weekContents,
+                selectedDate = selectedDate,
+                today = today,
+                cellWidth = cellWidth,
+                anchorIndex = stripAnchor,
+                animationsEnabled = animationsEnabled,
+                onSelectDate = { viewModel.setSelectedCalendarDate(it) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            // ---- Grid / agenda content (one motion moment: the mode swap).
+            val modeContent: @Composable (CalendarViewMode) -> Unit = { mode ->
+                CalendarModeContent(
+                    mode = mode,
+                    weekDates = weekDates,
+                    weekContents = weekContents,
+                    selectedDate = selectedDate,
                     snapshot = snapshot,
                     viewModel = viewModel,
-                    modifier = Modifier.fillMaxSize().padding(bottom = 88.dp).then(swipeModifier),
                 )
+            }
+            if (animationsEnabled) {
+                Crossfade(
+                    targetState = viewMode,
+                    animationSpec = tween(CALENDAR_MOTION_MILLIS, easing = CalendarEaseOutExpo),
+                    label = "calendarMode",
+                    modifier = Modifier.fillMaxSize(),
+                ) { mode ->
+                    modeContent(mode)
+                }
             } else {
-                // Days Header Row
-                Row(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.surface)
-                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                            .then(swipeModifier),
-                ) {
-                    Spacer(modifier = Modifier.width(48.dp))
+                modeContent(viewMode)
+            }
+        }
 
-                    displayedDates.forEach { date ->
-                        val isSelected = date == selectedDate
-                        val isToday = date == LocalDate.now()
-                        val dayName = date.dayOfWeek.name.take(3)
+        if (showDatePicker) {
+            val pickerState =
+                rememberDatePickerState(
+                    initialSelectedDateMillis = selectedDate.toEpochDay() * MILLIS_PER_DAY,
+                )
+            DatePickerDialog(
+                onDismissRequest = { showDatePicker = false },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            pickerState.selectedDateMillis?.let { millis ->
+                                viewModel.jumpToDate(
+                                    Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate(),
+                                )
+                            }
+                            showDatePicker = false
+                        },
+                    ) { Text("Jump to date") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+                },
+            ) {
+                DatePicker(state = pickerState)
+            }
+        }
+    }
+}
 
-                        Column(
-                            modifier =
-                                Modifier
-                                    .weight(1f)
-                                    .clickable { viewModel.setSelectedCalendarDate(date) }
-                                    .padding(vertical = 8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            Text(
-                                text = dayName,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
+/** The tappable range title (opens the Material3 DatePickerDialog) with the muted semester subtitle. */
+@Composable
+private fun CalendarRangeTitle(
+    headerRange: String,
+    semesterLabel: String,
+    onOpenDatePicker: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = headerRange,
+            style = MaterialTheme.typography.titleLarge.copy(fontFeatureSettings = "tnum"),
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier =
+                Modifier.clickable(
+                    role = Role.Button,
+                    onClickLabel = "Change calendar date",
+                    onClick = onOpenDatePicker,
+                ),
+        )
+        Text(
+            text = semesterLabel,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** "Today" as a compact tonal pill. */
+@Composable
+private fun CalendarTodayButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FilledTonalButton(
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+        modifier = modifier,
+    ) {
+        Text(text = "Today", style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+/**
+ * Day / 3-Day / Week as a Material3 segmented group (text labels, no bare
+ * icon - docs/ANDROID-DESIGN-SYSTEM.md §3/§6).
+ *
+ * This is deliberately NOT Material3's own `SegmentedButton`. With the
+ * Material3 1.3.1 + Compose 1.7.6 versions this app builds against, a
+ * `SingleChoiceSegmentedButtonRow` of `SegmentedButton`s swallows EVERY
+ * tap: the segment's `onClick` never runs, so the Day/3-Day/Week switch was
+ * unreachable on the calendar screen. The accessibility action (`OnClick`)
+ * still fired, which is why the control looked alive to a11y services while
+ * being dead to a finger.
+ *
+ * The control keeps the same Material3 look - the segmented row, the
+ * per-index `SegmentedButtonDefaults.itemShape` and the container/content/
+ * border colors - and the same accessibility contract (RadioButton role plus
+ * the `selected` state). The segments are label-only, like Material3's own
+ * segmented buttons: no leading check icon, so the "3-Day" label is never
+ * squeezed into an ellipsis on a 1080px screen; selection is conveyed by the
+ * active container/border color and to TalkBack by the `selected` state.
+ *
+ * The structure below is the one that measurably answers taps (all verified
+ * with Robolectric on this screen):
+ *  - The segment is a `Box` that carries the `Modifier.selectable`, so the
+ *    whole segment is one touch target with the
+ *    RadioButton role and the `selected` state.
+ *  - The segment's CONTENT carries NO padding modifier. With
+ *    `Modifier.padding(...)` on the label (or on the content row) the whole
+ *    segment goes dead to touch - every position across it was dead, while
+ *    the identical code without the padding answered the tap - and the a11y
+ *    action still worked, which is exactly the symptom this control had.
+ *    The label is therefore CENTERED in the segment
+ *    (`contentAlignment = Alignment.Center`) instead of padded.
+ *  - The row is `width(IntrinsicSize.Min)` and each segment sizes to its
+ *    content (no `weight(1f)`): the segments take only the width they need,
+ *    so the week arrows next to them keep their 48dp touch targets on a
+ *    narrow screen and no label is forced to ellipsize.
+ */
+@Composable
+private fun CalendarModeSegments(
+    mode: CalendarViewMode,
+    onSelectMode: (CalendarViewMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = SegmentedButtonDefaults.colors()
+    val count = CalendarViewMode.entries.size
+    Row(
+        modifier = modifier.selectableGroup().width(IntrinsicSize.Min),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CalendarViewMode.entries.forEachIndexed { index, candidate ->
+            val isSelected = mode == candidate
+            val shape = SegmentedButtonDefaults.itemShape(index = index, count = count)
+            val containerColor =
+                if (isSelected) {
+                    colors.activeContainerColor
+                } else {
+                    colors.inactiveContainerColor
+                }
+            val contentColor =
+                if (isSelected) {
+                    colors.activeContentColor
+                } else {
+                    colors.inactiveContentColor
+                }
+            Box(
+                modifier =
+                    Modifier
+                        .defaultMinSize(minWidth = 48.dp, minHeight = 40.dp)
+                        .clip(shape)
+                        .background(containerColor)
+                        .border(
+                            SegmentedButtonDefaults.borderStroke(
                                 color =
                                     if (isSelected) {
-                                        MaterialTheme.colorScheme.primary
+                                        colors.activeBorderColor
                                     } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                        colors.inactiveBorderColor
                                     },
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Box(
-                                modifier =
-                                    Modifier
-                                        .size(28.dp)
-                                        .clip(CircleShape)
-                                        .background(
-                                            if (isSelected) {
-                                                MaterialTheme.colorScheme.primary
-                                            } else {
-                                                Color.Transparent
-                                            },
-                                        ),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = "${date.dayOfMonth}",
-                                    style =
-                                        TextStyle(
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            fontFeatureSettings = "tnum",
-                                            color =
-                                                if (isSelected) {
-                                                    MaterialTheme.colorScheme.onPrimary
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurface
-                                                },
-                                        ),
-                                )
-                            }
-                            if (isToday && !isSelected) {
-                                Box(
-                                    modifier =
-                                        Modifier
-                                            .size(4.dp)
-                                            .clip(CircleShape)
-                                            .background(MaterialTheme.colorScheme.primary),
-                                )
-                            }
-                        }
-                    }
-                }
+                            ),
+                            shape,
+                        )
+                        .selectable(
+                            selected = isSelected,
+                            role = Role.RadioButton,
+                            onClick = { onSelectMode(candidate) },
+                        ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = candidate.label,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = contentColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
 
-                // Week Grid with vertical scroll
-                val scrollState = rememberScrollState()
-                val totalGridHeight = (END_HOUR - START_HOUR + 1) * HOUR_HEIGHT_DP
+/** Week paging arrows (kept from the old header; they page whole weeks). */
+@Composable
+private fun CalendarWeekArrows(
+    onPreviousWeek: () -> Unit,
+    onNextWeek: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        IconButton(
+            onClick = onPreviousWeek,
+            // 48dp minimum touch target (Material a11y guideline);
+            // the arrow icon inside stays 18dp.
+            modifier = Modifier.size(48.dp),
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Previous Week",
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        IconButton(
+            onClick = onNextWeek,
+            modifier = Modifier.size(48.dp),
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = "Next Week",
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
 
-                Row(
+/**
+ * The day strip: 64dp, horizontally paged windows with snapping, one cell
+ * per day. The standalone arrow/dots pager row is gone — swipe on the strip
+ * or tap cells to navigate. Each cell is selectable with a state description
+ * for TalkBack; the strip is one horizontally scrollable collection.
+ */
+@Composable
+private fun CalendarDayStrip(
+    weekDates: List<LocalDate>,
+    weekContents: List<CalendarDayContents>,
+    selectedDate: LocalDate,
+    today: LocalDate,
+    cellWidth: Dp,
+    anchorIndex: Int,
+    animationsEnabled: Boolean,
+    onSelectDate: (LocalDate) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val listState = rememberLazyListState()
+    val snapFlingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
+
+    // Keep the selected day's window on screen when the selection changes
+    // from OUTSIDE the strip (date picker, Today, week arrows). Tapping a
+    // visible cell is already in place, so this is a no-op there.
+    LaunchedEffect(anchorIndex, weekDates.firstOrNull()) {
+        if (animationsEnabled) {
+            listState.animateScrollToItem(anchorIndex)
+        } else {
+            listState.scrollToItem(anchorIndex)
+        }
+    }
+
+    LazyRow(
+        state = listState,
+        flingBehavior = snapFlingBehavior,
+        modifier =
+            modifier
+                .heightIn(min = 64.dp)
+                .padding(horizontal = 20.dp, vertical = 4.dp)
+                .testTag(DAY_STRIP_TAG),
+    ) {
+        itemsIndexed(weekDates, key = { _, date -> date.toString() }) { index, date ->
+            CalendarDayCell(
+                date = date,
+                contents = weekContents[index],
+                isSelected = date == selectedDate,
+                isToday = date == today,
+                cellWidth = cellWidth,
+                onSelect = onSelectDate,
+            )
+        }
+    }
+}
+
+/**
+ * One day cell: weekday label (labelMedium) + date number (15sp/600 tabular).
+ * Selected = filled primary pill with onPrimary content; today = 4dp primary
+ * dot under the number; days with items = 2dp status dots (one per layer).
+ */
+@Composable
+private fun CalendarDayCell(
+    date: LocalDate,
+    contents: CalendarDayContents,
+    isSelected: Boolean,
+    isToday: Boolean,
+    cellWidth: Dp,
+    onSelect: (LocalDate) -> Unit,
+) {
+    val cellLabel = remember(date) { date.format(DayCellLabelFormatter) }
+    val stateParts =
+        buildList {
+            if (isSelected) add("Selected")
+            if (isToday) add("Today")
+            if (contents.totalCount > 0) add("Has items")
+        }
+    val containerColor by animateColorAsState(
+        targetValue =
+            if (isSelected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                Color.Transparent
+            },
+        animationSpec = tween(CALENDAR_MOTION_MILLIS, easing = CalendarEaseOutExpo),
+        label = "dayCellContainer",
+    )
+
+    Box(
+        modifier =
+            Modifier
+                .width(cellWidth)
+                .padding(horizontal = 2.dp)
+                .heightIn(min = 56.dp)
+                .clip(DayCellShape)
+                .background(containerColor)
+                .selectable(
+                    selected = isSelected,
+                    role = Role.Tab,
+                    onClick = { onSelect(date) },
+                )
+                .semantics {
+                    contentDescription = cellLabel
+                    if (stateParts.isNotEmpty()) stateDescription = stateParts.joinToString(", ")
+                },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = date.dayOfWeek.name.take(3),
+                style = MaterialTheme.typography.labelMedium,
+                color =
+                    if (isSelected) {
+                        MaterialTheme.colorScheme.onPrimary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+            )
+            Text(
+                text = "${date.dayOfMonth}",
+                style =
+                    TextStyle(
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFeatureSettings = "tnum",
+                    ),
+                color =
+                    if (isSelected) {
+                        MaterialTheme.colorScheme.onPrimary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+            )
+            if (isToday) {
+                // 4dp dot under the number; onPrimary on the selected pill so
+                // today-ness never disappears behind the selection.
+                Box(
                     modifier =
                         Modifier
-                            .fillMaxSize()
-                            .padding(bottom = 88.dp)
-                            .verticalScroll(scrollState),
+                            .size(4.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (isSelected) {
+                                    MaterialTheme.colorScheme.onPrimary
+                                } else {
+                                    MaterialTheme.colorScheme.primary
+                                },
+                            ),
+                )
+            }
+            if (!isSelected && contents.totalCount > 0) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // Time Gutter (08:00 to 21:00)
-                    Column(
-                        modifier =
-                            Modifier
-                                .width(48.dp)
-                                .height(totalGridHeight.dp),
-                    ) {
-                        for (h in START_HOUR..END_HOUR) {
-                            Box(
-                                modifier =
-                                    Modifier
-                                        .height(HOUR_HEIGHT_DP.dp)
-                                        .padding(start = 6.dp, top = 2.dp),
-                            ) {
-                                Text(
-                                    text = String.format("%02d:00", h),
-                                    style =
-                                        TextStyle(
-                                            fontSize = 11.sp,
-                                            fontFeatureSettings = "tnum",
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        ),
-                                )
-                            }
-                        }
+                    if (contents.slots.isNotEmpty()) {
+                        CalendarStatusDot(MaterialTheme.colorScheme.primary)
                     }
-
-                    // Grid Days Columns
-                    Row(
-                        modifier =
-                            Modifier
-                                .weight(1f)
-                                .height(totalGridHeight.dp),
-                    ) {
-                        displayedDates.forEach { date ->
-                            val dayName = date.dayOfWeek.name.take(3)
-
-                            val daySlots =
-                                snapshot.schedule.slots.filter {
-                                    WeekParityHelper.slotMatchesDate(it, date)
-                                }
-                            val dayAssessments =
-                                snapshot.assessments.filter {
-                                    it.dateIso == date
-                                }
-                            val dayCustomEvents =
-                                snapshot.customEvents.filter {
-                                    it.dateIso == date
-                                }
-
-                            val rawBlocks = mutableListOf<CalendarUiBlock>()
-
-                            // A slot and an exam are one block only when they
-                            // share the course AND the start time; every other
-                            // pair stays two blocks (no class is ever dropped).
-                            val mergedSlotByExamId = mutableMapOf<String, ScheduleSlotModel>()
-                            val mergedSlotIds = mutableSetOf<String>()
-                            daySlots.forEach { s ->
-                                val matchingExam =
-                                    dayAssessments.firstOrNull { a ->
-                                        // One exam absorbs one slot: a second slot
-                                        // with the same course and start time keeps
-                                        // its own block instead of vanishing.
-                                        val alreadyMerged = mergedSlotByExamId.containsKey(a.id)
-                                        !alreadyMerged && shouldMergeExamWithSlot(a.courseId, a.startTime, s.courseId, s.startTime)
-                                    }
-                                if (matchingExam != null) {
-                                    mergedSlotByExamId[matchingExam.id] = s
-                                    mergedSlotIds.add(s.id)
-                                }
-                            }
-
-                            dayAssessments.forEach { a ->
-                                val mergedSlot = mergedSlotByExamId[a.id]
-                                // The merged block keeps the SLOT's clock range
-                                // (web parity) so the class length is not lost.
-                                val pos =
-                                    CalendarLanes.computeBlockPosition(
-                                        mergedSlot?.startTime ?: a.startTime,
-                                        mergedSlot?.endTime ?: a.endTime,
-                                    )
-                                val kind =
-                                    if (mergedSlot != null) {
-                                        BlockKind.MERGED_EXAM
-                                    } else {
-                                        BlockKind.STANDALONE_EXAM
-                                    }
-                                rawBlocks.add(
-                                    CalendarUiBlock(
-                                        id = a.id,
-                                        topPx = pos.topPx,
-                                        heightPx = pos.heightPx,
-                                        kind = kind,
-                                        title = a.title,
-                                        courseId = a.courseId,
-                                        displayTime = a.displayTime ?: "All Day",
-                                        room = mergedSlot?.room ?: a.room,
-                                        assessmentId = a.id,
-                                    ),
-                                )
-                            }
-
-                            daySlots.forEach { s ->
-                                if (s.id !in mergedSlotIds) {
-                                    val pos = CalendarLanes.computeBlockPosition(s.startTime, s.endTime)
-                                    rawBlocks.add(
-                                        CalendarUiBlock(
-                                            id = s.id,
-                                            topPx = pos.topPx,
-                                            heightPx = pos.heightPx,
-                                            kind = BlockKind.CLASS_SLOT,
-                                            title = listOfNotNull(s.courseName ?: s.courseId, s.type.ifBlank { null }).joinToString(" "),
-                                            courseId = s.courseId,
-                                            displayTime = s.displayTime ?: "${s.startTime}–${s.endTime}",
-                                            room = s.room,
-                                            assessmentId = null,
-                                        ),
-                                    )
-                                }
-                            }
-
-                            dayCustomEvents.forEach { e ->
-                                val pos = CalendarLanes.computeBlockPosition(e.startTime, e.endTime)
-                                rawBlocks.add(
-                                    CalendarUiBlock(
-                                        id = e.id,
-                                        topPx = pos.topPx,
-                                        heightPx = pos.heightPx,
-                                        kind = BlockKind.CUSTOM_EVENT,
-                                        title = e.title,
-                                        courseId = e.courseId,
-                                        displayTime = formatCustomEventTime(e.startTime, e.endTime),
-                                        room = e.room,
-                                        assessmentId = null,
-                                    ),
-                                )
-                            }
-
-                            val laneItems = CalendarLanes.assignOverlapLanes(rawBlocks)
-
-                            Box(
-                                modifier =
-                                    Modifier
-                                        .weight(1f)
-                                        .fillMaxHeight()
-                                        .border(
-                                            1.dp,
-                                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-                                        ),
-                            ) {
-                                // Hour grid dividers with tap-to-create study block
-                                for (h in 0 until (END_HOUR - START_HOUR + 1)) {
-                                    val hourSlot = START_HOUR + h
-                                    Box(
-                                        modifier =
-                                            Modifier
-                                                .fillMaxWidth()
-                                                .offset(y = (h * HOUR_HEIGHT_DP).dp)
-                                                .height(HOUR_HEIGHT_DP.dp)
-                                                // The grid is the screen: 14 slots per
-                                                // day column, and every one of them is a
-                                                // tap target. Without a name, a screen
-                                                // reader announced a wall of
-                                                // "button"s and the user could not
-                                                // tell WHICH hour they were on.
-                                                .semantics {
-                                                    contentDescription =
-                                                        "$dayName ${String.format("%02d:00", hourSlot)}, " +
-                                                        "double tap to schedule a study block"
-                                                }.clickable {
-                                                    val startStr = String.format("%02d:00", hourSlot)
-                                                    val endStr = String.format("%02d:00", (hourSlot + 1).coerceAtMost(23))
-                                                    viewModel.openCreateEventDraft(
-                                                        com.quizradar.app.ui.share.SharedEventDraft(
-                                                            title = "Study Session",
-                                                            notes = "Scheduled study slot $startStr–$endStr",
-                                                            dateIso = date,
-                                                            startTime = startStr,
-                                                            endTime = endStr,
-                                                        ),
-                                                    )
-                                                },
-                                    ) {
-                                        Box(
-                                            modifier =
-                                                Modifier
-                                                    .fillMaxWidth()
-                                                    .height(1.dp)
-                                                    .background(MaterialTheme.colorScheme.outlineVariant),
-                                        )
-                                    }
-                                }
-
-                                // Current time "Now" indicator line (if column is today)
-                                if (date == LocalDate.now()) {
-                                    val now = java.time.LocalTime.now()
-                                    val nowDecimal = now.hour + now.minute / 60f
-                                    if (nowDecimal >= START_HOUR && nowDecimal <= END_HOUR + 1) {
-                                        val nowTopPx = (nowDecimal - START_HOUR) * HOUR_HEIGHT_DP
-                                        Box(
-                                            modifier =
-                                                Modifier
-                                                    .fillMaxWidth()
-                                                    .offset(y = nowTopPx.dp)
-                                                    .height(2.dp)
-                                                    .background(Color(0xFFEF4444)),
-                                        ) {
-                                            Box(
-                                                modifier =
-                                                    Modifier
-                                                        .size(7.dp)
-                                                        .offset(x = (-3.5).dp, y = (-2.5).dp)
-                                                        .clip(CircleShape)
-                                                        .background(Color(0xFFEF4444)),
-                                            )
-                                        }
-                                    }
-                                }
-
-                                laneItems.forEach { block ->
-                                    val palette = CoursePalette.get(block.courseId)
-                                    val accessibleCourseText = CoursePalette.textOnSurface(block.courseId, isDark)
-                                    val (bg, border, textClr) =
-                                        when (block.kind) {
-                                            BlockKind.MERGED_EXAM ->
-                                                Triple(
-                                                    Color(0xFFDC2626).copy(alpha = if (isDark) 0.22f else 0.14f),
-                                                    Color(0xFFDC2626),
-                                                    if (isDark) Color(0xFFFCA5A5) else Color(0xFFB91C1C),
-                                                )
-                                            BlockKind.STANDALONE_EXAM ->
-                                                Triple(
-                                                    palette.color.copy(alpha = if (isDark) 0.2f else 0.14f),
-                                                    palette.color,
-                                                    accessibleCourseText,
-                                                )
-                                            BlockKind.CLASS_SLOT ->
-                                                Triple(
-                                                    palette.color.copy(alpha = if (isDark) 0.12f else 0.08f),
-                                                    palette.border,
-                                                    accessibleCourseText,
-                                                )
-                                            BlockKind.CUSTOM_EVENT ->
-                                                Triple(
-                                                    CustomEventPink.copy(alpha = if (isDark) 0.2f else 0.12f),
-                                                    CustomEventPink,
-                                                    if (isDark) Color(0xFFF9A8D4) else Color(0xFF9D174D),
-                                                )
-                                        }
-
-                                    val isExam =
-                                        block.kind == BlockKind.MERGED_EXAM ||
-                                            block.kind == BlockKind.STANDALONE_EXAM
-                                    val borderWidth = if (isExam) 1.5.dp else 1.dp
-                                    val titleMaxLines = if (block.heightPx >= 52) 2 else 1
-
-                                    BoxWithConstraints(
-                                        modifier =
-                                            Modifier
-                                                .fillMaxWidth()
-                                                .offset(y = block.topPx.dp)
-                                                .height(block.heightPx.dp),
-                                    ) {
-                                        val laneWidth = maxWidth / block.laneCount.coerceAtLeast(1)
-                                        val xOffset = laneWidth * block.laneIndex
-
-                                        Column(
-                                            modifier =
-                                                Modifier
-                                                    .offset(x = xOffset)
-                                                    .width(laneWidth)
-                                                    .fillMaxHeight()
-                                                    .padding(1.5.dp)
-                                                    .clip(RoundedCornerShape(6.dp))
-                                                    .background(bg)
-                                                    .border(
-                                                        borderWidth,
-                                                        border,
-                                                        RoundedCornerShape(6.dp),
-                                                    )
-                                                    .clickable {
-                                                        if (block.assessmentId != null) {
-                                                            viewModel.openAssessmentDetail(block.assessmentId)
-                                                        }
-                                                    }
-                                                    .padding(horizontal = 5.dp, vertical = 4.dp),
-                                        ) {
-                                            Text(
-                                                text = block.title,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = textClr,
-                                                maxLines = titleMaxLines,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
-                                            if (block.room != null && block.heightPx >= 42) {
-                                                Text(
-                                                    text = block.room,
-                                                    fontSize = 11.sp,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    if (contents.assessments.isNotEmpty()) {
+                        CalendarStatusDot(MaterialTheme.colorScheme.error)
+                    }
+                    if (contents.customEvents.isNotEmpty()) {
+                        CalendarStatusDot(CustomEventPink)
                     }
                 }
             }
@@ -734,6 +681,86 @@ fun CalendarScreen(
     }
 }
 
+@Composable
+private fun CalendarStatusDot(color: Color) {
+    Box(
+        modifier =
+            Modifier
+                .size(2.dp)
+                .clip(CircleShape)
+                .background(color),
+    )
+}
+
+/** Grid or agenda content for one [CalendarViewMode], all resolved days shared. */
+@Composable
+private fun CalendarModeContent(
+    mode: CalendarViewMode,
+    weekDates: List<LocalDate>,
+    weekContents: List<CalendarDayContents>,
+    selectedDate: LocalDate,
+    snapshot: AppSnapshotModel,
+    viewModel: QuizRadarViewModel,
+) {
+    when (mode) {
+        CalendarViewMode.DAY ->
+            CalendarAgendaView(
+                displayedDates = listOf(selectedDate),
+                snapshot = snapshot,
+                viewModel = viewModel,
+                modifier = Modifier.fillMaxSize().padding(bottom = 88.dp),
+            )
+        CalendarViewMode.THREE_DAY -> {
+            val offset = windowOffsetFor(weekDates.indexOf(selectedDate), 3)
+            CalendarGrid(
+                dates = weekDates.subList(offset, offset + 3),
+                days = weekContents.subList(offset, offset + 3),
+                onBlockClick = { block ->
+                    block.assessmentId?.let { viewModel.openAssessmentDetail(it) }
+                },
+                onHourClick = { date, hourSlot -> openStudyBlockDraft(viewModel, date, hourSlot) },
+                modifier = Modifier.fillMaxSize().padding(bottom = 88.dp),
+            )
+        }
+        CalendarViewMode.WEEK ->
+            CalendarGrid(
+                dates = weekDates,
+                days = weekContents,
+                onBlockClick = { block ->
+                    block.assessmentId?.let { viewModel.openAssessmentDetail(it) }
+                },
+                onHourClick = { date, hourSlot -> openStudyBlockDraft(viewModel, date, hourSlot) },
+                modifier = Modifier.fillMaxSize().padding(bottom = 88.dp),
+            )
+    }
+}
+
+/** Tap-to-create study block on an empty grid hour (unchanged draft shape). */
+private fun openStudyBlockDraft(
+    viewModel: QuizRadarViewModel,
+    date: LocalDate,
+    hourSlot: Int,
+) {
+    val startStr = String.format("%02d:00", hourSlot)
+    val endStr = String.format("%02d:00", (hourSlot + 1).coerceAtMost(23))
+    viewModel.openCreateEventDraft(
+        SharedEventDraft(
+            title = "Study Session",
+            notes = "Scheduled study slot $startStr–$endStr",
+            dateIso = date,
+            startTime = startStr,
+            endTime = endStr,
+        ),
+    )
+}
+
+/**
+ * The agenda list: one day card per [displayedDates] entry. Every day is
+ * resolved through [CalendarDayResolver] — the SAME helper the week grid
+ * uses — so the agenda can never disagree with the grid about what is on a
+ * day (the old day-name-only match lost every abbreviated slot day and every
+ * alternating-week class; audit A09).
+ */
 @Composable
 fun CalendarAgendaView(
     displayedDates: List<LocalDate>,
@@ -745,23 +772,24 @@ fun CalendarAgendaView(
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
     Column(
-        modifier = modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        modifier = modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         displayedDates.forEach { date ->
-            val isToday = date == LocalDate.now()
-            val dayOfWeek = date.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }
+            val isToday = date == viewModel.today
             val headerText = date.format(DateTimeFormatter.ofPattern("EEEE, MMM d"))
 
-            val daySlots =
-                snapshot.schedule.slots.filter { it.day.equals(dayOfWeek, ignoreCase = true) }
-                    .sortedBy { it.startTime }
-            val dayAssessments =
-                snapshot.assessments.filter { it.dateIso == date }
-                    .sortedBy { it.startTime ?: "00:00" }
-            val dayEvents = snapshot.customEvents.filter { it.dateIso == date }
-
-            val totalCount = daySlots.size + dayAssessments.size + dayEvents.size
+            val dayContents =
+                CalendarDayResolver.resolve(
+                    date = date,
+                    slots = snapshot.schedule.slots,
+                    assessments = snapshot.assessments,
+                    customEvents = snapshot.customEvents,
+                )
+            val daySlots = dayContents.slots
+            val dayAssessments = dayContents.assessments
+            val dayEvents = dayContents.customEvents
+            val totalCount = dayContents.totalCount
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -769,7 +797,7 @@ fun CalendarAgendaView(
                     CardDefaults.cardColors(
                         containerColor =
                             if (isToday) {
-                                if (isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9)
+                                MaterialTheme.colorScheme.surfaceVariant
                             } else {
                                 MaterialTheme.colorScheme.surface
                             },
@@ -785,7 +813,7 @@ fun CalendarAgendaView(
                         },
                     ),
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     // Header
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -795,41 +823,47 @@ fun CalendarAgendaView(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = headerText,
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                color = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                style = MaterialTheme.typography.titleMedium,
+                                color =
+                                    if (isToday) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    },
                             )
                             if (isToday) {
-                                Spacer(modifier = Modifier.width(6.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Box(
                                     modifier =
                                         Modifier
-                                            .clip(RoundedCornerShape(4.dp))
+                                            .clip(RoundedCornerShape(8.dp))
                                             .background(MaterialTheme.colorScheme.primary)
-                                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                                            .padding(horizontal = 8.dp, vertical = 2.dp),
                                 ) {
                                     Text(
                                         text = "TODAY",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onPrimary,
                                     )
                                 }
                             }
                         }
                         Text(
-                            text = if (totalCount == 0) "Clear" else "$totalCount items",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
+                            // Status, not an action: nothing is clickable here.
+                            // The bare word "Clear" read like a button, so the
+                            // label now says what the day actually is.
+                            text = if (totalCount == 0) "Clear day" else "$totalCount items",
+                            style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     if (totalCount == 0) {
                         Text(
                             text = "No classes, exams, or events scheduled.",
-                            fontSize = 12.sp,
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 4.dp),
                         )
@@ -849,11 +883,15 @@ fun CalendarAgendaView(
                                 modifier =
                                     Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(MaterialTheme.colorScheme.surface)
-                                        .border(1.5.dp, Color(0xFFEF4444).copy(alpha = 0.7f), RoundedCornerShape(10.dp))
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f))
+                                        .border(
+                                            1.dp,
+                                            MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                                            RoundedCornerShape(12.dp),
+                                        )
                                         .clickable { viewModel.openAssessmentDetail(exam.id) }
-                                        .padding(10.dp),
+                                        .padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Box(
@@ -862,7 +900,7 @@ fun CalendarAgendaView(
                                             .width(4.dp)
                                             .height(36.dp)
                                             .clip(RoundedCornerShape(2.dp))
-                                            .background(Color(0xFFEF4444)),
+                                            .background(MaterialTheme.colorScheme.error),
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Column(modifier = Modifier.weight(1f)) {
@@ -871,39 +909,39 @@ fun CalendarAgendaView(
                                             modifier =
                                                 Modifier
                                                     .clip(RoundedCornerShape(4.dp))
-                                                    .background(Color(0xFFEF4444).copy(alpha = 0.15f))
+                                                    .background(MaterialTheme.colorScheme.errorContainer)
                                                     .padding(horizontal = 5.dp, vertical = 2.dp),
                                         ) {
                                             Text(
                                                 text = exam.assessmentType.uppercase(),
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = Color(0xFFEF4444),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onErrorContainer,
                                             )
                                         }
-                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
                                         Text(
                                             text = exam.courseName ?: exam.courseId ?: course?.name ?: "EXAM",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
+                                            style =
+                                                MaterialTheme.typography.labelMedium.copy(
+                                                    fontWeight = FontWeight.Bold,
+                                                ),
                                             color = accentColor,
                                         )
                                     }
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = exam.title,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.titleSmall,
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
                                     Text(
                                         text = "${exam.displayTime ?: "All day"} · ${exam.room ?: "—"}",
-                                        fontSize = 11.sp,
+                                        style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
                             }
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
                         }
 
                         // 2. Class Slots with Attendance Tracker
@@ -923,10 +961,14 @@ fun CalendarAgendaView(
                                 modifier =
                                     Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(10.dp))
+                                        .clip(RoundedCornerShape(12.dp))
                                         .background(MaterialTheme.colorScheme.surface)
-                                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(10.dp))
-                                        .padding(10.dp),
+                                        .border(
+                                            1.dp,
+                                            MaterialTheme.colorScheme.outlineVariant,
+                                            RoundedCornerShape(12.dp),
+                                        )
+                                        .padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Box(
@@ -942,40 +984,58 @@ fun CalendarAgendaView(
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
                                             text = "${slot.courseId} · ${slot.type}",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
+                                            style =
+                                                MaterialTheme.typography.labelMedium.copy(
+                                                    fontWeight = FontWeight.Bold,
+                                                ),
                                             color = accentColor,
                                         )
                                         if (absenceCount >= 2) {
-                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Spacer(modifier = Modifier.width(8.dp))
                                             Text(
-                                                text = "⚠️ $absenceCount absences",
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = Color(0xFFF59E0B),
+                                                text = "$absenceCount absences",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = StatusColors.warningBadge,
                                             )
                                         }
                                     }
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = slot.courseName,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
+                                        style =
+                                            MaterialTheme.typography.bodySmall.copy(
+                                                fontWeight = FontWeight.Bold,
+                                            ),
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
                                     Text(
                                         text = "${slot.startTime}–${slot.endTime} @ ${slot.room ?: "—"}",
-                                        fontSize = 11.sp,
+                                        style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
 
-                                // Interactive Attendance Chip
+                                // Interactive Attendance Chip (48dp min touch target)
                                 val (attText, attBg, attFg) =
                                     when (attStatus) {
-                                        "attended" -> Triple("✓ Attended", Color(0xFF10B981).copy(alpha = 0.15f), Color(0xFF10B981))
-                                        "absent" -> Triple("✗ Absent", Color(0xFFEF4444).copy(alpha = 0.15f), Color(0xFFEF4444))
-                                        "excused" -> Triple("~ Excused", Color(0xFFF59E0B).copy(alpha = 0.15f), Color(0xFFF59E0B))
+                                        "attended" ->
+                                            Triple(
+                                                "Attended",
+                                                StatusColors.successContainer(isDark),
+                                                StatusColors.onSuccessContainer(isDark),
+                                            )
+                                        "absent" ->
+                                            Triple(
+                                                "Absent",
+                                                MaterialTheme.colorScheme.error.copy(alpha = 0.15f),
+                                                MaterialTheme.colorScheme.error,
+                                            )
+                                        "excused" ->
+                                            Triple(
+                                                "Excused",
+                                                StatusColors.warningBadge.copy(alpha = 0.15f),
+                                                StatusColors.warningBadge,
+                                            )
                                         else ->
                                             Triple(
                                                 "Mark",
@@ -987,22 +1047,26 @@ fun CalendarAgendaView(
                                 Box(
                                     modifier =
                                         Modifier
-                                            .clip(RoundedCornerShape(8.dp))
+                                            .clip(DayCellShape)
                                             .background(attBg)
+                                            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
                                             .clickable {
                                                 viewModel.toggleAttendance(slot.id, slot.courseId, date.toString())
                                             }
-                                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    contentAlignment = Alignment.Center,
                                 ) {
                                     Text(
                                         text = attText,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
+                                        style =
+                                            MaterialTheme.typography.labelMedium.copy(
+                                                fontWeight = FontWeight.Bold,
+                                            ),
                                         color = attFg,
                                     )
                                 }
                             }
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
                         }
 
                         // 3. Custom events
@@ -1011,10 +1075,10 @@ fun CalendarAgendaView(
                                 modifier =
                                     Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(10.dp))
+                                        .clip(RoundedCornerShape(12.dp))
                                         .background(MaterialTheme.colorScheme.surface)
-                                        .border(1.dp, CustomEventPink.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
-                                        .padding(10.dp),
+                                        .border(1.dp, CustomEventPink.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                                        .padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Box(
@@ -1029,18 +1093,20 @@ fun CalendarAgendaView(
                                 Column {
                                     Text(
                                         text = event.title,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
+                                        style =
+                                            MaterialTheme.typography.bodySmall.copy(
+                                                fontWeight = FontWeight.Bold,
+                                            ),
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
                                     Text(
-                                        text = formatCustomEventTime(event.startTime, event.endTime),
-                                        fontSize = 11.sp,
+                                        text = CalendarDayResolver.formatCustomEventTime(event.startTime, event.endTime),
+                                        style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
                             }
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
                         }
                     }
                 }

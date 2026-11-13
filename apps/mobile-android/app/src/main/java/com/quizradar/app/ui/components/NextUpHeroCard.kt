@@ -12,8 +12,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -21,18 +22,30 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.quizradar.app.model.AssessmentModel
 import com.quizradar.app.ui.formatIsoDateForDisplay
 import com.quizradar.app.ui.icons.Icons
 
+/**
+ * The starfield hero is a locked motif (docs/ANDROID-DESIGN-SYSTEM.md: the
+ * brand palette is LOCKED, and the NextUp starfield hero is part of it), so
+ * the gradients and the amber countdown badge keep their own values. They
+ * are named here so the hero reads as one deliberate palette instead of a
+ * scatter of hex literals - every other surface in the app is drawn from the
+ * theme roles.
+ */
 private data class HeroPalette(
     val gradient: Brush,
     val border: Color,
 )
+
+/** The amber "up next" badge - the one accent the hero owns. */
+private object CountdownBadge {
+    val container = Color(0xFFFBBF24)
+    val content = Color(0xFF020617)
+}
 
 private fun heroPalette(
     isDark: Boolean,
@@ -86,15 +99,16 @@ fun NextUpHeroCard(
     onOpen: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val isAmoled = isDark && androidx.compose.material3.MaterialTheme.colorScheme.background == Color.Black
+    val isAmoled = isDark && MaterialTheme.colorScheme.background == Color.Black
     val palette = heroPalette(isDark, isAmoled)
+    val heroShape = MaterialTheme.shapes.medium
     Box(
         modifier =
             modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(20.dp))
+                .clip(heroShape)
                 .background(palette.gradient)
-                .border(1.dp, palette.border, RoundedCornerShape(20.dp))
+                .border(1.dp, palette.border, heroShape)
                 .then(
                     if (assessment != null && onOpen != null) {
                         Modifier.clickable(onClick = onOpen)
@@ -113,46 +127,45 @@ fun NextUpHeroCard(
         val heroSubtitleColor = if (isAmoled) Color(0xFFCBD5E1) else Color(0xFFBFDBFE)
 
         if (assessment == null) {
-            Column(modifier = Modifier.padding(18.dp)) {
+            Column(modifier = Modifier.padding(16.dp)) {
                 Text(
                     text = "No Upcoming Assessments Scheduled",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium,
                     color = Color.White,
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "Connect an account or add a course — your radar fills in as announcements land.",
-                    fontSize = 12.sp,
+                    style = MaterialTheme.typography.bodySmall,
                     color = heroSubtitleColor,
-                    lineHeight = 17.sp,
                 )
             }
             return@Box
         }
 
-        Column(modifier = Modifier.padding(18.dp)) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (countdownLabel(assessment.daysUntil).isNotEmpty()) {
+                val countdown = countdownLabel(assessment.daysUntil)
+                if (countdown.isNotEmpty()) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier =
                             Modifier
-                                .background(Color(0xFFFBBF24), RoundedCornerShape(999.dp))
-                                .padding(horizontal = 8.dp, vertical = 3.dp),
+                                .clip(CircleShape)
+                                .background(CountdownBadge.container)
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.SquareFoot,
+                            imageVector = Icons.Outlined.Timer,
                             contentDescription = null,
-                            tint = Color(0xFF020617),
-                            modifier = Modifier.size(11.dp),
+                            tint = CountdownBadge.content,
+                            modifier = Modifier.size(12.dp),
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "Up next · ${countdownLabel(assessment.daysUntil)}",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF020617),
+                            text = "Up next · $countdown",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = CountdownBadge.content,
                         )
                     }
                     Spacer(modifier = Modifier.width(8.dp))
@@ -163,8 +176,7 @@ fun NextUpHeroCard(
                             assessment.courseName ?: assessment.courseId,
                             assessment.assessmentType.takeIf { it.isNotBlank() },
                         ).joinToString(" · "),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.labelMedium,
                     color = Color.White.copy(alpha = 0.85f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -176,9 +188,7 @@ fun NextUpHeroCard(
 
             Text(
                 text = assessment.title,
-                fontSize = 21.sp,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 26.sp,
+                style = MaterialTheme.typography.titleLarge,
                 color = Color.White,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -191,9 +201,9 @@ fun NextUpHeroCard(
                     imageVector = Icons.Filled.CalendarMonth,
                     contentDescription = null,
                     tint = heroSubtitleColor,
-                    modifier = Modifier.size(13.dp),
+                    modifier = Modifier.size(16.dp),
                 )
-                Spacer(modifier = Modifier.width(5.dp))
+                Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text =
                         assessment.displayTime
@@ -201,7 +211,10 @@ fun NextUpHeroCard(
                             // in the hero reads like a database dump.
                             ?: formatIsoDateForDisplay(assessment.dateIso?.toString())
                             ?: "Date not confirmed",
-                    fontSize = 12.sp,
+                    style =
+                        MaterialTheme.typography.bodySmall.copy(
+                            fontFeatureSettings = "tnum",
+                        ),
                     color = heroSubtitleColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -218,12 +231,12 @@ fun NextUpHeroCard(
                         imageVector = Icons.Filled.Place,
                         contentDescription = null,
                         tint = heroSubtitleColor,
-                        modifier = Modifier.size(13.dp),
+                        modifier = Modifier.size(16.dp),
                     )
-                    Spacer(modifier = Modifier.width(5.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = assessment.room,
-                        fontSize = 12.sp,
+                        style = MaterialTheme.typography.bodySmall,
                         color = heroSubtitleColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,

@@ -12,9 +12,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -23,17 +22,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.quizradar.app.model.ConflictAlertModel
 import com.quizradar.app.model.ConflictSeverity
 import com.quizradar.app.model.CustomEventModel
 import com.quizradar.app.ui.icons.Icons
+import com.quizradar.app.ui.theme.PillButtonContentPadding
+import com.quizradar.app.ui.theme.PillButtonMinHeight
+import com.quizradar.app.ui.theme.StatusColors
+import com.quizradar.app.ui.theme.tonalPill
 
 @Composable
 fun ConflictBanner(
@@ -61,21 +61,20 @@ fun ConflictBanner(
     val unresolvedAlerts = alerts.filter { !it.isMitigated }
 
     if (unresolvedAlerts.isEmpty()) {
-        // Mitigated State: Emerald Shield
-        val bg = if (isDark) Color(0xFF10B981).copy(alpha = 0.14f) else Color(0xFFECFDF5)
-        val border = if (isDark) Color(0xFF10B981).copy(alpha = 0.45f) else Color(0xFF6EE7B7)
-        val textPrimary = if (isDark) Color(0xFFA7F3D0) else Color(0xFF065F46)
-        val textSecondary = if (isDark) Color(0xFF6EE7B7) else Color(0xFF047857)
-        val iconTint = if (isDark) Color(0xFF34D399) else Color(0xFF059669)
+        // Mitigated: the mint "done" pair from the token layer.
+        val container = StatusColors.successContainer(isDark)
+        val border = StatusColors.success(isDark)
+        val textPrimary = StatusColors.onSuccessContainer(isDark)
+        val textSecondary = StatusColors.success(isDark)
 
         Column(
             modifier =
                 modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(bg)
-                    .border(1.dp, border, RoundedCornerShape(16.dp))
-                    .padding(14.dp),
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(container)
+                    .border(1.dp, border, MaterialTheme.shapes.medium)
+                    .padding(16.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -86,13 +85,13 @@ fun ConflictBanner(
                     Icon(
                         imageVector = Icons.Outlined.Shield,
                         contentDescription = "Shield",
-                        tint = iconTint,
-                        modifier = Modifier.size(22.dp),
+                        tint = textSecondary,
+                        modifier = Modifier.size(20.dp),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Exam Overload Mitigated (${studyBlocks.size} blocks scheduled)",
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        style = MaterialTheme.typography.titleMedium,
                         color = textPrimary,
                     )
                 }
@@ -105,57 +104,56 @@ fun ConflictBanner(
                     modifier = Modifier.size(48.dp),
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Close,
+                        imageVector = Icons.Outlined.Close,
                         contentDescription = "Dismiss",
                         tint = textSecondary,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(20.dp),
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "Smart study sessions are booked around your ${alerts.size} detected exam clusters.",
                 style = MaterialTheme.typography.bodySmall,
                 color = textSecondary,
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
-            Button(
+            Spacer(modifier = Modifier.height(12.dp))
+            FilledTonalButton(
                 onClick = onViewCalendar,
-                colors =
-                    ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF047857),
-                        contentColor = Color.White,
-                    ),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.defaultMinSize(minHeight = 42.dp),
+                colors = ButtonDefaults.tonalPill(),
+                contentPadding = PillButtonContentPadding,
+                modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
             ) {
                 Icon(
                     imageVector = Icons.Outlined.CalendarMonth,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
                 )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(text = "View on Calendar", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "View on Calendar",
+                    style = MaterialTheme.typography.labelMedium,
+                )
             }
         }
     } else {
-        // Unresolved State: Amber Alert
-        val bg = if (isDark) Color(0xFFF59E0B).copy(alpha = 0.14f) else Color(0xFFFFFBEB)
-        val border = if (isDark) Color(0xFFF59E0B).copy(alpha = 0.45f) else Color(0xFFFCD34D)
-        val textPrimary = if (isDark) Color(0xFFFDE68A) else Color(0xFF78350F)
-        val textSecondary = if (isDark) Color(0xFFFCD34D) else Color(0xFF92400E)
-        val iconTint = if (isDark) Color(0xFFFBBF24) else Color(0xFFB45309)
+        // Unresolved: the error pair from the theme (an alert that asks for
+        // a decision), with the severity of each cluster as a tag.
+        val container = MaterialTheme.colorScheme.errorContainer
+        val border = MaterialTheme.colorScheme.error
+        val textPrimary = MaterialTheme.colorScheme.onErrorContainer
+        val textSecondary = MaterialTheme.colorScheme.onErrorContainer
 
         Column(
             modifier =
                 modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(bg)
-                    .border(1.dp, border, RoundedCornerShape(16.dp))
-                    .padding(14.dp),
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(container)
+                    .border(1.dp, border, MaterialTheme.shapes.medium)
+                    .padding(16.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -166,13 +164,13 @@ fun ConflictBanner(
                     Icon(
                         imageVector = Icons.Outlined.Warning,
                         contentDescription = "Warning",
-                        tint = iconTint,
-                        modifier = Modifier.size(22.dp),
+                        tint = border,
+                        modifier = Modifier.size(20.dp),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Exam Overload & Clash Alert (${unresolvedAlerts.size})",
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        style = MaterialTheme.typography.titleMedium,
                         color = textPrimary,
                     )
                 }
@@ -184,15 +182,15 @@ fun ConflictBanner(
                     modifier = Modifier.size(48.dp),
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Close,
+                        imageVector = Icons.Outlined.Close,
                         contentDescription = "Dismiss",
                         tint = textSecondary,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(20.dp),
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             if (mitigatedAlerts.isNotEmpty()) {
                 Text(
                     text =
@@ -205,33 +203,24 @@ fun ConflictBanner(
             }
             unresolvedAlerts.forEach { alert ->
                 Row(
-                    modifier = Modifier.padding(vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.Top,
                 ) {
                     val isCrit = alert.severity == ConflictSeverity.CRITICAL
-                    val severityBg =
-                        if (isCrit) {
-                            Color(0xFFEF4444).copy(alpha = if (isDark) 0.24f else 0.14f)
-                        } else {
-                            Color(0xFFF59E0B).copy(alpha = if (isDark) 0.24f else 0.16f)
-                        }
-                    val severityColor =
-                        if (isCrit) {
-                            if (isDark) Color(0xFFFCA5A5) else Color(0xFFB91C1C)
-                        } else {
-                            if (isDark) Color(0xFFFDE68A) else Color(0xFF92400E)
-                        }
-
-                    Text(
+                    StatusTag(
                         text = alert.severity.name,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = severityColor,
-                        modifier =
-                            Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(severityBg)
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        containerColor =
+                            if (isCrit) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.surface
+                            },
+                        contentColor =
+                            if (isCrit) {
+                                MaterialTheme.colorScheme.onError
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
@@ -242,23 +231,18 @@ fun ConflictBanner(
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
             val firstAlert = unresolvedAlerts.firstOrNull()
             if (firstAlert != null) {
-                Button(
+                FilledTonalButton(
                     onClick = { onScheduleStudyBlocks(firstAlert.assessmentIdA) },
-                    colors =
-                        ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFB45309),
-                            contentColor = Color.White,
-                        ),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.defaultMinSize(minHeight = 42.dp),
+                    colors = ButtonDefaults.tonalPill(),
+                    contentPadding = PillButtonContentPadding,
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
                 ) {
                     Text(
                         text = "Schedule Smart Study Blocks",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.labelMedium,
                     )
                 }
             }

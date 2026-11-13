@@ -19,8 +19,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -31,7 +31,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SheetState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,15 +43,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.quizradar.app.model.AppSnapshotModel
 import com.quizradar.app.model.AssessmentModel
 import com.quizradar.app.ui.icons.Icons
+import com.quizradar.app.ui.theme.ChipLeadingCheck
 import com.quizradar.app.ui.theme.CoursePalette
-import com.quizradar.app.ui.theme.StatusColors
+import com.quizradar.app.ui.theme.quietCardBorder
+import com.quizradar.app.ui.theme.quietCardColors
+import com.quizradar.app.ui.theme.quietCardElevation
+import com.quizradar.app.ui.theme.quietChipColors
+import com.quizradar.app.ui.theme.quietTextFieldColors
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
@@ -81,14 +84,13 @@ fun SearchSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface,
-        dragHandle = null,
         modifier = modifier.padding(top = statusBarPadding),
     ) {
         Column(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
         ) {
             // Top Bar: Search Input with Clear & Close Buttons
             Row(
@@ -124,14 +126,7 @@ fun SearchSheet(
                         }
                     },
                     singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    colors =
-                        OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        ),
+                    colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
                     modifier =
                         Modifier
                             .weight(1f)
@@ -150,7 +145,7 @@ fun SearchSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Filter Chips Row
             LazyRow(
@@ -161,7 +156,7 @@ fun SearchSheet(
                     val isSelected = selectedType == filterType
                     val label =
                         when (filterType) {
-                            "ALL" -> "All"
+                            "ALL" -> "All types"
                             "QUIZ" -> "Quizzes"
                             "EXAM" -> "Exams"
                             "ASSIGNMENT" -> "Assignments"
@@ -175,23 +170,16 @@ fun SearchSheet(
                             Text(
                                 text = label,
                                 style = MaterialTheme.typography.labelMedium,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                             )
                         },
-                        colors =
-                            FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            ),
-                        border = null,
-                        shape = RoundedCornerShape(9999.dp),
+                        leadingIcon = { if (isSelected) ChipLeadingCheck() },
+                        colors = FilterChipDefaults.quietChipColors(),
+                        modifier = Modifier.defaultMinSize(minHeight = 48.dp),
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Results List Calculation
             val filteredAssessments =
@@ -283,29 +271,34 @@ private fun SearchResultRow(
     assessment: AssessmentModel,
     onClick: () -> Unit,
 ) {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val courseColor = CoursePalette.get(assessment.courseId).color
+    val courseTextColor = CoursePalette.textOnSurface(assessment.courseId, isDark)
     val dateFormatter = remember { DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM) }
     val formattedDate = assessment.dateIso?.let { dateFormatter.format(it) } ?: "—"
+    val urgency = urgencyTagStyle(assessment.daysUntil)
 
-    Surface(
+    Card(
         onClick = onClick,
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
         modifier =
             Modifier
                 .fillMaxWidth()
                 .defaultMinSize(minHeight = 56.dp),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.quietCardColors(),
+        elevation = CardDefaults.quietCardElevation(),
+        border = CardDefaults.quietCardBorder(),
     ) {
         Row(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Course color pill indicator
+            // Course color dot - the same identity mark the timeline row uses.
             Box(
                 modifier =
                     Modifier
-                        .size(width = 4.dp, height = 36.dp)
-                        .clip(RoundedCornerShape(2.dp))
+                        .size(8.dp)
+                        .clip(MaterialTheme.shapes.small)
                         .background(courseColor),
             )
             Spacer(modifier = Modifier.width(12.dp))
@@ -318,65 +311,33 @@ private fun SearchResultRow(
                     Text(
                         text = assessment.courseName ?: assessment.courseId ?: "General",
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = courseTextColor,
                         fontWeight = FontWeight.SemiBold,
                     )
-                    assessment.daysUntil?.let { days ->
-                        val urgencyLabel =
-                            when {
-                                days == 0 -> "TODAY"
-                                days == 1 -> "TOMORROW"
-                                days > 1 -> "IN ${days}d"
-                                else -> "PAST"
-                            }
-                        val urgencyBg =
-                            when {
-                                days == 0 -> MaterialTheme.colorScheme.error
-                                // The old amber measured 2.7:1 with the white
-                                // text on it - unreadable. This one is 5.0:1.
-                                days == 1 -> StatusColors.warningBadge
-                                else -> MaterialTheme.colorScheme.surfaceVariant
-                            }
-                        val urgencyText =
-                            when {
-                                // error/onError is the scheme's own pair: #D93025 with white
-                                // in light (4.8:1), #F87171 with #450A0A in dark (5.9:1).
-                                // A fixed white on the dark error red measured 2.8:1 - the
-                                // TODAY chip was unreadable in dark mode.
-                                days == 0 -> MaterialTheme.colorScheme.onError
-                                // warningBadge is a fixed dark amber in BOTH themes:
-                                // white on it is 5.0:1 either way.
-                                days == 1 -> Color.White
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        Box(
-                            modifier =
-                                Modifier
-                                    .clip(CircleShape)
-                                    .background(urgencyBg)
-                                    .padding(horizontal = 6.dp, vertical = 2.dp),
-                        ) {
-                            Text(
-                                text = urgencyLabel,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = urgencyText,
-                            )
-                        }
+                    if (urgency != null) {
+                        StatusTag(
+                            text = urgency.label,
+                            containerColor = urgency.container,
+                            contentColor = urgency.content,
+                            tabular = true,
+                        )
                     }
                 }
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = assessment.title,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = formattedDate,
-                        style = MaterialTheme.typography.bodySmall,
+                        style =
+                            MaterialTheme.typography.bodySmall.copy(
+                                fontFeatureSettings = "tnum",
+                            ),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     if (assessment.topics.isNotEmpty()) {

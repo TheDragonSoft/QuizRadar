@@ -322,6 +322,151 @@ class QuizRadarEngine(
         return com.quizradar.app.core.notificationIdFor(assessmentId, kind)
     }
 
+    // ------------------------------------------------------------------
+    // Persistent operations — every mutation goes through the canonical
+    // Rust store API (no logic duplicated in Kotlin); reads return the
+    // store's own JSON so the ViewModel layer parses one wire format.
+    // ------------------------------------------------------------------
+
+    override suspend fun saveFeed(
+        feedJson: String,
+        refDate: LocalDate,
+    ): String {
+        return onCore { store.saveFeed(feedJson, nowIso(), refDate.toString()) }
+    }
+
+    override suspend fun deleteFeed(
+        id: String,
+        refDate: LocalDate,
+    ): String {
+        return onCore { store.deleteFeed(id, nowIso(), refDate.toString()) }
+    }
+
+    override suspend fun resetAllData() {
+        onCore { store.resetAll() }
+    }
+
+    override suspend fun recordAttendance(
+        slotId: String,
+        courseId: String,
+        date: LocalDate,
+        status: String,
+        refDate: LocalDate,
+    ): String {
+        return onCore {
+            store.recordAttendance(slotId, courseId, date.toString(), status, nowIso(), refDate.toString())
+        }
+    }
+
+    override suspend fun deleteAttendance(
+        slotId: String,
+        dateIso: String,
+        refDate: LocalDate,
+    ): String {
+        return onCore { store.deleteAttendance(slotId, dateIso, refDate.toString()) }
+    }
+
+    override suspend fun listAttendance(courseId: String?): String {
+        return onCore { store.listAttendance(courseId) }
+    }
+
+    override suspend fun attendanceSummaries(): String {
+        return onCore { store.attendanceSummaries() }
+    }
+
+    override suspend fun setCourseAbsenceLimit(
+        courseId: String,
+        maxAbsences: UInt?,
+        refDate: LocalDate,
+    ): String {
+        return onCore {
+            store.setCourseAbsenceLimit(courseId, maxAbsences, nowIso(), refDate.toString())
+        }
+    }
+
+    override suspend fun logStudySession(
+        sessionJson: String,
+        refDate: LocalDate,
+    ): String {
+        return onCore { store.logStudySession(sessionJson, nowIso(), refDate.toString()) }
+    }
+
+    override suspend fun listStudySessions(courseId: String?): String {
+        return onCore { store.listStudySessions(courseId) }
+    }
+
+    override suspend fun getStudyAnalytics(refDate: LocalDate): String {
+        return onCore { store.getStudyAnalytics(refDate.toString()) }
+    }
+
+    // ------------------------------------------------------------------
+    // Parity surface for later UI (assessment CRUD, GPA, flashcards,
+    // mistake bank, attempt history).
+    // ------------------------------------------------------------------
+
+    override suspend fun upsertAssessment(
+        assessmentJson: String,
+        refDate: LocalDate,
+    ): String {
+        return onCore { store.upsertAssessment(assessmentJson, nowIso(), refDate.toString()) }
+    }
+
+    override suspend fun deleteAssessment(
+        id: String,
+        refDate: LocalDate,
+    ): String {
+        return onCore { store.deleteAssessment(id, nowIso(), refDate.toString()) }
+    }
+
+    override fun calculateGpa(
+        coursesJson: String,
+        assessmentsJson: String,
+        gradesJson: String,
+        scale: String,
+    ): String {
+        return com.quizradar.app.core.calculateGpa(coursesJson, assessmentsJson, gradesJson, scale)
+    }
+
+    override suspend fun listQuizAttempts(assessmentId: String?): String {
+        return onCore { store.listQuizAttempts(assessmentId) }
+    }
+
+    override suspend fun saveQuizAttempt(
+        attemptJson: String,
+        mistakesJson: String,
+        refDate: LocalDate,
+    ): String {
+        return onCore { store.saveQuizAttempt(attemptJson, mistakesJson, nowIso(), refDate.toString()) }
+    }
+
+    override suspend fun listMistakes(assessmentId: String?): String {
+        return onCore { store.listMistakes(assessmentId) }
+    }
+
+    override suspend fun resolveMistake(mistakeId: String): String {
+        return onCore { store.resolveMistake(mistakeId, nowIso()) }
+    }
+
+    override suspend fun upsertFlashcard(cardJson: String): String {
+        return onCore { store.upsertFlashcard(cardJson, nowIso()) }
+    }
+
+    override suspend fun listFlashcards(courseId: String?): String {
+        return onCore { store.listFlashcards(courseId) }
+    }
+
+    override suspend fun deleteFlashcard(cardId: String): String {
+        return onCore { store.deleteFlashcard(cardId) }
+    }
+
+    override suspend fun reviewFlashcard(
+        cardId: String,
+        correct: Boolean,
+        refDate: LocalDate,
+    ): String {
+        return onCore { store.reviewFlashcard(cardId, correct, refDate.toString(), nowIso()) }
+    }
+
     /**
      * The OAuth client ids the token callback uses for silent refreshes.
      *
@@ -359,10 +504,15 @@ class QuizRadarEngine(
     suspend fun runNativeSync(
         syncConfig: FfiSyncConfig,
         progress: FfiSyncProgressListener,
+        geminiApiKey: String? = null,
     ): String {
         return onCore {
             val googleTokens = if (syncConfig.gmailEnabled || syncConfig.classroomEnabled) googleFfiTokens() else null
             val microsoftTokens = if (syncConfig.teamsEnabled) microsoftFfiTokens() else null
+            // The key is passed through for the core's CONSENT gate to judge
+            // (A07): with `gemini_enabled` off the core builds no provider and
+            // sends nothing, even with the key in hand. The core owns the
+            // gate so the shell cannot drift from the desktop semantics.
             store.runNativeSync(
                 syncConfig,
                 todayIso(),
@@ -372,8 +522,66 @@ class QuizRadarEngine(
                 progress,
                 googleTokens,
                 microsoftTokens,
+                geminiApiKey,
             )
         }
+    }
+
+    /**
+     * Requests cancellation of the in-flight native scan (A07). The core
+     * aborts the fetch phase and persists NOTHING for the cancelled run; its
+     * report carries `"cancelled": true`. Safe to call when no scan runs.
+     */
+    override fun cancelScan() {
+        store.cancelNativeSync()
+    }
+
+    /**
+     * Consent-gated practice-quiz generation (A07): the core decides between
+     * Gemini Flash-Lite and the honest on-device fallback from its own
+     * `gemini_enabled` consent flag, so this method simply passes the
+     * Keystore-held key through (header-only transport).
+     */
+    override suspend fun generatePracticeQuizAi(
+        assessmentJson: String,
+        geminiApiKey: String?,
+    ): String {
+        return onCore { store.generatePracticeQuiz(assessmentJson, geminiApiKey) }
+    }
+
+    /**
+     * Consent-gated "Optimize with AI" study plan (A07): returns
+     * `{"source": "ai"|"deterministic", "note": ..., "tasks": ...}`.
+     */
+    override suspend fun optimizeStudyPlan(
+        refDate: LocalDate,
+        geminiApiKey: String?,
+    ): String {
+        return onCore { store.optimizeStudyPlan(refDate.toString(), geminiApiKey) }
+    }
+
+    /**
+     * Weighted grade target (`01` §4.2) — thin pass-through to the shared
+     * Rust calculator (unknown weights are an honestly-labeled
+     * equal-weight assumption there).
+     */
+    override suspend fun calculateGradeTarget(
+        courseId: String,
+        assessmentsJson: String,
+        gradesJson: String,
+        scale: String,
+        targetLetter: String,
+    ): String {
+        // The shared calculator is a top-level exported fn (`ffi.rs`), not a
+        // NativeStore method — call the generated package-level binding the
+        // same way the GPA path does above.
+        return com.quizradar.app.core.calculateGradeTarget(
+            courseId,
+            assessmentsJson,
+            gradesJson,
+            scale,
+            targetLetter,
+        )
     }
 
     /**

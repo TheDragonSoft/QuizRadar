@@ -405,6 +405,36 @@ function popupWatcher(context, { label }) {
 }
 
 /**
+ * Summarise the popups a watcher saw, for a failure message.
+ *
+ * Only the origin and path of each popup are reported: a query string or a fragment
+ * can carry an OAuth code, a token or a session identifier, so it is never included.
+ *
+ * @param {import("playwright").Page[]} pages Popup pages observed by the watcher.
+ * @returns {string} A short, redacted description, or an empty string when there was none.
+ */
+function popupSummary(pages) {
+  const entries = [];
+  for (const page of Array.isArray(pages) ? pages : []) {
+    if (!page) continue;
+    try {
+      if (typeof page.isClosed === "function" && page.isClosed()) continue;
+      const raw = typeof page.url === "function" ? page.url() : "";
+      if (!raw) continue;
+      const parsed = new URL(raw);
+      if (!parsed.origin || parsed.origin === "null") continue;
+      const entry = trimTo(`${parsed.origin}${parsed.pathname}`, 120);
+      if (entry) entries.push(entry);
+    } catch {
+      /* the popup may already be closed, or its url may not be parsable */
+    }
+  }
+  if (entries.length === 0) return "";
+  if (entries.length === 1) return ` (popup was at ${entries[0]})`;
+  return ` (popups were at ${entries.join(", ")})`;
+}
+
+/**
  * Check whether a locator sits inside a card that belongs to one provider only.
  *
  * @param {import("playwright").Locator} locator Element to scope.
@@ -715,6 +745,10 @@ export async function readAccountState(page) {
  * The Google popup is opened by the app itself, so the caller has to finish the
  * account chooser in that window. The function only waits for the outcome toast.
  *
+ * When the sign-in fails or times out, the detail names where the popup had
+ * reached, reduced to its origin and path, so that no OAuth code, token or
+ * session identifier can reach the evidence bundle.
+ *
  * @param {{ page: import("playwright").Page, context: import("playwright").BrowserContext, timeoutMs?: number }} options
  *   Page, browser context and the maximum wait for the outcome toast.
  * @returns {Promise<{ ok: boolean, status: string, detail: string }>} The outcome.
@@ -757,21 +791,27 @@ export async function signInWithGoogle({ page, context, timeoutMs }) {
         detail: trimTo(outcome.message || "Google account connected.", 200),
       };
     }
+    const popupWhere = popupSummary(watcher ? watcher.pages : []);
     if (outcome.message) {
       if (outcome.message.toLowerCase().includes("needs a usable client id")) {
+        const reason = failureDetail("Google sign-in needs a usable client id", outcome.message);
         return {
           ok: false,
           status: "failed",
-          detail: failureDetail("Google sign-in needs a usable client id", outcome.message),
+          detail: `${reason}${popupWhere}`,
         };
       }
       return {
         ok: false,
         status: "failed",
-        detail: failureDetail("Google sign-in failed", outcome.message),
+        detail: `${failureDetail("Google sign-in failed", outcome.message)}${popupWhere}`,
       };
     }
-    return { ok: false, status: "timeout", detail: "No Google sign-in toast within the timeout." };
+    return {
+      ok: false,
+      status: "timeout",
+      detail: `No Google sign-in toast within the timeout.${popupWhere}`,
+    };
   } catch {
     return { ok: false, status: "failed", detail: "Google sign-in could not be completed." };
   } finally {
@@ -784,6 +824,10 @@ export async function signInWithGoogle({ page, context, timeoutMs }) {
  *
  * The web tier has no built-in Microsoft client id, so the function refuses to open
  * a popup when the Settings override is empty.
+ *
+ * When the sign-in fails or times out, the detail names where the popup had
+ * reached, reduced to its origin and path, so that no OAuth code, token or
+ * session identifier can reach the evidence bundle.
  *
  * @param {{ page: import("playwright").Page, context: import("playwright").BrowserContext, timeoutMs?: number }} options
  *   Page, browser context and the maximum wait for the outcome toast.
@@ -846,17 +890,18 @@ export async function signInWithMicrosoft({ page, context, timeoutMs }) {
         detail: trimTo(outcome.message || "Microsoft connected.", 200),
       };
     }
+    const popupWhere = popupSummary(watcher ? watcher.pages : []);
     if (outcome.message) {
       return {
         ok: false,
         status: "failed",
-        detail: failureDetail("Microsoft sign-in failed", outcome.message),
+        detail: `${failureDetail("Microsoft sign-in failed", outcome.message)}${popupWhere}`,
       };
     }
     return {
       ok: false,
       status: "timeout",
-      detail: "No Microsoft sign-in toast within the timeout.",
+      detail: `No Microsoft sign-in toast within the timeout.${popupWhere}`,
     };
   } catch {
     return { ok: false, status: "failed", detail: "Microsoft sign-in could not be completed." };
@@ -868,6 +913,10 @@ export async function signInWithMicrosoft({ page, context, timeoutMs }) {
 /**
  * Grant Microsoft mail and calendar scanning access from the Account settings
  * section.
+ *
+ * When the consent fails or times out, the detail names where the popup had
+ * reached, reduced to its origin and path, so that no OAuth code, token or
+ * session identifier can reach the evidence bundle.
  *
  * @param {{ page: import("playwright").Page, context: import("playwright").BrowserContext, timeoutMs?: number }} options
  *   Page, browser context and the maximum wait for the outcome toast.
@@ -917,17 +966,18 @@ export async function grantMicrosoftScanAccess({ page, context, timeoutMs }) {
         detail: trimTo(outcome.message || "Microsoft mail and calendar access granted.", 200),
       };
     }
+    const popupWhere = popupSummary(watcher ? watcher.pages : []);
     if (outcome.message) {
       return {
         ok: false,
         status: "failed",
-        detail: failureDetail("Microsoft consent failed", outcome.message),
+        detail: `${failureDetail("Microsoft consent failed", outcome.message)}${popupWhere}`,
       };
     }
     return {
       ok: false,
       status: "timeout",
-      detail: "No Microsoft consent toast within the timeout.",
+      detail: `No Microsoft consent toast within the timeout.${popupWhere}`,
     };
   } catch {
     return { ok: false, status: "failed", detail: "Microsoft consent could not be completed." };

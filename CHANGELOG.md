@@ -2,6 +2,20 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.11.2] — 2026-11-13
+
+### 🤝 Agent & Contributor Summaries
+
+- **[core]** Gmail scan no longer discards search-phase notes: a second shadowing notes declaration silently dropped per-query truncation warnings and the partial-query-failure warning; the partial-failure note now names every failed query with its error instead of only the first. Email cache ordering and CACHED_REFRESH_LIMIT selection no longer treat Gmail ids as a chronological contract (per-query newest-first concatenation is not globally newest-first); both rank by internalDate with id as deterministic tiebreak. Four regression tests added; GmailRunStats fields unchanged so no UniFFI/WASM contract regen.
+
+### 🐛 Fixes & Performance
+
+- `9050a21` fix(core): preserve gmail search warnings and order email cache by internal date
+
+### 🔧 Maintenance, Docs & Tests
+
+- `ff8ab67` Merge pull request #24 from TheDragonSoft/fix/gmail-scan-notes-ordering
+
 ## [5.11.1] — 2026-11-13
 
 ### 🤝 Agent & Contributor Summaries

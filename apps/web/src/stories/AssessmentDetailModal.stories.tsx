@@ -1,18 +1,28 @@
 import type { Story, StoryDefault } from "@ladle/react";
-import { AssessmentDetailModal } from "../components/AssessmentDetailModal";
+import { ModalStack } from "../components/ModalStack";
+import { useAppStore } from "../state/store";
 import { seedWorkbench } from "./workbenchFixtures";
+import "./modalSetup";
 
 export default { title: "Components / Assessment Detail Modal" } satisfies StoryDefault;
 
-/** The full detail modal for the fixture's Teams midterm (room present). */
+/**
+ * The detail modal through the REAL `ModalStack` — backdrop, centering and
+ * shell chrome exactly as the app renders it. (Rendering the bare component
+ * looked broken: an edge-to-edge sheet glued to the canvas with no dimmed
+ * page behind it.)
+ */
+
 export const MidtermWithRoom: Story = () => {
   seedWorkbench({ activeModalAssessmentId: "teams-1" });
-  return <AssessmentDetailModal modalId="assessment-detail" onClose={() => undefined} />;
+  useAppStore.setState({ openModals: [{ id: "assessment-detail" }] });
+  return <ModalStack />;
 };
 
 /** The fixture's Moodle quiz: no room on the wire — the modal must render
  * the honest "—" placeholder, never a default room string. */
 export const OnlineQuizNoRoom: Story = () => {
   seedWorkbench({ activeModalAssessmentId: "moodle-1" });
-  return <AssessmentDetailModal modalId="assessment-detail" onClose={() => undefined} />;
+  useAppStore.setState({ openModals: [{ id: "assessment-detail" }] });
+  return <ModalStack />;
 };

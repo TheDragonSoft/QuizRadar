@@ -12,8 +12,10 @@
  *   2. Workspace crate versions in `Cargo.lock` (`quizradar-core`, `quizradar-desktop`, `quizradar-wasm`)
  *   3. `docs/STATUS.md` live version header (if present)
  *   4. `CHANGELOG.md` (prepends/replaces `## [X.Y.Z] — YYYY-MM-DD` with agent summaries + commits)
- *   5. `docs/worklog/YYYY-MM.md` (archives full agent verification & handoff notes)
- *   6. Deletes consumed `changes/*.md` fragments so `changes/` starts clean for the next cycle.
+ *   5. `apps/web/public/sw.js` (restamps the version strings baked into the tracked
+ *      PWA service worker so its cache names follow the release; when bump != none)
+ *   6. `docs/worklog/YYYY-MM.md` (archives full agent verification & handoff notes)
+ *   7. Deletes consumed `changes/*.md` fragments so `changes/` starts clean for the next cycle.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
@@ -239,6 +241,34 @@ function renderWorklogEntries(version, dateStr, usedFragments) {
   return blocks.join("\n");
 }
 
+/**
+ * Restamp the version strings baked into the tracked PWA service worker
+ * (`apps/web/public/sw.js`).
+ *
+ * The service worker is a minified Vite bundle built from `apps/web/src/sw.ts`
+ * by `tooling/build-sw.mjs`, so it embeds the release version through the
+ * generated `version.ts` sink. A release bump that skips it leaves the
+ * previous release's precache active, which fails the PWA precache test
+ * (`apps/web/src/pwa.test.tsx`). The bundle is minified, so its variable
+ * names (`W`, `m`, …) may change on any rebuild — only the version STRINGS
+ * are patched, never identifiers.
+ *
+ * Returns the patched content, or the input unchanged when it embeds neither
+ * the old plain version nor the old `quizradar-v<old>` cache-name string
+ * (a future service worker may stop embedding a version — the caller decides
+ * whether that is an expected no-op or a warning).
+ */
+export function patchServiceWorkerVersion(content, oldVersion, nextVersion) {
+  const oldCacheName = `quizradar-v${oldVersion}`;
+  const nextCacheName = `quizradar-v${nextVersion}`;
+  if (!content.includes(oldVersion) && !content.includes(oldCacheName)) {
+    return content;
+  }
+  // The cache-name string contains the plain version, so replace it first;
+  // the plain pass then catches the remaining bare version occurrences.
+  return content.split(oldCacheName).join(nextCacheName).split(oldVersion).join(nextVersion);
+}
+
 const changelogPreview =
   computedBump !== "none" ? renderChangelogSection(nextVersion, todayIso, fragments, commits) : "";
 
@@ -328,9 +358,43 @@ if (computedBump !== "none") {
   const existingChangelog = existsSync(changelogPath) ? readFileSync(changelogPath, "utf8") : "";
   const updatedChangelog = upsertChangelogSection(existingChangelog, nextVersion, changelogPreview);
   writeFileSync(changelogPath, updatedChangelog, "utf8");
+
+  // 5. Restamp the tracked PWA service worker so its baked-in cache names
+  //    follow the release (it is a minified bundle that embeds the version
+  //    strings from the generated version.ts sink; only strings are patched).
+  const swPath = path.join(repoRoot, "apps/web/public/sw.js");
+  if (existsSync(swPath)) {
+    const originalSw = readFileSync(swPath, "utf8");
+    const patchedSw = patchServiceWorkerVersion(originalSw, currentVersion, nextVersion);
+    if (patchedSw !== originalSw) {
+      // Honest guard: the release must never ship a service worker that is
+      // still stamped with the previous version (it would fail the PWA
+      // precache test and serve a stale offline cache).
+      if (patchedSw.includes(currentVersion) || !patchedSw.includes(nextVersion)) {
+        console.error(
+          `Restamping apps/web/public/sw.js did not take effect: ${currentVersion} is still present or ${nextVersion} is missing — refusing to complete the rollup.`,
+        );
+        process.exit(1);
+      }
+      writeFileSync(swPath, patchedSw, "utf8");
+      console.log(
+        `Restamped apps/web/public/sw.js -> ${nextVersion} (cache prefix quizradar-v${nextVersion}).`,
+      );
+    } else if (originalSw.includes(nextVersion)) {
+      console.log(`apps/web/public/sw.js is already stamped ${nextVersion} — nothing to do.`);
+    } else {
+      console.warn(
+        `WARNING: apps/web/public/sw.js embeds neither ${currentVersion} nor quizradar-v${currentVersion} — leaving it untouched (did tooling/build-sw.mjs change shape?).`,
+      );
+    }
+  } else {
+    console.warn(
+      "WARNING: apps/web/public/sw.js not found — skipping the tracked service worker restamp.",
+    );
+  }
 }
 
-// 5. Archive consumed fragments into docs/worklog/YYYY-MM.md and delete from changes/
+// 6. Archive consumed fragments into docs/worklog/YYYY-MM.md and delete from changes/
 if (fragments.length > 0) {
   const monthKey = todayIso.slice(0, 7);
   const worklogDir = path.join(repoRoot, "docs/worklog");

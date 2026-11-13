@@ -87,6 +87,9 @@ export default defineConfig({
         "**/testdata/**",
         "**/e2e/**",
         "e2e/**",
+        // Ladle workbench stories: dev-only tooling, never shipped or covered.
+        "src/stories/**",
+        "**/*.stories.{ts,tsx}",
         "src/test/**",
       ],
     },

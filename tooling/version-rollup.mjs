@@ -130,7 +130,10 @@ function renderChangelogSection(version, dateStr, usedFragments, usedCommits) {
   if (usedFragments.length > 0) {
     lines.push("### 🤝 Agent & Contributor Summaries");
     lines.push("");
-    for (const f of usedFragments) {
+    for (const [index, f] of usedFragments.entries()) {
+      // Keep exactly one blank line between fragment bullet blocks: Prettier
+      // requires it once a bullet carries indented continuation lines.
+      if (index > 0 && lines[lines.length - 1] !== "") lines.push("");
       const surfaceTag = f.surfaces.length > 0 ? `**[${f.surfaces.join(", ")}]** ` : "";
       const summaryLines = f.summary.split("\n");
       lines.push(`- ${surfaceTag}${summaryLines[0]}`);

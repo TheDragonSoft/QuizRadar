@@ -840,7 +840,11 @@ export function SettingsIntegrationsSection() {
             <input
               id="settings-ms-client-id"
               type="text"
-              placeholder="Leave empty to use built-in Microsoft client"
+              placeholder={
+                isBrowserTier
+                  ? "Required on the web tier — paste your Azure app (client) id"
+                  : "Leave empty to use built-in Microsoft client"
+              }
               value={config.teamsClientId || ""}
               onChange={(e) => updateConfig({ teamsClientId: e.target.value.trim() || undefined })}
               className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-base sm:text-xs text-[var(--text)] focus:border-[var(--accent)] focus:outline-none"

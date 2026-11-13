@@ -16,13 +16,13 @@ use crate::plan::dashboard::{build_dashboard_summary, radar_order};
 use crate::plan::study_blocks::{block_date_for, block_id_for, study_block_candidates};
 use crate::plan::tasks::build_study_tasks;
 use crate::sources::merge_preserving_user_fields;
-use crate::sources::sync::{run_sync as core_run_sync, SyncConfig, SyncInput};
+use crate::sources::sync::{run_sync_with_ai as core_run_sync_with_ai, SyncConfig, SyncInput};
 use crate::sources::{SourceProgress, SourceStatus, TokenProvider};
 use crate::store::backup::{DriveBackupClient, PushOutcome};
 use crate::store::Store;
 use crate::types::{
     AcademicTrack, Assessment, CachedEmail, CompletedTopics, Course, CustomCalendarEvent,
-    ScheduleData, ScheduleSlot,
+    FeedConfig, ScheduleData, ScheduleSlot,
 };
 use crate::CORE_VERSION;
 use chrono::{FixedOffset, NaiveDate};
@@ -160,6 +160,34 @@ pub fn calculate_gpa(
         serde_json::from_str(&grades_json)?;
     let summary = crate::plan::gpa::calculate_gpa(&courses, &assessments, &grades, &scale);
     Ok(serde_json::to_string(&summary)?)
+}
+
+/// Thin UI-facing weighted grade-target calculator (`01` §4.2): given one
+/// course's assessments, the recorded grades, the grading scale and the
+/// requested target letter, returns the weighted percentage earned so far
+/// and the average still needed on the remaining weight. Unknown weights are
+/// handled as an honestly-labeled equal-weight assumption (`equal_weight_assumed`
+/// plus `note`) — never silently treated as known. The full result schema
+/// lives in [`crate::plan::grade_target::GradeTargetResult`].
+#[uniffi::export]
+pub fn calculate_grade_target(
+    course_id: String,
+    assessments_json: String,
+    grades_json: String,
+    scale: String,
+    target_letter: String,
+) -> Result<String, QuizRadarFfiError> {
+    let assessments: Vec<crate::types::Assessment> = serde_json::from_str(&assessments_json)?;
+    let grades: std::collections::HashMap<String, crate::types::GradeRecord> =
+        serde_json::from_str(&grades_json)?;
+    let result = crate::plan::grade_target::calculate_grade_target(
+        &course_id,
+        &assessments,
+        &grades,
+        &scale,
+        &target_letter,
+    );
+    Ok(serde_json::to_string(&result)?)
 }
 
 #[uniffi::export]
@@ -525,6 +553,13 @@ pub struct NativeStore {
     /// parity): two overlapping runs would both load the same gcal map and
     /// both POST the same assessments as new events.
     sync_in_flight: AtomicBool,
+    /// Scan-cancellation flag for the CURRENT run. Only the single-flight
+    /// owner resets it (at run start), so a stale flag can never leak into a
+    /// later run; `cancel_native_sync` sets it and wakes the notifier.
+    scan_cancelled: AtomicBool,
+    /// Wakes the awaiting scan so a cancel aborts the fetch phase instead of
+    /// waiting out the source timeouts.
+    scan_cancel_notify: tokio::sync::Notify,
 }
 
 /// Releases the single-flight gate even when the run errors or the future is
@@ -552,6 +587,67 @@ impl NativeStore {
         }
         Ok(SyncFlightGuard(&self.sync_in_flight))
     }
+
+    /// Marks the current scan as cancelled and wakes the awaiting run so the
+    /// fetch phase aborts promptly. Safe to call when nothing is running:
+    /// the flag is only read by the single-flight owner and reset by it at
+    /// run start.
+    fn request_scan_cancel(&self) {
+        self.scan_cancelled.store(true, Ordering::Release);
+        self.scan_cancel_notify.notify_waiters();
+    }
+
+    /// Builds the consent-gated BYOK Gemini provider, or `None` with an
+    /// honest reason (audit A07: the consent toggle is enforced HERE, at the
+    /// core boundary — a shell that keeps a saved key must not be able to
+    /// send a request while AI is disabled).
+    ///
+    /// The key travels into the provider memory only; it never reaches the
+    /// store, a log line or an error string, and it rides the
+    /// `x-goog-api-key` header exclusively (never an OAuth bearer).
+    async fn consented_gemini_provider(
+        &self,
+        api_key: Option<String>,
+    ) -> (Option<crate::ai::gemini::GeminiProvider>, Option<String>) {
+        let consent = self
+            .inner
+            .get_config_bool("gemini_enabled".to_string(), false)
+            .await
+            .unwrap_or(false);
+        let key = api_key
+            .map(|k| k.trim().to_string())
+            .filter(|k| !k.is_empty());
+        if !consent {
+            // Zero AI requests: no provider is even constructed, so a
+            // retained key cannot send anything (A07).
+            return (None, None);
+        }
+        let Some(key) = key else {
+            return (
+                None,
+                Some(
+                    "AI is enabled but no Gemini key is saved — the local heuristic was used instead of Gemini."
+                        .to_string(),
+                ),
+            );
+        };
+        let kv: std::sync::Arc<dyn crate::ai::provider::QuotaKv> =
+            std::sync::Arc::new(self.inner.quota_kv());
+        let ledger = std::sync::Arc::new(crate::ai::provider::QuotaLedger::new(kv, None));
+        match crate::ai::gemini::GeminiProvider::production(
+            Some(key),
+            std::sync::Arc::new(chrono::Utc::now),
+            Some(ledger),
+        ) {
+            Ok(provider) => (Some(provider), None),
+            Err(e) => (
+                None,
+                Some(format!(
+                    "Gemini could not be initialized ({e}) — the local heuristic was used instead."
+                )),
+            ),
+        }
+    }
 }
 
 #[uniffi::export]
@@ -561,6 +657,8 @@ pub fn open_native_store(db_path: String) -> Result<Arc<NativeStore>, QuizRadarF
     Ok(Arc::new(NativeStore {
         inner: store,
         sync_in_flight: AtomicBool::new(false),
+        scan_cancelled: AtomicBool::new(false),
+        scan_cancel_notify: tokio::sync::Notify::new(),
     }))
 }
 
@@ -571,6 +669,8 @@ pub fn open_in_memory_native_store() -> Result<Arc<NativeStore>, QuizRadarFfiErr
     Ok(Arc::new(NativeStore {
         inner: store,
         sync_in_flight: AtomicBool::new(false),
+        scan_cancelled: AtomicBool::new(false),
+        scan_cancel_notify: tokio::sync::Notify::new(),
     }))
 }
 
@@ -735,6 +835,34 @@ impl NativeStore {
         Ok(serde_json::to_string(&snapshot)?)
     }
 
+    /// Feed upsert (https-only URL enforced by the store).
+    pub async fn save_feed(
+        &self,
+        feed_json: String,
+        updated_at: String,
+        ref_date_iso: String,
+    ) -> Result<String, QuizRadarFfiError> {
+        let feed: FeedConfig = serde_json::from_str(&feed_json)?;
+        let ref_date = parse_ref_date(&ref_date_iso)?;
+        let snapshot = self.inner.save_feed(feed, updated_at, ref_date).await?;
+        Ok(serde_json::to_string(&snapshot)?)
+    }
+
+    /// Feed delete. A deleted feed stays deleted and touches nothing else —
+    /// the snapshot returned is the whole app state, so the caller can see
+    /// its unrelated config survived (audit "deleted feed stays deleted
+    /// without changing preferences").
+    pub async fn delete_feed(
+        &self,
+        id: String,
+        updated_at: String,
+        ref_date_iso: String,
+    ) -> Result<String, QuizRadarFfiError> {
+        let ref_date = parse_ref_date(&ref_date_iso)?;
+        let snapshot = self.inner.delete_feed(id, updated_at, ref_date).await?;
+        Ok(serde_json::to_string(&snapshot)?)
+    }
+
     pub async fn set_config_string(
         &self,
         key: String,
@@ -793,6 +921,45 @@ impl NativeStore {
         Ok(serde_json::to_string(&report)?)
     }
 
+    /// The transactional whole-store reset (`store::Store::reset_all`): one
+    /// SQLite transaction wipes every owned table — feeds, config, tokens
+    /// metadata, attendance, flashcards, quiz attempts, mistake bank, study
+    /// sessions, email caches included. The shell must NOT hand-roll a
+    /// partial wipe around this (audit A05).
+    pub async fn reset_all(&self) -> Result<(), QuizRadarFfiError> {
+        self.inner.reset_all().await?;
+        Ok(())
+    }
+
+    pub async fn upsert_assessment(
+        &self,
+        assessment_json: String,
+        updated_at: String,
+        ref_date_iso: String,
+    ) -> Result<String, QuizRadarFfiError> {
+        let assessment: Assessment = serde_json::from_str(&assessment_json)?;
+        let ref_date = parse_ref_date(&ref_date_iso)?;
+        let snapshot = self
+            .inner
+            .upsert_assessment(assessment, updated_at, ref_date)
+            .await?;
+        Ok(serde_json::to_string(&snapshot)?)
+    }
+
+    pub async fn delete_assessment(
+        &self,
+        id: String,
+        updated_at: String,
+        ref_date_iso: String,
+    ) -> Result<String, QuizRadarFfiError> {
+        let ref_date = parse_ref_date(&ref_date_iso)?;
+        let snapshot = self
+            .inner
+            .delete_assessment(id, updated_at, ref_date)
+            .await?;
+        Ok(serde_json::to_string(&snapshot)?)
+    }
+
     pub async fn record_attendance(
         &self,
         slot_id: String,
@@ -826,6 +993,38 @@ impl NativeStore {
         };
         let snapshot = self.inner.record_attendance(entry, ref_date).await?;
         Ok(serde_json::to_string(&snapshot)?)
+    }
+
+    /// Deletes the persisted attendance mark for one slot occurrence - the
+    /// write half of the toggle cycle's excused -> clear step. The deleted id
+    /// is the same deterministic `att-{slot_id}-{date_iso}` that
+    /// [`Self::record_attendance`] mints. Returns the post-delete snapshot.
+    pub async fn delete_attendance(
+        &self,
+        slot_id: String,
+        date_iso: String,
+        ref_date_iso: String,
+    ) -> Result<String, QuizRadarFfiError> {
+        let ref_date = parse_ref_date(&ref_date_iso)?;
+        let snapshot = self
+            .inner
+            .delete_attendance(slot_id, date_iso, ref_date)
+            .await?;
+        Ok(serde_json::to_string(&snapshot)?)
+    }
+
+    pub async fn list_attendance(
+        &self,
+        course_id: Option<String>,
+    ) -> Result<String, QuizRadarFfiError> {
+        let entries = self.inner.list_attendance(course_id).await?;
+        Ok(serde_json::to_string(&entries)?)
+    }
+
+    /// Per-course attendance summaries derived from the persisted records.
+    pub async fn attendance_summaries(&self) -> Result<String, QuizRadarFfiError> {
+        let summaries = self.inner.attendance_summaries().await?;
+        Ok(serde_json::to_string(&summaries)?)
     }
 
     pub async fn set_course_absence_limit(
@@ -867,6 +1066,16 @@ impl NativeStore {
         Ok(serde_json::to_string(&analytics)?)
     }
 
+    /// The persisted study-session history (optionally per course) — the
+    /// read twin of [`Self::log_study_session`].
+    pub async fn list_study_sessions(
+        &self,
+        course_id: Option<String>,
+    ) -> Result<String, QuizRadarFfiError> {
+        let sessions = self.inner.list_study_sessions(course_id).await?;
+        Ok(serde_json::to_string(&sessions)?)
+    }
+
     pub async fn save_quiz_attempt(
         &self,
         attempt_json: String,
@@ -890,6 +1099,15 @@ impl NativeStore {
     ) -> Result<String, QuizRadarFfiError> {
         let mistakes = self.inner.list_mistakes(assessment_id).await?;
         Ok(serde_json::to_string(&mistakes)?)
+    }
+
+    /// The persisted quiz-attempt history (optionally per assessment).
+    pub async fn list_quiz_attempts(
+        &self,
+        assessment_id: Option<String>,
+    ) -> Result<String, QuizRadarFfiError> {
+        let attempts = self.inner.list_quiz_attempts(assessment_id).await?;
+        Ok(serde_json::to_string(&attempts)?)
     }
 
     pub async fn resolve_mistake(
@@ -972,6 +1190,22 @@ impl NativeStore {
         mime: String,
         api_key: String,
     ) -> Result<String, QuizRadarFfiError> {
+        // A07 consent boundary (desktop `commands/ai.rs::extract_schedule`
+        // parity): a RETAINED key must not permit a send while AI is
+        // disabled — the preference is enforced here, at the core, not only
+        // in whichever shell happens to check it.
+        let consent = self
+            .inner
+            .get_config_bool("gemini_enabled".to_string(), false)
+            .await
+            .unwrap_or(false);
+        if !consent {
+            return Err(QuizRadarFfiError::Validation {
+                msg: "AI features are turned off in Settings, so this request cannot leave \
+                      the device. Turn Gemini back on to import a timetable image."
+                    .to_string(),
+            });
+        }
         let key = api_key.trim();
         if key.is_empty() {
             return Err(QuizRadarFfiError::Validation {
@@ -996,6 +1230,177 @@ impl NativeStore {
             "schedule": extracted.schedule,
             "dropped_courses": extracted.dropped_courses,
             "dropped_slots": extracted.dropped_slots,
+        });
+        Ok(serde_json::to_string(&payload)?)
+    }
+
+    /// Requests cancellation of the in-flight native scan. The abort is
+    /// honoured during the fetch phase and re-checked before every persist,
+    /// so a cancelled scan leaves the radar, the email cache and the
+    /// 'Last synced' stamp exactly as they were. The report of the cancelled
+    /// run carries `"cancelled": true` — the shell may show that honestly
+    /// instead of a fake success.
+    #[uniffi::method]
+    pub fn cancel_native_sync(&self) {
+        self.request_scan_cancel();
+    }
+
+    /// Consent-gated practice-quiz generation (audit A07): with the store's
+    /// `gemini_enabled` consent flag on AND a BYOK key supplied, the quiz is
+    /// authored by Gemini Flash-Lite through the real provider + quota
+    /// ledger; anything else (consent off, no key, a provider that cannot be
+    /// constructed, provider error, quota, transport) falls back to the
+    /// deterministic on-device authoring — the same
+    /// [`crate::ai::practice_fallback`] path the free function uses.
+    ///
+    /// The provenance labels travel in the payload itself
+    /// (`generated_by_ai` / `authored_locally` / `credit`), and when the AI
+    /// attempt was made but did NOT author the quiz, the extra
+    /// `fallback_reason` field names why — a labeled fallback, never a
+    /// silent one.
+    #[uniffi::method(async_runtime = "tokio")]
+    pub async fn generate_practice_quiz(
+        &self,
+        assessment_json: String,
+        gemini_api_key: Option<String>,
+    ) -> Result<String, QuizRadarFfiError> {
+        let assessment: Assessment = serde_json::from_str(&assessment_json)?;
+        let consent = self
+            .inner
+            .get_config_bool("gemini_enabled".to_string(), false)
+            .await
+            .unwrap_or(false);
+        let mut fallback_reason = if consent {
+            None
+        } else {
+            Some(
+                "AI features are turned off in Settings - the quiz was generated on-device."
+                    .to_string(),
+            )
+        };
+
+        let quiz = if consent {
+            let key = gemini_api_key
+                .map(|k| k.trim().to_string())
+                .filter(|k| !k.is_empty());
+            if let Some(key) = key {
+                let kv: std::sync::Arc<dyn crate::ai::provider::QuotaKv> =
+                    std::sync::Arc::new(self.inner.quota_kv());
+                let ledger = std::sync::Arc::new(crate::ai::provider::QuotaLedger::new(kv, None));
+                match crate::ai::gemini::GeminiProvider::production(
+                    Some(key.clone()),
+                    std::sync::Arc::new(chrono::Utc::now),
+                    Some(ledger),
+                ) {
+                    Ok(provider) => {
+                        match crate::ai::tasks::generate_practice(&provider, &assessment).await {
+                            Ok(quiz) => quiz,
+                            Err(e) => {
+                                fallback_reason = Some(format!(
+                                    "Gemini was unavailable ({}) - the quiz was generated on-device.",
+                                    e.reason()
+                                ));
+                                crate::ai::practice_fallback::generate_practice_locally(&assessment)
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        // A provider that cannot even be CONSTRUCTED is the
+                        // same kind of failure as a failed request: a labeled
+                        // on-device fallback, never a raw error to the shell
+                        // and never the key in the reason.
+                        fallback_reason = Some(format!(
+                            "Gemini could not be initialized ({}) - the quiz was generated on-device.",
+                            crate::ai::gemini::redact_key(&e, &key)
+                        ));
+                        crate::ai::practice_fallback::generate_practice_locally(&assessment)
+                    }
+                }
+            } else {
+                fallback_reason =
+                    Some("No Gemini key is saved - the quiz was generated on-device.".to_string());
+                crate::ai::practice_fallback::generate_practice_locally(&assessment)
+            }
+        } else {
+            // Consent off: no provider is constructed, nothing leaves the
+            // device. The fallback is still honestly labeled on-device.
+            crate::ai::practice_fallback::generate_practice_locally(&assessment)
+        };
+
+        let mut value = serde_json::to_value(&quiz)?;
+        if let Some(reason) = fallback_reason {
+            value["fallback_reason"] = serde_json::Value::String(reason);
+        }
+        Ok(serde_json::to_string(&value)?)
+    }
+
+    /// Consent-gated "Optimize with AI" study plan (audit A07). With consent
+    /// on AND a BYOK key, [`crate::ai::tasks::optimize_plan`] proposes the
+    /// roadmap and every readiness/urgency number is re-validated against
+    /// the real store state; consent off, a missing key or any provider
+    /// error returns the deterministic planner's payload with `source:
+    /// "deterministic"` and a note that names what happened. The payload is
+    /// `{"source": "ai"|"deterministic", "note": <string|null>, "tasks":
+    /// <StudyTasksPayload>}` — the UI can always tell which planner ran.
+    #[uniffi::method(async_runtime = "tokio")]
+    pub async fn optimize_study_plan(
+        &self,
+        ref_date_iso: String,
+        gemini_api_key: Option<String>,
+    ) -> Result<String, QuizRadarFfiError> {
+        let ref_date = parse_ref_date(&ref_date_iso)?;
+        let snapshot = self.inner.load_state(ref_date).await?;
+        let (email_ai, mut ai_note) = self.consented_gemini_provider(gemini_api_key).await;
+
+        if let Some(provider) = email_ai.as_ref() {
+            match crate::ai::tasks::optimize_plan(
+                provider,
+                &snapshot.assessments,
+                &snapshot.schedule,
+                &snapshot.completed_topics,
+                ref_date,
+            )
+            .await
+            {
+                Ok(payload) => {
+                    let note = serde_json::json!({
+                        "source": "ai",
+                        "note": format!(
+                            "Roadmap optimized by Gemini ({}) and re-validated against your real progress.",
+                            crate::ai::provider::AiModel::Flash.model_id()
+                        ),
+                        "tasks": payload,
+                    });
+                    return Ok(serde_json::to_string(&note)?);
+                }
+                Err(e) => {
+                    ai_note = Some(format!(
+                        "Gemini was unavailable ({}) - showing the deterministic study plan.",
+                        e.reason()
+                    ));
+                }
+            }
+        }
+
+        let track = AcademicTrack::from_config(
+            self.inner
+                .get_config_string("academic_track".to_string())
+                .await
+                .unwrap_or(None)
+                .as_deref(),
+        );
+        let tasks = build_study_tasks(
+            &snapshot.assessments,
+            &snapshot.completed_topics,
+            ref_date,
+            track,
+        );
+        let payload = serde_json::json!({
+            "source": "deterministic",
+            "note": ai_note.unwrap_or_else(|| {
+                "AI features are turned off in Settings - the study plan is the deterministic planner.".to_string()
+            }),
+            "tasks": tasks,
         });
         Ok(serde_json::to_string(&payload)?)
     }
@@ -1213,11 +1618,24 @@ impl NativeStore {
     /// UTC RFC3339 stamp for row mutations, `localStamp` the human-readable
     /// "Last synced" stamp (desktop uses `yyyy-MM-dd HH:mm`).
     ///
-    /// Single-flight: a second overlapping scan/push returns an error. There
-    /// is no mid-scan cancel API — a dropped call still finishes its persist
-    /// atomically, so the radar is never half-updated.
-    #[uniffi::method(async_runtime = "tokio")]
+    /// Single-flight: a second overlapping scan/push returns an error.
+    ///
+    /// Cancellation (audit A07 follow-up to the desktop parity): the shell
+    /// can abort the fetch phase via [`Self::cancel_native_sync`]. A
+    /// cancelled scan persists NOTHING — no email cache, no radar replace,
+    /// no extraction cache, no 'Last synced' stamp — and reports
+    /// `{"success": false, "cancelled": true, ...}` instead of pretending a
+    /// half-run succeeded.
+    ///
+    /// AI enhancement (audit A07): when the store's `gemini_enabled` consent
+    /// flag is on AND the shell passes the user's own BYOK key, Gmail
+    /// announcements are re-read by Gemini Flash-Lite through the same
+    /// extraction pipeline the desktop uses, with the store-backed quota
+    /// ledger and the persisted per-email extraction cache. With consent off
+    /// NO provider is constructed and NO request leaves the device, even
+    /// with a key still saved.
     #[allow(clippy::too_many_arguments)]
+    #[uniffi::method(async_runtime = "tokio")]
     pub async fn run_native_sync(
         &self,
         sync_config: FfiSyncConfig,
@@ -1228,8 +1646,12 @@ impl NativeStore {
         progress: Box<dyn FfiSyncProgressListener>,
         google_tokens: Option<Box<dyn FfiTokenProvider>>,
         microsoft_tokens: Option<Box<dyn FfiTokenProvider>>,
+        gemini_api_key: Option<String>,
     ) -> Result<String, QuizRadarFfiError> {
         let _guard = self.claim_sync_slot()?;
+        // Only the single-flight owner resets the flag, so a cancel requested
+        // while nothing ran cannot leak into this run.
+        self.scan_cancelled.store(false, Ordering::Release);
         let today = parse_ref_date(&today_iso)?;
         let local = parse_local_offset(offset_seconds)?;
 
@@ -1252,13 +1674,24 @@ impl NativeStore {
             moodle_rest_token: sync_config.moodle_rest_token,
         };
         let cached_emails = self.inner.load_cached_emails().await?;
+        // Prior AI extractions keyed by email-content hash (desktop parity):
+        // an already-extracted email is re-merged without a second provider
+        // call, so a rescan is free for the quota ledger.
+        let mut cached_extractions = std::collections::HashMap::new();
+        for email in &cached_emails {
+            let hash = crate::sources::sync::compute_email_hash(email);
+            if let Ok(Some(extraction)) = self.inner.get_email_ai_extraction(&hash).await {
+                cached_extractions.insert(hash, extraction);
+            }
+        }
+        let (email_ai, mut ai_note) = self.consented_gemini_provider(gemini_api_key).await;
         let input = SyncInput {
             schedule: snapshot.schedule,
             emails_cache: cached_emails,
             existing_assessments: snapshot.assessments,
             reference_date: today,
             local,
-            cached_extractions: std::collections::HashMap::new(),
+            cached_extractions,
         };
 
         let progress_cb = move |pulse: SourceProgress| {
@@ -1270,9 +1703,54 @@ impl NativeStore {
             );
         };
 
-        let report = core_run_sync(&config, &input, None, &progress_cb)
-            .await
-            .map_err(|e| QuizRadarFfiError::Store { msg: e })?;
+        // The cancel flag is checked again after the fetch completes and
+        // before every persist below, so a cancel that lands in the gap
+        // between fetch and write still persists nothing.
+        let cancelled = || self.scan_cancelled.load(Ordering::Acquire);
+
+        // `biased` + pre-registered interest: a cancel that fires while the
+        // fetch is still pending aborts the fetch future (dropping it) —
+        // the same semantics as the desktop's watch-channel abort.
+        let mut cancel_wait = std::pin::pin!(self.scan_cancel_notify.notified());
+        cancel_wait.as_mut().enable();
+        let fetch = core_run_sync_with_ai(
+            &config,
+            &input,
+            None,
+            email_ai
+                .as_ref()
+                .map(|p| p as &dyn crate::ai::provider::AiProvider),
+            &progress_cb,
+        );
+        let report = tokio::select! {
+            biased;
+            _ = &mut cancel_wait => {
+                return Ok(serde_json::json!({
+                    "success": false,
+                    "cancelled": true,
+                    "message": "Scan cancelled - nothing was saved.",
+                    "totalNew": 0,
+                    "totalUpdated": 0,
+                    "notes": [],
+                    "perSource": [],
+                })
+                .to_string());
+            }
+            result = fetch => result.map_err(|e| QuizRadarFfiError::Store { msg: e })?,
+        };
+
+        if cancelled() {
+            return Ok(serde_json::json!({
+                "success": false,
+                "cancelled": true,
+                "message": "Scan cancelled just before saving - nothing was written.",
+                "totalNew": 0,
+                "totalUpdated": 0,
+                "notes": [],
+                "perSource": [],
+            })
+            .to_string());
+        }
 
         if !report.emails_cache.is_empty() {
             self.inner
@@ -1290,15 +1768,33 @@ impl NativeStore {
 
         if !report.assessments.is_empty() {
             self.inner
-                .replace_assessments(report.assessments, now_iso, today)
+                .replace_assessments(report.assessments, now_iso.clone(), today)
                 .await?;
         } else if fetched_anything {
             self.inner
-                .replace_assessments_allowing_empty(report.assessments, now_iso, today)
+                .replace_assessments_allowing_empty(report.assessments, now_iso.clone(), today)
                 .await?;
         }
 
         let mut notes = report.notes;
+        if let Some(note) = ai_note.take() {
+            notes.push(note);
+        }
+        // New AI extractions land in the persisted cache, exactly like the
+        // desktop shell does — the NEXT rescan reuses them without spending
+        // quota again.
+        for (cache_key, email_id, extraction) in &report.new_extractions {
+            let _ = self
+                .inner
+                .save_email_ai_extraction(
+                    cache_key,
+                    email_id,
+                    extraction,
+                    crate::ai::provider::AiModel::FlashLite.model_id(),
+                    now_iso.clone(),
+                )
+                .await;
+        }
         if fetched_anything {
             if let Err(e) = self.inner.set_last_gmail_sync(local_stamp).await {
                 // The scan itself succeeded; say so in the report instead of
@@ -1615,6 +2111,8 @@ mod ffi_sync_tests {
         NativeStore {
             inner: Store::wrap(db),
             sync_in_flight: AtomicBool::new(false),
+            scan_cancelled: AtomicBool::new(false),
+            scan_cancel_notify: tokio::sync::Notify::new(),
         }
     }
 
@@ -1637,6 +2135,8 @@ mod ffi_sync_tests {
         NativeStore {
             inner: Store::wrap(db),
             sync_in_flight: AtomicBool::new(false),
+            scan_cancelled: AtomicBool::new(false),
+            scan_cancel_notify: tokio::sync::Notify::new(),
         }
     }
 
@@ -1657,6 +2157,7 @@ mod ffi_sync_tests {
                 NOW_ISO.to_string(),
                 LOCAL_STAMP.to_string(),
                 Box::new(listener),
+                None,
                 None,
                 None,
             )
@@ -2000,5 +2501,184 @@ mod ffi_sync_tests {
         // The radar was not touched.
         let snapshot = store.inner.load_state(today()).await.unwrap();
         assert!(snapshot.assessments.is_empty());
+    }
+
+    // --- A07: consent-gated AI paths ---------------------------------------
+
+    /// A minimal assessment JSON that exercises the practice-quiz payload.
+    fn practice_assessment_json() -> String {
+        serde_json::json!({
+            "id": "gmail-1",
+            "title": "Quiz 1",
+            "source": "Gmail",
+            "assessment_type": "Class Quiz",
+            "date_iso": "2026-11-03",
+            "topics": ["Loops", "Arrays"],
+        })
+        .to_string()
+    }
+
+    #[tokio::test]
+    async fn practice_quiz_with_consent_off_makes_no_ai_request_and_labels_the_fallback() {
+        let store = fresh_store();
+        // Consent OFF, but the shell still holds a saved key. Zero provider
+        // construction means zero requests — the key cannot send anything.
+        let quiz = store
+            .generate_practice_quiz(practice_assessment_json(), Some("k-test".to_string()))
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&quiz).unwrap();
+        assert_eq!(value["generated_by_ai"], false, "{value}");
+        assert_eq!(value["authored_locally"], true);
+        assert!(
+            value["fallback_reason"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("turned off"),
+            "{value}"
+        );
+        // The quiz is real: the on-device authoring produced questions.
+        assert!(
+            !value["questions"].as_array().unwrap().is_empty(),
+            "{value}"
+        );
+    }
+
+    #[tokio::test]
+    async fn practice_quiz_with_consent_on_but_no_key_labels_the_missing_key() {
+        let store = fresh_store();
+        store
+            .inner
+            .set_config_bool("gemini_enabled".to_string(), true)
+            .await
+            .unwrap();
+        let quiz = store
+            .generate_practice_quiz(practice_assessment_json(), None)
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&quiz).unwrap();
+        assert_eq!(value["authored_locally"], true, "{value}");
+        assert!(
+            value["fallback_reason"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("key"),
+            "{value}"
+        );
+    }
+
+    #[tokio::test]
+    async fn optimize_study_plan_with_consent_off_is_deterministic_and_labeled() {
+        let store = fresh_store();
+        save_assessment(&store, dated_upcoming("gmail-1")).await;
+        let plan = store
+            .optimize_study_plan(TODAY_ISO.to_string(), Some("k-test".to_string()))
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&plan).unwrap();
+        assert_eq!(value["source"], "deterministic", "{value}");
+        assert!(
+            value["note"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("turned off"),
+            "{value}"
+        );
+        // Real planner output against the real radar — never fabricated.
+        assert!(value["tasks"].is_object());
+    }
+
+    #[tokio::test]
+    async fn optimize_study_plan_with_consent_on_but_no_key_names_the_gap() {
+        let store = fresh_store();
+        store
+            .inner
+            .set_config_bool("gemini_enabled".to_string(), true)
+            .await
+            .unwrap();
+        let plan = store
+            .optimize_study_plan(TODAY_ISO.to_string(), None)
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&plan).unwrap();
+        assert_eq!(value["source"], "deterministic", "{value}");
+        assert!(
+            value["note"].as_str().unwrap_or_default().contains("key"),
+            "{value}"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelled_scan_persists_nothing_and_reports_cancelled() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/feed.ics"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(FEED_FIXTURE)
+                    .set_delay(std::time::Duration::from_secs(30)),
+            )
+            .mount(&server)
+            .await;
+        let store = Arc::new(store_with_loopback_feed(&format!(
+            "{}/feed.ics",
+            server.uri()
+        )));
+
+        let runner = Arc::clone(&store);
+        let listener = PulseListener::default();
+        let scan = tokio::spawn(async move {
+            runner
+                .run_native_sync(
+                    FfiSyncConfig::default(),
+                    TODAY_ISO.to_string(),
+                    OFFSET_SECS,
+                    NOW_ISO.to_string(),
+                    LOCAL_STAMP.to_string(),
+                    Box::new(listener),
+                    None,
+                    None,
+                    None,
+                )
+                .await
+                .unwrap()
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        store.cancel_native_sync();
+
+        let report: serde_json::Value = serde_json::from_str(&scan.await.unwrap()).unwrap();
+        assert_eq!(report["cancelled"], true, "{report}");
+        assert_eq!(report["success"], false);
+
+        // Nothing was persisted: the radar is empty, the email cache is
+        // empty and the 'Last synced' stamp was never written.
+        let snapshot = store.inner.load_state(today()).await.unwrap();
+        assert!(snapshot.assessments.is_empty(), "{report}");
+        assert!(store.inner.load_cached_emails().await.unwrap().is_empty());
+        assert_eq!(store.inner.get_last_gmail_sync().await.unwrap(), None);
+        // A cancel that lands before any persist leaves the single-flight
+        // gate free (the guard drops with the aborted future).
+        assert!(!store
+            .sync_in_flight
+            .load(std::sync::atomic::Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn cancel_requested_before_a_run_does_not_cancel_that_run() {
+        // The flag is only read by the single-flight owner: a cancel pressed
+        // while nothing ran must not poison the NEXT scan.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/feed.ics"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(FEED_FIXTURE))
+            .mount(&server)
+            .await;
+        let store = store_with_loopback_feed(&format!("{}/feed.ics", server.uri()));
+        store.cancel_native_sync();
+
+        let value = run_default_sync(&store, PulseListener::default()).await;
+        assert_ne!(value["cancelled"], true, "{value}");
+        assert_eq!(value["success"], true, "{value}");
+        assert_eq!(value["totalNew"].as_u64(), Some(1), "{value}");
     }
 }

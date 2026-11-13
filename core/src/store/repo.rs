@@ -1733,6 +1733,16 @@ impl<'a> AttendanceRepo<'a> {
         Ok(())
     }
 
+    /// Removes one attendance mark by its stable id, returning how many rows
+    /// went away. The toggle cycle's clear step persists as this deletion so
+    /// a cleared mark never reappears on restart.
+    pub fn delete(&self, id: &str) -> Result<usize, StoreError> {
+        let removed = self
+            .conn
+            .execute("DELETE FROM attendance WHERE id = ?1", params![id.trim()])?;
+        Ok(removed)
+    }
+
     pub fn list_all(&self) -> Result<Vec<AttendanceEntry>, StoreError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, slot_id, course_id, date_iso, status, updated_at \
@@ -2756,6 +2766,23 @@ pub mod ops {
         {
             let tx = db.transaction()?;
             AttendanceRepo::new(&tx).record(entry)?;
+            tx.commit()?;
+        }
+        read_snapshot(db.conn(), reference_date)
+    }
+
+    /// Deletes the persisted attendance mark for one slot occurrence. The
+    /// deterministic id mirrors the one `record_attendance` (and the ffi
+    /// export) mint, so the delete hits exactly the row that was written.
+    pub fn delete_attendance(
+        db: &Db,
+        slot_id: &str,
+        date_iso: &str,
+        reference_date: NaiveDate,
+    ) -> Result<AppSnapshot, StoreError> {
+        {
+            let tx = db.transaction()?;
+            AttendanceRepo::new(&tx).delete(&format!("att-{slot_id}-{date_iso}"))?;
             tx.commit()?;
         }
         read_snapshot(db.conn(), reference_date)

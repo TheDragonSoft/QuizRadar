@@ -9,6 +9,7 @@ import com.quizradar.app.core.OAuthClientIds
 import com.quizradar.app.core.QuizRadarCore
 import com.quizradar.app.core.QuizRadarEngine
 import com.quizradar.app.model.AppSnapshotModel
+import com.quizradar.app.model.AttendanceEntryModel
 import com.quizradar.app.model.CourseModel
 import com.quizradar.app.model.CustomEventModel
 import com.quizradar.app.model.PracticeQuizModel
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -102,6 +104,25 @@ data class ScanSourceProgress(
 private const val DEVICE_ID_CONFIG_KEY = "device_id"
 
 /**
+ * Total onboarding wizard steps. Must match `ONBOARDING_STEP_COUNT` in
+ * `OnboardingWizardScreen` — the wizard has SIX steps since the A07/A14
+ * rework (AI consent moved before import; sources and theme are their own
+ * steps), and every persisted/clamped step value is bounded by this.
+ */
+private const val ONBOARDING_STEP_COUNT = 6
+
+/**
+ * How long the reset waits for a cancelled scan to actually return before
+ * the store is wiped.
+ *
+ * The wait is BOUNDED on purpose: a reset must never hang, even if the
+ * native call refuses to come back. The core's cancel flag aborts the
+ * fetch phase (and is re-checked before every persist), so a normal scan
+ * returns well inside this budget.
+ */
+private const val SCAN_SETTLE_TIMEOUT_MS = 5_000L
+
+/**
  * The honest one-line summary of a scan report: real counts, real per-source
  * outcomes, the core's own notes. A scan that found nothing says exactly
  * that; a skipped-only run is not dressed up as success.
@@ -129,6 +150,14 @@ internal fun buildScanSummary(report: com.quizradar.app.model.SyncReportModel): 
 class QuizRadarViewModel(
     val core: QuizRadarCore,
     private val onStateMutated: (() -> Unit)? = null,
+    /**
+     * Platform cleanup for "Reset All" (audit A05): invoked exactly once,
+     * AFTER the transactional wipe + reload succeeded - cancelling the shell's
+     * owned notifications, clearing the pending OAuth transaction and
+     * refreshing BOTH widgets against the emptied store. The ViewModel has no
+     * Context of its own; MainActivity wires the real work in.
+     */
+    private val onDataReset: (() -> Unit)? = null,
     /**
      * The dispatcher the core reads/writes run on.
      *
@@ -180,6 +209,15 @@ class QuizRadarViewModel(
 
     private val _selectedCalendarDate = MutableStateFlow(clockDate())
     val selectedCalendarDate: StateFlow<LocalDate> = _selectedCalendarDate.asStateFlow()
+
+    /**
+     * The ViewModel's injected "today" (production: `LocalDate.now()`).
+     *
+     * Every "today" highlight in the UI reads THIS instead of the real
+     * clock, so a test that injects a fixed date sees exactly the "Today"
+     * marks the device would show on that day.
+     */
+    val today: LocalDate get() = clockDate()
 
     // Day-rollover tracking: every "today"-derived value (due dates, countdowns,
     // daysUntil, week highlight) is computed inside the core against the date we
@@ -292,8 +330,8 @@ class QuizRadarViewModel(
      * single-flight itself, but the UI must not even try), `scanProgress`
      * carries the honest per-source rows while running, and `lastScanReport`
      * keeps the last completed report so the dashboard can show what each
-     * source actually did. There is NO cancel: the core has no mid-scan
-     * cancel API, so the UI must not fake one.
+     * source actually did. [cancelScan] aborts the core's fetch phase; a
+     * cancelled run persists NOTHING and reports `"cancelled": true`.
      */
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
@@ -328,8 +366,22 @@ class QuizRadarViewModel(
     private val _backgroundScanEnabled = MutableStateFlow(false)
     val backgroundScanEnabled: StateFlow<Boolean> = _backgroundScanEnabled.asStateFlow()
 
-    private val _theme = MutableStateFlow("system")
-    val theme: StateFlow<String> = _theme.asStateFlow()
+    /**
+     * Appearance mode: "system" | "light" | "dark". Which dark scheme renders
+     * (Obsidian or AMOLED) is NOT a mode - it is the separate
+     * [preferredDarkTheme] preference, so switching modes can never silently
+     * drop a chosen AMOLED scheme again.
+     */
+    private val _themeMode = MutableStateFlow("system")
+    val themeMode: StateFlow<String> = _themeMode.asStateFlow()
+
+    /**
+     * Preferred dark theme: "obsidian" (default) | "amoled". Orthogonal to
+     * [themeMode]: it applies whenever a dark scheme resolves (Dark mode, or
+     * System mode with a dark system).
+     */
+    private val _preferredDarkTheme = MutableStateFlow("obsidian")
+    val preferredDarkTheme: StateFlow<String> = _preferredDarkTheme.asStateFlow()
 
     /**
      * The onboarding "study track / field" preset (`01` §4.1: the
@@ -358,8 +410,35 @@ class QuizRadarViewModel(
     val pomodoroIsRunning: StateFlow<Boolean> = _pomodoroIsRunning.asStateFlow()
 
     // Attendance Tracking
+    //
+    // The log of truth is the core's attendance store (audit A10): marks are
+    // recorded with the EXPLICIT slot/course/date association the core's
+    // `record_attendance` requires, reloaded from the store on launch, and
+    // absence counts match the record's `course_id` exactly - never a
+    // substring search inside a `slotId::date` key (generated slot ids need
+    // not contain the course id).
+    private val _attendanceRecords = MutableStateFlow<List<AttendanceEntryModel>>(emptyList())
+
+    /** The persisted log itself, re-derived from the store on every load. */
+    val attendanceRecords: StateFlow<List<AttendanceEntryModel>> = _attendanceRecords.asStateFlow()
+
+    /** UI cache keyed `"{slotId}::{dateIso}"` — the format the calendar reads. */
     private val _attendanceMap = MutableStateFlow<Map<String, String>>(emptyMap())
     val attendanceMap: StateFlow<Map<String, String>> = _attendanceMap.asStateFlow()
+
+    private fun applyAttendanceRecords(records: List<AttendanceEntryModel>) {
+        _attendanceRecords.value = records
+        _attendanceMap.value =
+            records.associate { entry ->
+                "${entry.slotId}::${entry.dateIso}" to entry.status
+            }
+    }
+
+    private suspend fun reloadAttendance() {
+        applyAttendanceRecords(
+            QuizRadarJsonParser.parseAttendanceEntries(callCore { core.listAttendance(null) }),
+        )
+    }
 
     fun toggleAttendance(
         slotId: String,
@@ -378,32 +457,115 @@ class QuizRadarViewModel(
         _attendanceMap.update { map ->
             if (next == null) map - key else map + (key to next)
         }
+        _attendanceRecords.update { records ->
+            if (next == null) {
+                records.filterNot { it.slotId == slotId && it.dateIso == dateIso }
+            } else {
+                records.filterNot { it.slotId == slotId && it.dateIso == dateIso } +
+                    AttendanceEntryModel(
+                        id = "att-$slotId-$dateIso",
+                        slotId = slotId,
+                        courseId = courseId,
+                        dateIso = dateIso,
+                        status = next,
+                    )
+            }
+        }
+        viewModelScope.launch {
+            try {
+                if (next != null) {
+                    callCore {
+                        core.recordAttendance(
+                            slotId = slotId,
+                            courseId = courseId,
+                            date = LocalDate.parse(dateIso),
+                            status = next,
+                            refDate = clockDate(),
+                        )
+                    }
+                } else {
+                    // The excused -> clear step of the cycle persists as a
+                    // deletion against the same deterministic id
+                    // `recordAttendance` mints, so a cleared mark never
+                    // reappears on restart.
+                    callCore {
+                        core.deleteAttendance(
+                            slotId = slotId,
+                            dateIso = dateIso,
+                            refDate = clockDate(),
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                // The store rejected the write: say so, then re-sync the UI to
+                // what the store ACTUALLY holds - never leave a mark on screen
+                // that the store does not have.
+                showToast("Could not save the attendance mark: ${e.message}")
+                try {
+                    reloadAttendance()
+                } catch (_: Exception) {
+                    // The store is unreachable; the retry on next toggle/launch resyncs.
+                }
+            }
+        }
     }
 
     fun getCourseAbsenceCount(courseId: String): Int {
-        return _attendanceMap.value.entries.count { (k, v) ->
-            v == "absent" && k.contains(courseId)
+        return _attendanceRecords.value.count { record ->
+            record.status == "absent" && record.courseId.equals(courseId, ignoreCase = true)
         }
     }
 
     // Study Analytics
-    private val _studyMinutesByCourse =
-        MutableStateFlow<Map<String, Int>>(
-            mapOf("CS" to 150, "MATH" to 90, "BIO" to 45),
-        )
+    //
+    // Everything below is derived from the core's persisted session log
+    // (audit A06): the shell starts EMPTY and never seeds example courses or
+    // a starter streak. A completed focus session is persisted exactly once
+    // via `log_study_session` and the totals are then re-read from the store
+    // - the screen can only ever show history that was really saved.
+    private val _studyMinutesByCourse = MutableStateFlow<Map<String, Int>>(emptyMap())
     val studyMinutesByCourse: StateFlow<Map<String, Int>> = _studyMinutesByCourse.asStateFlow()
 
-    private val _studyStreakDays = MutableStateFlow(4)
+    private val _studyStreakDays = MutableStateFlow(0)
     val studyStreakDays: StateFlow<Int> = _studyStreakDays.asStateFlow()
+
+    private suspend fun reloadStudyAnalytics() {
+        val analytics = QuizRadarJsonParser.parseStudyAnalytics(callCore { core.getStudyAnalytics(clockDate()) })
+        _studyMinutesByCourse.value = analytics.minutesByCourse
+        _studyStreakDays.value = analytics.currentStreakDays
+    }
 
     fun logFocusCompleted(
         courseId: String?,
         minutes: Int,
     ) {
-        val cid = courseId?.ifBlank { "GENERAL" } ?: "GENERAL"
-        _studyMinutesByCourse.update { map ->
-            val cur = map[cid] ?: 0
-            map + (cid to (cur + minutes))
+        if (minutes <= 0) return
+        viewModelScope.launch {
+            try {
+                val refDate = clockDate()
+                val cid = courseId?.trim()?.takeIf { it.isNotEmpty() }
+                val sessionJson =
+                    JSONObject().apply {
+                        put("id", "ss-${java.util.UUID.randomUUID()}")
+                        // A courseless session stays courseless: no invented
+                        // "GENERAL" course id is written to the store.
+                        if (cid != null) put("course_id", cid)
+                        put("duration_minutes", minutes)
+                        put("timestamp", java.time.LocalDateTime.now().toString())
+                        put("date_iso", refDate.toString())
+                    }.toString()
+                callCore { core.logStudySession(sessionJson, refDate) }
+                reloadStudyAnalytics()
+            } catch (e: Exception) {
+                // The session was NOT saved: say so instead of bumping an
+                // in-memory counter the store does not know about.
+                showToast("Could not save the focus session: ${e.message}")
+                try {
+                    reloadStudyAnalytics()
+                } catch (_: Exception) {
+                    // Store unreachable; the next successful reload resyncs.
+                }
+            }
         }
     }
 
@@ -462,6 +624,14 @@ class QuizRadarViewModel(
                 if (_pomodoroSecondsLeft.value <= 0 && _pomodoroIsRunning.value) {
                     _pomodoroIsRunning.value = false
                     val isBreak = _pomodoroInterval.value != PomodoroInterval.POMODORO
+                    // One real completion is persisted EXACTLY ONCE, here at
+                    // the completion point: a full focus interval against the
+                    // course of the assessment the timer is on. Breaks and
+                    // reset/pause never log (audit A06 - the timer used to
+                    // complete without ever touching the persisted log).
+                    if (!isBreak) {
+                        logFocusCompleted(activePomodoroCourseId(), _pomodoroInterval.value.minutes)
+                    }
                     if (context != null) {
                         val posted =
                             try {
@@ -558,7 +728,50 @@ class QuizRadarViewModel(
                             microsoft = { _teamsClientId.value },
                         )
                     _backgroundScanEnabled.value = core.getConfigBool("background_scan_enabled", false)
-                    _theme.value = core.getConfigString("theme") ?: "system"
+                    // One-time migration: the legacy `theme` key packed the mode
+                    // AND the dark scheme into a single string
+                    // ("system"|"light"|"dark"|"amoled"), which made AMOLED a
+                    // MODE - any later mode switch silently dropped it, and in
+                    // System mode the AMOLED scheme was unreachable. Split it
+                    // into the two orthogonal preferences, write them once, and
+                    // drop the legacy key so a later user choice is never
+                    // overwritten by this mapping:
+                    //   "light"  -> mode light  + obsidian
+                    //   "dark"   -> mode dark   + obsidian
+                    //   "system" -> mode system + obsidian
+                    //   "amoled" -> mode dark   + amoled (the old value forced dark)
+                    val legacyTheme = core.getConfigString("theme")
+                    if (legacyTheme != null) {
+                        val (mode, darkTheme) =
+                            when (legacyTheme) {
+                                "light" -> "light" to "obsidian"
+                                "dark", "system" -> legacyTheme to "obsidian"
+                                "amoled" -> "dark" to "amoled"
+                                // An unknown legacy value must not propagate
+                                // garbage into the new keys - resolve like a
+                                // fresh install instead.
+                                else -> "system" to "obsidian"
+                            }
+                        // Split keys written by a newer build win: the legacy
+                        // key is only ever the bootstrap. The mapped values are
+                        // PERSISTED once (a memory-only mapping made the second
+                        // load fall back to "system" after the legacy key was
+                        // deleted) - an existing split key is never overwritten.
+                        if (core.getConfigString("theme_mode") == null) {
+                            core.setConfigString("theme_mode", mode)
+                        }
+                        if (core.getConfigString("preferred_dark_theme") == null) {
+                            core.setConfigString("preferred_dark_theme", darkTheme)
+                        }
+                        _themeMode.value = core.getConfigString("theme_mode") ?: mode
+                        _preferredDarkTheme.value =
+                            core.getConfigString("preferred_dark_theme") ?: darkTheme
+                        core.setConfigString("theme", null)
+                    } else {
+                        _themeMode.value = core.getConfigString("theme_mode") ?: "system"
+                        _preferredDarkTheme.value =
+                            core.getConfigString("preferred_dark_theme") ?: "obsidian"
+                    }
                     _academicTrack.value = core.getConfigString("academic_track")
                     // The "Last synced" stamp the core writes ONLY after a scan
                     // in which a source really ran (`core/src/ffi.rs`).
@@ -579,7 +792,7 @@ class QuizRadarViewModel(
                         )
                     _onboardingCompleted.value = isDone
                     _onboardingStep.value =
-                        core.getConfigString("onboarding_step")?.toIntOrNull()?.coerceIn(1, 4) ?: 1
+                        core.getConfigString("onboarding_step")?.toIntOrNull()?.coerceIn(1, ONBOARDING_STEP_COUNT) ?: 1
                     _isSetupChecklistDismissed.value =
                         core.getConfigBool("dismiss_setup_checklist", false)
 
@@ -589,6 +802,16 @@ class QuizRadarViewModel(
                     // core dispatcher, instead of from the UI.
                     _coreVersion.value = core.version()
                     refreshAccountFlags(engine)
+
+                    // The persisted student state the snapshot JSON does not
+                    // carry: the attendance log and the study-session
+                    // analytics (audits A06/A10 - reloaded on every launch),
+                    // plus the review surfaces (GPA, flashcards, mistake
+                    // bank, attempt + session history) so a restart keeps
+                    // exactly what the student saved.
+                    reloadAttendance()
+                    reloadStudyAnalytics()
+                    reloadPersistentReviewState()
 
                     _uiState.value = UiState.Ready(snapshot)
                     lastLoadedDate = refDate
@@ -611,6 +834,12 @@ class QuizRadarViewModel(
                     val refDate = clockDate()
                     val json = core.getState(refDate)
                     val snapshot = QuizRadarJsonParser.parseAppSnapshot(json)
+                    // Day-rollover refresh also re-reads the persisted
+                    // attendance log and analytics: the streak and weekly
+                    // totals are computed against the reference date, so they
+                    // change when the day changes even if no session ran.
+                    reloadAttendance()
+                    reloadStudyAnalytics()
                     _uiState.value = UiState.Ready(snapshot)
                     lastLoadedDate = refDate
                     refreshAccountFlags(core as? QuizRadarEngine)
@@ -743,9 +972,22 @@ class QuizRadarViewModel(
                             put("source", assessment.source)
                         }.toString()
 
-                    val quizJson = callCore { core.generatePracticeQuiz(assessmentJson) }
+                    // A07: the consent-gated AI authoring path. The core
+                    // checks `gemini_enabled` itself and labels the quiz's
+                    // provenance (`generated_by_ai` / `authored_locally` +
+                    // `fallback_reason`) — the UI only relays what happened.
+                    val quizJson =
+                        callCore {
+                            core.generatePracticeQuizAi(assessmentJson, geminiApiKeyOrNull())
+                        }
                     val quiz = QuizRadarJsonParser.parsePracticeQuiz(quizJson)
                     _practiceQuiz.value = quiz
+                    if (quiz.authoredLocally && quiz.fallbackReason != null) {
+                        // A labeled fallback is SUCCESS, but it is never
+                        // silent: the user learns the quiz did NOT come from
+                        // Gemini and why.
+                        showToast(quiz.fallbackReason ?: "")
+                    }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
                     // A failed generation is a FAILURE, not an empty state: the
@@ -766,6 +1008,397 @@ class QuizRadarViewModel(
         _practiceQuiz.value = null
         _practiceQuizError.value = null
         _isPracticeLoading.value = false
+    }
+
+    // ------------------------------------------------------------------
+    // A07/A08 surfaces for the screens: consent-gated study-plan
+    // optimization, manual assessment CRUD with success callbacks, event
+    // edit, the calendar date jump, and the persistent Grade Center /
+    // review states (GPA, flashcards, mistake bank, attempt + session
+    // history). Everything below reads the REAL store — nothing here
+    // fabricates content, and an empty list is an honest empty list.
+    // ------------------------------------------------------------------
+
+    /** Honest outcome of one manual assessment write (A08 CRUD callback). */
+    sealed interface AssessmentSaveResult {
+        data object Saved : AssessmentSaveResult
+
+        data class Failed(val message: String) : AssessmentSaveResult
+    }
+
+    /** State of the consent-gated "Optimize with AI" roadmap run. */
+    sealed interface StudyOptimizeState {
+        data object Idle : StudyOptimizeState
+
+        data object Working : StudyOptimizeState
+
+        /** `source` is exactly what the core reported: "ai" | "deterministic". */
+        data class Done(
+            val source: String,
+            val note: String?,
+            val payloadJson: String,
+        ) : StudyOptimizeState
+
+        data class Failed(val message: String) : StudyOptimizeState
+    }
+
+    private val _studyOptimizeState = MutableStateFlow<StudyOptimizeState>(StudyOptimizeState.Idle)
+    val studyOptimizeState: StateFlow<StudyOptimizeState> = _studyOptimizeState.asStateFlow()
+
+    /**
+     * Runs the "Optimize with AI" roadmap against the current store state.
+     * The CORE owns the consent gate: with `gemini_enabled` off (or no key)
+     * it returns the deterministic planner labeled `source:
+     * "deterministic"` with a note that names why — no request is made.
+     */
+    fun optimizeStudyPlanWithAi() {
+        if (_studyOptimizeState.value is StudyOptimizeState.Working) return
+        _studyOptimizeState.value = StudyOptimizeState.Working
+        viewModelScope.launch {
+            try {
+                val json = callCore { core.optimizeStudyPlan(clockDate(), geminiApiKeyOrNull()) }
+                val root = JSONObject(json)
+                _studyOptimizeState.value =
+                    StudyOptimizeState.Done(
+                        source = root.optString("source", "deterministic"),
+                        note = root.optString("note", "").ifBlank { null },
+                        payloadJson = root.getJSONObject("tasks").toString(),
+                    )
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                _studyOptimizeState.value =
+                    StudyOptimizeState.Failed(e.message ?: "unknown error")
+            }
+        }
+    }
+
+    /** Closes the optimize sheet (or clears its error) without side effects. */
+    fun dismissStudyOptimize() {
+        _studyOptimizeState.value = StudyOptimizeState.Idle
+    }
+
+    /**
+     * Manual assessment create/edit (A08). The core's `upsert_assessment`
+     * persists the item and returns the whole post-write snapshot; the
+     * [onResult] callback tells the sheet whether to close with "Saved!" or
+     * stay open with the failure — a failed write is never a fake success.
+     */
+    fun upsertAssessment(
+        assessmentJson: String,
+        onResult: (AssessmentSaveResult) -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            try {
+                val refDate = clockDate()
+                val updatedJson = callCore { core.upsertAssessment(assessmentJson, refDate) }
+                val snapshot = QuizRadarJsonParser.parseAppSnapshot(updatedJson)
+                _uiState.value = UiState.Ready(snapshot)
+                lastLoadedDate = refDate
+                onStateMutated?.invoke()
+                onResult(AssessmentSaveResult.Saved)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                onResult(
+                    AssessmentSaveResult.Failed(e.message?.takeIf { it.isNotBlank() } ?: "unknown error"),
+                )
+            }
+        }
+    }
+
+    /** Deletes one assessment (A08); the callback reports the real outcome. */
+    fun deleteAssessment(
+        id: String,
+        onResult: (AssessmentSaveResult) -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            try {
+                val refDate = clockDate()
+                val updatedJson = callCore { core.deleteAssessment(id, refDate) }
+                val snapshot = QuizRadarJsonParser.parseAppSnapshot(updatedJson)
+                _uiState.value = UiState.Ready(snapshot)
+                lastLoadedDate = refDate
+                onStateMutated?.invoke()
+                onResult(AssessmentSaveResult.Saved)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                onResult(
+                    AssessmentSaveResult.Failed(e.message?.takeIf { it.isNotBlank() } ?: "unknown error"),
+                )
+            }
+        }
+    }
+
+    /**
+     * Edits an existing custom event (A08): an edit is an upsert under the
+     * SAME id, so reminders and calendar identity survive the correction.
+     * Unlike [addCustomEvent] this does not clear the share-intent draft.
+     */
+    fun updateCustomEvent(
+        event: CustomEventModel,
+        onResult: (Boolean) -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            try {
+                val refDate = clockDate()
+                val eventJson =
+                    JSONObject().apply {
+                        put("id", event.id)
+                        put("title", event.title)
+                        put("course_id", event.courseId)
+                        put("event_type", event.eventType ?: "Custom")
+                        put("date_iso", event.dateIso?.toString())
+                        put("start_time", event.startTime)
+                        put("end_time", event.endTime)
+                        put("room", event.room)
+                        put("notes", event.notes)
+                        put("color", event.color ?: "#db2777")
+                    }.toString()
+                val updatedJson = callCore { core.upsertCustomEvent(eventJson, refDate) }
+                val snapshot = QuizRadarJsonParser.parseAppSnapshot(updatedJson)
+                _uiState.value = UiState.Ready(snapshot)
+                lastLoadedDate = refDate
+                onStateMutated?.invoke()
+                onResult(true)
+            } catch (e: Exception) {
+                showToast(
+                    "Could not update the event: " +
+                        (e.message?.takeIf { it.isNotBlank() } ?: "unknown error"),
+                )
+                onResult(false)
+            }
+        }
+    }
+
+    /**
+     * Jumps the calendar to an arbitrary date (A08 date jump): selects the
+     * date and re-anchors the week grid on its week, so the tapped day is
+     * actually on screen.
+     */
+    fun jumpToDate(date: LocalDate) {
+        _currentWeekStart.value = getWeekStart(date)
+        _selectedCalendarDate.value = date
+    }
+
+    // --- Persistent review states (GPA / flashcards / mistake bank / history) ---
+
+    /** Raw GPA summary JSON from the shared Rust calculator (`GpaSummary`). */
+    private val _gpaSummaryJson = MutableStateFlow<String?>(null)
+    val gpaSummaryJson: StateFlow<String?> = _gpaSummaryJson.asStateFlow()
+
+    /** Raw weighted grade-target JSON (`GradeTargetResult`) for the UI. */
+    private val _gradeTargetJson = MutableStateFlow<String?>(null)
+    val gradeTargetJson: StateFlow<String?> = _gradeTargetJson.asStateFlow()
+
+    private val _flashcardsJson = MutableStateFlow("[]")
+    val flashcardsJson: StateFlow<String> = _flashcardsJson.asStateFlow()
+
+    private val _mistakesJson = MutableStateFlow("[]")
+    val mistakesJson: StateFlow<String> = _mistakesJson.asStateFlow()
+
+    private val _quizAttemptsJson = MutableStateFlow("[]")
+    val quizAttemptsJson: StateFlow<String> = _quizAttemptsJson.asStateFlow()
+
+    private val _studySessionsJson = MutableStateFlow("[]")
+    val studySessionsJson: StateFlow<String> = _studySessionsJson.asStateFlow()
+
+    /**
+     * Reloads every persistent review state from the store. Called on launch
+     * and after any mutation of these surfaces, so a restart keeps what the
+     * student actually saved — and nothing else.
+     */
+    suspend fun reloadPersistentReviewState() {
+        _flashcardsJson.value = callCore { core.listFlashcards() }
+        _mistakesJson.value = callCore { core.listMistakes() }
+        _quizAttemptsJson.value = callCore { core.listQuizAttempts() }
+        _studySessionsJson.value = callCore { core.listStudySessions() }
+        refreshGpaSummary()
+    }
+
+    /**
+     * Recomputes the GPA summary from the CURRENT snapshot via the shared
+     * Rust engine. Nothing is invented: a course without graded work simply
+     * carries no percentage.
+     */
+    suspend fun refreshGpaSummary(scale: String = "4.0") {
+        val current = _uiState.value as? UiState.Ready ?: return
+        val snapshot = current.snapshot
+        val coursesJson =
+            JSONArray().apply {
+                snapshot.schedule.courses.forEach { course ->
+                    put(
+                        JSONObject().apply {
+                            put("id", course.id)
+                            put("name", course.name)
+                            put("color", course.color ?: "#1a73e8")
+                        },
+                    )
+                }
+            }.toString()
+        val assessmentsJson =
+            JSONArray().apply {
+                snapshot.assessments.forEach { assessment ->
+                    put(
+                        JSONObject().apply {
+                            put("id", assessment.id)
+                            put("title", assessment.title)
+                            put("source", assessment.source)
+                            put("assessment_type", assessment.assessmentType)
+                            put("course_id", assessment.courseId)
+                        },
+                    )
+                }
+            }.toString()
+        val gradesJson =
+            JSONObject().apply {
+                snapshot.grades.forEach { (id, record) ->
+                    put(
+                        id,
+                        JSONObject().apply {
+                            record.achievedScore?.let { put("achieved_score", it) }
+                            record.maxScore?.let { put("max_score", it) }
+                            record.weightagePercent?.let { put("weightage_percent", it) }
+                        },
+                    )
+                }
+            }.toString()
+        _gpaSummaryJson.value =
+            callCore { core.calculateGpa(coursesJson, assessmentsJson, gradesJson, scale) }
+    }
+
+    /**
+     * The thin UI-facing weighted grade-target calculation (A08): what the
+     * student still needs to average on the remaining weight to reach
+     * [targetLetter]. Unknown weights stay an honestly-labeled equal-weight
+     * assumption inside the core — the shell adds no math of its own.
+     */
+    suspend fun calculateGradeTarget(
+        courseId: String,
+        targetLetter: String,
+        scale: String = "4.0",
+    ) {
+        val current = _uiState.value as? UiState.Ready ?: return
+        val snapshot = current.snapshot
+        val assessmentsJson =
+            JSONArray().apply {
+                snapshot.assessments.forEach { assessment ->
+                    put(
+                        JSONObject().apply {
+                            put("id", assessment.id)
+                            put("title", assessment.title)
+                            put("source", assessment.source)
+                            put("assessment_type", assessment.assessmentType)
+                            put("course_id", assessment.courseId)
+                            put("achieved_score", assessment.achievedScore ?: JSONObject.NULL)
+                            put("max_score", assessment.maxScore ?: JSONObject.NULL)
+                            put("weightage_percent", assessment.weightagePercent ?: JSONObject.NULL)
+                        },
+                    )
+                }
+            }.toString()
+        val gradesJson =
+            JSONObject().apply {
+                snapshot.grades.forEach { (id, record) ->
+                    put(
+                        id,
+                        JSONObject().apply {
+                            record.achievedScore?.let { put("achieved_score", it) }
+                            record.maxScore?.let { put("max_score", it) }
+                            record.weightagePercent?.let { put("weightage_percent", it) }
+                        },
+                    )
+                }
+            }.toString()
+        _gradeTargetJson.value =
+            callCore { core.calculateGradeTarget(courseId, assessmentsJson, gradesJson, scale, targetLetter) }
+    }
+
+    /** Saves one quiz attempt (+ its mistake bank entries) from the practice flow. */
+    fun saveQuizAttempt(
+        attemptJson: String,
+        mistakesJson: String,
+        onResult: (Boolean) -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            try {
+                val refDate = clockDate()
+                callCore { core.saveQuizAttempt(attemptJson, mistakesJson, refDate) }
+                _quizAttemptsJson.value = callCore { core.listQuizAttempts() }
+                _mistakesJson.value = callCore { core.listMistakes() }
+                onResult(true)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                onResult(false)
+            }
+        }
+    }
+
+    /** Marks one mistake resolved and refreshes the persisted bank. */
+    fun resolveMistake(
+        mistakeId: String,
+        onResult: (Boolean) -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            try {
+                callCore { core.resolveMistake(mistakeId) }
+                _mistakesJson.value = callCore { core.listMistakes() }
+                onResult(true)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                onResult(false)
+            }
+        }
+    }
+
+    /** Upserts one flashcard and refreshes the persisted deck. */
+    fun upsertFlashcard(
+        cardJson: String,
+        onResult: (Boolean) -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            try {
+                callCore { core.upsertFlashcard(cardJson) }
+                _flashcardsJson.value = callCore { core.listFlashcards() }
+                onResult(true)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                onResult(false)
+            }
+        }
+    }
+
+    /** Deletes one flashcard and refreshes the persisted deck. */
+    fun deleteFlashcard(
+        cardId: String,
+        onResult: (Boolean) -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            try {
+                callCore { core.deleteFlashcard(cardId) }
+                _flashcardsJson.value = callCore { core.listFlashcards() }
+                onResult(true)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                onResult(false)
+            }
+        }
+    }
+
+    /** Records one flashcard review (SM-2 state lives in the core). */
+    fun reviewFlashcard(
+        cardId: String,
+        correct: Boolean,
+        onResult: (Boolean) -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            try {
+                callCore { core.reviewFlashcard(cardId, correct, clockDate()) }
+                _flashcardsJson.value = callCore { core.listFlashcards() }
+                onResult(true)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                onResult(false)
+            }
+        }
     }
 
     /**
@@ -791,6 +1424,17 @@ class QuizRadarViewModel(
         _activePomodoroAssessmentId.value = null
         _activePomodoroTopic.value = null
         _activePomodoroTopicIndex.value = null
+    }
+
+    /**
+     * The course of the assessment the timer is working on. Unknown/null when
+     * the timer is courseless - the session is then persisted courseless, the
+     * same honest attribution the manual log path uses.
+     */
+    private fun activePomodoroCourseId(): String? {
+        val assessmentId = _activePomodoroAssessmentId.value ?: return null
+        val snapshot = (_uiState.value as? UiState.Ready)?.snapshot ?: return null
+        return snapshot.assessments.find { it.id == assessmentId }?.courseId
     }
 
     private fun resolveTopicIndex(
@@ -952,7 +1596,11 @@ class QuizRadarViewModel(
                         JSONObject().apply {
                             put("id", e.id)
                             put("title", e.title)
-                            put("date", e.dateIso?.toString())
+                            // Core contract key (`core/src/types.rs` has no
+                            // `date` alias) - `generateStudyBlocks` uses this
+                            // list for collision avoidance, so a wrong key
+                            // makes it treat placed events as unscheduled.
+                            put("date_iso", e.dateIso?.toString())
                             put("start_time", e.startTime)
                             put("end_time", e.endTime)
                         },
@@ -1018,7 +1666,10 @@ class QuizRadarViewModel(
                         put("title", event.title)
                         put("course_id", event.courseId)
                         put("event_type", event.eventType ?: "Custom")
-                        put("date", event.dateIso?.toString())
+                        // Canonical core key `date_iso` (`core/src/types.rs:723`):
+                        // no `date` alias, so a typo would silently turn the
+                        // event into an undated one the core cannot schedule.
+                        put("date_iso", event.dateIso?.toString())
                         put("start_time", event.startTime)
                         put("end_time", event.endTime)
                         put("room", event.room)
@@ -1075,14 +1726,36 @@ class QuizRadarViewModel(
                 val reportJson = callCore { core.importBackup(jsonContent, clockDate()) }
                 loadState()
                 onComplete?.invoke(reportJson)
+                // The core's ImportReport serializes camelCase
+                // (`core/src/store/importer.rs`: `#[serde(rename_all =
+                // "camelCase")]`) - the snake_case keys used to read as 0 and
+                // the toast claimed "Restored: 0 courses" for a full backup.
                 val reportObj = org.json.JSONObject(reportJson)
-                val courses = reportObj.optInt("courses_imported", 0)
-                val assessments = reportObj.optInt("assessments_imported", 0)
-                val grades = reportObj.optInt("grades_imported", 0)
-                val topics = reportObj.optInt("topics_imported", 0)
-                val secretsCount = reportObj.optJSONArray("secrets_ignored")?.length() ?: 0
+                val courses = reportObj.optInt("coursesImported", 0)
+                val assessments = reportObj.optInt("assessmentsImported", 0)
+                val slots = reportObj.optInt("slotsImported", 0)
+                val grades = reportObj.optInt("gradesImported", 0)
+                val topics = reportObj.optInt("topicsImported", 0)
+                val customEvents = reportObj.optInt("customEventsImported", 0)
+                val feeds = reportObj.optInt("feedsImported", 0)
+                val secretsCount = reportObj.optJSONArray("secretsIgnored")?.length() ?: 0
                 val secretsMsg = if (secretsCount > 0) " ($secretsCount legacy secrets dropped)" else ""
-                _toastMessage.value = "Restored: $courses courses, $assessments assessments, $grades grades, $topics topics.$secretsMsg"
+                val extras =
+                    listOf(
+                        "$slots class slots" to slots,
+                        "$customEvents custom events" to customEvents,
+                        "$feeds feeds" to feeds,
+                    ).filter { it.second > 0 }.joinToString(", ") { it.first }
+                val extrasMsg = if (extras.isEmpty()) "" else ", $extras"
+                val warnings = reportObj.optJSONArray("warnings") ?: org.json.JSONArray()
+                val warningsMsg =
+                    if (warnings.length() > 0) {
+                        " — " + (0 until warnings.length()).joinToString("; ") { warnings.optString(it) }
+                    } else {
+                        ""
+                    }
+                _toastMessage.value =
+                    "Restored: $courses courses, $assessments assessments, $grades grades, $topics topics$extrasMsg.$secretsMsg$warningsMsg"
             } catch (e: Exception) {
                 _toastMessage.value = "Import failed: ${e.message}"
             }
@@ -1210,11 +1883,24 @@ class QuizRadarViewModel(
         viewModelScope.launch {
             try {
                 val refDate = clockDate()
+                // The editor form carries only id/name/color; credits and the
+                // absence limit live on the persisted course and are NOT part
+                // of this form. `upsert_course` replaces the row, so dropping
+                // them here would silently wipe them on every save - re-emit
+                // what the store currently holds for this course.
+                val existingCourse =
+                    (_uiState.value as? UiState.Ready)?.snapshot?.schedule?.courses?.firstOrNull {
+                        it.id.equals(course.id.trim(), ignoreCase = true)
+                    }
+                val credits = course.credits ?: existingCourse?.credits
+                val maxAbsences = course.maxAbsences ?: existingCourse?.maxAbsences
                 val courseJson =
                     JSONObject().apply {
                         put("id", course.id.trim().uppercase())
                         put("name", course.name.trim())
                         put("color", course.color ?: "#1a73e8")
+                        if (credits != null) put("credits", credits)
+                        if (maxAbsences != null) put("max_absences", maxAbsences)
                     }.toString()
 
                 val slotsArr = JSONArray()
@@ -1233,6 +1919,10 @@ class QuizRadarViewModel(
                             if (!s.room.isNullOrBlank() && s.room != "—") put("room", s.room.trim())
                             if (!s.instructor.isNullOrBlank()) put("instructor", s.instructor.trim())
                             if (!s.group.isNullOrBlank()) put("group", s.group.trim())
+                            // Alternating-week parity is set by the editor's
+                            // parity helper; dropping it would move the class
+                            // to every week (`week_parity`: all/week_a/week_b).
+                            if (!s.weekParity.isNullOrBlank()) put("week_parity", s.weekParity)
                         },
                     )
                 }
@@ -1301,23 +1991,27 @@ class QuizRadarViewModel(
         viewModelScope.launch {
             try {
                 val refDate = clockDate()
-                val backupJson = callCore { core.exportBackup(refDate) }
-                val root = JSONObject(backupJson)
-                val feedsArr = root.optJSONArray("feeds") ?: JSONArray()
-                if (feedsArr.length() >= 10) {
+                val existing = (_uiState.value as? UiState.Ready)?.snapshot?.feeds.orEmpty()
+                if (existing.size >= 10) {
                     showToast("Maximum 10 calendar feeds allowed")
                     return@launch
                 }
-                val newFeed =
+                if (existing.any { it.url.equals(url.trim(), ignoreCase = true) }) {
+                    showToast("This feed URL is already subscribed")
+                    return@launch
+                }
+                // The core's real feed upsert (https-only enforced by the
+                // store) - NOT a backup export/import round trip, which is
+                // additive CRUD via the importer and would force unrelated
+                // legacy preferences off (audit A02).
+                val feedJson =
                     JSONObject().apply {
                         put("id", "feed-${System.currentTimeMillis()}")
                         put("name", label.trim().ifEmpty { "Calendar Feed" })
                         put("url", url.trim())
                         put("enabled", true)
-                    }
-                feedsArr.put(newFeed)
-                root.put("feeds", feedsArr)
-                callCore { core.importBackup(root.toString(), refDate) }
+                    }.toString()
+                callCore { core.saveFeed(feedJson, refDate) }
                 loadState()
                 showToast("Feed added")
                 onComplete?.invoke()
@@ -1328,34 +2022,24 @@ class QuizRadarViewModel(
     }
 
     /**
-     * Removes a subscribed feed by URL (the parsed feed model carries no id;
-     * the URL is the feed's stable key). The delete button used to be a no-op
-     * that toasted "Feed status updated" — a success message for an action
-     * that did nothing.
+     * Removes a subscribed feed by URL (the parsed feed model carries the
+     * store's stable id; the URL is how the UI identifies the row). The
+     * deletion goes through the core's real feed-delete operation — one
+     * targeted store write: the deleted feed stays deleted and unrelated
+     * preferences are untouched. It used to be a backup export/edit/reimport,
+     * and import is additive, so the "removed" feed silently came back.
      */
     fun removeIcsFeed(feedUrl: String) {
         viewModelScope.launch {
             try {
-                val refDate = clockDate()
-                val backupJson = callCore { core.exportBackup(refDate) }
-                val root = JSONObject(backupJson)
-                val feedsArr = root.optJSONArray("feeds") ?: JSONArray()
-                val kept = JSONArray()
-                var removed = false
-                for (i in 0 until feedsArr.length()) {
-                    val feed = feedsArr.getJSONObject(i)
-                    if (feed.optString("url") == feedUrl) {
-                        removed = true
-                    } else {
-                        kept.put(feed)
-                    }
-                }
-                if (!removed) {
+                val snapshot = (_uiState.value as? UiState.Ready)?.snapshot
+                val feed =
+                    snapshot?.feeds?.firstOrNull { it.url.equals(feedUrl, ignoreCase = true) }
+                if (feed == null || feed.id.isBlank()) {
                     showToast("Feed not found")
                     return@launch
                 }
-                root.put("feeds", kept)
-                callCore { core.importBackup(root.toString(), refDate) }
+                callCore { core.deleteFeed(feed.id, clockDate()) }
                 loadState()
                 showToast("Feed removed")
             } catch (e: Exception) {
@@ -1456,6 +2140,9 @@ class QuizRadarViewModel(
             moodleConfigured ||
             feedsEnabled
 
+    /** The in-flight manual scan, cancelled on reset so it cannot repopulate the wiped store. */
+    private var scanJob: Job? = null
+
     /**
      * Runs the real on-device scan: Gmail/Teams/Classroom/Moodle/.ics feeds
      * through the Rust core, live per-source progress, honest report.
@@ -1475,79 +2162,133 @@ class QuizRadarViewModel(
             showToast("Scanning needs the native core - it is not available in this process.")
             return
         }
-        viewModelScope.launch {
-            // Claim the slot ON the main thread before anything suspends: two
-            // rapid pulls can both pass a later check, and the core's
-            // single-flight would only fail the second run with an error.
-            if (_isScanning.value) return@launch
-            _isScanning.value = true
-            _scanProgress.value = emptyList()
-            try {
-                val syncConfig =
-                    try {
-                        currentSyncConfig()
-                    } catch (e: Exception) {
-                        showToast("Could not read the source configuration: ${e.message}")
+        scanJob =
+            viewModelScope.launch {
+                // Claim the slot ON the main thread before anything suspends: two
+                // rapid pulls can both pass a later check, and the core's
+                // single-flight would only fail the second run with an error.
+                if (_isScanning.value) return@launch
+                _isScanning.value = true
+                _scanProgress.value = emptyList()
+                try {
+                    val syncConfig =
+                        try {
+                            currentSyncConfig()
+                        } catch (e: Exception) {
+                            showToast("Could not read the source configuration: ${e.message}")
+                            return@launch
+                        }
+                    if (syncConfig == null) {
+                        showToast("No announcement sources connected - sign in or add a calendar feed first.")
                         return@launch
                     }
-                if (syncConfig == null) {
-                    showToast("No announcement sources connected - sign in or add a calendar feed first.")
-                    return@launch
-                }
 
-                val listener =
-                    object : com.quizradar.app.core.FfiSyncProgressListener {
-                        override fun onProgress(
-                            source: String,
-                            stage: String,
-                            found: UInt,
-                            done: UInt,
-                        ) {
-                            _scanProgress.update { current ->
-                                val row = ScanSourceProgress(source, stage, found.toInt(), done.toInt())
-                                val existing = current.indexOfFirst { it.name == source }
-                                if (existing >= 0) current.mapIndexed { i, r -> if (i == existing) row else r } else current + row
+                    val listener =
+                        object : com.quizradar.app.core.FfiSyncProgressListener {
+                            override fun onProgress(
+                                source: String,
+                                stage: String,
+                                found: UInt,
+                                done: UInt,
+                            ) {
+                                _scanProgress.update { current ->
+                                    val row = ScanSourceProgress(source, stage, found.toInt(), done.toInt())
+                                    val existing = current.indexOfFirst { it.name == source }
+                                    if (existing >= 0) current.mapIndexed { i, r -> if (i == existing) row else r } else current + row
+                                }
                             }
                         }
+                    val reportJson = engine.runNativeSync(syncConfig, listener, geminiApiKeyOrNull())
+                    val report = QuizRadarJsonParser.parseSyncReport(reportJson)
+                    if (report.cancelled) {
+                        // The core aborted the fetch and persisted NOTHING —
+                        // the radar and the 'Last synced' stamp are exactly
+                        // as before (A07 cancellation, not UI theatre).
+                        _lastScanReport.value = report
+                        showToast("Scan cancelled - nothing was saved.")
+                        return@launch
                     }
-                val reportJson = engine.runNativeSync(syncConfig, listener)
-                val report = QuizRadarJsonParser.parseSyncReport(reportJson)
-                _lastScanReport.value = report
-                _lastSyncedStamp.value = core.getConfigString("last_gmail_sync")
-                refreshState()
-                AnalyticsManager.trackScanCompleted(
-                    source = "manual",
-                    assessmentCount = report.totalNew + report.totalUpdated,
-                    success = report.success,
-                )
-                var summary = buildScanSummary(report)
-                if (
-                    report.success &&
-                    report.totalNew + report.totalUpdated > 0 &&
-                    _googleConnected.value &&
-                    _autoSyncGcal.value
-                ) {
-                    // The auto-push the Settings toggle promises: after a scan
-                    // that actually discovered/updated items, push them. The
-                    // push's real outcome joins the summary.
-                    val pushMessage = pushGcalInternal()
-                    if (pushMessage != null) summary += "\n$pushMessage"
+                    _lastScanReport.value = report
+                    _lastSyncedStamp.value = core.getConfigString("last_gmail_sync")
+                    refreshState()
+                    AnalyticsManager.trackScanCompleted(
+                        source = "manual",
+                        assessmentCount = report.totalNew + report.totalUpdated,
+                        success = report.success,
+                    )
+                    var summary = buildScanSummary(report)
+                    if (
+                        report.success &&
+                        report.totalNew + report.totalUpdated > 0 &&
+                        _googleConnected.value &&
+                        _autoSyncGcal.value
+                    ) {
+                        // The auto-push the Settings toggle promises: after a scan
+                        // that actually discovered/updated items, push them. The
+                        // push's real outcome joins the summary.
+                        val pushMessage = pushGcalInternal()
+                        if (pushMessage != null) summary += "\n$pushMessage"
+                    }
+                    showToast(summary)
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    AnalyticsManager.trackScanCompleted(
+                        source = "manual",
+                        assessmentCount = 0,
+                        success = false,
+                    )
+                    // The core throws on store/parse failures - fail loudly, keep
+                    // the previous report (it is still the last REAL outcome).
+                    showToast("Scan failed: ${e.message ?: "unknown error"}")
+                } finally {
+                    _isScanning.value = false
                 }
-                showToast(summary)
-            } catch (e: Exception) {
-                AnalyticsManager.trackScanCompleted(
-                    source = "manual",
-                    assessmentCount = 0,
-                    success = false,
-                )
-                // The core throws on store/parse failures - fail loudly, keep
-                // the previous report (it is still the last REAL outcome).
-                showToast("Scan failed: ${e.message ?: "unknown error"}")
-            } finally {
-                _isScanning.value = false
             }
+    }
+
+    /**
+     * Cancels the in-flight native scan. The core aborts the fetch phase and
+     * persists NOTHING for the cancelled run — the honest report the run
+     * then returns carries `"cancelled": true` and the scan summary says so.
+     */
+    fun cancelScan() {
+        requestNativeScanCancellation()
+    }
+
+    /**
+     * Asks the CORE to abort the in-flight native scan.
+     *
+     * This is the native cancel the scan's cancel button uses
+     * (`QuizRadarCore.cancelScan()` → `NativeStore.cancel_native_sync`): the
+     * core sets its `scan_cancelled` flag, which aborts the fetch phase and
+     * is re-checked before EVERY persist - so a cancelled run writes
+     * nothing back into the store.
+     *
+     * A core that does not implement native cancellation throws
+     * `UnsupportedOperationException` (the interface's safe default) - the
+     * caller must survive that, not break on it.
+     */
+    private fun requestNativeScanCancellation() {
+        try {
+            // Deliberately NOT dispatched through the core dispatcher: that
+            // one is single-threaded and an in-flight scan occupies it, so a
+            // dispatched cancel would queue BEHIND the scan it is meant to
+            // abort. The native cancel only flips an atomic flag, so calling
+            // it straight away is both safe and immediate.
+            core.cancelScan()
+        } catch (_: UnsupportedOperationException) {
+            // This core has no native cancellation (a fake): the Kotlin job
+            // cancellation is all there is.
         }
     }
+
+    /**
+     * The Gemini key the core may use this run, or `null` when AI is
+     * disabled or no key is saved. Defense in depth on top of the core's
+     * own consent gate (A07): with the toggle off nothing is even passed
+     * through, so a retained key cannot reach the network from either side.
+     */
+    private fun geminiApiKeyOrNull(): String? = if (_geminiEnabled.value) _geminiApiKey.value.ifBlank { null } else null
 
     /**
      * The "Push now to Google Calendar" action (Settings -> Sources). Returns
@@ -1714,6 +2455,18 @@ class QuizRadarViewModel(
         _timetableImportState.value = TimetableImportState.Working
         viewModelScope.launch {
             try {
+                // A07 consent gate: a RETAINED key must not permit a send
+                // while AI is disabled. The preference is checked FIRST, so
+                // with the toggle off nothing — not even the Keystore read —
+                // starts and zero bytes ever leave the device.
+                if (!_geminiEnabled.value) {
+                    _timetableImportState.value =
+                        TimetableImportState.Failed(
+                            "AI features are turned off in Settings, so this image never " +
+                                "leaves the device. Turn Gemini back on to import a timetable.",
+                        )
+                    return@launch
+                }
                 val key =
                     withContext(coreDispatcher) {
                         core.geminiApiKey().orEmpty()
@@ -1804,6 +2557,7 @@ class QuizRadarViewModel(
                                         )
                                         if (!slot.room.isNullOrBlank()) put("room", slot.room.trim())
                                         if (!slot.group.isNullOrBlank()) put("group", slot.group.trim())
+                                        if (!slot.weekParity.isNullOrBlank()) put("week_parity", slot.weekParity)
                                     },
                                 )
                             }
@@ -1929,9 +2683,16 @@ class QuizRadarViewModel(
         persistConfig("auto_sync_gcal", enabled)
     }
 
-    fun setTheme(themeVal: String) {
-        _theme.value = themeVal
-        persistConfig("theme", themeVal)
+    /** Sets only the appearance mode; the dark scheme preference is untouched. */
+    fun setThemeMode(mode: String) {
+        _themeMode.value = mode
+        persistConfig("theme_mode", mode)
+    }
+
+    /** Sets only the preferred dark scheme; the appearance mode is untouched. */
+    fun setPreferredDarkTheme(theme: String) {
+        _preferredDarkTheme.value = theme
+        persistConfig("preferred_dark_theme", theme)
     }
 
     /**
@@ -1978,42 +2739,79 @@ class QuizRadarViewModel(
 
     fun resetAllData(onComplete: () -> Unit) {
         viewModelScope.launch {
+            // Stop everything that could touch the store while (or after) the
+            // wipe: the running timer, the in-flight scan and the compose
+            // draft. The scan is cancelled at the CORE level FIRST: the
+            // native call is blocking, so cancelling the Kotlin coroutine
+            // alone cannot stop it - only the core's own cancel flag aborts
+            // the fetch phase and makes the run persist nothing (the flag is
+            // re-checked before every persist). Cancelling the coroutine
+            // then keeps the run from ever repopulating the UI or the state
+            // flows with the wiped store's history.
+            pausePomodoro()
+            _pomodoroSecondsLeft.value = _pomodoroInterval.value.minutes * 60
+            closePomodoro()
             try {
-                val refDate = clockDate()
-                val currentEvents = (_uiState.value as? UiState.Ready)?.snapshot?.customEvents ?: emptyList()
-                val engine = core as? QuizRadarEngine
-                // Every step of the reset is a native store write (and the
-                // token wipe is a Keystore write) - it all runs on the core
-                // dispatcher, never on the main thread. The dismissed-banner /
-                // checklist flags are cleared too: the confirm dialog promises
-                // "all data" and a lingering dismissal flag would quietly keep
-                // those UI pieces hidden after the reset.
-                callCore {
-                    core.saveSchedule("""{"courses":[],"slots":[]}""", refDate)
-                    core.replaceAssessments("[]", refDate)
-                    for (ev in currentEvents) {
-                        core.deleteCustomEvent(ev.id, refDate)
-                    }
-                    core.setConfigString("user_name", null)
-                    core.setConfigString("user_email", null)
-                    core.setConfigBool("auto_sync_gcal", false)
-                    core.setConfigBool("gemini_enabled", false)
-                    core.setConfigBool("onboarding_completed", false)
-                    core.setConfigBool("dismiss_conflict_banner", false)
-                    core.setConfigBool("dismiss_setup_checklist", false)
-                    engine?.tokenProvider?.clearAll()
-                }
-                loadState()
-                showToast("All data and credentials reset")
-                onComplete()
+                requestNativeScanCancellation()
             } catch (e: Exception) {
-                showToast("Reset failed: ${e.message}")
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                // The core could not be told to abort the running scan, so
+                // that scan may still persist AFTER the wipe and undo it.
+                // Fail loudly instead of claiming a clean store.
+                showToast("Reset failed: the running scan could not be cancelled: ${e.message}")
+                return@launch
             }
+            val runningScan = scanJob
+            runningScan?.cancel()
+            scanJob = null
+            // Let the cancelled scan settle so its native call has RETURNED
+            // before the store is wiped (otherwise it could persist right
+            // after the wipe). Bounded: a reset must never hang.
+            withTimeoutOrNull(SCAN_SETTLE_TIMEOUT_MS) { runningScan?.join() }
+            _activeCreateEventDraft.value = null
+            _isScanning.value = false
+            val engine = core as? QuizRadarEngine
+            try {
+                // The core's canonical transactional reset (ONE SQLite
+                // transaction wiping EVERY owned table: schedule, assessments,
+                // custom events, feeds, config, attendance, study sessions,
+                // quiz attempts, flashcards, mistake bank, email caches,
+                // token metadata - audit A05).
+                callCore { core.resetAllData() }
+            } catch (e: Exception) {
+                // A failed reset must fail loudly: the store may still hold
+                // data, so the success toast is never shown (audit A05).
+                showToast("Reset failed: ${e.message}")
+                return@launch
+            }
+            try {
+                // The credential wipe is a Keystore write (device-side, outside
+                // the store). It runs AFTER the wipe: a failure here must not
+                // mask the fact that the data itself is already gone.
+                callCore { engine?.tokenProvider?.clearAll() }
+            } catch (e: Exception) {
+                showToast("Data reset, but clearing the stored credentials failed: ${e.message}")
+            }
+            // In-memory state loadState() does not repopulate: the scan
+            // report/progress belong to the (now wiped) store history.
+            // Attendance, analytics and every config-derived flow are
+            // re-read from the emptied store by loadState() below.
+            _lastScanReport.value = null
+            _scanProgress.value = emptyList()
+            _isScanning.value = false
+            loadState()
+            // Platform cleanup runs only AFTER the transactional reset AND the
+            // reload succeeded: notifications survive a reset otherwise (their
+            // registry is shell-side, not in the store), and BOTH widgets
+            // would keep rendering the wiped data.
+            onDataReset?.invoke()
+            showToast("All data and credentials reset")
+            onComplete()
         }
     }
 
     fun setOnboardingStep(step: Int) {
-        val clamped = step.coerceIn(1, 4)
+        val clamped = step.coerceIn(1, ONBOARDING_STEP_COUNT)
         _onboardingStep.value = clamped
         persistConfig("onboarding_step", clamped.toString())
     }
@@ -2083,6 +2881,7 @@ class QuizRadarViewModel(
         fun provideFactory(
             core: QuizRadarCore,
             onStateMutated: (() -> Unit)? = null,
+            onDataReset: (() -> Unit)? = null,
             clockDate: () -> LocalDate = { LocalDate.now() },
             coreDispatcher: CoroutineDispatcher = core.coreDispatcher,
         ): ViewModelProvider.Factory =
@@ -2092,6 +2891,7 @@ class QuizRadarViewModel(
                     return QuizRadarViewModel(
                         core = core,
                         onStateMutated = onStateMutated,
+                        onDataReset = onDataReset,
                         coreDispatcher = coreDispatcher,
                         clockDate = clockDate,
                     ) as T

@@ -1,12 +1,12 @@
 package com.quizradar.app.ui.components
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -14,13 +14,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
@@ -32,10 +33,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.quizradar.app.ui.icons.Icons
+import com.quizradar.app.ui.theme.PillButtonContentPadding
+import com.quizradar.app.ui.theme.PillButtonMinHeight
+import com.quizradar.app.ui.theme.filledPill
+import com.quizradar.app.ui.theme.quietCardBorder
+import com.quizradar.app.ui.theme.quietCardColors
+import com.quizradar.app.ui.theme.quietCardElevation
 
 private data class FaqItem(val question: String, val answer: String)
 
@@ -100,7 +107,6 @@ fun HelpSheet(
                     Text(
                         text = "QuizRadar Help & FAQ",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
                     )
                     Text(
                         text = "Zero-server, local-first intelligence engine",
@@ -118,19 +124,25 @@ fun HelpSheet(
             FAQS.forEach { faq ->
                 var expanded by remember { mutableStateOf(false) }
                 Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors =
-                        CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        ),
+                    onClick = { expanded = !expanded },
+                    shape = MaterialTheme.shapes.medium,
+                    colors = CardDefaults.quietCardColors().copy(containerColor = MaterialTheme.colorScheme.surface),
+                    border = CardDefaults.quietCardBorder(),
+                    elevation = CardDefaults.quietCardElevation(),
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { expanded = !expanded },
+                            .padding(vertical = 4.dp),
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
+                    // The state description merges up into the card's clickable
+                    // node: TalkBack announces Expanded/Collapsed, not just the
+                    // question (the chevron icon itself is decorative).
+                    Column(
+                        modifier =
+                            Modifier
+                                .padding(16.dp)
+                                .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" },
+                    ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -138,16 +150,14 @@ fun HelpSheet(
                         ) {
                             Text(
                                 text = faq.question,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.weight(1f),
                             )
-                            Text(
-                                text = if (expanded) "▲" else "▼",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Bold,
+                            Icon(
+                                imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(start = 8.dp),
                             )
                         }
@@ -157,7 +167,6 @@ fun HelpSheet(
                                 text = faq.answer,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                lineHeight = 18.sp,
                             )
                         }
                     }
@@ -168,8 +177,12 @@ fun HelpSheet(
 
             Button(
                 onClick = onDismiss,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.filledPill(),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = PillButtonMinHeight),
+                contentPadding = PillButtonContentPadding,
             ) {
                 Text("Got it")
             }

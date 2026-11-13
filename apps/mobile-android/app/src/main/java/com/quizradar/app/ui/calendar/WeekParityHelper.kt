@@ -18,13 +18,29 @@ object WeekParityHelper {
         return if (isoWeek % 2 != 0) "week_a" else "week_b"
     }
 
+    /**
+     * Day match that accepts every spelling the timetable uses: the full
+     * name ("Monday"), the three letter abbreviation ("Mon") and the odd
+     * short form ("Th"). The agenda used to compare "Monday" against a "Mon"
+     * slot and therefore lost every abbreviated class (audit A09).
+     */
+    fun dayMatches(
+        slotDay: String,
+        date: LocalDate,
+    ): Boolean {
+        val slot = slotDay.trim().lowercase()
+        if (slot.isEmpty()) return false
+        val target = date.dayOfWeek.name.lowercase()
+        if (slot == target) return true
+        if (slot.length >= 3 && target.startsWith(slot.take(3))) return true
+        return false
+    }
+
     fun slotMatchesDate(
         slot: ScheduleSlotModel,
         date: LocalDate,
     ): Boolean {
-        val dayName = date.dayOfWeek.name
-        val matchesDay = slot.day.take(3).equals(dayName.take(3), ignoreCase = true)
-        if (!matchesDay) return false
+        if (!dayMatches(slot.day, date)) return false
 
         val parity = slot.weekParity?.trim()?.lowercase() ?: "all"
         return when (parity) {

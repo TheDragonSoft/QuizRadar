@@ -109,6 +109,144 @@ pub fn evaluate_scale(percentage: f64, scale: &str) -> (f64, String, f64) {
     }
 }
 
+/// One graded assessment contribution, shared by the GPA engine and the
+/// grade-target calculator so both apply the SAME weighting rules.
+#[derive(Debug, Clone, Copy)]
+pub struct GradedContribution {
+    /// Achieved ÷ max, clamped to `0.0..=2.0` (a little extra credit allowed).
+    pub ratio: f64,
+    /// Points achieved on the item.
+    pub achieved: f64,
+    /// Points the item is worth.
+    pub max: f64,
+    /// The weight the course records for the item, when it records one.
+    pub weight: Option<f64>,
+}
+
+/// Which weighting rule produced the course total.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WeightingMode {
+    /// Nothing is graded yet.
+    Empty,
+    /// Every graded item is unweighted: the raw points decide the percentage.
+    RawPoints,
+    /// Every graded item carries an explicit weight.
+    Explicit,
+    /// Explicitly weighted and unweighted graded items are mixed.
+    Mixed,
+}
+
+/// The resolved weighting of one course's graded items.
+#[derive(Debug, Clone)]
+pub struct CourseWeighting {
+    /// The rule that produced the numbers below.
+    pub mode: WeightingMode,
+    /// The weight every graded item contributes under the rule in force.
+    pub item_weights: Vec<f64>,
+    /// Earned weight points under the rule in force.
+    pub accumulated_points: f64,
+    /// The course total weight under the rule in force.
+    pub total_weightage: f64,
+    /// The weighted percentage earned so far, rounded to ONE decimal.
+    pub percentage: Option<f64>,
+    /// The share every unweighted graded item received in the mixed case.
+    pub unweighted_share: f64,
+    /// The sum of the explicit weights of the graded items.
+    pub explicit_sum: f64,
+    /// How many graded items carry an explicit weight.
+    pub explicit_count: usize,
+    /// How many graded items have no explicit weight.
+    pub unweighted_count: usize,
+}
+
+/// Resolves the course weighting from its graded items — the SINGLE source of
+/// truth for the GPA percentage AND the Grade Center what-if projection
+/// (`crate::plan::grade_target`), so the two views can never disagree.
+///
+/// The course's own rules, applied to the graded items only:
+/// - no graded item -> no percentage;
+/// - every graded item unweighted -> raw points (`Σ achieved / Σ max`);
+/// - every graded item weighted -> `Σ (ratio × weight) / Σ weight`;
+/// - mixed -> every unweighted item takes `(100 − Σ explicit weights) / count`
+///   (or `Σ explicit weights / explicit count` when the explicit weights
+///   already reach 100), so the course total is exactly 100.
+///
+/// Every percentage is rounded to ONE decimal, exactly like the GPA summary.
+#[must_use]
+pub fn resolve_course_weighting(items: &[GradedContribution]) -> CourseWeighting {
+    let explicit_count = items.iter().filter(|i| i.weight.is_some()).count();
+    let unweighted_count = items.len() - explicit_count;
+    let explicit_sum: f64 = items.iter().filter_map(|i| i.weight).sum();
+
+    let mode = if items.is_empty() {
+        WeightingMode::Empty
+    } else if explicit_count == 0 {
+        WeightingMode::RawPoints
+    } else if unweighted_count == 0 {
+        WeightingMode::Explicit
+    } else {
+        WeightingMode::Mixed
+    };
+
+    let mut item_weights = Vec::with_capacity(items.len());
+    let mut accumulated_points = 0.0;
+    let mut total_weightage = 0.0;
+    let mut unweighted_share = 0.0;
+
+    match mode {
+        WeightingMode::Empty => {}
+        WeightingMode::RawPoints => {
+            // All unweighted: the raw points fallback.
+            accumulated_points = items.iter().map(|i| i.achieved).sum();
+            total_weightage = items.iter().map(|i| i.max).sum();
+            item_weights = items.iter().map(|i| i.max).collect();
+        }
+        WeightingMode::Explicit => {
+            // All items have explicit weights.
+            for item in items {
+                let w = item.weight.unwrap_or(0.0);
+                accumulated_points += item.ratio * w;
+                total_weightage += w;
+                item_weights.push(w);
+            }
+        }
+        WeightingMode::Mixed => {
+            // Mixed: the unweighted items split the course weight the
+            // explicit weights leave behind (or their average weight when the
+            // explicit weights already reach 100).
+            unweighted_share = if explicit_sum < 100.0 {
+                (100.0 - explicit_sum) / (unweighted_count as f64)
+            } else {
+                explicit_sum / (explicit_count as f64)
+            };
+            for item in items {
+                let w = item.weight.unwrap_or(unweighted_share);
+                accumulated_points += item.ratio * w;
+                total_weightage += w;
+                item_weights.push(w);
+            }
+        }
+    }
+
+    let percentage = if total_weightage > 0.0 {
+        Some(((accumulated_points / total_weightage) * 100.0 * 10.0).round() / 10.0)
+    } else {
+        None
+    };
+
+    CourseWeighting {
+        mode,
+        item_weights,
+        accumulated_points,
+        total_weightage,
+        percentage,
+        unweighted_share,
+        explicit_sum,
+        explicit_count,
+        unweighted_count,
+    }
+}
+
 /// Calculates course grade progress and semester GPA across all enrolled courses.
 #[must_use]
 pub fn calculate_gpa(
@@ -142,14 +280,7 @@ pub fn calculate_gpa(
             })
             .collect();
 
-        struct GradedItem {
-            ratio: f64,
-            achieved: f64,
-            max: f64,
-            weight: Option<f64>,
-        }
-
-        let mut graded_items = Vec::new();
+        let mut graded_items: Vec<GradedContribution> = Vec::new();
 
         for assessment in matching_assessments {
             let grade = grades.get(&assessment.id);
@@ -164,7 +295,7 @@ pub fn calculate_gpa(
             if let (Some(ach), Some(mx)) = (achieved, max) {
                 if mx > 0.0 {
                     let ratio = (ach / mx).clamp(0.0, 2.0); // allow slight extra credit
-                    graded_items.push(GradedItem {
+                    graded_items.push(GradedContribution {
                         ratio,
                         achieved: ach,
                         max: mx,
@@ -174,60 +305,12 @@ pub fn calculate_gpa(
             }
         }
 
-        let mut accumulated_points = 0.0;
-        let mut total_weightage = 0.0;
-
-        let percentage = if graded_items.is_empty() {
-            None
-        } else {
-            let explicit_count = graded_items.iter().filter(|g| g.weight.is_some()).count();
-            let unweighted_count = graded_items.len() - explicit_count;
-
-            if explicit_count == 0 {
-                // All unweighted: raw points fallback
-                let raw_achieved: f64 = graded_items.iter().map(|g| g.achieved).sum();
-                let raw_max: f64 = graded_items.iter().map(|g| g.max).sum();
-                accumulated_points = raw_achieved;
-                total_weightage = raw_max;
-                if raw_max > 0.0 {
-                    Some(((raw_achieved / raw_max) * 100.0 * 10.0).round() / 10.0)
-                } else {
-                    None
-                }
-            } else if unweighted_count == 0 {
-                // All items have explicit weights
-                for item in &graded_items {
-                    let w = item.weight.unwrap_or(0.0);
-                    accumulated_points += item.ratio * w;
-                    total_weightage += w;
-                }
-                if total_weightage > 0.0 {
-                    Some(((accumulated_points / total_weightage) * 100.0 * 10.0).round() / 10.0)
-                } else {
-                    None
-                }
-            } else {
-                // Mixed: some have explicit weights, some do not.
-                // Allocate remaining weight (or average weight if already >= 100%) to unweighted items.
-                let explicit_sum: f64 = graded_items.iter().filter_map(|g| g.weight).sum();
-                let unweighted_weight = if explicit_sum < 100.0 {
-                    (100.0 - explicit_sum) / (unweighted_count as f64)
-                } else {
-                    explicit_sum / (explicit_count as f64)
-                };
-
-                for item in &graded_items {
-                    let w = item.weight.unwrap_or(unweighted_weight);
-                    accumulated_points += item.ratio * w;
-                    total_weightage += w;
-                }
-                if total_weightage > 0.0 {
-                    Some(((accumulated_points / total_weightage) * 100.0 * 10.0).round() / 10.0)
-                } else {
-                    None
-                }
-            }
-        };
+        // The ONE weighting rule the GPA summary and the Grade Center what-if
+        // projection share, so the two views can never disagree.
+        let weighting = resolve_course_weighting(&graded_items);
+        let accumulated_points = weighting.accumulated_points;
+        let total_weightage = weighting.total_weightage;
+        let percentage = weighting.percentage;
 
         let (grade_point, letter_grade) = if let Some(p) = percentage {
             let (gp, letter, max_s) = evaluate_scale(p, scale);

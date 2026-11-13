@@ -5,11 +5,30 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import com.quizradar.app.MainActivity
 import com.quizradar.app.R
 import com.quizradar.app.model.AssessmentModel
+import java.time.Duration
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.ZonedDateTime
+
+/** Whether a known exam start instant lies ahead of the reference instant. */
+enum class ExamStartStatus {
+    /** A real, parseable start exists and has not happened yet. */
+    FUTURE,
+
+    /** A real, parseable start exists but has already passed. */
+    PAST,
+
+    /** No date or no parsable start time — nothing honest can be computed. */
+    UNKNOWN,
+}
 
 /**
  * First-party notification helper creating notification channels and builders
@@ -19,6 +38,15 @@ object NotificationHelper {
     const val CHANNEL_EXAMS = "quizradar_exam_reminders"
     const val CHANNEL_DIGEST = "quizradar_morning_digest"
     const val CHANNEL_FOCUS = "quizradar_focus_timer"
+
+    /** Notification kinds the reminder worker owns per assessment (stable via `notificationIdFor`). */
+    val EXAM_NOTIFICATION_KINDS = listOf("exam-24h", "exam-0d", "exam-ongoing")
+
+    const val TEST_NOTIFICATION_ID = 777
+    const val TIMER_NOTIFICATION_ID = 7788
+
+    private const val OWNED_PREFS_FILE = "quizradar_owned_notifications"
+    private const val OWNED_IDS_KEY = "owned_notification_ids"
 
     fun createNotificationChannels(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -97,7 +125,7 @@ object NotificationHelper {
     fun buildPersistentExamNotification(
         context: Context,
         assessment: AssessmentModel,
-        minutesRemaining: Int = 120,
+        minutesRemaining: Int,
     ): NotificationCompat.Builder {
         val intent =
             Intent(context, MainActivity::class.java).apply {
@@ -115,7 +143,7 @@ object NotificationHelper {
         val courseStr = assessment.courseName ?: assessment.courseId ?: "Exam"
         val timeStr = assessment.displayTime?.let { " ($it)" } ?: ""
         val roomStr = if (assessment.room != null && assessment.room != "—") " · Room ${assessment.room}" else ""
-        val countdownText = if (minutesRemaining <= 60) "$minutesRemaining mins" else "${minutesRemaining / 60}h ${minutesRemaining % 60}m"
+        val countdownText = formatCountdown(minutesRemaining)
         val title = "🎯 Exam Soon: ${assessment.title} (in $countdownText)"
         val body = "$courseStr$roomStr$timeStr"
 
@@ -127,6 +155,9 @@ object NotificationHelper {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            // The worker refreshes this countdown every pass; each refresh
+            // must silently update, not re-alert with sound/vibration.
+            .setOnlyAlertOnce(true)
             .setAutoCancel(false)
     }
 
@@ -258,4 +289,118 @@ object NotificationHelper {
         } else {
             true
         }
+
+    /**
+     * Classifies the assessment's real start instant against `now` in `zone`.
+     *
+     * Core serialises `start_time` as `HH:MM` (see `core/src/types.rs`), so a
+     * wall-clock parse is the honest contract; anything unparsable, missing
+     * or already past is reported instead of invented around.
+     */
+    fun examStartStatus(
+        now: ZonedDateTime,
+        dateIso: LocalDate?,
+        startTime: String?,
+        zone: ZoneId,
+    ): ExamStartStatus {
+        val date = dateIso ?: return ExamStartStatus.UNKNOWN
+        val time =
+            startTime
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { runCatching { LocalTime.parse(it) }.getOrNull() }
+                ?: return ExamStartStatus.UNKNOWN
+        val startAt = ZonedDateTime.of(date, time, zone)
+        return if (startAt.isAfter(now)) ExamStartStatus.FUTURE else ExamStartStatus.PAST
+    }
+
+    /**
+     * Whole minutes until the assessment's real start, or `null` when the
+     * start is unknown or already past — a countdown is never fabricated.
+     */
+    fun minutesUntilExamStart(
+        now: ZonedDateTime,
+        dateIso: LocalDate?,
+        startTime: String?,
+        zone: ZoneId,
+    ): Int? {
+        val date = dateIso ?: return null
+        val time =
+            startTime
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { runCatching { LocalTime.parse(it) }.getOrNull() }
+                ?: return null
+        val startAt = ZonedDateTime.of(date, time, zone)
+        if (!startAt.isAfter(now)) return null
+        val minutes = Duration.between(now, startAt).toMinutes()
+        return if (minutes > 0) minutes.toInt() else null
+    }
+
+    /** "45 mins" under an hour, otherwise "2h 15m" — never a made-up value. */
+    fun formatCountdown(minutes: Int): String = if (minutes <= 60) "$minutes mins" else "${minutes / 60}h ${minutes % 60}m"
+
+    // ------------------------------------------------------------------
+    // Owned-notification bookkeeping: every notification the reminder
+    // worker posts is remembered so a reset (or a retired/past assessment)
+    // can cancel it even after the underlying data is gone.
+    // ------------------------------------------------------------------
+
+    private fun ownedPrefs(context: Context): SharedPreferences = context.getSharedPreferences(OWNED_PREFS_FILE, Context.MODE_PRIVATE)
+
+    fun rememberOwnedNotification(
+        context: Context,
+        notificationId: Int,
+    ) {
+        val prefs = ownedPrefs(context)
+        val ids = prefs.getStringSet(OWNED_IDS_KEY, emptySet()).orEmpty() + notificationId.toString()
+        prefs.edit().putStringSet(OWNED_IDS_KEY, ids).apply()
+    }
+
+    private fun forgetOwnedNotification(
+        context: Context,
+        notificationId: Int,
+    ) {
+        val prefs = ownedPrefs(context)
+        val ids = prefs.getStringSet(OWNED_IDS_KEY, emptySet()).orEmpty() - notificationId.toString()
+        prefs.edit().putStringSet(OWNED_IDS_KEY, ids).apply()
+    }
+
+    /**
+     * Cancels the given notifications and clears their owned-registry
+     * entries. Returns how many cancel calls were attempted.
+     */
+    fun cancelByIds(
+        context: Context,
+        notificationIds: Collection<Int>,
+    ): Int {
+        val notificationManager = NotificationManagerCompat.from(context)
+        var cancelled = 0
+        for (id in notificationIds) {
+            runCatching { notificationManager.cancel(id) }
+                .onSuccess {
+                    cancelled++
+                    forgetOwnedNotification(context, id)
+                }
+        }
+        return cancelled
+    }
+
+    /**
+     * Cancels every notification this app's first-party paths own: all IDs
+     * remembered by the reminder worker plus the fixed test/timer IDs.
+     *
+     * Intended for the data-reset integrator (`resetAllData` wipes the store
+     * that derived the notifications, so they must not outlive it).
+     *
+     * @return number of notifications actually cancelled.
+     */
+    fun cancelAllOwnedNotifications(context: Context): Int {
+        val rememberedIds =
+            ownedPrefs(context)
+                .getStringSet(OWNED_IDS_KEY, emptySet())
+                .orEmpty()
+                .mapNotNull { it.toIntOrNull() }
+        return cancelByIds(context, rememberedIds + TEST_NOTIFICATION_ID + TIMER_NOTIFICATION_ID)
+    }
 }

@@ -27,6 +27,14 @@ sealed class OAuthRedirectResult {
 class OAuthManager(
     var googleClientId: String = DEFAULT_GOOGLE_CLIENT_ID,
     var microsoftClientId: String = DEFAULT_MICROSOFT_CLIENT_ID,
+    /**
+     * When wired, the pending PKCE transaction (provider/state/verifier/
+     * redirect) is persisted encrypted and consumed once, so a callback
+     * arriving after an Activity recreation or process death still validates
+     * (audit A04). Null keeps the pre-persistence behavior: pending state in
+     * memory only (unit tests, store-less managers).
+     */
+    private val transactionStore: OAuthTransactionStore? = null,
 ) {
     var pendingProvider: String? = null
         private set
@@ -42,11 +50,34 @@ class OAuthManager(
         verifier: String,
         state: String,
         redirectUri: String,
+        clientId: String = "",
     ) {
         pendingProvider = provider
         pendingVerifier = verifier
         pendingState = state
         pendingRedirectUri = redirectUri
+        transactionStore?.save(
+            PendingOAuthTransaction(provider, verifier, state, redirectUri, System.currentTimeMillis(), clientId),
+        )
+    }
+
+    private fun rememberPending(
+        provider: String,
+        verifier: String,
+        state: String,
+        redirectUri: String,
+    ) {
+        pendingProvider = provider
+        pendingVerifier = verifier
+        pendingState = state
+        pendingRedirectUri = redirectUri
+        // The id the sign-in STARTED with: the callback can arrive before the
+        // config store has been read again, and the exchange must use the
+        // initiating id, never the id loaded at callback time.
+        val clientId = if (provider == "google") googleClientId else microsoftClientId
+        transactionStore?.save(
+            PendingOAuthTransaction(provider, verifier, state, redirectUri, System.currentTimeMillis(), clientId),
+        )
     }
 
     /**
@@ -69,10 +100,7 @@ class OAuthManager(
         val payloadJson = engine.buildGoogleAuthUrl(googleClientId, redirectUri)
         val obj = JSONObject(payloadJson)
         val url = obj.getString("url")
-        pendingProvider = "google"
-        pendingVerifier = obj.getString("verifier")
-        pendingState = obj.getString("state")
-        pendingRedirectUri = redirectUri
+        rememberPending("google", obj.getString("verifier"), obj.getString("state"), redirectUri)
         launchBrowser(context, url)
         return url
     }
@@ -85,10 +113,7 @@ class OAuthManager(
         val payloadJson = engine.buildMicrosoftAuthUrl(microsoftClientId, redirectUri)
         val obj = JSONObject(payloadJson)
         val url = obj.getString("url")
-        pendingProvider = "microsoft"
-        pendingVerifier = obj.getString("verifier")
-        pendingState = obj.getString("state")
-        pendingRedirectUri = redirectUri
+        rememberPending("microsoft", obj.getString("verifier"), obj.getString("state"), redirectUri)
         launchBrowser(context, url)
         return url
     }
@@ -154,25 +179,76 @@ class OAuthManager(
                 else -> return OAuthRedirectResult.Error("Unsupported OAuth path: $route")
             }
 
+        // Audit A04: resolve the pending transaction. A wired transaction
+        // store is authoritative - its persisted copy survives Activity
+        // recreation and process death, expires after 15 minutes, and is
+        // CONSUMED on read (single-use; a replayed callback finds nothing).
+        // Without a store the in-memory fields are used (unit tests).
+        val pending =
+            if (transactionStore != null) {
+                transactionStore.load()
+            } else {
+                pendingState?.let {
+                    PendingOAuthTransaction(
+                        provider = pendingProvider ?: "",
+                        verifier = pendingVerifier ?: "",
+                        state = it,
+                        redirectUri = pendingRedirectUri ?: "",
+                        createdAtMs = 0L,
+                    )
+                }
+            }
+        if (pending == null) {
+            clearPendingState()
+            return OAuthRedirectResult.Error("OAuth state mismatch or expired session")
+        }
+        if (pending.provider != provider) {
+            clearPendingState()
+            return OAuthRedirectResult.Error(
+                "OAuth provider mismatch: callback for $provider but session started for ${pending.provider}",
+            )
+        }
+
+        // The stored redirect is AUTHORITATIVE: the callback must match the
+        // scheme and path the sign-in started with, not merely any
+        // com.quizradar.app OAuth route.
+        val redirectUri =
+            pending.redirectUri.takeIf { it.isNotBlank() }
+                ?: (if (provider == "google") GOOGLE_REDIRECT_URI else MICROSOFT_REDIRECT_URI)
+        if (!callbackMatchesRedirect(uri, redirectUri)) {
+            clearPendingState()
+            return OAuthRedirectResult.Error(
+                "OAuth redirect mismatch: callback does not match the redirect the session started with",
+            )
+        }
+
         val returnedState = uri.getQueryParameter("state")
-        if (returnedState == null || returnedState != pendingState) {
+        if (returnedState == null || returnedState != pending.state) {
             clearPendingState()
             return OAuthRedirectResult.Error("OAuth state mismatch or expired session")
         }
 
         val code =
             uri.getQueryParameter("code")
-                ?: return OAuthRedirectResult.Error("Missing authorization code in redirect")
+                ?: run {
+                    clearPendingState()
+                    return OAuthRedirectResult.Error("Missing authorization code in redirect")
+                }
 
         val verifier =
-            pendingVerifier
-                ?: return OAuthRedirectResult.Error("Missing PKCE code verifier")
+            pending.verifier.takeIf { it.isNotBlank() }
+                ?: run {
+                    clearPendingState()
+                    return OAuthRedirectResult.Error("Missing PKCE code verifier")
+                }
 
-        val redirectUri =
-            pendingRedirectUri
-                ?: if (provider == "google") GOOGLE_REDIRECT_URI else MICROSOFT_REDIRECT_URI
-
-        val clientId = if (provider == "google") googleClientId else microsoftClientId
+        // The initiating client id, persisted with the transaction: a custom
+        // (BYO) id must be used even when the callback races the config load
+        // and the manager still holds the default id. Transactions saved by
+        // older builds without an id fall back to the manager's current one.
+        val clientId =
+            pending.clientId.takeIf { it.isNotBlank() }
+                ?: (if (provider == "google") googleClientId else microsoftClientId)
 
         return try {
             val exchangeJson =
@@ -201,11 +277,13 @@ class OAuthManager(
 
             if (provider == "google") {
                 engine.tokenProvider.setGoogleAccessToken(accessToken)
+                engine.tokenProvider.setGoogleAccessTokenIssuedAtMs(System.currentTimeMillis())
                 if (refreshToken != null) {
                     engine.tokenProvider.setGoogleRefreshToken(refreshToken)
                 }
             } else {
                 engine.tokenProvider.setMicrosoftAccessToken(accessToken)
+                engine.tokenProvider.setMicrosoftAccessTokenIssuedAtMs(System.currentTimeMillis())
                 if (refreshToken != null) {
                     engine.tokenProvider.setMicrosoftRefreshToken(refreshToken)
                 }
@@ -218,14 +296,50 @@ class OAuthManager(
         }
     }
 
+    /**
+     * True when the callback URI carries the same scheme and normalized
+     * host/path as the redirect the session started with (query parameters
+     * ignored). Both Google's single-slash `package:/path` form and the
+     * RFC-3986 with-authority `package://host/path` form normalize to the
+     * same shape, so both deliveries validate against one stored redirect.
+     */
+    private fun callbackMatchesRedirect(
+        callback: Uri,
+        redirectUri: String,
+    ): Boolean {
+        val redirect = Uri.parse(redirectUri)
+        if (callback.scheme != redirect.scheme) return false
+        return normalizeRoute(callback) == normalizeRoute(redirect)
+    }
+
+    /** Normalizes a URI to its host + path route, slash-insensitive. */
+    private fun normalizeRoute(uri: Uri): String {
+        val host = uri.host.orEmpty().lowercase()
+        val path = uri.path.orEmpty().removePrefix("/").lowercase()
+        return if (host.isEmpty()) path else "$host/$path"
+    }
+
     fun clearPendingState() {
         pendingProvider = null
         pendingVerifier = null
         pendingState = null
         pendingRedirectUri = null
+        transactionStore?.clear()
     }
 
     companion object {
+        /**
+         * The effective Google client id (audit A03): the stored override
+         * (Settings -> Sources) when usable, otherwise the shipped public
+         * client id - a blank or legacy-placeholder override no longer kills
+         * sign-in or silent refresh. Login and the core-facing token refresh
+         * (EngineFfiTokens) resolve through this one rule.
+         */
+        fun resolveGoogleClientId(stored: String?): String =
+            stored?.trim()?.takeIf {
+                it.isNotEmpty() && it !in LEGACY_PLACEHOLDER_GOOGLE_CLIENT_IDS
+            } ?: DEFAULT_GOOGLE_CLIENT_ID
+
         /**
          * Google OAuth 2.0 policy requires native Android custom schemes to be
          * formatted as `package_name:/path` without an authority/host (single slash `:/`).

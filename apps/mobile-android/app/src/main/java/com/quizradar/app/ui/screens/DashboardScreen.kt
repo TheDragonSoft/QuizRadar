@@ -6,7 +6,6 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -23,45 +22,67 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.quizradar.app.model.AppSnapshotModel
+import com.quizradar.app.model.AssessmentModel
+import com.quizradar.app.model.DailyStudyTaskModel
 import com.quizradar.app.model.FeedConfigModel
 import com.quizradar.app.ui.QuizRadarViewModel
+import com.quizradar.app.ui.components.CompactSetupPanel
+import com.quizradar.app.ui.components.CompactSetupStep
 import com.quizradar.app.ui.components.ConflictBanner
 import com.quizradar.app.ui.components.NextUpHeroCard
-import com.quizradar.app.ui.components.SetupChecklistCard
+import com.quizradar.app.ui.components.StatusTag
+import com.quizradar.app.ui.components.StudyRecommendationCard
 import com.quizradar.app.ui.components.TimelineAssessmentRow
+import com.quizradar.app.ui.extractTimePart
+import com.quizradar.app.ui.formatIsoDateForDisplay
 import com.quizradar.app.ui.icons.Icons
+import com.quizradar.app.ui.theme.ChipLeadingCheck
+import com.quizradar.app.ui.theme.PillButtonContentPadding
+import com.quizradar.app.ui.theme.PillButtonMinHeight
+import com.quizradar.app.ui.theme.StatusColors
+import com.quizradar.app.ui.theme.filledPill
+import com.quizradar.app.ui.theme.quietCardBorder
+import com.quizradar.app.ui.theme.quietCardColors
+import com.quizradar.app.ui.theme.quietCardElevation
+import com.quizradar.app.ui.theme.quietChipColors
+import com.quizradar.app.ui.theme.tonalPill
 
 internal fun formatReadinessDisplay(
     totalTopicsCount: Int,
@@ -160,15 +181,6 @@ fun DashboardScreen(
     val sourceFilter by viewModel.activeSourceFilter.collectAsState()
     val typeFilter by viewModel.activeTypeFilter.collectAsState()
 
-    val notificationPermissionLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.RequestPermission(),
-        ) { isGranted ->
-            if (isGranted) {
-                viewModel.showToast("Notifications enabled")
-            }
-        }
-
     val hasNotificationPermission =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ContextCompat.checkSelfPermission(
@@ -179,18 +191,44 @@ fun DashboardScreen(
             true
         }
 
+    // The permission answer is kept in local state as well, so the reminders
+    // step flips to "done" the moment the student grants it (the launcher
+    // result is the only event that tells us the answer changed).
+    var notificationPermissionGranted by remember { mutableStateOf(false) }
+    val notificationGranted = notificationPermissionGranted || hasNotificationPermission
+
+    val notificationPermissionLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission(),
+        ) { isGranted ->
+            notificationPermissionGranted = isGranted
+            if (isGranted) {
+                viewModel.setNotifyExam24h(true)
+                viewModel.showToast("Exam reminders enabled")
+            }
+        }
+
     val coursesDone = snapshot.schedule.courses.isNotEmpty()
-    val sourcesDone = viewModel.isGoogleConnected() || viewModel.isMicrosoftConnected()
-    val remindersDone = hasNotificationPermission && notifyExam24h
-    val showChecklist = !isSetupChecklistDismissed && (!coursesDone || !sourcesDone || !remindersDone)
+    val accountsConnected =
+        (if (viewModel.isGoogleConnected()) 1 else 0) +
+            (if (viewModel.isMicrosoftConnected()) 1 else 0)
+    val feedsEnabled = snapshot.feeds.count { it.enabled }
+    // A source is "done" when this phone can really scan something: a signed
+    // in account and/or an enabled .ics feed.
+    val sourcesDone = accountsConnected > 0 || feedsEnabled > 0
+    val remindersDone = notificationGranted && notifyExam24h
 
     val dash = snapshot.dashboard
     val assessments = snapshot.assessments
     val completedTopics = snapshot.completedTopics
+    val radarIsEmpty = assessments.isEmpty()
 
-    // Filtered timeline
+    // The timeline starts at the genuinely upcoming items; the type and
+    // source chips narrow that list further. The type filter used to be
+    // consumed here without any control at all (audit A12).
+    val upcomingAssessments = assessments.filter { it.isUpcoming }
     val filteredTimeline =
-        assessments.filter { a ->
+        upcomingAssessments.filter { a ->
             if (sourceFilter != "ALL") {
                 val src = a.source.uppercase()
                 if (!src.contains(sourceFilter)) return@filter false
@@ -202,16 +240,42 @@ fun DashboardScreen(
             }
             true
         }
+    val typeChips =
+        buildList {
+            add("ALL")
+            upcomingAssessments
+                .map { it.assessmentType }
+                .filter { it.isNotBlank() }
+                .distinct()
+                .sorted()
+                .forEach { add(it) }
+            if (typeFilter != "ALL" && typeFilter !in this) add(typeFilter)
+        }
+    val sourceChips =
+        buildList {
+            add("ALL")
+            upcomingAssessments
+                .map { it.source }
+                .filter { it.isNotBlank() }
+                .map { it.uppercase() }
+                .distinct()
+                .sorted()
+                .forEach { add(it) }
+            if (sourceFilter != "ALL" && sourceFilter !in this) add(sourceFilter)
+        }
+    val nextAssessment = upcomingAssessments.firstOrNull()
 
     val weekCount = dash.upcomingThisWeek.size
     val hasTrackedTopics = dash.totalTopicsCount > 0
     val readinessPct = if (hasTrackedTopics) dash.readinessPercent.coerceIn(0, 100) else 0
+    // The status colour rides the shield icon and the meter only; the
+    // readiness number itself stays in ink so it is legible in every theme.
     val readinessColor =
         when {
             !hasTrackedTopics -> MaterialTheme.colorScheme.onSurfaceVariant
-            readinessPct >= 80 -> if (isDark) Color(0xFF34D399) else Color(0xFF047857)
-            readinessPct >= 50 -> if (isDark) Color(0xFFFBBF24) else Color(0xFFB45309)
-            else -> if (isDark) Color(0xFFF87171) else Color(0xFFDC2626)
+            readinessPct >= 80 -> StatusColors.success(isDark)
+            readinessPct >= 50 -> StatusColors.warningBadge
+            else -> MaterialTheme.colorScheme.error
         }
     val (readinessHeadline, readinessSubtitle) =
         formatReadinessDisplay(
@@ -219,12 +283,95 @@ fun DashboardScreen(
             completedTopicsCount = dash.completedTopicsCount,
             readinessPercent = dash.readinessPercent,
         )
-    val accountsConnected =
-        (if (viewModel.isGoogleConnected()) 1 else 0) +
-            (if (viewModel.isMicrosoftConnected()) 1 else 0)
     val (sourcesHeadline, sourcesSubtitle) =
         formatSourcesDisplay(snapshot.feeds, dash.sourcesCount, accountsConnected, lastSyncedStamp)
-    val hasActiveSources = snapshot.feeds.any { it.enabled } || accountsConnected > 0
+    val hasActiveSources = sourcesDone
+
+    // ONE primary action, matching the step that actually blocks the student
+    // (audit P3-4): no timetable -> add a course, no source -> connect one,
+    // everything in place -> scan.
+    val primaryActionLabel: String
+    val primaryAction: () -> Unit
+    when {
+        !coursesDone -> {
+            primaryActionLabel = "Add course"
+            primaryAction = onAddCourse
+        }
+        !sourcesDone -> {
+            primaryActionLabel = "Connect source"
+            primaryAction = onOpenAccount
+        }
+        else -> {
+            primaryActionLabel = "Scan now"
+            primaryAction = { viewModel.runScan() }
+        }
+    }
+
+    // Turning the reminders on needs the notification permission where the
+    // platform asks for one; below Android 13 the permission always exists.
+    val enableReminders: () -> Unit = {
+        if (!notificationGranted) {
+            notificationPermissionLauncher.launch(
+                Manifest.permission.POST_NOTIFICATIONS,
+            )
+        } else {
+            viewModel.setNotifyExam24h(true)
+        }
+    }
+
+    val setupSteps =
+        listOf(
+            CompactSetupStep(
+                icon = Icons.Outlined.School,
+                label = "Course",
+                status =
+                    if (coursesDone) {
+                        "Your timetable is in QuizRadar"
+                    } else {
+                        "No timetable yet"
+                    },
+                done = coursesDone,
+            ),
+            CompactSetupStep(
+                icon = Icons.Outlined.RssFeed,
+                label = "Source",
+                status =
+                    if (sourcesDone) {
+                        "Scanning runs on this device"
+                    } else {
+                        "No account or feed connected — Settings → Sources"
+                    },
+                done = sourcesDone,
+                actionLabel = if (sourcesDone) null else "Settings",
+                onAction = if (sourcesDone) null else onOpenSettings,
+            ),
+            CompactSetupStep(
+                icon = Icons.Outlined.Notifications,
+                label = "Reminders",
+                status =
+                    if (remindersDone) {
+                        "Exam reminders are on"
+                    } else {
+                        "Turn on exam reminders"
+                    },
+                done = remindersDone,
+                actionLabel = if (remindersDone) null else "Enable reminders",
+                onAction = if (remindersDone) null else enableReminders,
+            ),
+        )
+
+    val setupPanel: @Composable () -> Unit = {
+        CompactSetupPanel(
+            steps = setupSteps,
+            primaryActionLabel = primaryActionLabel,
+            onPrimaryAction = primaryAction,
+            onDismiss = { viewModel.dismissSetupChecklist() },
+            dismissed = isSetupChecklistDismissed,
+            // When the empty-timeline state card below owns the filled action,
+            // the panel's button recedes to tonal - one filled pill per flow.
+            primaryTonal = !radarIsEmpty && filteredTimeline.isEmpty(),
+        )
+    }
 
     PullToRefreshBox(
         isRefreshing = isRefreshing || isScanning,
@@ -235,11 +382,61 @@ fun DashboardScreen(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = 20.dp),
             contentPadding = PaddingValues(bottom = 88.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item { Spacer(modifier = Modifier.height(6.dp)) }
+            item { Spacer(modifier = Modifier.height(8.dp)) }
+
+            // Empty radar: ONE compact setup panel replaces the old hero +
+            // checklist + four-KPI stack (audit P3-1). Nothing else can be
+            // true yet, so nothing else is shown.
+            if (radarIsEmpty) {
+                item { setupPanel() }
+                if (isScanning || lastScanReport != null) {
+                    item {
+                        ScanSourcesCard(
+                            isScanning = isScanning,
+                            progress = scanProgress,
+                            report = lastScanReport,
+                            onScanNow = { viewModel.runScan() },
+                        )
+                    }
+                }
+                item {
+                    // Escape hatches that also put real data on the radar.
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        TextButton(
+                            onClick = onImportBackup,
+                            modifier =
+                                Modifier
+                                    .weight(1f)
+                                    .defaultMinSize(minHeight = 48.dp),
+                        ) {
+                            Text(
+                                text = "Restore a backup",
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
+                        TextButton(
+                            onClick = onAddEvent,
+                            modifier =
+                                Modifier
+                                    .weight(1f)
+                                    .defaultMinSize(minHeight = 48.dp),
+                        ) {
+                            Text(
+                                text = "Add an event",
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
+                    }
+                }
+                return@LazyColumn
+            }
 
             // Next Up hero — the desktop radar card (gradient + starfield sky).
             // It sits ABOVE the sub-tab bar: the banner is the one thing that
@@ -265,24 +462,9 @@ fun DashboardScreen(
                 )
             }
 
-            // Setup Checklist Card
-            if (showChecklist) {
-                item {
-                    SetupChecklistCard(
-                        snapshot = snapshot,
-                        viewModel = viewModel,
-                        hasNotificationPermission = hasNotificationPermission,
-                        onAddCourse = onAddCourse,
-                        onConnectSources = onOpenAccount,
-                        onOpenSettings = onOpenSettings,
-                        onRequestNotificationPermission = {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            }
-                        },
-                        onDismiss = { viewModel.dismissSetupChecklist() },
-                    )
-                }
+            // Compact setup nudge — only while a step is still open.
+            if (!isSetupChecklistDismissed) {
+                item { setupPanel() }
             }
 
             // Live scan card: the per-source progress the Rust core reports
@@ -300,95 +482,129 @@ fun DashboardScreen(
                 }
             }
 
+            // WHAT SHOULD I STUDY NOW? — the core's study recommendations,
+            // finally mounted (audit A12). A topic tick is optimistic: the
+            // ViewModel updates the state first and rolls the change back if
+            // the core refuses it.
+            if (dash.studyRecommendations.isNotEmpty()) {
+                item {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "What should I study now?",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Pick a topic to work on — a tick saves straight away.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                itemsIndexed(
+                    dash.studyRecommendations,
+                    key = { _, rec -> "${rec.assessmentId}::${rec.title}" },
+                ) { index, rec ->
+                    StudyRecommendationCard(
+                        index = index + 1,
+                        recommendation = rec,
+                        completedTopicsMap = completedTopics,
+                        onToggleTopic = { key, done -> viewModel.toggleTopic(key, done) },
+                        onClick = {
+                            val topic =
+                                rec.topics.firstOrNull { !it.completed }?.topic
+                                    ?: rec.topics.firstOrNull()?.topic
+                            if (topic != null) {
+                                viewModel.openPomodoro(rec.assessmentId, topic)
+                                viewModel.selectTab("Focus")
+                            } else {
+                                viewModel.openAssessmentDetail(rec.assessmentId)
+                            }
+                        },
+                    )
+                }
+            }
+
+            // TODAY — the study tasks the core planned for today. A task opens
+            // Focus with that task already selected.
+            val todayGroup = snapshot.tasks.days.firstOrNull { it.isToday }
+            if (todayGroup != null && todayGroup.tasks.isNotEmpty()) {
+                item {
+                    TodayStudyStrip(
+                        tasks = todayGroup.tasks,
+                        onOpenTask = { task ->
+                            viewModel.openPomodoro(task.assessmentId, task.topic)
+                            viewModel.selectTab("Focus")
+                        },
+                    )
+                }
+            }
+
+            // NEXT ASSESSMENT — the soonest genuinely upcoming item, with a
+            // way into its detail sheet. The hero above already leads with
+            // the countdown, so this card stays a quiet facts strip in the
+            // same anatomy as a timeline row.
+            item {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Next assessment",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    NextAssessmentCard(
+                        assessment = nextAssessment,
+                        onOpen = { assessment -> viewModel.openAssessmentDetail(assessment.id) },
+                    )
+                }
+            }
+
             // OVERVIEW: KPI cards 2x2 grid
             item {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    Text(
+                        text = "Overview",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
                     // Row 1: Upcoming (7 Days) & Exams Ahead
                     Row(
                         modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        // KPI 1: Next 7 Days
-                        Column(
-                            modifier =
-                                Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(MaterialTheme.colorScheme.surface)
-                                    .border(
-                                        1.dp,
-                                        MaterialTheme.colorScheme.outlineVariant,
-                                        RoundedCornerShape(16.dp),
-                                    )
-                                    .padding(16.dp),
+                        KpiCard(
+                            label = "Upcoming (7 Days)",
+                            value =
+                                if (weekCount == 1) {
+                                    "1 assessment"
+                                } else {
+                                    "$weekCount assessments"
+                                },
+                            support =
+                                if (weekCount > 0) {
+                                    "Scheduled within upcoming 7 days"
+                                } else {
+                                    "Nothing scheduled in the next 7 days"
+                                },
+                            icon = Icons.Outlined.CalendarToday,
+                            iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = "Upcoming (7 Days)",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Icon(
-                                    imageVector = Icons.Outlined.CalendarToday,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text =
-                                    if (weekCount == 1) {
-                                        "1 assessment"
-                                    } else {
-                                        "$weekCount assessments"
-                                    },
-                                style =
-                                    MaterialTheme.typography.titleLarge.merge(
-                                        TextStyle(
-                                            fontWeight = FontWeight.ExtraBold,
-                                            fontFeatureSettings = "tnum",
-                                        ),
-                                    ),
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Text(
-                                text =
-                                    if (weekCount > 0) {
-                                        "Scheduled within upcoming 7 days"
-                                    } else {
-                                        "Nothing scheduled in the next 7 days"
-                                    },
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-
                             if (dash.examTypeCounts.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(10.dp))
                                 Row(
                                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
                                     dash.examTypeCounts.forEach { (type, count) ->
-                                        Text(
+                                        StatusTag(
                                             text = "$type ($count)",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                            modifier =
-                                                Modifier
-                                                    .clip(RoundedCornerShape(6.dp))
-                                                    .background(MaterialTheme.colorScheme.secondaryContainer)
-                                                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            tabular = true,
                                         )
                                     }
                                 }
@@ -396,272 +612,128 @@ fun DashboardScreen(
                         }
 
                         // KPI 1b: Exams Ahead (midterms + finals among upcoming)
-                        Column(
-                            modifier =
-                                Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(MaterialTheme.colorScheme.surface)
-                                    .border(
-                                        1.dp,
-                                        MaterialTheme.colorScheme.outlineVariant,
-                                        RoundedCornerShape(16.dp),
-                                    )
-                                    .padding(16.dp),
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = "Exams ahead",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Icon(
-                                    imageVector = Icons.Outlined.School,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(16.dp),
-                                )
+                        val examsAhead =
+                            dash.allUpcoming.count {
+                                it.assessmentType.contains("Midterm", ignoreCase = true) ||
+                                    it.assessmentType.contains("Final", ignoreCase = true)
                             }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            val examsAhead =
-                                dash.allUpcoming.count {
-                                    it.assessmentType.contains("Midterm", ignoreCase = true) ||
-                                        it.assessmentType.contains("Final", ignoreCase = true)
-                                }
-                            Text(
-                                text =
-                                    if (examsAhead == 1) {
-                                        "1 exam"
-                                    } else {
-                                        "$examsAhead exams"
-                                    },
-                                style =
-                                    MaterialTheme.typography.titleLarge.merge(
-                                        TextStyle(
-                                            fontWeight = FontWeight.ExtraBold,
-                                            fontFeatureSettings = "tnum",
-                                        ),
-                                    ),
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Text(
-                                text =
-                                    if (examsAhead > 0) {
-                                        "Midterm & final exams on the radar"
-                                    } else {
-                                        "No upcoming exams"
-                                    },
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                        KpiCard(
+                            label = "Exams ahead",
+                            value =
+                                if (examsAhead == 1) {
+                                    "1 exam"
+                                } else {
+                                    "$examsAhead exams"
+                                },
+                            support =
+                                if (examsAhead > 0) {
+                                    "Midterm & final exams on the radar"
+                                } else {
+                                    "No upcoming exams"
+                                },
+                            icon = Icons.Outlined.School,
+                            iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                        )
                     }
 
                     // Row 2: Exam Readiness & Connected Sources
                     Row(
                         modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         // KPI 2: Exam Readiness (Honest when totalTopicsCount == 0)
-                        Column(
-                            modifier =
-                                Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(MaterialTheme.colorScheme.surface)
-                                    .border(
-                                        1.dp,
-                                        MaterialTheme.colorScheme.outlineVariant,
-                                        RoundedCornerShape(16.dp),
-                                    )
-                                    .padding(16.dp),
+                        KpiCard(
+                            label = "Overall Readiness",
+                            value = readinessHeadline,
+                            support = readinessSubtitle,
+                            icon = Icons.Outlined.Shield,
+                            iconTint = readinessColor,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = "Overall Readiness",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Icon(
-                                    imageVector = Icons.Outlined.Shield,
-                                    contentDescription = null,
-                                    tint = readinessColor,
-                                    modifier = Modifier.size(16.dp),
+                            if (hasTrackedTopics) {
+                                LinearProgressIndicator(
+                                    progress = { (readinessPct / 100f).coerceIn(0f, 1f) },
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .height(6.dp)
+                                            .clip(CircleShape),
+                                    color = readinessColor,
+                                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
                                 )
                             }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = readinessHeadline,
-                                style =
-                                    MaterialTheme.typography.titleLarge.merge(
-                                        TextStyle(
-                                            fontWeight = FontWeight.ExtraBold,
-                                            fontFeatureSettings = "tnum",
-                                        ),
-                                    ),
-                                color = readinessColor,
-                            )
-                            Text(
-                                text = readinessSubtitle,
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            LinearProgressIndicator(
-                                progress = {
-                                    if (hasTrackedTopics) {
-                                        (readinessPct / 100f).coerceIn(0f, 1f)
-                                    } else {
-                                        0f
-                                    }
-                                },
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .height(6.dp)
-                                        .clip(RoundedCornerShape(3.dp)),
-                                color = readinessColor,
-                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                            )
                         }
 
                         // KPI 3: Sync & Sources (Honest when 0 sources exist)
-                        Column(
-                            modifier =
-                                Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(MaterialTheme.colorScheme.surface)
-                                    .border(
-                                        1.dp,
-                                        MaterialTheme.colorScheme.outlineVariant,
-                                        RoundedCornerShape(16.dp),
-                                    )
-                                    .padding(16.dp),
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = "Connected Sources",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Icon(
-                                    imageVector =
-                                        if (hasActiveSources) {
-                                            Icons.Outlined.CheckCircle
-                                        } else {
-                                            Icons.Outlined.RadioButtonUnchecked
-                                        },
-                                    contentDescription = null,
-                                    tint =
-                                        if (hasActiveSources) {
-                                            if (isDark) Color(0xFF34D399) else Color(0xFF047857)
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                    modifier = Modifier.size(16.dp),
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = sourcesHeadline,
-                                style =
-                                    MaterialTheme.typography.titleLarge.merge(
-                                        TextStyle(
-                                            fontWeight = FontWeight.ExtraBold,
-                                            fontFeatureSettings = "tnum",
-                                        ),
-                                    ),
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Text(
-                                text = sourcesSubtitle,
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                        KpiCard(
+                            label = "Connected Sources",
+                            value = sourcesHeadline,
+                            support = sourcesSubtitle,
+                            icon =
+                                if (hasActiveSources) {
+                                    Icons.Outlined.CheckCircle
+                                } else {
+                                    Icons.Outlined.RadioButtonUnchecked
+                                },
+                            iconTint =
+                                if (hasActiveSources) {
+                                    StatusColors.success(isDark)
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                        )
                     }
                 }
             }
 
-            // Next 7 Days / Upcoming Assessments Timeline
+            // Upcoming assessments — starts at the genuinely upcoming items and
+            // narrows by type and source. Both filters are visible now; the
+            // type filter used to be consumed without any control (audit A12).
             item {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = "Upcoming Assessments",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Filter by Source",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        text = "Filter by type",
+                        style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        listOf("ALL", "GMAIL", "MOODLE", "TEAMS", "CLASSROOM").forEach { src ->
-                            val isSelected = sourceFilter == src
-                            Box(
-                                modifier =
-                                    Modifier
-                                        .defaultMinSize(minHeight = 36.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(
-                                            if (isSelected) {
-                                                MaterialTheme.colorScheme.primary
-                                            } else {
-                                                MaterialTheme.colorScheme.surface
-                                            },
-                                        )
-                                        .border(
-                                            1.dp,
-                                            if (isSelected) {
-                                                MaterialTheme.colorScheme.primary
-                                            } else {
-                                                MaterialTheme.colorScheme.outlineVariant
-                                            },
-                                            RoundedCornerShape(8.dp),
-                                        )
-                                        .clickable { viewModel.setActiveSourceFilter(src) }
-                                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = src,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color =
-                                        if (isSelected) {
-                                            MaterialTheme.colorScheme.onPrimary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                )
-                            }
+                        typeChips.forEach { type ->
+                            DashboardFilterChip(
+                                label = if (type == "ALL") "All types" else type,
+                                selected = typeFilter == type,
+                                onClick = { viewModel.setActiveTypeFilter(type) },
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Filter by source",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        sourceChips.forEach { src ->
+                            DashboardFilterChip(
+                                label = if (src == "ALL") "All sources" else src,
+                                selected = sourceFilter == src,
+                                onClick = { viewModel.setActiveSourceFilter(src) },
+                            )
                         }
                     }
                 }
@@ -676,45 +748,38 @@ fun DashboardScreen(
                                 "QuizRadar needs your weekly class schedule to cross-reference " +
                                     "announcements and pin exam dates.",
                             icon = Icons.Outlined.School,
-                            primaryButtonLabel = "Add Course",
+                            primaryButtonLabel = "Add course",
                             onPrimaryClick = onAddCourse,
-                            secondaryButtonLabel = "Restore Backup",
+                            secondaryButtonLabel = "Restore a backup",
                             onSecondaryClick = onImportBackup,
                         )
-                    } else if (assessments.isEmpty()) {
+                    } else if (sourceFilter != "ALL" || typeFilter != "ALL") {
                         EmptyDashboardStateCard(
-                            title = "No assessments discovered yet",
+                            title = "No assessments match these filters",
                             desc =
-                                "Your courses are enrolled. Sign in to Gmail or Teams (or add an " +
-                                    ".ics feed) and pull down to scan - announcements are read on " +
-                                    "this device. You can also add an event manually.",
-                            icon = Icons.Outlined.Checklist,
-                            primaryButtonLabel = "Scan now",
-                            onPrimaryClick = { viewModel.runScan() },
-                            secondaryButtonLabel = "Add Event",
+                                "Nothing upcoming fits the current type and source filters. " +
+                                    "Clear them to see the rest of your radar.",
+                            icon = Icons.Outlined.Search,
+                            primaryButtonLabel = "Clear filters",
+                            onPrimaryClick = {
+                                viewModel.setActiveSourceFilter("ALL")
+                                viewModel.setActiveTypeFilter("ALL")
+                            },
+                            secondaryButtonLabel = "Add an event",
                             onSecondaryClick = onAddEvent,
                         )
                     } else {
-                        Box(
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(MaterialTheme.colorScheme.surface)
-                                    .border(
-                                        1.dp,
-                                        MaterialTheme.colorScheme.outlineVariant,
-                                        RoundedCornerShape(16.dp),
-                                    )
-                                    .padding(28.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = "No assessments matching this filter.",
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                        EmptyDashboardStateCard(
+                            title = "Nothing upcoming right now",
+                            desc =
+                                "Your radar holds no upcoming assessment. Pull down to scan " +
+                                    "again, or add an event manually.",
+                            icon = Icons.Outlined.Event,
+                            primaryButtonLabel = "Scan now",
+                            onPrimaryClick = { viewModel.runScan() },
+                            secondaryButtonLabel = "Add an event",
+                            onSecondaryClick = onAddEvent,
+                        )
                     }
                 }
             } else {
@@ -731,11 +796,100 @@ fun DashboardScreen(
     }
 }
 
+/**
+ * One KPI instrument: the label and the value in ink, the accent reserved for
+ * the icon and (where the value is a progress) the meter underneath.
+ */
+@Composable
+private fun KpiCard(
+    label: String,
+    value: String,
+    support: String,
+    icon: ImageVector,
+    iconTint: Color,
+    modifier: Modifier = Modifier,
+    footer: (@Composable () -> Unit)? = null,
+) {
+    Card(
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.quietCardColors(),
+        elevation = CardDefaults.quietCardElevation(),
+        border = CardDefaults.quietCardBorder(),
+        modifier = modifier,
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = value,
+                style =
+                    MaterialTheme.typography.titleLarge.copy(
+                        fontFeatureSettings = "tnum",
+                    ),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = support,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            footer?.let {
+                Spacer(modifier = Modifier.height(8.dp))
+                it()
+            }
+        }
+    }
+}
+
+/**
+ * A filter chip that tells TalkBack it is selected: the leading check icon
+ * carries the state as well, so the choice never rests on colour alone.
+ */
+@Composable
+private fun DashboardFilterChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+            )
+        },
+        leadingIcon = { if (selected) ChipLeadingCheck() },
+        colors = FilterChipDefaults.quietChipColors(),
+        modifier = modifier.defaultMinSize(minHeight = 48.dp),
+    )
+}
+
 @Composable
 private fun EmptyDashboardStateCard(
     title: String,
     desc: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     primaryButtonLabel: String,
     onPrimaryClick: () -> Unit,
     secondaryButtonLabel: String,
@@ -743,62 +897,73 @@ private fun EmptyDashboardStateCard(
     modifier: Modifier = Modifier,
 ) {
     Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.quietCardColors(),
+        elevation = CardDefaults.quietCardElevation(),
+        border = CardDefaults.quietCardBorder(),
         modifier = modifier.fillMaxWidth(),
     ) {
-        Column(
-            modifier = Modifier.padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Box(
+        Column(modifier = Modifier.padding(24.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier =
+                        Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = desc,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = onPrimaryClick,
+                colors = ButtonDefaults.filledPill(),
+                contentPadding = PillButtonContentPadding,
                 modifier =
                     Modifier
-                        .size(56.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center,
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = PillButtonMinHeight),
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(28.dp),
+                Text(
+                    text = primaryButtonLabel,
+                    style = MaterialTheme.typography.labelMedium,
                 )
             }
-            Spacer(modifier = Modifier.height(14.dp))
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = desc,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(modifier = Modifier.height(18.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            Spacer(modifier = Modifier.height(8.dp))
+            FilledTonalButton(
+                onClick = onSecondaryClick,
+                colors = ButtonDefaults.tonalPill(),
+                contentPadding = PillButtonContentPadding,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = PillButtonMinHeight),
             ) {
-                OutlinedButton(
-                    onClick = onSecondaryClick,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
-                ) {
-                    Text(secondaryButtonLabel, fontSize = 12.sp)
-                }
-                Button(
-                    onClick = onPrimaryClick,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
-                ) {
-                    Text(primaryButtonLabel, fontSize = 12.sp)
-                }
+                Text(
+                    text = secondaryButtonLabel,
+                    style = MaterialTheme.typography.labelMedium,
+                )
             }
         }
     }
@@ -820,114 +985,291 @@ private fun ScanSourcesCard(
     onScanNow: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surface)
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
-                .padding(16.dp),
+    Card(
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.quietCardColors(),
+        elevation = CardDefaults.quietCardElevation(),
+        border = CardDefaults.quietCardBorder(),
+        modifier = modifier.fillMaxWidth(),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = if (isScanning) "Scanning sources…" else "Last scan result",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (isScanning) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            } else {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
-                    text =
-                        buildString {
-                            if (report != null) {
-                                append("${report.totalNew} new · ${report.totalUpdated} updated")
-                            }
-                        },
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = if (isScanning) "Scanning sources…" else "Last scan result",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        val rows: List<Pair<String, String>> =
-            if (isScanning) {
-                progress.map { row ->
-                    val counts =
-                        if (row.done > 0 || row.found > 0) "${row.done}/${row.found}" else ""
-                    row.name to
-                        listOf(row.stage, counts)
-                            .filter { it.isNotBlank() }
-                            .joinToString(" · ")
-                }
-            } else {
-                report?.perSource.orEmpty().map { row ->
-                    val status =
-                        when (row.status) {
-                            "ran" -> "ran · found ${row.found}"
-                            "failed" -> "failed${row.detail?.let { ": $it" } ?: ""}"
-                            else -> "skipped${row.detail?.let { ": $it" } ?: ""}"
-                        }
-                    row.name to status
-                }
-            }
-
-        if (rows.isEmpty()) {
-            Text(
-                text =
-                    if (isScanning) {
-                        "Waiting for the first source to report…"
-                    } else {
-                        "No scan has run yet on this device."
-                    },
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        } else {
-            rows.forEach { (name, status) ->
-                Row(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = name,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
+                if (isScanning) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary,
                     )
+                } else {
                     Text(
-                        text = status,
-                        fontSize = 12.sp,
+                        text =
+                            buildString {
+                                if (report != null) {
+                                    append("${report.totalNew} new · ${report.totalUpdated} updated")
+                                }
+                            },
+                        style =
+                            MaterialTheme.typography.bodySmall.copy(
+                                fontFeatureSettings = "tnum",
+                            ),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
-        }
 
-        if (!isScanning) {
-            Spacer(modifier = Modifier.height(8.dp))
-            OutlinedButton(
-                onClick = onScanNow,
-                modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 44.dp),
-                shape = RoundedCornerShape(10.dp),
+            Spacer(modifier = Modifier.height(12.dp))
+
+            val rows: List<Pair<String, String>> =
+                if (isScanning) {
+                    progress.map { row ->
+                        val counts =
+                            if (row.done > 0 || row.found > 0) "${row.done}/${row.found}" else ""
+                        row.name to
+                            listOf(row.stage, counts)
+                                .filter { it.isNotBlank() }
+                                .joinToString(" · ")
+                    }
+                } else {
+                    report?.perSource.orEmpty().map { row ->
+                        val status =
+                            when (row.status) {
+                                "ran" -> "ran · found ${row.found}"
+                                "failed" -> "failed${row.detail?.let { ": $it" } ?: ""}"
+                                else -> "skipped${row.detail?.let { ": $it" } ?: ""}"
+                            }
+                        row.name to status
+                    }
+                }
+
+            if (rows.isEmpty()) {
+                Text(
+                    text =
+                        if (isScanning) {
+                            "Waiting for the first source to report…"
+                        } else {
+                            "No scan has run yet on this device."
+                        },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    rows.forEach { (name, status) ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                text = status,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (!isScanning) {
+                Spacer(modifier = Modifier.height(16.dp))
+                FilledTonalButton(
+                    onClick = onScanNow,
+                    colors = ButtonDefaults.tonalPill(),
+                    contentPadding = PillButtonContentPadding,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = PillButtonMinHeight),
+                ) {
+                    Text(
+                        text = "Scan now",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The Today strip: the study tasks the core planned for today, as one row
+ * of tappable cards. A card opens Focus with that task preselected; the
+ * counts come straight from the payload, never from a guess.
+ */
+@Composable
+private fun TodayStudyStrip(
+    tasks: List<DailyStudyTaskModel>,
+    onOpenTask: (DailyStudyTaskModel) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val pending = tasks.filter { !it.completed }
+    Card(
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.quietCardColors(),
+        elevation = CardDefaults.quietCardElevation(),
+        border = CardDefaults.quietCardBorder(),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Scan now", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = "Today",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text =
+                        if (pending.isEmpty()) {
+                            "All planned tasks done"
+                        } else {
+                            "${pending.size} to study"
+                        },
+                    style =
+                        MaterialTheme.typography.labelMedium.copy(
+                            fontFeatureSettings = "tnum",
+                        ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            if (pending.isEmpty()) {
+                Text(
+                    text = "Everything the core planned for today is done.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    pending.forEach { task ->
+                        Column(
+                            modifier =
+                                Modifier
+                                    .defaultMinSize(minHeight = 48.dp)
+                                    .clip(MaterialTheme.shapes.extraSmall)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .clickable(role = Role.Button) { onOpenTask(task) }
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                        ) {
+                            Text(
+                                text = task.topic,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 2,
+                            )
+                            Text(
+                                text = task.courseName ?: task.assessmentTitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The next genuinely upcoming assessment, with a direct way into its detail
+ * sheet. Every field comes from the core: a missing room stays "—".
+ */
+@Composable
+private fun NextAssessmentCard(
+    assessment: AssessmentModel?,
+    onOpen: (AssessmentModel) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.quietCardColors(),
+        elevation = CardDefaults.quietCardElevation(),
+        border = CardDefaults.quietCardBorder(),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        if (assessment == null) {
+            Text(
+                text = "Nothing upcoming on your radar right now.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+            )
+        } else {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text =
+                            listOfNotNull(
+                                assessment.courseName ?: assessment.courseId,
+                                assessment.assessmentType.takeIf { it.isNotBlank() },
+                            ).joinToString(" · "),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        onClick = { onOpen(assessment) },
+                        modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                    ) {
+                        Text(
+                            text = "Details",
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
+                }
+                Text(
+                    text = assessment.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text =
+                        buildString {
+                            append(formatIsoDateForDisplay(assessment.dateIso?.toString()) ?: "Undated")
+                            extractTimePart(assessment.displayTime)?.let { time ->
+                                append(" • ")
+                                append(time)
+                            }
+                            append(" • Room: ")
+                            append(assessment.room ?: "—")
+                        },
+                    style =
+                        MaterialTheme.typography.bodySmall.copy(
+                            fontFeatureSettings = "tnum",
+                        ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

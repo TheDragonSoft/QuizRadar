@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -21,22 +22,24 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SheetState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -50,16 +53,32 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.quizradar.app.model.CourseModel
 import com.quizradar.app.model.ScheduleSlotModel
 import com.quizradar.app.ui.icons.Icons
+import com.quizradar.app.ui.theme.ChipLeadingCheck
 import com.quizradar.app.ui.theme.CoursePalette
+import com.quizradar.app.ui.theme.PillButtonContentPadding
+import com.quizradar.app.ui.theme.PillButtonMinHeight
+import com.quizradar.app.ui.theme.destructivePill
+import com.quizradar.app.ui.theme.filledPill
+import com.quizradar.app.ui.theme.quietCardBorder
+import com.quizradar.app.ui.theme.quietCardColors
+import com.quizradar.app.ui.theme.quietCardElevation
+import com.quizradar.app.ui.theme.quietChipColors
+import com.quizradar.app.ui.theme.quietTextFieldColors
+import com.quizradar.app.ui.theme.tonalPill
 
 private val DAYS = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
 private val SLOT_TYPES = listOf("Lecture", "Tutorial", "Lab")
+
+// TalkBack names for CoursePalette.HEX_PRESETS (same order, CoursePalette.kt
+// header) - a colour swatch must not be selectable by colour alone.
+private val COLOR_PRESET_NAMES = listOf("Blue", "Emerald", "Amber", "Red", "Purple", "Cyan", "Coral", "Indigo")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -109,15 +128,16 @@ fun CourseEditorSheet(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
             ) {
                 Text(
                     text = if (isEditMode) "Edit Course & Slots" else "Add New Course",
                     style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
                 )
-                IconButton(onClick = onDismiss) {
+                // 48dp minimum touch target (Material a11y guideline).
+                IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Close course editor",
@@ -135,6 +155,7 @@ fun CourseEditorSheet(
                 label = { Text("Course Code (e.g. CSE241)") },
                 singleLine = true,
                 readOnly = isEditMode,
+                colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
                 modifier = Modifier.fillMaxWidth(),
             )
 
@@ -145,6 +166,7 @@ fun CourseEditorSheet(
                 onValueChange = { name = it },
                 label = { Text("Course Name (e.g. Data Structures)") },
                 singleLine = true,
+                colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
                 modifier = Modifier.fillMaxWidth(),
             )
 
@@ -155,26 +177,26 @@ fun CourseEditorSheet(
                 onValueChange = { instructor = it },
                 label = { Text("Instructor Name (optional)") },
                 singleLine = true,
+                colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             // Color Presets
             Text(
-                text = "Course Color",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = "Course color",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(12.dp))
             // 48dp swatches with 8dp gaps (Material touch-target rule); eight of
             // them no longer fit side by side on a phone, so the row scrolls.
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                CoursePalette.HEX_PRESETS.forEach { hex ->
+                CoursePalette.HEX_PRESETS.forEachIndexed { index, hex ->
                     val colorInt =
                         try {
                             android.graphics.Color.parseColor(hex)
@@ -198,6 +220,10 @@ fun CourseEditorSheet(
                                         },
                                     shape = CircleShape,
                                 )
+                                .semantics {
+                                    contentDescription =
+                                        "Course color ${COLOR_PRESET_NAMES.getOrElse(index) { hex }}"
+                                }
                                 .clickable { selectedColor = hex },
                         contentAlignment = Alignment.Center,
                     ) {
@@ -215,7 +241,7 @@ fun CourseEditorSheet(
 
             Spacer(modifier = Modifier.height(24.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             // Weekly Timetable Slots Header
             Row(
@@ -223,12 +249,13 @@ fun CourseEditorSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Weekly Recurring Slots",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Cross-referenced to pin fuzzy announcements to real dates",
                         style = MaterialTheme.typography.bodySmall,
@@ -246,74 +273,84 @@ fun CourseEditorSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Slot list
             if (slots.isEmpty() && !isAddingSlot) {
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                Card(
                     modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    colors = CardDefaults.quietCardColors(),
+                    elevation = CardDefaults.quietCardElevation(),
+                    border = CardDefaults.quietCardBorder(),
                 ) {
                     Text(
                         text = "No recurring slots added yet. Tap + to add weekly lecture or lab times.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(14.dp),
+                        modifier = Modifier.padding(16.dp),
                     )
                 }
             } else {
-                slots.forEachIndexed { index, slot ->
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    slots.forEachIndexed { index, slot ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.medium,
+                            colors = CardDefaults.quietCardColors(),
+                            elevation = CardDefaults.quietCardElevation(),
+                            border = CardDefaults.quietCardBorder(),
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    modifier = Modifier.padding(end = 10.dp),
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Text(
                                         text = slot.day,
                                         style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        modifier =
+                                            Modifier
+                                                .clip(MaterialTheme.shapes.small)
+                                                .background(MaterialTheme.colorScheme.primaryContainer)
+                                                .padding(horizontal = 8.dp, vertical = 4.dp),
                                     )
-                                }
-                                Column {
-                                    Text(
-                                        text = "${slot.type} · ${slot.startTime}–${slot.endTime}",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                    val meta = listOfNotNull(slot.room?.takeIf { it != "—" }, slot.group).joinToString(" · ")
-                                    if (meta.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column {
                                         Text(
-                                            text = meta,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            text = "${slot.type} · ${slot.startTime}–${slot.endTime}",
+                                            style =
+                                                MaterialTheme.typography.bodyMedium.copy(
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    fontFeatureSettings = "tnum",
+                                                ),
+                                            color = MaterialTheme.colorScheme.onSurface,
                                         )
+                                        val meta =
+                                            listOfNotNull(slot.room?.takeIf { it != "—" }, slot.group)
+                                                .joinToString(" · ")
+                                        if (meta.isNotEmpty()) {
+                                            Text(
+                                                text = meta,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
                                     }
                                 }
-                            }
-                            IconButton(onClick = { slots.removeAt(index) }) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Delete,
-                                    contentDescription = "Delete slot",
-                                    tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(20.dp),
-                                )
+                                IconButton(onClick = { slots.removeAt(index) }) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Delete,
+                                        contentDescription = "Delete slot",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                }
                             }
                         }
                     }
@@ -322,35 +359,45 @@ fun CourseEditorSheet(
 
             // Inline New Slot Card
             if (isAddingSlot) {
-                Spacer(modifier = Modifier.height(10.dp))
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                Spacer(modifier = Modifier.height(12.dp))
+                Card(
                     modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    colors = CardDefaults.quietCardColors(),
+                    elevation = CardDefaults.quietCardElevation(),
+                    border = CardDefaults.quietCardBorder(),
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
+                    Column(modifier = Modifier.padding(16.dp)) {
                         Text(
                             text = "New Class Slot",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         // Day chips
                         LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             items(DAYS) { day ->
                                 FilterChip(
                                     selected = slotDay == day,
                                     onClick = { slotDay = day },
-                                    label = { Text(day, fontSize = 11.sp) },
+                                    label = {
+                                        Text(
+                                            text = day,
+                                            style = MaterialTheme.typography.labelMedium,
+                                        )
+                                    },
+                                    leadingIcon = { if (slotDay == day) ChipLeadingCheck() },
+                                    colors = FilterChipDefaults.quietChipColors(),
+                                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
                                 )
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
                         // Type chips
                         Row(
@@ -361,7 +408,15 @@ fun CourseEditorSheet(
                                 FilterChip(
                                     selected = slotType == type,
                                     onClick = { slotType = type },
-                                    label = { Text(type, fontSize = 11.sp) },
+                                    label = {
+                                        Text(
+                                            text = type,
+                                            style = MaterialTheme.typography.labelMedium,
+                                        )
+                                    },
+                                    leadingIcon = { if (slotType == type) ChipLeadingCheck() },
+                                    colors = FilterChipDefaults.quietChipColors(),
+                                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
                                 )
                             }
                         }
@@ -370,7 +425,7 @@ fun CourseEditorSheet(
 
                         // Start & End Time
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             OutlinedTextField(
@@ -378,6 +433,11 @@ fun CourseEditorSheet(
                                 onValueChange = { slotStartTime = it },
                                 label = { Text("Start (HH:MM)") },
                                 singleLine = true,
+                                colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
+                                textStyle =
+                                    MaterialTheme.typography.bodyMedium.copy(
+                                        fontFeatureSettings = "tnum",
+                                    ),
                                 modifier = Modifier.weight(1f),
                             )
                             OutlinedTextField(
@@ -385,15 +445,20 @@ fun CourseEditorSheet(
                                 onValueChange = { slotEndTime = it },
                                 label = { Text("End (HH:MM)") },
                                 singleLine = true,
+                                colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
+                                textStyle =
+                                    MaterialTheme.typography.bodyMedium.copy(
+                                        fontFeatureSettings = "tnum",
+                                    ),
                                 modifier = Modifier.weight(1f),
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         // Room & Group
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             OutlinedTextField(
@@ -401,6 +466,7 @@ fun CourseEditorSheet(
                                 onValueChange = { slotRoom = it },
                                 label = { Text("Room (optional)") },
                                 singleLine = true,
+                                colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
                                 modifier = Modifier.weight(1f),
                             )
                             OutlinedTextField(
@@ -408,21 +474,26 @@ fun CourseEditorSheet(
                                 onValueChange = { slotGroup = it },
                                 label = { Text("Section/Group") },
                                 singleLine = true,
+                                colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
                                 modifier = Modifier.weight(1f),
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             TextButton(onClick = { isAddingSlot = false }) {
-                                Text("Cancel")
+                                Text(
+                                    text = "Cancel",
+                                    style = MaterialTheme.typography.labelMedium,
+                                )
                             }
                             Spacer(modifier = Modifier.width(8.dp))
-                            Button(
+                            FilledTonalButton(
                                 onClick = {
                                     val newSlot =
                                         ScheduleSlotModel(
@@ -441,8 +512,14 @@ fun CourseEditorSheet(
                                     slots.add(newSlot)
                                     isAddingSlot = false
                                 },
+                                colors = ButtonDefaults.tonalPill(),
+                                contentPadding = PillButtonContentPadding,
+                                modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
                             ) {
-                                Text("Add Slot")
+                                Text(
+                                    text = "Add Slot",
+                                    style = MaterialTheme.typography.labelMedium,
+                                )
                             }
                         }
                     }
@@ -457,13 +534,19 @@ fun CourseEditorSheet(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 if (isEditMode && onDelete != null) {
-                    OutlinedButton(
+                    Button(
                         onClick = { showDeleteConfirm = true },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.destructivePill(),
+                        contentPadding = PillButtonContentPadding,
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .defaultMinSize(minHeight = PillButtonMinHeight),
                     ) {
-                        Text("Delete Course")
+                        Text(
+                            text = "Delete Course",
+                            style = MaterialTheme.typography.labelMedium,
+                        )
                     }
                 }
 
@@ -479,10 +562,17 @@ fun CourseEditorSheet(
                         onDismiss()
                     },
                     enabled = code.isNotBlank() && name.isNotBlank(),
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.filledPill(),
+                    contentPadding = PillButtonContentPadding,
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .defaultMinSize(minHeight = PillButtonMinHeight),
                 ) {
-                    Text(if (isEditMode) "Save Changes" else "Create Course")
+                    Text(
+                        text = if (isEditMode) "Save Changes" else "Create Course",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
                 }
             }
 
@@ -511,14 +601,20 @@ fun CourseEditorSheet(
                         course?.id?.let { onDelete?.invoke(it) }
                         onDismiss()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    colors = ButtonDefaults.destructivePill(),
                 ) {
-                    Text("Delete")
+                    Text(
+                        text = "Delete",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text("Cancel")
+                    Text(
+                        text = "Cancel",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
                 }
             },
         )

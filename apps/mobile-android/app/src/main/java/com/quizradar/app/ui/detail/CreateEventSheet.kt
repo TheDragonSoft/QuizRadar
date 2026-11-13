@@ -1,6 +1,5 @@
 package com.quizradar.app.ui.detail
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,17 +13,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -34,12 +33,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.quizradar.app.model.CustomEventModel
 import com.quizradar.app.ui.icons.Icons
 import com.quizradar.app.ui.share.SharedEventDraft
+import com.quizradar.app.ui.theme.PillButtonContentPadding
+import com.quizradar.app.ui.theme.PillButtonMinHeight
+import com.quizradar.app.ui.theme.filledPill
+import com.quizradar.app.ui.theme.quietTextFieldColors
+import com.quizradar.app.ui.theme.tonalPill
 import java.time.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -81,18 +83,18 @@ fun CreateEventSheet(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "New Study or Custom Event",
                         style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Saved locally on this device",
-                        fontSize = 11.sp,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -102,13 +104,14 @@ fun CreateEventSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             OutlinedTextField(
                 value = title,
                 onValueChange = { title = it },
                 label = { Text("Event Title") },
                 placeholder = { Text("e.g. Problem Set Review") },
+                colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
@@ -120,6 +123,7 @@ fun CreateEventSheet(
                 onValueChange = { courseId = it },
                 label = { Text("Course Code (optional)") },
                 placeholder = { Text("e.g. CSE 341") },
+                colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
@@ -139,6 +143,11 @@ fun CreateEventSheet(
                         Text("Use the YYYY-MM-DD format — the event was not saved.")
                     }
                 },
+                colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
+                textStyle =
+                    MaterialTheme.typography.bodyMedium.copy(
+                        fontFeatureSettings = "tnum",
+                    ),
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
@@ -153,6 +162,11 @@ fun CreateEventSheet(
                     value = startTime,
                     onValueChange = { startTime = it },
                     label = { Text("Start Time") },
+                    colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
+                    textStyle =
+                        MaterialTheme.typography.bodyMedium.copy(
+                            fontFeatureSettings = "tnum",
+                        ),
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                 )
@@ -160,6 +174,11 @@ fun CreateEventSheet(
                     value = endTime,
                     onValueChange = { endTime = it },
                     label = { Text("End Time") },
+                    colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
+                    textStyle =
+                        MaterialTheme.typography.bodyMedium.copy(
+                            fontFeatureSettings = "tnum",
+                        ),
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                 )
@@ -171,24 +190,28 @@ fun CreateEventSheet(
                 value = notes,
                 onValueChange = { notes = it },
                 label = { Text("Notes / Shared Text") },
+                colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 3,
                 maxLines = 6,
             )
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                OutlinedButton(
+                FilledTonalButton(
                     onClick = onDismiss,
-                    modifier = Modifier.weight(1f).defaultMinSize(minHeight = 46.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                    colors = ButtonDefaults.tonalPill(),
+                    contentPadding = PillButtonContentPadding,
+                    modifier = Modifier.weight(1f).defaultMinSize(minHeight = PillButtonMinHeight),
                 ) {
-                    Text("Cancel", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = "Cancel",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
                 }
 
                 Button(
@@ -218,15 +241,14 @@ fun CreateEventSheet(
                             )
                         onSave(event)
                     },
-                    modifier = Modifier.weight(1f).defaultMinSize(minHeight = 46.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    colors =
-                        ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                        ),
+                    colors = ButtonDefaults.filledPill(),
+                    contentPadding = PillButtonContentPadding,
+                    modifier = Modifier.weight(1f).defaultMinSize(minHeight = PillButtonMinHeight),
                 ) {
-                    Text("Save Event", fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "Save Event",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
                 }
             }
 

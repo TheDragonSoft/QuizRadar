@@ -2,11 +2,11 @@ package com.quizradar.app.ui
 
 import androidx.compose.ui.graphics.luminance
 import com.quizradar.app.model.FeedConfigModel
+import com.quizradar.app.ui.calendar.CalendarDayResolver.formatCustomEventTime
+import com.quizradar.app.ui.calendar.CalendarDayResolver.shouldMergeExamWithSlot
 import com.quizradar.app.ui.screens.formatCourseFilterLabel
-import com.quizradar.app.ui.screens.formatCustomEventTime
 import com.quizradar.app.ui.screens.formatReadinessDisplay
 import com.quizradar.app.ui.screens.formatSourcesDisplay
-import com.quizradar.app.ui.screens.shouldMergeExamWithSlot
 import com.quizradar.app.ui.theme.CoursePalette
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

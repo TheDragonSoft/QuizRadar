@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,7 +25,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -34,14 +35,13 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -67,14 +67,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.quizradar.app.analytics.AnalyticsManager
 import com.quizradar.app.core.BackgroundScanWorker
 import com.quizradar.app.model.AppSnapshotModel
 import com.quizradar.app.model.CourseModel
@@ -91,7 +93,18 @@ import com.quizradar.app.ui.components.TimetableImportWorkingDialog
 import com.quizradar.app.ui.detail.CourseEditorSheet
 import com.quizradar.app.ui.icons.Icons
 import com.quizradar.app.ui.readScaledImage
+import com.quizradar.app.ui.theme.ChipLeadingCheck
+import com.quizradar.app.ui.theme.PillButtonContentPadding
+import com.quizradar.app.ui.theme.PillButtonMinHeight
 import com.quizradar.app.ui.theme.StatusColors
+import com.quizradar.app.ui.theme.destructivePill
+import com.quizradar.app.ui.theme.filledPill
+import com.quizradar.app.ui.theme.quietCardBorder
+import com.quizradar.app.ui.theme.quietCardColors
+import com.quizradar.app.ui.theme.quietCardElevation
+import com.quizradar.app.ui.theme.quietChipColors
+import com.quizradar.app.ui.theme.quietTextFieldColors
+import com.quizradar.app.ui.theme.tonalPill
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -131,7 +144,18 @@ fun SettingsScreen(
     val notifyMorningDigest by viewModel.notifyMorningDigest.collectAsState()
     val notifyMorningTime by viewModel.notifyMorningTime.collectAsState()
     val autoSyncGcal by viewModel.autoSyncGcal.collectAsState()
-    val theme by viewModel.theme.collectAsState()
+    val themeMode by viewModel.themeMode.collectAsState()
+    val preferredDarkTheme by viewModel.preferredDarkTheme.collectAsState()
+    // The AMOLED treatment follows the RESOLVED dark scheme, not a mode
+    // string: the pure-black scheme is active in Dark mode and in System
+    // mode with a dark system whenever the preferred dark theme is AMOLED.
+    val isAmoledDark =
+        preferredDarkTheme == "amoled" &&
+            (themeMode == "dark" || (themeMode == "system" && isSystemInDarkTheme()))
+    // One light theme ships, so "the light theme in use" is exactly this
+    // resolved condition - the Appearance card mirrors it instead of a
+    // constant selection the state never held.
+    val isLightSchemeActive = themeMode == "light" || (themeMode == "system" && !isSystemInDarkTheme())
     val academicTrack by viewModel.academicTrack.collectAsState()
     val timetableImportState by viewModel.timetableImportState.collectAsState()
     val backgroundScanEnabled by viewModel.backgroundScanEnabled.collectAsState()
@@ -141,6 +165,7 @@ fun SettingsScreen(
     var showDisconnectGoogleDialog by rememberSaveable { mutableStateOf(false) }
     var showDisconnectMicrosoftDialog by rememberSaveable { mutableStateOf(false) }
     var showAddFeedDialog by rememberSaveable { mutableStateOf(false) }
+    var feedPendingDeleteUrl by rememberSaveable { mutableStateOf<String?>(null) }
     var showResetConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var resetInputText by rememberSaveable { mutableStateOf("") }
     // Digest time picker (M3 TimePicker in a dialog) - the "at $time" copy
@@ -253,7 +278,6 @@ fun SettingsScreen(
                         Text(
                             text = "Settings",
                             style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
                         )
                     },
                     navigationIcon = {
@@ -266,14 +290,22 @@ fun SettingsScreen(
                     },
                     colors =
                         TopAppBarDefaults.topAppBarColors(
-                            containerColor = if (theme == "amoled") Color.Black.copy(alpha = 0.85f) else MaterialTheme.colorScheme.surface,
+                            // AMOLED needs the pure-black token role, not a raw
+                            // Color.Black literal: surfaceContainerLowest IS
+                            // black in the AMOLED scheme (QuizRadarTheme.kt).
+                            containerColor =
+                                if (isAmoledDark) {
+                                    MaterialTheme.colorScheme.surfaceContainerLowest
+                                } else {
+                                    MaterialTheme.colorScheme.surface
+                                },
                             titleContentColor = MaterialTheme.colorScheme.onSurface,
                         ),
                 )
-                HorizontalDivider(color = if (theme == "amoled") Color(0xFF222222) else MaterialTheme.colorScheme.outlineVariant)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
         },
-        containerColor = if (theme == "amoled") Color.Transparent else MaterialTheme.colorScheme.background,
+        containerColor = if (isAmoledDark) Color.Transparent else MaterialTheme.colorScheme.background,
         modifier = modifier.fillMaxSize(),
     ) { innerPadding ->
         Column(
@@ -281,7 +313,10 @@ fun SettingsScreen(
                 Modifier
                     .padding(innerPadding)
                     .verticalScroll(scrollState)
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    // Text fields (API key, feed dialog) must never end up
+                    // under the keyboard - the whole settings body rides up.
+                    .imePadding()
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
         ) {
             // =========================================================================
             // 1. ACCOUNT & CONNECTIONS
@@ -292,11 +327,13 @@ fun SettingsScreen(
             )
 
             Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.quietCardColors().copy(containerColor = MaterialTheme.colorScheme.surface),
+                border = CardDefaults.quietCardBorder(),
+                elevation = CardDefaults.quietCardElevation(),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -306,7 +343,6 @@ fun SettingsScreen(
                             Text(
                                 text = userName.ifBlank { "Student Profile" },
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
                             )
                             Text(
                                 text = userEmail.ifBlank { "No email configured (local-only profile)" },
@@ -314,19 +350,22 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        TextButton(onClick = { showEditProfileDialog = true }) {
+                        TextButton(
+                            onClick = { showEditProfileDialog = true },
+                            modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                        ) {
                             Text("Edit Profile")
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        shape = MaterialTheme.shapes.extraSmall,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Row(
-                            modifier = Modifier.padding(10.dp),
+                            modifier = Modifier.padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(
@@ -344,7 +383,7 @@ fun SettingsScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -354,10 +393,9 @@ fun SettingsScreen(
                     // Settings -> Account card.
                     Text(
                         text = "Academic Rhythm Preset",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text =
                             academicTrackLabel(academicTrack) +
@@ -365,21 +403,28 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         items(ACADEMIC_TRACKS) { (id, label) ->
+                            val isTrackSelected = academicTrack == id
                             FilterChip(
-                                selected = academicTrack == id,
+                                selected = isTrackSelected,
                                 onClick = { viewModel.setAcademicTrack(id) },
-                                label = { Text(label, fontSize = 12.sp) },
+                                // 48dp touch target: FilterChip defaults to 32dp,
+                                // below the minimum a thumb reliably hits.
+                                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                                colors = FilterChipDefaults.quietChipColors(),
+                                label = { Text(label, style = MaterialTheme.typography.labelMedium) },
+                                // Selection is never colour-only.
+                                leadingIcon = { if (isTrackSelected) ChipLeadingCheck() },
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -407,18 +452,22 @@ fun SettingsScreen(
                             )
                         }
                         if (isGoogleConnected) {
-                            OutlinedButton(
+                            Button(
                                 onClick = { showDisconnectGoogleDialog = true },
-                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.tonalPill(),
+                                modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                                contentPadding = PillButtonContentPadding,
                             ) {
-                                Text("Disconnect", fontSize = 12.sp)
+                                Text("Disconnect")
                             }
                         } else {
                             Button(
                                 onClick = onStartGoogleLogin,
-                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.filledPill(),
+                                modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                                contentPadding = PillButtonContentPadding,
                             ) {
-                                Text("Sign In", fontSize = 12.sp)
+                                Text("Sign In")
                             }
                         }
                     }
@@ -451,18 +500,22 @@ fun SettingsScreen(
                             )
                         }
                         if (isMicrosoftConnected) {
-                            OutlinedButton(
+                            Button(
                                 onClick = { showDisconnectMicrosoftDialog = true },
-                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.tonalPill(),
+                                modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                                contentPadding = PillButtonContentPadding,
                             ) {
-                                Text("Disconnect", fontSize = 12.sp)
+                                Text("Disconnect")
                             }
                         } else {
                             Button(
                                 onClick = onStartMicrosoftLogin,
-                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.filledPill(),
+                                modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                                contentPadding = PillButtonContentPadding,
                             ) {
-                                Text("Sign In", fontSize = 12.sp)
+                                Text("Sign In")
                             }
                         }
                     }
@@ -480,20 +533,21 @@ fun SettingsScreen(
             )
 
             Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.quietCardColors().copy(containerColor = MaterialTheme.colorScheme.surface),
+                border = CardDefaults.quietCardBorder(),
+                elevation = CardDefaults.quietCardElevation(),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = "Enrolled Courses (${snapshot.schedule.courses.size})",
+                            text = tabular("Enrolled Courses ", "(${snapshot.schedule.courses.size})"),
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
                         )
                         IconButton(
                             onClick = {
@@ -521,8 +575,8 @@ fun SettingsScreen(
                         snapshot.schedule.courses.forEach { course ->
                             val courseSlots = snapshot.schedule.slots.filter { it.courseId == course.id }
                             Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                shape = MaterialTheme.shapes.extraSmall,
+                                color = MaterialTheme.colorScheme.surfaceVariant,
                                 modifier =
                                     Modifier
                                         .fillMaxWidth()
@@ -539,28 +593,35 @@ fun SettingsScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        val colorInt =
+                                        // The dot colour is USER DATA (the saved
+                                        // course colour string), parsed here. Only
+                                        // the missing/invalid fallback is a theme
+                                        // role - never a hardcoded brand hex.
+                                        val courseColor =
                                             try {
-                                                android.graphics.Color.parseColor(course.color ?: "#1a73e8")
+                                                Color(android.graphics.Color.parseColor(course.color))
                                             } catch (_: Exception) {
-                                                0xFF1A73E8.toInt()
+                                                MaterialTheme.colorScheme.primary
                                             }
                                         Box(
                                             modifier =
                                                 Modifier
                                                     .size(12.dp)
                                                     .clip(CircleShape)
-                                                    .background(Color(colorInt)),
+                                                    .background(courseColor),
                                         )
-                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Spacer(modifier = Modifier.width(12.dp))
                                         Column {
                                             Text(
                                                 text = "${course.id} · ${course.name}",
                                                 style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.Bold,
+                                                fontWeight = FontWeight.SemiBold,
                                             )
                                             Text(
-                                                text = "${courseSlots.size} weekly slot(s)",
+                                                // Count and noun agree, like the
+                                                // onboarding import preview:
+                                                // "1 weekly slot" / "N weekly slots".
+                                                text = if (courseSlots.size == 1) "1 weekly slot" else "${courseSlots.size} weekly slots",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
@@ -576,16 +637,17 @@ fun SettingsScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
-                    OutlinedButton(
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
                         onClick = onReRunOnboarding,
+                        colors = ButtonDefaults.tonalPill(),
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PillButtonContentPadding,
                     ) {
                         Text("Re-run Timetable Onboarding")
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -594,20 +656,23 @@ fun SettingsScreen(
                     // desktop shell and the web companion do.
                     Text(
                         text = "AI Course Import",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text =
                             "Pick a timetable screenshot. Gemini reads it on your phone and you " +
                                 "review the courses and class slots before anything is saved. " +
-                                "Needs a Gemini API key (see the AI section below).",
+                                "Needs AI turned on and a saved Gemini API key (AI section below).",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedButton(
+                    Spacer(modifier = Modifier.height(12.dp))
+                    // A07: the image-extraction path must check the AI-enabled
+                    // preference AND key presence, not just key presence - the
+                    // blocker is stated inline, not in a toast after the tap.
+                    val aiImportReady = geminiEnabled && geminiApiKey.isNotBlank()
+                    Button(
                         onClick = {
                             timetableImageLauncher.launch(
                                 androidx.activity.result.PickVisualMediaRequest(
@@ -615,12 +680,28 @@ fun SettingsScreen(
                                 ),
                             )
                         },
+                        enabled = aiImportReady,
+                        colors = ButtonDefaults.tonalPill(),
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PillButtonContentPadding,
                     ) {
                         Icon(Icons.Outlined.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Import Timetable from Image (AI)", fontSize = 12.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Import Timetable from Image (AI)")
+                    }
+                    if (!aiImportReady) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text =
+                                "Timetable image import is unavailable: " +
+                                    if (!geminiEnabled) {
+                                        "AI features are turned off. Enable them in the AI section below."
+                                    } else {
+                                        "No Gemini API key is saved. Add and save one in the AI section below."
+                                    },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
                     }
                 }
             }
@@ -636,11 +717,13 @@ fun SettingsScreen(
             )
 
             Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.quietCardColors().copy(containerColor = MaterialTheme.colorScheme.surface),
+                border = CardDefaults.quietCardBorder(),
+                elevation = CardDefaults.quietCardElevation(),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     // Gmail toggle
                     SourceToggleRow(
                         name = "Gmail Scanning",
@@ -675,35 +758,44 @@ fun SettingsScreen(
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
                     // Moodle REST (Desktop only honesty)
-                    ListItem(
-                        headlineContent = {
+                    Row(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .defaultMinSize(minHeight = 56.dp)
+                                .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Moodle REST", fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    text = "Moodle REST",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Surface(
-                                    shape = RoundedCornerShape(4.dp),
+                                    shape = MaterialTheme.shapes.small,
                                     color = MaterialTheme.colorScheme.secondaryContainer,
                                 ) {
                                     Text(
                                         text = "Desktop only",
                                         style = MaterialTheme.typography.labelSmall,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                     )
                                 }
                             }
-                        },
-                        supportingContent = {
                             Text(
                                 text = "Direct token scraping and local web session sync are supported in the desktop client.",
                                 style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                        },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    )
+                        }
+                    }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     // Calendar Feeds (.ics)
                     Row(
@@ -713,9 +805,9 @@ fun SettingsScreen(
                     ) {
                         Column {
                             Text(
-                                text = "Calendar Feeds (${snapshot.feeds.size}/10)",
+                                text = tabular("Calendar Feeds ", "(${snapshot.feeds.size}/10)"),
                                 style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.SemiBold,
                             )
                             Text(
                                 text = "Subscribed HTTPS iCalendar (.ics) URLs",
@@ -737,25 +829,29 @@ fun SettingsScreen(
                             text = "No .ics feeds configured. Tap + to subscribe to university academic calendar feeds.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 6.dp),
+                            modifier = Modifier.padding(vertical = 8.dp),
                         )
                     } else {
                         snapshot.feeds.forEach { feed ->
                             Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                shape = MaterialTheme.shapes.extraSmall,
+                                color = MaterialTheme.colorScheme.surfaceVariant,
                                 modifier =
                                     Modifier
                                         .fillMaxWidth()
                                         .padding(vertical = 4.dp),
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(10.dp),
+                                    modifier = Modifier.padding(12.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(feed.label, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                        Text(
+                                            text = feed.label,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
                                         Text(
                                             feed.url,
                                             style = MaterialTheme.typography.bodySmall,
@@ -764,7 +860,10 @@ fun SettingsScreen(
                                         )
                                     }
                                     IconButton(
-                                        onClick = { viewModel.removeIcsFeed(feed.url) },
+                                        // A02: removal is a real delete of THIS
+                                        // feed, confirmed first, and never
+                                        // touches unrelated preferences.
+                                        onClick = { feedPendingDeleteUrl = feed.url },
                                     ) {
                                         Icon(
                                             imageVector = Icons.Outlined.Delete,
@@ -778,7 +877,7 @@ fun SettingsScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -792,18 +891,24 @@ fun SettingsScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Google Calendar push", fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    text = "Google Calendar push",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
                                 Text(
                                     "Push every dated upcoming assessment to your primary calendar",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                            OutlinedButton(
+                            Button(
                                 onClick = { viewModel.pushGcalNow() },
-                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.tonalPill(),
+                                modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                                contentPadding = PillButtonContentPadding,
                             ) {
-                                Text("Push now", fontSize = 12.sp)
+                                Text("Push now")
                             }
                         }
                         Spacer(modifier = Modifier.height(12.dp))
@@ -814,28 +919,17 @@ fun SettingsScreen(
                     // Background periodic scan: explicit opt-in, default OFF.
                     // The worker re-checks this toggle from the store at run
                     // time and posts no notifications on its own.
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Background scan (every 6 hours)", fontWeight = FontWeight.SemiBold)
-                            Text(
-                                "Scan your connected sources periodically, even when the app is closed. " +
-                                    "Off by default; a scan that finds nothing never notifies you.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(
-                            checked = backgroundScanEnabled,
-                            onCheckedChange = { enabled ->
-                                viewModel.setBackgroundScanEnabled(enabled)
-                                BackgroundScanWorker.reschedule(context, enabled)
-                            },
-                        )
-                    }
+                    SettingsSwitchRow(
+                        name = "Background scan (every 6 hours)",
+                        desc =
+                            "Scan your connected sources periodically, even when the app is closed. " +
+                                "Off by default; a scan that finds nothing never notifies you.",
+                        checked = backgroundScanEnabled,
+                        onCheckedChange = { enabled ->
+                            viewModel.setBackgroundScanEnabled(enabled)
+                            BackgroundScanWorker.reschedule(context, enabled)
+                        },
+                    )
                 }
             }
 
@@ -850,11 +944,13 @@ fun SettingsScreen(
             )
 
             Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.quietCardColors().copy(containerColor = MaterialTheme.colorScheme.surface),
+                border = CardDefaults.quietCardBorder(),
+                elevation = CardDefaults.quietCardElevation(),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -864,7 +960,7 @@ fun SettingsScreen(
                             Text(
                                 text = "Enable Gemini AI features",
                                 style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.SemiBold,
                             )
                             Text(
                                 text = "Generates practice quizzes, study plans, and topic reasoning",
@@ -878,6 +974,18 @@ fun SettingsScreen(
                         )
                     }
 
+                    // The key field and the enable toggle are deliberately
+                    // separate: turning the toggle on without a saved key is
+                    // not an error, but the screen must say so honestly.
+                    if (geminiEnabled && geminiApiKey.isBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "AI features are on, but no Gemini API key is saved - paste and save one below to use them.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(12.dp))
 
                     OutlinedTextField(
@@ -887,6 +995,7 @@ fun SettingsScreen(
                         singleLine = true,
                         visualTransformation = if (isKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
                         trailingIcon = {
                             IconButton(onClick = { isKeyVisible = !isKeyVisible }) {
                                 Icon(
@@ -898,7 +1007,7 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -906,13 +1015,14 @@ fun SettingsScreen(
                     ) {
                         Button(
                             onClick = { viewModel.saveGeminiApiKey(keyInputValue) },
-                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.filledPill(),
+                            contentPadding = PillButtonContentPadding,
                             modifier = Modifier.weight(1f),
                         ) {
                             Text("Save Key")
                         }
 
-                        OutlinedButton(
+                        Button(
                             onClick = {
                                 isAiValidating = true
                                 aiValidationStatus = null
@@ -922,7 +1032,8 @@ fun SettingsScreen(
                                 }
                             },
                             enabled = !isAiValidating && keyInputValue.isNotBlank(),
-                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.tonalPill(),
+                            contentPadding = PillButtonContentPadding,
                             modifier = Modifier.weight(1f),
                         ) {
                             if (isAiValidating) {
@@ -948,26 +1059,27 @@ fun SettingsScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                    // Free-tier disclosure copy per 05 §5.1
+                    // Enable-time disclosure - VERBATIM copy per
+                    // docs/rebuild/05-ai-features-plan.md §5 item 1. Do not
+                    // paraphrase: this exact sentence is the consent record.
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        shape = MaterialTheme.shapes.extraSmall,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
+                        Column(modifier = Modifier.padding(12.dp)) {
                             Text(
-                                text = "Google Gemini Free-Tier Data Terms:",
+                                text = "Before you enable AI:",
                                 style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text =
-                                    "When using a free-tier Gemini API key, Google may use your prompts and responses to train models. " +
-                                        "Your queries are sent directly from this phone to Google's API using your own key. " +
-                                        "QuizRadar has no servers and sees none of your data.",
+                                    "Your email announcements and timetable images are sent to Google's Gemini API when AI is used. " +
+                                        "On Google's free tier, Google may use that content to improve its products. " +
+                                        "Turn off to stay fully local.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -987,31 +1099,35 @@ fun SettingsScreen(
             )
 
             Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.quietCardColors().copy(containerColor = MaterialTheme.colorScheme.surface),
+                border = CardDefaults.quietCardBorder(),
+                elevation = CardDefaults.quietCardElevation(),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     if (!hasNotificationPermission) {
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                            shape = MaterialTheme.shapes.extraSmall,
+                            color = MaterialTheme.colorScheme.errorContainer,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Row(
-                                modifier = Modifier.padding(10.dp),
+                                modifier = Modifier.padding(12.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = "Permission required",
-                                        fontWeight = FontWeight.Bold,
                                         style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
                                     )
                                     Text(
                                         text = "Grant notification permission to receive exam alerts",
                                         style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
                                     )
                                 }
                                 Button(
@@ -1020,94 +1136,61 @@ fun SettingsScreen(
                                             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                                         }
                                     },
-                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.filledPill(),
+                                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                                    contentPadding = PillButtonContentPadding,
                                 ) {
-                                    Text("Grant", fontSize = 12.sp)
+                                    Text("Grant")
                                 }
                             }
                         }
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
                     }
 
                     // 24h Reminder Switch
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Exam Reminder (T-24h)", fontWeight = FontWeight.SemiBold)
-                            Text(
-                                "Notify the day before each upcoming exam",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(
-                            checked = notifyExam24h,
-                            onCheckedChange = { viewModel.setNotifyExam24h(it) },
-                        )
-                    }
+                    SettingsSwitchRow(
+                        name = "Exam Reminder (T-24h)",
+                        desc = "Notify the day before each upcoming exam",
+                        checked = notifyExam24h,
+                        onCheckedChange = { viewModel.setNotifyExam24h(it) },
+                    )
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(vertical = 8.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
                     // Same-Day Reminder Switch
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Same-Day Exam Alert", fontWeight = FontWeight.SemiBold)
-                            Text(
-                                "Notify on the morning of an exam",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(
-                            checked = notifyExamSameDay,
-                            onCheckedChange = { viewModel.setNotifyExamSameDay(it) },
-                        )
-                    }
+                    SettingsSwitchRow(
+                        name = "Same-Day Exam Alert",
+                        desc = "Notify on the morning of an exam",
+                        checked = notifyExamSameDay,
+                        onCheckedChange = { viewModel.setNotifyExamSameDay(it) },
+                    )
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(vertical = 8.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
                     // Morning Digest Switch & Time. The time is now SETTABLE:
                     // the row used to display "at 08:00" while nothing could
                     // ever change the value.
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Daily Morning Digest", fontWeight = FontWeight.SemiBold)
-                            Text(
-                                "Daily summary of classes and assessments at $notifyMorningTime",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(
-                            checked = notifyMorningDigest,
-                            onCheckedChange = { viewModel.setNotifyMorningDigest(it) },
-                        )
-                    }
+                    SettingsSwitchRow(
+                        name = "Daily Morning Digest",
+                        desc = "Daily summary of classes and assessments at $notifyMorningTime",
+                        checked = notifyMorningDigest,
+                        onCheckedChange = { viewModel.setNotifyMorningDigest(it) },
+                    )
 
                     TextButton(
                         onClick = { showDigestTimePicker = true },
-                        modifier = Modifier.defaultMinSize(minHeight = 44.dp),
+                        modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
                     ) {
-                        Text("Set digest time ($notifyMorningTime)")
+                        Text(text = tabular("Set digest time ", "($notifyMorningTime)"))
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                    OutlinedButton(
+                    Button(
                         onClick = { NotificationHelper.sendTestNotification(context) },
+                        colors = ButtonDefaults.tonalPill(),
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PillButtonContentPadding,
                     ) {
                         Text("Send Test Notification")
                     }
@@ -1125,37 +1208,29 @@ fun SettingsScreen(
             )
 
             Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.quietCardColors().copy(containerColor = MaterialTheme.colorScheme.surface),
+                border = CardDefaults.quietCardBorder(),
+                elevation = CardDefaults.quietCardElevation(),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     // The auto-push toggle is REAL: after a scan that discovered
                     // or updated items (and with Google signed in), the shell
                     // pushes them and reports the push outcome in the scan
                     // summary. The former "Sync Weekly Classes" row was removed
                     // entirely - no feature backed it, and a switch that does
                     // nothing is banned.
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Auto-push to Google Calendar", fontWeight = FontWeight.SemiBold)
-                            Text(
-                                "After a scan with new or updated items, push them to your primary Google Calendar (off by default)",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(
-                            checked = autoSyncGcal,
-                            onCheckedChange = { viewModel.setAutoSyncGcal(it) },
-                        )
-                    }
+                    SettingsSwitchRow(
+                        name = "Auto-push to Google Calendar",
+                        desc =
+                            "After a scan with new or updated items, push them to your primary Google Calendar " +
+                                "(off by default)",
+                        checked = autoSyncGcal,
+                        onCheckedChange = { viewModel.setAutoSyncGcal(it) },
+                    )
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(vertical = 8.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
                     Text(
                         text =
@@ -1178,91 +1253,117 @@ fun SettingsScreen(
             )
 
             Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.quietCardColors().copy(containerColor = MaterialTheme.colorScheme.surface),
+                border = CardDefaults.quietCardBorder(),
+                elevation = CardDefaults.quietCardElevation(),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Text("Appearance Mode", fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.height(8.dp))
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Appearance Mode",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
+                        // Mode chips set ONLY the mode: which dark scheme renders
+                        // is the separate "Preferred Dark Theme" preference below,
+                        // so switching modes can never drop an AMOLED choice.
                         listOf("system" to "System", "light" to "Light", "dark" to "Dark").forEach { (key, label) ->
-                            val isChipSelected = theme == key || (key == "dark" && theme == "amoled")
+                            val isChipSelected = themeMode == key
                             FilterChip(
                                 selected = isChipSelected,
-                                onClick = { viewModel.setTheme(key) },
-                                label = { Text(label) },
-                                leadingIcon = {
-                                    if (isChipSelected) {
-                                        Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    }
-                                },
+                                onClick = { viewModel.setThemeMode(key) },
+                                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                                colors = FilterChipDefaults.quietChipColors(),
+                                label = { Text(label, style = MaterialTheme.typography.labelMedium) },
+                                // Selection is never colour-only.
+                                leadingIcon = { if (isChipSelected) ChipLeadingCheck() },
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    Text("Preferred Light Theme", fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Preferred Light Theme",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "Active in Light mode and during daytime",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
+                    // QuizRadar ships exactly one light theme, so there is no
+                    // light preference to persist or switch: the chip mirrors
+                    // the resolved state (is the light scheme in use right
+                    // now?) instead of a constant "selected" the state never
+                    // held. Tapping it intentionally does nothing.
                     FilterChip(
-                        selected = true,
-                        onClick = { viewModel.setTheme("light") },
-                        label = { Text("Solar Dawn (Default)") },
-                        leadingIcon = {
-                            Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                        selected = isLightSchemeActive,
+                        onClick = {},
+                        modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                        colors = FilterChipDefaults.quietChipColors(),
+                        label = {
+                            Text("Solar Dawn (only light theme)", style = MaterialTheme.typography.labelMedium)
                         },
+                        // Selection is never colour-only.
+                        leadingIcon = { if (isLightSchemeActive) ChipLeadingCheck() },
                     )
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    Text("Preferred Dark Theme", fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Preferred Dark Theme",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "Active in Dark mode and during nighttime",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
+                    // Dark-scheme chips set ONLY the dark preference; the
+                    // selection derives from preferredDarkTheme alone, so it
+                    // survives any Appearance Mode switch.
                     FilterChip(
-                        selected = theme != "amoled",
-                        onClick = { viewModel.setTheme("dark") },
-                        label = { Text("Obsidian Cosmic (Default)") },
-                        leadingIcon = {
-                            if (theme != "amoled") {
-                                Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                            }
+                        selected = preferredDarkTheme == "obsidian",
+                        onClick = { viewModel.setPreferredDarkTheme("obsidian") },
+                        modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                        colors = FilterChipDefaults.quietChipColors(),
+                        label = {
+                            Text("Obsidian Cosmic (Default)", style = MaterialTheme.typography.labelMedium)
                         },
+                        // Selection is never colour-only.
+                        leadingIcon = { if (preferredDarkTheme == "obsidian") ChipLeadingCheck() },
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     FilterChip(
-                        selected = theme == "amoled",
-                        onClick = { viewModel.setTheme("amoled") },
-                        label = { Text("AMOLED Pure Black & Starlight") },
-                        leadingIcon = {
-                            if (theme == "amoled") {
-                                Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                            }
+                        selected = preferredDarkTheme == "amoled",
+                        onClick = { viewModel.setPreferredDarkTheme("amoled") },
+                        modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                        colors = FilterChipDefaults.quietChipColors(),
+                        label = {
+                            Text("AMOLED Pure Black & Starlight", style = MaterialTheme.typography.labelMedium)
                         },
+                        // Selection is never colour-only.
+                        leadingIcon = { if (preferredDarkTheme == "amoled") ChipLeadingCheck() },
                     )
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = "Reduced motion follows system accessibility settings.",
                         style = MaterialTheme.typography.bodySmall,
@@ -1282,11 +1383,13 @@ fun SettingsScreen(
             )
 
             Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.quietCardColors().copy(containerColor = MaterialTheme.colorScheme.surface),
+                border = CardDefaults.quietCardBorder(),
+                elevation = CardDefaults.quietCardElevation(),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         text = "Backups are stored locally (spec §8 [M]). Credentials and OAuth tokens are never included in backups.",
                         style = MaterialTheme.typography.bodySmall,
@@ -1296,31 +1399,33 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        OutlinedButton(
+                        Button(
                             onClick = {
                                 exportBackupLauncher.launch("quizradar-backup-${LocalDate.now()}.json")
                             },
+                            colors = ButtonDefaults.tonalPill(),
+                            contentPadding = PillButtonContentPadding,
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
                         ) {
                             Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Export Backup", fontSize = 12.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Export Backup")
                         }
 
-                        OutlinedButton(
+                        Button(
                             onClick = {
                                 importBackupLauncher.launch("application/json")
                             },
+                            colors = ButtonDefaults.tonalPill(),
+                            contentPadding = PillButtonContentPadding,
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
                         ) {
                             Icon(Icons.Outlined.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Import Backup", fontSize = 12.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Import Backup")
                         }
                     }
 
@@ -1329,7 +1434,7 @@ fun SettingsScreen(
                     // built by the Rust core and structurally cannot carry
                     // tokens. "No backup found" is the honest empty state.
                     if (viewModel.isGoogleConnected()) {
-                        Spacer(modifier = Modifier.height(14.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
@@ -1339,29 +1444,31 @@ fun SettingsScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            OutlinedButton(
+                            Button(
                                 onClick = { viewModel.pushDriveBackupNow() },
+                                colors = ButtonDefaults.tonalPill(),
+                                contentPadding = PillButtonContentPadding,
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp),
                             ) {
                                 Icon(Icons.Outlined.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Back up to Drive", fontSize = 12.sp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Back up to Drive")
                             }
 
-                            OutlinedButton(
+                            Button(
                                 onClick = { viewModel.restoreDriveBackupNow() },
+                                colors = ButtonDefaults.tonalPill(),
+                                contentPadding = PillButtonContentPadding,
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp),
                             ) {
                                 Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Restore from Drive", fontSize = 12.sp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Restore from Drive")
                             }
                         }
                     }
@@ -1375,12 +1482,12 @@ fun SettingsScreen(
                             resetInputText = ""
                             showResetConfirmDialog = true
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        colors = ButtonDefaults.destructivePill(),
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PillButtonContentPadding,
                     ) {
                         Icon(Icons.Outlined.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text("Reset All Data")
                     }
                 }
@@ -1397,15 +1504,16 @@ fun SettingsScreen(
             )
 
             Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.quietCardColors().copy(containerColor = MaterialTheme.colorScheme.surface),
+                border = CardDefaults.quietCardBorder(),
+                elevation = CardDefaults.quietCardElevation(),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         text = if (coreVersion.isBlank()) "QuizRadar" else "QuizRadar v$coreVersion",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
                     )
                     Text(
                         text = "Local-first quiz and exam radar",
@@ -1413,7 +1521,7 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text =
                             "QuizRadar runs zero external servers. All course matching, parsing, and exam radar derivation " +
@@ -1421,7 +1529,7 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                     )
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "Licensed under Apache 2.0 / MIT. Zero telemetry, zero analytics.",
                         style = MaterialTheme.typography.bodySmall,
@@ -1441,14 +1549,14 @@ fun SettingsScreen(
             )
 
             Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable { isAdvancedOAuthExpanded = !isAdvancedOAuthExpanded },
+                onClick = { isAdvancedOAuthExpanded = !isAdvancedOAuthExpanded },
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.quietCardColors().copy(containerColor = MaterialTheme.colorScheme.surface),
+                border = CardDefaults.quietCardBorder(),
+                elevation = CardDefaults.quietCardElevation(),
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1458,9 +1566,8 @@ fun SettingsScreen(
                             Text(
                                 text = "Custom OAuth Client IDs",
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text =
                                     if (isAdvancedOAuthExpanded) {
@@ -1480,7 +1587,7 @@ fun SettingsScreen(
                     }
 
                     if (isAdvancedOAuthExpanded) {
-                        Spacer(modifier = Modifier.height(14.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         Spacer(modifier = Modifier.height(12.dp))
                         OAuthClientIdFields(viewModel = viewModel)
@@ -1488,45 +1595,9 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Anonymous Diagnostics & Telemetry Card
-            Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Anonymous Diagnostics",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text =
-                                "Send coarse, anonymous reliability and error signals (widget taps, notification delivery, scan health). " +
-                                    "Student schedules, grades, course names, and email contents are never collected.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    val context = LocalContext.current
-                    var telemetryOptOut by remember { mutableStateOf(AnalyticsManager.isOptedOut(context)) }
-                    Switch(
-                        checked = !telemetryOptOut,
-                        onCheckedChange = { enabled ->
-                            AnalyticsManager.setOptOut(context, !enabled)
-                            telemetryOptOut = !enabled
-                        },
-                    )
-                }
-            }
+            // P3-8: the Anonymous Diagnostics preference is gone entirely.
+            // AnalyticsManager is a no-op and QuizRadar ships zero telemetry
+            // (AGENTS.md §9) - a switch that controls nothing must not exist.
 
             Spacer(modifier = Modifier.height(32.dp))
         }
@@ -1551,14 +1622,16 @@ fun SettingsScreen(
                         onValueChange = { draftName = it },
                         label = { Text("Student Name") },
                         singleLine = true,
+                        colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     OutlinedTextField(
                         value = draftEmail,
                         onValueChange = { draftEmail = it },
                         label = { Text("Student Email") },
                         singleLine = true,
+                        colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -1569,12 +1642,18 @@ fun SettingsScreen(
                         viewModel.saveUserProfile(draftName, draftEmail)
                         showEditProfileDialog = false
                     },
+                    colors = ButtonDefaults.filledPill(),
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                    contentPadding = PillButtonContentPadding,
                 ) {
                     Text("Save")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showEditProfileDialog = false }) {
+                TextButton(
+                    onClick = { showEditProfileDialog = false },
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                ) {
                     Text("Cancel")
                 }
             },
@@ -1600,13 +1679,18 @@ fun SettingsScreen(
                         viewModel.disconnectGoogle()
                         showDisconnectGoogleDialog = false
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    colors = ButtonDefaults.destructivePill(),
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                    contentPadding = PillButtonContentPadding,
                 ) {
                     Text("Disconnect")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDisconnectGoogleDialog = false }) {
+                TextButton(
+                    onClick = { showDisconnectGoogleDialog = false },
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                ) {
                     Text("Cancel")
                 }
             },
@@ -1630,23 +1714,43 @@ fun SettingsScreen(
                         viewModel.disconnectMicrosoft()
                         showDisconnectMicrosoftDialog = false
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    colors = ButtonDefaults.destructivePill(),
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                    contentPadding = PillButtonContentPadding,
                 ) {
                     Text("Disconnect")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDisconnectMicrosoftDialog = false }) {
+                TextButton(
+                    onClick = { showDisconnectMicrosoftDialog = false },
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                ) {
                     Text("Cancel")
                 }
             },
         )
     }
 
-    // Add Feed Dialog
+    // Add Feed Dialog: every rejection reason the ViewModel would otherwise
+    // only toast is validated inline BEFORE the call, and the dialog closes
+    // only on the confirmed success callback (never on a failed save).
     if (showAddFeedDialog) {
         var feedUrl by rememberSaveable { mutableStateOf("") }
         var feedLabel by rememberSaveable { mutableStateOf("") }
+
+        val trimmedUrl = feedUrl.trim()
+        val feedUrlError =
+            when {
+                trimmedUrl.isEmpty() -> null
+                !trimmedUrl.startsWith("https://", ignoreCase = true) ->
+                    "Only HTTPS URLs are supported - university calendar feeds start with https://"
+                snapshot.feeds.any { it.url.equals(trimmedUrl, ignoreCase = true) } ->
+                    "You already subscribe to this feed URL"
+                snapshot.feeds.size >= 10 ->
+                    "Remove a feed first - QuizRadar keeps at most 10 calendar feeds"
+                else -> null
+            }
 
         AlertDialog(
             onDismissRequest = { showAddFeedDialog = false },
@@ -1658,14 +1762,22 @@ fun SettingsScreen(
                         onValueChange = { feedUrl = it },
                         label = { Text("Feed URL (https:// only)") },
                         singleLine = true,
+                        isError = feedUrlError != null,
+                        supportingText = {
+                            feedUrlError?.let {
+                                Text(it, color = MaterialTheme.colorScheme.error)
+                            }
+                        },
+                        colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     OutlinedTextField(
                         value = feedLabel,
                         onValueChange = { feedLabel = it },
                         label = { Text("Label (e.g. University Calendar)") },
                         singleLine = true,
+                        colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -1677,13 +1789,59 @@ fun SettingsScreen(
                             showAddFeedDialog = false
                         }
                     },
-                    enabled = feedUrl.startsWith("https://", ignoreCase = true),
+                    enabled = trimmedUrl.isNotEmpty() && feedUrlError == null,
+                    colors = ButtonDefaults.filledPill(),
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                    contentPadding = PillButtonContentPadding,
                 ) {
                     Text("Add Feed")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showAddFeedDialog = false }) {
+                TextButton(
+                    onClick = { showAddFeedDialog = false },
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                ) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
+    // Feed removal confirm: the delete itself is the ViewModel's real core
+    // feed-delete (A02); the refreshed feed list is the outcome the user
+    // sees, with the ViewModel reporting a failure loudly if the write fails.
+    feedPendingDeleteUrl?.let { pendingUrl ->
+        val pendingFeed =
+            snapshot.feeds.firstOrNull { it.url.equals(pendingUrl, ignoreCase = true) }
+        AlertDialog(
+            onDismissRequest = { feedPendingDeleteUrl = null },
+            title = { Text("Remove feed?") },
+            text = {
+                Text(
+                    text =
+                        "Removes \"${pendingFeed?.label ?: pendingUrl}\". QuizRadar stops fetching " +
+                            "this calendar. Your other feeds and preferences are not changed.",
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.removeIcsFeed(pendingUrl)
+                        feedPendingDeleteUrl = null
+                    },
+                    colors = ButtonDefaults.destructivePill(),
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                    contentPadding = PillButtonContentPadding,
+                ) {
+                    Text("Remove")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { feedPendingDeleteUrl = null },
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                ) {
                     Text("Cancel")
                 }
             },
@@ -1712,12 +1870,18 @@ fun SettingsScreen(
                         )
                         showDigestTimePicker = false
                     },
+                    colors = ButtonDefaults.filledPill(),
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                    contentPadding = PillButtonContentPadding,
                 ) {
                     Text("Save")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDigestTimePicker = false }) {
+                TextButton(
+                    onClick = { showDigestTimePicker = false },
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                ) {
                     Text("Cancel")
                 }
             },
@@ -1745,16 +1909,12 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        "Type DELETE to confirm:",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
                     OutlinedTextField(
                         value = resetInputText,
                         onValueChange = { resetInputText = it },
+                        label = { Text("Type DELETE to confirm") },
                         singleLine = true,
+                        colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -1767,13 +1927,18 @@ fun SettingsScreen(
                         }
                     },
                     enabled = resetInputText.trim() == "DELETE",
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    colors = ButtonDefaults.destructivePill(),
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                    contentPadding = PillButtonContentPadding,
                 ) {
                     Text("Confirm Reset")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showResetConfirmDialog = false }) {
+                TextButton(
+                    onClick = { showResetConfirmDialog = false },
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                ) {
                     Text("Cancel")
                 }
             },
@@ -1836,7 +2001,6 @@ private fun SettingsSectionHeader(
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
         )
     }
@@ -1852,7 +2016,9 @@ private fun StatusPill(
     // 4.5:1 that 11sp text needs. The token now has a dark variant.
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     Surface(
-        shape = RoundedCornerShape(12.dp),
+        // Both inline badges ("Connected", "Desktop only") share the theme's
+        // small pill slot - badges are small controls, not cards.
+        shape = MaterialTheme.shapes.small,
         color =
             if (connected) {
                 StatusColors.successContainer(isDark)
@@ -1874,15 +2040,14 @@ private fun StatusPill(
                             if (connected) {
                                 StatusColors.onSuccessContainer(isDark)
                             } else {
-                                Color(0xFF9CA3AF)
+                                MaterialTheme.colorScheme.onSurfaceVariant
                             },
                         ),
             )
-            Spacer(modifier = Modifier.width(5.dp))
+            Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = if (connected) "Connected" else "Not connected",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.labelSmall,
                 color =
                     if (connected) {
                         StatusColors.onSuccessContainer(isDark)
@@ -1904,7 +2069,11 @@ private fun SourceToggleRow(
     modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = modifier.fillMaxWidth(),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = 56.dp)
+                .padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1920,7 +2089,11 @@ private fun SourceToggleRow(
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column {
-                Text(name, fontWeight = FontWeight.SemiBold)
+                Text(
+                    name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
                 Text(
                     desc,
                     style = MaterialTheme.typography.bodySmall,
@@ -1934,3 +2107,57 @@ private fun SourceToggleRow(
         )
     }
 }
+
+/*
+ * The settings switch row the whole screen shares (notifications, calendar,
+ * background scan): title + support text on the left, the switch on the
+ * right, on the same 56dp row grid as SourceToggleRow.
+ */
+@Composable
+private fun SettingsSwitchRow(
+    name: String,
+    desc: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = 56.dp)
+                .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                name,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                desc,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+        )
+    }
+}
+
+/*
+ * Counts and times are data (docs/ANDROID-DESIGN-SYSTEM.md §2): [counted]
+ * renders in tabular figures so digits keep a fixed width next to the label.
+ */
+private fun tabular(
+    prefix: String,
+    counted: String,
+): AnnotatedString =
+    buildAnnotatedString {
+        append(prefix)
+        withStyle(SpanStyle(fontFeatureSettings = "tnum")) { append(counted) }
+    }

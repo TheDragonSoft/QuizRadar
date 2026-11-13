@@ -1,6 +1,7 @@
 package com.quizradar.app.core
 
 import android.util.Log
+import com.quizradar.app.auth.OAuthManager
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -45,9 +46,11 @@ class OAuthClientIds(
  * - No token and no way to get one: `null`. The core treats that as the
  *   honest "no token" failure and reports the source as skipped/failed.
  *
- * A refresh grant can only succeed when the user's own OAuth client id is
- * configured (Settings -> Sources); without it the provider returns null and
- * the scan reports the source honestly instead of guessing a client.
+ * A refresh grant resolves the Google client id through
+ * [googleRefreshClientId]: a stored override (Settings -> Sources) wins, a
+ * blank one falls back to the shipped public client id. Microsoft keeps its
+ * honest placeholder - a refresh there still needs the user's own Azure app
+ * id, and returns null (an honestly skipped source) without one.
  *
  * @param google true -> serve Google capabilities; false -> Microsoft.
  *   A capability of the other provider is answered with null (the core never
@@ -66,10 +69,6 @@ class EngineFfiTokens(
     private val refreshGrant: (provider: String, refreshToken: String, clientId: String) -> String? =
         ::defaultRefreshGrant,
 ) : FfiTokenProvider {
-    /** Value we last served and when we FIRST served it (TTL anchor). */
-    private var servedGoogleToken: Pair<String, Long>? = null
-    private var servedMicrosoftToken: Pair<String, Long>? = null
-
     override fun bearerToken(capability: FfiProviderCapability): String? {
         val forGoogle =
             when (capability) {
@@ -85,35 +84,87 @@ class EngineFfiTokens(
         return if (google) googleBearer() else microsoftBearer()
     }
 
+    /**
+     * Serves the Google access token if it is verifiably still inside its
+     * TTL. The TTL anchor is the ISSUANCE timestamp recorded in the token
+     * store — not the moment this instance first saw the token — so a token
+     * issued an hour ago stays stale across fresh wrappers and fresh
+     * processes (audit A03).
+     */
     private fun googleBearer(): String? {
         val memory = tokens.getGoogleAccessToken()
-        val served = servedGoogleToken
-        if (!memory.isNullOrBlank() && (served == null || served.first != memory)) {
-            // Fresh from a sign-in this session - serve as-is.
-            servedGoogleToken = memory to nowMs()
-            return memory
+        if (!memory.isNullOrBlank()) {
+            when (tokens.getGoogleAccessTokenIssuedAtMs()) {
+                null -> {
+                    // Age unknown (token written by an older build or without
+                    // a stamp). Conservative: prefer a silent refresh; when
+                    // that is impossible, serve the remembered token and let
+                    // the core's 401 report honestly if it is truly dead.
+                    return refreshAndStore(google = true) ?: memory
+                }
+                else ->
+                    if (
+                        tokenStillFresh(
+                            tokens.getGoogleAccessTokenIssuedAtMs(),
+                            accessTokenTtlMs(tokens.getGoogleAccessTokenExpiresInSec()),
+                        )
+                    ) {
+                        return memory
+                    }
+            }
         }
-        if (memory != null && served != null && served.first == memory && nowMs() - served.second < ACCESS_TOKEN_TTL_MS) {
-            // Same token inside its TTL - reuse, no refresh round trip.
-            return memory
-        }
-        // Absent (process restart while tokens persisted) or past the TTL:
-        // silent refresh, then serve the fresh token.
+        // Absent (process restart while only the refresh token persisted) or
+        // past its TTL: silent refresh, then serve the fresh token.
         return refreshAndStore(google = true)
     }
 
     private fun microsoftBearer(): String? {
         val memory = tokens.getMicrosoftAccessToken()
-        val served = servedMicrosoftToken
-        if (!memory.isNullOrBlank() && (served == null || served.first != memory)) {
-            servedMicrosoftToken = memory to nowMs()
-            return memory
-        }
-        if (memory != null && served != null && served.first == memory && nowMs() - served.second < ACCESS_TOKEN_TTL_MS) {
-            return memory
+        if (!memory.isNullOrBlank()) {
+            when (tokens.getMicrosoftAccessTokenIssuedAtMs()) {
+                null ->
+                    return refreshAndStore(google = false) ?: memory
+                else ->
+                    if (
+                        tokenStillFresh(
+                            tokens.getMicrosoftAccessTokenIssuedAtMs(),
+                            accessTokenTtlMs(tokens.getMicrosoftAccessTokenExpiresInSec()),
+                        )
+                    ) {
+                        return memory
+                    }
+            }
         }
         return refreshAndStore(google = false)
     }
+
+    /**
+     * True only when the token carries a real issuance stamp that is NOT in
+     * the future and lies inside its lifetime. A future stamp (device clock
+     * rolled back after issuance) is treated as stale, never as eternally
+     * fresh.
+     */
+    private fun tokenStillFresh(
+        issuedAtMs: Long?,
+        ttlMs: Long,
+    ): Boolean {
+        if (issuedAtMs == null || issuedAtMs < 0L) return false
+        val now = nowMs()
+        if (issuedAtMs > now) return false
+        return now - issuedAtMs < ttlMs
+    }
+
+    /**
+     * The access token's usable lifetime: the provider's actual `expires_in`
+     * with a safety margin when the response carried one, the conservative
+     * fixed TTL only when it did not. Negative/zero lifetimes are floored so
+     * a degenerate `expires_in` cannot flip-flop the freshness check.
+     */
+    private fun accessTokenTtlMs(expiresInSec: Long?): Long =
+        expiresInSec
+            ?.takeIf { it > 0 }
+            ?.let { maxOf(it * 1000L - TTL_SAFETY_MARGIN_MS, MIN_ACCESS_TOKEN_TTL_MS) }
+            ?: ACCESS_TOKEN_TTL_MS
 
     /**
      * Runs one refresh grant and stores the outcome. Returns the fresh access
@@ -127,7 +178,7 @@ class EngineFfiTokens(
         val refreshToken =
             if (google) tokens.getGoogleRefreshToken() else tokens.getMicrosoftRefreshToken()
         if (refreshToken.isNullOrBlank()) return null
-        val clientId = if (google) clientIds.googleClientId() else clientIds.microsoftClientId()
+        val clientId = if (google) googleRefreshClientId() else clientIds.microsoftClientId()
         if (clientId.isNullOrBlank()) return null
         val body =
             try {
@@ -138,27 +189,58 @@ class EngineFfiTokens(
         val json = runCatching { org.json.JSONObject(body) }.getOrNull() ?: return null
         val accessToken = json.optString("access_token").takeIf { it.isNotBlank() } ?: return null
         val newRefresh = json.optString("refresh_token").takeIf { it.isNotBlank() }
+        // The real lifetime the provider granted; null keeps the conservative
+        // fixed TTL as the honest fallback when the field is absent.
+        val expiresInSec = json.optLong("expires_in", -1L).takeIf { it > 0 }
         if (google) {
             tokens.setGoogleAccessToken(accessToken)
+            tokens.setGoogleAccessTokenIssuedAtMs(nowMs())
+            tokens.setGoogleAccessTokenExpiresInSec(expiresInSec)
             if (newRefresh != null) tokens.setGoogleRefreshToken(newRefresh)
-            servedGoogleToken = accessToken to nowMs()
         } else {
             tokens.setMicrosoftAccessToken(accessToken)
+            tokens.setMicrosoftAccessTokenIssuedAtMs(nowMs())
+            tokens.setMicrosoftAccessTokenExpiresInSec(expiresInSec)
             if (newRefresh != null) tokens.setMicrosoftRefreshToken(newRefresh)
-            servedMicrosoftToken = accessToken to nowMs()
         }
         return accessToken
+    }
+
+    /**
+     * The effective Google client id for a silent refresh (audit A03).
+     *
+     * Resolution order:
+     *  1. the stored override, when it is usable (non-blank, not a legacy
+     *     placeholder id);
+     *  2. the shipped maintainer client id (a public identifier, AGENTS §3.2
+     *     amendment) - but ONLY when ids were actually wired in, i.e. the
+     *     holder is not the [OAuthClientIds.EMPTY] sentinel. The sentinel
+     *     means "no config was ever read", and a refresh without a real
+     *     client id must refuse instead of guessing.
+     */
+    private fun googleRefreshClientId(): String? {
+        val stored = clientIds.googleClientId()
+        if (stored != null && stored !in OAuthManager.LEGACY_PLACEHOLDER_GOOGLE_CLIENT_IDS) return stored
+        return if (clientIds !== OAuthClientIds.EMPTY) OAuthManager.DEFAULT_GOOGLE_CLIENT_ID else null
     }
 
     private fun nowMs(): Long = System.currentTimeMillis()
 
     companion object {
         /**
-         * The 1h access-token TTL with a safety margin: past 45 minutes a
-         * served token is treated as stale and refreshed lazily, so a scan
-         * never enters with a token the provider is about to reject.
+         * The conservative access-token TTL used when the provider response
+         * carried no `expires_in`: the typical 1h Google lifetime with a
+         * 15-minute safety margin. Past 45 minutes a served token is treated
+         * as stale and refreshed lazily, so a scan never enters with a token
+         * the provider is about to reject.
          */
         internal const val ACCESS_TOKEN_TTL_MS = 45L * 60L * 1000L
+
+        /** The margin subtracted from a real `expires_in` before use. */
+        internal const val TTL_SAFETY_MARGIN_MS = 15L * 60L * 1000L
+
+        /** Floor for a real `expires_in` lifetime after the margin. */
+        internal const val MIN_ACCESS_TOKEN_TTL_MS = 60L * 1000L
 
         private const val TAG = "EngineFfiTokens"
 

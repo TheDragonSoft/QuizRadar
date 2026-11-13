@@ -12,6 +12,8 @@ import com.quizradar.app.core.QuizRadarEngine
 import com.quizradar.app.model.QuizRadarJsonParser
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.util.concurrent.TimeUnit
 
 /**
@@ -60,10 +62,15 @@ class ExamReminderWorker(
             }
 
             if (notifyExam24h || notifyExamSameDay) {
-                // Respect ≤48 nearest scheduled policy
+                val now = ZonedDateTime.now()
+                val zone = ZoneId.systemDefault()
+
+                // Respect ≤48 nearest scheduled policy. Retired/cancelled
+                // assessments (`isUpcoming == false`) and past days are never
+                // reminded.
                 val upcoming =
                     snapshot.assessments
-                        .filter { it.daysUntil != null && it.daysUntil in 0..1 }
+                        .filter { it.isUpcoming && it.daysUntil != null && it.daysUntil in 0..1 }
                         .take(48)
 
                 for (assessment in upcoming) {
@@ -85,22 +92,77 @@ class ExamReminderWorker(
                         )
                     try {
                         notificationManager.notify(notifId, builder.build())
+                        NotificationHelper.rememberOwnedNotification(applicationContext, notifId)
                         markNotified(marker)
                         AnalyticsManager.trackExamReminderNotification(if (isSameDay) "same_day" else "24h")
+                    } catch (_: SecurityException) {
+                        // POST_NOTIFICATIONS runtime permission not granted
+                    }
+                }
 
-                        if (isSameDay) {
-                            val persistentId = engine.notificationIdFor(assessment.id, "exam-ongoing")
+                // The ongoing same-day countdown tracks reality on every
+                // worker pass — it must not be gated by the once-per-day
+                // "notified" marker, or it would freeze at its first value
+                // and outlive the exam. A countdown exists only for a known,
+                // still-future start (date + `HH:MM` in the device zone);
+                // unknown or past starts cancel the stale notification
+                // instead of inventing a fixed value.
+                if (notifyExamSameDay) {
+                    for (assessment in snapshot.assessments.filter { it.isUpcoming && it.daysUntil == 0 }) {
+                        val persistentId = engine.notificationIdFor(assessment.id, "exam-ongoing")
+                        val minutesRemaining =
+                            NotificationHelper.minutesUntilExamStart(
+                                now,
+                                assessment.dateIso,
+                                assessment.startTime,
+                                zone,
+                            )
+                        if (minutesRemaining == null) {
+                            NotificationHelper.cancelByIds(applicationContext, listOf(persistentId))
+                        } else {
                             val persistentBuilder =
                                 NotificationHelper.buildPersistentExamNotification(
                                     applicationContext,
                                     assessment,
-                                    minutesRemaining = 120,
+                                    minutesRemaining,
                                 )
-                            notificationManager.notify(persistentId, persistentBuilder.build())
+                            try {
+                                notificationManager.notify(persistentId, persistentBuilder.build())
+                                NotificationHelper.rememberOwnedNotification(applicationContext, persistentId)
+                            } catch (_: SecurityException) {
+                                // POST_NOTIFICATIONS runtime permission not granted
+                            }
                         }
-                    } catch (_: SecurityException) {
-                        // POST_NOTIFICATIONS runtime permission not granted
                     }
+                }
+
+                // Retired/cancelled or already-started assessments keep none
+                // of their owned reminder notifications alive (stable IDs via
+                // `notificationIdFor`, so a re-post under the same id also
+                // replaces instead of duplicating).
+                val obsolete =
+                    snapshot.assessments.filter { assessment ->
+                        !assessment.isUpcoming ||
+                            (assessment.daysUntil != null && assessment.daysUntil < 0) ||
+                            (
+                                assessment.daysUntil == 0 &&
+                                    NotificationHelper.examStartStatus(
+                                        now,
+                                        assessment.dateIso,
+                                        assessment.startTime,
+                                        zone,
+                                    ) == ExamStartStatus.PAST
+                            )
+                    }
+                if (obsolete.isNotEmpty()) {
+                    NotificationHelper.cancelByIds(
+                        applicationContext,
+                        obsolete.flatMap { assessment ->
+                            NotificationHelper.EXAM_NOTIFICATION_KINDS.map { kind ->
+                                engine.notificationIdFor(assessment.id, kind)
+                            }
+                        },
+                    )
                 }
             }
 
@@ -120,7 +182,7 @@ class ExamReminderWorker(
                                 it.day.equals(dayOfWeek, ignoreCase = true) ||
                                     it.day.take(3).equals(dayOfWeek.take(3), ignoreCase = true)
                             }
-                        val todayExams = snapshot.assessments.filter { it.daysUntil == 0 }
+                        val todayExams = snapshot.assessments.filter { it.isUpcoming && it.daysUntil == 0 }
 
                         if (todayClasses.isNotEmpty() || todayExams.isNotEmpty()) {
                             val digestSummary =
@@ -145,6 +207,7 @@ class ExamReminderWorker(
                                 )
                             try {
                                 notificationManager.notify(digestId, builder.build())
+                                NotificationHelper.rememberOwnedNotification(applicationContext, digestId)
                                 markNotified(digestMarker)
                             } catch (_: SecurityException) {
                             }

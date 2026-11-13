@@ -1,7 +1,15 @@
 import { spawn, execFileSync } from "node:child_process";
+import dns from "node:dns";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { WEB_DIR, REPO_DIR } from "./args.mjs";
+
+// Vite binds exactly one address and `localhost` resolves to the IPv6 loopback (::1)
+// FIRST on this Windows host, so the dev server would listen on ::1 only while the
+// OAuth providers still see `http://localhost:4317`. Resolving IPv4 first mirrors the
+// `NODE_OPTIONS: --dns-result-order=ipv4first` injection in
+// `apps/web/playwright.config.ts`.
+if (typeof dns.setDefaultResultOrder === "function") dns.setDefaultResultOrder("ipv4first");
 
 const VITE_PORT = "4317";
 const WASM_BUILD_REL = "../../tooling/build-wasm.mjs";
@@ -99,7 +107,17 @@ function runWasmBuild() {
 
 /** Ensures a Vite dev server answers at `baseUrl`; returns { started, stop }. */
 export async function ensureServer({ baseUrl }) {
-  if (await probe(baseUrl)) return { started: false, stop: async () => {} };
+  const url = new URL(baseUrl);
+  const requestedHost = url.hostname || "127.0.0.1";
+  const port = url.port || VITE_PORT;
+  // Vite binds exactly ONE address, and `localhost` resolves to the IPv6 loopback
+  // (::1) first on this Windows host, so binding the name `localhost` would make Vite
+  // listen on ::1 only. The bind therefore uses the IPv4 loopback literal, while the
+  // URL the browser opens stays `http://localhost:4317` — the origin the OAuth
+  // providers validate. The probe uses that same literal.
+  const bindHost = requestedHost === "localhost" ? "127.0.0.1" : requestedHost;
+  const probeUrl = `http://${bindHost}:${port}`;
+  if (await probe(probeUrl)) return { started: false, stop: async () => {} };
   const build = await runWasmBuild();
   if (build.code !== 0) {
     throw new Error(
@@ -107,10 +125,7 @@ export async function ensureServer({ baseUrl }) {
     );
   }
   const isWin = process.platform === "win32";
-  const url = new URL(baseUrl);
-  const host = url.hostname || "127.0.0.1";
-  const port = url.port || VITE_PORT;
-  const args = ["exec", "vite", "--host", host, "--port", port, "--strictPort"];
+  const args = ["exec", "vite", "--host", bindHost, "--port", port, "--strictPort"];
   const server = isWin
     ? spawn("pnpm.cmd", args, { cwd: WEB_DIR, shell: true, stdio: "pipe" })
     : spawn("pnpm", args, { cwd: WEB_DIR, detached: true, stdio: "pipe" });
@@ -135,12 +150,12 @@ export async function ensureServer({ baseUrl }) {
         `dev server exited (${server.exitCode}) for ${path.join(REPO_DIR, "apps", "web")}:\n${serverOutput.slice(-2000)}`,
       );
     }
-    if (await probe(baseUrl)) return { started: true, stop };
+    if (await probe(probeUrl)) return { started: true, stop };
     await sleep(POLL_INTERVAL_MS);
   }
   await stop();
   throw new Error(
-    `dev server did not answer ${baseUrl} within ${READY_TIMEOUT_MS} ms:\n${serverOutput.slice(-2000)}\nVite must be reachable at the base URL; on Windows it binds the IPv6 loopback unless --host is passed.`,
+    `dev server did not answer ${baseUrl} within ${READY_TIMEOUT_MS} ms:\n${serverOutput.slice(-2000)}\nVite must be reachable at the base URL; the harness binds the IPv4 loopback literal, so the base URL has to resolve to it.`,
   );
 }
 
@@ -162,14 +177,31 @@ function loadPlaywright() {
 /**
  * Launches a persistent Chromium context on `profileDir`; returns { context, page }.
  * Keep this context alive: the web tier holds its OAuth token in memory only.
+ *
+ * When `baseUrl` points at the literal name `localhost`, Chromium is told to resolve
+ * that name to the IPv4 loopback. The OAuth providers validate the CALLING PAGE'S
+ * ORIGIN string, so the browser has to keep showing `http://localhost:4317`, while the
+ * socket has to reach the address Vite actually bound. The resolver rule matches only
+ * the literal name `localhost`, so accounts.google.com and login.microsoftonline.com
+ * are untouched.
  */
-export async function launchBrowser({ profileDir, headless }) {
+export async function launchBrowser({ profileDir, headless, baseUrl }) {
   const pw = await loadPlaywright();
-  const context = await pw.chromium.launchPersistentContext(profileDir, {
+  const launchOptions = {
     headless: headless === undefined ? true : Boolean(headless),
     viewport: { width: 1440, height: 900 },
     timezoneId: "UTC",
-  });
+  };
+  let hostname = "";
+  try {
+    hostname = baseUrl ? new URL(baseUrl).hostname : "";
+  } catch {
+    hostname = "";
+  }
+  if (hostname === "localhost") {
+    launchOptions.args = ["--host-resolver-rules=MAP localhost 127.0.0.1"];
+  }
+  const context = await pw.chromium.launchPersistentContext(profileDir, launchOptions);
   const pages = context.pages();
   const page = pages.length > 0 ? pages[0] : await context.newPage();
   return { context, page };

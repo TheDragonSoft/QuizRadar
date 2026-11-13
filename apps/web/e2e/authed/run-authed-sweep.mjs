@@ -33,6 +33,7 @@ import {
   launchBrowser,
 } from "./lib/harness.mjs";
 import {
+  ensureGoogleClientId,
   ensureTeamsClientId,
   grantMicrosoftScanAccess,
   readAccountState,
@@ -118,9 +119,10 @@ function asStatus(result, fallbackDetail = "No outcome was reported.") {
 /**
  * Prints the plain-text banner that tells the operator what is about to happen.
  */
-function printBanner(options, outDir) {
+function printBanner(options, outDir, report) {
   console.log("QuizRadar authenticated UX sweep");
   console.log(`  base URL:  ${options.baseUrl}`);
+  console.log(`  origin:    ${report.origin}`);
   console.log(`  evidence:  ${outDir}`);
   console.log(
     `  profile:   ${options.profileDir}   (a persistent Chromium profile: it keeps YOUR Google/Microsoft session cookies on this machine. Delete that folder to sign the harness browser out.)`,
@@ -160,6 +162,11 @@ async function runSignInPhase({ page, context, options, report }) {
   signIn.teamsClientId = await runStatusStep("Teams id:", () =>
     ensureTeamsClientId({ page, clientId: options.teamsClientId }),
   );
+  // The Google client id has to be in place BEFORE the sign-in: the web tier pre-fills
+  // the field with the app's bundled id, which Google rejects for the harness origin.
+  signIn.googleClientId = await runStatusStep("Google id:", () =>
+    ensureGoogleClientId({ page, clientId: options.googleClientId }),
+  );
   signIn.google = await runStatusStep("Google:", () =>
     signInWithGoogle({ page, context, timeoutMs }),
   );
@@ -190,6 +197,11 @@ async function runSignInPhase({ page, context, options, report }) {
   if (signIn.teamsClientId.status === "needs-teams-client-id") {
     console.log(
       "  Teams id:   needs your Azure app (client) id — pass --teams-client-id <id> (a public id, not a secret) and re-run.",
+    );
+  }
+  if (signIn.googleClientId.status === "needs-google-client-id") {
+    console.log(
+      "  Google id:  needs your Google OAuth client id — pass --google-client-id <id> (a public id, not a secret) and re-run.",
     );
   }
   if (signIn.microsoft.status === "needs-teams-client-id") {
@@ -353,6 +365,7 @@ function buildSummaryMarkdown({ report, outDir }) {
     `- Mode: ${report.mode === "smoke" ? "smoke run (sign-in skipped)" : "signed-in sweep"}`,
   );
   lines.push(`- Base URL: ${report.baseUrl}`);
+  lines.push(`- Origin: ${report.origin || "unknown"}`);
   lines.push(`- Headless: ${report.headless}`);
   lines.push(`- Started: ${report.startedAt}`);
   lines.push(`- Finished: ${report.finishedAt}`);
@@ -385,6 +398,7 @@ function buildSummaryMarkdown({ report, outDir }) {
   lines.push("## Sign-in");
   lines.push("");
   lines.push(`- Teams client id: ${report.signIn.teamsClientId.status}`);
+  lines.push(`- Google client id: ${report.signIn.googleClientId.status}`);
   lines.push(`- Google: ${report.signIn.google.status}`);
   lines.push(`- Microsoft: ${report.signIn.microsoft.status}`);
   lines.push(
@@ -436,6 +450,7 @@ function printFinalSummary({ report, outDir }) {
   console.log(`  surfaces:   ${report.coverage.surfaceCount}`);
   console.log(`  axe issues: ${totalAxe}`);
   console.log(`  ${"Teams id:".padEnd(13)}${report.signIn.teamsClientId.status}`);
+  console.log(`  ${"Google id:".padEnd(13)}${report.signIn.googleClientId.status}`);
   console.log(`  ${"Google:".padEnd(13)}${report.signIn.google.status}`);
   console.log(`  ${"Microsoft:".padEnd(13)}${report.signIn.microsoft.status}`);
   console.log(
@@ -478,6 +493,7 @@ async function main() {
     finishedAt: null,
     durationMs: null,
     baseUrl: options.baseUrl,
+    origin: null,
     headless: Boolean(options.headless),
     profileDir: options.profileDir,
     mode,
@@ -487,6 +503,11 @@ async function main() {
     signIn: {
       attempted: !options.skipSignin,
       teamsClientId: {
+        ok: false,
+        status: "skipped",
+        detail: "Sign-in was skipped for this run.",
+      },
+      googleClientId: {
         ok: false,
         status: "skipped",
         detail: "Sign-in was skipped for this run.",
@@ -534,6 +555,7 @@ async function main() {
     const launched = await launchBrowser({
       profileDir: options.profileDir,
       headless: options.headless,
+      baseUrl: options.baseUrl,
     });
     context = launched.context;
     const page = launched.page;
@@ -556,8 +578,15 @@ async function main() {
     }
 
     if (booted) {
+      // The OAuth providers validate the CALLING PAGE'S ORIGIN, so it is part of the
+      // evidence; a failure to read it must not abort the run.
+      try {
+        report.origin = await page.evaluate(() => window.location.origin);
+      } catch {
+        report.origin = null;
+      }
       await dismissOnboarding(page);
-      printBanner(options, outDir);
+      printBanner(options, outDir, report);
 
       if (!options.skipSignin) {
         await runSignInPhase({ page, context, options, report });
@@ -595,6 +624,11 @@ async function main() {
   if (report.signIn.teamsClientId.status === "set") {
     report.honesty.push(
       "The harness filled the Microsoft Azure client id once via --teams-client-id (a public identifier, through the app's own Settings form).",
+    );
+  }
+  if (report.signIn.googleClientId.status === "set") {
+    report.honesty.push(
+      "The harness filled the Google OAuth client id once through the app's own Settings form; a Google client id is a public identifier, not a secret.",
     );
   }
 

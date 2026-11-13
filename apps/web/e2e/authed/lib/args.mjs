@@ -4,10 +4,30 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const DEFAULT_BASE_URL = "http://127.0.0.1:4317";
+const DEFAULT_BASE_URL = "http://localhost:4317";
 const DEFAULT_SIGNIN_TIMEOUT_MS = 600000;
+/**
+ * Public Google OAuth client id that authorizes BOTH `http://localhost:4317` and
+ * `http://127.0.0.1:4317` as a Google GIS JavaScript origin.
+ *
+ * The id bundled in `apps/web/src/pwadapters/browserSources.ts` only authorizes the
+ * `127.0.0.1` origin, so Google rejects `http://localhost:4317` for it with
+ * `Error 400: origin_mismatch`.
+ */
+export const DEFAULT_GOOGLE_CLIENT_ID =
+  "620389124802-98bn4r9kllknq8l820rts76840l4af7q.apps.googleusercontent.com";
+/**
+ * Public "Microsoft Graph Command Line Tools" app id, bundled with the desktop shell
+ * (`apps/desktop/src-tauri/src/state.rs`, `DEFAULT_MICROSOFT_CLIENT_ID`).
+ *
+ * Microsoft's v2 endpoint accepts its redirect ONLY at `http://localhost:<port>/` —
+ * not at `127.0.0.1` and not at a sub-path — which is why the harness serves the app
+ * from `localhost`.
+ */
+export const DEFAULT_TEAMS_CLIENT_ID = "14d82eec-204b-4c2f-b7e8-296a70dab67e";
 const VALUE_FLAGS = new Set([
   "--base-url",
+  "--google-client-id",
   "--out",
   "--signin-timeout-ms",
   "--profile",
@@ -33,6 +53,12 @@ export const REPO_DIR = path.resolve(WEB_DIR, "..", "..");
 /**
  * Parses node-style argv (argv[0] is node, argv[1] is this script) into sweep options.
  * Accepts "--flag value" and "--flag=value"; unknown flags are ignored.
+ *
+ * `--teams-client-id` falls back to the `QUIZRADAR_E2E_TEAMS_CLIENT_ID` environment
+ * variable and then to {@link DEFAULT_TEAMS_CLIENT_ID}; `--google-client-id` falls back
+ * to the `QUIZRADAR_E2E_GOOGLE_CLIENT_ID` environment variable and then to
+ * {@link DEFAULT_GOOGLE_CLIENT_ID}. An explicitly empty value means "no client id" and
+ * is never replaced by a default.
  */
 export function parseArgs(argv) {
   const args = Array.isArray(argv) ? argv.slice(2) : [];
@@ -46,8 +72,10 @@ export function parseArgs(argv) {
     grantScanAccess: true,
     surfaces: null,
     teamsClientId: null,
+    googleClientId: DEFAULT_GOOGLE_CLIENT_ID,
   };
   let teamsClientIdSupplied = false;
+  let googleClientIdSupplied = false;
   let index = 0;
   while (index < args.length) {
     const token = args[index++];
@@ -76,6 +104,9 @@ export function parseArgs(argv) {
     } else if (name === "--teams-client-id" && value !== undefined) {
       teamsClientIdSupplied = true;
       options.teamsClientId = value.trim() || null;
+    } else if (name === "--google-client-id" && value !== undefined) {
+      googleClientIdSupplied = true;
+      options.googleClientId = value.trim() || null;
     } else if (name === "--signin-timeout-ms" && value !== undefined) {
       const parsed = Number(value);
       // Zero or negative would make every sign-in time out instantly; keep the default instead.
@@ -93,7 +124,12 @@ export function parseArgs(argv) {
   }
   if (options.outDir === null) options.outDir = `e2e-results/authed/${localTimestamp()}`;
   if (!teamsClientIdSupplied) {
-    options.teamsClientId = (process.env.QUIZRADAR_E2E_TEAMS_CLIENT_ID || "").trim() || null;
+    const fromEnv = (process.env.QUIZRADAR_E2E_TEAMS_CLIENT_ID || "").trim();
+    options.teamsClientId = fromEnv || DEFAULT_TEAMS_CLIENT_ID;
+  }
+  if (!googleClientIdSupplied) {
+    const fromEnv = (process.env.QUIZRADAR_E2E_GOOGLE_CLIENT_ID || "").trim();
+    options.googleClientId = fromEnv || DEFAULT_GOOGLE_CLIENT_ID;
   }
   return options;
 }

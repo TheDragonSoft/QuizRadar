@@ -509,6 +509,26 @@ async function readTeamsClientId(page) {
 }
 
 /**
+ * Read the current value of the Google OAuth client id override input.
+ *
+ * @param {import("playwright").Page} page Active page.
+ * @returns {Promise<string>} The trimmed input value, or an empty string.
+ */
+async function readGoogleClientId(page) {
+  try {
+    const input = page.locator("#settings-google-client-id");
+    if ((await input.count()) === 0) return "";
+    const value = await input
+      .first()
+      .inputValue({ timeout: 3000 })
+      .catch(() => "");
+    return (value || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Close the scan progress modal when it refuses to auto-close.
  *
  * @param {import("playwright").Locator} modal The scan modal locator.
@@ -597,6 +617,72 @@ export async function ensureTeamsClientId({ page, clientId }) {
     };
   } catch {
     return { ok: false, status: "failed", detail: "Could not configure the Microsoft client id." };
+  }
+}
+
+/**
+ * Make sure the Google OAuth client id override is configured in Settings.
+ *
+ * Unlike the Microsoft override, the Google field is ALWAYS overwritten. The web tier
+ * pre-fills it with the app's bundled client id, and that bundled id is exactly the one
+ * Google rejects for the `http://localhost:4317` origin with `Error 400: origin_mismatch`.
+ * Writing the wanted id through the app's own Settings form also proves the value the
+ * app will use for the very next sign-in.
+ *
+ * @param {{ page: import("playwright").Page, clientId?: string }} options Page and optional
+ *   public Google OAuth client id.
+ * @returns {Promise<{ ok: boolean, status: string, detail: string }>} The outcome.
+ */
+export async function ensureGoogleClientId({ page, clientId }) {
+  try {
+    if (!page) {
+      return { ok: false, status: "failed", detail: "No page was provided." };
+    }
+    const opened = await openIntegrationsSection(page);
+    if (!opened) {
+      return {
+        ok: false,
+        status: "failed",
+        detail: "The Integrations settings section is not available.",
+      };
+    }
+    const input = page.locator("#settings-google-client-id");
+    if ((await input.count()) === 0) {
+      await expandAdvancedDetails(page);
+      if ((await input.count()) === 0) {
+        return { ok: false, status: "failed", detail: "The Google client id field is missing." };
+      }
+    }
+    const wanted = typeof clientId === "string" ? clientId.trim() : "";
+    if (!wanted) {
+      return {
+        ok: false,
+        status: "needs-google-client-id",
+        detail: "Google sign-in needs a Google OAuth client id from the user.",
+      };
+    }
+    // The Google field is pre-filled with the app's bundled client id, and that bundled id
+    // is the one Google rejects for the `http://localhost:4317` origin, so the harness
+    // ALWAYS overwrites it - unlike the Microsoft override, which may be the user's own
+    // Azure app and must never be replaced.
+    await input.first().fill(wanted, { timeout: 10000 });
+    try {
+      await input.first().blur();
+    } catch {
+      await page.keyboard.press("Tab").catch(() => {});
+    }
+    await sleep(300);
+    const after = await readGoogleClientId(page);
+    if (after === wanted) {
+      return { ok: true, status: "set", detail: "Google client id is saved in Settings." };
+    }
+    return {
+      ok: false,
+      status: "failed",
+      detail: "The Google client id field did not keep the entered value.",
+    };
+  } catch {
+    return { ok: false, status: "failed", detail: "Could not configure the Google client id." };
   }
 }
 

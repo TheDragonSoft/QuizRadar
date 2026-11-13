@@ -469,12 +469,12 @@ export const copy = {
     googleDesktopClientSecretHint:
       "Only needed for a client ID you paste yourself: Google refuses a secretless token exchange for Web application clients. Stored in the OS keyring (never in the database, the logs or the web bundle). Leave empty to use the bundled secret.",
     googleBrowserClientIdHint:
-      "The browser tier ships a public client ID (an identifier, never a secret). Add this app's origin — e.g. http://localhost:5173 — to the client's Authorized JavaScript origins, or paste your own client ID.",
+      "The browser tier ships a public client ID (an identifier, never a secret), and that client must authorize the exact origin the app is served from: the bundled ID allows http://127.0.0.1:4317 but not http://localhost:4317 (Google answers Error 400: origin_mismatch). Paste your own client ID and register the origin you serve the app from — e.g. http://localhost:4317 — in its Authorized JavaScript origins.",
     teamsClientIdLabel: "Microsoft Azure App Client ID",
     teamsClientIdPlaceholder: "00000000-0000-0000-0000-000000000000",
     teamsDesktopClientIdLabel: "Microsoft App (Client) ID (optional)",
     teamsDesktopClientIdHint:
-      "Azure portal → App registrations → your app → Overview. Leave empty to use the bundled Microsoft Graph Command Line Tools registration.",
+      "Azure portal → App registrations → your app → Overview. On the desktop tier, leave this empty to use the bundled Microsoft Graph Command Line Tools registration; on the web tier the browser ships no Microsoft client ID, so paste your own Azure app (client) id.",
     redirectUriLabel: (uri: string) => `Register this redirect URI on your OAuth app: ${uri}`,
     desktopRedirectUriNote:
       "Register http://127.0.0.1 (Google) and http://localhost (Microsoft) — the port is picked at runtime and ignored by both providers.",

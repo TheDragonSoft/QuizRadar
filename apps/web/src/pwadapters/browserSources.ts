@@ -63,10 +63,14 @@ export const GOOGLE_BROWSER_SCOPES =
  * Google client is confidential and lives only in the desktop shell, so
  * this tier can only use it as a public identifier (GIS needs no secret).
  *
- * The user can override it in Settings → Account; the client's authorized
- * JavaScript origins must contain the origin the PWA is served from. The
- * bundled registration (project `quizradar-511922`) already authorizes the
- * dev origins `http://localhost:4317` and `http://127.0.0.1:4317`.
+ * The user can override it in Settings → Integrations → "Advanced Settings
+ * & Custom OAuth Overrides" (collapsed by default, field
+ * `settings-google-client-id`); the client's authorized JavaScript origins
+ * must contain the origin the PWA is served from. Measured against Google's
+ * GIS endpoint: the bundled client id authorizes `http://127.0.0.1:4317` but
+ * **not** `http://localhost:4317` (Google answers `Error 400: origin_mismatch`),
+ * so a PWA served from `localhost` has to use a client id whose Authorized
+ * JavaScript origins contain that exact origin.
  */
 export const DEFAULT_BROWSER_GOOGLE_CLIENT_ID =
   "438181858687-9etakn8k6fd1en8ra968russdpkjh9jr.apps.googleusercontent.com";

@@ -14,7 +14,7 @@
  */
 
 import { useAppStore } from "../state/store";
-import { addDaysToIsoDate } from "../state/dateUtils";
+import { addDaysToIsoDate, getWeekStart } from "../state/dateUtils";
 import { normalizeStatePayload } from "../state/ipcShape";
 import { applyThemeToDocument } from "../state/storage";
 import { getLocalDateString } from "../state/watchdog";
@@ -82,6 +82,16 @@ function rebuildAssessmentLabels(assessment: Rec): void {
     assessment.display_time =
       `${DAY_LONG.format(date)}, ${date.getUTCDate()} ${MONTH_LONG.format(date)} ` +
       `${date.getUTCFullYear()} (${to12Hour(assessment.start_time)} – ${to12Hour(assessment.end_time)})`;
+    return;
+  }
+  // Assessment-shaped objects WITHOUT times (study recommendations) still
+  // carry a stale display_time string — rebuild its date part and preserve
+  // whatever "(…)" time segment the core appended.
+  if (typeof assessment.display_time === "string") {
+    const timeSegment = assessment.display_time.match(/\((.*)\)\s*$/);
+    assessment.display_time =
+      `${DAY_LONG.format(date)}, ${date.getUTCDate()} ${MONTH_LONG.format(date)} ` +
+      `${date.getUTCFullYear()}${timeSegment ? ` (${timeSegment[1]})` : ""}`;
   }
 }
 
@@ -138,6 +148,20 @@ export function buildWorkbenchState(): GetStatePayload {
     }
   }
 
+  // Readiness cards carry a non-ISO `display_date` string next to their
+  // `date_iso` — rebuild it from the shifted date like the labels above.
+  const readinessCards = Array.isArray(studyTasks.readiness_cards)
+    ? (studyTasks.readiness_cards as Rec[])
+    : [];
+  for (const card of readinessCards) {
+    if (typeof card.date_iso === "string") {
+      const date = new Date(Date.parse(card.date_iso));
+      card.display_date =
+        `${DAY_LONG.format(date)}, ${date.getUTCDate()} ${MONTH_LONG.format(date)} ` +
+        `${date.getUTCFullYear()}`;
+    }
+  }
+
   return normalizeStatePayload({
     config,
     auth,
@@ -148,18 +172,30 @@ export function buildWorkbenchState(): GetStatePayload {
   } as unknown as GetStatePayload);
 }
 
-/** The five shipped ThemeModes (state/types.ts). */
+/**
+ * Every theme id the app ships (state/types.ts ThemeMode): the two generic
+ * mode ids plus the three concrete themes. `light` and `dark` are NOT
+ * separate visual themes — `applyThemeToDocument` normalizes them onto the
+ * Solar/Obsidian attributes exactly like the app's TopBar toggle does, so a
+ * `theme=dark` story renders the user's preferred dark theme (Obsidian
+ * unless a `quizradar-theme-preferred-dark` pick is stored). The AMOLED
+ * Pure/Sparkle variants from the v1 gallery were retired from the app.
+ */
 const KNOWN_THEMES: readonly ThemeMode[] = ["light", "dark", "obsidian", "solar", "amoled-nebula"];
 
 /**
  * The workbench theme for this render: the `?theme=<ThemeMode>` URL param
- * wins (so agents can screenshot any theme deterministically), otherwise the
- * Obsidian default. Ladle's own chrome theme (its banner toggle) writes the
- * same `data-theme` attribute for its UI — use this URL param instead.
+ * wins (so agents can screenshot any theme deterministically; `system`
+ * follows the OS preference), otherwise the Obsidian default. Ladle's own
+ * chrome theme (its banner toggle) writes the same `data-theme` attribute
+ * for its UI — use this URL param instead.
  */
 function resolveWorkbenchTheme(fallback?: ThemeMode): ThemeMode {
   if (typeof window !== "undefined") {
     const fromUrl = new URLSearchParams(window.location.search).get("theme");
+    if (fromUrl === "system") {
+      return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
     if (fromUrl && (KNOWN_THEMES as readonly string[]).includes(fromUrl)) {
       return fromUrl as ThemeMode;
     }
@@ -180,8 +216,10 @@ export function seedWorkbench(options?: {
   view?: View;
   toasts?: ToastItem[];
   activeModalAssessmentId?: string | null;
+  searchQuery?: string;
 }): void {
   const theme = resolveWorkbenchTheme(options?.theme);
+  const todayIso = getLocalDateString();
   useAppStore.setState({
     data: buildWorkbenchState(),
     hasLoaded: true,
@@ -193,9 +231,14 @@ export function seedWorkbench(options?: {
     activeTypeFilter: "ALL",
     activeCourseFilterTasks: "ALL",
     activeModalAssessmentId: options?.activeModalAssessmentId ?? null,
-    searchQuery: "",
+    searchQuery: options?.searchQuery ?? "",
     openModals: [],
     toasts: options?.toasts ?? [],
+    // Calendar grid seams the views derive from the real clock; pin them so
+    // the fixture week and the grid always agree.
+    currentWeekStart: getWeekStart(todayIso),
+    selectedCalendarDate: todayIso,
+    layers: { exams: true, classes: true },
   });
   if (typeof window === "undefined") return;
   // Ladle's chrome writes its own `data-theme` in effects that run after the

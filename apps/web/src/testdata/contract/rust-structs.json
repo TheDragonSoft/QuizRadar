@@ -17,8 +17,8 @@
     "core/src/plan/tasks.rs": "393b8f8badc358a850fe51df90c9b907be10749c1dd4f886bfd4e78d3a5dabba",
     "core/src/plan/conflicts.rs": "a953cf743da6a8fc45b43bc6c2dfd716c6842a65a2d4311b08c56a19e8729e74",
     "apps/desktop/src-tauri/src/commands/state.rs": "3ae67738ab86d92dc8a3aff56a8d984453a414e64fc74bf902e36f521a22c671",
-    "core/src/store/repo.rs": "76dc7673c2231b5c6b0478be827c11e38f84395deaf69bae3e6810ed8d63e490",
-    "core/src/ffi.rs": "d0628158a075032f19e3f05c7b81d7ef7a179cf74133bc3b732a7afc591f104d",
+    "core/src/store/repo.rs": "4b647cfbfbb3ecd8625e81a569a41daa8bb841828ba9ffa3c2afe3446f9f95e3",
+    "core/src/ffi.rs": "e677f5e1d755c88fc00066a80f7ddee1dad2cdb204e97168b0ed66f44c0f3ce4",
     "core/src/store/db.rs": "4625fe24dae9dc60232a5b7d84323ca67b5705a53e5ab257dcf690b268bb8bc7"
   },
   "structs": {
@@ -2274,6 +2274,16 @@
       ],
       "returns": "Result<String, QuizRadarFfiError>"
     },
+    "calculate_grade_target": {
+      "parameters": [
+        "course_id: String",
+        "assessments_json: String",
+        "grades_json: String",
+        "scale: String",
+        "target_letter: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
     "calculate_study_cushion": {
       "parameters": [
         "schedule_json: String",
@@ -2457,6 +2467,24 @@
       ],
       "returns": "Result<String, QuizRadarFfiError>"
     },
+    "NativeStore.save_feed": {
+      "parameters": [
+        "&self",
+        "feed_json: String",
+        "updated_at: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.delete_feed": {
+      "parameters": [
+        "&self",
+        "id: String",
+        "updated_at: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
     "NativeStore.set_config_string": {
       "parameters": [
         "&self",
@@ -2505,6 +2533,30 @@
       ],
       "returns": "Result<String, QuizRadarFfiError>"
     },
+    "NativeStore.reset_all": {
+      "parameters": [
+        "&self"
+      ],
+      "returns": "Result<(), QuizRadarFfiError>"
+    },
+    "NativeStore.upsert_assessment": {
+      "parameters": [
+        "&self",
+        "assessment_json: String",
+        "updated_at: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.delete_assessment": {
+      "parameters": [
+        "&self",
+        "id: String",
+        "updated_at: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
     "NativeStore.record_attendance": {
       "parameters": [
         "&self",
@@ -2514,6 +2566,28 @@
         "status: String",
         "updated_at: String",
         "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.delete_attendance": {
+      "parameters": [
+        "&self",
+        "slot_id: String",
+        "date_iso: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.list_attendance": {
+      "parameters": [
+        "&self",
+        "course_id: Option<String>"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.attendance_summaries": {
+      "parameters": [
+        "&self"
       ],
       "returns": "Result<String, QuizRadarFfiError>"
     },
@@ -2543,6 +2617,13 @@
       ],
       "returns": "Result<String, QuizRadarFfiError>"
     },
+    "NativeStore.list_study_sessions": {
+      "parameters": [
+        "&self",
+        "course_id: Option<String>"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
     "NativeStore.save_quiz_attempt": {
       "parameters": [
         "&self",
@@ -2554,6 +2635,13 @@
       "returns": "Result<String, QuizRadarFfiError>"
     },
     "NativeStore.list_mistakes": {
+      "parameters": [
+        "&self",
+        "assessment_id: Option<String>"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.list_quiz_attempts": {
       "parameters": [
         "&self",
         "assessment_id: Option<String>"
@@ -2609,6 +2697,28 @@
       ],
       "returns": "Result<String, QuizRadarFfiError>"
     },
+    "NativeStore.cancel_native_sync": {
+      "parameters": [
+        "&self"
+      ],
+      "returns": "()"
+    },
+    "NativeStore.generate_practice_quiz": {
+      "parameters": [
+        "&self",
+        "assessment_json: String",
+        "gemini_api_key: Option<String>"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.optimize_study_plan": {
+      "parameters": [
+        "&self",
+        "ref_date_iso: String",
+        "gemini_api_key: Option<String>"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
     "NativeStore.run_native_sync": {
       "parameters": [
         "&self",
@@ -2619,7 +2729,8 @@
         "local_stamp: String",
         "progress: Box<dyn FfiSyncProgressListener>",
         "google_tokens: Option<Box<dyn FfiTokenProvider>>",
-        "microsoft_tokens: Option<Box<dyn FfiTokenProvider>>"
+        "microsoft_tokens: Option<Box<dyn FfiTokenProvider>>",
+        "gemini_api_key: Option<String>"
       ],
       "returns": "Result<String, QuizRadarFfiError>"
     },

@@ -2,12 +2,14 @@ package com.quizradar.app.ui.components
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -22,6 +24,10 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.quizradar.app.ui.QuizRadarViewModel
+import com.quizradar.app.ui.theme.PillButtonContentPadding
+import com.quizradar.app.ui.theme.PillButtonMinHeight
+import com.quizradar.app.ui.theme.quietTextFieldColors
+import com.quizradar.app.ui.theme.tonalPill
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
@@ -78,16 +84,20 @@ fun OAuthClientIdFields(
 
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
-            text = "OAuth client IDs (bring your own)",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
+            text = "Custom sign-in client IDs (advanced)",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
         )
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+        // Honest default-client messaging, no developer jargon on the happy
+        // path: Google works with nothing typed here; Microsoft genuinely
+        // needs one registration, and that requirement is stated plainly.
         Text(
             text =
-                "Google sign-in ships with a built-in QuizRadar client id — paste your own to " +
-                    "override it. Microsoft needs YOUR Azure app id: register one with the redirect " +
-                    "com.quizradar.app://oauth/microsoft. Both fields save automatically as you type.",
+                "Google sign-in works out of the box using QuizRadar's built-in client id - you only " +
+                    "need to paste your own if your university requires one. Microsoft sign-in does " +
+                    "need your own registered app id (redirect: com.quizradar.app://oauth/microsoft). " +
+                    "Both fields save automatically as you type.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -95,8 +105,9 @@ fun OAuthClientIdFields(
         OutlinedTextField(
             value = googleInput,
             onValueChange = { googleInput = it },
-            label = { Text("Google client ID") },
+            label = { Text("Google client ID (optional)") },
             singleLine = true,
+            colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
             modifier =
                 Modifier
                     .fillMaxWidth()
@@ -115,8 +126,9 @@ fun OAuthClientIdFields(
         OutlinedTextField(
             value = microsoftInput,
             onValueChange = { microsoftInput = it },
-            label = { Text("Microsoft (Azure) client ID") },
+            label = { Text("Microsoft client ID") },
             singleLine = true,
+            colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
             modifier =
                 Modifier
                     .fillMaxWidth()
@@ -138,14 +150,18 @@ fun OAuthClientIdFields(
         // as the saved/unsaved indicator for both fields.
         val unsavedChanges =
             googleInput.trim() != googleClientId || microsoftInput.trim() != teamsClientId
-        OutlinedButton(
+        Button(
             onClick = {
                 viewModel.setGoogleClientId(googleInput)
                 viewModel.setTeamsClientId(microsoftInput)
                 viewModel.showToast("OAuth client IDs saved")
             },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
+            colors = ButtonDefaults.tonalPill(),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = PillButtonMinHeight),
+            contentPadding = PillButtonContentPadding,
         ) {
             Text(if (unsavedChanges) "Save now" else "Saved ✓")
         }

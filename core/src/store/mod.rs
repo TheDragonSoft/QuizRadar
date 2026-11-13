@@ -299,6 +299,18 @@ impl Store {
             .await
     }
 
+    /// The write twin of [`Self::record_attendance`]'s clear step: removes the
+    /// persisted mark for one slot occurrence (the same deterministic id).
+    pub async fn delete_attendance(
+        &self,
+        slot_id: String,
+        date_iso: String,
+        reference_date: NaiveDate,
+    ) -> Result<repo::AppSnapshot, StoreError> {
+        self.run(move |db| repo::ops::delete_attendance(db, &slot_id, &date_iso, reference_date))
+            .await
+    }
+
     pub async fn set_course_absence_limit(
         &self,
         course_id: String,
@@ -409,10 +421,6 @@ impl Store {
             .await
     }
 
-    pub async fn list_quiz_attempts(&self) -> Result<Vec<crate::types::QuizAttempt>, StoreError> {
-        self.run(repo::ops::list_quiz_attempts).await
-    }
-
     pub async fn delete_quiz_attempt(&self, attempt_id: String) -> Result<bool, StoreError> {
         self.run(move |db| repo::ops::delete_quiz_attempt(db, &attempt_id))
             .await
@@ -443,12 +451,69 @@ impl Store {
         .await
     }
 
+    /// Attendance entries (optionally filtered to one course) — the read
+    /// twin of [`Self::record_attendance`].
+    pub async fn list_attendance(
+        &self,
+        course_id: Option<String>,
+    ) -> Result<Vec<crate::types::AttendanceEntry>, StoreError> {
+        self.run(move |db| {
+            let repo = repo::AttendanceRepo::new(db.conn());
+            match course_id.as_deref() {
+                Some(cid) if !cid.trim().is_empty() => repo.list_for_course(cid),
+                _ => repo.list_all(),
+            }
+        })
+        .await
+    }
+
     /// Desktop study bridge, purge write: all four study collections cleared
     /// in one transaction (see [`repo::ops::purge_study_collections`]).
     pub async fn purge_study_collections(
         &self,
     ) -> Result<repo::StudyCollectionsReport, StoreError> {
         self.run(repo::ops::purge_study_collections).await
+    }
+
+    /// Per-course attendance summaries (counts + absence limits) derived
+    /// from the persisted records — never fabricated.
+    pub async fn attendance_summaries(
+        &self,
+    ) -> Result<Vec<crate::types::CourseAttendanceSummary>, StoreError> {
+        self.run(move |db| repo::AttendanceRepo::new(db.conn()).all_summaries())
+            .await
+    }
+
+    /// Logged study sessions (optionally filtered to one course) — the read
+    /// twin of [`Self::log_study_session`].
+    pub async fn list_study_sessions(
+        &self,
+        course_id: Option<String>,
+    ) -> Result<Vec<crate::types::StudySessionRecord>, StoreError> {
+        self.run(move |db| {
+            let repo = repo::StudySessionRepo::new(db.conn());
+            match course_id.as_deref() {
+                Some(cid) if !cid.trim().is_empty() => repo.list_for_course(cid),
+                _ => repo.list_all(),
+            }
+        })
+        .await
+    }
+
+    /// Quiz attempts (optionally filtered to one assessment) — the read twin
+    /// of [`Self::save_quiz_attempt`].
+    pub async fn list_quiz_attempts(
+        &self,
+        assessment_id: Option<String>,
+    ) -> Result<Vec<crate::types::QuizAttempt>, StoreError> {
+        self.run(move |db| {
+            let repo = repo::QuizAttemptRepo::new(db.conn());
+            match assessment_id.as_deref() {
+                Some(aid) if !aid.trim().is_empty() => repo.list_for_assessment(aid),
+                _ => repo.list_all(),
+            }
+        })
+        .await
     }
 
     /// Dismiss the conflict banner (`/api/conflicts/dismiss`).

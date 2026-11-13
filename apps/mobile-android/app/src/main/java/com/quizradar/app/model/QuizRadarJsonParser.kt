@@ -37,6 +37,14 @@ object QuizRadarJsonParser {
         return if (d.isNaN()) null else d.toFloat()
     }
 
+    private fun optInt(
+        obj: JSONObject,
+        key: String,
+    ): Int? {
+        if (!obj.has(key) || obj.isNull(key)) return null
+        return obj.optInt(key, Int.MIN_VALUE).takeIf { it != Int.MIN_VALUE }
+    }
+
     private fun optString(
         obj: JSONObject,
         key: String,
@@ -60,6 +68,8 @@ object QuizRadarJsonParser {
             id = obj.getString("id"),
             name = obj.getString("name"),
             color = optString(obj, "color"),
+            credits = optDouble(obj, "credits"),
+            maxAbsences = optInt(obj, "max_absences"),
         )
     }
 
@@ -117,13 +127,21 @@ object QuizRadarJsonParser {
         )
     }
 
+    /**
+     * One custom calendar item (`core/src/types.rs`: `CustomCalendarEvent`).
+     *
+     * The date key is `date_iso` - the canonical serialized name of the
+     * event date. The core has no `date` alias, so a payload carrying that
+     * key is an UNDATED event for the core too; reading it here would show
+     * a date the core never stored.
+     */
     fun parseCustomEvent(obj: JSONObject): CustomEventModel {
         return CustomEventModel(
             id = obj.getString("id"),
             title = obj.getString("title"),
             courseId = optString(obj, "course_id"),
             eventType = optString(obj, "event_type"),
-            dateIso = optDate(obj, "date"),
+            dateIso = optDate(obj, "date_iso"),
             startTime = optString(obj, "start_time"),
             endTime = optString(obj, "end_time"),
             room = optString(obj, "room"),
@@ -134,9 +152,62 @@ object QuizRadarJsonParser {
 
     fun parseFeed(obj: JSONObject): FeedConfigModel {
         return FeedConfigModel(
+            id = obj.optString("id", ""),
             url = obj.getString("url"),
-            label = obj.optString("label", ""),
+            // The core's wire key is `name` (`core/src/types.rs`
+            // `FeedConfig.name`); `label` was the v4 export key. Reading only
+            // `label` left every core-persisted feed with an empty label.
+            label = optString(obj, "name") ?: optString(obj, "label") ?: "",
             enabled = obj.optBoolean("enabled", true),
+        )
+    }
+
+    /**
+     * The persisted attendance log (`core/src/types.rs`: `AttendanceEntry[]`
+     * as returned by `list_attendance`). Read back on launch so marks survive
+     * a restart instead of living only in a ViewModel map (audit A10).
+     */
+    fun parseAttendanceEntries(json: String): List<AttendanceEntryModel> {
+        val arr = JSONArray(json)
+        val entries = ArrayList<AttendanceEntryModel>(arr.length())
+        for (i in 0 until arr.length()) {
+            val obj = arr.getJSONObject(i)
+            entries.add(
+                AttendanceEntryModel(
+                    id = obj.getString("id"),
+                    slotId = obj.getString("slot_id"),
+                    courseId = obj.getString("course_id"),
+                    dateIso = obj.getString("date_iso"),
+                    status = obj.getString("status"),
+                ),
+            )
+        }
+        return entries
+    }
+
+    /**
+     * Study analytics derived by the core from the persisted session log
+     * (`core/src/types.rs`: `StudyAnalytics`). An empty history parses to an
+     * all-zero model - the shell renders zeros, never seeded examples.
+     */
+    fun parseStudyAnalytics(json: String): StudyAnalyticsModel {
+        val obj = JSONObject(json)
+        val minutesByCourse = LinkedHashMap<String, Int>()
+        val breakdown = obj.optJSONArray("course_breakdown")
+        if (breakdown != null) {
+            for (i in 0 until breakdown.length()) {
+                val stat = breakdown.getJSONObject(i)
+                val cid = stat.optString("course_id", "")
+                if (cid.isNotEmpty()) {
+                    minutesByCourse[cid] = stat.optInt("minutes", 0)
+                }
+            }
+        }
+        return StudyAnalyticsModel(
+            currentStreakDays = obj.optInt("current_streak_days", 0),
+            bestStreakDays = obj.optInt("best_streak_days", 0),
+            totalFocusMinutes = obj.optInt("total_focus_minutes", 0),
+            minutesByCourse = minutesByCourse,
         )
     }
 
@@ -178,6 +249,13 @@ object QuizRadarJsonParser {
             isGcalSynced = obj.optBoolean("gcal_synced", false),
             gcalEventId = optString(obj, "gcal_event_id"),
             conflictWarning = optString(obj, "conflict_warning"),
+            // The core's provenance (`core/src/types.rs`): what was inferred
+            // and why, the study plan and the heuristic hour estimate. They
+            // are retained, never dropped at the shell boundary - the UI
+            // labels them as inferences.
+            aiInferenceNote = optString(obj, "ai_inference_note"),
+            aiStudyPlan = optString(obj, "ai_study_plan"),
+            estimatedStudyHours = optFloat(obj, "estimated_study_hours"),
         )
     }
 
@@ -509,6 +587,10 @@ object QuizRadarJsonParser {
             authoredLocally = root.optBoolean("authored_locally", root.optBoolean("authoredLocally", true)),
             generatedByAi = root.optBoolean("generated_by_ai", root.optBoolean("generatedByAi", false)),
             questions = questions,
+            // A07: the labeled fallback reason the core adds when an AI
+            // attempt did not author the quiz. optString returns "" for a
+            // missing key, so blank -> null keeps "no excuse" honest.
+            fallbackReason = root.optString("fallback_reason", "").ifBlank { null },
         )
     }
 
@@ -543,6 +625,7 @@ object QuizRadarJsonParser {
             notes = toStringList(root.optJSONArray("notes")),
             perSource = perSource,
             discoveredTeamsCount = teamsArr?.length() ?: 0,
+            cancelled = root.optBoolean("cancelled", false),
         )
     }
 

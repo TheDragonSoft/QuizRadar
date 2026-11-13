@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -15,15 +16,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -31,13 +32,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.quizradar.app.ui.icons.Icons
+import com.quizradar.app.ui.theme.PillButtonContentPadding
+import com.quizradar.app.ui.theme.PillButtonMinHeight
 import com.quizradar.app.ui.theme.StatusColors
+import com.quizradar.app.ui.theme.filledPill
+import com.quizradar.app.ui.theme.quietCardBorder
+import com.quizradar.app.ui.theme.quietCardColors
+import com.quizradar.app.ui.theme.quietCardElevation
+import com.quizradar.app.ui.theme.tonalPill
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -95,21 +101,24 @@ fun AccountSheet(
                         modifier = Modifier.size(32.dp),
                     )
                 }
-                Spacer(modifier = Modifier.width(14.dp))
+                Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = "Student Profile",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
             }
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // Honest privacy disclosure card
+            // A07: the privacy claim states exactly what is true - local
+            // storage, encrypted tokens, and ONLY the optional flows the
+            // user turns on sending what those features send. The old
+            // "No personal data crosses external servers" was false the
+            // moment AI or Drive backup is enabled.
             Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                shape = MaterialTheme.shapes.extraSmall,
+                color = MaterialTheme.colorScheme.surfaceVariant,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(
@@ -122,54 +131,60 @@ fun AccountSheet(
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp),
                     )
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text =
-                            "Tokens are encrypted with the Android Keystore; your schedule and " +
-                                "radar stay in this app's private storage on this phone. " +
-                                "No personal data crosses external servers.",
+                            "Your schedule, radar and grades stay in this app's private storage on this phone, " +
+                                "and sign-in tokens are encrypted with the Android Keystore. " +
+                                "Nothing is sent anywhere unless you turn on an optional feature that needs it: " +
+                                "AI features send what you ask Gemini, and Drive backup sends a data-only copy to your own Drive.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             Text(
                 text = "Connected Sources",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Google Account Card
-            ElevatedCard(
-                shape = RoundedCornerShape(14.dp),
+            Card(
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.quietCardColors().copy(containerColor = MaterialTheme.colorScheme.surface),
+                border = CardDefaults.quietCardBorder(),
+                elevation = CardDefaults.quietCardElevation(),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .padding(14.dp),
+                            .padding(16.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f),
+                    ) {
                         Box(
                             modifier =
                                 Modifier
                                     .size(36.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFFE8F0FE)),
+                                    .background(MaterialTheme.colorScheme.primaryContainer),
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.Email,
                                 contentDescription = null,
-                                tint = Color(0xFF1A73E8),
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
                                 modifier = Modifier.size(20.dp),
                             )
                         }
@@ -177,7 +192,7 @@ fun AccountSheet(
                         Column {
                             Text(
                                 text = "Google Services",
-                                style = MaterialTheme.typography.titleSmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold,
                             )
                             Text(
@@ -194,51 +209,61 @@ fun AccountSheet(
                     }
 
                     if (isGoogleConnected) {
-                        OutlinedButton(
+                        Button(
                             onClick = onDisconnectGoogle,
-                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.tonalPill(),
+                            modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                            contentPadding = PillButtonContentPadding,
                         ) {
-                            Text("Disconnect", fontSize = 12.sp)
+                            Text("Disconnect")
                         }
                     } else {
-                        FilledTonalButton(
+                        Button(
                             onClick = onStartGoogleLogin,
-                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.filledPill(),
+                            modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                            contentPadding = PillButtonContentPadding,
                         ) {
-                            Text("Sign In", fontSize = 12.sp)
+                            Text("Sign In")
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Microsoft Account Card
-            ElevatedCard(
-                shape = RoundedCornerShape(14.dp),
+            Card(
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.quietCardColors().copy(containerColor = MaterialTheme.colorScheme.surface),
+                border = CardDefaults.quietCardBorder(),
+                elevation = CardDefaults.quietCardElevation(),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .padding(14.dp),
+                            .padding(16.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f),
+                    ) {
                         Box(
                             modifier =
                                 Modifier
                                     .size(36.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFFEDE9FE)),
+                                    .background(MaterialTheme.colorScheme.secondaryContainer),
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.Groups,
                                 contentDescription = null,
-                                tint = Color(0xFF7E22CE),
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
                                 modifier = Modifier.size(20.dp),
                             )
                         }
@@ -246,7 +271,7 @@ fun AccountSheet(
                         Column {
                             Text(
                                 text = "Microsoft Teams",
-                                style = MaterialTheme.typography.titleSmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold,
                             )
                             Text(
@@ -263,66 +288,78 @@ fun AccountSheet(
                     }
 
                     if (isMicrosoftConnected) {
-                        OutlinedButton(
+                        Button(
                             onClick = onDisconnectMicrosoft,
-                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.tonalPill(),
+                            modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                            contentPadding = PillButtonContentPadding,
                         ) {
-                            Text("Disconnect", fontSize = 12.sp)
+                            Text("Disconnect")
                         }
                     } else {
-                        FilledTonalButton(
+                        Button(
                             onClick = onStartMicrosoftLogin,
-                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.filledPill(),
+                            modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                            contentPadding = PillButtonContentPadding,
                         ) {
-                            Text("Sign In", fontSize = 12.sp)
+                            Text("Sign In")
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                OutlinedButton(
+                Button(
                     onClick = {
                         onOpenHelp()
                         onDismiss()
                     },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.tonalPill(),
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .defaultMinSize(minHeight = PillButtonMinHeight),
+                    contentPadding = PillButtonContentPadding,
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Info,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Help & FAQ", fontSize = 12.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Help & FAQ")
                 }
-                FilledTonalButton(
+                Button(
                     onClick = {
                         onOpenSettings()
                         onDismiss()
                     },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.tonalPill(),
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .defaultMinSize(minHeight = PillButtonMinHeight),
+                    contentPadding = PillButtonContentPadding,
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Settings,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Settings", fontSize = 12.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Settings")
                 }
             }
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }

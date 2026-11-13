@@ -263,7 +263,7 @@ pub async fn study_list(state: State<'_, AppState>) -> Result<StudyCollectionsDt
         .collect();
     let quiz_attempts = state
         .store
-        .list_quiz_attempts()
+        .list_quiz_attempts(None)
         .await
         .map_err(err_string)?
         .into_iter()

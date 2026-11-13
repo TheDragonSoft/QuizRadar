@@ -9,21 +9,22 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -34,14 +35,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.quizradar.app.glance.QuizRadarWidgetReceiver
 import com.quizradar.app.model.AppSnapshotModel
 import com.quizradar.app.ui.QuizRadarViewModel
 import com.quizradar.app.ui.icons.Icons
+import com.quizradar.app.ui.theme.PillButtonContentPadding
+import com.quizradar.app.ui.theme.PillButtonMinHeight
 import com.quizradar.app.ui.theme.StatusColors
+import com.quizradar.app.ui.theme.quietCardBorder
+import com.quizradar.app.ui.theme.quietCardColors
+import com.quizradar.app.ui.theme.quietCardElevation
+import com.quizradar.app.ui.theme.tonalPill
 
 @Composable
 fun SetupChecklistCard(
@@ -64,8 +69,10 @@ fun SetupChecklistCard(
     val totalDone = listOf(coursesDone, sourcesDone, remindersDone).count { it }
 
     Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.quietCardColors(),
+        elevation = CardDefaults.quietCardElevation(),
+        border = CardDefaults.quietCardBorder(),
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -79,7 +86,7 @@ fun SetupChecklistCard(
                     Text(
                         text = "Setup Checklist",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
                         text = "$totalDone of 3 recommended steps complete",
@@ -90,23 +97,23 @@ fun SetupChecklistCard(
                 // 48dp minimum touch target (Material a11y guideline).
                 IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
                     Icon(
-                        imageVector = Icons.Default.Close,
+                        imageVector = Icons.Outlined.Close,
                         contentDescription = "Dismiss checklist",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(20.dp),
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
             LinearProgressIndicator(
                 progress = { totalDone / 3f },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape),
                 color = MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant,
             )
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Item 1: Add Courses
             ChecklistItemRow(
@@ -114,12 +121,12 @@ fun SetupChecklistCard(
                 desc = "Enables schedule-based exam resolution",
                 icon = Icons.Outlined.School,
                 isDone = coursesDone,
-                actionLabel = "Add",
+                actionLabel = "Add course",
                 onAction = onAddCourse,
             )
 
             HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                color = MaterialTheme.colorScheme.outlineVariant,
                 modifier = Modifier.padding(vertical = 8.dp),
             )
 
@@ -136,12 +143,12 @@ fun SetupChecklistCard(
                     },
                 icon = Icons.Outlined.Email,
                 isDone = sourcesDone,
-                actionLabel = "Connect",
+                actionLabel = "Connect source",
                 onAction = onConnectSources,
             )
 
             HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                color = MaterialTheme.colorScheme.outlineVariant,
                 modifier = Modifier.padding(vertical = 8.dp),
             )
 
@@ -151,7 +158,7 @@ fun SetupChecklistCard(
                 desc = "T-24h and same-day notifications",
                 icon = Icons.Outlined.Notifications,
                 isDone = remindersDone,
-                actionLabel = "Enable",
+                actionLabel = "Enable reminders",
                 onAction = onRequestNotificationPermission,
             )
 
@@ -160,7 +167,7 @@ fun SetupChecklistCard(
                 val appWidgetManager = context.getSystemService(AppWidgetManager::class.java)
                 if (appWidgetManager != null && appWidgetManager.isRequestPinAppWidgetSupported) {
                     HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                        color = MaterialTheme.colorScheme.outlineVariant,
                         modifier = Modifier.padding(vertical = 8.dp),
                     )
                     ChecklistItemRow(
@@ -168,7 +175,7 @@ fun SetupChecklistCard(
                         desc = "2x1 countdown glance",
                         icon = Icons.Outlined.Widgets,
                         isDone = false,
-                        actionLabel = "Pin",
+                        actionLabel = "Pin widget",
                         onAction = {
                             val provider = ComponentName(context, QuizRadarWidgetReceiver::class.java)
                             appWidgetManager.requestPinAppWidget(provider, null, null)
@@ -206,7 +213,7 @@ private fun ChecklistItemRow(
             Box(
                 modifier =
                     Modifier
-                        .size(26.dp)
+                        .size(24.dp)
                         .clip(CircleShape)
                         .background(
                             if (isDone) {
@@ -226,16 +233,20 @@ private fun ChecklistItemRow(
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
-                    modifier = Modifier.size(15.dp),
+                    modifier = Modifier.size(16.dp),
                 )
             }
-            Spacer(modifier = Modifier.width(10.dp))
+            Spacer(modifier = Modifier.width(12.dp))
             Column {
                 Text(
                     text = title,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp,
-                    color = if (isDone) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color =
+                        if (isDone) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
                 )
                 Text(
                     text = desc,
@@ -253,11 +264,16 @@ private fun ChecklistItemRow(
                 modifier = Modifier.size(20.dp),
             )
         } else {
-            OutlinedButton(
+            FilledTonalButton(
                 onClick = onAction,
-                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.tonalPill(),
+                contentPadding = PillButtonContentPadding,
+                modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
             ) {
-                Text(actionLabel, fontSize = 12.sp)
+                Text(
+                    text = actionLabel,
+                    style = MaterialTheme.typography.labelMedium,
+                )
             }
         }
     }

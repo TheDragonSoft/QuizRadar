@@ -45,6 +45,12 @@ class EncryptedTokenStore(context: Context) : TokenProvider {
     @Volatile
     private var memoryMicrosoftAccessToken: String? = null
 
+    @Volatile
+    private var memoryGoogleAccessTokenExpiresInSec: Long? = null
+
+    @Volatile
+    private var memoryMicrosoftAccessTokenExpiresInSec: Long? = null
+
     override fun getGoogleRefreshToken(): String? = prefs.getString("google_refresh_token", null)
 
     override fun setGoogleRefreshToken(token: String?) {
@@ -83,6 +89,43 @@ class EncryptedTokenStore(context: Context) : TokenProvider {
         memoryMicrosoftAccessToken = token
     }
 
+    // The access tokens themselves stay memory-only; only the (non-secret)
+    // issuance timestamps persist, so a fresh EngineFfiTokens wrapper — or a
+    // fresh process — knows the token's real age instead of guessing from
+    // when it was first served.
+    override fun getGoogleAccessTokenIssuedAtMs(): Long? = prefs.getLong("google_access_issued_at_ms", 0L).takeIf { it != 0L }
+
+    override fun setGoogleAccessTokenIssuedAtMs(issuedAtMs: Long?) {
+        prefs.edit().apply {
+            if (issuedAtMs != null) putLong("google_access_issued_at_ms", issuedAtMs) else remove("google_access_issued_at_ms")
+            apply()
+        }
+    }
+
+    override fun getMicrosoftAccessTokenIssuedAtMs(): Long? = prefs.getLong("microsoft_access_issued_at_ms", 0L).takeIf { it != 0L }
+
+    override fun setMicrosoftAccessTokenIssuedAtMs(issuedAtMs: Long?) {
+        prefs.edit().apply {
+            if (issuedAtMs != null) putLong("microsoft_access_issued_at_ms", issuedAtMs) else remove("microsoft_access_issued_at_ms")
+            apply()
+        }
+    }
+
+    // The provider-returned expires_in stays MEMORY-ONLY with the token: a
+    // fresh process conservatively assumes the fixed TTL until the next
+    // refresh records the real lifetime again.
+    override fun getGoogleAccessTokenExpiresInSec(): Long? = memoryGoogleAccessTokenExpiresInSec
+
+    override fun setGoogleAccessTokenExpiresInSec(expiresInSec: Long?) {
+        memoryGoogleAccessTokenExpiresInSec = expiresInSec
+    }
+
+    override fun getMicrosoftAccessTokenExpiresInSec(): Long? = memoryMicrosoftAccessTokenExpiresInSec
+
+    override fun setMicrosoftAccessTokenExpiresInSec(expiresInSec: Long?) {
+        memoryMicrosoftAccessTokenExpiresInSec = expiresInSec
+    }
+
     override fun getGeminiApiKey(): String? = prefs.getString("gemini_api_key", null)
 
     override fun setGeminiApiKey(key: String?) {
@@ -99,6 +142,8 @@ class EncryptedTokenStore(context: Context) : TokenProvider {
     override fun clearAll() {
         memoryGoogleAccessToken = null
         memoryMicrosoftAccessToken = null
+        memoryGoogleAccessTokenExpiresInSec = null
+        memoryMicrosoftAccessTokenExpiresInSec = null
         prefs.edit().clear().apply()
     }
 }

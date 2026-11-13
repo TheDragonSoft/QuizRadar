@@ -85,7 +85,9 @@ class ComposeUiSmokeTest {
         // 4. Click Focus tab
         composeTestRule.onNodeWithTag("bottom-nav-Focus").performClick()
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("Pomodoro Timer").assertIsDisplayed()
+        // The Session segment renders the Pomodoro timer; its interval pill
+        // ("Pomodoro (25m)") is the stable marker of that section.
+        composeTestRule.onNodeWithText("Pomodoro (25m)").assertIsDisplayed()
 
         // 5. Navigate back to Dashboard
         composeTestRule.onNodeWithTag("bottom-nav-Dashboard").performClick()
@@ -141,7 +143,13 @@ class ComposeUiSmokeTest {
             "Zero-server mode: auth tokens & schedule data never leave this device.",
         ).assertExists()
         composeTestRule.onNodeWithText("Desktop only").assertExists()
-        composeTestRule.onNodeWithText("Google Gemini Free-Tier Data Terms:").assertExists()
+        // The AI section carries the VERBATIM enable-time free-tier disclosure
+        // (`05` §5.1): header + the exact consent sentence, never paraphrased.
+        composeTestRule.onNodeWithText("Before you enable AI:").assertExists()
+        composeTestRule.onNodeWithText(
+            "Google may use that content to improve its products.",
+            substring = true,
+        ).assertExists()
         composeTestRule.onNodeWithText("Reset All Data").assertExists()
     }
 
@@ -159,26 +167,38 @@ class ComposeUiSmokeTest {
 
         composeTestRule.waitForIdle()
 
-        // 1. Verify Step 1 is displayed
-        composeTestRule.onNodeWithText("Step 1 of 4").assertIsDisplayed()
+        // 1. Verify Step 1 is displayed. The wizard has SIX steps since the
+        // A07/A14 fixes (AI consent moved before import; sources and theme
+        // became their own steps) — asserted step by step below.
+        composeTestRule.onNodeWithText("Step 1 of 6").assertIsDisplayed()
         composeTestRule.onNodeWithText("Never miss another university quiz, lab, or exam date.").assertIsDisplayed()
 
-        // 2. Click "Get Started" to advance to Step 2
+        // 2. Click "Get Started" to advance to Step 2 (AI key + explicit consent)
         composeTestRule.onNodeWithText("Get Started").performScrollTo().performClick()
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("Step 2 of 4").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Step 2 of 6").assertIsDisplayed()
 
-        // 3. Click "Continue Without Courses" to advance to Step 3
+        // 3. Decline AI to advance to Step 3 (timetable & courses)
+        composeTestRule.onNodeWithText("Continue Without AI").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Step 3 of 6").assertIsDisplayed()
+
+        // 4. Click "Continue Without Courses" to advance to Step 4 (sources)
         composeTestRule.onNodeWithText("Continue Without Courses").performScrollTo().performClick()
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("Step 3 of 4").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Step 4 of 6").assertIsDisplayed()
 
-        // 4. Click "Continue to Reminders" to advance to Step 4
+        // 5. Click "Continue to Theme" to advance to Step 5
+        composeTestRule.onNodeWithText("Continue to Theme").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Step 5 of 6").assertIsDisplayed()
+
+        // 6. Click "Continue to Reminders" to advance to Step 6
         composeTestRule.onNodeWithText("Continue to Reminders").performScrollTo().performClick()
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("Step 4 of 4").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Step 6 of 6").assertIsDisplayed()
 
-        // 5. Click "Finish Setup & Enter QuizRadar" to complete onboarding
+        // 7. Click "Finish Setup & Enter QuizRadar" to complete onboarding
         composeTestRule.onNodeWithText("Finish Setup & Enter QuizRadar").performScrollTo().performClick()
         composeTestRule.waitForIdle()
 

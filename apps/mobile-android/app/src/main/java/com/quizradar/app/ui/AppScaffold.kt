@@ -9,12 +9,14 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,8 +27,10 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -77,10 +81,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.quizradar.app.ui.components.AccountSheet
 import com.quizradar.app.ui.components.AddActionMenuSheet
 import com.quizradar.app.ui.components.HelpSheet
+import com.quizradar.app.ui.components.ManualAssessmentSheet
 import com.quizradar.app.ui.components.QuizRadarLogo
 import com.quizradar.app.ui.components.SearchSheet
 import com.quizradar.app.ui.detail.AssessmentDetailSheet
@@ -90,11 +94,18 @@ import com.quizradar.app.ui.icons.Icons
 import com.quizradar.app.ui.screens.CalendarScreen
 import com.quizradar.app.ui.screens.DashboardScreen
 import com.quizradar.app.ui.screens.FocusScreen
+import com.quizradar.app.ui.screens.GradeCenterScreen
 import com.quizradar.app.ui.screens.OnboardingWizardScreen
 import com.quizradar.app.ui.screens.SettingsScreen
 import com.quizradar.app.ui.screens.TasksScreen
 import com.quizradar.app.ui.share.SharedEventDraft
+import com.quizradar.app.ui.theme.PillButtonContentPadding
+import com.quizradar.app.ui.theme.PillButtonMinHeight
 import com.quizradar.app.ui.theme.StatusColors
+import com.quizradar.app.ui.theme.filledPill
+import com.quizradar.app.ui.theme.quietCardBorder
+import com.quizradar.app.ui.theme.quietCardColors
+import com.quizradar.app.ui.theme.quietCardElevation
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -105,6 +116,10 @@ private val TABS =
         Tab("Dashboard", Icons.Outlined.SpaceDashboard),
         Tab("Tasks", Icons.Outlined.Checklist),
         Tab("Calendar", Icons.Outlined.CalendarMonth),
+        // Grades (Grade Center, A15). `SquareFoot` ships only in the Filled
+        // set of the in-tree icon table — the theme agent can swap in a
+        // dedicated Outlined grade glyph when one lands in Icons.kt.
+        Tab("Grades", Icons.Filled.SquareFoot),
         Tab("Focus", Icons.Outlined.Timer),
     )
 
@@ -124,12 +139,20 @@ fun AppScaffold(
     val toastMessage by viewModel.toastMessage.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
-    val theme by viewModel.theme.collectAsState(initial = "system")
+    val themeMode by viewModel.themeMode.collectAsState(initial = "system")
+    val preferredDarkTheme by viewModel.preferredDarkTheme.collectAsState(initial = "obsidian")
+    // The AMOLED treatment follows the RESOLVED dark scheme, not a mode
+    // string: the pure-black containers over the starfield are active in
+    // Dark mode and in System mode with a dark system whenever the preferred
+    // dark theme is AMOLED.
+    val isAmoledDark =
+        preferredDarkTheme == "amoled" &&
+            (themeMode == "dark" || (themeMode == "system" && isSystemInDarkTheme()))
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
-    // The app's own mark in the top-left corner opens the navigation drawer.
-    // `ModalNavigationDrawer` keeps the edge-swipe gesture enabled, so the
-    // drawer can be pulled in from the left edge as well as opened by tap.
+    // The drawer belongs to expanded widths (>= 600dp): the rail header opens
+    // it there and the edge-swipe gesture is enabled with it. On compact
+    // phones the bottom navigation bar owns every primary destination.
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -144,6 +167,7 @@ fun AppScaffold(
     var isAddMenuOpen by rememberSaveable { mutableStateOf(false) }
     var isSettingsOpen by rememberSaveable { mutableStateOf(false) }
     var isNewCourseOpen by rememberSaveable { mutableStateOf(false) }
+    var isManualAssessmentOpen by rememberSaveable { mutableStateOf(false) }
 
     val searchSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val accountSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -151,6 +175,7 @@ fun AppScaffold(
     val addMenuSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val detailSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val newCourseSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val manualAssessmentSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val backupPickerLauncher =
         rememberLauncherForActivityResult(contract = ActivityResultContracts.GetContent()) { uri ->
@@ -185,6 +210,7 @@ fun AppScaffold(
             (isExpanded && drawerState.isOpen) ||
                 isSettingsOpen ||
                 isNewCourseOpen ||
+                isManualAssessmentOpen ||
                 isSearchOpen ||
                 isAccountOpen ||
                 isHelpOpen ||
@@ -197,6 +223,7 @@ fun AppScaffold(
             isExpanded && drawerState.isOpen -> scope.launch { drawerState.close() }
             isSettingsOpen -> isSettingsOpen = false
             isNewCourseOpen -> isNewCourseOpen = false
+            isManualAssessmentOpen -> isManualAssessmentOpen = false
             isSearchOpen -> isSearchOpen = false
             isAccountOpen -> isAccountOpen = false
             isHelpOpen -> isHelpOpen = false
@@ -279,18 +306,17 @@ fun AppScaffold(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         QuizRadarLogo(modifier = Modifier.size(28.dp))
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
                         Text(
                             text = "QuizRadar",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
                         )
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Spacer(modifier = Modifier.height(8.dp))
                     TABS.forEach { tab ->
                         NavigationDrawerItem(
-                            label = { Text(tab.label) },
+                            label = { Text(tab.label, style = MaterialTheme.typography.bodyMedium) },
                             selected = selectedTab == tab.label,
                             onClick = {
                                 viewModel.selectTab(tab.label)
@@ -304,7 +330,7 @@ fun AppScaffold(
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Spacer(modifier = Modifier.height(8.dp))
                     NavigationDrawerItem(
-                        label = { Text("Account & sources") },
+                        label = { Text("Account & sources", style = MaterialTheme.typography.bodyMedium) },
                         selected = false,
                         onClick = {
                             scope.launch {
@@ -316,7 +342,7 @@ fun AppScaffold(
                         modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
                     )
                     NavigationDrawerItem(
-                        label = { Text("Settings") },
+                        label = { Text("Settings", style = MaterialTheme.typography.bodyMedium) },
                         selected = false,
                         onClick = {
                             scope.launch {
@@ -361,10 +387,10 @@ fun AppScaffold(
                             label = {
                                 Text(
                                     text = tab.label,
-                                    fontSize = 11.sp,
+                                    style = MaterialTheme.typography.labelMedium,
                                     fontWeight =
                                         if (selectedTab == tab.label) {
-                                            FontWeight.Bold
+                                            FontWeight.SemiBold
                                         } else {
                                             FontWeight.Medium
                                         },
@@ -386,7 +412,7 @@ fun AppScaffold(
                 }
             }
             Scaffold(
-                containerColor = if (theme == "amoled") Color.Transparent else MaterialTheme.colorScheme.background,
+                containerColor = if (isAmoledDark) Color.Transparent else MaterialTheme.colorScheme.background,
                 snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
                 topBar = {
                     Column {
@@ -394,7 +420,7 @@ fun AppScaffold(
                             colors =
                                 TopAppBarDefaults.topAppBarColors(
                                     containerColor =
-                                        if (theme == "amoled") {
+                                        if (isAmoledDark) {
                                             Color.Black.copy(
                                                 alpha = 0.85f,
                                             )
@@ -409,7 +435,7 @@ fun AppScaffold(
                                 if (!isExpanded) {
                                     // Brand mark heads the top bar on compact phones.
                                     // Drawer is reserved for expanded screens (>=600dp);
-                                    // the bottom nav exclusively owns the 4 primary tabs.
+                                    // the bottom nav exclusively owns the primary tabs.
                                     Box(
                                         modifier =
                                             Modifier
@@ -427,7 +453,6 @@ fun AppScaffold(
                                 Text(
                                     text = selectedTab,
                                     style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
                             },
@@ -443,8 +468,16 @@ fun AppScaffold(
                                     modifier = Modifier.size(48.dp),
                                 ) {
                                     if (isRefreshing || isScanning) {
+                                        // The sync icon gives way to the spinner
+                                        // while a scan runs, so the button needs
+                                        // its own label to stay speakable.
                                         CircularProgressIndicator(
-                                            modifier = Modifier.size(20.dp),
+                                            modifier =
+                                                Modifier
+                                                    .size(20.dp)
+                                                    .semantics {
+                                                        contentDescription = "Scanning announcement sources"
+                                                    },
                                             strokeWidth = 2.dp,
                                             color = MaterialTheme.colorScheme.primary,
                                         )
@@ -465,6 +498,20 @@ fun AppScaffold(
                                     Icon(
                                         imageVector = Icons.Outlined.Search,
                                         contentDescription = "Search assessments and topics",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+
+                                // Settings Button (P3-2): settings used to hide
+                                // behind the profile sheet; now it is one tap
+                                // from every screen. The avatar stays account-only.
+                                IconButton(
+                                    onClick = { isSettingsOpen = true },
+                                    modifier = Modifier.size(48.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Settings,
+                                        contentDescription = "Open settings",
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
@@ -505,7 +552,7 @@ fun AppScaffold(
                                             Box(
                                                 modifier =
                                                     Modifier
-                                                        .size(9.dp)
+                                                        .size(8.dp)
                                                         .clip(CircleShape)
                                                         .background(
                                                             StatusColors.success(
@@ -530,7 +577,6 @@ fun AppScaffold(
                             onClick = { isAddMenuOpen = true },
                             containerColor = MaterialTheme.colorScheme.primary,
                             contentColor = MaterialTheme.colorScheme.onPrimary,
-                            shape = RoundedCornerShape(16.dp),
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.Add,
@@ -548,7 +594,7 @@ fun AppScaffold(
                             )
                             NavigationBar(
                                 containerColor =
-                                    if (theme == "amoled") {
+                                    if (isAmoledDark) {
                                         Color.Black.copy(
                                             alpha = 0.85f,
                                         )
@@ -571,10 +617,10 @@ fun AppScaffold(
                                         label = {
                                             Text(
                                                 text = tab.label,
-                                                fontSize = 11.sp,
+                                                style = MaterialTheme.typography.labelMedium,
                                                 fontWeight =
                                                     if (selectedTab == tab.label) {
-                                                        FontWeight.Bold
+                                                        FontWeight.SemiBold
                                                     } else {
                                                         FontWeight.Medium
                                                     },
@@ -610,7 +656,7 @@ fun AppScaffold(
                                 Modifier
                                     .widthIn(max = 840.dp)
                                     .fillMaxWidth()
-                                    .padding(horizontal = 24.dp)
+                                    .padding(horizontal = 20.dp)
                             } else {
                                 Modifier.fillMaxSize()
                             },
@@ -627,24 +673,44 @@ fun AppScaffold(
                                 // forward but killing the app. A Retry re-runs
                                 // the load (the failure may have been a cold
                                 // native-core start or a transient IO error).
+                                // The message sits in a quiet card so it reads as
+                                // part of the app, not as a stray red line.
                                 Box(
                                     modifier = Modifier.fillMaxSize(),
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text(
-                                            text = "Error: ${state.message}",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.error,
-                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                            modifier = Modifier.padding(horizontal = 24.dp),
-                                        )
-                                        Spacer(modifier = Modifier.height(16.dp))
-                                        Button(
-                                            onClick = { viewModel.loadState() },
-                                            shape = RoundedCornerShape(10.dp),
-                                        ) {
-                                            Text("Retry")
+                                    Card(
+                                        shape = MaterialTheme.shapes.medium,
+                                        colors = CardDefaults.quietCardColors(),
+                                        border = CardDefaults.quietCardBorder(),
+                                        elevation = CardDefaults.quietCardElevation(),
+                                        modifier =
+                                            Modifier
+                                                .padding(20.dp)
+                                                .widthIn(max = 420.dp)
+                                                .fillMaxWidth(),
+                                    ) {
+                                        Column(modifier = Modifier.padding(16.dp)) {
+                                            Text(
+                                                text = "Error: ${state.message}",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.error,
+                                            )
+                                            Spacer(modifier = Modifier.height(16.dp))
+                                            Button(
+                                                onClick = { viewModel.loadState() },
+                                                colors = ButtonDefaults.filledPill(),
+                                                contentPadding = PillButtonContentPadding,
+                                                modifier =
+                                                    Modifier.defaultMinSize(
+                                                        minHeight = PillButtonMinHeight,
+                                                    ),
+                                            ) {
+                                                Text(
+                                                    text = "Retry",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -680,6 +746,12 @@ fun AppScaffold(
 
                                         "Calendar" ->
                                             CalendarScreen(
+                                                snapshot = state.snapshot,
+                                                viewModel = viewModel,
+                                            )
+
+                                        "Grades" ->
+                                            GradeCenterScreen(
                                                 snapshot = state.snapshot,
                                                 viewModel = viewModel,
                                             )
@@ -740,6 +812,7 @@ fun AppScaffold(
                                     AddActionMenuSheet(
                                         sheetState = addMenuSheetState,
                                         onDismiss = { isAddMenuOpen = false },
+                                        onNewAssessment = { isManualAssessmentOpen = true },
                                         onNewCustomEvent = {
                                             viewModel.openCreateEventDraft(
                                                 SharedEventDraft(
@@ -754,6 +827,21 @@ fun AppScaffold(
                                             isNewCourseOpen = true
                                         },
                                         onImportBackup = { backupPickerLauncher.launch("application/json") },
+                                    )
+                                }
+
+                                // Manual Assessment Sheet (from Add Menu, A08).
+                                // The sheet owns the draft and closes ONLY on a
+                                // confirmed core save — the onResult callback
+                                // decides, never an optimistic dismissal.
+                                if (isManualAssessmentOpen) {
+                                    ManualAssessmentSheet(
+                                        courses = state.snapshot.schedule.courses,
+                                        sheetState = manualAssessmentSheetState,
+                                        onDismiss = { isManualAssessmentOpen = false },
+                                        onSave = { assessmentJson, onResult ->
+                                            viewModel.upsertAssessment(assessmentJson, onResult)
+                                        },
                                     )
                                 }
 

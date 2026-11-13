@@ -1,3 +1,5 @@
+import java.io.File
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -21,8 +23,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // STAMPED by tooling/generate-version.mjs from tooling/version.json — do not edit.
-        versionCode = 51000
-        versionName = "5.10.0"
+        versionCode = 51100
+        versionName = "5.11.0"
 
         // The Kotlin shell alone could run on 32-bit ABIs (JNA ships dispatchers
         // for armeabi-v7a, x86, ...), but the Rust core is only cross-built for
@@ -164,25 +166,96 @@ android {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Host (JVM) native core
+// ---------------------------------------------------------------------------
+// The JVM unit tests load the Rust core through JNA (`jna.library.path`), so
+// they need the *host* cdylib in `target/debug` - the Android `.so` files are
+// cross-compiled for arm64/x86_64 and cannot be loaded by a JVM. One task
+// builds it, every `Test` task depends on that same task (so it runs once per
+// Gradle invocation, not once per test class), and Gradle's up-to-date check
+// ties it to the Rust sources and the version stamp - a test can never load a
+// library the current sources do not produce.
+val repoRootDir = rootProject.projectDir.resolve("../..")
+val osName = System.getProperty("os.name").lowercase()
+val hostCoreLibRelativePath =
+    when {
+        osName.contains("win") -> "target/debug/quizradar_core.dll"
+        osName.contains("mac") -> "target/debug/libquizradar_core.dylib"
+        else -> "target/debug/libquizradar_core.so"
+    }
+val hostCoreLib = repoRootDir.resolve(hostCoreLibRelativePath)
+val cargoExecutable = System.getenv("CARGO") ?: "cargo"
+
+tasks.register<Exec>("buildHostRustCore") {
+    group = "build"
+    description = "Builds the host quizradar-core cdylib the JVM unit tests load through JNA"
+    workingDir = repoRootDir
+    commandLine(cargoExecutable, "build", "-p", "quizradar-core", "--features", "uniffi")
+    inputs.files(
+        fileTree(repoRootDir.resolve("core")) {
+            include("src/**", "Cargo.toml", "build.rs")
+        },
+        repoRootDir.resolve("Cargo.toml"),
+        repoRootDir.resolve("Cargo.lock"),
+        repoRootDir.resolve("tooling/version.json"),
+    )
+    outputs.file(hostCoreLib)
+    // The host library is a machine-local build artifact, not a cacheable
+    // project output.
+    outputs.cacheIf { false }
+    // Both native builds share one cargo target directory; keep them apart so
+    // cargo's build-directory lock never makes one of them wait for the other.
+    mustRunAfter("buildAndroidRustLibs")
+    doFirst {
+        // This task's output path is target/debug by construction. A
+        // CARGO_TARGET_DIR (or a default CARGO_BUILD_TARGET triple) relocates
+        // cargo's output, so the declared output would go stale or missing -
+        // fail loudly instead of handing tests a library they cannot trust.
+        val rejectedEnv =
+            listOf("CARGO_TARGET_DIR", "CARGO_BUILD_TARGET").filter { env -> !System.getenv(env).isNullOrBlank() }
+        if (rejectedEnv.isNotEmpty()) {
+            throw GradleException(
+                "$rejectedEnv is set, but this task builds the host core to a fixed " +
+                    "target/debug path. Unset it (or build with tooling/build-android-libs.mjs, " +
+                    "which passes --target explicitly per triple) and re-run.",
+            )
+        }
+        val cargoName = if (System.getProperty("os.name").lowercase().contains("win")) "cargo.exe" else "cargo"
+        val cargoOnPath =
+            System.getenv("PATH")
+                .orEmpty()
+                .split(File.pathSeparator)
+                .any { dir -> File(dir, cargoName).isFile }
+        if (System.getenv("CARGO").isNullOrBlank() && !cargoOnPath) {
+            throw GradleException(
+                "cargo was not found on PATH. The JVM unit tests load the Rust core through JNA, " +
+                    "so the host library has to be built first - install Rust (https://rustup.rs) " +
+                    "and re-run, or point CARGO at the cargo binary.",
+            )
+        }
+    }
+    doLast {
+        if (!hostCoreLib.isFile) {
+            throw GradleException("cargo did not produce the host core at ${hostCoreLib.absolutePath}")
+        }
+    }
+}
+
 tasks.withType<Test> {
-    systemProperty("jna.library.path", file("${rootProject.projectDir}/../../target/debug").absolutePath)
+    dependsOn("buildHostRustCore")
+    systemProperty("jna.library.path", hostCoreLib.parentFile.absolutePath)
 }
 
 tasks.register<Exec>("uniffiGenerate") {
     group = "build"
     description = "Generates Kotlin bindings from quizradar-core cdylib using uniffi-bindgen"
-    workingDir = rootProject.projectDir.resolve("../..")
-    val osName = System.getProperty("os.name").lowercase()
-    val cdylibPath =
-        when {
-            osName.contains("win") -> "target/debug/quizradar_core.dll"
-            osName.contains("mac") -> "target/debug/libquizradar_core.dylib"
-            else -> "target/debug/libquizradar_core.so"
-        }
+    dependsOn("buildHostRustCore")
+    workingDir = repoRootDir
     commandLine(
-        "cargo", "run", "-p", "quizradar-core", "--bin", "uniffi-bindgen", "--features", "cli", "--",
+        cargoExecutable, "run", "-p", "quizradar-core", "--bin", "uniffi-bindgen", "--features", "cli", "--",
         "generate",
-        "--library", cdylibPath,
+        "--library", hostCoreLibRelativePath,
         "--language", "kotlin",
         "--config", "core/bindings/uniffi.toml",
         "--out-dir", "apps/mobile-android/app/src/main/java",

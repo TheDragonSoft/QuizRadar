@@ -1,67 +1,88 @@
 package com.quizradar.app.ui.detail
 
-import com.quizradar.app.model.AssessmentModel
-import kotlin.math.roundToInt
+import org.json.JSONObject
+import java.util.Locale
 
-enum class ScoreColorState {
-    GREEN,
-    AMBER,
-    ROSE,
-}
-
-data class WhatIfProjection(
-    val projectedAvg: Int,
-    val gradedCount: Int,
-    val isFirstGraded: Boolean,
-    val colorState: ScoreColorState,
+/**
+ * The weighted grade target for ONE course, exactly as the shared Rust core
+ * computes it (`core/src/plan/grade_target.rs`).
+ *
+ * The Android shell does NO grade math of its own any more: it renders what
+ * the core decided, including the cases the core refuses to invent a number
+ * for (unknown remaining weight, a target that can no longer be reached).
+ */
+data class GradeTargetProjection(
+    val courseId: String,
+    val weightsKnown: Boolean,
+    val equalWeightAssumed: Boolean,
+    val gradedWeight: Double,
+    val remainingWeight: Double?,
+    val currentPercentage: Double?,
+    val targetLetter: String,
+    val targetPercentage: Double,
+    val requiredAverageOnRemaining: Double?,
+    val achievable: Boolean,
+    val note: String,
 )
 
+/** How the projection reads - theme roles, never raw colours. */
+enum class ScoreColorState {
+    SUCCESS,
+    WARNING,
+    DANGER,
+}
+
 object WhatIfCalculator {
-    fun calculate(
-        activeAssessment: AssessmentModel,
-        allAssessments: List<AssessmentModel>,
-        planScorePct: Double,
-    ): WhatIfProjection {
-        val planPct = planScorePct.coerceIn(0.0, 100.0)
+    /**
+     * Parses the core's `GradeTargetResult` JSON.
+     *
+     * `null` when there is no result yet, and `null` when the result belongs
+     * to a DIFFERENT course than the one on screen - a stale projection from
+     * another course must never be presented as this course's.
+     */
+    fun parseGradeTarget(
+        json: String?,
+        courseId: String?,
+    ): GradeTargetProjection? {
+        if (json.isNullOrBlank() || courseId.isNullOrBlank()) return null
+        return try {
+            val obj = JSONObject(json)
+            val resultCourseId = obj.optString("course_id")
+            if (!resultCourseId.equals(courseId.trim(), ignoreCase = true)) return null
+            GradeTargetProjection(
+                courseId = resultCourseId,
+                weightsKnown = obj.optBoolean("weights_known", false),
+                equalWeightAssumed = obj.optBoolean("equal_weight_assumed", false),
+                gradedWeight = obj.optDouble("graded_weight", 0.0),
+                remainingWeight = obj.optDoubleOrNull("remaining_weight"),
+                currentPercentage = obj.optDoubleOrNull("current_percentage"),
+                targetLetter = obj.optString("target_letter"),
+                targetPercentage = obj.optDouble("target_percentage", 0.0),
+                requiredAverageOnRemaining = obj.optDoubleOrNull("required_average_on_remaining"),
+                achievable = obj.optBoolean("achievable", false),
+                note = obj.optString("note"),
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
 
-        val gradedElsewhere =
-            allAssessments.filter { x ->
-                x.courseId != null &&
-                    activeAssessment.courseId != null &&
-                    x.courseId.equals(activeAssessment.courseId, ignoreCase = true) &&
-                    x.id != activeAssessment.id &&
-                    x.achievedScore != null &&
-                    x.maxScore != null &&
-                    x.maxScore > 0.0
-            }
+    /** "82.0%" - one decimal, the way the core prints it. `null` stays `null`. */
+    fun formatPercentage(value: Double?): String? = value?.let { String.format(Locale.US, "%.1f", it) + "%" }
 
-        val otherPcts =
-            gradedElsewhere.mapNotNull { x ->
-                val achieved = x.achievedScore
-                val max = x.maxScore
-                if (achieved != null && max != null && max > 0.0) {
-                    (achieved / max) * 100.0
-                } else {
-                    null
-                }
-            }
-
-        val totalItems = otherPcts.size + 1
-        val sumScores = otherPcts.sum() + planPct
-        val projected = (sumScores / totalItems).roundToInt()
-
-        val colorState =
-            when {
-                projected >= 80 -> ScoreColorState.GREEN
-                projected >= 50 -> ScoreColorState.AMBER
-                else -> ScoreColorState.ROSE
-            }
-
-        return WhatIfProjection(
-            projectedAvg = projected,
-            gradedCount = otherPcts.size,
-            isFirstGraded = otherPcts.isEmpty(),
-            colorState = colorState,
-        )
+    /**
+     * The reading of the projection: on target, close to it, or short of it.
+     * "Nothing graded yet" is a WARNING, never a fabricated 0%.
+     */
+    fun colorState(projection: GradeTargetProjection): ScoreColorState {
+        val current = projection.currentPercentage ?: return ScoreColorState.WARNING
+        return when {
+            current >= projection.targetPercentage -> ScoreColorState.SUCCESS
+            current >= projection.targetPercentage - 10.0 -> ScoreColorState.WARNING
+            else -> ScoreColorState.DANGER
+        }
     }
 }
+
+/** `JSONObject` has no "number or null" accessor - this is the honest one. */
+private fun JSONObject.optDoubleOrNull(key: String): Double? = if (isNull(key)) null else optDouble(key, Double.NaN).takeIf { !it.isNaN() }

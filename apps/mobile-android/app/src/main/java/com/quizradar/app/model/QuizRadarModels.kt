@@ -6,6 +6,14 @@ data class CourseModel(
     val id: String,
     val name: String,
     val color: String? = null,
+    /**
+     * Credit weight for GPA (`core/src/types.rs`: `Course.credits`). Round
+     * -tripped so a course EDIT that does not touch credits keeps the
+     * persisted value instead of silently wiping it.
+     */
+    val credits: Double? = null,
+    /** Absence warning threshold (`Course.max_absences`), same round-trip rule. */
+    val maxAbsences: Int? = null,
 )
 
 data class ScheduleSlotModel(
@@ -56,6 +64,12 @@ data class CustomEventModel(
 )
 
 data class FeedConfigModel(
+    /**
+     * The store's stable feed id (`core/src/types.rs`: `FeedConfig.id`,
+     * `"feed-<unix_millis>"`). Feed DELETE targets the id, not the URL -
+     * without it the shell cannot call the core's real delete operation.
+     */
+    val id: String = "",
     val url: String,
     val label: String,
     val enabled: Boolean = true,
@@ -66,6 +80,37 @@ data class GradeRecordModel(
     val maxScore: Double? = null,
     val weightagePercent: Double? = null,
     val updatedAt: String? = null,
+)
+
+/**
+ * One persisted attendance mark (`core/src/types.rs`: `AttendanceEntry`).
+ *
+ * The association is EXPLICIT - `slotId`, `courseId` and `dateIso` travel
+ * with the record - so absence counts match on `courseId` exactly instead of
+ * searching for the course id inside a `slotId::date` string (audit A10:
+ * generated slot ids need not contain the course id).
+ */
+data class AttendanceEntryModel(
+    val id: String,
+    val slotId: String,
+    val courseId: String,
+    val dateIso: String,
+    /** `attended` | `absent` | `excused` (`AttendanceStatus`). */
+    val status: String,
+)
+
+/**
+ * Study analytics derived by the core from the persisted session log
+ * (`core/src/types.rs`: `StudyAnalytics`). Every number here is history the
+ * user actually logged - the shell starts EMPTY and never seeds examples
+ * (audit A06).
+ */
+data class StudyAnalyticsModel(
+    val currentStreakDays: Int = 0,
+    val bestStreakDays: Int = 0,
+    val totalFocusMinutes: Int = 0,
+    /** Focus minutes per course id; sessions without a course are unattributed. */
+    val minutesByCourse: Map<String, Int> = emptyMap(),
 )
 
 data class AssessmentModel(
@@ -101,6 +146,21 @@ data class AssessmentModel(
      * `null` when the assessment is clean.
      */
     val conflictWarning: String? = null,
+    /**
+     * What the pipeline inferred (heuristic vs explicit) and why the core
+     * says so (`core/src/types.rs`). `null` only for fully user-created
+     * items that need no explanation.
+     */
+    val aiInferenceNote: String? = null,
+    /**
+     * The core's study plan for this assessment, when one was produced.
+     * The hour estimate below is labeled as an estimate inside this plan.
+     */
+    val aiStudyPlan: String? = null,
+    /**
+     * Heuristic study-hour estimate - never a confirmed workload.
+     */
+    val estimatedStudyHours: Float? = null,
 )
 
 data class TopicCheckItemModel(
@@ -245,6 +305,13 @@ data class PracticeQuizModel(
     val authoredLocally: Boolean = true,
     val generatedByAi: Boolean = false,
     val questions: List<PracticeQuestionModel> = emptyList(),
+    /**
+     * A07 honesty: when an AI attempt was made but did NOT author the quiz,
+     * the core names why (consent off, no key, quota, transport). `null`
+     * when the provenance needs no excuse (AI authored it, or the user
+     * never asked for AI).
+     */
+    val fallbackReason: String? = null,
 )
 
 /**
@@ -273,6 +340,12 @@ data class SyncReportModel(
     val notes: List<String> = emptyList(),
     val perSource: List<SyncSourceReportModel> = emptyList(),
     val discoveredTeamsCount: Int = 0,
+    /**
+     * A07 cancellation: the core aborted the fetch and persisted NOTHING.
+     * A cancelled report is not a success and not a failure — the UI says
+     * exactly what happened ("nothing was saved") instead of either.
+     */
+    val cancelled: Boolean = false,
 )
 
 /**

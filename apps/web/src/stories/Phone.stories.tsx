@@ -12,23 +12,26 @@ export default { title: "Phone" } satisfies StoryDefault;
  * app on a phone (a CSS-width frame would NOT be: breakpoints read the
  * window, not the container). The iframes are live — click through them.
  *
- * The story ids below reference stories defined outside this section, so
- * there is no recursion.
+ * Views point at the `Phone shell/*` stories, which wrap the view in the
+ * app's actual phone chrome (TopBar, PullToRefresh main, MobileNav) —
+ * without it the views render bare and read as desktop fragments.
+ * Modal stories point at `Modals/*` (ModalStack already owns the full
+ * screen). Story ids reference stories outside this section — no recursion.
  */
 
-export const Dashboard: Story = () => <PhoneFrame story="views--dashboard--loaded" />;
+export const Dashboard: Story = () => <PhoneFrame story="phone-shell--dashboard" />;
 
 export const DashboardSolar: Story = () => (
-  <PhoneFrame story="views--dashboard--loaded" theme="solar" />
+  <PhoneFrame story="phone-shell--dashboard" theme="solar" />
 );
 
-export const StudyRoadmapTasks: Story = () => (
-  <PhoneFrame story="views--study-roadmap-tasks--loaded" />
-);
+export const StudyRoadmapTasks: Story = () => <PhoneFrame story="phone-shell--tasks" />;
 
-export const WeekCalendar: Story = () => <PhoneFrame story="views--week-calendar--loaded" />;
+export const WeekCalendar: Story = () => <PhoneFrame story="phone-shell--calendar" />;
 
-export const Settings: Story = () => <PhoneFrame story="views--settings--loaded" />;
+export const Focus: Story = () => <PhoneFrame story="phone-shell--focus" />;
+
+export const Settings: Story = () => <PhoneFrame story="phone-shell--settings" />;
 
 export const AssessmentDetail: Story = () => <PhoneFrame story="modals--assessment-detail" />;
 

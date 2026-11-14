@@ -1,22 +1,20 @@
 import type { Story, StoryDefault } from "@ladle/react";
 import { PhoneFrame } from "./phoneFrameHelpers";
 
-export default { title: "Phone" } satisfies StoryDefault;
+export default { title: "Phone (PWA web tier)" } satisfies StoryDefault;
 
 /**
- * Every key surface rendered inside a real 390×844 phone viewport.
+ * The WEB app's own phone rendering — the PWA companion tier (the same React
+ * UI shipped to phones as the PWA), inside a real 390×844 phone viewport.
  *
- * Each story mounts an iframe pointing at the underlying story with
+ * This is NOT the Android app's UI: the primary phone experience is the
+ * Kotlin/Compose app, rendered on the JVM in the `Phone (Android app)/`
+ * section. Each story mounts an iframe pointing at the underlying story with
  * `mode=preview`: an iframe is a real nested viewport, so Tailwind
- * breakpoints follow the phone's width — this is pixel-identical to the
- * app on a phone (a CSS-width frame would NOT be: breakpoints read the
- * window, not the container). The iframes are live — click through them.
- *
- * Views point at the `Phone shell/*` stories, which wrap the view in the
- * app's actual phone chrome (TopBar, PullToRefresh main, MobileNav) —
- * without it the views render bare and read as desktop fragments.
- * Modal stories point at `Modals/*` (ModalStack already owns the full
- * screen). Story ids reference stories outside this section — no recursion.
+ * breakpoints follow the phone's width — pixel-identical to the PWA on a
+ * phone. Views point at the `Phone shell/*` stories (app chrome included —
+ * bare views overflow horizontally and read as desktop fragments). The
+ * iframes are live — click through them.
  */
 
 export const Dashboard: Story = () => <PhoneFrame story="phone-shell--dashboard" />;

@@ -69,9 +69,12 @@ wire map is snake_case at the boundary and normalized to camelCase once in
   `px-4` main padding — always render them inside the app's phone shell
   (`Phone shell/*` stories, mirrored from `App.tsx`: TopBar, self-hiding
   Sidebar, PullToRefresh main, MobileNav). Bare views overflow horizontally
-  and read as desktop fragments. The `Phone/*` section mounts those shell
-  stories inside live 390×844 iframes (a real nested viewport — breakpoints
-  follow it).
+  and read as desktop fragments. The `Phone (PWA web tier)/*` section mounts
+  those shell stories inside live 390×844 iframes (a real nested viewport —
+  breakpoints follow it). The `Phone (Android app)/*` section shows the
+  production Compose screens, JVM-rendered by the Android module's
+  `AndroidUiCaptureTest` into `.ladle-static/android-ui/` (served here via a
+  publicDir override; machine-local and gitignored).
 - Render **real views with real payloads**: `src/stories/workbenchFixtures.ts`
   composes `src/testdata/contract/*.json` through the app's own
   `normalizeStatePayload` and seeds the store. Do not hand-invent state shapes

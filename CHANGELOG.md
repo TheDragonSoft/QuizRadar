@@ -2,6 +2,33 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.12.0] — 2026-11-14
+
+### 🤝 Agent & Contributor Summaries
+
+- **[docs]** Audit Android reliability, missing workflows and usability; document 15 evidence-backed findings and phased improvement roadmap without application source changes.
+
+- **[web, android, tooling]** Web UI workbench final (Ladle 5): 92 stories covering every surface in every state. (1) Modal state matrix: all 13 registered modals x their meaningful states (assessment detail with-room/no-room/graded/with-warnings, onboarding fresh/populated, practice quiz ready-via-mocked-rpc/generating/error/no-assessment, pomodoro idle/running/paused/short-break, scan progress syncing/success/error, cloud sync never/last-backup, account profile signed-in/out, search palette matches/none/empty, app confirm destructive/non-destructive, create-edit assessment+event new/editing, add course populated/empty-schedule, schedule preview clean/dropped). Backend-bound states use the blessed setRpcMockHandler seam. (2) Phone section: views render inside PhoneAppShell (mirrored line-for-line from App.tsx: TopBar, self-hiding Sidebar, PullToRefresh main with px-4, MobileNav) - bare views overflow horizontally and read as desktop fragments, the shell absorbs the -mx-4 hero bleed; Phone/* stories mount them in live 390x844 iframes (real nested viewport, real breakpoints), verified 0 horizontal overflow at 390px. (3) Theme system fixed: Ladle banner button drives the story (theme-bridge.css teaches ladle.css the app's dark ids; observer only syncs Tailwind .dark, never rewrites the attribute; applyThemeToDocument must never run inside an observer - View Transitions wedge). (4) Assessment-detail stories render through the real ModalStack. (5) Per-surface AGENTS.md guides + housekeeping (audit docs committed, scratch deleted). Verified: tsc/eslint/prettier clean, pnpm -r test 472 passed, capture 118 shots 0 page errors, preflight version check.
+
+### 🚀 New Features
+
+- `06eef26` feat(web): render phone stories inside the real app phone shell
+- `19c4a06` feat(web): per-state modal matrix and live phone-frame section in the workbench
+- `a36804b` feat(web): expand workbench to all modals, chrome, cards, full theme surface and phone passes
+- `4e3462d` feat(web): add Ladle UI workbench seeded from real core fixtures
+
+### 🐛 Fixes & Performance
+
+- `2c3bf08` fix(web): make Ladle's theme button drive the workbench story
+- `fddf85e` fix(web): render assessment-detail stories through the real ModalStack
+
+### 🔧 Maintenance, Docs & Tests
+
+- `9d8b991` Merge pull request #26 from TheDragonSoft/feat/ui-workbench
+- `52649c6` docs(changes): record the final workbench handoff and gate results
+- `490312c` docs: record repo and android audit handoffs from the review swarm
+- `f968c8e` docs(agents): add per-surface AGENTS.md guides for web, desktop and android
+
 ## [5.11.2] — 2026-11-13
 
 ### 🤝 Agent & Contributor Summaries

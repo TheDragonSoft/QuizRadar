@@ -2,6 +2,21 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.13.0] — 2026-11-14
+
+### 🤝 Agent & Contributor Summaries
+
+- **[android, web]** Real Android phone UI in the web workbench, rendered from code on the JVM (no emulator): AndroidUiCaptureTest renders the production Compose screens (Dashboard dark+light, Tasks, Calendar, Grades, Focus, Settings) with Robolectric native graphics over the REAL Rust-backed QuizRadarViewModel on an in-memory engine (QuizRadarEngine.createInMemory) seeded with relative dates - the same evergreen honesty contract as the web fixtures. Two Robolectric pitfalls solved and documented in the test: waitForIdle never settles under infinite animations (hero starfield) so the main clock is paused and data readiness is awaited via bounded waitUntil on visible text; compose-test captureToImage's forceRedraw handshake times out under Robolectric so the PNG is produced by drawing the window decor onto a canvas. Captures are written to apps/web/public/android-ui (gitignored, machine-local - AGENTS 3.8; CI never runs the capture test so release builds ship no PNGs) and the workbench Phone (Android app)/ section displays them in a device bezel; the web Phone section is renamed Phone (PWA web tier) so the two phone tiers are never confused.
+
+### 🚀 New Features
+
+- `3a96525` feat(workbench): render production Compose screens on the JVM into the workbench
+
+### 🔧 Maintenance, Docs & Tests
+
+- `812754b` Merge pull request #27 from TheDragonSoft/feat/android-ui-captures
+- `5fdd762` docs(changes): record the Android UI capture handoff
+
 ## [5.12.0] — 2026-11-14
 
 ### 🤝 Agent & Contributor Summaries

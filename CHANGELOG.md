@@ -2,6 +2,21 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.15.1] — 2026-11-14
+
+### 🤝 Agent & Contributor Summaries
+
+- **[core, desktop, android, web]** Fix post-sign-in OAuth connection state, profile hydration, and toast visibility across Android, core FFI, and Desktop. On Android, SettingsScreen, AppScaffold, SetupChecklistCard, and DashboardScreen subscribe reactively to StateFlow connection flags instead of non-reactive point-in-time reads; OAuthManager.handleRedirect persists expires_in and hydrates signed-in Google/Microsoft profile metadata; EncryptedTokenStore commits refresh tokens synchronously; QuizRadarViewModel.refreshState reloads profile and OAuth client ID state; and OnboardingWizardScreen and SettingsScreen mount SnackbarHost so OAuth feedback displays in place. Core FFI exchange_oauth_code formats provider errors via explain_oauth_error (with FFI OAuth, planner, and NativeStore unit tests lifting core coverage above the ratchet floor), and Desktop loopback listeners ignore empty preconnects and non-OAuth GET probes and hydrate Google userinfo on the fallback retry branch.
+
+### 🐛 Fixes & Performance
+
+- `c452dcb` fix(oauth): persist and reactively display post-signin connection state
+
+### 🔧 Maintenance, Docs & Tests
+
+- `ef17447` Merge pull request #30 from TheDragonSoft/fix/google-oauth-connection-state
+- `3db479a` test(core): cover FFI OAuth and helper exports for coverage ratchet
+
 ## [5.15.0] — 2026-11-14
 
 ### 🤝 Agent & Contributor Summaries

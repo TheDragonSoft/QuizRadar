@@ -842,6 +842,20 @@ class QuizRadarViewModel(
                     reloadStudyAnalytics()
                     _uiState.value = UiState.Ready(snapshot)
                     lastLoadedDate = refDate
+                    _userName.value = core.getConfigString("user_name") ?: ""
+                    _userEmail.value = core.getConfigString("user_email") ?: ""
+                    _lastSyncedStamp.value =
+                        core.getConfigString("last_gmail_sync")
+                            ?: core.getConfigString("last_gcal_sync")
+                    _googleClientId.value = core.getConfigString("google_client_id") ?: ""
+                    _teamsClientId.value = core.getConfigString("teams_client_id") ?: ""
+                    (core as? QuizRadarEngine)?.let { engine ->
+                        engine.oauthClientIds =
+                            com.quizradar.app.core.OAuthClientIds(
+                                google = { _googleClientId.value.ifBlank { null } },
+                                microsoft = { _teamsClientId.value.ifBlank { null } },
+                            )
+                    }
                     refreshAccountFlags(core as? QuizRadarEngine)
                     onStateMutated?.invoke()
                 }

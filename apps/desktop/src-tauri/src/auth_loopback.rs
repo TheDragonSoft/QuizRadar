@@ -251,6 +251,69 @@ struct MicrosoftMeInfo {
     user_principal_name: Option<String>,
 }
 
+enum LoopbackRequest {
+    EmptyPreconnect,
+    IgnoredAsset,
+    Callback {
+        path: String,
+        params: std::collections::HashMap<String, String>,
+    },
+    InvalidHttp,
+}
+
+fn classify_loopback_request(buf: &[u8]) -> LoopbackRequest {
+    if buf.is_empty() {
+        return LoopbackRequest::EmptyPreconnect;
+    }
+    let Some((path, params)) = parse_http_get_params(buf) else {
+        return LoopbackRequest::InvalidHttp;
+    };
+    let has_oauth_param =
+        params.contains_key("code") || params.contains_key("error") || params.contains_key("state");
+    if path == "/favicon.ico" || !has_oauth_param {
+        return LoopbackRequest::IgnoredAsset;
+    }
+    LoopbackRequest::Callback { path, params }
+}
+
+async fn finish_google_login(state: &AppState, tok: OAuthTokenResponse) {
+    if let Some(ref_tok) = tok.refresh_token {
+        let _ = state.keyring.set_secret(KEY_GOOGLE_REFRESH_TOKEN, &ref_tok);
+    }
+    let expires_in = tok.expires_in.unwrap_or(3600);
+    state
+        .set_google_access_token(tok.access_token.clone(), expires_in)
+        .await;
+
+    // Fetch profile from Google userinfo
+    if let Ok(userinfo_res) = state
+        .http_client
+        .get("https://www.googleapis.com/oauth2/v2/userinfo")
+        .bearer_auth(&tok.access_token)
+        .send()
+        .await
+    {
+        if let Ok(info) = userinfo_res.json::<GoogleUserInfo>().await {
+            // Persist the signed-in identity anchors so the UI
+            // profile reflects the real account. NOTE: never call
+            // `save_schedule` here — it REPLACES the whole timetable
+            // (repo.rs `save_all`), i.e. a data wipe.
+            let _ = state
+                .store
+                .set_config_string("user_email".to_string(), info.email.clone())
+                .await;
+            let _ = state
+                .store
+                .set_config_string("user_name".to_string(), info.name.clone())
+                .await;
+            let _ = state
+                .store
+                .set_config_string("user_picture".to_string(), info.picture.clone())
+                .await;
+        }
+    }
+}
+
 /// Spawns the loopback listener for Google OAuth and returns the authorize URL.
 pub async fn start_google_login(state: AppState, app: tauri::AppHandle) -> Result<String, String> {
     // Resolve the client id and its secret *before* binding a listener: an
@@ -322,212 +385,164 @@ pub async fn start_google_login(state: AppState, app: tauri::AppHandle) -> Resul
 
     let expected_state = oauth_state.clone();
 
-    // Background accept loop: terminates after receiving callback or 5-min timeout
+    // Background accept loop: ignores preconnects / favicon requests and terminates after receiving callback or 5-min timeout
     tokio::spawn(async move {
-        let accept_fut = accept_any(&listener, port80_ipv4.as_ref(), port80_ipv6.as_ref());
         let timeout_fut = tokio::time::sleep(Duration::from_secs(300));
-        tokio::pin!(accept_fut);
         tokio::pin!(timeout_fut);
 
-        tokio::select! {
-            result = &mut accept_fut => {
-                if let Ok((mut stream, peer)) = result {
-                    eprintln!("[oauth] google: callback accepted from {peer}");
-                    let mut buf = [0u8; 4096];
-                    let n = stream.read(&mut buf).await.unwrap_or(0);
-                    if let Some((path, params)) = parse_http_get_params(&buf[..n]) {
+        loop {
+            let result = tokio::select! {
+                _ = &mut timeout_fut => break,
+                result = accept_any(&listener, port80_ipv4.as_ref(), port80_ipv6.as_ref()) => result,
+            };
+            let Ok((mut stream, peer)) = result else {
+                break;
+            };
+            eprintln!("[oauth] google: callback accepted from {peer}");
+            let mut buf = [0u8; 4096];
+            let n = stream.read(&mut buf).await.unwrap_or(0);
+            let params = match classify_loopback_request(&buf[..n]) {
+                LoopbackRequest::EmptyPreconnect => continue,
+                LoopbackRequest::IgnoredAsset => {
+                    send_http_response(stream, 404, "Not Found", "").await;
+                    continue;
+                }
+                LoopbackRequest::InvalidHttp => {
+                    send_http_response(stream, 400, "Bad Request", AUTH_CANCELLED_HTML).await;
+                    continue;
+                }
+                LoopbackRequest::Callback { path, params } => {
+                    eprintln!(
+                        "[oauth] google: callback path={path} params={:?}",
+                        params.keys().collect::<Vec<_>>()
+                    );
+                    params
+                }
+            };
+            let returned_state = params.get("state").map(|s| s.as_str());
+            if returned_state != Some(&expected_state) {
+                let body = render_error_page("Sign-In Error", "State mismatch or session expired.");
+                send_http_response(stream, 400, "Bad Request", &body).await;
+                return;
+            }
+
+            if params.contains_key("error") {
+                send_http_response(stream, 200, "OK", AUTH_CANCELLED_HTML).await;
+                return;
+            }
+
+            if let Some(code) = params.get("code") {
+                let exchange_req = TokenExchangeRequest {
+                    client_id: &client_id,
+                    code,
+                    redirect_uri: &redirect_uri,
+                    code_verifier: &verifier,
+                    client_secret: client_secret.as_deref(),
+                };
+                let form_params = google_token_exchange_params(&exchange_req);
+
+                let resp = state
+                    .http_client
+                    .post(GOOGLE_TOKEN_URL)
+                    .form(&form_params)
+                    .send()
+                    .await;
+
+                match resp {
+                    Ok(res) if res.status().is_success() => {
+                        if let Ok(tok) = res.json::<OAuthTokenResponse>().await {
+                            eprintln!("[oauth] google: token exchange succeeded");
+                            finish_google_login(&state, tok).await;
+                            let _ = app.emit("auth-changed", ());
+                            focus_main_window(&app);
+                            send_http_response(stream, 200, "OK", GOOGLE_SUCCESS_HTML).await;
+                            return;
+                        }
+                    }
+                    Ok(res) => {
+                        let err_text = res.text().await.unwrap_or_default();
                         eprintln!(
-                            "[oauth] google: callback path={path} params={:?}",
-                            params.keys().collect::<Vec<_>>()
+                            "[oauth] google: token exchange rejected: {}",
+                            err_text.chars().take(300).collect::<String>()
                         );
-                        let returned_state = params.get("state").map(|s| s.as_str());
-                        if returned_state != Some(&expected_state) {
-                            let body = render_error_page("Sign-In Error", "State mismatch or session expired.");
-                            send_http_response(stream, 400, "Bad Request", &body).await;
-                            return;
-                        }
-
-                        if params.contains_key("error") {
-                            send_http_response(stream, 200, "OK", AUTH_CANCELLED_HTML).await;
-                            return;
-                        }
-
-                        if let Some(code) = params.get("code") {
-                            let exchange_req = TokenExchangeRequest {
+                        // The provider may expect the other loopback
+                        // shape back (port-less vs. the ephemeral
+                        // port). Retry once with the alternative
+                        // before giving up.
+                        if err_text.contains("redirect_uri_mismatch") {
+                            let alternate_uri = if redirect_uri.contains(':')
+                                && redirect_uri
+                                    .rsplit(':')
+                                    .next()
+                                    .map(|p| p.chars().all(|c| c.is_ascii_digit()) && !p.is_empty())
+                                    .unwrap_or(false)
+                            {
+                                "http://127.0.0.1".to_string()
+                            } else {
+                                format!("http://127.0.0.1:{port}")
+                            };
+                            eprintln!(
+                                "[oauth] google: retrying the exchange with redirect_uri={alternate_uri}"
+                            );
+                            let fallback_req = TokenExchangeRequest {
                                 client_id: &client_id,
                                 code,
-                                redirect_uri: &redirect_uri,
+                                redirect_uri: &alternate_uri,
                                 code_verifier: &verifier,
                                 client_secret: client_secret.as_deref(),
                             };
-                            let form_params = google_token_exchange_params(&exchange_req);
-
-                            let resp = state.http_client
+                            let fallback_params = google_token_exchange_params(&fallback_req);
+                            let fallback = state
+                                .http_client
                                 .post(GOOGLE_TOKEN_URL)
-                                .form(&form_params)
+                                .form(&fallback_params)
                                 .send()
                                 .await;
-
-                            match resp {
+                            match fallback {
                                 Ok(res) if res.status().is_success() => {
                                     if let Ok(tok) = res.json::<OAuthTokenResponse>().await {
-                                        eprintln!("[oauth] google: token exchange succeeded");
-                                        if let Some(ref_tok) = tok.refresh_token {
-                                            let _ = state.keyring.set_secret(KEY_GOOGLE_REFRESH_TOKEN, &ref_tok);
-                                        }
-                                        let expires_in = tok.expires_in.unwrap_or(3600);
-                                        state.set_google_access_token(tok.access_token.clone(), expires_in).await;
-
-                                        // Fetch profile from Google userinfo
-                                        if let Ok(userinfo_res) = state.http_client
-                                            .get("https://www.googleapis.com/oauth2/v2/userinfo")
-                                            .bearer_auth(&tok.access_token)
-                                            .send()
-                                            .await
-                                        {
-                                            if let Ok(info) = userinfo_res.json::<GoogleUserInfo>().await {
-                                                // Persist the signed-in identity anchors so the UI
-                                                // profile reflects the real account. NOTE: never call
-                                                // `save_schedule` here — it REPLACES the whole timetable
-                                                // (repo.rs `save_all`), i.e. a data wipe.
-                                                let _ = state
-                                                    .store
-                                                    .set_config_string("user_email".to_string(), info.email.clone())
-                                                    .await;
-                                                let _ = state
-                                                    .store
-                                                    .set_config_string("user_name".to_string(), info.name.clone())
-                                                    .await;
-                                                let _ = state
-                                                    .store
-                                                    .set_config_string("user_picture".to_string(), info.picture.clone())
-                                                    .await;
-                                                // Emit profile info
-                                                let _ = app.emit("auth-changed", ());
-                                            }
-                                        }
-
+                                        eprintln!(
+                                            "[oauth] google: token exchange succeeded with the port-less redirect URI"
+                                        );
+                                        finish_google_login(&state, tok).await;
                                         let _ = app.emit("auth-changed", ());
                                         focus_main_window(&app);
-                                        send_http_response(stream, 200, "OK", GOOGLE_SUCCESS_HTML).await;
+                                        send_http_response(stream, 200, "OK", GOOGLE_SUCCESS_HTML)
+                                            .await;
                                         return;
                                     }
                                 }
                                 Ok(res) => {
                                     let err_text = res.text().await.unwrap_or_default();
-                                    eprintln!(
-                                        "[oauth] google: token exchange rejected: {}",
-                                        err_text.chars().take(300).collect::<String>()
-                                    );
-                                    // The provider may expect the other loopback
-                                    // shape back (port-less vs. the ephemeral
-                                    // port). Retry once with the alternative
-                                    // before giving up.
-                                    if err_text.contains("redirect_uri_mismatch") {
-                                        let alternate_uri = if redirect_uri.contains(':') && redirect_uri.rsplit(':').next().map(|p| p.chars().all(|c| c.is_ascii_digit()) && !p.is_empty()).unwrap_or(false) {
-                                            "http://127.0.0.1".to_string()
-                                        } else {
-                                            format!("http://127.0.0.1:{port}")
-                                        };
-                                        eprintln!(
-                                            "[oauth] google: retrying the exchange with redirect_uri={alternate_uri}"
-                                        );
-                                        let fallback_req = TokenExchangeRequest {
-                                            client_id: &client_id,
-                                            code,
-                                            redirect_uri: &alternate_uri,
-                                            code_verifier: &verifier,
-                                            client_secret: client_secret.as_deref(),
-                                        };
-                                        let fallback_params =
-                                            google_token_exchange_params(&fallback_req);
-                                        let fallback = state
-                                            .http_client
-                                            .post(GOOGLE_TOKEN_URL)
-                                            .form(&fallback_params)
-                                            .send()
-                                            .await;
-                                        match fallback {
-                                            Ok(res) if res.status().is_success() => {
-                                                if let Ok(tok) = res.json::<OAuthTokenResponse>().await
-                                                {
-                                                    eprintln!(
-                                                        "[oauth] google: token exchange succeeded with the port-less redirect URI"
-                                                    );
-                                                    if let Some(ref_tok) = tok.refresh_token {
-                                                        let _ = state.keyring.set_secret(
-                                                            KEY_GOOGLE_REFRESH_TOKEN,
-                                                            &ref_tok,
-                                                        );
-                                                    }
-                                                    let expires_in = tok.expires_in.unwrap_or(3600);
-                                                    state
-                                                        .set_google_access_token(
-                                                            tok.access_token.clone(),
-                                                            expires_in,
-                                                        )
-                                                        .await;
-                                                    let _ = app.emit("auth-changed", ());
-                                                    focus_main_window(&app);
-                                                    send_http_response(
-                                                        stream,
-                                                        200,
-                                                        "OK",
-                                                        GOOGLE_SUCCESS_HTML,
-                                                    )
-                                                    .await;
-                                                    return;
-                                                }
-                                            }
-                                            Ok(res) => {
-                                                let err_text = res.text().await.unwrap_or_default();
-                                                let explained = explain_oauth_error(
-                                                    OAuthProvider::Google,
-                                                    &err_text,
-                                                );
-                                                let body = render_error_page(
-                                                    "Google Sign-In Failed",
-                                                    &explained,
-                                                );
-                                                send_http_response(stream, 400, "Bad Request", &body)
-                                                    .await;
-                                                return;
-                                            }
-                                            Err(err) => {
-                                                let body = render_error_page(
-                                                    "Network Error",
-                                                    &err.to_string(),
-                                                );
-                                                send_http_response(
-                                                    stream,
-                                                    500,
-                                                    "Internal Server Error",
-                                                    &body,
-                                                )
-                                                .await;
-                                                return;
-                                            }
-                                        }
-                                    }
-                                    let explained = explain_oauth_error(OAuthProvider::Google, &err_text);
-                                    let body = render_error_page("Google Sign-In Failed", &explained);
+                                    let explained =
+                                        explain_oauth_error(OAuthProvider::Google, &err_text);
+                                    let body =
+                                        render_error_page("Google Sign-In Failed", &explained);
                                     send_http_response(stream, 400, "Bad Request", &body).await;
                                     return;
                                 }
                                 Err(err) => {
                                     let body = render_error_page("Network Error", &err.to_string());
-                                    send_http_response(stream, 500, "Internal Server Error", &body).await;
+                                    send_http_response(stream, 500, "Internal Server Error", &body)
+                                        .await;
                                     return;
                                 }
                             }
                         }
+                        let explained = explain_oauth_error(OAuthProvider::Google, &err_text);
+                        let body = render_error_page("Google Sign-In Failed", &explained);
+                        send_http_response(stream, 400, "Bad Request", &body).await;
+                        return;
                     }
-                    send_http_response(stream, 400, "Bad Request", AUTH_CANCELLED_HTML).await;
+                    Err(err) => {
+                        let body = render_error_page("Network Error", &err.to_string());
+                        send_http_response(stream, 500, "Internal Server Error", &body).await;
+                        return;
+                    }
                 }
             }
-            _ = &mut timeout_fut => {
-                // Expired without interaction, listener drops and closes port
-            }
+            send_http_response(stream, 400, "Bad Request", AUTH_CANCELLED_HTML).await;
+            return;
         }
     });
 
@@ -612,122 +627,139 @@ async fn start_microsoft_login_with(
     let expected_state = oauth_state.clone();
 
     tokio::spawn(async move {
-        let accept_fut = accept_loopback(&listener, ipv6_listener.as_ref());
         let timeout_fut = tokio::time::sleep(Duration::from_secs(300));
-        tokio::pin!(accept_fut);
         tokio::pin!(timeout_fut);
 
-        tokio::select! {
-            result = &mut accept_fut => {
-                if let Ok(mut stream) = result {
-                    let mut buf = [0u8; 4096];
-                    let n = stream.read(&mut buf).await.unwrap_or(0);
-                    if let Some((_path, params)) = parse_http_get_params(&buf[..n]) {
-                        let returned_state = params.get("state").map(|s| s.as_str());
-                        if returned_state != Some(&expected_state) {
-                            let body = render_error_page("Sign-In Error", "State mismatch or session expired.");
-                            send_http_response(stream, 400, "Bad Request", &body).await;
-                            return;
-                        }
+        loop {
+            let result = tokio::select! {
+                _ = &mut timeout_fut => break,
+                result = accept_loopback(&listener, ipv6_listener.as_ref()) => result,
+            };
+            let Ok(mut stream) = result else {
+                break;
+            };
+            let mut buf = [0u8; 4096];
+            let n = stream.read(&mut buf).await.unwrap_or(0);
+            let params = match classify_loopback_request(&buf[..n]) {
+                LoopbackRequest::EmptyPreconnect => continue,
+                LoopbackRequest::IgnoredAsset => {
+                    send_http_response(stream, 404, "Not Found", "").await;
+                    continue;
+                }
+                LoopbackRequest::InvalidHttp => {
+                    send_http_response(stream, 400, "Bad Request", AUTH_CANCELLED_HTML).await;
+                    continue;
+                }
+                LoopbackRequest::Callback { params, .. } => params,
+            };
+            let returned_state = params.get("state").map(|s| s.as_str());
+            if returned_state != Some(&expected_state) {
+                let body = render_error_page("Sign-In Error", "State mismatch or session expired.");
+                send_http_response(stream, 400, "Bad Request", &body).await;
+                return;
+            }
 
-                        if params.contains_key("error") {
-                            let provider_error = params.get("error").map(String::as_str).unwrap_or("");
-                            let description = params
-                                .get("error_description")
-                                .map(String::as_str)
-                                .unwrap_or("");
-                            if provider_error == "access_denied" {
-                                // The consent screen bounced the user back —
-                                // the usual cause is a tenant that requires
-                                // administrator approval for these scopes.
-                                let raw = format!("{provider_error} {description}");
-                                let explained =
-                                    explain_oauth_error(OAuthProvider::Microsoft, &raw);
-                                let body =
-                                    render_error_page("Microsoft Sign-In Not Approved", &explained);
-                                send_http_response(stream, 400, "Bad Request", &body).await;
-                                return;
+            if params.contains_key("error") {
+                let provider_error = params.get("error").map(String::as_str).unwrap_or("");
+                let description = params
+                    .get("error_description")
+                    .map(String::as_str)
+                    .unwrap_or("");
+                if provider_error == "access_denied" {
+                    // The consent screen bounced the user back —
+                    // the usual cause is a tenant that requires
+                    // administrator approval for these scopes.
+                    let raw = format!("{provider_error} {description}");
+                    let explained = explain_oauth_error(OAuthProvider::Microsoft, &raw);
+                    let body = render_error_page("Microsoft Sign-In Not Approved", &explained);
+                    send_http_response(stream, 400, "Bad Request", &body).await;
+                    return;
+                }
+                send_http_response(stream, 200, "OK", AUTH_CANCELLED_HTML).await;
+                return;
+            }
+
+            if let Some(code) = params.get("code") {
+                let exchange_req = TokenExchangeRequest {
+                    client_id: &client_id,
+                    code,
+                    redirect_uri: &redirect_uri,
+                    code_verifier: &verifier,
+                    // Microsoft public clients authenticate with
+                    // PKCE alone — no secret.
+                    client_secret: None,
+                };
+                let form_params = microsoft_token_exchange_params(&exchange_req);
+
+                let resp = state
+                    .http_client
+                    .post(MICROSOFT_TOKEN_URL)
+                    .form(&form_params)
+                    .send()
+                    .await;
+
+                match resp {
+                    Ok(res) if res.status().is_success() => {
+                        if let Ok(tok) = res.json::<OAuthTokenResponse>().await {
+                            if let Some(ref_tok) = tok.refresh_token {
+                                let _ = state
+                                    .keyring
+                                    .set_secret(KEY_MICROSOFT_REFRESH_TOKEN, &ref_tok);
                             }
-                            send_http_response(stream, 200, "OK", AUTH_CANCELLED_HTML).await;
-                            return;
-                        }
-
-                        if let Some(code) = params.get("code") {
-                            let exchange_req = TokenExchangeRequest {
-                                client_id: &client_id,
-                                code,
-                                redirect_uri: &redirect_uri,
-                                code_verifier: &verifier,
-                                // Microsoft public clients authenticate with
-                                // PKCE alone — no secret.
-                                client_secret: None,
-                            };
-                            let form_params = microsoft_token_exchange_params(&exchange_req);
-
-                            let resp = state.http_client
-                                .post(MICROSOFT_TOKEN_URL)
-                                .form(&form_params)
-                                .send()
+                            let expires_in = tok.expires_in.unwrap_or(3600);
+                            state
+                                .set_microsoft_access_token(tok.access_token.clone(), expires_in)
                                 .await;
 
-                            match resp {
-                                Ok(res) if res.status().is_success() => {
-                                    if let Ok(tok) = res.json::<OAuthTokenResponse>().await {
-                                        if let Some(ref_tok) = tok.refresh_token {
-                                            let _ = state.keyring.set_secret(KEY_MICROSOFT_REFRESH_TOKEN, &ref_tok);
-                                        }
-                                        let expires_in = tok.expires_in.unwrap_or(3600);
-                                        state.set_microsoft_access_token(tok.access_token.clone(), expires_in).await;
-
-                                        // Fetch profile from Graph /me
-                                        if let Ok(me_res) = state.http_client
-                                            .get("https://graph.microsoft.com/v1.0/me")
-                                            .bearer_auth(&tok.access_token)
-                                            .send()
-                                            .await
-                                        {
-                                            if let Ok(me) = me_res.json::<MicrosoftMeInfo>().await {
-                                                // Persist the Teams identity anchors for the UI.
-                                                let _ = state
-                                                    .store
-                                                    .set_config_string("teams_account_name".to_string(), me.display_name.clone())
-                                                    .await;
-                                                let _ = state
-                                                    .store
-                                                    .set_config_string("teams_account_email".to_string(), me.user_principal_name.clone())
-                                                    .await;
-                                            }
-                                        }
-
-                                        let _ = app.emit("auth-changed", ());
-                                        focus_main_window(&app);
-                                        send_http_response(stream, 200, "OK", MICROSOFT_SUCCESS_HTML).await;
-                                        return;
-                                    }
-                                }
-                                Ok(res) => {
-                                    let err_text = res.text().await.unwrap_or_default();
-                                    let explained =
-                                        explain_oauth_error(OAuthProvider::Microsoft, &err_text);
-                                    let body =
-                                        render_error_page("Microsoft Sign-In Failed", &explained);
-                                    send_http_response(stream, 400, "Bad Request", &body).await;
-                                    return;
-                                }
-                                Err(err) => {
-                                    let body = render_error_page("Network Error", &err.to_string());
-                                    send_http_response(stream, 500, "Internal Server Error", &body).await;
-                                    return;
+                            // Fetch profile from Graph /me
+                            if let Ok(me_res) = state
+                                .http_client
+                                .get("https://graph.microsoft.com/v1.0/me")
+                                .bearer_auth(&tok.access_token)
+                                .send()
+                                .await
+                            {
+                                if let Ok(me) = me_res.json::<MicrosoftMeInfo>().await {
+                                    // Persist the Teams identity anchors for the UI.
+                                    let _ = state
+                                        .store
+                                        .set_config_string(
+                                            "teams_account_name".to_string(),
+                                            me.display_name.clone(),
+                                        )
+                                        .await;
+                                    let _ = state
+                                        .store
+                                        .set_config_string(
+                                            "teams_account_email".to_string(),
+                                            me.user_principal_name.clone(),
+                                        )
+                                        .await;
                                 }
                             }
+
+                            let _ = app.emit("auth-changed", ());
+                            focus_main_window(&app);
+                            send_http_response(stream, 200, "OK", MICROSOFT_SUCCESS_HTML).await;
+                            return;
                         }
                     }
-                    send_http_response(stream, 400, "Bad Request", AUTH_CANCELLED_HTML).await;
+                    Ok(res) => {
+                        let err_text = res.text().await.unwrap_or_default();
+                        let explained = explain_oauth_error(OAuthProvider::Microsoft, &err_text);
+                        let body = render_error_page("Microsoft Sign-In Failed", &explained);
+                        send_http_response(stream, 400, "Bad Request", &body).await;
+                        return;
+                    }
+                    Err(err) => {
+                        let body = render_error_page("Network Error", &err.to_string());
+                        send_http_response(stream, 500, "Internal Server Error", &body).await;
+                        return;
+                    }
                 }
             }
-            _ = &mut timeout_fut => {
-                // Expired
-            }
+            send_http_response(stream, 400, "Bad Request", AUTH_CANCELLED_HTML).await;
+            return;
         }
     });
 
@@ -777,5 +809,31 @@ mod tests {
         assert_eq!(path, "/");
         assert_eq!(params.get("code").map(String::as_str), Some("abc-def"));
         assert_eq!(params.get("state").map(String::as_str), Some("xyz 123"));
+    }
+
+    #[test]
+    fn loopback_classifier_ignores_preconnects_and_favicon_probes() {
+        assert!(matches!(
+            classify_loopback_request(b""),
+            LoopbackRequest::EmptyPreconnect
+        ));
+        assert!(matches!(
+            classify_loopback_request(b"GET /favicon.ico HTTP/1.1\r\nHost: localhost\r\n\r\n"),
+            LoopbackRequest::IgnoredAsset
+        ));
+        assert!(matches!(
+            classify_loopback_request(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"),
+            LoopbackRequest::IgnoredAsset
+        ));
+        match classify_loopback_request(
+            b"GET /?code=auth-1&state=st-1 HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        ) {
+            LoopbackRequest::Callback { path, params } => {
+                assert_eq!(path, "/");
+                assert_eq!(params.get("code").map(String::as_str), Some("auth-1"));
+                assert_eq!(params.get("state").map(String::as_str), Some("st-1"));
+            }
+            _ => panic!("expected OAuth callback classification"),
+        }
     }
 }

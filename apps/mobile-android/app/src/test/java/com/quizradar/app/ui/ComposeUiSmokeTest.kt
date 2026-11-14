@@ -1,5 +1,9 @@
 package com.quizradar.app.ui
 
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -241,5 +245,106 @@ class ComposeUiSmokeTest {
 
         // Verify checklist is dismissed
         composeTestRule.onNodeWithText("Setup Checklist").assertDoesNotExist()
+    }
+
+    @Test
+    fun settingsScreen_reactivelyUpdatesConnectionStatusAndDisplaysOAuthToast() {
+        val testDate = LocalDate.parse("2026-10-25")
+        val engine = QuizRadarEngine.createInMemory(coreDispatcher = Dispatchers.Unconfined)
+        val viewModel = QuizRadarViewModel(engine, coreDispatcher = Dispatchers.Main.immediate) { testDate }
+
+        runBlocking {
+            engine.upsertCourse(
+                """{ "id": "CS101", "name": "Intro to CS", "color": "#1a73e8" }""",
+                "[]",
+                testDate,
+            )
+            engine.setConfigBool("onboarding_completed", true)
+        }
+
+        viewModel.loadState()
+        val snackbarHostState = SnackbarHostState()
+
+        composeTestRule.setContent {
+            val toastMessage by viewModel.toastMessage.collectAsState()
+            LaunchedEffect(toastMessage) {
+                val msg = toastMessage ?: return@LaunchedEffect
+                snackbarHostState.showSnackbar(msg)
+                viewModel.clearToast()
+            }
+            QuizRadarTheme {
+                val state = viewModel.uiState.value
+                if (state is UiState.Ready) {
+                    com.quizradar.app.ui.screens.SettingsScreen(
+                        snapshot = state.snapshot,
+                        viewModel = viewModel,
+                        onNavigateBack = {},
+                        snackbarHostState = snackbarHostState,
+                    )
+                }
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onAllNodesWithText("Sign In").onFirst().assertExists()
+
+        // Simulate OAuth redirect completing while the user is still on Settings:
+        // reactive connection state, GCal/Drive sections, email, and toast must appear
+        // immediately without closing or reopening Settings.
+        runBlocking {
+            engine.tokenProvider.setGoogleAccessToken("access-live-1")
+            engine.tokenProvider.setGoogleAccessTokenIssuedAtMs(System.currentTimeMillis())
+            engine.setConfigString("user_name", "Ada Lovelace")
+            engine.setConfigString("user_email", "ada@uni.edu")
+        }
+        viewModel.showToast("Signed in with Google")
+        viewModel.refreshState()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onAllNodesWithText("Disconnect").onFirst().assertExists()
+        composeTestRule.onNodeWithText("Google Calendar push").assertExists()
+        composeTestRule.onNodeWithText("ada@uni.edu").assertExists()
+        composeTestRule.onNodeWithText("Signed in with Google").assertIsDisplayed()
+    }
+
+    @Test
+    fun onboardingWizardScreen_displaysOAuthToastViaSnackbarHost() {
+        val testDate = LocalDate.parse("2026-10-25")
+        val engine = QuizRadarEngine.createInMemory(coreDispatcher = Dispatchers.Unconfined)
+        val viewModel = QuizRadarViewModel(engine, coreDispatcher = Dispatchers.Main.immediate) { testDate }
+
+        viewModel.loadState()
+        val snackbarHostState = SnackbarHostState()
+
+        composeTestRule.setContent {
+            val toastMessage by viewModel.toastMessage.collectAsState()
+            LaunchedEffect(toastMessage) {
+                val msg = toastMessage ?: return@LaunchedEffect
+                snackbarHostState.showSnackbar(msg)
+                viewModel.clearToast()
+            }
+            QuizRadarTheme {
+                val state = viewModel.uiState.value
+                if (state is UiState.Ready) {
+                    com.quizradar.app.ui.screens.OnboardingWizardScreen(
+                        snapshot = state.snapshot,
+                        viewModel = viewModel,
+                        onComplete = {},
+                        snackbarHostState = snackbarHostState,
+                    )
+                }
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        runBlocking {
+            engine.tokenProvider.setGoogleAccessToken("access-live-onboarding")
+            engine.tokenProvider.setGoogleAccessTokenIssuedAtMs(System.currentTimeMillis())
+        }
+        viewModel.showToast("Signed in with Google")
+        viewModel.refreshState()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithText("Signed in with Google").assertIsDisplayed()
     }
 }

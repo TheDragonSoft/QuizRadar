@@ -1215,4 +1215,31 @@ class QuizRadarViewModelTest {
                 engine.getConfigBool("dismiss_setup_checklist", default = false),
             )
         }
+
+    @Test
+    fun refreshState_reloadsConnectedStateAndUserProfileWhenSnapshotIsUnchanged() =
+        runTest {
+            val engine = QuizRadarEngine.createInMemory(coreDispatcher = testDispatcher)
+            val viewModel = QuizRadarViewModel(engine, clockDate = { testDate }, coreDispatcher = testDispatcher)
+            advanceUntilIdle()
+
+            assertEquals(false, viewModel.googleConnected.value)
+            assertEquals("", viewModel.userName.value)
+            assertEquals("", viewModel.userEmail.value)
+
+            // Simulate OAuthManager.handleRedirect writing tokens + profile into the
+            // engine while the snapshot tables (courses/assessments) remain unchanged.
+            engine.tokenProvider.setGoogleAccessToken("fresh-access-1")
+            engine.tokenProvider.setGoogleAccessTokenIssuedAtMs(1_700_000_000_000L)
+            engine.tokenProvider.setGoogleAccessTokenExpiresInSec(3599L)
+            engine.setConfigString("user_name", "Ada Lovelace")
+            engine.setConfigString("user_email", "ada@uni.edu")
+
+            viewModel.refreshState()
+            advanceUntilIdle()
+
+            assertEquals(true, viewModel.googleConnected.value)
+            assertEquals("Ada Lovelace", viewModel.userName.value)
+            assertEquals("ada@uni.edu", viewModel.userEmail.value)
+        }
 }

@@ -184,4 +184,165 @@ class OAuthFlowTest {
                 res3 is OAuthRedirectResult.Error && (res3 as OAuthRedirectResult.Error).error.contains("state mismatch"),
             )
         }
+
+    @Test
+    fun testGoogleRedirectStoresExpiresInAndHydratesUserProfile() =
+        runBlocking {
+            val server = ServerSocket(0)
+            serverSocket = server
+            val port = server.localPort
+            var userInfoAuthHeader: String? = null
+
+            Thread {
+                try {
+                    repeat(2) {
+                        val socket = server.accept()
+                        val reader = socket.getInputStream().bufferedReader()
+                        val requestLine = reader.readLine() ?: ""
+                        var authHeader: String? = null
+                        while (true) {
+                            val line = reader.readLine()
+                            if (line.isNullOrEmpty()) break
+                            if (line.startsWith("Authorization:", ignoreCase = true)) {
+                                authHeader = line.substringAfter(':').trim()
+                            }
+                        }
+
+                        val responseBody =
+                            if (requestLine.contains("/userinfo")) {
+                                userInfoAuthHeader = authHeader
+                                """
+                                {
+                                    "id": "usr-42",
+                                    "email": "ada@uni.edu",
+                                    "name": "Ada Lovelace",
+                                    "picture": "https://example.com/ada.png"
+                                }
+                                """.trimIndent()
+                            } else {
+                                """
+                                {
+                                    "access_token": "mock-access-profile-1",
+                                    "token_type": "Bearer",
+                                    "expires_in": 3600,
+                                    "refresh_token": "mock-refresh-profile-1"
+                                }
+                                """.trimIndent()
+                            }
+
+                        val bytes = responseBody.toByteArray(Charsets.UTF_8)
+                        val header =
+                            "HTTP/1.1 200 OK\r\n" +
+                                "Content-Type: application/json\r\n" +
+                                "Content-Length: ${bytes.size}\r\n" +
+                                "Connection: close\r\n\r\n"
+                        val out = socket.getOutputStream()
+                        out.write(header.toByteArray(Charsets.UTF_8))
+                        out.write(bytes)
+                        out.flush()
+                        socket.close()
+                    }
+                } catch (_: Exception) {
+                }
+            }.start()
+
+            oauthManager.setPendingStateForTest(
+                provider = "google",
+                verifier = "test-verifier-12345678901234567890123456789012345",
+                state = "state-profile-123",
+                redirectUri = OAuthManager.GOOGLE_REDIRECT_URI,
+            )
+
+            val callbackUri = Uri.parse("com.quizradar.app:/oauth/google?code=code-profile&state=state-profile-123")
+            val result =
+                oauthManager.handleRedirect(
+                    callbackUri,
+                    engine,
+                    tokenEndpointOverride = "http://127.0.0.1:$port/token",
+                    userInfoEndpointOverride = "http://127.0.0.1:$port/userinfo",
+                )
+
+            assertTrue("Token exchange with userinfo must succeed: $result", result is OAuthRedirectResult.Success)
+            assertEquals("mock-access-profile-1", tokenStore.getGoogleAccessToken())
+            assertEquals("mock-refresh-profile-1", tokenStore.getGoogleRefreshToken())
+            assertEquals(3600L, tokenStore.getGoogleAccessTokenExpiresInSec())
+            assertEquals("Bearer mock-access-profile-1", userInfoAuthHeader)
+            assertEquals("Ada Lovelace", engine.getConfigString("user_name"))
+            assertEquals("ada@uni.edu", engine.getConfigString("user_email"))
+            assertEquals("https://example.com/ada.png", engine.getConfigString("user_picture"))
+        }
+
+    @Test
+    fun testGoogleRedirectSucceedsHonestlyWhenUserInfoFails() =
+        runBlocking {
+            val server = ServerSocket(0)
+            serverSocket = server
+            val port = server.localPort
+
+            Thread {
+                try {
+                    repeat(2) {
+                        val socket = server.accept()
+                        val reader = socket.getInputStream().bufferedReader()
+                        val requestLine = reader.readLine() ?: ""
+                        while (true) {
+                            val line = reader.readLine()
+                            if (line.isNullOrEmpty()) break
+                        }
+
+                        val (status, responseBody) =
+                            if (requestLine.contains("/userinfo")) {
+                                "500 Internal Server Error" to """{"error":"upstream_down"}"""
+                            } else {
+                                "200 OK" to
+                                    """
+                                    {
+                                        "access_token": "mock-access-no-profile",
+                                        "token_type": "Bearer",
+                                        "expires_in": 1800,
+                                        "refresh_token": "mock-refresh-no-profile"
+                                    }
+                                    """.trimIndent()
+                            }
+
+                        val bytes = responseBody.toByteArray(Charsets.UTF_8)
+                        val header =
+                            "HTTP/1.1 $status\r\n" +
+                                "Content-Type: application/json\r\n" +
+                                "Content-Length: ${bytes.size}\r\n" +
+                                "Connection: close\r\n\r\n"
+                        val out = socket.getOutputStream()
+                        out.write(header.toByteArray(Charsets.UTF_8))
+                        out.write(bytes)
+                        out.flush()
+                        socket.close()
+                    }
+                } catch (_: Exception) {
+                }
+            }.start()
+
+            oauthManager.setPendingStateForTest(
+                provider = "google",
+                verifier = "test-verifier-12345678901234567890123456789012345",
+                state = "state-noprofile-123",
+                redirectUri = OAuthManager.GOOGLE_REDIRECT_URI,
+            )
+
+            val callbackUri = Uri.parse("com.quizradar.app:/oauth/google?code=code-no-profile&state=state-noprofile-123")
+            val result =
+                oauthManager.handleRedirect(
+                    callbackUri,
+                    engine,
+                    tokenEndpointOverride = "http://127.0.0.1:$port/token",
+                    userInfoEndpointOverride = "http://127.0.0.1:$port/userinfo",
+                )
+
+            assertTrue("Token exchange should still succeed when userinfo fails: $result", result is OAuthRedirectResult.Success)
+            assertEquals("mock-access-no-profile", tokenStore.getGoogleAccessToken())
+            assertEquals("mock-refresh-no-profile", tokenStore.getGoogleRefreshToken())
+            assertEquals(1800L, tokenStore.getGoogleAccessTokenExpiresInSec())
+            assertEquals(null, engine.getConfigString("user_name"))
+            assertEquals(null, engine.getConfigString("user_email"))
+            assertEquals(null, engine.getConfigString("user_picture"))
+        }
 }

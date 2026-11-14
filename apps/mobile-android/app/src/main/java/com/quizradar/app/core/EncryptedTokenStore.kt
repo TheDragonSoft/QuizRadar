@@ -60,7 +60,7 @@ class EncryptedTokenStore(context: Context) : TokenProvider {
             } else {
                 remove("google_refresh_token")
             }
-            apply()
+            commit()
         }
     }
 
@@ -79,7 +79,7 @@ class EncryptedTokenStore(context: Context) : TokenProvider {
             } else {
                 remove("microsoft_refresh_token")
             }
-            apply()
+            commit()
         }
     }
 

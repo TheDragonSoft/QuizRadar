@@ -1,0 +1,21 @@
+/*
+ * Workbench-only theme bridge (dev tooling — never shipped).
+ *
+ * Two consumers read the SAME `data-theme` attribute on <html> with two
+ * vocabularies: the app's tokens.css understands obsidian | solar |
+ * amoled-nebula (+ the `.dark` class), while ladle.css understands only
+ * light (its :root default) | dark. This bridge teaches Ladle's chrome the
+ * app's dark ids so the chrome and the story always agree, whatever wrote
+ * the attribute (Ladle's theme button, the ?theme= URL param, or the app).
+ *
+ * Keep in sync with ladle.css's `[data-theme="dark"]` block (7 vars).
+ */
+html[data-theme="obsidian"],
+html[data-theme="dark"],
+html[data-theme="amoled-nebula"] {
+  --ladle-bg-color-primary: #141414;
+  --ladle-bg-color-secondary: #1f1f1f;
+  --ladle-color-primary: #f6f6f6;
+  --ladle-color-hover: #e2e2e2;
+  --ladle-blueprint: #1f1f1f;
+}

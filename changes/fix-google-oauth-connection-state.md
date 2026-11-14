@@ -8,7 +8,7 @@ date: 2026-11-14
 
 ### Summary
 
-Fix post-sign-in OAuth connection state, profile hydration, and toast visibility across Android, core FFI, and Desktop. On Android, SettingsScreen, AppScaffold, SetupChecklistCard, and DashboardScreen subscribe reactively to StateFlow connection flags instead of non-reactive point-in-time reads; OAuthManager.handleRedirect persists expires_in and hydrates signed-in Google/Microsoft profile metadata; EncryptedTokenStore commits refresh tokens synchronously; QuizRadarViewModel.refreshState reloads profile and OAuth client ID state; and OnboardingWizardScreen and SettingsScreen mount SnackbarHost so OAuth feedback displays in place. Core FFI exchange_oauth_code formats provider errors via explain_oauth_error, and Desktop loopback listeners ignore empty preconnects and non-OAuth GET probes and hydrate Google userinfo on the fallback retry branch.
+Fix post-sign-in OAuth connection state, profile hydration, and toast visibility across Android, core FFI, and Desktop. On Android, SettingsScreen, AppScaffold, SetupChecklistCard, and DashboardScreen subscribe reactively to StateFlow connection flags instead of non-reactive point-in-time reads; OAuthManager.handleRedirect persists expires_in and hydrates signed-in Google/Microsoft profile metadata; EncryptedTokenStore commits refresh tokens synchronously; QuizRadarViewModel.refreshState reloads profile and OAuth client ID state; and OnboardingWizardScreen and SettingsScreen mount SnackbarHost so OAuth feedback displays in place. Core FFI exchange_oauth_code formats provider errors via explain_oauth_error (with FFI OAuth, planner, and NativeStore unit tests lifting core coverage above the ratchet floor), and Desktop loopback listeners ignore empty preconnects and non-OAuth GET probes and hydrate Google userinfo on the fallback retry branch.
 
 ### Verification
 
@@ -17,6 +17,7 @@ Fix post-sign-in OAuth connection state, profile hydration, and toast visibility
 - cargo fmt --all --check
 - cargo clippy --workspace --all-targets -- -D warnings
 - cargo test --workspace
+- pnpm coverage:rust && node tooling/coverage-ratchet.mjs
 - pnpm --dir apps/web build:wasm
 - pnpm format:check
 - pnpm lint

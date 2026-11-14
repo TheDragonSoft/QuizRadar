@@ -2727,4 +2727,462 @@ mod ffi_sync_tests {
             "explained provider body must surface instead of bare status code: {msg}"
         );
     }
+
+    #[tokio::test]
+    async fn exchange_oauth_code_handles_google_success_microsoft_errors_and_guards() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "tok-live-1",
+                "refresh_token": "ref-live-1",
+                "expires_in": 3600
+            })))
+            .mount(&server)
+            .await;
+
+        let ok_endpoint = format!("{}/token", server.uri());
+        let ok_json = tokio::task::spawn_blocking(move || {
+            exchange_oauth_code(
+                "google".to_string(),
+                "client-id-1".to_string(),
+                "auth-code-ok".to_string(),
+                "com.quizradar.app:/oauth/google".to_string(),
+                "verifier-1234567890123456789012345678901234567890".to_string(),
+                Some(ok_endpoint),
+            )
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        let parsed: OAuthTokensPayload = serde_json::from_str(&ok_json).unwrap();
+        assert_eq!(parsed.access_token, "tok-live-1");
+        assert_eq!(parsed.refresh_token.as_deref(), Some("ref-live-1"));
+        assert_eq!(parsed.expires_in, Some(3600));
+
+        // Unsupported provider and untrusted endpoint override fail before network.
+        assert!(exchange_oauth_code(
+            "github".to_string(),
+            "cid".to_string(),
+            "code".to_string(),
+            "com.quizradar.app:/oauth/github".to_string(),
+            "verifier".to_string(),
+            None,
+        )
+        .is_err());
+        assert!(exchange_oauth_code(
+            "google".to_string(),
+            "cid".to_string(),
+            "code".to_string(),
+            "com.quizradar.app:/oauth/google".to_string(),
+            "verifier".to_string(),
+            Some("https://evil.example.com/token".to_string()),
+        )
+        .is_err());
+
+        // Microsoft error response surfaces provider explanation.
+        server.reset().await;
+        Mock::given(method("POST"))
+            .and(path("/ms-token"))
+            .respond_with(
+                ResponseTemplate::new(400)
+                    .set_body_json(serde_json::json!({ "error": "invalid_grant" })),
+            )
+            .mount(&server)
+            .await;
+        let ms_endpoint = format!("{}/ms-token", server.uri());
+        let ms_err = tokio::task::spawn_blocking(move || {
+            exchange_oauth_code(
+                "microsoft".to_string(),
+                "ms-cid".to_string(),
+                "bad-code".to_string(),
+                "com.quizradar.app://oauth/microsoft".to_string(),
+                "verifier-1234567890123456789012345678901234567890".to_string(),
+                Some(ms_endpoint),
+            )
+        })
+        .await
+        .unwrap()
+        .unwrap_err()
+        .to_string();
+        assert!(ms_err.contains("HTTP 400"), "{ms_err}");
+
+        // 200 payload missing access_token fails loudly.
+        server.reset().await;
+        Mock::given(method("POST"))
+            .and(path("/empty-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .mount(&server)
+            .await;
+        let empty_endpoint = format!("{}/empty-token", server.uri());
+        let missing_err = tokio::task::spawn_blocking(move || {
+            exchange_oauth_code(
+                "google".to_string(),
+                "cid".to_string(),
+                "code".to_string(),
+                "com.quizradar.app:/oauth/google".to_string(),
+                "verifier-1234567890123456789012345678901234567890".to_string(),
+                Some(empty_endpoint),
+            )
+        })
+        .await
+        .unwrap()
+        .unwrap_err()
+        .to_string();
+        assert!(missing_err.contains("access_token"), "{missing_err}");
+    }
+
+    #[test]
+    fn oauth_url_builders_return_pkce_state_and_scopes() {
+        let g_raw = build_google_auth_url(
+            "cid-google".to_string(),
+            "com.quizradar.app:/oauth/google".to_string(),
+        )
+        .unwrap();
+        let g: OAuthUrlPayload = serde_json::from_str(&g_raw).unwrap();
+        assert!(g.url.contains("cid-google"), "{}", g.url);
+        assert!(!g.verifier.is_empty());
+        assert!(!g.state.is_empty());
+
+        let m_raw = build_microsoft_auth_url(
+            "cid-ms".to_string(),
+            "com.quizradar.app://oauth/microsoft".to_string(),
+        )
+        .unwrap();
+        let m: OAuthUrlPayload = serde_json::from_str(&m_raw).unwrap();
+        assert!(m.url.contains("cid-ms"), "{}", m.url);
+        assert!(!m.verifier.is_empty());
+        assert!(!m.state.is_empty());
+    }
+
+    #[test]
+    fn top_level_pure_ffi_helpers_round_trip() {
+        assert_eq!(core_version(), CORE_VERSION);
+        assert_eq!(
+            notification_id_for("gmail-1".to_string(), "1d".to_string()),
+            notification_id_for("gmail-1".to_string(), "1d".to_string())
+        );
+        let tkey = topic_key("gmail-1".to_string(), "Loops".to_string());
+        assert!(tkey.starts_with("gmail-1::"), "{tkey}");
+        assert!(!get_week_parity(TODAY_ISO.to_string()).unwrap().is_empty());
+
+        let course = Course {
+            id: "CSE241".to_string(),
+            name: "Data Structures".to_string(),
+            color: "#1a73e8".to_string(),
+            bg: None,
+            border: None,
+            credits: Some(3.0),
+            max_absences: Some(4),
+        };
+        let schedule = ScheduleData {
+            semester: Some("Fall 2026".to_string()),
+            academic_week_start: Some("Sunday".to_string()),
+            courses: vec![course],
+            slots: vec![ScheduleSlot {
+                id: "slot-1".to_string(),
+                day: "Mon".to_string(),
+                day_index: 1,
+                course_id: "CSE241".to_string(),
+                course_name: "Data Structures".to_string(),
+                slot_type: "Lecture".to_string(),
+                group: None,
+                room: None,
+                start_time: chrono::NaiveTime::from_hms_opt(10, 0, 0).unwrap(),
+                end_time: chrono::NaiveTime::from_hms_opt(11, 30, 0).unwrap(),
+                display_time: "10:00–11:30".to_string(),
+                has_quiz: false,
+                quiz_title: None,
+                week_parity: None,
+            }],
+        };
+        let schedule_json = serde_json::to_string(&schedule).unwrap();
+        let courses_json = serde_json::to_string(&schedule.courses).unwrap();
+
+        let email = CachedEmail {
+            id: "msg-1".to_string(),
+            subject: "CSE241 Quiz 1 tomorrow".to_string(),
+            from: "prof@uni.edu".to_string(),
+            date: "Thu, 22 Oct 2026 09:00:00 +0000".to_string(),
+            snippet: None,
+            body: "Class Quiz 1 on Loops tomorrow.".to_string(),
+            body_truncated: false,
+            internal_date_ms: None,
+            history_id: None,
+        };
+        let parsed_email = parse_email(
+            serde_json::to_string(&email).unwrap(),
+            schedule_json.clone(),
+            TODAY_ISO.to_string(),
+        )
+        .unwrap();
+        assert!(!parsed_email.is_empty());
+
+        let parsed_ics = parse_ics(
+            FEED_FIXTURE.to_string(),
+            schedule_json.clone(),
+            TODAY_ISO.to_string(),
+            OFFSET_SECS,
+        )
+        .unwrap();
+        assert!(parsed_ics.contains("Quiz 3"), "{parsed_ics}");
+
+        let item = dated_upcoming("gmail-1");
+        let undated = assessment_on("gmail-2", Some("CSE241"), "TBD Quiz", None, vec![]);
+        let assessments_json = serde_json::to_string(&vec![item.clone()]).unwrap();
+        let topics_json = "{}";
+        let events_json = "[]";
+        let grades_json = serde_json::to_string(&serde_json::json!({
+            "gmail-1": { "achieved_score": 18.0, "max_score": 20.0, "weightage_percent": 15.0 }
+        }))
+        .unwrap();
+
+        assert!(
+            !radar_order_list(assessments_json.clone(), TODAY_ISO.to_string())
+                .unwrap()
+                .is_empty()
+        );
+        assert!(!derive_dashboard_summary(
+            assessments_json.clone(),
+            topics_json.to_string(),
+            events_json.to_string(),
+            TODAY_ISO.to_string(),
+        )
+        .unwrap()
+        .is_empty());
+        let tasks_json = derive_study_tasks(
+            assessments_json.clone(),
+            topics_json.to_string(),
+            TODAY_ISO.to_string(),
+            "eng".to_string(),
+        )
+        .unwrap();
+        assert!(!tasks_json.is_empty());
+        assert!(!calculate_gpa(
+            courses_json,
+            assessments_json.clone(),
+            grades_json.clone(),
+            "4.0".to_string(),
+        )
+        .unwrap()
+        .is_empty());
+        assert!(!calculate_grade_target(
+            "CSE241".to_string(),
+            assessments_json.clone(),
+            grades_json,
+            "4.0".to_string(),
+            "A".to_string(),
+        )
+        .unwrap()
+        .is_empty());
+        let tasks_payload: crate::plan::tasks::StudyTasksPayload =
+            serde_json::from_str(&tasks_json).unwrap();
+        let flat_tasks: Vec<crate::plan::tasks::DailyStudyTask> = tasks_payload
+            .days
+            .into_iter()
+            .flat_map(|day| day.tasks)
+            .collect();
+        let flat_tasks_json = serde_json::to_string(&flat_tasks).unwrap();
+        assert!(!calculate_study_cushion(
+            schedule_json.clone(),
+            events_json.to_string(),
+            assessments_json.clone(),
+            flat_tasks_json,
+            TODAY_ISO.to_string(),
+            Some(15.0),
+        )
+        .unwrap()
+        .is_empty());
+        assert!(
+            !detect_schedule_conflicts(assessments_json.clone(), events_json.to_string())
+                .unwrap()
+                .is_empty()
+        );
+
+        let blocks = generate_study_blocks_for_exam(
+            serde_json::to_string(&item).unwrap(),
+            schedule_json.clone(),
+            events_json.to_string(),
+            TODAY_ISO.to_string(),
+        )
+        .unwrap();
+        assert!(blocks.contains("Study: Quiz 1"), "{blocks}");
+        assert_eq!(
+            generate_study_blocks_for_exam(
+                serde_json::to_string(&undated).unwrap(),
+                schedule_json,
+                events_json.to_string(),
+                TODAY_ISO.to_string(),
+            )
+            .unwrap(),
+            "[]"
+        );
+
+        let ics_single =
+            export_ics_calendar(assessments_json.clone(), Some("gmail-1".to_string())).unwrap();
+        assert!(ics_single.contains("BEGIN:VCALENDAR"), "{ics_single}");
+        assert!(export_ics_calendar(assessments_json.clone(), None)
+            .unwrap()
+            .contains("BEGIN:VCALENDAR"));
+        assert!(
+            export_ics_calendar(assessments_json.clone(), Some("missing".to_string())).is_err()
+        );
+
+        let mcq = generate_practice_mcq(serde_json::to_string(&item).unwrap()).unwrap();
+        assert!(mcq.contains("questions"), "{mcq}");
+        let merged = merge_sync_assessments("[]".to_string(), assessments_json).unwrap();
+        assert!(merged.contains("\"added\":1"), "{merged}");
+    }
+
+    #[tokio::test]
+    async fn native_store_crud_and_config_round_trip() {
+        let store = fresh_store();
+        assert!(!store
+            .get_state(TODAY_ISO.to_string())
+            .await
+            .unwrap()
+            .is_empty());
+
+        store
+            .set_config_string("user_email".to_string(), Some("ada@uni.edu".to_string()))
+            .await
+            .unwrap();
+        assert_eq!(
+            store
+                .get_config_string("user_email".to_string())
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("ada@uni.edu")
+        );
+        store
+            .set_config_bool("gemini_enabled".to_string(), true)
+            .await
+            .unwrap();
+        assert!(store
+            .get_config_bool("gemini_enabled".to_string(), false)
+            .await
+            .unwrap());
+
+        let course_json = serde_json::json!({
+            "id": "CSE241",
+            "name": "Data Structures",
+            "color": "#1a73e8"
+        })
+        .to_string();
+        let after_course = store
+            .upsert_course(
+                course_json,
+                "[]".to_string(),
+                NOW_ISO.to_string(),
+                TODAY_ISO.to_string(),
+            )
+            .await
+            .unwrap();
+        assert!(after_course.contains("CSE241"), "{after_course}");
+
+        let item = dated_upcoming("manual-1");
+        let after_add = store
+            .upsert_assessment(
+                serde_json::to_string(&item).unwrap(),
+                NOW_ISO.to_string(),
+                TODAY_ISO.to_string(),
+            )
+            .await
+            .unwrap();
+        assert!(after_add.contains("manual-1"), "{after_add}");
+
+        let tkey = topic_key("manual-1".to_string(), "Loops".to_string());
+        let _ = store
+            .toggle_topic(tkey, true, NOW_ISO.to_string(), TODAY_ISO.to_string())
+            .await
+            .unwrap();
+        let _ = store
+            .update_grade(
+                "manual-1".to_string(),
+                Some(19.0),
+                Some(20.0),
+                Some(10.0),
+                false,
+                false,
+                false,
+                NOW_ISO.to_string(),
+                TODAY_ISO.to_string(),
+            )
+            .await
+            .unwrap();
+
+        let event_json = serde_json::json!({
+            "id": "evt-1",
+            "title": "Lab Review",
+            "date": "2026-11-02",
+            "start_time": "12:00",
+            "end_time": "13:00"
+        })
+        .to_string();
+        let _ = store
+            .upsert_custom_event(event_json, NOW_ISO.to_string(), TODAY_ISO.to_string())
+            .await
+            .unwrap();
+        let _ = store
+            .delete_custom_event(
+                "evt-1".to_string(),
+                NOW_ISO.to_string(),
+                TODAY_ISO.to_string(),
+            )
+            .await
+            .unwrap();
+
+        let feed_json = serde_json::json!({
+            "id": "feed-1",
+            "name": "Registrar",
+            "url": "https://registrar.example.edu/cal.ics",
+            "enabled": true
+        })
+        .to_string();
+        let _ = store
+            .save_feed(feed_json, NOW_ISO.to_string(), TODAY_ISO.to_string())
+            .await
+            .unwrap();
+        let _ = store
+            .delete_feed(
+                "feed-1".to_string(),
+                NOW_ISO.to_string(),
+                TODAY_ISO.to_string(),
+            )
+            .await
+            .unwrap();
+
+        let backup = store
+            .export_backup(NOW_ISO.to_string(), TODAY_ISO.to_string())
+            .await
+            .unwrap();
+        let import_report = store
+            .import_backup(backup, NOW_ISO.to_string(), TODAY_ISO.to_string())
+            .await
+            .unwrap();
+        assert!(!import_report.is_empty());
+
+        let _ = store
+            .delete_assessment(
+                "manual-1".to_string(),
+                NOW_ISO.to_string(),
+                TODAY_ISO.to_string(),
+            )
+            .await
+            .unwrap();
+        let _ = store
+            .delete_course(
+                "CSE241".to_string(),
+                NOW_ISO.to_string(),
+                TODAY_ISO.to_string(),
+            )
+            .await
+            .unwrap();
+        let _ = store
+            .replace_assessments("[]".to_string(), NOW_ISO.to_string(), TODAY_ISO.to_string())
+            .await
+            .unwrap();
+        store.reset_all().await.unwrap();
+    }
 }

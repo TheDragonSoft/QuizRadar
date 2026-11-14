@@ -504,8 +504,19 @@ pub fn exchange_oauth_code(
 
         if !resp.status().is_success() {
             let status = resp.status();
+            let err_text = resp.text().await.unwrap_or_default();
+            let oauth_provider = if provider.eq_ignore_ascii_case("google") {
+                crate::auth::providers::OAuthProvider::Google
+            } else {
+                crate::auth::providers::OAuthProvider::Microsoft
+            };
+            let explained = crate::auth::providers::explain_oauth_error(oauth_provider, &err_text);
             return Err(QuizRadarFfiError::Validation {
-                msg: format!("OAuth token exchange returned HTTP {status}"),
+                msg: if explained.trim().is_empty() {
+                    format!("OAuth token exchange returned HTTP {status}")
+                } else {
+                    format!("OAuth token exchange returned HTTP {status}: {explained}")
+                },
             });
         }
 
@@ -2680,5 +2691,40 @@ mod ffi_sync_tests {
         assert_ne!(value["cancelled"], true, "{value}");
         assert_eq!(value["success"], true, "{value}");
         assert_eq!(value["totalNew"].as_u64(), Some(1), "{value}");
+    }
+
+    #[tokio::test]
+    async fn exchange_oauth_code_explains_google_http_error_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(
+                ResponseTemplate::new(400)
+                    .set_body_json(serde_json::json!({ "error": "redirect_uri_mismatch" })),
+            )
+            .mount(&server)
+            .await;
+
+        let endpoint = format!("{}/token", server.uri());
+        let err = tokio::task::spawn_blocking(move || {
+            exchange_oauth_code(
+                "google".to_string(),
+                "client-id-1".to_string(),
+                "auth-code-1".to_string(),
+                "com.quizradar.app:/oauth/google".to_string(),
+                "verifier-1234567890123456789012345678901234567890".to_string(),
+                Some(endpoint),
+            )
+        })
+        .await
+        .unwrap()
+        .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(msg.contains("HTTP 400"), "{msg}");
+        assert!(
+            msg.to_lowercase().contains("redirect"),
+            "explained provider body must surface instead of bare status code: {msg}"
+        );
     }
 }

@@ -222,10 +222,13 @@ fun DashboardScreen(
             }
         }
 
+    val isGoogleConnected by viewModel.googleConnected.collectAsState()
+    val isMicrosoftConnected by viewModel.microsoftConnected.collectAsState()
+
     val coursesDone = snapshot.schedule.courses.isNotEmpty()
     val accountsConnected =
-        (if (viewModel.isGoogleConnected()) 1 else 0) +
-            (if (viewModel.isMicrosoftConnected()) 1 else 0)
+        (if (isGoogleConnected) 1 else 0) +
+            (if (isMicrosoftConnected) 1 else 0)
     val feedsEnabled = snapshot.feeds.count { it.enabled }
     // A source is "done" when this phone can really scan something: a signed
     // in account and/or an enabled .ics feed.

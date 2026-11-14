@@ -5,7 +5,11 @@ import android.content.Intent
 import android.net.Uri
 import androidx.browser.customtabs.CustomTabsIntent
 import com.quizradar.app.core.QuizRadarEngine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 
 /**
  * Result of processing a deep-link callback from an OAuth provider or pairing action.
@@ -141,6 +145,7 @@ class OAuthManager(
         uri: Uri,
         engine: QuizRadarEngine,
         tokenEndpointOverride: String? = null,
+        userInfoEndpointOverride: String? = null,
     ): OAuthRedirectResult {
         if (uri.scheme != "com.quizradar.app") {
             return OAuthRedirectResult.Error("Unsupported URI scheme: ${uri.scheme}")
@@ -274,19 +279,30 @@ class OAuthManager(
                 return OAuthRedirectResult.Error("Token exchange failed: $hint")
             }
             val refreshToken = tokens.optString("refresh_token").takeIf { it.isNotBlank() }
+            val expiresInSec = tokens.optLong("expires_in", -1L).takeIf { it > 0 }
 
             if (provider == "google") {
                 engine.tokenProvider.setGoogleAccessToken(accessToken)
                 engine.tokenProvider.setGoogleAccessTokenIssuedAtMs(System.currentTimeMillis())
+                engine.tokenProvider.setGoogleAccessTokenExpiresInSec(expiresInSec)
                 if (refreshToken != null) {
                     engine.tokenProvider.setGoogleRefreshToken(refreshToken)
                 }
             } else {
                 engine.tokenProvider.setMicrosoftAccessToken(accessToken)
                 engine.tokenProvider.setMicrosoftAccessTokenIssuedAtMs(System.currentTimeMillis())
+                engine.tokenProvider.setMicrosoftAccessTokenExpiresInSec(expiresInSec)
                 if (refreshToken != null) {
                     engine.tokenProvider.setMicrosoftRefreshToken(refreshToken)
                 }
+            }
+            if (tokenEndpointOverride == null || userInfoEndpointOverride != null) {
+                hydrateSignedInProfile(
+                    provider = provider,
+                    accessToken = accessToken,
+                    engine = engine,
+                    userInfoEndpointOverride = userInfoEndpointOverride,
+                )
             }
             clearPendingState()
             OAuthRedirectResult.Success(provider)
@@ -319,6 +335,78 @@ class OAuthManager(
         return if (host.isEmpty()) path else "$host/$path"
     }
 
+    private suspend fun hydrateSignedInProfile(
+        provider: String,
+        accessToken: String,
+        engine: QuizRadarEngine,
+        userInfoEndpointOverride: String?,
+    ) {
+        val targetUrl =
+            userInfoEndpointOverride
+                ?: if (provider == "google") {
+                    GOOGLE_USERINFO_URL
+                } else {
+                    MICROSOFT_ME_URL
+                }
+        val parsed =
+            withContext(Dispatchers.IO) {
+                fetchUserProfileJson(targetUrl, accessToken)
+            } ?: return
+        if (provider == "google") {
+            parsed.optString("email").trim().takeIf { it.isNotEmpty() }?.let { email ->
+                engine.setConfigString("user_email", email)
+            }
+            parsed.optString("name").trim().takeIf { it.isNotEmpty() }?.let { name ->
+                engine.setConfigString("user_name", name)
+            }
+            parsed.optString("picture").trim().takeIf { it.isNotEmpty() }?.let { picture ->
+                engine.setConfigString("user_picture", picture)
+            }
+        } else {
+            parsed.optString("displayName").trim().takeIf { it.isNotEmpty() }?.let { name ->
+                engine.setConfigString("teams_account_name", name)
+            }
+            val email =
+                parsed.optString("mail").trim().ifBlank {
+                    parsed.optString("userPrincipalName").trim()
+                }
+            if (email.isNotEmpty()) {
+                engine.setConfigString("teams_account_email", email)
+            }
+        }
+    }
+
+    private fun fetchUserProfileJson(
+        targetUrl: String,
+        accessToken: String,
+    ): JSONObject? =
+        runCatching {
+            val uri = Uri.parse(targetUrl)
+            val scheme = uri.scheme?.lowercase()
+            val host = uri.host?.lowercase()
+            val isAllowedProd =
+                scheme == "https" &&
+                    (host == "www.googleapis.com" || host == "graph.microsoft.com")
+            val isAllowedLoopback =
+                scheme == "http" &&
+                    (host == "127.0.0.1" || host == "localhost" || host == "::1")
+            if (!isAllowedProd && !isAllowedLoopback) return@runCatching null
+
+            val conn = (URL(targetUrl).openConnection() as? HttpURLConnection) ?: return@runCatching null
+            try {
+                conn.requestMethod = "GET"
+                conn.connectTimeout = 5_000
+                conn.readTimeout = 5_000
+                conn.setRequestProperty("Authorization", "Bearer $accessToken")
+                conn.setRequestProperty("Accept", "application/json")
+                if (conn.responseCode !in 200..299) return@runCatching null
+                val body = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                JSONObject(body)
+            } finally {
+                conn.disconnect()
+            }
+        }.getOrNull()
+
     fun clearPendingState() {
         pendingProvider = null
         pendingVerifier = null
@@ -347,6 +435,8 @@ class OAuthManager(
          */
         const val GOOGLE_REDIRECT_URI = "com.quizradar.app:/oauth/google"
         const val MICROSOFT_REDIRECT_URI = "com.quizradar.app://oauth/microsoft"
+        const val GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
+        const val MICROSOFT_ME_URL = "https://graph.microsoft.com/v1.0/me"
 
         /**
          * The maintainer's Google OAuth client id (project

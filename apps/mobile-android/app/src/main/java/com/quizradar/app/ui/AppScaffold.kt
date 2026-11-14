@@ -142,6 +142,8 @@ fun AppScaffold(
     val toastMessage by viewModel.toastMessage.collectAsState()
     val userName by viewModel.userName.collectAsState()
     val userEmail by viewModel.userEmail.collectAsState()
+    val isGoogleConnected by viewModel.googleConnected.collectAsState()
+    val isMicrosoftConnected by viewModel.microsoftConnected.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState(initial = "system")
@@ -262,6 +264,7 @@ fun AppScaffold(
                     onImportBackup = {
                         backupPickerLauncher.launch("application/json")
                     },
+                    snackbarHostState = snackbarHostState,
                 )
                 return
             }
@@ -282,6 +285,7 @@ fun AppScaffold(
                         isSettingsOpen = false
                         viewModel.reRunOnboarding()
                     },
+                    snackbarHostState = snackbarHostState,
                 )
                 return
             }
@@ -537,7 +541,7 @@ fun AppScaffold(
 
                                     // Profile / Avatar Button
                                     val hasAccounts =
-                                        viewModel.isGoogleConnected() || viewModel.isMicrosoftConnected()
+                                        isGoogleConnected || isMicrosoftConnected
                                     IconButton(
                                         onClick = { isAccountOpen = true },
                                         modifier =
@@ -872,8 +876,8 @@ fun AppScaffold(
                                 // Account & Connections Sheet
                                 if (isAccountOpen) {
                                     AccountSheet(
-                                        isGoogleConnected = viewModel.isGoogleConnected(),
-                                        isMicrosoftConnected = viewModel.isMicrosoftConnected(),
+                                        isGoogleConnected = isGoogleConnected,
+                                        isMicrosoftConnected = isMicrosoftConnected,
                                         sheetState = accountSheetState,
                                         onDismiss = { isAccountOpen = false },
                                         onStartGoogleLogin = onStartGoogleLogin,

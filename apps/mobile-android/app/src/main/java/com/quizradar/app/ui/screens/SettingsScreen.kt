@@ -43,6 +43,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -121,10 +123,13 @@ fun SettingsScreen(
     onStartGoogleLogin: () -> Unit = {},
     onStartMicrosoftLogin: () -> Unit = {},
     onReRunOnboarding: () -> Unit = {},
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
+    val isGoogleConnected by viewModel.googleConnected.collectAsState()
+    val isMicrosoftConnected by viewModel.microsoftConnected.collectAsState()
     // Status greens need a theme-aware variant: the old #047857 measured
     // 3.21:1 on the dark background, below the 4.5:1 body text needs.
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
@@ -273,6 +278,7 @@ fun SettingsScreen(
         }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             Column {
                 TopAppBar(
@@ -432,7 +438,6 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     // Google Account Card
-                    val isGoogleConnected = viewModel.isGoogleConnected()
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -480,7 +485,6 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     // Microsoft Account Card
-                    val isMicrosoftConnected = viewModel.isMicrosoftConnected()
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -897,7 +901,7 @@ fun SettingsScreen(
                     // The REAL Google Calendar push (Settings action). Visible
                     // only when a Google account is signed in - the button
                     // would otherwise only ever produce an honest "skipped".
-                    if (viewModel.isGoogleConnected()) {
+                    if (isGoogleConnected) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1492,7 +1496,7 @@ fun SettingsScreen(
                     // user action - never a background sync). The payload is
                     // built by the Rust core and structurally cannot carry
                     // tokens. "No backup found" is the honest empty state.
-                    if (viewModel.isGoogleConnected()) {
+                    if (isGoogleConnected) {
                         Spacer(modifier = Modifier.height(16.dp))
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         Spacer(modifier = Modifier.height(12.dp))

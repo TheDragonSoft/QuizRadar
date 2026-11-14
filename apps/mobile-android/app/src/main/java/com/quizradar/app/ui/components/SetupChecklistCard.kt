@@ -62,9 +62,11 @@ fun SetupChecklistCard(
 ) {
     val context = LocalContext.current
     val notifyExam24h by viewModel.notifyExam24h.collectAsState()
+    val isGoogleConnected by viewModel.googleConnected.collectAsState()
+    val isMicrosoftConnected by viewModel.microsoftConnected.collectAsState()
 
     val coursesDone = snapshot.schedule.courses.isNotEmpty()
-    val sourcesDone = viewModel.isGoogleConnected() || viewModel.isMicrosoftConnected()
+    val sourcesDone = isGoogleConnected || isMicrosoftConnected
     val remindersDone = hasNotificationPermission && notifyExam24h
     val totalDone = listOf(coursesDone, sourcesDone, remindersDone).count { it }
 

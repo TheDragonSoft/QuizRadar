@@ -3,21 +3,22 @@ bump: minor
 surfaces: [web, android, tooling]
 agent: zcode
 branch: feat/ui-workbench
-date: 2026-11-13
+date: 2026-11-14
 ---
 
 ### Summary
 
-Web UI workbench v2 (Ladle 5): complete per-element UI playground for apps/web. 40+ stories: the four views, ALL 13 registered modals rendered through the real ModalStack (modalSetup.ts mirrors App.tsx registrations - keep in sync), the shell chrome (TopBar, Sidebar, MobileNav, PullToRefresh, PrintScheduleDoc, SearchDropdown, brand marks), and every dashboard/calendar card (CalendarGrid, DailyStudyRoadmap, StudyStatsCard full+compact, TimelineHorizon, NextUpHero loaded+empty, StudyRecommendationCard, TimelineRow, all three empty states). Everything seeded from the real core-produced contract payloads re-dated by one uniform delta; calendar grid seams (currentWeekStart, selectedCalendarDate, layers) pinned to the fixture week. Theme fixes from maintainer feedback: the URL ?theme= param now documents the app's real theme surface (5 ids; light/dark are generic MODES the app normalizes onto Solar/Obsidian - AMOLED Pure/Sparkle were retired from the app), supports ?theme=system (OS preference), and the decorator paints the canvas with the real page tokens (bare components no longer float on Ladle's gray canvas - that was the 'weird' look). Phone coverage: capture pass at a real 390x844 viewport with mode=preview - Tailwind breakpoints follow the viewport, so MobileNav, PullToRefresh and every view render exactly as on a phone. Captured ~100 screenshots into gitignored target/wb-shots. Per-surface AGENTS.md guides; workbench docs list all URL params.
+Web UI workbench final (Ladle 5): 92 stories covering every surface in every state. (1) Modal state matrix: all 13 registered modals x their meaningful states (assessment detail with-room/no-room/graded/with-warnings, onboarding fresh/populated, practice quiz ready-via-mocked-rpc/generating/error/no-assessment, pomodoro idle/running/paused/short-break, scan progress syncing/success/error, cloud sync never/last-backup, account profile signed-in/out, search palette matches/none/empty, app confirm destructive/non-destructive, create-edit assessment+event new/editing, add course populated/empty-schedule, schedule preview clean/dropped). Backend-bound states use the blessed setRpcMockHandler seam. (2) Phone section: views render inside PhoneAppShell (mirrored line-for-line from App.tsx: TopBar, self-hiding Sidebar, PullToRefresh main with px-4, MobileNav) - bare views overflow horizontally and read as desktop fragments, the shell absorbs the -mx-4 hero bleed; Phone/* stories mount them in live 390x844 iframes (real nested viewport, real breakpoints), verified 0 horizontal overflow at 390px. (3) Theme system fixed: Ladle banner button drives the story (theme-bridge.css teaches ladle.css the app's dark ids; observer only syncs Tailwind .dark, never rewrites the attribute; applyThemeToDocument must never run inside an observer - View Transitions wedge). (4) Assessment-detail stories render through the real ModalStack. (5) Per-surface AGENTS.md guides + housekeeping (audit docs committed, scratch deleted). Verified: tsc/eslint/prettier clean, pnpm -r test 472 passed, capture 118 shots 0 page errors, preflight version check.
 
 ### Verification
 
 - pnpm lint
-- pnpm --dir apps/web exec tsc --noEmit -p tsconfig.json
-- pnpm exec prettier --check apps/web/src/stories apps/web/.ladle
-- node target/wb-shots/capture.mjs
+- pnpm typecheck
+- pnpm test
+- node tooling/generate-version.mjs --check
+- node target/wb-shots/capture.mjs (118 shots, 0 errors)
 
 ### Handoff / Follow-ups
 
-- Ladle 5.1.1 applies .ladle/components.tsx decorators unreliably - stories seed themselves via workbenchFixtures.seedWorkbench and theming is URL-param driven
-- if a future Ladle applies decorators the globals control can replace the URL param. NEVER call applyThemeToDocument inside a MutationObserver - its View Transitions path wedges initial load (the observer writes attributes directly). Paparazzi 1.3.5 JVM screenshots + Android debug @Preview gallery remain open follow-ups. Full format:check still fails on 31 pre-existing files (untouched).
+- Ladle builds its story list at server startup - restart pnpm --dir apps/web ladle after adding stories. Ladle 5.1.1 applies .ladle/components.tsx decorators unreliably
+- stories self-seed via workbenchFixtures and themes are URL-param driven. NEVER call applyThemeToDocument inside a MutationObserver (View Transitions wedge). Paparazzi 1.3.5 JVM screenshots + Android debug @Preview gallery remain open follow-ups. Full format:check still fails on 31 pre-existing files (untouched by this branch).

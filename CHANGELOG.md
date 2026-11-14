@@ -2,6 +2,20 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.15.0] — 2026-11-14
+
+### 🤝 Agent & Contributor Summaries
+
+- **[web, android, tooling, docs]** Remediate cross-platform UX audit findings across Android Compose and Web, add dynamic empty-day calendar column filtering on both platforms, tune dynamic Android period grid lines, redesign Focus timer and Web TimelineHorizon cards, and add AuditRenderHarness plus Web component/capture test coverage.
+
+### 🚀 New Features
+
+- `9367853` feat(ui): remediate UX audit findings and add dynamic empty-day calendar layout
+
+### 🔧 Maintenance, Docs & Tests
+
+- `1a599f0` Merge pull request #29 from TheDragonSoft/fix/ux-audit-remediation
+
 ## [5.14.0] — 2026-11-14
 
 ### 🤝 Agent & Contributor Summaries

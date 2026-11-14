@@ -64,9 +64,11 @@ export const StudyStatsCard: React.FC<StudyStatsCardProps> = ({
           </div>
           <div className="text-xs">
             <span className="font-bold tabular-nums text-slate-900 dark:text-white">
-              {stats.studyStreakDays}d
+              {stats.studyStreakDays}
             </span>
-            <span className="ml-1 text-[11px] text-slate-500 dark:text-slate-400">streak</span>
+            <span className="ml-1 text-[11px] text-slate-500 dark:text-slate-400">
+              {stats.studyStreakDays === 1 ? "day" : "days"}
+            </span>
           </div>
         </div>
       </div>
@@ -149,7 +151,7 @@ export const StudyStatsCard: React.FC<StudyStatsCardProps> = ({
         <div className="flex flex-col justify-between rounded-xl border border-slate-100 bg-slate-50/70 p-3 dark:border-slate-800/60 dark:bg-slate-800/40">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400">
-              Surviving Radar
+              Active Radar
             </span>
             <CalendarClock
               className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400"

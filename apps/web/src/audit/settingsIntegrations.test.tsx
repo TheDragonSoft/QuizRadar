@@ -102,4 +102,12 @@ describe("Settings → Integrations", () => {
 
     expect(unnamed.map((el) => el.outerHTML)).toEqual([]);
   });
+
+  it("does not show browser-tier dead-end GCal push button or [Mobile only] notification prefs", () => {
+    render(<SettingsIntegrationsSection />);
+    expect(
+      screen.queryByRole("button", { name: /Sync to Google Calendar Now/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/\[Mobile only\]/i)).not.toBeInTheDocument();
+  });
 });

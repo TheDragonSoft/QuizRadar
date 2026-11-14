@@ -1,5 +1,6 @@
 package com.quizradar.app.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -186,11 +187,20 @@ fun GradeCenterScreen(
 
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val courses = snapshot.schedule.courses
+    val courseCreditsById = remember(courses) { courses.associate { it.id to it.credits } }
 
     var scaleKey by rememberSaveable { mutableStateOf("4.0") }
     var selectedCourseId by rememberSaveable { mutableStateOf("") }
     // Reset per scale: each scale has its own letter set (or numeric entry).
-    var targetLetter by rememberSaveable(scaleKey) { mutableStateOf("B") }
+    var targetLetter by rememberSaveable(scaleKey) {
+        mutableStateOf(
+            when (scaleKey) {
+                "uk_honors" -> "2:1"
+                "percentage" -> ""
+                else -> "B"
+            },
+        )
+    }
     var percentTargetDraft by rememberSaveable(scaleKey) { mutableStateOf("") }
     var percentTargetError by rememberSaveable(scaleKey) { mutableStateOf<String?>(null) }
 
@@ -257,6 +267,7 @@ fun GradeCenterScreen(
         GpaHistoryCard(
             gpaSummaryJson = gpaSummaryJson,
             scaleLabel = scale.label,
+            courseCreditsById = courseCreditsById,
         )
 
         if (courses.isEmpty()) {
@@ -305,6 +316,7 @@ fun GradeCenterScreen(
                             achieved = record?.achievedScore ?: assessment.achievedScore,
                             maxScore = record?.maxScore ?: assessment.maxScore,
                             weight = record?.weightagePercent ?: assessment.weightagePercent,
+                            onClick = { viewModel.openAssessmentDetail(assessment.id) },
                         )
                     }
                 }
@@ -490,12 +502,20 @@ private fun GradedItemRow(
     achieved: Double?,
     maxScore: Double?,
     weight: Double?,
+    onClick: (() -> Unit)? = null,
 ) {
     Row(
         modifier =
             Modifier
                 .fillMaxWidth()
                 .defaultMinSize(minHeight = 56.dp)
+                .then(
+                    if (onClick != null) {
+                        Modifier.clickable(onClick = onClick)
+                    } else {
+                        Modifier
+                    },
+                )
                 .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

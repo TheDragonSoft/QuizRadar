@@ -71,6 +71,39 @@ class CalendarScreenWindowTest {
                 """
                 [
                     {
+                        "id": "slot-sun",
+                        "day": "Sunday",
+                        "course_id": "CS101",
+                        "course_name": "Intro to CS",
+                        "type": "Lab",
+                        "start_time": "10:00",
+                        "end_time": "11:30",
+                        "display_time": "10:00-11:30",
+                        "room": "Lab 1"
+                    },
+                    {
+                        "id": "slot-mon",
+                        "day": "Monday",
+                        "course_id": "CS101",
+                        "course_name": "Intro to CS",
+                        "type": "Tutorial",
+                        "start_time": "13:00",
+                        "end_time": "14:00",
+                        "display_time": "13:00-14:00",
+                        "room": "A-101"
+                    },
+                    {
+                        "id": "slot-tue",
+                        "day": "Tuesday",
+                        "course_id": "CS101",
+                        "course_name": "Intro to CS",
+                        "type": "Seminar",
+                        "start_time": "15:00",
+                        "end_time": "16:00",
+                        "display_time": "15:00-16:00",
+                        "room": "A-102"
+                    },
+                    {
                         "id": "slot-wed",
                         "day": "Wednesday",
                         "course_id": "CS101",
@@ -80,6 +113,28 @@ class CalendarScreenWindowTest {
                         "end_time": "10:30",
                         "display_time": "09:00-10:30",
                         "room": "B-204"
+                    },
+                    {
+                        "id": "slot-thu",
+                        "day": "Thursday",
+                        "course_id": "CS101",
+                        "course_name": "Intro to CS",
+                        "type": "Lecture",
+                        "start_time": "11:00",
+                        "end_time": "12:00",
+                        "display_time": "11:00-12:00",
+                        "room": "B-205"
+                    },
+                    {
+                        "id": "slot-sat",
+                        "day": "Saturday",
+                        "course_id": "CS101",
+                        "course_name": "Intro to CS",
+                        "type": "Workshop",
+                        "start_time": "12:00",
+                        "end_time": "13:00",
+                        "display_time": "12:00-13:00",
+                        "room": "C-301"
                     }
                 ]
                 """.trimIndent(),
@@ -110,14 +165,24 @@ class CalendarScreenWindowTest {
         composeTestRule.onNodeWithContentDescription("Monday, 26 October").assertIsDisplayed()
         composeTestRule.onNodeWithContentDescription("Monday, 26 October").assertIsSelected()
 
-        // Sunday is today and has no items: its state description says so.
+        // Empty Friday is dynamically hidden from the active week strip and grid.
+        check(
+            composeTestRule
+                .onAllNodesWithContentDescription("Friday, 30 October")
+                .fetchSemanticsNodes()
+                .isEmpty(),
+        ) {
+            "Empty Friday must be hidden from the dynamic calendar strip"
+        }
+
+        // Sunday is today and has items: its state description says so.
         val sundayState =
             composeTestRule
                 .onNodeWithContentDescription("Sunday, 25 October")
                 .fetchSemanticsNode()
                 .config[SemanticsProperties.StateDescription]
-        check(sundayState == "Today") {
-            "Sunday cell state description was '$sundayState', expected 'Today'"
+        check(sundayState == "Today, Has items") {
+            "Sunday cell state description was '$sundayState', expected 'Today, Has items'"
         }
 
         // 2. The grid window re-anchored onto the selected Monday: Wednesday's
@@ -222,5 +287,88 @@ class CalendarScreenWindowTest {
 
         // One status label for the selected day's card; the day is empty.
         composeTestRule.onAllNodesWithText("Clear day").onFirst().assertExists()
+    }
+
+    @Test
+    fun weekAndThreeDayViews_hideEmptyDaysDynamically_andShowAllWhenWeekIsEmpty() {
+        val testDate = LocalDate.parse("2026-10-25") // Sunday, week start
+        val engine = QuizRadarEngine.createInMemory(coreDispatcher = Dispatchers.Unconfined)
+
+        // Start with Mon (lecture) + Thu (custom study block) only -> 5 empty days hidden.
+        runBlocking {
+            engine.upsertCourse(
+                """{ "id": "CS101", "name": "Intro to CS", "color": "#1a73e8" }""",
+                """
+                [
+                    {
+                        "id": "slot-mon",
+                        "day": "Monday",
+                        "course_id": "CS101",
+                        "course_name": "Intro to CS",
+                        "type": "Lecture",
+                        "start_time": "09:00",
+                        "end_time": "10:30",
+                        "display_time": "09:00-10:30",
+                        "room": "B-204"
+                    }
+                ]
+                """.trimIndent(),
+                testDate,
+            )
+            engine.upsertCustomEvent(
+                """
+                {
+                    "id": "evt-thu",
+                    "title": "Quiz Prep",
+                    "date_iso": "2026-10-29",
+                    "start_time": "14:00",
+                    "end_time": "15:00"
+                }
+                """.trimIndent(),
+                testDate,
+            )
+        }
+
+        val viewModel = QuizRadarViewModel(engine, coreDispatcher = Dispatchers.Main.immediate) { testDate }
+        viewModel.loadState()
+
+        composeTestRule.setContent {
+            QuizRadarTheme {
+                val state = viewModel.uiState.collectAsState().value
+                if (state is UiState.Ready) {
+                    CalendarScreen(snapshot = state.snapshot, viewModel = viewModel)
+                }
+            }
+        }
+        composeTestRule.waitForIdle()
+
+        // Switch to Week mode: only Mon and Thu columns render; empty days are removed.
+        composeTestRule.onNodeWithText("Week").performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onAllNodesWithContentDescription("MON 08:00", substring = true).onFirst().assertExists()
+        composeTestRule.onAllNodesWithContentDescription("THU 08:00", substring = true).onFirst().assertExists()
+        check(composeTestRule.onAllNodesWithContentDescription("SUN 08:00", substring = true).fetchSemanticsNodes().isEmpty())
+        check(composeTestRule.onAllNodesWithContentDescription("TUE 08:00", substring = true).fetchSemanticsNodes().isEmpty())
+        check(composeTestRule.onAllNodesWithContentDescription("FRI 08:00", substring = true).fetchSemanticsNodes().isEmpty())
+
+        // Adding a class or event on Tuesday dynamically restores Tuesday's column.
+        runBlocking {
+            engine.upsertCustomEvent(
+                """
+                {
+                    "id": "evt-tue",
+                    "title": "Tutorial Review",
+                    "date_iso": "2026-10-27",
+                    "start_time": "11:00",
+                    "end_time": "12:00"
+                }
+                """.trimIndent(),
+                testDate,
+            )
+        }
+        viewModel.loadState()
+        composeTestRule.waitForIdle()
+        composeTestRule.onAllNodesWithContentDescription("TUE 08:00", substring = true).onFirst().assertExists()
     }
 }

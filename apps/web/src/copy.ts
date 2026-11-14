@@ -16,7 +16,7 @@ export const copy = {
     tasks: "Tasks",
     calendar: "Calendar",
     focus: "Focus",
-    help: "Help & Tiers",
+    help: "Help",
   },
 
   topBar: {
@@ -196,7 +196,7 @@ export const copy = {
       unresolvedTitle: (count: number) =>
         `Exam Overload & Schedule Conflict Detected (${count} conflict${count > 1 ? "s" : ""})`,
       autoScheduleAction: "Auto-Schedule Study Blocks",
-      balancedFlightPathAction: "Draft Balanced Study Flight Path",
+      balancedFlightPathAction: "Balance Study Schedule",
       mitigatedTitle: (count: number) =>
         `Exam Overload Mitigated (${count} Active Study Preparation Blocks)`,
       mitigatedBadge: "Protected",
@@ -211,7 +211,7 @@ export const copy = {
       blocksCreated: (count: number) =>
         `Added ${count} study block${count === 1 ? "" : "s"} to your timetable`,
       balancedPathCreated: (count: number) =>
-        `Drafted ${count} balanced, interleaved study block${count === 1 ? "" : "s"} across your week calendar to resolve exam overload`,
+        `Added ${count} balanced study block${count === 1 ? "" : "s"} across your week calendar to spread out your exam prep`,
       blocksSkippedUndated: (count: number) =>
         `Skipped ${count} assessment${count === 1 ? "" : "s"} without a confirmed date — no study block was added`,
       blocksNoWindow:
@@ -219,14 +219,13 @@ export const copy = {
     },
 
     recommendationsTitle: "What Should I Study?",
-    recommendationsEmpty: "No active study recommendations. You're all caught up!",
+    recommendationsEmpty: "No active study recommendations yet.",
     studyEmptyTitle: "Add your first course to build your study plan",
     studyEmptyBody:
       "QuizRadar turns your weekly timetable and announcements into deadline countdowns and a “what should I study” plan.",
     studyEmptyAddCourse: "Add Course",
-    studyAllClearTitle: "All Clear for Now!",
-    studyAllClearBody:
-      "No pending study plans or overdue quizzes. You're completely up to date with your academic radar!",
+    studyAllClearTitle: "No Pending Exams or Study Plans",
+    studyAllClearBody: "Add a quiz, exam, or assignment to start building your study schedule.",
     studyAddCustomEvent: "Add Custom Quiz or Exam",
     connectAccount: "Connect Account",
     scrollBadge: "Scroll",
@@ -307,7 +306,7 @@ export const copy = {
     nextWeek: "Next week",
     jumpToToday: "Jump to Today",
     legendExam: "Exam / Quiz",
-    legendClass: "Class Slot",
+    legendClass: "Class Time",
     legendCustom: "Custom / Study Block",
     exportAllIcs: "Export all (.ics)",
     timeGutterAria: "Time of day",
@@ -496,9 +495,6 @@ export const copy = {
     gcalAutoPush: "Auto-sync assessments to Google Calendar (consents first)",
     gcalClassesPush: "Sync weekly timetable classes to Google Calendar",
     gcalPushNow: "Sync to Google Calendar Now",
-    notificationPrefsTitle: "Notification Preferences",
-    notificationPrefsNote:
-      "[Mobile only] Notification scheduling operates natively on Android with T-24h and morning digest alerts.",
     moodleTitle: "Moodle LMS Integration",
     moodleIcalPrimaryLabel: "Moodle Calendar Export URL (.ics — primary)",
     moodleIcalPrimaryHelp:
@@ -522,7 +518,7 @@ export const copy = {
     feedUrlPlaceholder: "https://example.com/calendar.ics",
     feedHttpsError: "Feed URL must start with https://",
     noFeeds: "No external .ics feeds subscribed.",
-    backupHeader: "Data Backup, Migration & Device Pairing",
+    backupHeader: "Data Backup & Migration",
     exportBackup: "Export Backup (JSON)",
     importBackup: "Import Backup (JSON)",
     pairPhoneTitle: "Transfer to Android Mobile",
@@ -604,7 +600,7 @@ export const copy = {
     nameLabel: "Course Name (e.g. Digital Logic Design)",
     colorLabel: "Course Color Palette",
     colorOption: (hex: string) => `Use course colour ${hex}`,
-    slotsHeader: "Weekly Recurring Class Slots",
+    slotsHeader: "Weekly Class Times",
     addSlot: "Add Class Slot",
     dayLabel: "Day",
     timeLabel: "Time (HH:MM)",

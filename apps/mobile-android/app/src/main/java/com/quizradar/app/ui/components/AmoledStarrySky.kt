@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 
@@ -94,11 +95,13 @@ private val AMOLED_STARS: List<CelestialStar> =
         CelestialStar(0.96f, 0.96f, 1.3f, 0.75f),
     )
 
+private const val MAX_STAR_ALPHA = 0.56f
+
 @Composable
 fun AmoledStarrySky(modifier: Modifier = Modifier) {
     val infiniteTransition = rememberInfiniteTransition(label = "star_twinkle_transition")
     val twinklePulse by infiniteTransition.animateFloat(
-        initialValue = 0.82f,
+        initialValue = 0.76f,
         targetValue = 1.0f,
         animationSpec =
             infiniteRepeatable(
@@ -109,6 +112,38 @@ fun AmoledStarrySky(modifier: Modifier = Modifier) {
     )
 
     Canvas(modifier = modifier) {
+        drawRect(color = Color.Black)
+        // Subtle deep-space zenith nebula glow so the starfield has depth while
+        // preserving true-black AMOLED contrast across the main viewport.
+        drawCircle(
+            brush =
+                Brush.radialGradient(
+                    colors =
+                        listOf(
+                            Color(0xFF1E1B4B).copy(alpha = 0.34f),
+                            Color(0xFF0F172A).copy(alpha = 0.14f),
+                            Color.Transparent,
+                        ),
+                    center = Offset(size.width * 0.24f, size.height * 0.12f),
+                    radius = size.width * 0.72f,
+                ),
+            radius = size.width * 0.72f,
+            center = Offset(size.width * 0.24f, size.height * 0.12f),
+        )
+        drawCircle(
+            brush =
+                Brush.radialGradient(
+                    colors =
+                        listOf(
+                            Color(0xFF172554).copy(alpha = 0.26f),
+                            Color.Transparent,
+                        ),
+                    center = Offset(size.width * 0.82f, size.height * 0.20f),
+                    radius = size.width * 0.58f,
+                ),
+            radius = size.width * 0.58f,
+            center = Offset(size.width * 0.82f, size.height * 0.20f),
+        )
         drawAmoledStars(AMOLED_STARS, twinklePulse)
     }
 }
@@ -119,34 +154,51 @@ private fun DrawScope.drawAmoledStars(
 ) {
     stars.forEach { star ->
         val center = Offset(size.width * star.x, size.height * star.y)
-        val alpha = (star.alpha * twinkleScale).coerceIn(0f, 1f)
+        val alpha = (star.alpha * MAX_STAR_ALPHA * twinkleScale).coerceIn(0f, MAX_STAR_ALPHA)
 
         val coreColor =
             if (star.isGold) {
                 Color(0xFFFEF08A).copy(alpha = alpha)
             } else {
-                Color.White.copy(alpha = alpha)
+                Color(0xFFF8FAFC).copy(alpha = alpha)
             }
 
-        // Soft celestial diffraction bloom
+        // Outer atmospheric halo
         drawCircle(
-            color = if (star.isGold) Color(0xFFFDE68A).copy(alpha = alpha * 0.35f) else Color(0xFFC7D2FE).copy(alpha = alpha * 0.35f),
-            radius = star.radius * 2.8f,
+            color =
+                if (star.isGold) {
+                    Color(0xFFF59E0B).copy(alpha = alpha * 0.14f)
+                } else {
+                    Color(0xFF818CF8).copy(alpha = alpha * 0.16f)
+                },
+            radius = star.radius * 3.1f,
             center = center,
         )
 
-        // Brilliant focal core
+        // Mid corona bloom
+        drawCircle(
+            color =
+                if (star.isGold) {
+                    Color(0xFFFDE68A).copy(alpha = alpha * 0.34f)
+                } else {
+                    Color(0xFFC7D2FE).copy(alpha = alpha * 0.34f)
+                },
+            radius = star.radius * 1.75f,
+            center = center,
+        )
+
+        // Crisp starlight core
         drawCircle(
             color = coreColor,
-            radius = star.radius * 1.5f,
+            radius = star.radius * 0.92f,
             center = center,
         )
 
-        // Prominent 4-point sparkle cross on key landmark stars
+        // Refined 4-point sparkle cross on landmark stars
         if (star.hasSparkleCross) {
-            val sparkLen = star.radius * 4.5f
-            val sparkWidth = 1.3f
-            val sparkColor = coreColor.copy(alpha = alpha * 0.75f)
+            val sparkLen = star.radius * 3.2f
+            val sparkWidth = 1.0f
+            val sparkColor = coreColor.copy(alpha = alpha * 0.62f)
 
             drawLine(
                 color = sparkColor,

@@ -37,21 +37,21 @@ import kotlinx.coroutines.flow.drop
  * The bring-your-own OAuth client id editors (Settings -> Sources and the
  * onboarding connections step share this).
  *
- * The ids AUTO-SAVE ~600 ms after the last keystroke. The original explicit
- * "Save Client IDs" button sat at the bottom of a long settings scroll: an
- * id that was typed but never saved looked exactly like "the app has no
- * client id" after a restart, which is the failure this replaces. Editors
- * reload from the saved state only while they are not focused, so a refresh
- * (a scan finishing, a reconnect) can never clobber in-progress typing.
+ * The ids AUTO-SAVE ~600 ms after the last keystroke. Editors reload from the
+ * saved state only while they are not focused, so a refresh can never clobber
+ * in-progress typing.
  */
 @OptIn(FlowPreview::class)
 @Composable
 fun OAuthClientIdFields(
     viewModel: QuizRadarViewModel,
     modifier: Modifier = Modifier,
+    microsoftConnected: Boolean = false,
 ) {
     val googleClientId by viewModel.googleClientId.collectAsState()
     val teamsClientId by viewModel.teamsClientId.collectAsState()
+    val vmMicrosoftConnected by viewModel.microsoftConnected.collectAsState()
+    val isMicrosoftConnected = microsoftConnected || vmMicrosoftConnected
 
     var googleFocused by remember { mutableStateOf(false) }
     var microsoftFocused by remember { mutableStateOf(false) }
@@ -88,16 +88,11 @@ fun OAuthClientIdFields(
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
         )
-        Spacer(modifier = Modifier.height(8.dp))
-        // Honest default-client messaging, no developer jargon on the happy
-        // path: Google works with nothing typed here; Microsoft genuinely
-        // needs one registration, and that requirement is stated plainly.
+        Spacer(modifier = Modifier.height(6.dp))
         Text(
             text =
-                "Google sign-in works out of the box using QuizRadar's built-in client id - you only " +
-                    "need to paste your own if your university requires one. Microsoft sign-in does " +
-                    "need your own registered app id (redirect: com.quizradar.app://oauth/microsoft). " +
-                    "Both fields save automatically as you type.",
+                "Only needed if your university requires a custom OAuth app ID " +
+                    "(Microsoft redirect: com.quizradar.app://oauth/microsoft).",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -115,9 +110,9 @@ fun OAuthClientIdFields(
             supportingText = {
                 Text(
                     when {
-                        googleInput.trim() != googleClientId -> "Saving automatically…"
-                        googleClientId.isNotBlank() -> "Saved ✓ - Google sign-in will use this id"
-                        else -> "Not set - the built-in QuizRadar client id will be used"
+                        googleInput.trim() != googleClientId -> "Saving…"
+                        googleClientId.isNotBlank() -> "Saved ✓ — custom ID active"
+                        else -> "Using QuizRadar's built-in Google client ID"
                     },
                 )
             },
@@ -126,7 +121,7 @@ fun OAuthClientIdFields(
         OutlinedTextField(
             value = microsoftInput,
             onValueChange = { microsoftInput = it },
-            label = { Text("Microsoft client ID") },
+            label = { Text("Microsoft client ID (optional)") },
             singleLine = true,
             colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
             modifier =
@@ -136,19 +131,17 @@ fun OAuthClientIdFields(
             supportingText = {
                 Text(
                     when {
-                        microsoftInput.trim() != teamsClientId -> "Saving automatically…"
-                        teamsClientId.isNotBlank() -> "Saved ✓ - Microsoft sign-in will use this id"
-                        else -> "Not set - Microsoft sign-in is refused until one is saved"
+                        microsoftInput.trim() != teamsClientId -> "Saving…"
+                        teamsClientId.isNotBlank() -> "Saved ✓ — custom ID active"
+                        isMicrosoftConnected -> "Connected — using active Microsoft sign-in"
+                        else -> "Not set — only required if your school restricts default sign-in"
                     },
                 )
             },
         )
         Spacer(modifier = Modifier.height(8.dp))
 
-        // The explicit save stays as an option next to the auto-save: some
-        // users want the certainty of pressing a button, and the label doubles
-        // as the saved/unsaved indicator for both fields.
-        val unsavedChanges =
+        val hasUnsavedChanges =
             googleInput.trim() != googleClientId || microsoftInput.trim() != teamsClientId
         Button(
             onClick = {
@@ -156,6 +149,7 @@ fun OAuthClientIdFields(
                 viewModel.setTeamsClientId(microsoftInput)
                 viewModel.showToast("OAuth client IDs saved")
             },
+            enabled = hasUnsavedChanges,
             colors = ButtonDefaults.tonalPill(),
             modifier =
                 Modifier
@@ -163,7 +157,10 @@ fun OAuthClientIdFields(
                     .defaultMinSize(minHeight = PillButtonMinHeight),
             contentPadding = PillButtonContentPadding,
         ) {
-            Text(if (unsavedChanges) "Save now" else "Saved ✓")
+            Text(
+                text = if (hasUnsavedChanges) "Save client IDs" else "Saved ✓",
+                style = MaterialTheme.typography.labelLarge,
+            )
         }
     }
 }

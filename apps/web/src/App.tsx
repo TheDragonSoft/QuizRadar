@@ -331,7 +331,7 @@ export default function App() {
         <PullToRefresh>
           <main
             data-testid="main-content-viewport"
-            className="h-full overflow-y-auto px-4 py-6 pb-24 sm:px-6 lg:pb-8"
+            className="h-full overflow-x-hidden overflow-y-auto px-4 py-6 pb-24 sm:px-6 lg:pb-8"
           >
             {isOffline && (
               <div

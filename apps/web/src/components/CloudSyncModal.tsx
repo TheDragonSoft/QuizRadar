@@ -1,10 +1,33 @@
 import { useRef, useState } from "react";
-import { Cloud, Smartphone, UploadCloud, DownloadCloud, Download, Upload, X } from "lucide-react";
+import {
+  Cloud,
+  HardDrive,
+  Smartphone,
+  UploadCloud,
+  DownloadCloud,
+  Download,
+  Upload,
+  X,
+} from "lucide-react";
 import { copy } from "../copy";
 import { isTauriEnvironment } from "../state/rpc";
 import { useAppStore } from "../state/store";
 import { rpc } from "../state/rpc";
 import type { MergeReport } from "../state/types";
+
+function formatBackupTimestamp(iso: string): string {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return iso;
+  return parsed.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "UTC",
+    timeZoneName: "short",
+  });
+}
 
 export function CloudSyncModal({
   onClose,
@@ -18,6 +41,7 @@ export function CloudSyncModal({
   const [exporting, setExporting] = useState(false);
   const isDesktop = isTauriEnvironment();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const lastBackupPush = useAppStore((s) => s.data.config.lastBackupPush);
   const addToast = useAppStore((s) => s.addToast);
   const refreshState = useAppStore((s) => s.refreshState);
   const exportBackupFile = useAppStore((s) => s.exportBackupFile);
@@ -125,15 +149,21 @@ export function CloudSyncModal({
     <div className="w-full">
       <div className="flex items-start justify-between border-b border-[var(--border)] pb-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--accent-ink)]">
-            <Cloud className="h-5 w-5" />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--accent-ink)]">
+            {isDesktop ? (
+              <Cloud className="h-5 w-5" aria-hidden="true" />
+            ) : (
+              <HardDrive className="h-5 w-5" aria-hidden="true" />
+            )}
           </div>
           <div>
             <h2 id="cloud-sync-title" className="text-lg font-bold text-[var(--text)]">
-              Cloud Backup & Transfer
+              {isDesktop ? "Cloud Backup & Transfer" : "JSON Backup & Transfer"}
             </h2>
             <p className="text-xs text-[var(--text-muted)] mt-0.5">
-              Secure, secret-free data sync across your devices
+              {isDesktop
+                ? "Secure, secret-free data sync across your devices"
+                : "Export or import a secret-free JSON backup file across devices (Google Drive sync is available on desktop & Android)"}
             </p>
           </div>
         </div>
@@ -148,6 +178,16 @@ export function CloudSyncModal({
       </div>
 
       <div className="mt-5 space-y-4">
+        <div
+          data-testid="cloud-sync-last-backup"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-hover)] px-3.5 py-2.5 text-xs"
+        >
+          <span className="font-semibold text-[var(--text-muted)]">Last Cloud Backup</span>
+          <span className="font-semibold tabular-nums text-[var(--text)]">
+            {lastBackupPush ? formatBackupTimestamp(lastBackupPush) : "Never backed up"}
+          </span>
+        </div>
+
         {/* Google Drive AppData Section — desktop tier only: the browser tier
             has no Drive RPC (honest degradation), so showing the buttons there
             produced raw "not implemented" errors. */}
@@ -188,13 +228,11 @@ export function CloudSyncModal({
           </div>
         )}
 
-        {/* Local File Backup & Android Transfer Section */}
+        {/* Local File Backup & Cross-Device Transfer Section */}
         <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
           <div className="flex items-center gap-2 mb-2">
-            <Smartphone className="h-4 w-4 text-[var(--accent-ink)]" />
-            <span className="text-xs font-bold text-[var(--text)]">
-              {copy.settings.pairPhoneTitle}
-            </span>
+            <Smartphone className="h-4 w-4 text-[var(--accent-ink)]" aria-hidden="true" />
+            <span className="text-xs font-bold text-[var(--text)]">Cross-Device JSON Transfer</span>
           </div>
           <p className="text-xs text-[var(--text-muted)] mb-3">{copy.settings.pairPhoneHelp}</p>
           <input

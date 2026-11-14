@@ -22,6 +22,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.quizradar.app.model.AssessmentModel
@@ -56,9 +59,9 @@ private fun heroPalette(
             HeroPalette(
                 gradient =
                     Brush.horizontalGradient(
-                        listOf(Color(0xFF0B0D13), Color(0xFF10131C), Color(0xFF171B26)),
+                        listOf(Color(0xFF090D16), Color(0xFF0E1424), Color(0xFF151C30)),
                     ),
-                border = Color(0xFF282D3D),
+                border = Color(0xFF2B3554),
             )
         isDark ->
             HeroPalette(
@@ -111,7 +114,9 @@ fun NextUpHeroCard(
                 .border(1.dp, palette.border, heroShape)
                 .then(
                     if (assessment != null && onOpen != null) {
-                        Modifier.clickable(onClick = onOpen)
+                        Modifier
+                            .semantics { role = Role.Button }
+                            .clickable(onClick = onOpen)
                     } else {
                         Modifier
                     },
@@ -182,6 +187,15 @@ fun NextUpHeroCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
+                if (onOpen != null) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = null,
+                        tint = heroSubtitleColor,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -222,27 +236,24 @@ fun NextUpHeroCard(
                 )
             }
 
-            // The room gets its own line: the date string is long, and
-            // squeezing both into one row truncated the room to "B…".
-            if (!assessment.room.isNullOrBlank() && assessment.room != "—") {
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Filled.Place,
-                        contentDescription = null,
-                        tint = heroSubtitleColor,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = assessment.room,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = heroSubtitleColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                }
+            Spacer(modifier = Modifier.height(4.dp))
+            val roomDisplay = assessment.room?.takeIf { it.isNotBlank() } ?: "—"
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Filled.Place,
+                    contentDescription = null,
+                    tint = heroSubtitleColor,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "Room: $roomDisplay",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = heroSubtitleColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
             }
         }
     }

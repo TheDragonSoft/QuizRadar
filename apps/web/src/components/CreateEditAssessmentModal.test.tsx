@@ -66,12 +66,26 @@ describe("CreateEditAssessmentModal", () => {
     // Provenance chip for new manual assessment
     expect(screen.getByText(copy.assessmentModal.provenanceManual)).toBeInTheDocument();
 
-    // Check placeholder for optional honesty doctrine fields
+    // Check helpful placeholders on optional fields
     const roomInput = screen.getByLabelText(/room/i);
-    expect(roomInput).toHaveAttribute("placeholder", copy.assessmentModal.noValuePlaceholder);
+    expect(roomInput).toHaveAttribute("placeholder", "e.g. Room 301");
 
     const instructorInput = screen.getByLabelText(/instructor/i);
-    expect(instructorInput).toHaveAttribute("placeholder", copy.assessmentModal.noValuePlaceholder);
+    expect(instructorInput).toHaveAttribute("placeholder", "Optional");
+
+    const weightageInput = screen.getByLabelText(/weightage/i);
+    expect(weightageInput).toHaveAttribute("placeholder", "e.g. 20");
+
+    const maxScoreInput = screen.getByLabelText(/maximum score/i);
+    expect(maxScoreInput).toHaveAttribute("placeholder", "e.g. 100");
+
+    const dateLabel = screen.getByText(/^Date \*/i);
+    expect(dateLabel).toBeInTheDocument();
+    expect(screen.queryByText(/YYYY-MM-DD/i)).not.toBeInTheDocument();
+
+    const saveBtn = screen.getByRole("button", { name: copy.assessmentModal.saveAssessment });
+    expect(saveBtn.className).toContain("bg-[var(--accent-fill)]");
+    expect(saveBtn.className).not.toContain("indigo");
   });
 
   it("submits a new assessment with honesty doctrine null values when room/instructor omitted", async () => {

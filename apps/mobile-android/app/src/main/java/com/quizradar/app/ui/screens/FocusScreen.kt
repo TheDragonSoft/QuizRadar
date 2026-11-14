@@ -4,11 +4,11 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,7 +22,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -36,6 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -50,9 +53,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.quizradar.app.core.topicKey
 import com.quizradar.app.model.AppSnapshotModel
@@ -74,6 +81,8 @@ import com.quizradar.app.ui.theme.quietCardColors
 import com.quizradar.app.ui.theme.quietCardElevation
 import com.quizradar.app.ui.theme.quietChipColors
 import com.quizradar.app.ui.theme.tonalPill
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 /** The three top-level Focus segments (`docs/ANDROID-QUALITY-UI-BRIEF.md` §Focus). */
 private enum class FocusSegment {
@@ -101,7 +110,7 @@ fun FocusScreen(
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
-    val isDark = isSystemInDarkTheme()
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     var segment by rememberSaveable { mutableStateOf(FocusSegment.SESSION) }
 
     // Pomodoro timer state from ViewModel (persists across tabs and app lifecycle)
@@ -134,36 +143,62 @@ fun FocusScreen(
     ) {
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Top switcher: Session / History / Review as the app's one filter-chip
-        // system. Selection is announced by the chip's selectable semantics and
-        // repeated by the leading check icon, never colour alone.
+        // Top switcher: Session / History / Review inside a unified segmented pill track.
+        val navTrackShape = RoundedCornerShape(14.dp)
+        val navPillShape = RoundedCornerShape(10.dp)
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clip(navTrackShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                    .border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                        shape = navTrackShape,
+                    ).padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             FocusSegment.values().forEach { entry ->
                 val isSelected = segment == entry
-                FilterChip(
-                    selected = isSelected,
-                    onClick = { segment = entry },
-                    label = {
-                        Text(
-                            text =
-                                when (entry) {
-                                    FocusSegment.SESSION -> "Session"
-                                    FocusSegment.HISTORY -> "History"
-                                    FocusSegment.REVIEW -> "Review"
-                                },
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                    },
-                    leadingIcon = { if (isSelected) ChipLeadingCheck() },
-                    colors = FilterChipDefaults.quietChipColors(),
+                val tabLabel =
+                    when (entry) {
+                        FocusSegment.SESSION -> "Session"
+                        FocusSegment.HISTORY -> "History"
+                        FocusSegment.REVIEW -> "Review"
+                    }
+                Box(
                     modifier =
                         Modifier
                             .weight(1f)
-                            .defaultMinSize(minHeight = 48.dp),
-                )
+                            .defaultMinSize(minHeight = 40.dp)
+                            .clip(navPillShape)
+                            .background(
+                                if (isSelected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    Color.Transparent
+                                },
+                            ).selectable(
+                                selected = isSelected,
+                                role = Role.Tab,
+                                onClick = { segment = entry },
+                            ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = tabLabel,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        color =
+                            if (isSelected) {
+                                MaterialTheme.colorScheme.onPrimary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                    )
+                }
             }
         }
 
@@ -210,9 +245,13 @@ fun FocusScreen(
                         // Real course names from the snapshot - never invented
                         // labels for stored course ids.
                         courseNames =
-                            snapshot.assessments.mapNotNull { a ->
-                                a.courseId?.let { id -> a.courseName?.let { id to it } }
-                            }.toMap(),
+                            (
+                                snapshot.schedule.courses.associate { it.id to it.name } +
+                                    snapshot.assessments.mapNotNull { a ->
+                                        a.courseId?.let { id -> a.courseName?.let { id to it } }
+                                    }.toMap()
+                            ),
+                        courseColorsById = snapshot.schedule.courses.associate { it.id to it.color },
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                 }
@@ -254,161 +293,314 @@ private fun FocusSessionSection(
                 .fillMaxSize()
                 .padding(bottom = 88.dp)
                 .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Interval Switcher (25m / 5m / 15m) - the one filter-chip system.
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            PomodoroInterval.values().forEach { interval ->
-                val isSelected = selectedInterval == interval
-                FilterChip(
-                    selected = isSelected,
-                    onClick = { onIntervalSelected(interval) },
-                    label = {
-                        Text(
-                            text = "${interval.label} (${interval.minutes}m)",
-                            style =
-                                MaterialTheme.typography.labelMedium.copy(
-                                    fontFeatureSettings = "tnum",
-                                ),
-                            maxLines = 1,
-                            softWrap = false,
-                        )
-                    },
-                    leadingIcon = { if (isSelected) ChipLeadingCheck() },
-                    colors = FilterChipDefaults.quietChipColors(),
-                    modifier =
-                        Modifier
-                            .weight(1f)
-                            .defaultMinSize(minHeight = 48.dp),
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // Timer Display Circle
         val totalSeconds = selectedInterval.minutes * 60
         val progress = 1f - (secondsLeft.toFloat() / totalSeconds.toFloat())
         val mins = secondsLeft / 60
         val secs = secondsLeft % 60
         val timeDisplay = String.format("%02d:%02d", mins, secs)
+        val statusText =
+            if (isRunning) {
+                "Focusing"
+            } else if (secondsLeft == 0) {
+                "Session Complete"
+            } else {
+                "Ready to Focus"
+            }
 
-        Box(
-            modifier = Modifier.size(216.dp),
-            contentAlignment = Alignment.Center,
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.quietCardColors(),
+            border = CardDefaults.quietCardBorder(),
+            elevation = CardDefaults.quietCardElevation(),
+            shape = RoundedCornerShape(20.dp),
         ) {
-            val primaryColor = MaterialTheme.colorScheme.primary
-            CircularProgressIndicator(
-                progress = { progress },
-                modifier = Modifier.fillMaxSize(),
-                strokeWidth = 10.dp,
-                color = primaryColor,
-                trackColor = primaryColor.copy(alpha = 0.12f),
-            )
-            if (progress > 0f) {
-                androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
-                    val strokeWidthPx = 10.dp.toPx()
-                    val r = (size.width - strokeWidthPx) / 2f
-                    val angleDeg = -90.0 + (progress * 360.0)
-                    val rad = Math.toRadians(angleDeg)
-                    val cx = (size.width / 2f) + (r * Math.cos(rad)).toFloat()
-                    val cy = (size.height / 2f) + (r * Math.sin(rad)).toFloat()
-
-                    drawCircle(
-                        color = primaryColor.copy(alpha = 0.45f),
-                        radius = 7.dp.toPx(),
-                        center = androidx.compose.ui.geometry.Offset(cx, cy),
+            Column(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "POMODORO TIMER",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    // The bright trailing dot uses the scheme's primary so it
-                    // stays a token in every theme (was a raw hex literal).
-                    drawCircle(
-                        color = primaryColor,
-                        radius = 3.5.dp.toPx(),
-                        center = androidx.compose.ui.geometry.Offset(cx, cy),
+                    StatusTag(
+                        text = statusText,
+                        containerColor =
+                            if (isRunning) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            },
+                        contentColor =
+                            if (isRunning) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                     )
                 }
-            }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = timeDisplay,
-                    style =
-                        MaterialTheme.typography.displayMedium.copy(
-                            fontFeatureSettings = "tnum",
-                        ),
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text =
-                        if (isRunning) {
-                            "Focusing"
-                        } else if (secondsLeft == 0) {
-                            "Session Complete"
-                        } else {
-                            "Ready to Focus"
-                        },
-                    style = MaterialTheme.typography.labelMedium,
-                    color =
-                        if (isRunning) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Interval Switcher (25m / 5m / 15m) inside a compact secondary track
+                val intervalTrackShape = RoundedCornerShape(11.dp)
+                val intervalPillShape = RoundedCornerShape(8.dp)
+                Row(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(intervalTrackShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                            .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PomodoroInterval.values().forEach { interval ->
+                        val isSelected = selectedInterval == interval
+                        val chipLabel =
+                            when (interval) {
+                                PomodoroInterval.POMODORO -> "Focus ${interval.minutes}m"
+                                PomodoroInterval.SHORT_BREAK -> "Short ${interval.minutes}m"
+                                PomodoroInterval.LONG_BREAK -> "Long ${interval.minutes}m"
+                            }
+                        Box(
+                            modifier =
+                                Modifier
+                                    .weight(1f)
+                                    .defaultMinSize(minHeight = 36.dp)
+                                    .clip(intervalPillShape)
+                                    .background(
+                                        if (isSelected) {
+                                            MaterialTheme.colorScheme.surface
+                                        } else {
+                                            Color.Transparent
+                                        },
+                                    ).then(
+                                        if (isSelected) {
+                                            Modifier.border(
+                                                1.dp,
+                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                                                intervalPillShape,
+                                            )
+                                        } else {
+                                            Modifier
+                                        },
+                                    ).selectable(
+                                        selected = isSelected,
+                                        role = Role.RadioButton,
+                                        onClick = { onIntervalSelected(interval) },
+                                    ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = chipLabel,
+                                style =
+                                    MaterialTheme.typography.labelMedium.copy(
+                                        fontFeatureSettings = "tnum",
+                                    ),
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color =
+                                    if (isSelected) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                maxLines = 1,
+                                softWrap = false,
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Timer Display Circle
+                Box(
+                    modifier = Modifier.size(212.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val primaryColor = MaterialTheme.colorScheme.primary
+                    Box(
+                        modifier =
+                            Modifier
+                                .size(182.dp)
+                                .clip(CircleShape)
+                                .background(primaryColor.copy(alpha = 0.04f))
+                                .border(1.dp, primaryColor.copy(alpha = 0.10f), CircleShape),
+                    )
+                    CircularProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.fillMaxSize(),
+                        strokeWidth = 10.dp,
+                        color = primaryColor,
+                        trackColor = primaryColor.copy(alpha = 0.12f),
+                    )
+                    if (progress > 0f) {
+                        androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                            val strokeWidthPx = 10.dp.toPx()
+                            val r = (size.width - strokeWidthPx) / 2f
+                            val angleDeg = -90.0 + (progress * 360.0)
+                            val rad = Math.toRadians(angleDeg)
+                            val cx = (size.width / 2f) + (r * Math.cos(rad)).toFloat()
+                            val cy = (size.height / 2f) + (r * Math.sin(rad)).toFloat()
+
+                            drawCircle(
+                                color = primaryColor.copy(alpha = 0.45f),
+                                radius = 7.dp.toPx(),
+                                center = androidx.compose.ui.geometry.Offset(cx, cy),
+                            )
+                            drawCircle(
+                                color = primaryColor,
+                                radius = 3.5.dp.toPx(),
+                                center = androidx.compose.ui.geometry.Offset(cx, cy),
+                            )
+                        }
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = timeDisplay,
+                            style =
+                                MaterialTheme.typography.displayMedium.copy(
+                                    fontFeatureSettings = "tnum",
+                                ),
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text =
+                                when (selectedInterval) {
+                                    PomodoroInterval.POMODORO -> "25 min Focus Block"
+                                    PomodoroInterval.SHORT_BREAK -> "5 min Short Break"
+                                    PomodoroInterval.LONG_BREAK -> "15 min Long Break"
+                                },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(22.dp))
+
+                // Play / Pause / Reset controls row
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Button(
+                        onClick = onPlayPause,
+                        shape = CircleShape,
+                        contentPadding = PaddingValues(0.dp),
+                        colors = ButtonDefaults.filledPill(),
+                        modifier = Modifier.size(60.dp),
+                    ) {
+                        Icon(
+                            imageVector = if (isRunning) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                            contentDescription = if (isRunning) "Pause" else "Play",
+                            modifier = Modifier.size(28.dp),
+                        )
+                    }
+
+                    OutlinedIconButton(
+                        onClick = onReset,
+                        shape = CircleShape,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier.size(52.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Refresh,
+                            contentDescription = "Reset",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // Play / Pause / Reset buttons. The running state is carried by the
-        // icon and its contentDescription, so the button keeps the primary
-        // fill - destructive styling stays reserved for destructive actions.
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        // Session Cadence Strip (fills out the lower layout cleanly)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.quietCardColors(),
+            border = CardDefaults.quietCardBorder(),
+            shape = RoundedCornerShape(16.dp),
         ) {
-            Button(
-                onClick = onPlayPause,
-                shape = CircleShape,
-                contentPadding = PaddingValues(0.dp),
-                colors = ButtonDefaults.filledPill(),
-                modifier = Modifier.size(60.dp),
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    imageVector = if (isRunning) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                    contentDescription = if (isRunning) "Pause" else "Play",
-                    modifier = Modifier.size(28.dp),
-                )
-            }
-
-            OutlinedIconButton(
-                onClick = onReset,
-                shape = CircleShape,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                modifier = Modifier.size(52.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Refresh,
-                    contentDescription = "Reset",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(22.dp),
-                )
+                listOf(
+                    Triple("25m", "Deep Focus", selectedInterval == PomodoroInterval.POMODORO),
+                    Triple("5m", "Short Break", selectedInterval == PomodoroInterval.SHORT_BREAK),
+                    Triple("15m", "Long Break", selectedInterval == PomodoroInterval.LONG_BREAK),
+                ).forEach { (duration, caption, active) ->
+                    Column(
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    if (active) {
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                                    },
+                                ).padding(vertical = 10.dp, horizontal = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            text = duration,
+                            style =
+                                MaterialTheme.typography.titleMedium.copy(
+                                    fontFeatureSettings = "tnum",
+                                ),
+                            fontWeight = FontWeight.Bold,
+                            color =
+                                if (active) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                        )
+                        Text(
+                            text = caption,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
+                }
             }
         }
 
         // Linked topic section
         if (activePomodoroTopic != null) {
-            Spacer(modifier = Modifier.height(24.dp))
             Column(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .clip(MaterialTheme.shapes.extraSmall)
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(16.dp),
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                        .border(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                            RoundedCornerShape(16.dp),
+                        ).padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
@@ -474,6 +666,7 @@ private fun FocusSessionSection(
  * label; the AI branch is consent-gated in the ViewModel/core) followed by
  * flashcard and mistake-bank review.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FocusReviewSegment(
     snapshot: AppSnapshotModel,
@@ -486,6 +679,11 @@ private fun FocusReviewSegment(
     isPracticeLoading: Boolean,
 ) {
     val assessments = snapshot.assessments
+    val datedAssessments =
+        assessments
+            .filter { it.dateIso != null }
+            .sortedBy { it.dateIso }
+    val chipDateFormatter = DateTimeFormatter.ofPattern("MMM d", Locale.US)
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -515,15 +713,7 @@ private fun FocusReviewSegment(
                     )
                 }
             } else {
-                // The picker used to show only the FIRST THREE
-                // assessments - everything after that was unreachable.
-                // It is now a horizontally scrollable row of every
-                // DATED assessment, soonest first; an undated item has
-                // no exam day to practice towards and stays out.
-                val datedAssessments =
-                    assessments
-                        .filter { it.dateIso != null }
-                        .sortedBy { it.dateIso }
+                // Every DATED assessment, soonest first; FlowRow lets long names wrap cleanly.
                 if (datedAssessments.isEmpty()) {
                     Text(
                         text =
@@ -533,17 +723,15 @@ private fun FocusReviewSegment(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
-                    Row(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         datedAssessments.forEach { a ->
                             val isChosenExam = activePracticeId == a.id
                             val label = a.courseName ?: a.courseId ?: a.title.take(10)
-                            val dateSuffix = a.dateIso?.let { " · $it" } ?: ""
+                            val dateSuffix = a.dateIso?.let { " · ${it.format(chipDateFormatter)}" } ?: ""
                             FilterChip(
                                 selected = isChosenExam,
                                 onClick = {
@@ -558,6 +746,7 @@ private fun FocusReviewSegment(
                                                 fontFeatureSettings = "tnum",
                                             ),
                                         maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                     )
                                 },
                                 leadingIcon = { if (isChosenExam) ChipLeadingCheck() },
@@ -572,11 +761,17 @@ private fun FocusReviewSegment(
 
         if (isPracticeLoading) {
             item {
-                Box(
+                Column(
                     modifier = Modifier.fillMaxWidth().padding(32.dp),
-                    contentAlignment = Alignment.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     CircularProgressIndicator()
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Generating practice questions…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         } else if (practiceQuiz != null) {
@@ -755,29 +950,69 @@ private fun FocusReviewSegment(
                             MaterialTheme.colorScheme.error.copy(alpha = 0.5f),
                         ),
                 ) {
+                    val missingAssessment =
+                        practiceQuizError?.contains("is no longer on the radar", ignoreCase = true) == true
+                    val friendlyErrorText =
+                        when {
+                            practiceQuizError == null -> "Unable to generate practice questions right now."
+                            missingAssessment ->
+                                "That assessment is no longer on your radar. Pick a current exam above " +
+                                    "or generate an offline quiz for an available exam."
+                            else -> practiceQuizError
+                        }
+                    val fallbackAssessment = datedAssessments.firstOrNull() ?: assessments.firstOrNull()
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = practiceQuizError ?: "Unknown error occurred.",
+                            text = friendlyErrorText,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.error,
                         )
                         Spacer(modifier = Modifier.height(12.dp))
-                        FilledTonalButton(
-                            onClick = {
-                                userAnswers.clear()
-                                activePracticeId?.let { viewModel.openPracticeQuiz(it) }
-                            },
-                            colors = ButtonDefaults.tonalPill(),
-                            contentPadding = PillButtonContentPadding,
-                            modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Refresh,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Retry", style = MaterialTheme.typography.labelMedium)
+                            if (!missingAssessment && activePracticeId != null) {
+                                FilledTonalButton(
+                                    onClick = {
+                                        userAnswers.clear()
+                                        viewModel.openPracticeQuiz(activePracticeId)
+                                    },
+                                    colors = ButtonDefaults.tonalPill(),
+                                    contentPadding = PillButtonContentPadding,
+                                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Refresh,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Retry", style = MaterialTheme.typography.labelLarge)
+                                }
+                            } else if (fallbackAssessment != null) {
+                                FilledTonalButton(
+                                    onClick = {
+                                        userAnswers.clear()
+                                        viewModel.openPracticeQuiz(fallbackAssessment.id)
+                                    },
+                                    colors = ButtonDefaults.tonalPill(),
+                                    contentPadding = PillButtonContentPadding,
+                                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                                ) {
+                                    Text("Practice locally", style = MaterialTheme.typography.labelLarge)
+                                }
+                            }
+                            TextButton(
+                                onClick = {
+                                    userAnswers.clear()
+                                    viewModel.closePracticeQuiz()
+                                },
+                                modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                            ) {
+                                Text("Choose exam", style = MaterialTheme.typography.labelLarge)
+                            }
                         }
                     }
                 }

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { CalendarView } from "./CalendarView";
+import { CalendarGrid } from "../components/CalendarGrid";
 import { useAppStore, initialFullState } from "../state/store";
 import type { GetStatePayload } from "../state/types";
 
@@ -179,5 +180,45 @@ describe("CalendarView — v4 parity", () => {
     expect(custom).toBeDefined();
     expect(custom?.textContent).toContain("Study Session · —");
     expect(custom?.querySelector('button[aria-label="Delete event"]')).toBeTruthy();
+  });
+
+  it("keeps CalendarView and compact CalendarGrid columns scrollable with matching header/body minWidth and hides empty days dynamically", () => {
+    const { container: viewContainer } = render(<CalendarView />);
+    const viewColumns = viewContainer.querySelector(
+      '[data-testid="calendar-columns-grid"]',
+    ) as HTMLElement;
+    const viewHeader = viewColumns.parentElement?.previousElementSibling?.querySelector(
+      ".grid",
+    ) as HTMLElement;
+    expect(viewColumns).toBeTruthy();
+    // sampleState only populates Friday -> 1 active day renders wide (1 * 140px minWidth).
+    expect(viewColumns.style.minWidth).toBe("140px");
+    expect(viewHeader.style.minWidth).toBe("140px");
+    expect(viewContainer.querySelector('[data-testid="calendar-day-col-2026-10-23"]')).toBeTruthy();
+    expect(viewContainer.querySelector('[data-testid="calendar-day-col-2026-10-19"]')).toBeNull();
+
+    const { container: gridContainer } = render(<CalendarGrid compactMode />);
+    const compactColumns = gridContainer.querySelector(
+      '[data-testid="calendar-columns-grid"]',
+    ) as HTMLElement;
+    const compactHeader = compactColumns.parentElement?.previousElementSibling?.querySelector(
+      ".grid",
+    ) as HTMLElement;
+    // Compact CalendarGrid also hides empty days (1 * 96px) and matches header/body minWidth.
+    expect(compactColumns.style.minWidth).toBe("96px");
+    expect(compactHeader.style.minWidth).toBe("96px");
+    expect(
+      gridContainer.querySelector('[data-testid="calendar-grid-scroll-hint"]'),
+    ).toBeInTheDocument();
+
+    // When the entire week has 0 items, all 7 days stay visible as a baseline week grid.
+    useAppStore.setState({
+      data: JSON.parse(JSON.stringify(initialFullState)),
+    });
+    const { container: emptyGridContainer } = render(<CalendarGrid compactMode />);
+    const emptyColumns = emptyGridContainer.querySelector(
+      '[data-testid="calendar-columns-grid"]',
+    ) as HTMLElement;
+    expect(emptyColumns.style.minWidth).toBe("672px");
   });
 });

@@ -92,7 +92,7 @@ export const PullToRefresh: React.FC<PullToRefreshProps> = ({ children, threshol
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      className="relative flex-1"
+      className="relative min-w-0 flex-1"
     >
       {/* Pull Indicator */}
       {(pullDistance > 0 || syncStatus === "syncing") && (

@@ -86,8 +86,8 @@ class ComposeUiSmokeTest {
         composeTestRule.onNodeWithTag("bottom-nav-Focus").performClick()
         composeTestRule.waitForIdle()
         // The Session segment renders the Pomodoro timer; its interval pill
-        // ("Pomodoro (25m)") is the stable marker of that section.
-        composeTestRule.onNodeWithText("Pomodoro (25m)").assertIsDisplayed()
+        // ("Focus 25m") is the stable marker of that section.
+        composeTestRule.onNodeWithText("Focus 25m").assertIsDisplayed()
 
         // 5. Navigate back to Dashboard
         composeTestRule.onNodeWithTag("bottom-nav-Dashboard").performClick()

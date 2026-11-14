@@ -121,11 +121,11 @@ html[data-theme="solar"] {
       and faint ethereal amber/violet nebula clouds (AMOLED v3). The v1/v2
       variants stay retired; a stored legacy id migrates to Obsidian Cosmic. */
 html[data-theme="amoled-nebula"] {
-  --accent: #f8fafc;
-  --accent-hover: #ffffff;
-  --accent-fill: #27272a;
-  --accent-fill-hover: #3f3f46;
-  --accent-ink: #f8fafc;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-fill: #2563eb;
+  --accent-fill-hover: #1d4ed8;
+  --accent-ink: #60a5fa;
   --page: #000000;
   --surface: #0a0b10;
   --surface-elevated: #10121a;
@@ -135,7 +135,7 @@ html[data-theme="amoled-nebula"] {
   --text: #f8fafc;
   --text-muted: #94a3b8;
   --custom-event: #f472b6;
-  --glass-bg: rgba(10, 11, 16, 0.88);
+  --glass-bg: rgba(10, 11, 16, 0.94);
   --glass-border: rgba(255, 255, 255, 0.1);
   --border: var(--surface-border);
   --border-subtle: var(--surface-border);
@@ -143,57 +143,70 @@ html[data-theme="amoled-nebula"] {
   color-scheme: dark;
 }
 
-/* Make sure the AMOLED shell containers are transparent so the starfield behind is 100% visible */
+/* Isolate AMOLED starfield inside body so it paints ONLY behind the app shell in empty #000000 margins/gutters */
+html[data-theme^="amoled"] {
+  background-color: #000000;
+}
+
 html[data-theme^="amoled"] body {
   background-color: #000000 !important;
   position: relative;
+  isolation: isolate;
 }
 
-html[data-theme^="amoled"] #root,
+html[data-theme^="amoled"] #root {
+  position: relative;
+  z-index: 1;
+}
+
 html[data-theme^="amoled"] [data-testid="app-shell"],
 html[data-theme^="amoled"] [data-testid="main-content-viewport"] {
   background-color: transparent !important;
+  position: relative;
+  z-index: 1;
 }
 
-/* Starfield canvas layer: fixed behind the UI, visible through margins, gutters, and frosted cards */
-html[data-theme^="amoled"] body::before,
-html[data-theme^="amoled"] [data-testid="app-shell"]::before {
+/* Starfield canvas layer: sits behind #root (z-index: -1 inside isolated body) so stars never draw over text, cards, or grids */
+html[data-theme^="amoled"] body::before {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
-  z-index: 0;
+  z-index: -1;
+  opacity: 0.28;
   background-repeat: repeat;
 }
 
-/* Cosmic Stardust starfield (Layered stars + luminous celestial dust) */
-html[data-theme="amoled-nebula"] body::before,
-html[data-theme="amoled-nebula"] [data-testid="app-shell"]::before {
+/* Cosmic Stardust starfield (Subtle distant stars visible strictly in canvas gutters) */
+html[data-theme="amoled-nebula"] body::before {
   background-image:
-    radial-gradient(2px 2px at 50px 70px, #ffffff, transparent),
-    radial-gradient(3px 3px at 190px 250px, #fef08a, transparent),
-    radial-gradient(2px 2px at 330px 125px, #ffffff, transparent),
-    radial-gradient(3.5px 3.5px at 510px 360px, #ffffff, transparent),
-    radial-gradient(2px 2px at 660px 175px, #ffffff, transparent),
-    radial-gradient(3px 3px at 830px 300px, #fef08a, transparent),
-    radial-gradient(2px 2px at 980px 105px, #ffffff, transparent),
-    radial-gradient(3.5px 3.5px at 1170px 380px, #ffffff, transparent),
-    radial-gradient(2.5px 2.5px at 250px 480px, #ffffff, transparent),
-    radial-gradient(3px 3px at 720px 520px, #fef08a, transparent);
+    radial-gradient(1.5px 1.5px at 50px 70px, #ffffff, transparent),
+    radial-gradient(2px 2px at 190px 250px, #fef08a, transparent),
+    radial-gradient(1.5px 1.5px at 330px 125px, #ffffff, transparent),
+    radial-gradient(2px 2px at 510px 360px, #ffffff, transparent),
+    radial-gradient(1.5px 1.5px at 660px 175px, #ffffff, transparent),
+    radial-gradient(2px 2px at 830px 300px, #fef08a, transparent),
+    radial-gradient(1.5px 1.5px at 980px 105px, #ffffff, transparent),
+    radial-gradient(2px 2px at 1170px 380px, #ffffff, transparent),
+    radial-gradient(1.5px 1.5px at 250px 480px, #ffffff, transparent),
+    radial-gradient(2px 2px at 720px 520px, #fef08a, transparent);
   background-size: 520px 420px;
 }
 
-/* AMOLED Mode Overrides — Eliminate all brighter blue parts */
-html[data-theme^="amoled"] [class*="dark:bg-blue-950"],
-html[data-theme^="amoled"] [class*="dark:bg-blue-900"],
+/* AMOLED Mode Overrides — Keep surfaces opaque above the starfield while preserving high-contrast accents */
 html[data-theme^="amoled"] [class*="dark:bg-slate-900"] {
-  background-color: rgba(255, 255, 255, 0.05) !important;
+  background-color: var(--surface) !important;
+}
+
+html[data-theme^="amoled"] [class*="dark:bg-blue-950"],
+html[data-theme^="amoled"] [class*="dark:bg-blue-900"] {
+  background-color: var(--surface-elevated) !important;
 }
 
 html[data-theme^="amoled"] [class*="dark:border-blue-800"],
 html[data-theme^="amoled"] [class*="dark:border-blue-900"],
 html[data-theme^="amoled"] [class*="dark:border-blue-700"] {
-  border-color: rgba(255, 255, 255, 0.12) !important;
+  border-color: var(--surface-border) !important;
 }
 
 html[data-theme^="amoled"] [class*="dark:text-blue-300"],
@@ -202,41 +215,26 @@ html[data-theme^="amoled"] [class*="dark:text-blue-100"] {
   color: #f1f5f9 !important;
 }
 
-/* Hero Observatory Canopy in AMOLED: Pure pitch-black with starlight, NO blue gradient */
+/* Hero Observatory Canopy in AMOLED: Opaque pitch-black canopy with clear primary CTA */
 html[data-theme^="amoled"] .hero-view-transition {
-  background: linear-gradient(135deg, #000000 0%, #060606 50%, #0c0c0c 100%) !important;
+  background: linear-gradient(135deg, #020307 0%, #070910 55%, #0c101b 100%) !important;
   border-color: rgba(255, 255, 255, 0.14) !important;
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.95) !important;
 }
 
-/* Hero connect account button in AMOLED */
+/* Hero primary action button in AMOLED matches global accessible accent CTA */
 html[data-theme^="amoled"] .hero-view-transition button.bg-white {
-  background: #18181b !important;
+  background: var(--accent-fill) !important;
   color: #ffffff !important;
-  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border: 1px solid rgba(96, 165, 250, 0.35) !important;
 }
 html[data-theme^="amoled"] .hero-view-transition button.bg-white:hover {
-  background: #27272a !important;
-}
-
-/* TopBar Sync CTA in AMOLED: sleek neutral pill instead of bright blue */
-html[data-theme^="amoled"] [aria-label*="Sync"],
-html[data-theme^="amoled"] [aria-label*="sync"] {
-  background-color: rgba(255, 255, 255, 0.06) !important;
-  border-color: rgba(255, 255, 255, 0.14) !important;
-  color: #f8fafc !important;
+  background: var(--accent-fill-hover) !important;
 }
 
 /* MiniCalendar selected week in AMOLED */
-html[data-theme^="amoled"] .bg-blue-100,
-html[data-theme^="amoled"] [class*="dark:bg-blue-950"] {
-  background-color: rgba(255, 255, 255, 0.08) !important;
-}
-
-/* Frosted card backgrounds in AMOLED for subtle star pass-through */
-html[data-theme^="amoled"] .rounded-2xl,
-html[data-theme^="amoled"] .rounded-xl {
-  backdrop-filter: blur(8px);
+html[data-theme^="amoled"] .bg-blue-100 {
+  background-color: #131826 !important;
 }
 
 /* Smooth crossfade applied via CSS only */

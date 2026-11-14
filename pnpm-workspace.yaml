@@ -7,7 +7,7 @@ packages:
 allowBuilds:
   # @swc/core resolves its platform binding in postinstall; used only by the
   # Ladle workbench toolchain, never shipped in the app bundle.
-  '@swc/core': true
+  "@swc/core": true
   core-js: false
   esbuild: true
   # msw ships a `msw init` postinstall that generates a public/ handler dir —

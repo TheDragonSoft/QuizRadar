@@ -132,8 +132,8 @@ export function CreateEditAssessmentModal({
     <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
       <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface)] px-6 py-4 shrink-0">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-700 dark:text-indigo-400">
-            <BookOpen className="h-5 w-5" />
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[var(--accent-ink)]">
+            <BookOpen className="h-5 w-5" aria-hidden="true" />
           </div>
           <div>
             <h2 id="assessment-modal-title" className="text-lg font-bold text-[var(--text)]">
@@ -174,7 +174,7 @@ export function CreateEditAssessmentModal({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. Midterm Examination"
-              className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] px-3 py-2 text-xs font-semibold text-[var(--text)] outline-none focus:border-indigo-600"
+              className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] px-3 py-2 text-xs font-semibold text-[var(--text)] outline-none focus:border-[var(--accent)]"
             />
           </div>
 
@@ -190,7 +190,7 @@ export function CreateEditAssessmentModal({
                 id="assessment-course"
                 value={courseId}
                 onChange={(e) => setCourseId(e.target.value)}
-                className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] p-2 text-xs text-[var(--text)]"
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] p-2 text-xs text-[var(--text)] outline-none focus:border-[var(--accent)]"
               >
                 <option value="">None / General</option>
                 {courses.map((c) => (
@@ -212,7 +212,7 @@ export function CreateEditAssessmentModal({
                 id="assessment-type"
                 value={assessmentType}
                 onChange={(e) => setAssessmentType(e.target.value)}
-                className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] p-2 text-xs text-[var(--text)]"
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] p-2 text-xs text-[var(--text)] outline-none focus:border-[var(--accent)]"
               >
                 {ASSESSMENT_TYPES.map((type) => (
                   <option key={type} value={type}>
@@ -229,7 +229,7 @@ export function CreateEditAssessmentModal({
                 htmlFor="assessment-date"
                 className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1"
               >
-                {copy.assessmentModal.dateLabel} *
+                {copy.assessmentModal.dateLabel.replace(/\s*\(YYYY-MM-DD\)/i, "")} *
               </label>
               <input
                 id="assessment-date"
@@ -237,7 +237,7 @@ export function CreateEditAssessmentModal({
                 required
                 value={dateIso}
                 onChange={(e) => setDateIso(e.target.value)}
-                className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] p-2 text-xs text-[var(--text)]"
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] p-2 text-xs text-[var(--text)] outline-none focus:border-[var(--accent)]"
               />
             </div>
 
@@ -287,8 +287,8 @@ export function CreateEditAssessmentModal({
                 type="text"
                 value={room}
                 onChange={(e) => setRoom(e.target.value)}
-                placeholder={copy.assessmentModal.noValuePlaceholder}
-                className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] px-3 py-2 text-xs text-[var(--text)] outline-none focus:border-indigo-600"
+                placeholder="e.g. Room 301"
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] px-3 py-2 text-xs text-[var(--text)] outline-none focus:border-[var(--accent)]"
               />
             </div>
 
@@ -304,8 +304,8 @@ export function CreateEditAssessmentModal({
                 type="text"
                 value={instructor}
                 onChange={(e) => setInstructor(e.target.value)}
-                placeholder={copy.assessmentModal.noValuePlaceholder}
-                className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] px-3 py-2 text-xs text-[var(--text)] outline-none focus:border-indigo-600"
+                placeholder="Optional"
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] px-3 py-2 text-xs text-[var(--text)] outline-none focus:border-[var(--accent)]"
               />
             </div>
           </div>
@@ -326,8 +326,8 @@ export function CreateEditAssessmentModal({
                 step="any"
                 value={weightagePercent}
                 onChange={(e) => setWeightagePercent(e.target.value)}
-                placeholder={copy.assessmentModal.noValuePlaceholder}
-                className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] px-3 py-2 text-xs text-[var(--text)] outline-none focus:border-indigo-600"
+                placeholder="e.g. 20"
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] px-3 py-2 text-xs text-[var(--text)] outline-none focus:border-[var(--accent)]"
               />
             </div>
 
@@ -345,8 +345,8 @@ export function CreateEditAssessmentModal({
                 step="any"
                 value={maxScore}
                 onChange={(e) => setMaxScore(e.target.value)}
-                placeholder={copy.assessmentModal.noValuePlaceholder}
-                className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] px-3 py-2 text-xs text-[var(--text)] outline-none focus:border-indigo-600"
+                placeholder="e.g. 100"
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] px-3 py-2 text-xs text-[var(--text)] outline-none focus:border-[var(--accent)]"
               />
             </div>
           </div>
@@ -364,7 +364,7 @@ export function CreateEditAssessmentModal({
               value={topicsRaw}
               onChange={(e) => setTopicsRaw(e.target.value)}
               placeholder={"e.g. Dynamic Programming\nGraph Algorithms\nShortest Path"}
-              className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] px-3 py-2 text-xs text-[var(--text)] outline-none focus:border-indigo-600 resize-none"
+              className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] px-3 py-2 text-xs text-[var(--text)] outline-none focus:border-[var(--accent)] resize-none"
             />
           </div>
         </div>
@@ -394,7 +394,7 @@ export function CreateEditAssessmentModal({
             <button
               type="submit"
               disabled={submitting || !title.trim() || !dateIso}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow hover:bg-indigo-700 transition disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-[var(--accent-fill-hover)] transition disabled:opacity-50"
             >
               <Check className="h-4 w-4" />
               {copy.assessmentModal.saveAssessment}

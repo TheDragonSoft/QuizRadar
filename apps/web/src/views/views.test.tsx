@@ -702,5 +702,53 @@ describe("FocusView pomodoro completion (exactly once, store-owned)", () => {
     expect(useAppStore.getState().pomodoroSessionId).toBe(1);
 
     stopTicker();
+    vi.useRealTimers();
+  });
+
+  it("shows 'No assessments added yet' with + Add Course / + Assessment CTAs on fresh TasksView", () => {
+    vi.useRealTimers();
+    useAppStore.setState({
+      data: {
+        ...initialFullState,
+        schedule: { semester: "", courses: [], slots: [] },
+        assessments: [],
+        studyTasksPayload: {
+          ...initialFullState.studyTasksPayload,
+          readinessCards: [],
+          days: [],
+        },
+      },
+      activeCourseFilterTasks: "ALL",
+    });
+
+    render(<TasksView />);
+    fireEvent.click(screen.getByRole("button", { name: /All Assessments/i }));
+    expect(screen.getByText("No assessments added yet")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /\+ Add Course/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /\+ Assessment/i }).length).toBeGreaterThanOrEqual(
+      2,
+    );
+    expect(screen.queryByText("No assessments match your active filters")).not.toBeInTheDocument();
+  });
+
+  it("streamlines cold-start DashboardView by hiding duplicate Clear Exam Horizon empty body", () => {
+    vi.useRealTimers();
+    useAppStore.setState({
+      data: {
+        ...initialFullState,
+        schedule: { semester: "", courses: [], slots: [] },
+        assessments: [],
+        studyTasksPayload: {
+          ...initialFullState.studyTasksPayload,
+          readinessCards: [],
+          days: [],
+        },
+      },
+    });
+
+    render(<DashboardView />);
+    expect(screen.getByTestId("empty-dashboard-no-courses")).toBeInTheDocument();
+    expect(screen.getByText(/Setup Checklist/i)).toBeInTheDocument();
+    expect(screen.queryByText("Clear Exam Horizon")).not.toBeInTheDocument();
   });
 });

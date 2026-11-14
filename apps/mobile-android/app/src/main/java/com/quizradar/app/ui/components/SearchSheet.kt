@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -73,10 +75,14 @@ fun SearchSheet(
     var searchQuery by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf("ALL") }
     val focusRequester = remember { FocusRequester() }
-
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
-    }
+    val courseColorsById =
+        remember(snapshot.schedule.courses) {
+            snapshot.schedule.courses.associate { it.id to it.color }
+        }
+    val courseColorsByName =
+        remember(snapshot.schedule.courses) {
+            snapshot.schedule.courses.associate { it.name.trim().lowercase() to it.color }
+        }
 
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
@@ -90,6 +96,8 @@ fun SearchSheet(
             modifier =
                 Modifier
                     .fillMaxSize()
+                    .imePadding()
+                    .navigationBarsPadding()
                     .padding(horizontal = 20.dp, vertical = 12.dp),
         ) {
             // Top Bar: Search Input with Clear & Close Buttons
@@ -143,6 +151,11 @@ fun SearchSheet(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+
+            // Attached after OutlinedTextField is composed inside ModalBottomSheet so focus never crashes.
+            LaunchedEffect(Unit) {
+                runCatching { focusRequester.requestFocus() }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -252,8 +265,12 @@ fun SearchSheet(
                     modifier = Modifier.weight(1f),
                 ) {
                     items(filteredAssessments, key = { it.id }) { assessment ->
+                        val resolvedColorHex =
+                            assessment.courseId?.let { courseColorsById[it] }
+                                ?: assessment.courseName?.trim()?.lowercase()?.let { courseColorsByName[it] }
                         SearchResultRow(
                             assessment = assessment,
+                            courseColorHex = resolvedColorHex,
                             onClick = {
                                 onSelectAssessment(assessment.id)
                                 onDismiss()
@@ -270,12 +287,16 @@ fun SearchSheet(
 private fun SearchResultRow(
     assessment: AssessmentModel,
     onClick: () -> Unit,
+    courseColorHex: String? = null,
 ) {
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val courseColor = CoursePalette.get(assessment.courseId).color
-    val courseTextColor = CoursePalette.textOnSurface(assessment.courseId, isDark)
+    val courseColor = CoursePalette.get(assessment.courseId, courseColorHex).color
+    val courseTextColor = CoursePalette.textOnSurface(assessment.courseId, isDark, courseColorHex)
     val dateFormatter = remember { DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM) }
-    val formattedDate = assessment.dateIso?.let { dateFormatter.format(it) } ?: "—"
+    val formattedDate =
+        assessment.dateIso?.let {
+            runCatching { dateFormatter.format(it) }.getOrDefault(it.toString())
+        } ?: "—"
     val urgency = urgencyTagStyle(assessment.daysUntil)
 
     Card(

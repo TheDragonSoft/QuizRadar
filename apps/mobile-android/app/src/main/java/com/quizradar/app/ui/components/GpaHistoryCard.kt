@@ -109,6 +109,7 @@ fun GpaHistoryCard(
     gpaSummaryJson: String?,
     scaleLabel: String,
     modifier: Modifier = Modifier,
+    courseCreditsById: Map<String, Double?> = emptyMap(),
 ) {
     val summary = remember(gpaSummaryJson) { parseGpaSummary(gpaSummaryJson) }
 
@@ -156,18 +157,30 @@ fun GpaHistoryCard(
             } else {
                 HorizontalDivider()
                 Spacer(modifier = Modifier.height(12.dp))
+                val resolvedCourseCredits =
+                    summary.courses.mapNotNull { row ->
+                        (row.credits ?: courseCreditsById[row.courseId])?.takeIf { it > 0.0 }
+                    }
+                val effectiveTotalCredits =
+                    when {
+                        summary.totalCredits > 0.0 && resolvedCourseCredits.isNotEmpty() -> summary.totalCredits
+                        resolvedCourseCredits.isNotEmpty() -> resolvedCourseCredits.sum()
+                        else -> 0.0
+                    }
                 Text(
                     text =
-                        if (summary.totalCredits > 0.0) {
-                            "Courses (${summary.courses.size}) · ${String.format(Locale.US, "%.1f", summary.totalCredits)} credits"
+                        if (effectiveTotalCredits > 0.0) {
+                            "Courses (${summary.courses.size}) · ${String.format(Locale.US, "%.1f", effectiveTotalCredits)} credits"
                         } else {
-                            "Courses (${summary.courses.size})"
+                            "Courses (${summary.courses.size}) · Credits not set"
                         },
                     style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 summary.courses.forEachIndexed { index, course ->
                     if (index > 0) HorizontalDivider()
+                    val rowCredits =
+                        (course.credits ?: courseCreditsById[course.courseId])?.takeIf { it > 0.0 }
                     Row(
                         modifier =
                             Modifier
@@ -189,10 +202,10 @@ fun GpaHistoryCard(
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text =
-                                    when {
-                                        course.credits != null ->
-                                            String.format(Locale.US, "%.1f", course.credits) + " credits"
-                                        else -> "No credits recorded"
+                                    if (rowCredits != null) {
+                                        String.format(Locale.US, "%.1f", rowCredits) + " credits"
+                                    } else {
+                                        "Credits not set"
                                     },
                                 style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,

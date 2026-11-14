@@ -60,6 +60,8 @@ private val LightColors: ColorScheme =
         outlineVariant = Color(0xFFE2E8F0),
         error = ExamRed,
         onError = SurfaceLight,
+        errorContainer = Color(0xFFFEE2E2),
+        onErrorContainer = Color(0xFF7F1D1D),
     )
 
 private val DarkColors: ColorScheme =
@@ -87,33 +89,37 @@ private val DarkColors: ColorScheme =
         outlineVariant = Color(0xFF1A243A),
         error = ExamRedDark,
         onError = Color(0xFF450A0A),
+        errorContainer = Color(0xFF3B1219),
+        onErrorContainer = Color(0xFFFECDD3),
     )
 
 private val AmoledColors: ColorScheme =
     darkColorScheme(
-        primary = Color(0xFFF1F5F9),
+        primary = Color(0xFFF8FAFC),
         onPrimary = Color.Black,
-        primaryContainer = Color(0xFF1A1C24),
-        onPrimaryContainer = Color(0xFFF4F4F5),
-        secondary = Color(0xFFA1A1AA),
+        primaryContainer = Color(0xFF222633),
+        onPrimaryContainer = Color(0xFFF8FAFC),
+        secondary = Color(0xFFD4D4D8),
         onSecondary = Color.Black,
-        secondaryContainer = Color(0xFF242732),
-        onSecondaryContainer = Color(0xFFF4F4F5),
+        secondaryContainer = Color(0xFF2F3545),
+        onSecondaryContainer = Color(0xFFF8FAFC),
         background = Color.Black,
         onBackground = Color(0xFFF8FAFC),
         surface = Color(0xFF0C0D12),
         onSurface = Color(0xFFF8FAFC),
-        surfaceVariant = Color(0xFF12141C),
-        onSurfaceVariant = Color(0xFFA1A1AA),
+        surfaceVariant = Color(0xFF1A1E29),
+        onSurfaceVariant = Color(0xFFB8BECB),
         surfaceContainerLowest = Color.Black,
         surfaceContainerLow = Color(0xFF08090D),
         surfaceContainer = Color(0xFF0E1016),
         surfaceContainerHigh = Color(0xFF151720),
-        surfaceContainerHighest = Color(0xFF1C1E2A),
-        outline = Color(0xFF282C3A),
-        outlineVariant = Color(0xFF1E212C),
+        surfaceContainerHighest = Color(0xFF1E222E),
+        outline = Color(0xFF303647),
+        outlineVariant = Color(0xFF222634),
         error = ExamRedDark,
         onError = Color(0xFF450A0A),
+        errorContainer = Color(0xFF2A0B10),
+        onErrorContainer = Color(0xFFFECDD3),
     )
 
 /*

@@ -180,40 +180,44 @@ export const TasksView: React.FC = () => {
     <div data-testid="tasks-view" className="space-y-6">
       {/* Top Header: Title, Segmented Tab Switcher & Course Filter */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[var(--surface-border)] pb-4">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-lg font-bold tracking-tight text-[var(--text)]">{copy.nav.tasks}</h1>
           <p className="text-xs tabular-nums text-[var(--text-muted)] mt-0.5">
-            {copy.tasks.summaryLine(pendingCount, upcomingCount, totalHours)}
+            {assessments.length === 0 && courses.length === 0
+              ? "No courses or assessments added yet — add one to start tracking your study plan."
+              : assessments.length === 0
+                ? "No assessments added yet — click + Assessment to start planning."
+                : copy.tasks.summaryLine(pendingCount, upcomingCount, totalHours)}
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* Segmented View Switcher: Study Roadmap vs. Assessments Ledger vs. Grade Center & GPA */}
-          <div className="flex items-center gap-1 rounded-xl border border-[var(--surface-border)] bg-[var(--page)] p-1 text-xs font-semibold">
+        <div className="flex flex-wrap lg:flex-nowrap items-center gap-2.5 shrink-0">
+          {/* Segmented View Switcher: Daily Roadmap vs. Assessments vs. Grade Center & GPA */}
+          <div className="flex max-w-full overflow-x-auto items-center gap-1 rounded-xl border border-[var(--surface-border)] bg-[var(--page)] p-1 text-xs font-semibold">
             <button
               type="button"
               onClick={() => setActiveTab("roadmap")}
-              className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 transition ${
+              className={`flex shrink-0 whitespace-nowrap cursor-pointer items-center gap-1.5 rounded-lg px-2.5 sm:px-3 py-1.5 transition ${
                 activeTab === "roadmap"
                   ? "bg-[var(--surface)] text-[var(--accent-ink)] font-bold shadow-2xs border border-[var(--surface-border)]"
                   : "text-[var(--text-muted)] hover:text-[var(--text)]"
               }`}
             >
-              <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
+              <BookOpen className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               <span>Daily Roadmap</span>
             </button>
             <button
               type="button"
-              aria-label="All Assessments (Assessments Ledger)"
+              aria-label="All Assessments"
               onClick={() => setActiveTab("assessments")}
-              className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 transition ${
+              className={`flex shrink-0 whitespace-nowrap cursor-pointer items-center gap-1.5 rounded-lg px-2.5 sm:px-3 py-1.5 transition ${
                 activeTab === "assessments"
                   ? "bg-[var(--surface)] text-[var(--accent-ink)] font-bold shadow-2xs border border-[var(--surface-border)]"
                   : "text-[var(--text-muted)] hover:text-[var(--text)]"
               }`}
             >
-              <RadarIcon className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>Assessments Ledger</span>
+              <RadarIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>Assessments</span>
               <span className="rounded-full bg-[var(--surface-border)] px-1.5 py-0.2 text-[10px] font-bold tabular-nums">
                 {assessments.length}
               </span>
@@ -222,24 +226,24 @@ export const TasksView: React.FC = () => {
               type="button"
               data-testid="tab-grades"
               onClick={() => setActiveTab("grades")}
-              className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 transition ${
+              className={`flex shrink-0 whitespace-nowrap cursor-pointer items-center gap-1.5 rounded-lg px-2.5 sm:px-3 py-1.5 transition ${
                 activeTab === "grades"
                   ? "bg-[var(--surface)] text-[var(--accent-ink)] font-bold shadow-2xs border border-[var(--surface-border)]"
                   : "text-[var(--text-muted)] hover:text-[var(--text)]"
               }`}
             >
-              <GraduationCap className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>Grade Center & GPA</span>
+              <GraduationCap className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>Grade Center &amp; GPA</span>
             </button>
           </div>
 
           {/* Actions & Course Filter */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0 w-auto shrink-0">
             <select
               aria-label="Filter study tasks by course"
               value={activeCourseFilter}
               onChange={(e) => setActiveCourseFilter(e.target.value)}
-              className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] px-3 py-1.5 text-xs text-[var(--text)] focus:border-[var(--accent)] focus:outline-none cursor-pointer"
+              className="min-w-0 max-w-full flex-1 sm:flex-initial sm:max-w-[240px] truncate rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] px-3 py-1.5 text-xs text-[var(--text)] focus:border-[var(--accent)] focus:outline-none cursor-pointer"
             >
               <option value="ALL">{copy.tasks.filterAllCourses}</option>
               {courses.map((c) => (
@@ -253,7 +257,7 @@ export const TasksView: React.FC = () => {
               type="button"
               data-testid="add-assessment-btn"
               onClick={() => openModal({ id: "create-edit-assessment" })}
-              className="flex items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-3 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-[var(--accent-fill-hover)] transition cursor-pointer active:scale-95 shrink-0"
+              className="flex whitespace-nowrap items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-3 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-[var(--accent-fill-hover)] transition cursor-pointer active:scale-95 shrink-0"
             >
               <Plus className="h-3.5 w-3.5" aria-hidden="true" />
               <span>+ Assessment</span>
@@ -421,7 +425,33 @@ export const TasksView: React.FC = () => {
 
           {/* Assessment Rows List */}
           <div className="space-y-2">
-            {filteredAssessments.length === 0 ? (
+            {assessments.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-[var(--surface-border)] p-8 text-center text-xs text-[var(--text-muted)] space-y-2">
+                <div className="font-semibold text-[var(--text)]">No assessments added yet</div>
+                <p className="text-[11px]">
+                  Add a course timetable or create your first quiz, exam, or assignment to populate
+                  this list.
+                </p>
+                <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openModal({ id: "add-course" })}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] transition cursor-pointer"
+                  >
+                    <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>+ Add Course</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openModal({ id: "create-edit-assessment" })}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-3 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-[var(--accent-fill-hover)] transition cursor-pointer"
+                  >
+                    <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>+ Assessment</span>
+                  </button>
+                </div>
+              </div>
+            ) : filteredAssessments.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-[var(--surface-border)] p-8 text-center text-xs text-[var(--text-muted)] space-y-2">
                 <div className="font-semibold text-[var(--text)]">
                   No assessments match your active filters
@@ -429,7 +459,7 @@ export const TasksView: React.FC = () => {
                 <p className="text-[11px]">
                   Try adjusting your time horizon or clearing the search query to see older records.
                 </p>
-                <div className="mt-2 flex items-center justify-center gap-2">
+                <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
                   <button
                     type="button"
                     onClick={() => {
@@ -804,9 +834,9 @@ const ReadinessCard: React.FC<{ card: ExamReadinessCard; onClick: () => void }> 
       }}
       className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface)] p-4 shadow-xs hover:border-[var(--accent)] hover:shadow-sm transition cursor-pointer flex flex-col justify-between space-y-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
     >
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-start justify-between gap-2 min-w-0">
         <span
-          className="px-2 py-0.5 rounded-md border text-xs font-bold shadow-2xs"
+          className="min-w-0 max-w-[70%] truncate px-2 py-0.5 rounded-md border text-xs font-bold shadow-2xs"
           style={{
             backgroundColor: chip.bg,
             color: chip.text,
@@ -815,7 +845,7 @@ const ReadinessCard: React.FC<{ card: ExamReadinessCard; onClick: () => void }> 
         >
           {courseDisplayName(card.courseId, courses)}
         </span>
-        <span className="text-xs uppercase font-bold tabular-nums text-[var(--text-muted)]">
+        <span className="shrink-0 text-xs uppercase font-bold tabular-nums text-[var(--text-muted)]">
           {card.daysUntil === 0 ? (
             <span className="px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-700 dark:text-red-300 text-[10px] font-bold">
               TODAY
@@ -824,8 +854,10 @@ const ReadinessCard: React.FC<{ card: ExamReadinessCard; onClick: () => void }> 
             <span className="px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[10px] font-bold">
               TOMORROW
             </span>
+          ) : card.daysUntil !== null && card.daysUntil !== undefined && card.daysUntil >= 0 ? (
+            copy.dashboard.countdownShort(card.daysUntil)
           ) : (
-            copy.dashboard.countdownShort(card.daysUntil ?? 0)
+            "—"
           )}
         </span>
       </div>

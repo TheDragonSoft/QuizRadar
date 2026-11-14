@@ -121,8 +121,8 @@ export function SettingsCoursesSection() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
           <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
             {copy.settings.coursesHeader}
           </h3>
@@ -130,7 +130,7 @@ export function SettingsCoursesSection() {
             {courses.length} course{courses.length === 1 ? "" : "s"} enrolled
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => openModal({ id: "onboarding", flush: true })}
@@ -150,8 +150,18 @@ export function SettingsCoursesSection() {
       </div>
 
       {courses.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--text-muted)]">
-          {copy.sidebar.noCoursesEnrolled}
+        <div className="rounded-xl border border-dashed border-[var(--border)] p-8 text-center space-y-3">
+          <p className="text-sm font-medium text-[var(--text-muted)]">
+            {copy.sidebar.noCoursesEnrolled}
+          </p>
+          <button
+            type="button"
+            onClick={() => openModal({ id: "add-course" })}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[var(--accent-fill-hover)] cursor-pointer"
+          >
+            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>+ {copy.settings.addCourse}</span>
+          </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

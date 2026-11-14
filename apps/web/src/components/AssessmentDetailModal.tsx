@@ -16,6 +16,7 @@ import {
   X,
   Mail,
   Pencil,
+  BookOpen,
 } from "lucide-react";
 import { copy } from "../copy";
 import { safeExternalUrl } from "../lib/safeUrl";
@@ -25,6 +26,15 @@ import { useAppStore } from "../state/store";
 import { isDarkTheme } from "../state/storage";
 import { calculateWhatIf } from "../lib/whatIf";
 import { courseAccessibleChip, courseDisplayName, coursePalette } from "../lib/coursePalette";
+
+function formatSourceEmailDate(raw: string): string {
+  const trimmed = raw.trim();
+  const isoMatch = /^(\d{4}-\d{2}-\d{2})/.exec(trimmed);
+  if (isoMatch) {
+    return formatIsoShortDate(isoMatch[1], { year: true });
+  }
+  return trimmed;
+}
 
 interface AssessmentDetailModalProps {
   modalId: string;
@@ -163,6 +173,17 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
     assessment.daysUntil !== undefined &&
     assessment.daysUntil >= 0 &&
     assessment.daysUntil <= 2;
+  const inferenceNoteTrimmed = assessment.aiInferenceNote?.trim() ?? "";
+  const isHeuristicNote =
+    inferenceNoteTrimmed.includes("[AI unavailable") ||
+    inferenceNoteTrimmed.toLowerCase().startsWith("estimated");
+  const isManualOrEditedNote =
+    inferenceNoteTrimmed === copy.assessmentModal.provenanceManual ||
+    inferenceNoteTrimmed === copy.assessmentModal.provenanceEdited;
+  const hasRealAiMetadata = Boolean(
+    assessment.aiStudyPlan?.trim() ||
+    (inferenceNoteTrimmed && !isHeuristicNote && !isManualOrEditedNote),
+  );
 
   return (
     <div
@@ -195,20 +216,27 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
               <span className="px-2 py-0.5 rounded-full bg-[var(--surface-hover)] text-[var(--text-muted)] text-[11px] font-semibold">
                 {assessment.source || copy.assessmentDetail.defaultSource}
               </span>
-              {assessment.aiInferenceNote ? (
-                assessment.aiInferenceNote.includes("[AI unavailable") ||
-                assessment.aiInferenceNote.toLowerCase().startsWith("estimated") ? (
+              {inferenceNoteTrimmed ? (
+                isHeuristicNote ? (
                   <span
                     className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[11px] font-semibold"
-                    title={assessment.aiInferenceNote}
+                    title={inferenceNoteTrimmed}
                   >
                     <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" />
                     <span>Heuristic Estimate</span>
                   </span>
+                ) : isManualOrEditedNote ? (
+                  <span
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[var(--surface-hover)] text-[var(--text-muted)] text-[11px] font-semibold"
+                    title={inferenceNoteTrimmed}
+                  >
+                    <Pencil className="h-3 w-3 shrink-0" aria-hidden="true" />
+                    <span>{inferenceNoteTrimmed}</span>
+                  </span>
                 ) : (
                   <span
                     className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 text-[11px] font-bold shadow-2xs"
-                    title={assessment.aiInferenceNote}
+                    title={inferenceNoteTrimmed}
                   >
                     <Sparkles
                       className="h-3 w-3 shrink-0 text-purple-600 dark:text-purple-400"
@@ -219,12 +247,21 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
                 )
               ) : null}
               {isGraded ? (
-                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold">
-                  {copy.assessmentDetail.recordedStatus(
-                    assessment.achievedScore!,
-                    assessment.maxScore!,
-                    assessment.weightagePercent,
-                  )}
+                <span
+                  className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold"
+                  title={
+                    assessment.weightagePercent != null
+                      ? `Score: ${assessment.achievedScore}/${assessment.maxScore} · Course weight: ${assessment.weightagePercent}%`
+                      : `Score: ${assessment.achievedScore}/${assessment.maxScore}`
+                  }
+                >
+                  {assessment.weightagePercent != null
+                    ? `Recorded: ${assessment.achievedScore}/${assessment.maxScore} (${assessment.weightagePercent}% weight)`
+                    : copy.assessmentDetail.recordedStatus(
+                        assessment.achievedScore!,
+                        assessment.maxScore!,
+                        null,
+                      )}
                 </span>
               ) : (
                 <span className="px-2 py-0.5 rounded-full bg-slate-500/15 text-[var(--text-muted)] text-[11px] font-semibold">
@@ -275,15 +312,18 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
 
       {/* Scrollable Body */}
       <div className="min-h-0 flex-1 overflow-y-auto p-6 pb-12 space-y-6">
-        {/* Facts Card */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-hover)] p-3.5 text-xs">
-          <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4 text-[var(--accent-ink)] shrink-0" aria-hidden="true" />
-            <div className="min-w-0">
+        {/* Details Card */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-hover)] p-3.5 text-xs">
+          <div className="flex items-start gap-2 sm:col-span-2">
+            <Clock
+              className="mt-0.5 h-4 w-4 text-[var(--accent-ink)] shrink-0"
+              aria-hidden="true"
+            />
+            <div className="min-w-0 flex-1">
               <span className="text-[11px] text-[var(--text-muted)] block font-semibold">
                 {copy.assessmentDetail.dateLabel}
               </span>
-              <span className="font-semibold tabular-nums text-[var(--text)] truncate block">
+              <span className="font-semibold tabular-nums text-[var(--text)] break-words leading-snug block">
                 {/* The core's `display_time` already carries the date AND the
                     time ("Sunday, 01 November 2026 (9:30 AM - 10:30 AM)"), so
                     the raw ISO date is never printed next to it - that used
@@ -297,13 +337,16 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <MapPin className="h-4 w-4 text-[var(--accent-ink)] shrink-0" aria-hidden="true" />
-            <div className="min-w-0">
+          <div className="flex items-start gap-2">
+            <MapPin
+              className="mt-0.5 h-4 w-4 text-[var(--accent-ink)] shrink-0"
+              aria-hidden="true"
+            />
+            <div className="min-w-0 flex-1">
               <span className="text-[11px] text-[var(--text-muted)] block font-semibold">
                 {copy.assessmentDetail.roomLabel}
               </span>
-              <span className="font-semibold text-[var(--text)] truncate block">
+              <span className="font-semibold text-[var(--text)] break-words leading-snug block">
                 {assessment.room
                   ? `Room ${stripRoomPrefix(assessment.room)}`
                   : copy.assessmentDetail.missingValue}
@@ -312,13 +355,13 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <User className="h-4 w-4 text-[var(--accent-ink)] shrink-0" aria-hidden="true" />
-            <div className="min-w-0">
+          <div className="flex items-start gap-2">
+            <User className="mt-0.5 h-4 w-4 text-[var(--accent-ink)] shrink-0" aria-hidden="true" />
+            <div className="min-w-0 flex-1">
               <span className="text-[11px] text-[var(--text-muted)] block font-semibold">
                 {copy.assessmentDetail.instructorLabel}
               </span>
-              <span className="font-semibold text-[var(--text)] truncate block">
+              <span className="font-semibold text-[var(--text)] break-words leading-snug block">
                 {assessment.instructor || copy.assessmentDetail.missingValue}
               </span>
             </div>
@@ -334,8 +377,8 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
                 <span>Source Email Announcement</span>
               </div>
               {assessment.emailSentDate && (
-                <span className="text-[11px] text-[var(--text-muted)] font-mono">
-                  {assessment.emailSentDate}
+                <span className="text-[11px] text-[var(--text-muted)] tabular-nums">
+                  {formatSourceEmailDate(assessment.emailSentDate)}
                 </span>
               )}
             </div>
@@ -475,33 +518,84 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
           )}
         </div>
 
-        {/* AI Extraction Reasoning & Study Guidance */}
-        {(assessment.aiInferenceNote || assessment.aiStudyPlan || rec?.whyStudyNow) && (
-          <div className="space-y-2 rounded-xl border border-purple-500/20 bg-purple-500/5 p-3.5 text-xs">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 font-bold text-purple-700 dark:text-purple-300">
-                <Sparkles className="h-4 w-4 shrink-0" aria-hidden="true" />
-                <span>AI Reasoning & Study Roadmap</span>
-              </div>
-              {assessment.estimatedStudyHours != null && assessment.estimatedStudyHours > 0 && (
-                <span className="px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 font-semibold text-[11px]">
-                  ~{assessment.estimatedStudyHours}h prep recommended
+        {/* Study Priority & Guidance — AI branding strictly limited to real AI output */}
+        {(inferenceNoteTrimmed || assessment.aiStudyPlan?.trim() || rec?.whyStudyNow) && (
+          <div
+            data-testid="study-roadmap-card"
+            className={
+              hasRealAiMetadata
+                ? "space-y-2 rounded-xl border border-purple-500/20 bg-purple-500/5 p-3.5 text-xs"
+                : "space-y-2 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-hover)] p-3.5 text-xs"
+            }
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div
+                className={
+                  hasRealAiMetadata
+                    ? "flex items-center gap-1.5 font-bold text-purple-700 dark:text-purple-300"
+                    : "flex items-center gap-1.5 font-bold text-[var(--text)]"
+                }
+              >
+                {hasRealAiMetadata ? (
+                  <Sparkles className="h-4 w-4 shrink-0" aria-hidden="true" />
+                ) : (
+                  <BookOpen
+                    className="h-4 w-4 shrink-0 text-[var(--accent-ink)]"
+                    aria-hidden="true"
+                  />
+                )}
+                <span>
+                  {hasRealAiMetadata ? "AI Reasoning & Study Roadmap" : "Study Priority & Roadmap"}
                 </span>
-              )}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {!hasRealAiMetadata && (
+                  <span className="px-2 py-0.5 rounded-full bg-[var(--surface)] border border-[var(--surface-border)] text-[var(--text-muted)] font-semibold text-[11px]">
+                    {isHeuristicNote ? "Heuristic Estimate" : "Deterministic Planner"}
+                  </span>
+                )}
+                {assessment.estimatedStudyHours != null && assessment.estimatedStudyHours > 0 && (
+                  <span
+                    className={
+                      hasRealAiMetadata
+                        ? "px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 font-semibold text-[11px]"
+                        : "px-2 py-0.5 rounded-full bg-[var(--accent-soft)] text-[var(--accent-ink)] font-semibold text-[11px]"
+                    }
+                  >
+                    ~{assessment.estimatedStudyHours}h prep recommended
+                  </span>
+                )}
+              </div>
             </div>
 
-            {assessment.aiInferenceNote && (
+            {inferenceNoteTrimmed && (
               <div className="space-y-0.5">
-                <span className="text-[11px] text-purple-800/80 dark:text-purple-300/80 font-semibold block">
-                  Extraction Derivation:
+                <span
+                  className={
+                    hasRealAiMetadata
+                      ? "text-[11px] text-purple-800/80 dark:text-purple-300/80 font-semibold block"
+                      : "text-[11px] text-[var(--text-muted)] font-semibold block"
+                  }
+                >
+                  {isManualOrEditedNote
+                    ? "Entry Note:"
+                    : isHeuristicNote
+                      ? "Estimate Note:"
+                      : "Extraction Derivation:"}
                 </span>
-                <p className="text-[var(--text)] leading-relaxed italic bg-[var(--surface)]/70 p-2 rounded-lg border border-purple-500/10">
-                  {assessment.aiInferenceNote}
+                <p
+                  className={
+                    hasRealAiMetadata
+                      ? "text-[var(--text)] leading-relaxed italic bg-[var(--surface)]/70 p-2 rounded-lg border border-purple-500/10"
+                      : "text-[var(--text)] leading-relaxed bg-[var(--surface)]/70 p-2 rounded-lg border border-[var(--surface-border)]"
+                  }
+                >
+                  {inferenceNoteTrimmed}
                 </p>
               </div>
             )}
 
-            {assessment.aiStudyPlan && (
+            {assessment.aiStudyPlan?.trim() && (
               <div className="space-y-0.5">
                 <span className="text-[11px] text-purple-800/80 dark:text-purple-300/80 font-semibold block">
                   Recommended Study Plan:
@@ -510,7 +604,7 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
               </div>
             )}
 
-            {rec?.whyStudyNow && !assessment.aiStudyPlan && (
+            {rec?.whyStudyNow && !assessment.aiStudyPlan?.trim() && (
               <p className="text-[var(--text-muted)] leading-relaxed">{rec.whyStudyNow}</p>
             )}
           </div>

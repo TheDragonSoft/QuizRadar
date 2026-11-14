@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -93,6 +94,7 @@ fun HelpSheet(
             modifier =
                 Modifier
                     .fillMaxWidth()
+                    .navigationBarsPadding()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 20.dp, vertical = 8.dp),
         ) {
@@ -106,10 +108,10 @@ fun HelpSheet(
                 Column {
                     Text(
                         text = "QuizRadar Help & FAQ",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleLarge,
                     )
                     Text(
-                        text = "Zero-server, local-first intelligence engine",
+                        text = "Private, on-device exam & study planner",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -184,7 +186,7 @@ fun HelpSheet(
                         .defaultMinSize(minHeight = PillButtonMinHeight),
                 contentPadding = PillButtonContentPadding,
             ) {
-                Text("Got it")
+                Text("Got it", style = MaterialTheme.typography.labelLarge)
             }
 
             Spacer(modifier = Modifier.height(24.dp))

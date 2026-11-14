@@ -466,35 +466,35 @@ describe("Adversarial Verification — Milestone 2: UI, Shortcuts & Density", ()
       // Flip card to reveal Leitner rating controls
       fireEvent.click(screen.getByRole("button", { name: /Flip flashcard/i }));
 
-      // Click 'Mastered (Advance Box)'
-      const masteredBtn = screen.getByRole("button", { name: /Mastered \(Advance Box\)/i });
+      // Click 'Mastered (Advance Stage)'
+      const masteredBtn = screen.getByRole("button", { name: /Mastered \(Advance Stage\)/i });
       fireEvent.click(masteredBtn);
 
-      // Verify card in store advanced from Box 1 to Box 2
+      // Verify card in store advanced from Stage 1 to Stage 2
       let storedCard = useAppStore.getState().flashcards.find((c) => c.id === "card-test");
       expect(storedCard?.boxLevel).toBe(2);
       expect(storedCard?.reviewCount).toBe(1);
 
-      // Test Box 5 ceiling: manually set card to box 5 and master it
+      // Test Stage 5 ceiling: manually set card to stage 5 and master it
       useAppStore.setState({
         flashcards: [{ ...storedCard!, boxLevel: 5 }],
       });
       fireEvent.click(screen.getByRole("button", { name: /Flip flashcard/i }));
-      fireEvent.click(screen.getByRole("button", { name: /Mastered \(Advance Box\)/i }));
+      fireEvent.click(screen.getByRole("button", { name: /Mastered \(Advance Stage\)/i }));
 
       storedCard = useAppStore.getState().flashcards.find((c) => c.id === "card-test");
       expect(storedCard?.boxLevel).toBe(5); // Must remain capped at 5
 
-      // Test Reset: card at Box 5 marked 'Needs Review' resets directly to Box 1
+      // Test Reset: card at Stage 5 marked 'Needs Review' resets directly to Stage 1
       fireEvent.click(screen.getByRole("button", { name: /Flip flashcard/i }));
-      const needsReviewBtn = screen.getByRole("button", { name: /Needs Review \(Box 1\)/i });
+      const needsReviewBtn = screen.getByRole("button", { name: /Needs Review \(Stage 1\)/i });
       fireEvent.click(needsReviewBtn);
 
       storedCard = useAppStore.getState().flashcards.find((c) => c.id === "card-test");
       expect(storedCard?.boxLevel).toBe(1); // Reset to 1
     });
 
-    it("records mistakes into Mistake Bank when flashcard is marked 'Needs Review', and supports mark resolved", () => {
+    it("records mistakes into Missed Questions when flashcard is marked 'Needs Review', and supports mark resolved", () => {
       const initialCards: Flashcard[] = [
         {
           id: "card-mistake-test",
@@ -515,7 +515,7 @@ describe("Adversarial Verification — Milestone 2: UI, Shortcuts & Density", ()
       fireEvent.click(screen.getByRole("button", { name: /Flip flashcard/i }));
 
       // Mark Needs Review
-      fireEvent.click(screen.getByRole("button", { name: /Needs Review \(Box 1\)/i }));
+      fireEvent.click(screen.getByRole("button", { name: /Needs Review \(Stage 1\)/i }));
 
       // Verify mistake logged in store
       const mistakes = useAppStore.getState().mistakeBank;
@@ -524,8 +524,8 @@ describe("Adversarial Verification — Milestone 2: UI, Shortcuts & Density", ()
       expect(mistakes[0].resolved).toBe(false);
       expect(mistakes[0].courseId).toBe("CSE241");
 
-      // Switch to Mistake Bank tab
-      fireEvent.click(screen.getByRole("tab", { name: /Mistake Bank/i }));
+      // Switch to Missed Questions tab
+      fireEvent.click(screen.getByRole("tab", { name: /Missed Questions/i }));
       expect(screen.getByTestId("mistake-bank-section")).toBeInTheDocument();
 
       // Verify unresolved item is rendered
@@ -541,13 +541,28 @@ describe("Adversarial Verification — Milestone 2: UI, Shortcuts & Density", ()
       // Verify in store
       expect(useAppStore.getState().mistakeBank[0].resolved).toBe(true);
 
-      // Unresolved view should now show 'No Mistakes Found'
+      // Unresolved view should now show 'All caught up!' because 1 recorded mistake was resolved
       expect(screen.getByText("No Mistakes Found")).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "All caught up! You have resolved all recorded errors for this assessment.",
+        ),
+      ).toBeInTheDocument();
 
       // Switch filter to 'All History'
       fireEvent.click(screen.getByRole("button", { name: /All History/i }));
       expect(screen.getByText("✓ Resolved")).toBeInTheDocument();
       expect(screen.getByText("What is an XOR gate output for inputs (1, 1)?")).toBeInTheDocument();
+    });
+
+    it("honestly states no mistakes recorded yet instead of 'All caught up!' when mistakeBank is empty", () => {
+      useAppStore.setState({ flashcards: [], mistakeBank: [] });
+      render(<FocusView />);
+      fireEvent.click(screen.getByRole("tab", { name: /Missed Questions/i }));
+      expect(
+        screen.getByText("No mistakes recorded yet — missed practice questions will appear here."),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/All caught up!/i)).not.toBeInTheDocument();
     });
   });
 });

@@ -153,8 +153,8 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenAuth }) =>
     error: copy.topBar.syncFailed,
   }[syncStatus];
 
-  const displayName =
-    auth.name || config.userName || auth.email || config.userEmail || copy.topBar.userSignIn;
+  const isConnected = auth.authenticated || auth.hasTeamsAuth;
+  const displayName = auth.name || config.userName || auth.email || config.userEmail || "Connect";
 
   const handleSettingsClick = () => {
     if (onOpenSettings) {
@@ -360,22 +360,24 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenAuth }) =>
         {currentView === "calendar" && (
           <div
             data-testid="topbar-calendar-controls"
-            className="hidden shrink-0 items-center gap-1.5 border-l border-[var(--surface-border)] pl-1.5 lg:flex"
+            className="hidden shrink-0 items-center gap-1 border-l border-[var(--surface-border)] pl-1.5 lg:flex"
           >
             <button
               type="button"
               onClick={jumpToToday}
-              className="h-8 cursor-pointer rounded-lg border border-[var(--surface-border)] px-2.5 text-xs font-medium text-[var(--text)] transition hover:bg-[var(--surface-hover)] active:scale-95"
+              aria-label={copy.calendar.jumpToToday}
+              title={copy.calendar.jumpToToday}
+              className="h-8 shrink-0 cursor-pointer whitespace-nowrap rounded-lg border border-[var(--surface-border)] px-2.5 text-xs font-medium text-[var(--text)] transition hover:bg-[var(--surface-hover)] active:scale-95"
             >
-              {copy.calendar.jumpToToday}
+              Today
             </button>
-            <div className="flex items-center">
+            <div className="flex shrink-0 items-center">
               <button
                 type="button"
                 onClick={() => shiftWeek(-1)}
                 aria-label={copy.calendar.prevWeek}
                 title={copy.calendar.prevWeek}
-                className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)]"
+                className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)]"
               >
                 <ChevronLeft className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -384,12 +386,12 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenAuth }) =>
                 onClick={() => shiftWeek(1)}
                 aria-label={copy.calendar.nextWeek}
                 title={copy.calendar.nextWeek}
-                className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)]"
+                className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)]"
               >
                 <ChevronRight className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
-            <h2 className="hidden whitespace-nowrap text-sm font-semibold text-[var(--text)] xl:block">
+            <h2 className="hidden whitespace-nowrap text-sm font-semibold text-[var(--text)] 2xl:block">
               {MONTH_NAMES[(weekMonth ?? 1) - 1] ?? ""} {weekYear}
             </h2>
           </div>
@@ -397,35 +399,35 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenAuth }) =>
       </div>
 
       {/* Unified Search Palette Trigger — opens SearchPaletteModal on click or ⌘K */}
-      <div className="flex min-w-0 flex-1 items-center justify-center px-1 sm:px-4">
+      <div className="flex min-w-0 flex-1 items-center justify-center px-1 sm:px-2 lg:px-3">
         <button
           type="button"
           onClick={() => openModal({ id: "search-palette" })}
           aria-label={`Open search palette (Press ${getSearchShortcutLabel()} or /)`}
-          className="group flex h-9 w-full max-w-md items-center justify-between rounded-xl border border-[var(--surface-border)] bg-[var(--page)] px-3 text-xs text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)] active:scale-[0.99] cursor-pointer"
+          className="group flex h-9 w-full min-w-0 sm:min-w-[190px] max-w-md items-center justify-between gap-2 rounded-xl border border-[var(--surface-border)] bg-[var(--page)] px-2.5 sm:px-3 text-xs text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)] active:scale-[0.99] cursor-pointer"
         >
-          <div className="flex items-center gap-2 truncate">
+          <div className="flex min-w-0 items-center gap-2">
             <SearchIcon
               className="h-4 w-4 shrink-0 text-[var(--text-muted)] group-hover:text-[var(--accent)]"
               aria-hidden="true"
             />
-            <span className="truncate">Search assessments, courses, topics...</span>
+            <span className="truncate">Search assessments, courses...</span>
           </div>
-          <kbd className="ml-2 hidden sm:inline-flex items-center rounded-md border border-[var(--surface-border)] bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-muted)]">
+          <kbd className="hidden shrink-0 whitespace-nowrap sm:inline-flex items-center rounded-md border border-[var(--surface-border)] bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-muted)]">
             {getSearchShortcutLabel()}
           </kbd>
         </button>
       </div>
 
       {/* Action Controls — v4 order: Sync, Data & Backup, theme, Settings, account */}
-      <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-        {/* Sync Button — primary blue-tinted scan CTA with WCAG AA >= 5.8:1 text */}
+      <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+        {/* Sync Button — primary accessible CTA matching desktop/Android accent contrast */}
         <button
           type="button"
           onClick={handleSyncClick}
           disabled={syncStatus === "syncing"}
           aria-label={syncLabel}
-          className="flex h-9 items-center gap-1.5 rounded-lg border border-blue-200/80 bg-[#e8f0fe] px-3 text-xs font-semibold text-[#1557b0] transition hover:bg-[#d2e3fc] active:scale-[0.98] disabled:opacity-60 dark:border-blue-800/60 dark:bg-blue-950/70 dark:text-blue-300 dark:hover:bg-blue-900/70"
+          className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-transparent bg-[var(--accent-fill)] px-2.5 sm:px-3 text-xs font-semibold text-white shadow-2xs transition hover:bg-[var(--accent-fill-hover)] active:scale-[0.98] disabled:opacity-60 cursor-pointer"
         >
           <RefreshCw
             className={`h-3.5 w-3.5 ${syncStatus === "syncing" ? "animate-spin" : ""}`}
@@ -462,12 +464,13 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenAuth }) =>
           </span>
         </button>
 
-        {/* Settings Button — v4 cog with the hover rotation */}
+        {/* Settings Button — visible on mobile and desktop for direct access */}
         <button
           type="button"
           onClick={handleSettingsClick}
           aria-label={copy.topBar.settingsAria}
-          className="group hidden h-9 items-center gap-1.5 rounded-lg border border-[var(--surface-border)] px-2.5 text-xs font-semibold text-[var(--text)] transition hover:bg-[var(--surface-hover)] active:scale-95 sm:flex sm:px-3"
+          title={copy.topBar.settings}
+          className="group flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--surface-border)] text-xs font-semibold text-[var(--text)] transition hover:bg-[var(--surface-hover)] active:scale-95 sm:h-9 sm:w-auto sm:gap-1.5 sm:px-3"
         >
           <span className="settings-btn-stage">
             <Settings
@@ -482,8 +485,11 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenAuth }) =>
         <button
           type="button"
           onClick={handleUserClick}
-          aria-label={auth.authenticated ? `Account: ${displayName}` : copy.topBar.userSignIn}
-          className="flex h-9 items-center gap-2 rounded-lg border border-[var(--surface-border)] px-1.5 pr-2.5 transition hover:bg-[var(--surface-hover)] active:scale-95 sm:pr-2.5"
+          aria-label={
+            isConnected ? `Account: ${displayName}` : `Connect account (${copy.topBar.userSignIn})`
+          }
+          title={isConnected ? `Account: ${displayName}` : "Connect Google or Microsoft account"}
+          className="flex h-9 items-center gap-2 rounded-lg border border-[var(--surface-border)] px-1.5 transition hover:bg-[var(--surface-hover)] active:scale-95 md:pr-2.5"
         >
           {avatarUrl && !avatarError ? (
             <img

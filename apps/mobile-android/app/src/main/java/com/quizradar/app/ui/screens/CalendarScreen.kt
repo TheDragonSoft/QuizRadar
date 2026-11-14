@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 
 package com.quizradar.app.ui.screens
 
@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -28,6 +29,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -37,6 +39,8 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DatePicker
@@ -46,10 +50,11 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -75,21 +80,33 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quizradar.app.model.AppSnapshotModel
+import com.quizradar.app.model.AssessmentModel
+import com.quizradar.app.model.CourseModel
+import com.quizradar.app.model.CustomEventModel
+import com.quizradar.app.model.ScheduleSlotModel
 import com.quizradar.app.ui.QuizRadarViewModel
+import com.quizradar.app.ui.calendar.CalendarBlock
 import com.quizradar.app.ui.calendar.CalendarDayContents
 import com.quizradar.app.ui.calendar.CalendarDayResolver
 import com.quizradar.app.ui.calendar.CalendarGrid
+import com.quizradar.app.ui.detail.CourseEditorSheet
 import com.quizradar.app.ui.icons.Icons
 import com.quizradar.app.ui.share.SharedEventDraft
 import com.quizradar.app.ui.theme.CoursePalette
 import com.quizradar.app.ui.theme.CustomEventPink
+import com.quizradar.app.ui.theme.PillButtonContentPadding
+import com.quizradar.app.ui.theme.PillButtonMinHeight
 import com.quizradar.app.ui.theme.StatusColors
+import com.quizradar.app.ui.theme.filledPill
+import com.quizradar.app.ui.theme.quietCardBorder
+import com.quizradar.app.ui.theme.quietCardColors
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 private const val DAY_STRIP_TAG = "calendar_day_strip"
+private val GRID_TIME_GUTTER_WIDTH = 38.dp
 
 /** One authored motion token: 200ms, exponential ease-out (brief §6). */
 private const val CALENDAR_MOTION_MILLIS = 200
@@ -98,6 +115,23 @@ private val CalendarEaseOutExpo = CubicBezierEasing(0.19f, 1f, 0.22f, 1f)
 private const val MILLIS_PER_DAY = 86_400_000L
 
 private val DayCellShape = RoundedCornerShape(percent = 50)
+
+private fun buildCourseColorMap(courses: List<CourseModel>): Map<String, String?> =
+    buildMap {
+        courses.forEach { course ->
+            put(course.id, course.color)
+        }
+    }
+
+private fun resolveStoredCourseColor(
+    courseId: String?,
+    courseColorById: Map<String, String?>,
+): String? {
+    if (courseId.isNullOrBlank()) return null
+    return courseColorById[courseId]
+        ?: courseColorById.entries.firstOrNull { it.key.equals(courseId, ignoreCase = true) }?.value
+}
+
 private val DayCellLabelFormatter = DateTimeFormatter.ofPattern("EEEE, d MMMM")
 private val MonthDayFormatter = DateTimeFormatter.ofPattern("MMM d")
 private val DayFormatter = DateTimeFormatter.ofPattern("d")
@@ -120,7 +154,10 @@ private fun windowOffsetFor(
     selectedIdx: Int,
     dayCount: Int,
     weekSize: Int = 7,
-): Int = (selectedIdx.coerceAtLeast(0) - (dayCount - 1) / 2).coerceIn(0, weekSize - dayCount)
+): Int {
+    val maxOffset = (weekSize - dayCount).coerceAtLeast(0)
+    return (selectedIdx.coerceAtLeast(0) - (dayCount - 1) / 2).coerceIn(0, maxOffset)
+}
 
 /**
  * Calendar screen, rebuilt per docs/ANDROID-DESIGN-SYSTEM.md §6 ("Quiet
@@ -162,6 +199,15 @@ fun CalendarScreen(
         remember(currentWeekStart) {
             (0..6).map { currentWeekStart.plusDays(it.toLong()) }
         }
+    val courseColorById =
+        remember(snapshot.schedule.courses) {
+            buildCourseColorMap(snapshot.schedule.courses)
+        }
+    val isCalendarCompletelyEmpty =
+        snapshot.schedule.courses.isEmpty() &&
+            snapshot.assessments.isEmpty() &&
+            snapshot.customEvents.isEmpty()
+    var showAddCourseSheet by remember { mutableStateOf(false) }
 
     // ONE resolution pass per week: the day strip dots, the grid and the
     // agenda all read the exact same CalendarDayContents.
@@ -174,6 +220,21 @@ fun CalendarScreen(
                     assessments = snapshot.assessments,
                     customEvents = snapshot.customEvents,
                 )
+            }
+        }
+
+    // Dynamic empty-day removal: keep only days that actually have at least
+    // one lecture, tutorial, lab, assessment, study block, or custom event
+    // so populated days expand across the full screen width. When the entire
+    // week has 0 items, keep all 7 days so empty states remain actionable.
+    val (displayDates, displayContents) =
+        remember(weekDates, weekContents) {
+            val paired = weekDates.zip(weekContents)
+            val nonEmpty = paired.filter { (_, contents) -> !contents.isEmpty }
+            if (nonEmpty.isNotEmpty()) {
+                nonEmpty.map { it.first } to nonEmpty.map { it.second }
+            } else {
+                weekDates to weekContents
             }
         }
 
@@ -190,11 +251,41 @@ fun CalendarScreen(
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val isNarrow = maxWidth < 600.dp
-        val visibleCellCount = if (isNarrow) 3 else 7
-        val cellWidth = (maxWidth - 40.dp) / visibleCellCount
+        val usesGridGutter = viewMode != CalendarViewMode.DAY
+        val activeDayCount = displayDates.size.coerceAtLeast(1)
+        val visibleCellCount =
+            when (viewMode) {
+                CalendarViewMode.WEEK -> activeDayCount
+                CalendarViewMode.THREE_DAY -> minOf(3, activeDayCount)
+                CalendarViewMode.DAY ->
+                    if (maxWidth >= 380.dp) activeDayCount else minOf(3, activeDayCount)
+            }
+        val cellWidth =
+            if (usesGridGutter) {
+                (maxWidth - GRID_TIME_GUTTER_WIDTH) / visibleCellCount
+            } else {
+                (maxWidth - 40.dp) / visibleCellCount
+            }
 
-        val selectedIdx = weekDates.indexOf(selectedDate)
-        val stripAnchor = windowOffsetFor(selectedIdx, visibleCellCount)
+        val effectiveSelectedDate =
+            if (selectedDate in displayDates) {
+                selectedDate
+            } else {
+                displayDates.firstOrNull { !it.isBefore(selectedDate) } ?: displayDates.first()
+            }
+        val selectedIdx = displayDates.indexOf(effectiveSelectedDate).coerceAtLeast(0)
+        val stripAnchor =
+            when (viewMode) {
+                CalendarViewMode.WEEK -> 0
+                CalendarViewMode.THREE_DAY ->
+                    windowOffsetFor(selectedIdx, visibleCellCount, activeDayCount)
+                CalendarViewMode.DAY ->
+                    if (visibleCellCount >= activeDayCount) {
+                        0
+                    } else {
+                        windowOffsetFor(selectedIdx, visibleCellCount, activeDayCount)
+                    }
+            }
 
         Column(modifier = Modifier.fillMaxSize()) {
             // ---- Title row (48dp): range -> DatePickerDialog, muted semester
@@ -204,8 +295,8 @@ fun CalendarScreen(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 if (isNarrow) {
                     Row(
@@ -262,28 +353,54 @@ fun CalendarScreen(
                 }
             }
 
-            // ---- Day strip: THE ONLY pager. Horizontally paged windows with
-            // snapping; tapping a cell selects it and the grid/agenda follow.
+            // ---- Day strip: aligned directly over grid columns in 3-Day and
+            // Week views (including the 38dp left time gutter).
             CalendarDayStrip(
-                weekDates = weekDates,
-                weekContents = weekContents,
-                selectedDate = selectedDate,
+                weekDates = displayDates,
+                weekContents = displayContents,
+                selectedDate = effectiveSelectedDate,
                 today = today,
                 cellWidth = cellWidth,
                 anchorIndex = stripAnchor,
+                alignWithGridGutter = usesGridGutter,
                 animationsEnabled = animationsEnabled,
                 onSelectDate = { viewModel.setSelectedCalendarDate(it) },
                 modifier = Modifier.fillMaxWidth(),
             )
 
+            if (isCalendarCompletelyEmpty) {
+                CalendarEmptyCtaCard(
+                    onAddCourse = { showAddCourseSheet = true },
+                    onAddEvent = {
+                        viewModel.openCreateEventDraft(
+                            SharedEventDraft(
+                                title = "",
+                                notes = "",
+                                dateIso = selectedDate,
+                            ),
+                        )
+                    },
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                )
+            }
+
             // ---- Grid / agenda content (one motion moment: the mode swap).
             val modeContent: @Composable (CalendarViewMode) -> Unit = { mode ->
                 CalendarModeContent(
                     mode = mode,
-                    weekDates = weekDates,
-                    weekContents = weekContents,
-                    selectedDate = selectedDate,
+                    weekDates = displayDates,
+                    weekContents = displayContents,
+                    selectedDate =
+                        if (mode == CalendarViewMode.DAY) selectedDate else effectiveSelectedDate,
                     snapshot = snapshot,
+                    courseColorById = courseColorById,
+                    onSwitchToDay = { date ->
+                        viewModel.setSelectedCalendarDate(date)
+                        viewMode = CalendarViewMode.DAY
+                    },
                     viewModel = viewModel,
                 )
             }
@@ -299,6 +416,20 @@ fun CalendarScreen(
             } else {
                 modeContent(viewMode)
             }
+        }
+
+        if (showAddCourseSheet) {
+            val addCourseSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            CourseEditorSheet(
+                course = null,
+                initialSlots = emptyList(),
+                sheetState = addCourseSheetState,
+                onDismiss = { showAddCourseSheet = false },
+                onSave = { newCourse, slots ->
+                    viewModel.upsertCourse(newCourse, slots)
+                    showAddCourseSheet = false
+                },
+            )
         }
 
         if (showDatePicker) {
@@ -330,6 +461,66 @@ fun CalendarScreen(
     }
 }
 
+/** Empty-calendar prompt shown when no courses, assessments, or custom events exist yet. */
+@Composable
+private fun CalendarEmptyCtaCard(
+    onAddCourse: () -> Unit,
+    onAddEvent: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.quietCardColors(),
+        border = CardDefaults.quietCardBorder(),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = "Your calendar is clear",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = "Add a course timetable or schedule a study block to fill your week.",
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, lineHeight = 16.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Button(
+                    onClick = onAddCourse,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.filledPill(),
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .defaultMinSize(minHeight = PillButtonMinHeight),
+                    contentPadding = PillButtonContentPadding,
+                ) {
+                    Text("+ Add Course", style = MaterialTheme.typography.labelLarge)
+                }
+                OutlinedButton(
+                    onClick = onAddEvent,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .defaultMinSize(minHeight = PillButtonMinHeight),
+                    contentPadding = PillButtonContentPadding,
+                ) {
+                    Text("+ Event", style = MaterialTheme.typography.labelLarge)
+                }
+            }
+        }
+    }
+}
+
 /** The tappable range title (opens the Material3 DatePickerDialog) with the muted semester subtitle. */
 @Composable
 private fun CalendarRangeTitle(
@@ -338,20 +529,36 @@ private fun CalendarRangeTitle(
     onOpenDatePicker: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier) {
-        Text(
-            text = headerRange,
-            style = MaterialTheme.typography.titleLarge.copy(fontFeatureSettings = "tnum"),
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier =
-                Modifier.clickable(
+    Column(
+        modifier =
+            modifier
+                .defaultMinSize(minHeight = 48.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(
                     role = Role.Button,
                     onClickLabel = "Change calendar date",
                     onClick = onOpenDatePicker,
-                ),
-        )
+                )
+                .padding(vertical = 2.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = headerRange,
+                style = MaterialTheme.typography.titleLarge.copy(fontFeatureSettings = "tnum"),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Icon(
+                imageVector = Icons.Outlined.ExpandMore,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
         Text(
             text = semesterLabel,
             style = MaterialTheme.typography.labelMedium,
@@ -362,7 +569,7 @@ private fun CalendarRangeTitle(
     }
 }
 
-/** "Today" as a compact tonal pill. */
+/** "Today" as a squarish tonal button matching the Day/3-Day/Week segmented control. */
 @Composable
 private fun CalendarTodayButton(
     onClick: () -> Unit,
@@ -370,10 +577,21 @@ private fun CalendarTodayButton(
 ) {
     FilledTonalButton(
         onClick = onClick,
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        colors =
+            ButtonDefaults.filledTonalButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        modifier = modifier.defaultMinSize(minWidth = 72.dp, minHeight = 42.dp),
     ) {
-        Text(text = "Today", style = MaterialTheme.typography.labelLarge)
+        Text(
+            text = "Today",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 
@@ -420,44 +638,43 @@ private fun CalendarModeSegments(
     onSelectMode: (CalendarViewMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val colors = SegmentedButtonDefaults.colors()
-    val count = CalendarViewMode.entries.size
+    val trackShape = RoundedCornerShape(12.dp)
+    val pillShape = RoundedCornerShape(9.dp)
     Row(
-        modifier = modifier.selectableGroup().width(IntrinsicSize.Min),
+        modifier =
+            modifier
+                .selectableGroup()
+                .width(IntrinsicSize.Min)
+                .clip(trackShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                    shape = trackShape,
+                ).padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CalendarViewMode.entries.forEachIndexed { index, candidate ->
+        CalendarViewMode.entries.forEach { candidate ->
             val isSelected = mode == candidate
-            val shape = SegmentedButtonDefaults.itemShape(index = index, count = count)
             val containerColor =
                 if (isSelected) {
-                    colors.activeContainerColor
+                    MaterialTheme.colorScheme.primary
                 } else {
-                    colors.inactiveContainerColor
+                    Color.Transparent
                 }
             val contentColor =
                 if (isSelected) {
-                    colors.activeContentColor
+                    MaterialTheme.colorScheme.onPrimary
                 } else {
-                    colors.inactiveContentColor
+                    MaterialTheme.colorScheme.onSurfaceVariant
                 }
             Box(
                 modifier =
                     Modifier
-                        .defaultMinSize(minWidth = 48.dp, minHeight = 40.dp)
-                        .clip(shape)
+                        .defaultMinSize(minWidth = 64.dp, minHeight = 36.dp)
+                        .clip(pillShape)
                         .background(containerColor)
-                        .border(
-                            SegmentedButtonDefaults.borderStroke(
-                                color =
-                                    if (isSelected) {
-                                        colors.activeBorderColor
-                                    } else {
-                                        colors.inactiveBorderColor
-                                    },
-                            ),
-                            shape,
-                        )
                         .selectable(
                             selected = isSelected,
                             role = Role.RadioButton,
@@ -468,6 +685,7 @@ private fun CalendarModeSegments(
                 Text(
                     text = candidate.label,
                     style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                     color = contentColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -524,6 +742,7 @@ private fun CalendarDayStrip(
     today: LocalDate,
     cellWidth: Dp,
     anchorIndex: Int,
+    alignWithGridGutter: Boolean,
     animationsEnabled: Boolean,
     onSelectDate: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
@@ -542,24 +761,37 @@ private fun CalendarDayStrip(
         }
     }
 
-    LazyRow(
-        state = listState,
-        flingBehavior = snapFlingBehavior,
+    Row(
         modifier =
             modifier
-                .heightIn(min = 64.dp)
-                .padding(horizontal = 20.dp, vertical = 4.dp)
-                .testTag(DAY_STRIP_TAG),
+                .fillMaxWidth()
+                .padding(
+                    start = if (alignWithGridGutter) GRID_TIME_GUTTER_WIDTH else 20.dp,
+                    end = if (alignWithGridGutter) 0.dp else 20.dp,
+                    top = 4.dp,
+                    bottom = 4.dp,
+                ),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        itemsIndexed(weekDates, key = { _, date -> date.toString() }) { index, date ->
-            CalendarDayCell(
-                date = date,
-                contents = weekContents[index],
-                isSelected = date == selectedDate,
-                isToday = date == today,
-                cellWidth = cellWidth,
-                onSelect = onSelectDate,
-            )
+        LazyRow(
+            state = listState,
+            flingBehavior = snapFlingBehavior,
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .heightIn(min = 64.dp)
+                    .testTag(DAY_STRIP_TAG),
+        ) {
+            itemsIndexed(weekDates, key = { _, date -> date.toString() }) { index, date ->
+                CalendarDayCell(
+                    date = date,
+                    contents = weekContents[index],
+                    isSelected = date == selectedDate,
+                    isToday = date == today,
+                    cellWidth = cellWidth,
+                    onSelect = onSelectDate,
+                )
+            }
         }
     }
 }
@@ -567,7 +799,7 @@ private fun CalendarDayStrip(
 /**
  * One day cell: weekday label (labelMedium) + date number (15sp/600 tabular).
  * Selected = filled primary pill with onPrimary content; today = 4dp primary
- * dot under the number; days with items = 2dp status dots (one per layer).
+ * dot under the number; days with items = 4dp status dots (one per layer).
  */
 @Composable
 private fun CalendarDayCell(
@@ -579,6 +811,7 @@ private fun CalendarDayCell(
     onSelect: (LocalDate) -> Unit,
 ) {
     val cellLabel = remember(date) { date.format(DayCellLabelFormatter) }
+    val isCompactCell = cellWidth < 68.dp
     val stateParts =
         buildList {
             if (isSelected) add("Selected")
@@ -600,28 +833,44 @@ private fun CalendarDayCell(
         modifier =
             Modifier
                 .width(cellWidth)
-                .padding(horizontal = 2.dp)
-                .heightIn(min = 56.dp)
+                .padding(horizontal = if (isCompactCell) 1.dp else 2.dp)
+                .heightIn(min = 60.dp)
                 .clip(DayCellShape)
-                .background(containerColor)
                 .selectable(
                     selected = isSelected,
                     role = Role.Tab,
                     onClick = { onSelect(date) },
-                )
-                .semantics {
+                ).semantics {
                     contentDescription = cellLabel
                     if (stateParts.isNotEmpty()) stateDescription = stateParts.joinToString(", ")
                 },
         contentAlignment = Alignment.Center,
     ) {
         Column(
+            modifier =
+                Modifier
+                    .widthIn(
+                        min = if (isCompactCell) 42.dp else 54.dp,
+                        max = 62.dp,
+                    ).clip(DayCellShape)
+                    .background(containerColor)
+                    .padding(
+                        horizontal = if (isCompactCell) 4.dp else 10.dp,
+                        vertical = 6.dp,
+                    ),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
                 text = date.dayOfWeek.name.take(3),
-                style = MaterialTheme.typography.labelMedium,
+                style =
+                    if (isCompactCell) {
+                        MaterialTheme.typography.labelSmall
+                    } else {
+                        MaterialTheme.typography.labelMedium
+                    },
+                maxLines = 1,
+                softWrap = false,
                 color =
                     if (isSelected) {
                         MaterialTheme.colorScheme.onPrimary
@@ -661,19 +910,37 @@ private fun CalendarDayCell(
                             ),
                 )
             }
-            if (!isSelected && contents.totalCount > 0) {
+            if (contents.totalCount > 0) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(3.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (contents.slots.isNotEmpty()) {
-                        CalendarStatusDot(MaterialTheme.colorScheme.primary)
+                        CalendarStatusDot(
+                            if (isSelected) {
+                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f)
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            },
+                        )
                     }
                     if (contents.assessments.isNotEmpty()) {
-                        CalendarStatusDot(MaterialTheme.colorScheme.error)
+                        CalendarStatusDot(
+                            if (isSelected) {
+                                MaterialTheme.colorScheme.onPrimary
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            },
+                        )
                     }
                     if (contents.customEvents.isNotEmpty()) {
-                        CalendarStatusDot(CustomEventPink)
+                        CalendarStatusDot(
+                            if (isSelected) {
+                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f)
+                            } else {
+                                CustomEventPink
+                            },
+                        )
                     }
                 }
             }
@@ -686,7 +953,7 @@ private fun CalendarStatusDot(color: Color) {
     Box(
         modifier =
             Modifier
-                .size(2.dp)
+                .size(4.dp)
                 .clip(CircleShape)
                 .background(color),
     )
@@ -700,37 +967,54 @@ private fun CalendarModeContent(
     weekContents: List<CalendarDayContents>,
     selectedDate: LocalDate,
     snapshot: AppSnapshotModel,
+    courseColorById: Map<String, String?>,
+    onSwitchToDay: (LocalDate) -> Unit,
     viewModel: QuizRadarViewModel,
 ) {
+    val handleBlockClick: (LocalDate, CalendarBlock) -> Unit = { blockDate, block ->
+        val assessmentId = block.assessmentId
+        if (assessmentId != null) {
+            viewModel.openAssessmentDetail(assessmentId)
+        } else {
+            onSwitchToDay(blockDate)
+        }
+    }
+
     when (mode) {
         CalendarViewMode.DAY ->
             CalendarAgendaView(
                 displayedDates = listOf(selectedDate),
                 snapshot = snapshot,
                 viewModel = viewModel,
-                modifier = Modifier.fillMaxSize().padding(bottom = 88.dp),
+                modifier = Modifier.fillMaxSize(),
             )
         CalendarViewMode.THREE_DAY -> {
-            val offset = windowOffsetFor(weekDates.indexOf(selectedDate), 3)
+            val windowSize = minOf(3, weekDates.size).coerceAtLeast(1)
+            val offset = windowOffsetFor(weekDates.indexOf(selectedDate), windowSize, weekDates.size)
+            val end = (offset + windowSize).coerceAtMost(weekDates.size)
             CalendarGrid(
-                dates = weekDates.subList(offset, offset + 3),
-                days = weekContents.subList(offset, offset + 3),
+                dates = weekDates.subList(offset, end),
+                days = weekContents.subList(offset, end),
+                courseColorById = courseColorById,
                 onBlockClick = { block ->
                     block.assessmentId?.let { viewModel.openAssessmentDetail(it) }
                 },
+                onDayBlockClick = handleBlockClick,
                 onHourClick = { date, hourSlot -> openStudyBlockDraft(viewModel, date, hourSlot) },
-                modifier = Modifier.fillMaxSize().padding(bottom = 88.dp),
+                modifier = Modifier.fillMaxSize(),
             )
         }
         CalendarViewMode.WEEK ->
             CalendarGrid(
                 dates = weekDates,
                 days = weekContents,
+                courseColorById = courseColorById,
                 onBlockClick = { block ->
                     block.assessmentId?.let { viewModel.openAssessmentDetail(it) }
                 },
+                onDayBlockClick = handleBlockClick,
                 onHourClick = { date, hourSlot -> openStudyBlockDraft(viewModel, date, hourSlot) },
-                modifier = Modifier.fillMaxSize().padding(bottom = 88.dp),
+                modifier = Modifier.fillMaxSize(),
             )
     }
 }
@@ -754,6 +1038,47 @@ private fun openStudyBlockDraft(
     )
 }
 
+private data class AttendanceChipStyle(
+    val label: String,
+    val stateDesc: String,
+    val background: Color,
+    val foreground: Color,
+)
+
+private sealed interface AgendaEntry {
+    val sortMinutes: Int
+    val kindOrder: Int
+
+    data class Exam(
+        val assessment: AssessmentModel,
+        override val sortMinutes: Int,
+    ) : AgendaEntry {
+        override val kindOrder: Int = 0
+    }
+
+    data class ClassSlot(
+        val slot: ScheduleSlotModel,
+        override val sortMinutes: Int,
+    ) : AgendaEntry {
+        override val kindOrder: Int = 1
+    }
+
+    data class CustomEvent(
+        val event: CustomEventModel,
+        override val sortMinutes: Int,
+    ) : AgendaEntry {
+        override val kindOrder: Int = 2
+    }
+}
+
+private fun parseAgendaSortMinutes(rawTime: String?): Int {
+    if (rawTime.isNullOrBlank()) return -1
+    val match = Regex("""^(\d{1,2})[:.](\d{2})""").find(rawTime.trim()) ?: return -1
+    val hour = match.groupValues[1].toIntOrNull() ?: return -1
+    val minute = match.groupValues[2].toIntOrNull() ?: return -1
+    return if (hour in 0..23 && minute in 0..59) hour * 60 + minute else -1
+}
+
 /**
  * The agenda list: one day card per [displayedDates] entry. Every day is
  * resolved through [CalendarDayResolver] — the SAME helper the week grid
@@ -770,6 +1095,10 @@ fun CalendarAgendaView(
 ) {
     val attendanceMap by viewModel.attendanceMap.collectAsState()
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val courseColorById =
+        remember(snapshot.schedule.courses) {
+            buildCourseColorMap(snapshot.schedule.courses)
+        }
 
     Column(
         modifier = modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
@@ -786,10 +1115,36 @@ fun CalendarAgendaView(
                     assessments = snapshot.assessments,
                     customEvents = snapshot.customEvents,
                 )
-            val daySlots = dayContents.slots
-            val dayAssessments = dayContents.assessments
-            val dayEvents = dayContents.customEvents
             val totalCount = dayContents.totalCount
+            val chronologicalEntries =
+                remember(dayContents) {
+                    buildList {
+                        dayContents.assessments.forEach { exam ->
+                            add(
+                                AgendaEntry.Exam(
+                                    assessment = exam,
+                                    sortMinutes = parseAgendaSortMinutes(exam.startTime ?: exam.displayTime),
+                                ),
+                            )
+                        }
+                        dayContents.slots.forEach { slot ->
+                            add(
+                                AgendaEntry.ClassSlot(
+                                    slot = slot,
+                                    sortMinutes = parseAgendaSortMinutes(slot.startTime),
+                                ),
+                            )
+                        }
+                        dayContents.customEvents.forEach { event ->
+                            add(
+                                AgendaEntry.CustomEvent(
+                                    event = event,
+                                    sortMinutes = parseAgendaSortMinutes(event.startTime),
+                                ),
+                            )
+                        }
+                    }.sortedWith(compareBy<AgendaEntry> { it.sortMinutes }.thenBy { it.kindOrder })
+                }
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -797,7 +1152,7 @@ fun CalendarAgendaView(
                     CardDefaults.cardColors(
                         containerColor =
                             if (isToday) {
-                                MaterialTheme.colorScheme.surfaceVariant
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isDark) 0.55f else 0.7f)
                             } else {
                                 MaterialTheme.colorScheme.surface
                             },
@@ -807,7 +1162,7 @@ fun CalendarAgendaView(
                     BorderStroke(
                         1.dp,
                         if (isToday) {
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                            MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.4f else 0.5f)
                         } else {
                             MaterialTheme.colorScheme.outlineVariant
                         },
@@ -860,7 +1215,7 @@ fun CalendarAgendaView(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    if (totalCount == 0) {
+                    if (chronologicalEntries.isEmpty()) {
                         Text(
                             text = "No classes, exams, or events scheduled.",
                             style = MaterialTheme.typography.bodySmall,
@@ -868,249 +1223,298 @@ fun CalendarAgendaView(
                             modifier = Modifier.padding(vertical = 4.dp),
                         )
                     } else {
-                        // 1. Exams
-                        dayAssessments.forEach { exam ->
-                            val course = snapshot.schedule.courses.find { it.id == exam.courseId }
-                            val courseColorHex = CoursePalette.getHex(exam.courseId)
-                            val accentColor =
-                                try {
-                                    Color(android.graphics.Color.parseColor(courseColorHex))
-                                } catch (_: Exception) {
-                                    MaterialTheme.colorScheme.primary
-                                }
+                        chronologicalEntries.forEachIndexed { index, entry ->
+                            when (entry) {
+                                is AgendaEntry.Exam -> {
+                                    val exam = entry.assessment
+                                    val course =
+                                        snapshot.schedule.courses.find {
+                                            it.id.equals(exam.courseId, ignoreCase = true)
+                                        }
+                                    val storedHex = resolveStoredCourseColor(exam.courseId, courseColorById)
+                                    val accentTextColor =
+                                        CoursePalette.textOnSurface(exam.courseId, isDark, storedHex)
 
-                            Row(
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f))
-                                        .border(
-                                            1.dp,
-                                            MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
-                                            RoundedCornerShape(12.dp),
-                                        )
-                                        .clickable { viewModel.openAssessmentDetail(exam.id) }
-                                        .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Box(
-                                    modifier =
-                                        Modifier
-                                            .width(4.dp)
-                                            .height(36.dp)
-                                            .clip(RoundedCornerShape(2.dp))
-                                            .background(MaterialTheme.colorScheme.error),
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Row(
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f))
+                                                .border(
+                                                    1.dp,
+                                                    MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                                                    RoundedCornerShape(12.dp),
+                                                )
+                                                .clickable { viewModel.openAssessmentDetail(exam.id) }
+                                                .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
                                         Box(
                                             modifier =
                                                 Modifier
-                                                    .clip(RoundedCornerShape(4.dp))
-                                                    .background(MaterialTheme.colorScheme.errorContainer)
-                                                    .padding(horizontal = 5.dp, vertical = 2.dp),
-                                        ) {
+                                                    .width(4.dp)
+                                                    .height(36.dp)
+                                                    .clip(RoundedCornerShape(2.dp))
+                                                    .background(MaterialTheme.colorScheme.error),
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Box(
+                                                    modifier =
+                                                        Modifier
+                                                            .clip(RoundedCornerShape(4.dp))
+                                                            .background(MaterialTheme.colorScheme.errorContainer)
+                                                            .padding(horizontal = 5.dp, vertical = 2.dp),
+                                                ) {
+                                                    Text(
+                                                        text = exam.assessmentType.uppercase(),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                                    )
+                                                }
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = exam.courseName ?: exam.courseId ?: course?.name ?: "EXAM",
+                                                    style =
+                                                        MaterialTheme.typography.labelMedium.copy(
+                                                            fontWeight = FontWeight.Bold,
+                                                        ),
+                                                    color = accentTextColor,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(2.dp))
                                             Text(
-                                                text = exam.assessmentType.uppercase(),
+                                                text = exam.title,
+                                                style = MaterialTheme.typography.titleSmall,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                            )
+                                            Text(
+                                                text = "${exam.displayTime ?: "All day"} · ${exam.room?.takeIf { it.isNotBlank() } ?: "—"}",
                                                 style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
+                                }
+                                is AgendaEntry.ClassSlot -> {
+                                    val slot = entry.slot
+                                    val storedHex = resolveStoredCourseColor(slot.courseId, courseColorById)
+                                    val palette = CoursePalette.get(slot.courseId, storedHex)
+                                    val accentTextColor =
+                                        CoursePalette.textOnSurface(slot.courseId, isDark, storedHex)
+                                    val attKey = "${slot.id}::$date"
+                                    val attStatus = attendanceMap[attKey]
+                                    val absenceCount = viewModel.getCourseAbsenceCount(slot.courseId)
+
+                                    Row(
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(MaterialTheme.colorScheme.surface)
+                                                .border(
+                                                    1.dp,
+                                                    MaterialTheme.colorScheme.outlineVariant,
+                                                    RoundedCornerShape(12.dp),
+                                                )
+                                                .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Box(
+                                            modifier =
+                                                Modifier
+                                                    .width(4.dp)
+                                                    .height(36.dp)
+                                                    .clip(RoundedCornerShape(2.dp))
+                                                    .background(palette.color),
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = "${slot.courseId} · ${slot.type}",
+                                                    style =
+                                                        MaterialTheme.typography.labelMedium.copy(
+                                                            fontWeight = FontWeight.Bold,
+                                                        ),
+                                                    color = accentTextColor,
+                                                )
+                                                if (absenceCount >= 2) {
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text(
+                                                        text = "$absenceCount absences",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = StatusColors.warningBadge,
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = slot.courseName,
+                                                style =
+                                                    MaterialTheme.typography.bodySmall.copy(
+                                                        fontWeight = FontWeight.Bold,
+                                                    ),
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                            )
+                                            Text(
+                                                text =
+                                                    "${slot.startTime}–${slot.endTime} · " +
+                                                        (slot.room?.takeIf { it.isNotBlank() } ?: "—"),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
                                         }
                                         Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = exam.courseName ?: exam.courseId ?: course?.name ?: "EXAM",
-                                            style =
-                                                MaterialTheme.typography.labelMedium.copy(
-                                                    fontWeight = FontWeight.Bold,
-                                                ),
-                                            color = accentColor,
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = exam.title,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                    )
-                                    Text(
-                                        text = "${exam.displayTime ?: "All day"} · ${exam.room ?: "—"}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
 
-                        // 2. Class Slots with Attendance Tracker
-                        daySlots.forEach { slot ->
-                            val courseColorHex = CoursePalette.getHex(slot.courseId)
-                            val accentColor =
-                                try {
-                                    Color(android.graphics.Color.parseColor(courseColorHex))
-                                } catch (_: Exception) {
-                                    MaterialTheme.colorScheme.primary
-                                }
-                            val attKey = "${slot.id}::$date"
-                            val attStatus = attendanceMap[attKey]
-                            val absenceCount = viewModel.getCourseAbsenceCount(slot.courseId)
+                                        // Interactive Attendance Chip (48dp min touch target)
+                                        val chipStyle =
+                                            when (attStatus) {
+                                                "attended" ->
+                                                    AttendanceChipStyle(
+                                                        label = "Attended",
+                                                        stateDesc = "Attended",
+                                                        background = StatusColors.successContainer(isDark),
+                                                        foreground = StatusColors.onSuccessContainer(isDark),
+                                                    )
+                                                "absent" ->
+                                                    AttendanceChipStyle(
+                                                        label = "Absent",
+                                                        stateDesc = "Absent",
+                                                        background = MaterialTheme.colorScheme.error.copy(alpha = 0.15f),
+                                                        foreground = MaterialTheme.colorScheme.error,
+                                                    )
+                                                "excused" ->
+                                                    AttendanceChipStyle(
+                                                        label = "Excused",
+                                                        stateDesc = "Excused",
+                                                        background = StatusColors.warningBadge.copy(alpha = 0.15f),
+                                                        foreground = StatusColors.warningBadge,
+                                                    )
+                                                else ->
+                                                    AttendanceChipStyle(
+                                                        label = "Mark present",
+                                                        stateDesc = "Not marked",
+                                                        background = MaterialTheme.colorScheme.surfaceVariant,
+                                                        foreground = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                            }
 
-                            Row(
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(MaterialTheme.colorScheme.surface)
-                                        .border(
-                                            1.dp,
-                                            MaterialTheme.colorScheme.outlineVariant,
-                                            RoundedCornerShape(12.dp),
-                                        )
-                                        .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Box(
-                                    modifier =
-                                        Modifier
-                                            .width(4.dp)
-                                            .height(36.dp)
-                                            .clip(RoundedCornerShape(2.dp))
-                                            .background(accentColor),
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = "${slot.courseId} · ${slot.type}",
-                                            style =
-                                                MaterialTheme.typography.labelMedium.copy(
-                                                    fontWeight = FontWeight.Bold,
-                                                ),
-                                            color = accentColor,
-                                        )
-                                        if (absenceCount >= 2) {
-                                            Spacer(modifier = Modifier.width(8.dp))
+                                        Box(
+                                            modifier =
+                                                Modifier
+                                                    .clip(DayCellShape)
+                                                    .background(chipStyle.background)
+                                                    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                                                    .clickable {
+                                                        viewModel.toggleAttendance(
+                                                            slot.id,
+                                                            slot.courseId,
+                                                            date.toString(),
+                                                        )
+                                                    }
+                                                    .semantics {
+                                                        contentDescription =
+                                                            "Attendance for ${slot.courseName} ${slot.type}"
+                                                        stateDescription = chipStyle.stateDesc
+                                                    }
+                                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
                                             Text(
-                                                text = "$absenceCount absences",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = StatusColors.warningBadge,
+                                                text = chipStyle.label,
+                                                style =
+                                                    MaterialTheme.typography.labelMedium.copy(
+                                                        fontWeight = FontWeight.Bold,
+                                                    ),
+                                                color = chipStyle.foreground,
                                             )
                                         }
                                     }
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = slot.courseName,
-                                        style =
-                                            MaterialTheme.typography.bodySmall.copy(
-                                                fontWeight = FontWeight.Bold,
-                                            ),
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                    )
-                                    Text(
-                                        text = "${slot.startTime}–${slot.endTime} @ ${slot.room ?: "—"}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
                                 }
+                                is AgendaEntry.CustomEvent -> {
+                                    val event = entry.event
+                                    val storedHex = resolveStoredCourseColor(event.courseId, courseColorById)
+                                    val barColor =
+                                        if (!event.courseId.isNullOrBlank()) {
+                                            CoursePalette.get(event.courseId, storedHex).color
+                                        } else {
+                                            CustomEventPink
+                                        }
+                                    val timeLabel =
+                                        CalendarDayResolver.formatCustomEventTime(
+                                            event.startTime,
+                                            event.endTime,
+                                        )
+                                    val metaLine =
+                                        listOfNotNull(
+                                            timeLabel.takeIf { it.isNotBlank() },
+                                            event.room?.takeIf { it.isNotBlank() } ?: "—",
+                                        ).joinToString(" · ")
 
-                                // Interactive Attendance Chip (48dp min touch target)
-                                val (attText, attBg, attFg) =
-                                    when (attStatus) {
-                                        "attended" ->
-                                            Triple(
-                                                "Attended",
-                                                StatusColors.successContainer(isDark),
-                                                StatusColors.onSuccessContainer(isDark),
+                                    Row(
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(MaterialTheme.colorScheme.surface)
+                                                .border(
+                                                    1.dp,
+                                                    barColor.copy(alpha = 0.5f),
+                                                    RoundedCornerShape(12.dp),
+                                                )
+                                                .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Box(
+                                            modifier =
+                                                Modifier
+                                                    .width(4.dp)
+                                                    .height(30.dp)
+                                                    .clip(RoundedCornerShape(2.dp))
+                                                    .background(barColor),
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = event.title,
+                                                style =
+                                                    MaterialTheme.typography.bodySmall.copy(
+                                                        fontWeight = FontWeight.Bold,
+                                                    ),
+                                                color = MaterialTheme.colorScheme.onSurface,
                                             )
-                                        "absent" ->
-                                            Triple(
-                                                "Absent",
-                                                MaterialTheme.colorScheme.error.copy(alpha = 0.15f),
-                                                MaterialTheme.colorScheme.error,
+                                            Text(
+                                                text = metaLine,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
-                                        "excused" ->
-                                            Triple(
-                                                "Excused",
-                                                StatusColors.warningBadge.copy(alpha = 0.15f),
-                                                StatusColors.warningBadge,
-                                            )
-                                        else ->
-                                            Triple(
-                                                "Mark",
-                                                MaterialTheme.colorScheme.surfaceVariant,
-                                                MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                    }
-
-                                Box(
-                                    modifier =
-                                        Modifier
-                                            .clip(DayCellShape)
-                                            .background(attBg)
-                                            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-                                            .clickable {
-                                                viewModel.toggleAttendance(slot.id, slot.courseId, date.toString())
+                                            event.notes?.takeIf { it.isNotBlank() }?.let { noteText ->
+                                                Spacer(modifier = Modifier.height(2.dp))
+                                                Text(
+                                                    text = noteText,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 2,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
                                             }
-                                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Text(
-                                        text = attText,
-                                        style =
-                                            MaterialTheme.typography.labelMedium.copy(
-                                                fontWeight = FontWeight.Bold,
-                                            ),
-                                        color = attFg,
-                                    )
+                                        }
+                                    }
                                 }
                             }
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
-
-                        // 3. Custom events
-                        dayEvents.forEach { event ->
-                            Row(
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(MaterialTheme.colorScheme.surface)
-                                        .border(1.dp, CustomEventPink.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                                        .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Box(
-                                    modifier =
-                                        Modifier
-                                            .width(4.dp)
-                                            .height(30.dp)
-                                            .clip(RoundedCornerShape(2.dp))
-                                            .background(CustomEventPink),
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column {
-                                    Text(
-                                        text = event.title,
-                                        style =
-                                            MaterialTheme.typography.bodySmall.copy(
-                                                fontWeight = FontWeight.Bold,
-                                            ),
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                    )
-                                    Text(
-                                        text = CalendarDayResolver.formatCustomEventTime(event.startTime, event.endTime),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
+                            if (index < chronologicalEntries.lastIndex) {
+                                Spacer(modifier = Modifier.height(8.dp))
                             }
-                            Spacer(modifier = Modifier.height(8.dp))
                         }
                     }
                 }
             }
         }
+        Spacer(modifier = Modifier.height(88.dp))
     }
 }

@@ -1,6 +1,8 @@
 package com.quizradar.app.ui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -14,16 +16,22 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -31,18 +39,24 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.quizradar.app.model.CourseModel
 import com.quizradar.app.ui.QuizRadarViewModel.AssessmentSaveResult
+import com.quizradar.app.ui.icons.Icons
 import com.quizradar.app.ui.theme.ChipLeadingCheck
+import com.quizradar.app.ui.theme.CoursePalette
 import com.quizradar.app.ui.theme.PillButtonContentPadding
 import com.quizradar.app.ui.theme.PillButtonMinHeight
 import com.quizradar.app.ui.theme.destructivePill
@@ -50,10 +64,13 @@ import com.quizradar.app.ui.theme.filledPill
 import com.quizradar.app.ui.theme.quietChipColors
 import com.quizradar.app.ui.theme.quietTextFieldColors
 import org.json.JSONObject
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
+import java.util.Locale
 
 /** The six rungs of the assessment-type ladder (`01` §3; `core/src/types.rs`). */
 private val ASSESSMENT_TYPES = listOf("Class Quiz", "Online Quiz", "Midterm Exam", "Final Exam", "Lab Assessment", "Assignment")
@@ -96,6 +113,8 @@ fun ManualAssessmentSheet(
     var saveError by rememberSaveable { mutableStateOf<String?>(null) }
     var isSaving by rememberSaveable { mutableStateOf(false) }
     var showDiscardConfirm by rememberSaveable { mutableStateOf(false) }
+    var showDatePicker by rememberSaveable { mutableStateOf(false) }
+    var activeTimePickerTarget by rememberSaveable { mutableStateOf<String?>(null) }
 
     val hasEdits =
         title.isNotBlank() || courseId.isNotBlank() || dateIso.isNotBlank() ||
@@ -173,6 +192,7 @@ fun ManualAssessmentSheet(
             Spacer(modifier = Modifier.height(8.dp))
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 ASSESSMENT_TYPES.forEach { type ->
@@ -210,6 +230,7 @@ fun ManualAssessmentSheet(
             Spacer(modifier = Modifier.height(8.dp))
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 FilterChip(
@@ -233,8 +254,10 @@ fun ManualAssessmentSheet(
                             ),
                 )
                 courses.forEach { course ->
+                    val isSelected = courseId == course.id
+                    val dotColor = CoursePalette.get(course.id, course.color).color
                     FilterChip(
-                        selected = courseId == course.id,
+                        selected = isSelected,
                         onClick = { courseId = course.id },
                         label = {
                             Text(
@@ -242,13 +265,25 @@ fun ManualAssessmentSheet(
                                 style = MaterialTheme.typography.labelMedium,
                             )
                         },
-                        leadingIcon = { if (courseId == course.id) ChipLeadingCheck() },
+                        leadingIcon = {
+                            if (isSelected) {
+                                ChipLeadingCheck()
+                            } else {
+                                Box(
+                                    modifier =
+                                        Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(dotColor),
+                                )
+                            }
+                        },
                         colors = FilterChipDefaults.quietChipColors(),
                         modifier =
                             Modifier
                                 .defaultMinSize(minHeight = 48.dp)
                                 .selectable(
-                                    selected = courseId == course.id,
+                                    selected = isSelected,
                                     role = Role.RadioButton,
                                     onClick = { courseId = course.id },
                                 ),
@@ -265,6 +300,17 @@ fun ManualAssessmentSheet(
                 },
                 label = { Text("Date (YYYY-MM-DD)") },
                 placeholder = { Text(LocalDate.now().toString()) },
+                trailingIcon = {
+                    IconButton(
+                        onClick = { showDatePicker = true },
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.CalendarToday,
+                            contentDescription = "Pick date",
+                        )
+                    }
+                },
                 isError = dateError != null,
                 supportingText = dateError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
                 colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
@@ -284,7 +330,19 @@ fun ManualAssessmentSheet(
                         startTime = it
                         timeError = null
                     },
-                    label = { Text("Start (HH:mm, optional)") },
+                    label = { Text("Start (optional)", maxLines = 1) },
+                    placeholder = { Text("HH:mm") },
+                    trailingIcon = {
+                        IconButton(
+                            onClick = { activeTimePickerTarget = "start" },
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Timer,
+                                contentDescription = "Pick start time",
+                            )
+                        }
+                    },
                     isError = timeError != null,
                     singleLine = true,
                     keyboardOptions =
@@ -302,7 +360,19 @@ fun ManualAssessmentSheet(
                         endTime = it
                         timeError = null
                     },
-                    label = { Text("End (HH:mm, optional)") },
+                    label = { Text("End (optional)", maxLines = 1) },
+                    placeholder = { Text("HH:mm") },
+                    trailingIcon = {
+                        IconButton(
+                            onClick = { activeTimePickerTarget = "end" },
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Timer,
+                                contentDescription = "Pick end time",
+                            )
+                        }
+                    },
                     isError = timeError != null,
                     singleLine = true,
                     keyboardOptions =
@@ -424,10 +494,91 @@ fun ManualAssessmentSheet(
             ) {
                 Text(
                     text = if (isSaving) "Saving…" else "Save assessment",
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelLarge,
                 )
             }
         }
+    }
+
+    if (showDatePicker) {
+        val initialMillis =
+            runCatching {
+                LocalDate.parse(dateIso.trim()).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+            }.getOrNull()
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { millis ->
+                            dateIso =
+                                Instant
+                                    .ofEpochMilli(millis)
+                                    .atZone(ZoneOffset.UTC)
+                                    .toLocalDate()
+                                    .toString()
+                            dateError = null
+                        }
+                        showDatePicker = false
+                    },
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                ) {
+                    Text("Set date", style = MaterialTheme.typography.labelLarge)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDatePicker = false },
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                ) {
+                    Text("Cancel", style = MaterialTheme.typography.labelLarge)
+                }
+            },
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+
+    activeTimePickerTarget?.let { target ->
+        val existingTime =
+            parseTime(if (target == "start") startTime else endTime)
+                ?: LocalTime.of(9, 0)
+        val timePickerState =
+            rememberTimePickerState(
+                initialHour = existingTime.hour,
+                initialMinute = existingTime.minute,
+                is24Hour = true,
+            )
+        AlertDialog(
+            onDismissRequest = { activeTimePickerTarget = null },
+            title = { Text(if (target == "start") "Start time" else "End time") },
+            text = { TimePicker(state = timePickerState) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val formatted =
+                            String.format(Locale.US, "%02d:%02d", timePickerState.hour, timePickerState.minute)
+                        if (target == "start") startTime = formatted else endTime = formatted
+                        timeError = null
+                        activeTimePickerTarget = null
+                    },
+                    colors = ButtonDefaults.filledPill(),
+                    contentPadding = PillButtonContentPadding,
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                ) {
+                    Text("Save", style = MaterialTheme.typography.labelLarge)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { activeTimePickerTarget = null },
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                ) {
+                    Text("Cancel", style = MaterialTheme.typography.labelLarge)
+                }
+            },
+        )
     }
 
     if (showDiscardConfirm) {
@@ -444,18 +595,23 @@ fun ManualAssessmentSheet(
                         onDismiss()
                     },
                     colors = ButtonDefaults.destructivePill(),
+                    contentPadding = PillButtonContentPadding,
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
                 ) {
                     Text(
                         text = "Discard",
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelLarge,
                     )
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDiscardConfirm = false }) {
+                TextButton(
+                    onClick = { showDiscardConfirm = false },
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                ) {
                     Text(
                         text = "Keep editing",
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelLarge,
                     )
                 }
             },

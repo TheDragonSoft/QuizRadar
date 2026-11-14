@@ -231,7 +231,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
       <div
         ref={canopyRef}
         data-canopy-pinned={canopyPinned ? "true" : "false"}
-        className="composite-layer sticky top-0 z-20 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 pt-1 pb-3 canopy-tint backdrop-blur-md transition-colors"
+        className="composite-layer relative z-10 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 pt-1 pb-2 canopy-tint transition-colors"
       >
         {/* Canopy dissolve skirt — extends the canopy's painted coverage above
             the wrapper's border box so scrolling content is occluded the
@@ -334,6 +334,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
           onRunGcalSync={runGcalSync}
           onOpenConnect={() => openSettings("account")}
           onOpenAddCourse={() => openModal("add-course")}
+          hideEmptyState={!hasCourses && allHorizonAssessments.length === 0}
         />
       </section>
 
@@ -392,7 +393,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
                   onClick={() => setView("tasks")}
                   className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--page)] px-3 py-1.5 text-xs font-semibold text-[var(--accent-ink)] hover:bg-[var(--surface-hover)] hover:border-[var(--accent)] transition"
                 >
-                  <span>View All Assessments & Ledger in Tasks</span>
+                  <span>View All Assessments in Tasks</span>
                   <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
               </div>
@@ -425,10 +426,44 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
                   ))
                 )
               ) : (
-                <FirstRunEmpty
-                  onAddCourse={() => openModal("add-course")}
-                  onConnect={() => openSettings("account")}
-                />
+                <div className="space-y-3">
+                  <div
+                    aria-label="Getting started checklist"
+                    className="rounded-xl border border-slate-200/80 bg-slate-50/70 px-3.5 py-2.5 text-xs dark:border-slate-800 dark:bg-slate-800/40"
+                  >
+                    <div className="font-bold text-slate-900 dark:text-white mb-1.5">
+                      Setup Checklist
+                    </div>
+                    <ol className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+                      <li className="flex items-center gap-1.5">
+                        <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[var(--accent-fill)] text-[10px] font-bold text-white">
+                          1
+                        </span>
+                        <span>Add courses &amp; class times</span>
+                      </li>
+                      <li className="flex items-center gap-1.5">
+                        <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-slate-300 dark:border-slate-600 text-[10px] font-bold">
+                          2
+                        </span>
+                        <span>
+                          {activeSourceCount > 0
+                            ? "Source connected"
+                            : "Connect Gmail, Outlook, or LMS"}
+                        </span>
+                      </li>
+                      <li className="flex items-center gap-1.5">
+                        <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-slate-300 dark:border-slate-600 text-[10px] font-bold">
+                          3
+                        </span>
+                        <span>Review your study plan</span>
+                      </li>
+                    </ol>
+                  </div>
+                  <FirstRunEmpty
+                    onAddCourse={() => openModal("add-course")}
+                    onConnect={() => openSettings("account")}
+                  />
+                </div>
               )}
             </div>
           </div>
@@ -445,7 +480,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
           {/* Left Pane (~58% width / col-span-7): Embedded Weekly Class Schedule & Calendar Grid */}
           <div
             data-testid="dashboard-widescreen-left-pane"
-            className="col-span-7 flex h-full min-h-0 flex-col rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 shadow-xs"
+            className="col-span-7 flex h-full min-h-0 min-w-0 flex-col rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 shadow-xs"
           >
             <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-200 dark:border-slate-800">
               <div className="flex items-center gap-2">
@@ -463,7 +498,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
                 <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto pr-1">
               <CalendarGrid compactMode />
             </div>
           </div>
@@ -471,7 +506,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ forceWidescreen })
           {/* Right Pane (~42% width / col-span-5): Upcoming Assessments Radar & Daily Study Roadmap */}
           <div
             data-testid="dashboard-widescreen-right-pane"
-            className="col-span-5 flex h-full min-h-0 flex-col gap-4"
+            className="col-span-5 flex h-full min-h-0 min-w-0 flex-col gap-4"
           >
             {/* Widescreen NextUp test anchor — sr-only + absolute keeps it out of
                 layout flow (gap-4 only spaces in-flow children), so the

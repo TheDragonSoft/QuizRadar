@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -21,11 +23,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
+import com.quizradar.app.ui.theme.CoursePalette
 import com.quizradar.app.ui.theme.StatusColors
 import com.quizradar.app.ui.theme.quietCardBorder
 import com.quizradar.app.ui.theme.quietCardColors
 import com.quizradar.app.ui.theme.quietCardElevation
 import org.json.JSONArray
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 /**
  * One persisted focus session (`core/src/types.rs`: `StudySessionRecord`).
@@ -38,6 +44,7 @@ private data class FocusSession(
     val topic: String?,
     val minutes: Int,
     val timestamp: String,
+    val dateIso: String?,
 )
 
 /**
@@ -64,6 +71,10 @@ private fun parseFocusSessions(json: String): List<FocusSession> =
                     },
                 minutes = item.optInt("duration_minutes", 0),
                 timestamp = item.optString("timestamp"),
+                dateIso =
+                    item.optString("date_iso").takeIf {
+                        it.isNotBlank() && !item.isNull("date_iso")
+                    },
             )
         }
     }.getOrDefault(emptyList())
@@ -76,11 +87,25 @@ internal fun formatFocusMinutes(minutes: Int): String =
         "${minutes / 60}h ${(minutes % 60).toString().padStart(2, '0')}m"
     }
 
-/** The stored timestamp, shortened to "date · hh:mm" (no invented clock). */
-private fun focusTimestampLabel(timestamp: String): String {
-    val date = timestamp.substringBefore('T')
-    val time = timestamp.substringAfter('T', "").take(5)
-    return if (time.isBlank()) date else "$date · $time"
+/** Prefers `session.dateIso` formatted cleanly ("Nov 2") over DB write timestamps. */
+private fun focusSessionDateLabel(session: FocusSession): String {
+    val isoCandidate = session.dateIso ?: session.timestamp.substringBefore('T').takeIf { it.isNotBlank() }
+    val formattedDate =
+        isoCandidate?.let { raw ->
+            runCatching {
+                LocalDate.parse(raw.trim()).format(DateTimeFormatter.ofPattern("MMM d", Locale.US))
+            }.getOrDefault(raw)
+        } ?: ""
+    return if (session.dateIso != null) {
+        formattedDate
+    } else {
+        val time = session.timestamp.substringAfter('T', "").take(5)
+        when {
+            formattedDate.isBlank() -> time
+            time.isBlank() -> formattedDate
+            else -> "$formattedDate · $time"
+        }
+    }
 }
 
 /**
@@ -98,6 +123,7 @@ fun FocusHistoryCard(
     sessionsJson: String,
     courseNames: Map<String, String>,
     modifier: Modifier = Modifier,
+    courseColorsById: Map<String, String?> = emptyMap(),
 ) {
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val sessions = remember(sessionsJson) { parseFocusSessions(sessionsJson) }
@@ -171,6 +197,7 @@ fun FocusHistoryCard(
                     val maxMinutes = trackedCourses.maxOf { it.value }.coerceAtLeast(1)
                     trackedCourses.forEach { (courseId, minutes) ->
                         val label = courseNames[courseId] ?: courseId
+                        val courseColor = CoursePalette.get(courseId, courseColorsById[courseId]).color
                         Column(
                             modifier =
                                 Modifier
@@ -180,12 +207,27 @@ fun FocusHistoryCard(
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text(
-                                    text = label,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Box(
+                                        modifier =
+                                            Modifier
+                                                .size(8.dp)
+                                                .clip(CircleShape)
+                                                .background(courseColor),
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = formatFocusMinutes(minutes),
                                     style =
@@ -210,7 +252,7 @@ fun FocusHistoryCard(
                                             .fillMaxWidth(minutes.toFloat() / maxMinutes.toFloat())
                                             .height(6.dp)
                                             .clip(MaterialTheme.shapes.small)
-                                            .background(MaterialTheme.colorScheme.primary),
+                                            .background(courseColor),
                                 )
                             }
                         }
@@ -228,6 +270,8 @@ fun FocusHistoryCard(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 sessions.forEach { session ->
+                    val sessionColor =
+                        CoursePalette.get(session.courseId, session.courseId?.let { courseColorsById[it] }).color
                     Row(
                         modifier =
                             Modifier
@@ -236,11 +280,21 @@ fun FocusHistoryCard(
                         verticalAlignment = Alignment.Top,
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = session.courseId?.let { courseNames[it] ?: it } ?: "No course",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier =
+                                        Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(sessionColor),
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = session.courseId?.let { courseNames[it] ?: it } ?: "No course",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
                             if (session.topic != null) {
                                 Text(
                                     text = session.topic,
@@ -249,7 +303,7 @@ fun FocusHistoryCard(
                                 )
                             }
                             Text(
-                                text = focusTimestampLabel(session.timestamp),
+                                text = focusSessionDateLabel(session),
                                 style =
                                     MaterialTheme.typography.labelMedium.copy(
                                         fontFeatureSettings = "tnum",

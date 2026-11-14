@@ -1,7 +1,6 @@
 package com.quizradar.app.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import com.quizradar.app.ui.theme.PillButtonContentPadding
 import com.quizradar.app.ui.theme.PillButtonMinHeight
@@ -42,6 +42,16 @@ import com.quizradar.app.ui.theme.quietTextFieldColors
 import com.quizradar.app.ui.theme.tonalPill
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+private fun formatShortHumanDate(isoOrDate: String): String {
+    val datePart = isoOrDate.substringBefore('T').trim()
+    return runCatching {
+        LocalDate.parse(datePart).format(DateTimeFormatter.ofPattern("MMM d", Locale.US))
+    }.getOrDefault(datePart)
+}
 
 /**
  * One stored flashcard (`core/src/types.rs`: `Flashcard`).
@@ -148,7 +158,7 @@ fun FocusReviewCard(
                 ) {
                     Text(
                         text = if (showForm) "Cancel" else "New card",
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelLarge,
                     )
                 }
             }
@@ -214,7 +224,7 @@ fun FocusReviewCard(
                             .fillMaxWidth()
                             .defaultMinSize(minHeight = PillButtonMinHeight),
                 ) {
-                    Text("Save card", style = MaterialTheme.typography.labelMedium)
+                    Text("Save card", style = MaterialTheme.typography.labelLarge)
                 }
             }
 
@@ -231,8 +241,8 @@ fun FocusReviewCard(
                 ) {
                     Text(
                         text =
-                            "No flashcards yet. Add one with \"New card\" and it is stored on " +
-                                "this device, ready to review here.",
+                            "Create cards from your syllabus topics with \"New card\" and review " +
+                                "them offline here.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -296,7 +306,7 @@ fun FocusReviewCard(
                                 ) {
                                     Text(
                                         text = "I knew it",
-                                        style = MaterialTheme.typography.labelMedium,
+                                        style = MaterialTheme.typography.labelLarge,
                                     )
                                 }
                                 FilledTonalButton(
@@ -319,7 +329,7 @@ fun FocusReviewCard(
                                 ) {
                                     Text(
                                         text = "Missed",
-                                        style = MaterialTheme.typography.labelMedium,
+                                        style = MaterialTheme.typography.labelLarge,
                                     )
                                 }
                             }
@@ -335,7 +345,7 @@ fun FocusReviewCard(
                             ) {
                                 Text(
                                     text = "Show answer",
-                                    style = MaterialTheme.typography.labelMedium,
+                                    style = MaterialTheme.typography.labelLarge,
                                 )
                             }
                         }
@@ -343,8 +353,10 @@ fun FocusReviewCard(
                         Text(
                             text =
                                 buildString {
-                                    append("Box ${card.boxLevel}")
-                                    card.nextReviewIso?.let { append(" · next review ").append(it) }
+                                    append("Level ${card.boxLevel}")
+                                    card.nextReviewIso?.let {
+                                        append(" · next review ").append(formatShortHumanDate(it))
+                                    }
                                 },
                             style =
                                 MaterialTheme.typography.labelMedium.copy(
@@ -415,7 +427,7 @@ fun FocusMistakeBankCard(
     onResolve: (mistakeId: String, onResult: (Boolean) -> Unit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val mistakes = remember(mistakesJson) { parseFocusMistakes(mistakesJson) }
     var resolveError by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -428,7 +440,7 @@ fun FocusMistakeBankCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Mistake bank (${mistakes.size})",
+                text = "Missed Questions & Review (${mistakes.size})",
                 style =
                     MaterialTheme.typography.titleMedium.copy(
                         fontFeatureSettings = "tnum",
@@ -449,7 +461,7 @@ fun FocusMistakeBankCard(
                 ) {
                     Text(
                         text =
-                            "No mistakes recorded yet. Wrong answers from a saved practice " +
+                            "No missed questions yet. Wrong answers from a saved practice " +
                                 "attempt land here so you can review them.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -501,7 +513,7 @@ fun FocusMistakeBankCard(
                         if (mistake.timestamp.isNotBlank()) {
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = mistake.timestamp.substringBefore('T'),
+                                text = formatShortHumanDate(mistake.timestamp),
                                 style =
                                     MaterialTheme.typography.labelMedium.copy(
                                         fontFeatureSettings = "tnum",
@@ -534,7 +546,7 @@ fun FocusMistakeBankCard(
                             ) {
                                 Text(
                                     text = "Mark resolved",
-                                    style = MaterialTheme.typography.labelMedium,
+                                    style = MaterialTheme.typography.labelLarge,
                                 )
                             }
                         }

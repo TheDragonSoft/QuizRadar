@@ -6,7 +6,7 @@ import kotlin.math.roundToInt
 
 const val START_HOUR = 8
 const val END_HOUR = 21 // 08:00 to 21:00 (13 hours)
-const val HOUR_HEIGHT_DP = 64
+const val HOUR_HEIGHT_DP = 52
 
 interface CalendarLaneItem {
     val id: String

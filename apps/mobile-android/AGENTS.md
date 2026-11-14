@@ -39,8 +39,12 @@ pure `core/` crate via UniFFI.
 - Screens take the shared `QuizRadarViewModel`, so full-screen `@Preview`s need
   a factory — prefer **leaf-component previews** (params-only composables) in
   the debug source set (`app/src/debug/java/...`), which never ships.
-- Per-screen renders come from the emulator captures (maintainer tooling); a
-  JVM renderer (Paparazzi, compatible with AGP 8.9.1) is the planned
-  follow-up for CI-runnable per-component PNGs.
+- **JVM screen captures** (no emulator): `AndroidUiCaptureTest` renders the
+  production screens with Robolectric native graphics + the REAL Rust-backed
+  ViewModel (in-memory engine, seeded with relative dates) and writes PNGs to
+  `apps/web/.ladle-static/android-ui/`, where the web workbench's
+  `Phone (Android app)/` section displays them. Regenerate:
+  `.\gradlew.bat testDebugUnitTest --tests "*AndroidUiCaptureTest*"`.
+  The PNGs are machine-local and gitignored (root §3.8).
 - Real-device/emulator captures for docs go through the maintainer's tooling —
-  don't commit screenshot PNGs (root §3.8: no large generated files in-repo).
+  don't commit screenshot PNGs (root §3.8).

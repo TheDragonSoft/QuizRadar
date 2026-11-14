@@ -36,6 +36,11 @@ apps/mobile-android/app/src/main/jniLibs/
 # build/test scripts regenerate it on demand.
 apps/web/public/wasm/
 
+# Android JVM UI captures (AndroidUiCaptureTest) — machine-local renders the
+# workbench `Phone (Android app)/` section displays; regenerate via
+# `gradlew.bat testDebugUnitTest --tests "*AndroidUiCaptureTest*"`.
+apps/web/public/android-ui/
+
 
 # v5 runtime state — NEVER commit personal data or secrets
 /data/

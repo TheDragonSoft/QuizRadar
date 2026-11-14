@@ -73,8 +73,27 @@ wire map is snake_case at the boundary and normalized to camelCase once in
   those shell stories inside live 390×844 iframes (a real nested viewport —
   breakpoints follow it). The `Phone (Android app)/*` section shows the
   production Compose screens, JVM-rendered by the Android module's
-  `AndroidUiCaptureTest` into `.ladle-static/android-ui/` (served here via a
+  `AndroidUiCaptureTest` into `public/android-ui/` (served here via a
   publicDir override; machine-local and gitignored).
+
+## Before/after UI change verification (required for UI work)
+
+Every agent changing UI produces a BEFORE and an AFTER render so the
+maintainer can see the change:
+
+```powershell
+pnpm --dir apps/web ladle                                   # workbench must be running
+node tooling/capture-workbench.mjs target/ui-before         # BEFORE the change
+node tooling/capture-workbench.mjs target/ui-after          # AFTER the change
+node tooling/ui-compare.mjs target/ui-before target/ui-after
+```
+
+Then open `target/ui-compare/index.html` — every screen side by side
+(before | after, synced scroll) — and link it in the handoff/summary.
+All captures are gitignored under `target/` (root §3.8). For Android
+(Compose) changes the same flow works: copy `apps/web/public/android-ui/`
+to `target/ui-before/android-ui/` before, re-run `AndroidUiCaptureTest`
+after, then run the compare tool.
 - Render **real views with real payloads**: `src/stories/workbenchFixtures.ts`
   composes `src/testdata/contract/*.json` through the app's own
   `normalizeStatePayload` and seeds the store. Do not hand-invent state shapes

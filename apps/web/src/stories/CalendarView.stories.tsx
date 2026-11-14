@@ -2,7 +2,7 @@ import type { Story, StoryDefault } from "@ladle/react";
 import { CalendarView } from "../views/CalendarView";
 import { seedWorkbench } from "./workbenchFixtures";
 
-export default { title: "Views / Week Calendar" } satisfies StoryDefault;
+export default { title: "Views / Calendar" } satisfies StoryDefault;
 
 /**
  * The week calendar on the re-dated fixture week: timetable slots (including

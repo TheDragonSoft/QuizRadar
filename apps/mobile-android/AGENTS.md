@@ -42,9 +42,15 @@ pure `core/` crate via UniFFI.
 - **JVM screen captures** (no emulator): `AndroidUiCaptureTest` renders the
   production screens with Robolectric native graphics + the REAL Rust-backed
   ViewModel (in-memory engine, seeded with relative dates) and writes PNGs to
-  `apps/web/.ladle-static/android-ui/`, where the web workbench's
+  `apps/web/public/android-ui/`, where the web workbench's
   `Phone (Android app)/` section displays them. Regenerate:
   `.\gradlew.bat testDebugUnitTest --tests "*AndroidUiCaptureTest*"`.
   The PNGs are machine-local and gitignored (root §3.8).
+- **Before/after for Compose changes**: before editing, copy
+  `apps/web/public/android-ui/` to `target/android-ui-before/`; after the
+  change, re-run the capture test, then
+  `node tooling/ui-compare.mjs target/android-ui-before apps/web/public/android-ui`
+  and open `target/ui-compare/index.html` — the maintainer sees the visual
+  diff. (Full flow incl. web tier: `apps/web/AGENTS.md` → Before/after.)
 - Real-device/emulator captures for docs go through the maintainer's tooling —
   don't commit screenshot PNGs (root §3.8).

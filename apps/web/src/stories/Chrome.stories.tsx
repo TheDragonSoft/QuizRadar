@@ -69,6 +69,16 @@ export const SearchDropdownDefault: Story = () => {
   );
 };
 
+/** A query that matches nothing — the dropdown's honest empty panel. */
+export const SearchDropdownNoMatches: Story = () => {
+  seedWorkbench({ searchQuery: "zzzz" });
+  return (
+    <div className="relative mx-auto h-72 w-full max-w-xl p-6">
+      <SearchDropdown />
+    </div>
+  );
+};
+
 /** The in-tree brand marks (no icon-font dependency). */
 export const BrandMarksAll: Story = () => {
   seedWorkbench();

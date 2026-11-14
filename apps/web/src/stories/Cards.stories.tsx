@@ -176,6 +176,27 @@ export const TimelineRowCritical: Story = () => {
   );
 };
 
+/** A graded, past assessment row: recorded score + result state. */
+export const TimelineRowGraded: Story = () => {
+  seedWorkbench();
+  const assessment = useAppStore.getState().data.assessments[0];
+  return (
+    <div className="max-w-3xl p-4">
+      <TimelineRow
+        assessment={{
+          ...assessment,
+          achievedScore: 17,
+          maxScore: 20,
+          isUpcoming: false,
+          daysUntil: -5,
+          urgencyLevel: "past",
+        }}
+        onClick={noop}
+      />
+    </div>
+  );
+};
+
 /** First-run dashboard: no courses, no sources yet. */
 export const FirstRunEmptyState: Story = () => {
   seedWorkbench();

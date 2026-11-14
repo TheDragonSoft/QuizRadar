@@ -2,6 +2,20 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.14.0] — 2026-11-14
+
+### 🤝 Agent & Contributor Summaries
+
+- **[web, android, tooling]** Workbench polish + the before/after UI-change workflow. (1) tooling/capture-workbench.mjs: committed capture tool (was a throwaway) - discovers every story from Ladle's generated module, captures desktop + full theme matrix on the views + 390x844 phone pass, writes <dir>/manifest.json; usage: node tooling/capture-workbench.mjs target/ui-before (before a UI change) and target/ui-after (after). (2) tooling/ui-compare.mjs: generates target/ui-compare/index.html pairing before/after shots side by side with synced scrolling, amber borders on shared screens, NEW/REMOVED badges. (3) AGENTS.md (web + android): the workflow is now documented so every agent produces a before/after diff for the maintainer around any UI change (android flow: copy public/android-ui to target/ui-before, re-run AndroidUiCaptureTest, compare). (4) Slug polish: Views/Study Roadmap (Tasks) and Views/Week Calendar renamed to Views/Tasks and Views/Calendar (the parenthesized titles produced ugly --- slugs). Capture verified live: 99 stories, 161 shots, 0 page errors; compare page generated 161 pairs.
+
+### 🚀 New Features
+
+- `4a83cc5` feat(tooling): before/after UI capture and compare workflow for agents
+
+### 🔧 Maintenance, Docs & Tests
+
+- `58ab8a0` Merge pull request #28 from TheDragonSoft/chore/workbench-polish
+
 ## [5.13.0] — 2026-11-14
 
 ### 🤝 Agent & Contributor Summaries

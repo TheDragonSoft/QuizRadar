@@ -59,6 +59,9 @@ wire map is snake_case at the boundary and normalized to camelCase once in
     `light`/`dark` are generic MODES the app normalizes onto Solar/Obsidian,
     so they render the user's preferred theme for that mode, not distinct
     skins. The old AMOLED Pure/Sparkle variants were retired from the app.
+    Without the param, the page attribute is the authority — Ladle's banner
+    button (light/dark) works and survives story switches
+    (`.ladle/theme-bridge.css` renders both vocabularies coherently).
   - `&mode=preview` — hides Ladle's sidebar/banner; the story fills the
     window (use with a 390×844 viewport for true phone rendering — Tailwind
     breakpoints follow the real viewport, not the canvas width).

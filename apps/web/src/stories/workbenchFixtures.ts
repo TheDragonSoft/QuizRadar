@@ -16,7 +16,7 @@
 import { useAppStore } from "../state/store";
 import { addDaysToIsoDate, getWeekStart } from "../state/dateUtils";
 import { normalizeStatePayload } from "../state/ipcShape";
-import { applyThemeToDocument } from "../state/storage";
+import { applyThemeToDocument, getInitialTheme } from "../state/storage";
 import { getLocalDateString } from "../state/watchdog";
 import type { GetStatePayload, ThemeMode, ToastItem, View } from "../state/types";
 
@@ -183,24 +183,38 @@ export function buildWorkbenchState(): GetStatePayload {
  */
 const KNOWN_THEMES: readonly ThemeMode[] = ["light", "dark", "obsidian", "solar", "amoled-nebula"];
 
+/** The explicit `?theme=` URL param, resolved (`system` → OS preference). */
+function urlThemeParam(): ThemeMode | null {
+  if (typeof window === "undefined") return null;
+  const fromUrl = new URLSearchParams(window.location.search).get("theme");
+  if (fromUrl === "system") {
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  if (fromUrl && (KNOWN_THEMES as readonly string[]).includes(fromUrl)) {
+    return fromUrl as ThemeMode;
+  }
+  return null;
+}
+
 /**
- * The workbench theme for this render: the `?theme=<ThemeMode>` URL param
- * wins (so agents can screenshot any theme deterministically; `system`
- * follows the OS preference), otherwise the Obsidian default. Ladle's own
- * chrome theme (its banner toggle) writes the same `data-theme` attribute
- * for its UI — use this URL param instead.
+ * The workbench theme for this render, in priority order:
+ * 1. the explicit `?theme=` URL param (deterministic for agents/screenshots),
+ * 2. the page's current `data-theme` attribute — Ladle's banner button and
+ *    the app both write it, so an interactive click survives story switches
+ *    (`theme-bridge.css` renders both vocabularies correctly),
+ * 3. the app's own boot resolution (localStorage → system → generic id),
+ * 4. Obsidian.
  */
 function resolveWorkbenchTheme(fallback?: ThemeMode): ThemeMode {
+  const fromUrl = urlThemeParam();
+  if (fromUrl) return fromUrl;
   if (typeof window !== "undefined") {
-    const fromUrl = new URLSearchParams(window.location.search).get("theme");
-    if (fromUrl === "system") {
-      return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-    }
-    if (fromUrl && (KNOWN_THEMES as readonly string[]).includes(fromUrl)) {
-      return fromUrl as ThemeMode;
+    const attr = document.documentElement.getAttribute("data-theme");
+    if (attr && (KNOWN_THEMES as readonly string[]).includes(attr)) {
+      return attr as ThemeMode;
     }
   }
-  return fallback ?? "obsidian";
+  return fallback ?? getInitialTheme();
 }
 
 /**
@@ -241,10 +255,17 @@ export function seedWorkbench(options?: {
     layers: { exams: true, classes: true },
   });
   if (typeof window === "undefined") return;
-  // Ladle's chrome writes its own `data-theme` in effects that run after the
-  // story render; one macrotask later the app theme wins the last write.
-  // (Each applyThemeToDocument starts a View Transition, so keep it to one.)
-  window.setTimeout(() => applyThemeToDocument(theme), 0);
+  // With an explicit `?theme=` param, apply it through the app's own applier
+  // (translates generic ids, persists the choice, updates the meta tag).
+  // Without one, leave the attribute alone — Ladle's banner button is the
+  // interactive authority there, and the `.ladle` observer keeps Tailwind's
+  // `.dark` class in sync with whichever value the page carries.
+  // Re-resolve at APPLY time: Ladle's button rewrites the URL on click, and
+  // its history write can land after this render captured the old param.
+  window.setTimeout(() => {
+    const current = urlThemeParam();
+    if (current) applyThemeToDocument(current);
+  }, 0);
 }
 
 /**

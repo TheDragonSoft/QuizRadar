@@ -35,10 +35,10 @@ import com.quizradar.app.ui.icons.Icons
  * a shadow. The factory parameter names here were verified against the
  * material3 1.3.1 artifact that compose-bom 2025.01.00 resolves.
  *
- * KNOWN TOKEN GAP: the locked color schemes do not define
- * errorContainer/onErrorContainer yet, so [ButtonDefaults.destructivePill]
- * currently resolves those roles to the Material baseline until a scheme
- * pass defines them - keep using the roles, never raw hex.
+ * Explicit [errorContainer]/[onErrorContainer] tokens are defined on
+ * LightColors, DarkColors, and AmoledColors in QuizRadarTheme.kt so
+ * [ButtonDefaults.destructivePill] and error banners keep subtle tinted
+ * crimson surfaces with accessible foregrounds across all three appearances.
  */
 
 /** 38% content alpha for disabled controls (brief section 3) - applied to onSurfaceVariant, never to an enabled look. */
@@ -114,6 +114,25 @@ fun CardDefaults.quietCardBorder(): BorderStroke = outlinedCardBorder(enabled = 
 /** Card elevation (brief section 1): flat - borders carry the edge, shadows are for FAB and sheets only. */
 @Composable
 fun CardDefaults.quietCardElevation(): CardElevation = outlinedCardElevation()
+
+/** Error banner surface: subtle tinted crimson [errorContainer] paired with [onErrorContainer]. */
+@Composable
+fun CardDefaults.errorBannerColors(): CardColors =
+    cardColors(
+        containerColor = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+    )
+
+/** Error banner border: softened error stroke harmonizing with [errorContainer] surfaces. */
+@Composable
+fun CardDefaults.errorBannerBorder(): BorderStroke = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.45f))
+
+/** Text button inside an [errorContainer] surface so links never fall back to low-contrast primary ink. */
+@Composable
+fun ButtonDefaults.errorTextButtonColors(): ButtonColors =
+    textButtonColors(
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+    )
 
 /** Text fields (brief section 1): 12dp radius from the theme's extraSmall slot, outlineVariant unfocused border, primary focused border (M3 draws 1dp/2dp thickness). */
 @Composable

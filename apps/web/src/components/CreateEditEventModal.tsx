@@ -138,7 +138,7 @@ export function CreateEditEventModal({
                 htmlFor="custom-event-date"
                 className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1"
               >
-                {copy.eventModal.dateLabel}
+                {copy.eventModal.dateLabel.replace(/\s*\(YYYY-MM-DD\)/i, "")}
               </label>
               <input
                 id="custom-event-date"
@@ -190,14 +190,14 @@ export function CreateEditEventModal({
               htmlFor="custom-event-room"
               className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1"
             >
-              {copy.eventModal.roomLabel}
+              {copy.assessmentDetail.roomLabel}
             </label>
             <input
               id="custom-event-room"
               type="text"
               value={room}
               onChange={(e) => setRoom(e.target.value)}
-              placeholder="e.g. Library 3rd Floor / Desk"
+              placeholder="e.g. Library 3rd Floor / Room 302"
               className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] px-3 py-2 text-xs text-[var(--text)] outline-none focus:border-pink-600"
             />
           </div>
@@ -207,7 +207,7 @@ export function CreateEditEventModal({
               htmlFor="custom-event-notes"
               className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1"
             >
-              {copy.eventModal.notesLabel}
+              Notes
             </label>
             <textarea
               id="custom-event-notes"

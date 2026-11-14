@@ -75,10 +75,73 @@ fun CompactSetupPanel(
     onDismiss: () -> Unit,
     dismissed: Boolean = false,
     primaryTonal: Boolean = false,
+    compactBanner: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
+    if (dismissed) return
+
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val doneCount = steps.count { it.done }
+    val nextPendingStep = steps.firstOrNull { !it.done }
+    val remainingCount = steps.size - doneCount
+
+    if (compactBanner && remainingCount > 0 && nextPendingStep != null) {
+        val stepNoun = if (remainingCount == 1) "step" else "steps"
+        Card(
+            shape = MaterialTheme.shapes.medium,
+            colors = CardDefaults.quietCardColors(),
+            elevation = CardDefaults.quietCardElevation(),
+            border = CardDefaults.quietCardBorder(),
+            modifier = modifier.fillMaxWidth(),
+        ) {
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, top = 8.dp, end = 4.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = nextPendingStep.icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "$remainingCount $stepNoun left: ${nextPendingStep.status}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                val stepAction = nextPendingStep.onAction
+                val stepActionLabel = nextPendingStep.actionLabel
+                if (stepAction != null && stepActionLabel != null) {
+                    TextButton(
+                        onClick = stepAction,
+                        modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                    ) {
+                        Text(
+                            text = stepActionLabel,
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                }
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Close,
+                        contentDescription = "Dismiss setup checklist",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+        }
+        return
+    }
 
     Card(
         shape = MaterialTheme.shapes.medium,
@@ -88,49 +151,35 @@ fun CompactSetupPanel(
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            if (dismissed) {
-                Text(
-                    text = "Setup dismissed",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Nothing is lost — the next step is still one tap away.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Setup Checklist",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "$doneCount of ${steps.size} steps done",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Close,
-                            contentDescription = "Dismiss setup checklist",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Setup Checklist",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "$doneCount of ${steps.size} steps done",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
-                Spacer(modifier = Modifier.height(8.dp))
-                steps.forEach { step ->
-                    CompactSetupStepRow(step = step, isDark = isDark)
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Close,
+                        contentDescription = "Dismiss setup checklist",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
                 }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            steps.forEach { step ->
+                CompactSetupStepRow(step = step, isDark = isDark)
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -146,7 +195,7 @@ fun CompactSetupPanel(
                 ) {
                     Text(
                         text = primaryActionLabel,
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelLarge,
                     )
                 }
             } else {
@@ -161,7 +210,7 @@ fun CompactSetupPanel(
                 ) {
                     Text(
                         text = primaryActionLabel,
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelLarge,
                     )
                 }
             }

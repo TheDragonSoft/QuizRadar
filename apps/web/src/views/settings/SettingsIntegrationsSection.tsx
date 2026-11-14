@@ -19,10 +19,12 @@ import { SECTION_ID } from "./constants";
 export function SettingsIntegrationsSection() {
   const config = useAppStore((s) => s.data.config);
   const feeds = useAppStore((s) => s.data.config.feeds || []);
+  const assessmentsCount = useAppStore((s) => (s.data.assessments || []).length);
   const updateConfig = useAppStore((s) => s.updateConfig);
   const upsertFeed = useAppStore((s) => s.upsertFeed);
   const deleteFeed = useAppStore((s) => s.deleteFeed);
   const runGcalSync = useAppStore((s) => s.runGcalSync);
+  const exportIcs = useAppStore((s) => s.exportIcs);
   const checkUpdate = useAppStore((s) => s.checkUpdate);
   const exportBackupFile = useAppStore((s) => s.exportBackupFile);
   const importBackupFile = useAppStore((s) => s.importBackupFile);
@@ -245,37 +247,65 @@ export function SettingsIntegrationsSection() {
 
       {/* Google Calendar Section */}
       <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Calendar className="h-4 w-4 text-[var(--accent-ink)]" aria-hidden="true" />
             <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
               {copy.settings.integrationsHeader}
             </h3>
           </div>
-          <button
-            type="button"
-            onClick={runGcalSync}
-            className="rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs font-semibold text-[var(--text)] transition hover:bg-[color-mix(in_srgb,var(--border)_30%,transparent)]"
-          >
-            {copy.settings.gcalPushNow}
-          </button>
+          {isBrowserTier ? (
+            assessmentsCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => void exportIcs()}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs font-semibold text-[var(--text)] transition hover:bg-[color-mix(in_srgb,var(--border)_30%,transparent)] cursor-pointer"
+              >
+                <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>{copy.calendar.exportAllIcs}</span>
+              </button>
+            ) : (
+              <span className="rounded-lg border border-[var(--border)] px-2.5 py-1 text-[11px] font-medium text-[var(--text-muted)]">
+                Desktop / Android direct push
+              </span>
+            )
+          ) : (
+            <button
+              type="button"
+              onClick={runGcalSync}
+              className="rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs font-semibold text-[var(--text)] transition hover:bg-[color-mix(in_srgb,var(--border)_30%,transparent)]"
+            >
+              {copy.settings.gcalPushNow}
+            </button>
+          )}
         </div>
 
         <div className="space-y-3">
-          <label className="flex cursor-pointer items-center justify-between text-xs font-semibold text-[var(--text)]">
-            <span>{copy.settings.gcalAutoPush}</span>
-            <input
-              type="checkbox"
-              checked={config.autoSyncGcal}
-              onChange={(e) => updateConfig({ autoSyncGcal: e.target.checked })}
-              className="h-4 w-4 rounded border-[var(--border)] accent-[var(--accent-fill)]"
-            />
-          </label>
-          <p className="text-xs text-[var(--text-muted)]">
-            Pushes the fresh radar to Google Calendar after every scan that found something. A scan
-            that fetched nothing, or a Calendar scope refusal, is reported in the scan notes — never
-            silently skipped.
-          </p>
+          {isBrowserTier ? (
+            <p className="text-xs text-[var(--text-muted)]">
+              Direct Google Calendar push runs in the Desktop and Android apps. In the browser
+              companion, export your assessments as an <code className="font-mono">.ics</code>{" "}
+              calendar file from here or the Calendar view to import into Google Calendar, Apple
+              Calendar, or Outlook.
+            </p>
+          ) : (
+            <>
+              <label className="flex cursor-pointer items-center justify-between gap-2 text-xs font-semibold text-[var(--text)]">
+                <span>{copy.settings.gcalAutoPush}</span>
+                <input
+                  type="checkbox"
+                  checked={config.autoSyncGcal}
+                  onChange={(e) => updateConfig({ autoSyncGcal: e.target.checked })}
+                  className="h-4 w-4 shrink-0 rounded border-[var(--border)] accent-[var(--accent-fill)]"
+                />
+              </label>
+              <p className="text-xs text-[var(--text-muted)]">
+                Pushes the fresh radar to Google Calendar after every scan that found something. A
+                scan that fetched nothing, or a Calendar scope refusal, is reported in the scan
+                notes — never silently skipped.
+              </p>
+            </>
+          )}
         </div>
       </div>
 
@@ -640,14 +670,6 @@ export function SettingsIntegrationsSection() {
         )}
       </div>
 
-      {/* Notification Preferences Section */}
-      <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
-        <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-          {copy.settings.notificationPrefsTitle}
-        </h3>
-        <p className="text-xs text-[var(--text-muted)]">{copy.settings.notificationPrefsNote}</p>
-      </div>
-
       {/* External ICS Feeds Section */}
       <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
         <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
@@ -671,7 +693,7 @@ export function SettingsIntegrationsSection() {
             value={newFeedUrl}
             onChange={(e) => setNewFeedUrl(e.target.value)}
             placeholder={copy.settings.feedUrlPlaceholder}
-            className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-base sm:text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none"
+            className="min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-base sm:text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none"
           />
           <button
             type="submit"

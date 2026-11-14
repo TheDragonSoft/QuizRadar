@@ -29,7 +29,8 @@ import {
   DAY_ABBR,
   computeBlockPosition,
   assignOverlapLanes,
-  getClampedDayWindow,
+  filterActiveCalendarDates,
+  getActiveDayWindow,
   formatCompactTime,
   hourLabel,
   roomLabel,
@@ -79,7 +80,8 @@ export const CalendarView: React.FC = () => {
 
   const schedule = useAppStore((s) => s.data.schedule);
   const assessments = useAppStore((s) => s.data.assessments);
-  const customEvents = useAppStore((s) => s.data.config.customEvents) || [];
+  const customEventsRaw = useAppStore((s) => s.data.config.customEvents);
+  const customEvents = useMemo(() => customEventsRaw || [], [customEventsRaw]);
   const layers = useAppStore((s) => s.layers);
   const selectedCourseIds = useAppStore((s) => s.selectedCourseIds);
 
@@ -101,9 +103,19 @@ export const CalendarView: React.FC = () => {
   );
   const selectedDate = useMemo(() => new Date(selectedDateStr + "T00:00:00"), [selectedDateStr]);
 
-  const { dayOffset, dayCount } = useMemo(
-    () => getClampedDayWindow(currentWeekStart, selectedDate, isNarrow),
-    [currentWeekStart, selectedDate, isNarrow],
+  const coursesById = useMemo(() => {
+    const map = new Map<string, Course>();
+    (schedule.courses || []).forEach((c) => map.set(c.id, c));
+    return map;
+  }, [schedule.courses]);
+
+  const isCourseSelected = useCallback(
+    (courseId?: string | null) => {
+      if (!courseId) return true;
+      if (selectedCourseIds === null) return true;
+      return selectedCourseIds.includes(courseId);
+    },
+    [selectedCourseIds],
   );
 
   // Generate date array for the week (7 days)
@@ -117,19 +129,41 @@ export const CalendarView: React.FC = () => {
     return dates;
   }, [currentWeekStart]);
 
-  // Displayed dates (clamped 3 days on mobile or all 7 on desktop)
-  const displayedDates = useMemo(
-    () => allWeekDates.slice(dayOffset, dayOffset + dayCount),
-    [allWeekDates, dayOffset, dayCount],
+  // Dynamically hide empty days (no classes, exams, or custom events), falling back to 7 days when empty.
+  const activeWeekDates = useMemo(
+    () =>
+      filterActiveCalendarDates({
+        dates: allWeekDates,
+        scheduleSlots: schedule.slots || [],
+        assessments: assessments || [],
+        customEvents,
+        showClasses: layers.classes,
+        showExams: layers.exams,
+        isCourseSelected,
+        searchQuery,
+        weekParityFilter,
+      }),
+    [
+      allWeekDates,
+      schedule.slots,
+      assessments,
+      customEvents,
+      layers.classes,
+      layers.exams,
+      isCourseSelected,
+      searchQuery,
+      weekParityFilter,
+    ],
   );
 
-  const coursesById = useMemo(() => {
-    const map = new Map<string, Course>();
-    (schedule.courses || []).forEach((c) => map.set(c.id, c));
-    return map;
-  }, [schedule.courses]);
+  // Displayed dates (up to 3 active days on mobile, or all active days on desktop)
+  const displayedDates = useMemo(
+    () => getActiveDayWindow(activeWeekDates, selectedDate, isNarrow),
+    [activeWeekDates, selectedDate, isNarrow],
+  );
 
   const todayIso = toIsoLocal(new Date());
+  const columnsMinWidth = displayedDates.length * (isNarrow ? 115 : 140);
 
   // Format header title e.g. "Oct 19 – Oct 25, 2026"
   const headerRangeTitle = useMemo(() => {
@@ -143,15 +177,6 @@ export const CalendarView: React.FC = () => {
     });
     return `${startStr} – ${endStr}`;
   }, [allWeekDates]);
-
-  const isCourseSelected = useCallback(
-    (courseId?: string | null) => {
-      if (!courseId) return true;
-      if (selectedCourseIds === null) return true;
-      return selectedCourseIds.includes(courseId);
-    },
-    [selectedCourseIds],
-  );
 
   const handleDeleteCustomEvent = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -308,39 +333,39 @@ export const CalendarView: React.FC = () => {
         customEvents.length === 0 && (
           <div
             data-testid="empty-calendar"
-            className="rounded-2xl border border-[var(--border)] bg-[var(--page)] p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left"
+            className="rounded-2xl border border-[var(--border)] bg-[var(--page)] p-4 sm:p-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 text-center sm:text-left overflow-hidden"
           >
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col sm:flex-row items-center gap-3 min-w-0">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-[var(--accent-ink)]">
                 <CalendarIcon className="h-5 w-5" aria-hidden="true" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <h2 className="text-xs font-bold text-[var(--text)]">Your Calendar is Ready</h2>
-                <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                <p className="text-[11px] text-[var(--text-muted)] mt-0.5 break-words">
                   Add courses, sync your timetable, or record custom study events to see your weekly
                   radar.
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2 w-full sm:w-auto shrink-0">
               <button
                 type="button"
                 onClick={() => openSettings("courses")}
-                className="rounded-xl bg-[var(--accent-fill)] px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-[var(--accent-fill-hover)] transition cursor-pointer active:scale-95"
+                className="whitespace-nowrap rounded-xl bg-[var(--accent-fill)] px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-[var(--accent-fill-hover)] transition cursor-pointer active:scale-95"
               >
                 + Add Course
               </button>
               <button
                 type="button"
                 onClick={() => openEventModal()}
-                className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] transition cursor-pointer active:scale-95"
+                className="whitespace-nowrap rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] transition cursor-pointer active:scale-95"
               >
                 + Custom Event
               </button>
               <button
                 type="button"
                 onClick={() => openModal({ id: "create-edit-assessment" })}
-                className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] transition cursor-pointer active:scale-95"
+                className="whitespace-nowrap rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] transition cursor-pointer active:scale-95"
               >
                 + Assessment
               </button>
@@ -348,153 +373,214 @@ export const CalendarView: React.FC = () => {
           </div>
         )}
 
-      {/* Week Grid Container */}
-      <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface)] overflow-hidden shadow-xs">
-        {/* Days Header Row */}
-        <div className="flex border-b border-[var(--surface-border)]">
-          {/* Time Gutter Header (v4 showed the UTC offset here) */}
-          <div className="w-16 shrink-0 border-r border-[var(--surface-border)] flex flex-col justify-end items-center pb-2 text-[11px] tabular-nums text-[var(--text-muted)]">
-            <span>{localUtcOffsetLabel()}</span>
-          </div>
-
-          {/* Day Header Cells */}
+      {/* Compact Day-Switcher Bar + Scroll Hint when > 3 active days don't all fit on mobile */}
+      {displayedDates.length < activeWeekDates.length && (
+        <div
+          data-testid="calendar-mobile-day-switcher"
+          className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] p-2 space-y-1.5"
+        >
           <div
-            className="flex-1 grid"
-            style={{ gridTemplateColumns: `repeat(${displayedDates.length}, minmax(0, 1fr))` }}
-          >
-            {displayedDates.map((date) => {
-              const iso = toIsoLocal(date);
-              const isSelected = iso === selectedDateStr;
-              const isToday = iso === todayIso;
-              const dayExams = headerExamsByDate.get(iso) || [];
-
-              return (
-                <div
-                  key={iso}
-                  className="border-r border-[var(--surface-border)] last:border-r-0 py-2.5 px-2 text-center"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setSelectedCalendarDate(iso)}
-                    aria-pressed={isSelected}
-                    className={`w-full rounded-md py-1 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] ${
-                      isSelected ? "bg-[var(--surface-hover)]" : "hover:bg-[var(--surface-hover)]"
-                    }`}
-                  >
-                    <div
-                      className={`text-xs font-semibold ${
-                        isToday
-                          ? "text-[var(--accent-ink)] font-bold"
-                          : isSelected
-                            ? "text-[var(--accent-ink)]"
-                            : "text-[var(--text-muted)]"
-                      }`}
-                    >
-                      {DAY_ABBR[date.getDay()]}
-                    </div>
-                    <div
-                      className={`mt-1 w-9 h-9 mx-auto rounded-full flex items-center justify-center text-lg tabular-nums ${
-                        isSelected
-                          ? "bg-[var(--accent-fill)] text-white font-semibold"
-                          : isToday
-                            ? "border-2 border-[var(--accent-ink)] text-[var(--accent-ink)] font-bold"
-                            : "text-[var(--text)] font-medium"
-                      }`}
-                    >
-                      {date.getDate()}
-                    </div>
-                  </button>
-                  {dayExams.length > 0 && (
-                    <div className="mt-1.5 flex flex-col gap-0.5">
-                      {dayExams.map((ex) => {
-                        const palette = resolvePalette(ex.courseId, coursesById, {
-                          color: ex.color,
-                          bg: ex.bg,
-                          border: ex.border,
-                        });
-                        const chip = courseAccessibleChip(palette.color, isDarkTheme(theme));
-                        return (
-                          <div
-                            key={ex.id}
-                            role="button"
-                            tabIndex={0}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openAssessmentDetail(ex.id);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                openAssessmentDetail(ex.id);
-                              }
-                            }}
-                            className="text-[11px] font-bold px-1.5 py-0.5 rounded-md line-clamp-2 text-left text-white hover:opacity-90 transition cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
-                            style={{ backgroundColor: chip.solidBg }}
-                            title={`${courseDisplayName(ex.courseId, coursesById)}: ${stripCoursePrefix(ex.title, ex.courseId)}`}
-                          >
-                            {courseDisplayName(ex.courseId, coursesById)}:{" "}
-                            {stripCoursePrefix(ex.title, ex.courseId)}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Scrollable Hours & Columns Area */}
-        <div className="relative flex overflow-x-auto max-h-[680px] bg-[var(--surface)]">
-          {/* Time Gutter Column */}
-          <div
-            data-testid="calendar-time-gutter"
-            className="w-16 shrink-0 border-r border-[var(--surface-border)] bg-[var(--surface)] select-none"
-          >
-            {hours.map((hour) => (
-              <div key={hour} className="hour-row relative pr-2 text-right">
-                <span className="text-[11px] tabular-nums text-[var(--text-muted)] -top-2 relative">
-                  {hourLabel(hour)}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {/* Day Columns */}
-          <div
-            data-testid="calendar-columns-grid"
-            className="flex-1 grid relative"
+            className="grid gap-1"
             style={{
-              gridTemplateColumns: `repeat(${displayedDates.length}, minmax(0, 1fr))`,
-              minWidth: displayedDates.length * (isNarrow ? 110 : 130),
+              gridTemplateColumns: `repeat(${activeWeekDates.length}, minmax(0, 1fr))`,
             }}
           >
-            {displayedDates.map((date) => {
-              const iso = toIsoLocal(date);
-              const dayIndex = date.getDay();
-
+            {activeWeekDates.map((d) => {
+              const iso = toIsoLocal(d);
+              const inWindow = displayedDates.some((vis) => toIsoLocal(vis) === iso);
+              const isSelected = iso === selectedDateStr;
+              const hasExam = (headerExamsByDate.get(iso) || []).length > 0;
               return (
-                <DayColumn
+                <button
                   key={iso}
-                  dateIso={iso}
-                  dayIndex={dayIndex}
-                  hoursCount={hours.length}
-                  scheduleSlots={schedule.slots || []}
-                  assessments={assessments || []}
-                  customEvents={customEvents}
-                  coursesById={coursesById}
-                  showExams={layers.exams}
-                  showClasses={layers.classes}
-                  isCourseSelected={isCourseSelected}
-                  searchQuery={searchQuery}
-                  onOpenAssessmentDetail={openAssessmentDetail}
-                  onOpenEvent={openEventModal}
-                  onDeleteCustomEvent={handleDeleteCustomEvent}
-                />
+                  type="button"
+                  onClick={() => setSelectedCalendarDate(iso)}
+                  aria-pressed={isSelected}
+                  className={`flex flex-col items-center justify-center rounded-lg py-1 text-[10px] font-semibold transition cursor-pointer ${
+                    isSelected
+                      ? "bg-[var(--accent-fill)] text-white font-bold shadow-2xs"
+                      : inWindow
+                        ? "bg-[var(--surface-hover)] text-[var(--text)]"
+                        : "text-[var(--text-muted)] hover:bg-[var(--surface-hover)]"
+                  }`}
+                >
+                  <span>{DAY_ABBR[d.getDay()]}</span>
+                  <span className="text-[11px] font-bold tabular-nums">{d.getDate()}</span>
+                  {hasExam && (
+                    <span
+                      aria-hidden="true"
+                      className={`mt-0.5 h-1 w-1 rounded-full ${
+                        isSelected ? "bg-white" : "bg-red-500"
+                      }`}
+                    />
+                  )}
+                </button>
               );
             })}
+          </div>
+          <p className="text-center text-[10px] font-medium text-[var(--text-muted)]">
+            Showing {displayedDates.length} of {activeWeekDates.length} days · Tap a day above or
+            scroll horizontally →
+          </p>
+        </div>
+      )}
+
+      {/* Week Grid Container */}
+      <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface)] overflow-hidden shadow-xs">
+        <div className="overflow-x-auto overflow-y-auto max-h-[760px] bg-[var(--surface)]">
+          <div className="min-w-fit w-full">
+            {/* Days Header Row (moves horizontally in lockstep with columns) */}
+            <div className="sticky top-0 z-20 flex border-b border-[var(--surface-border)] bg-[var(--surface)]">
+              {/* Time Gutter Header (v4 showed the UTC offset here) */}
+              <div className="w-16 shrink-0 border-r border-[var(--surface-border)] flex flex-col justify-end items-center pb-2 text-[11px] tabular-nums text-[var(--text-muted)]">
+                <span>{localUtcOffsetLabel()}</span>
+              </div>
+
+              {/* Day Header Cells */}
+              <div
+                className="flex-1 grid"
+                style={{
+                  gridTemplateColumns: `repeat(${displayedDates.length}, minmax(0, 1fr))`,
+                  minWidth: columnsMinWidth,
+                }}
+              >
+                {displayedDates.map((date) => {
+                  const iso = toIsoLocal(date);
+                  const isSelected = iso === selectedDateStr;
+                  const isToday = iso === todayIso;
+                  const dayExams = headerExamsByDate.get(iso) || [];
+
+                  return (
+                    <div
+                      key={iso}
+                      className="min-w-0 overflow-hidden border-r border-[var(--surface-border)] last:border-r-0 py-2.5 px-2 text-center"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCalendarDate(iso)}
+                        aria-pressed={isSelected}
+                        className={`w-full rounded-md py-1 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] ${
+                          isSelected
+                            ? "bg-[var(--surface-hover)]"
+                            : "hover:bg-[var(--surface-hover)]"
+                        }`}
+                      >
+                        <div
+                          className={`text-xs font-semibold ${
+                            isToday
+                              ? "text-[var(--accent-ink)] font-bold"
+                              : isSelected
+                                ? "text-[var(--accent-ink)]"
+                                : "text-[var(--text-muted)]"
+                          }`}
+                        >
+                          {DAY_ABBR[date.getDay()]}
+                        </div>
+                        <div
+                          className={`mt-1 w-9 h-9 mx-auto rounded-full flex items-center justify-center text-lg tabular-nums ${
+                            isSelected
+                              ? "bg-[var(--accent-fill)] text-white font-semibold"
+                              : isToday
+                                ? "border-2 border-[var(--accent-ink)] text-[var(--accent-ink)] font-bold"
+                                : "text-[var(--text)] font-medium"
+                          }`}
+                        >
+                          {date.getDate()}
+                        </div>
+                      </button>
+                      {dayExams.length > 0 && (
+                        <div className="mt-1.5 flex flex-col gap-0.5 min-w-0">
+                          {dayExams.map((ex) => {
+                            const palette = resolvePalette(ex.courseId, coursesById, {
+                              color: ex.color,
+                              bg: ex.bg,
+                              border: ex.border,
+                            });
+                            const chip = courseAccessibleChip(palette.color, isDarkTheme(theme));
+                            return (
+                              <div
+                                key={ex.id}
+                                role="button"
+                                tabIndex={0}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openAssessmentDetail(ex.id);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" || e.key === " ") {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    openAssessmentDetail(ex.id);
+                                  }
+                                }}
+                                className="block min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-bold px-1.5 py-0.5 rounded-md text-left text-white hover:opacity-90 transition cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+                                style={{ backgroundColor: chip.solidBg }}
+                                title={`${courseDisplayName(ex.courseId, coursesById)}: ${stripCoursePrefix(ex.title, ex.courseId)}`}
+                              >
+                                {courseDisplayName(ex.courseId, coursesById)}:{" "}
+                                {stripCoursePrefix(ex.title, ex.courseId)}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Hours & Columns Area */}
+            <div className="relative flex bg-[var(--surface)]">
+              {/* Time Gutter Column */}
+              <div
+                data-testid="calendar-time-gutter"
+                className="w-16 shrink-0 border-r border-[var(--surface-border)] bg-[var(--surface)] select-none"
+              >
+                {hours.map((hour) => (
+                  <div key={hour} className="hour-row relative pr-2 text-right">
+                    <span className="text-[11px] tabular-nums text-[var(--text-muted)] -top-2 relative">
+                      {hourLabel(hour)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Day Columns */}
+              <div
+                data-testid="calendar-columns-grid"
+                className="flex-1 grid relative"
+                style={{
+                  gridTemplateColumns: `repeat(${displayedDates.length}, minmax(0, 1fr))`,
+                  minWidth: columnsMinWidth,
+                }}
+              >
+                {displayedDates.map((date) => {
+                  const iso = toIsoLocal(date);
+                  const dayIndex = date.getDay();
+
+                  return (
+                    <DayColumn
+                      key={iso}
+                      dateIso={iso}
+                      dayIndex={dayIndex}
+                      hoursCount={hours.length}
+                      scheduleSlots={schedule.slots || []}
+                      assessments={assessments || []}
+                      customEvents={customEvents}
+                      coursesById={coursesById}
+                      showExams={layers.exams}
+                      showClasses={layers.classes}
+                      isCourseSelected={isCourseSelected}
+                      searchQuery={searchQuery}
+                      onOpenAssessmentDetail={openAssessmentDetail}
+                      onOpenEvent={openEventModal}
+                      onDeleteCustomEvent={handleDeleteCustomEvent}
+                    />
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -718,21 +804,25 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
         ))}
 
         {/* Live Current Time Indicator (Now Line) */}
-        {isToday && nowTopPx >= 0 && nowTopPx <= hoursCount * HOUR_HEIGHT && (
-          <div
-            data-testid="calendar-now-indicator"
-            className="pointer-events-none absolute left-0 right-0 z-20 flex items-center"
-            style={{ top: `${nowTopPx}px` }}
-          >
-            <div className="-ml-1.5 h-3 w-3 rounded-full bg-red-500 shadow-sm ring-2 ring-white dark:ring-slate-900" />
-            <div className="h-[2px] flex-1 bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.7)]" />
-          </div>
-        )}
+        {isToday &&
+          dayItems.length > 0 &&
+          nowTopPx >= 0 &&
+          nowTopPx <= hoursCount * HOUR_HEIGHT && (
+            <div
+              data-testid="calendar-now-indicator"
+              className="pointer-events-none absolute left-0 right-0 z-20 flex items-center"
+              style={{ top: `${nowTopPx}px` }}
+            >
+              <div className="-ml-1.5 h-2.5 w-2.5 rounded-full bg-[var(--accent-fill)] shadow-2xs ring-2 ring-[var(--surface)]" />
+              <div className="h-[1.5px] flex-1 bg-[var(--accent-fill)] opacity-75" />
+            </div>
+          )}
 
         {/* Calendar Blocks (v4 `gcal-card`) */}
         {dayItems.map((item) => {
           const laneCount = item.laneCount || 1;
           const laneIndex = item.laneIndex || 0;
+          const isSplitLane = laneCount > 1;
           const widthPct = 100 / laneCount;
           const leftPct = laneIndex * widthPct;
           const isCompact = item.heightPx < 54;
@@ -756,14 +846,19 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
           };
 
           const compactClass = isCompact ? " gcal-card-compact" : "";
+          const splitLaneClass = isSplitLane
+            ? " overflow-hidden min-w-0 hover:z-20"
+            : " overflow-hidden min-w-0";
 
           if (item.kind === "merged_exam") {
+            const label = item.courseName || courseDisplayName(item.courseId, coursesById);
             return (
               <div
                 key={item.id}
                 style={style}
                 role="button"
                 tabIndex={0}
+                title={`${label} — ${item.title} (${blockTimeLabel(item)})`}
                 onClick={() => item.assessmentId && onOpenAssessmentDetail(item.assessmentId)}
                 onKeyDown={(e) => {
                   if ((e.key === "Enter" || e.key === " ") && item.assessmentId) {
@@ -771,32 +866,37 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                     onOpenAssessmentDetail(item.assessmentId);
                   }
                 }}
-                className={`gcal-card has-exam-glow${compactClass}`}
+                className={`gcal-card has-exam-glow${compactClass}${splitLaneClass}`}
               >
-                <div className="flex items-center justify-between gap-1">
-                  <span className="text-[11px] font-bold truncate flex items-center gap-1 text-[var(--text)]">
+                <div className="flex items-center justify-between gap-1 min-w-0">
+                  <span className="text-[11px] font-bold truncate flex items-center gap-1 min-w-0 text-[var(--text)]">
                     <span
                       className="w-2 h-2 rounded-full shrink-0"
                       style={{ backgroundColor: borderHex }}
                     />
-                    <span className="truncate">
-                      {item.courseName || courseDisplayName(item.courseId, coursesById)}
+                    <span className="truncate">{label}</span>
+                  </span>
+                  {!isSplitLane && (
+                    <span className="px-1.5 py-0.5 rounded bg-red-700 text-white text-[11px] font-bold shrink-0">
+                      {item.assessmentType}
                     </span>
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded bg-red-700 text-white text-[11px] font-bold shrink-0">
-                    {item.assessmentType}
-                  </span>
+                  )}
                 </div>
                 <div className="text-[11px] font-bold text-red-700 dark:text-red-300 truncate mt-0.5">
                   {item.title}
                 </div>
+                {isSplitLane && item.assessmentType && (
+                  <span className="inline-block max-w-full truncate px-1 py-0.2 rounded bg-red-700 text-white text-[10px] font-bold mt-0.5">
+                    {item.assessmentType}
+                  </span>
+                )}
                 {!isCompact && (
                   <>
                     <div className="text-[11px] truncate text-[var(--text)]">
                       {roomLabel(item.room)}
                       {item.group ? ` · Group ${item.group}` : ""}
                     </div>
-                    <div className="text-[11px] tabular-nums text-[var(--text-muted)]">
+                    <div className="text-[11px] truncate tabular-nums text-[var(--text-muted)]">
                       {blockTimeLabel(item)}
                     </div>
                   </>
@@ -806,12 +906,14 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
           }
 
           if (item.kind === "standalone_exam") {
+            const label = `${courseDisplayName(item.courseId, coursesById)} · ${stripCoursePrefix(item.title, item.courseId)}`;
             return (
               <div
                 key={item.id}
                 style={style}
                 role="button"
                 tabIndex={0}
+                title={`${label} (${blockTimeLabel(item)})`}
                 onClick={() => item.assessmentId && onOpenAssessmentDetail(item.assessmentId)}
                 onKeyDown={(e) => {
                   if ((e.key === "Enter" || e.key === " ") && item.assessmentId) {
@@ -819,30 +921,34 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                     onOpenAssessmentDetail(item.assessmentId);
                   }
                 }}
-                className={`gcal-card has-exam-glow${compactClass}`}
+                className={`gcal-card has-exam-glow${compactClass}${splitLaneClass}`}
               >
-                <div className="flex items-center justify-between gap-1">
-                  <span className="text-[11px] font-bold truncate flex items-center gap-1 text-[var(--text)]">
+                <div className="flex items-center justify-between gap-1 min-w-0">
+                  <span className="text-[11px] font-bold truncate flex items-center gap-1 min-w-0 text-[var(--text)]">
                     <span
                       className="w-2 h-2 rounded-full shrink-0"
                       style={{ backgroundColor: borderHex }}
                     />
-                    <span className="truncate">
-                      {courseDisplayName(item.courseId, coursesById)} ·{" "}
-                      {stripCoursePrefix(item.title, item.courseId)}
-                    </span>
+                    <span className="truncate">{label}</span>
                   </span>
-                  <span className="px-1.5 py-0.5 rounded bg-red-700 text-white text-[11px] font-bold shrink-0">
+                  {!isSplitLane && (
+                    <span className="px-1.5 py-0.5 rounded bg-red-700 text-white text-[11px] font-bold shrink-0">
+                      {item.assessmentType}
+                    </span>
+                  )}
+                </div>
+                {isSplitLane && item.assessmentType && (
+                  <span className="inline-block max-w-full truncate px-1 py-0.2 rounded bg-red-700 text-white text-[10px] font-bold mt-0.5">
                     {item.assessmentType}
                   </span>
-                </div>
+                )}
                 {!isCompact ? (
                   <>
                     <div className="text-[11px] truncate text-[var(--text)]">
                       {roomLabel(item.room)}
                       {item.instructor ? ` · ${item.instructor}` : ""}
                     </div>
-                    <div className="text-[11px] tabular-nums text-[var(--text-muted)]">
+                    <div className="text-[11px] truncate tabular-nums text-[var(--text-muted)]">
                       {blockTimeLabel(item)}
                     </div>
                   </>
@@ -863,6 +969,7 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                 style={style}
                 role="button"
                 tabIndex={0}
+                title={`${item.title} (${blockTimeLabel(item)})`}
                 onClick={openEvent}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
@@ -870,15 +977,15 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                     openEvent();
                   }
                 }}
-                className={`gcal-card${compactClass} cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]`}
+                className={`gcal-card${compactClass}${splitLaneClass} cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]`}
               >
-                <div className="flex items-center justify-between gap-1">
+                <div className="flex items-center justify-between gap-1 min-w-0">
                   <span
                     onClick={(e) => {
                       e.stopPropagation();
                       openEvent();
                     }}
-                    className="text-[11px] font-bold truncate text-[var(--text)] cursor-pointer hover:underline"
+                    className="text-[11px] font-bold truncate min-w-0 text-[var(--text)] cursor-pointer hover:underline"
                     title="Edit this event"
                   >
                     {item.title}
@@ -898,7 +1005,7 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                     <div className="text-[11px] truncate text-[var(--text)]">
                       {item.eventType || "Event"} · {roomLabel(item.room)}
                     </div>
-                    <div className="text-[11px] tabular-nums text-[var(--text-muted)]">
+                    <div className="text-[11px] truncate tabular-nums text-[var(--text-muted)]">
                       {blockTimeLabel(item)}
                     </div>
                   </>
@@ -913,12 +1020,14 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
 
           // Plain class slot — clicking it opens a small popover with the
           // slot's real facts (v4's slot popover; the click used to be dead).
+          const slotLabel = item.courseName || courseDisplayName(item.courseId, coursesById);
           return (
             <div
               key={item.id}
               style={style}
               role="button"
               tabIndex={0}
+              title={`${slotLabel} — ${item.title} (${blockTimeLabel(item)})`}
               onClick={() =>
                 setSlotPopover({
                   id: item.id,
@@ -950,22 +1059,20 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                   });
                 }
               }}
-              className={`gcal-card${compactClass} cursor-pointer hover:ring-1 hover:ring-[color-mix(in_srgb,var(--accent)_50%,transparent)] transition-shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]`}
+              className={`gcal-card${compactClass}${splitLaneClass} cursor-pointer hover:ring-1 hover:ring-[color-mix(in_srgb,var(--accent)_50%,transparent)] transition-shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]`}
             >
-              <div className="text-[11px] font-bold truncate flex items-center gap-1.5 text-[var(--text)]">
+              <div className="text-[11px] font-bold truncate flex items-center gap-1.5 min-w-0 text-[var(--text)]">
                 <span
                   className="w-2 h-2 rounded-full shrink-0"
                   style={{ backgroundColor: borderHex }}
                 />
-                <span className="truncate">
-                  {item.courseName || courseDisplayName(item.courseId, coursesById)}
-                </span>
-                {item.weekParity === "week_a" && (
+                <span className="truncate">{slotLabel}</span>
+                {!isSplitLane && item.weekParity === "week_a" && (
                   <span className="px-1 py-0.2 rounded bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 text-[9px] font-bold shrink-0">
                     Week A
                   </span>
                 )}
-                {item.weekParity === "week_b" && (
+                {!isSplitLane && item.weekParity === "week_b" && (
                   <span className="px-1 py-0.2 rounded bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 text-[9px] font-bold shrink-0">
                     Week B
                   </span>
@@ -977,7 +1084,7 @@ export const DayColumn: React.FC<DayColumnProps> = React.memo(
                     {item.title}
                     {item.group ? ` (Grp ${item.group})` : ""} · {roomLabel(item.room)}
                   </div>
-                  <div className="text-[11px] tabular-nums text-[var(--text-muted)]">
+                  <div className="text-[11px] truncate tabular-nums text-[var(--text-muted)]">
                     {blockTimeLabel(item)}
                   </div>
                 </>

@@ -179,13 +179,14 @@ export function AddCourseModal({
       <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 space-y-6">
           {/* Course Code, Name & Credits */}
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-            <div className="sm:col-span-1">
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-start">
+            <div className="sm:col-span-3 flex flex-col">
               <label
                 htmlFor="course-code"
-                className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5"
+                className="block truncate whitespace-nowrap text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5"
               >
-                {copy.courseModal.codeLabel}
+                Course Code
+                <span className="sr-only"> (e.g. CSE241)</span>
               </label>
               <input
                 id="course-code"
@@ -195,16 +196,17 @@ export function AddCourseModal({
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 placeholder="e.g. CSE241"
-                className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] px-3 py-2 text-xs font-bold text-[var(--text)] outline-none focus:border-[var(--accent)] uppercase"
+                className="w-full rounded-md border border-[var(--border)] bg-[var(--page)] px-2 py-2 text-xs font-bold text-[var(--text)] outline-none focus:border-[var(--accent)] uppercase placeholder:normal-case placeholder:font-normal"
               />
             </div>
 
-            <div className="sm:col-span-2">
+            <div className="sm:col-span-6 flex flex-col">
               <label
                 htmlFor="course-name"
-                className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5"
+                className="block truncate whitespace-nowrap text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5"
               >
-                {copy.courseModal.nameLabel}
+                Course Name
+                <span className="sr-only"> (e.g. Digital Logic Design)</span>
               </label>
               <input
                 id="course-name"
@@ -213,14 +215,14 @@ export function AddCourseModal({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Digital Logic Design"
-                className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] px-3 py-2 text-xs font-medium text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                className="w-full rounded-md border border-[var(--border)] bg-[var(--page)] px-2 py-2 text-xs font-medium text-[var(--text)] outline-none focus:border-[var(--accent)]"
               />
             </div>
 
-            <div className="sm:col-span-1">
+            <div className="sm:col-span-3 flex flex-col">
               <label
                 htmlFor="course-credits"
-                className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5"
+                className="block truncate whitespace-nowrap text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5"
               >
                 Credit Hours
               </label>
@@ -233,7 +235,7 @@ export function AddCourseModal({
                 step="0.5"
                 value={credits}
                 onChange={(e) => setCredits(Math.max(0.1, parseFloat(e.target.value) || 0))}
-                className="w-full rounded-xl border border-[var(--border)] bg-[var(--page)] px-3 py-2 text-xs font-bold text-[var(--text)] outline-none focus:border-[var(--accent)] tabular-nums"
+                className="w-full rounded-md border border-[var(--border)] bg-[var(--page)] px-2 py-2 text-xs font-bold text-[var(--text)] outline-none focus:border-[var(--accent)] tabular-nums"
                 placeholder="3.0"
               />
             </div>
@@ -247,7 +249,7 @@ export function AddCourseModal({
             >
               {copy.courseModal.colorLabel}
             </span>
-            <div className="flex flex-wrap gap-2.5">
+            <div className="flex flex-wrap gap-2.5 pl-1">
               {COURSE_PALETTE_PRESETS.map((presetColor: string) => (
                 <button
                   key={presetColor}
@@ -282,96 +284,135 @@ export function AddCourseModal({
               </button>
             </div>
 
-            <div className="space-y-2.5 max-h-60 overflow-y-auto border border-[var(--border)] rounded-xl p-2.5 bg-[var(--page)]">
+            <div className="space-y-3 max-h-72 overflow-y-auto border border-[var(--border)] rounded-xl p-3 bg-[var(--page)]">
               {slots.map((slot, index) => (
                 <div
                   key={slot.id || index}
-                  className="grid grid-cols-1 gap-2 sm:grid-cols-12 sm:items-center rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] p-2.5 text-xs"
+                  data-testid={`course-slot-card-${index}`}
+                  className="space-y-2.5 rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] p-3 text-xs"
                 >
-                  <div className="sm:col-span-2">
-                    <select
-                      value={slot.day}
-                      aria-label={copy.courseModal.slotField(index + 1, copy.courseModal.dayLabel)}
-                      onChange={(e) => handleUpdateSlot(index, "day", e.target.value)}
-                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--page)] px-2 py-1.5 text-xs text-[var(--text)]"
-                    >
-                      {WEEKDAYS.map((w) => (
-                        <option key={w} value={w}>
-                          {w}
-                        </option>
-                      ))}
-                    </select>
+                  {/* Row 1: Weekday, Frequency, Session Type & Remove */}
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-12 items-end">
+                    <div className="sm:col-span-4">
+                      <span className="mb-1 block text-[11px] font-semibold text-[var(--text-muted)]">
+                        {copy.courseModal.dayLabel}
+                      </span>
+                      <select
+                        value={slot.day}
+                        aria-label={copy.courseModal.slotField(
+                          index + 1,
+                          copy.courseModal.dayLabel,
+                        )}
+                        onChange={(e) => handleUpdateSlot(index, "day", e.target.value)}
+                        className="w-full rounded-md border border-[var(--border)] bg-[var(--page)] px-2 py-1.5 text-xs text-[var(--text)]"
+                      >
+                        {WEEKDAYS.map((w) => (
+                          <option key={w} value={w}>
+                            {w}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="sm:col-span-4">
+                      <span className="mb-1 block text-[11px] font-semibold text-[var(--text-muted)]">
+                        Frequency
+                      </span>
+                      <select
+                        value={slot.weekParity || "all"}
+                        aria-label={`Recurrence for slot ${index + 1}`}
+                        onChange={(e) => handleUpdateSlot(index, "weekParity", e.target.value)}
+                        className="w-full rounded-md border border-[var(--border)] bg-[var(--page)] px-2 py-1.5 text-xs text-[var(--text)]"
+                      >
+                        <option value="all">Weekly (All)</option>
+                        <option value="week_a">Week A Only</option>
+                        <option value="week_b">Week B Only</option>
+                      </select>
+                    </div>
+
+                    <div className="sm:col-span-4 flex items-end gap-1.5">
+                      <div className="min-w-0 flex-1">
+                        <span className="mb-1 block text-[11px] font-semibold text-[var(--text-muted)]">
+                          {copy.courseModal.typeLabel}
+                        </span>
+                        <select
+                          value={slot.type}
+                          aria-label={copy.courseModal.slotField(
+                            index + 1,
+                            copy.courseModal.typeLabel,
+                          )}
+                          onChange={(e) => handleUpdateSlot(index, "type", e.target.value)}
+                          className="w-full rounded-md border border-[var(--border)] bg-[var(--page)] px-2 py-1.5 text-xs text-[var(--text)]"
+                        >
+                          {SLOT_TYPES.map((t) => (
+                            <option key={t} value={t}>
+                              {t}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveSlot(index)}
+                        aria-label={copy.courseModal.slotRemove(index + 1)}
+                        className="shrink-0 rounded-md border border-transparent p-1.5 text-[var(--text-muted)] hover:border-red-500/20 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
+                      >
+                        <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="sm:col-span-3 flex items-center gap-1 min-w-0">
-                    <input
-                      type="time"
-                      aria-label={copy.courseModal.slotField(
-                        index + 1,
-                        copy.courseModal.startTimeLabel,
-                      )}
-                      value={slot.startTime}
-                      onChange={(e) => handleUpdateSlot(index, "startTime", e.target.value)}
-                      className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--page)] px-1.5 py-1.5 text-xs tabular-nums text-[var(--text)]"
-                    />
-                    <span className="text-[var(--text-muted)]">–</span>
-                    <input
-                      type="time"
-                      aria-label={copy.courseModal.slotField(
-                        index + 1,
-                        copy.courseModal.endTimeLabel,
-                      )}
-                      value={slot.endTime}
-                      onChange={(e) => handleUpdateSlot(index, "endTime", e.target.value)}
-                      className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--page)] px-1.5 py-1.5 text-xs tabular-nums text-[var(--text)]"
-                    />
-                  </div>
+                  {/* Row 2: Labeled Start Time, End Time & Room */}
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-12">
+                    <div className="sm:col-span-4">
+                      <span className="mb-1 block text-[11px] font-semibold text-[var(--text-muted)]">
+                        {copy.courseModal.startTimeLabel}
+                      </span>
+                      <input
+                        type="time"
+                        aria-label={copy.courseModal.slotField(
+                          index + 1,
+                          copy.courseModal.startTimeLabel,
+                        )}
+                        value={slot.startTime}
+                        onChange={(e) => handleUpdateSlot(index, "startTime", e.target.value)}
+                        className="w-full rounded-md border border-[var(--border)] bg-[var(--page)] px-2 py-1.5 text-xs tabular-nums text-[var(--text)]"
+                      />
+                    </div>
 
-                  <div className="sm:col-span-2">
-                    <select
-                      value={slot.weekParity || "all"}
-                      aria-label={`Recurrence for slot ${index + 1}`}
-                      onChange={(e) => handleUpdateSlot(index, "weekParity", e.target.value)}
-                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--page)] px-1.5 py-1.5 text-xs text-[var(--text)]"
-                    >
-                      <option value="all">Weekly (All)</option>
-                      <option value="week_a">Week A Only</option>
-                      <option value="week_b">Week B Only</option>
-                    </select>
-                  </div>
+                    <div className="sm:col-span-4">
+                      <span className="mb-1 block text-[11px] font-semibold text-[var(--text-muted)]">
+                        {copy.courseModal.endTimeLabel}
+                      </span>
+                      <input
+                        type="time"
+                        aria-label={copy.courseModal.slotField(
+                          index + 1,
+                          copy.courseModal.endTimeLabel,
+                        )}
+                        value={slot.endTime}
+                        onChange={(e) => handleUpdateSlot(index, "endTime", e.target.value)}
+                        className="w-full rounded-md border border-[var(--border)] bg-[var(--page)] px-2 py-1.5 text-xs tabular-nums text-[var(--text)]"
+                      />
+                    </div>
 
-                  <div className="sm:col-span-2">
-                    <select
-                      value={slot.type}
-                      aria-label={copy.courseModal.slotField(index + 1, copy.courseModal.typeLabel)}
-                      onChange={(e) => handleUpdateSlot(index, "type", e.target.value)}
-                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--page)] px-2 py-1.5 text-xs text-[var(--text)]"
-                    >
-                      {SLOT_TYPES.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 sm:col-span-3">
-                    <input
-                      type="text"
-                      aria-label={copy.courseModal.slotField(index + 1, copy.courseModal.roomLabel)}
-                      placeholder="Room (e.g. Eng 302)"
-                      value={slot.room}
-                      onChange={(e) => handleUpdateSlot(index, "room", e.target.value)}
-                      className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--page)] px-2 py-1.5 text-xs text-[var(--text)]"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveSlot(index)}
-                      aria-label={copy.courseModal.slotRemove(index + 1)}
-                      className="shrink-0 rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
-                    >
-                      <Trash2 className="h-4 w-4" aria-hidden="true" />
-                    </button>
+                    <div className="sm:col-span-4">
+                      <span className="mb-1 block text-[11px] font-semibold text-[var(--text-muted)]">
+                        {copy.courseModal.roomLabel}
+                      </span>
+                      <input
+                        type="text"
+                        aria-label={copy.courseModal.slotField(
+                          index + 1,
+                          copy.courseModal.roomLabel,
+                        )}
+                        placeholder="e.g. Eng 302"
+                        value={slot.room}
+                        onChange={(e) => handleUpdateSlot(index, "room", e.target.value)}
+                        className="w-full rounded-md border border-[var(--border)] bg-[var(--page)] px-2 py-1.5 text-xs text-[var(--text)]"
+                      />
+                    </div>
                   </div>
                 </div>
               ))}

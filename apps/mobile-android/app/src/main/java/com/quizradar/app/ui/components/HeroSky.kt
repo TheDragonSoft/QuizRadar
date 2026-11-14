@@ -230,14 +230,23 @@ fun HeroSky(
 
     androidx.compose.foundation.Canvas(modifier = modifier) {
         if (dark) {
-            drawStars(NIGHT_STARS_A, alphaA)
-            drawStars(NIGHT_STARS_B, alphaB)
+            drawStars(NIGHT_STARS_A, alphaA * 0.65f)
+            drawStars(NIGHT_STARS_B, alphaB * 0.65f)
+            // Soft left-side mask keeps twinkling stars subtle behind foreground text.
+            drawRect(
+                brush =
+                    Brush.horizontalGradient(
+                        0.0f to Color(0xFF0A1022).copy(alpha = 0.55f),
+                        0.68f to Color(0xFF0A1022).copy(alpha = 0.18f),
+                        1.0f to Color.Transparent,
+                    ),
+            )
         } else {
-            // Expansive warm golden atmospheric corona
-            val sunCenter = Offset(size.width * 0.90f, -size.height * 0.08f)
-            val outerCoronaRadius = size.minDimension * 0.95f
-            val midCoronaRadius = size.minDimension * 0.55f
-            val coreRadius = size.minDimension * 0.22f
+            // Pull the warm solar corona toward the top-right corner so hero text remains crisp.
+            val sunCenter = Offset(size.width * 0.98f, -size.height * 0.22f)
+            val outerCoronaRadius = size.minDimension * 0.85f
+            val midCoronaRadius = size.minDimension * 0.48f
+            val coreRadius = size.minDimension * 0.18f
 
             // 1. Broad radiant warm atmospheric corona
             drawCircle(
@@ -245,9 +254,9 @@ fun HeroSky(
                     Brush.radialGradient(
                         colors =
                             listOf(
-                                Color(0xFFFFB300).copy(alpha = (sunGlow * 1.15f).coerceIn(0f, 1f)),
-                                Color(0xFFFFA000).copy(alpha = 0.26f),
-                                Color(0xFFFFD54F).copy(alpha = 0.08f),
+                                Color(0xFFFFB300).copy(alpha = (sunGlow * 0.85f).coerceIn(0f, 1f)),
+                                Color(0xFFFFA000).copy(alpha = 0.20f),
+                                Color(0xFFFFD54F).copy(alpha = 0.06f),
                                 Color.Transparent,
                             ),
                         center = sunCenter,
@@ -263,8 +272,8 @@ fun HeroSky(
                     Brush.radialGradient(
                         colors =
                             listOf(
-                                Color(0xFFFFF176).copy(alpha = 0.88f),
-                                Color(0xFFFFB300).copy(alpha = 0.52f),
+                                Color(0xFFFFF176).copy(alpha = 0.72f),
+                                Color(0xFFFFB300).copy(alpha = 0.38f),
                                 Color.Transparent,
                             ),
                         center = sunCenter,
@@ -274,16 +283,16 @@ fun HeroSky(
                 center = sunCenter,
             )
 
-            // 3. Blazing incandescent solar core
+            // 3. Softened solar core in corner
             drawCircle(
                 brush =
                     Brush.radialGradient(
                         colors =
                             listOf(
-                                Color.White,
-                                Color(0xFFFFF9C4).copy(alpha = 0.98f),
-                                Color(0xFFFFEE58).copy(alpha = 0.88f),
-                                Color(0xFFFFA000).copy(alpha = 0.42f),
+                                Color.White.copy(alpha = 0.90f),
+                                Color(0xFFFFF9C4).copy(alpha = 0.78f),
+                                Color(0xFFFFEE58).copy(alpha = 0.52f),
+                                Color(0xFFFFA000).copy(alpha = 0.22f),
                                 Color.Transparent,
                             ),
                         center = sunCenter,
@@ -292,7 +301,7 @@ fun HeroSky(
                 radius = coreRadius,
                 center = sunCenter,
             )
-            drawStars(DAY_STARS, 1f)
+            drawStars(DAY_STARS, 0.40f)
         }
         drawSheen(sheen)
     }

@@ -11,6 +11,8 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
@@ -21,8 +23,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -74,6 +74,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -94,6 +95,7 @@ import com.quizradar.app.ui.detail.CourseEditorSheet
 import com.quizradar.app.ui.icons.Icons
 import com.quizradar.app.ui.readScaledImage
 import com.quizradar.app.ui.theme.ChipLeadingCheck
+import com.quizradar.app.ui.theme.CoursePalette
 import com.quizradar.app.ui.theme.PillButtonContentPadding
 import com.quizradar.app.ui.theme.PillButtonMinHeight
 import com.quizradar.app.ui.theme.StatusColors
@@ -110,7 +112,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     snapshot: AppSnapshotModel,
@@ -404,11 +406,12 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(modifier = Modifier.height(12.dp))
-                    LazyRow(
+                    FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        items(ACADEMIC_TRACKS) { (id, label) ->
+                        ACADEMIC_TRACKS.forEach { (id, label) ->
                             val isTrackSelected = academicTrack == id
                             FilterChip(
                                 selected = isTrackSelected,
@@ -588,21 +591,15 @@ fun SettingsScreen(
                                         },
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(12.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(12.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        // The dot colour is USER DATA (the saved
-                                        // course colour string), parsed here. Only
-                                        // the missing/invalid fallback is a theme
-                                        // role - never a hardcoded brand hex.
-                                        val courseColor =
-                                            try {
-                                                Color(android.graphics.Color.parseColor(course.color))
-                                            } catch (_: Exception) {
-                                                MaterialTheme.colorScheme.primary
-                                            }
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f),
+                                    ) {
+                                        val courseColor = CoursePalette.get(course.id, course.color).color
                                         Box(
                                             modifier =
                                                 Modifier
@@ -627,11 +624,20 @@ fun SettingsScreen(
                                             )
                                         }
                                     }
-                                    Text(
-                                        text = "Edit",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.primary,
-                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    TextButton(
+                                        onClick = {
+                                            editingCourse = course
+                                            editingCourseSlots = courseSlots
+                                            isCourseSheetOpen = true
+                                        },
+                                        modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                                    ) {
+                                        Text(
+                                            text = "Edit",
+                                            style = MaterialTheme.typography.labelLarge,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -641,10 +647,13 @@ fun SettingsScreen(
                     Button(
                         onClick = onReRunOnboarding,
                         colors = ButtonDefaults.tonalPill(),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .defaultMinSize(minHeight = PillButtonMinHeight),
                         contentPadding = PillButtonContentPadding,
                     ) {
-                        Text("Re-run Timetable Onboarding")
+                        Text("Re-run Timetable Onboarding", style = MaterialTheme.typography.labelLarge)
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -682,12 +691,15 @@ fun SettingsScreen(
                         },
                         enabled = aiImportReady,
                         colors = ButtonDefaults.tonalPill(),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .defaultMinSize(minHeight = PillButtonMinHeight),
                         contentPadding = PillButtonContentPadding,
                     ) {
                         Icon(Icons.Outlined.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Import Timetable from Image (AI)")
+                        Text("Import Timetable from Image (AI)", style = MaterialTheme.typography.labelLarge)
                     }
                     if (!aiImportReady) {
                         Spacer(modifier = Modifier.height(8.dp))
@@ -857,6 +869,7 @@ fun SettingsScreen(
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
                                         )
                                     }
                                     IconButton(
@@ -1017,9 +1030,12 @@ fun SettingsScreen(
                             onClick = { viewModel.saveGeminiApiKey(keyInputValue) },
                             colors = ButtonDefaults.filledPill(),
                             contentPadding = PillButtonContentPadding,
-                            modifier = Modifier.weight(1f),
+                            modifier =
+                                Modifier
+                                    .weight(1f)
+                                    .defaultMinSize(minHeight = PillButtonMinHeight),
                         ) {
-                            Text("Save Key")
+                            Text("Save Key", style = MaterialTheme.typography.labelLarge)
                         }
 
                         Button(
@@ -1034,12 +1050,15 @@ fun SettingsScreen(
                             enabled = !isAiValidating && keyInputValue.isNotBlank(),
                             colors = ButtonDefaults.tonalPill(),
                             contentPadding = PillButtonContentPadding,
-                            modifier = Modifier.weight(1f),
+                            modifier =
+                                Modifier
+                                    .weight(1f)
+                                    .defaultMinSize(minHeight = PillButtonMinHeight),
                         ) {
                             if (isAiValidating) {
                                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                             } else {
-                                Text("Validate Key")
+                                Text("Validate Key", style = MaterialTheme.typography.labelLarge)
                             }
                         }
                     }
@@ -1189,10 +1208,13 @@ fun SettingsScreen(
                     Button(
                         onClick = { NotificationHelper.sendTestNotification(context) },
                         colors = ButtonDefaults.tonalPill(),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .defaultMinSize(minHeight = PillButtonMinHeight),
                         contentPadding = PillButtonContentPadding,
                     ) {
-                        Text("Send Test Notification")
+                        Text("Send Test Notification", style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }
@@ -1302,22 +1324,43 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(modifier = Modifier.height(12.dp))
-                    // QuizRadar ships exactly one light theme, so there is no
-                    // light preference to persist or switch: the chip mirrors
-                    // the resolved state (is the light scheme in use right
-                    // now?) instead of a constant "selected" the state never
-                    // held. Tapping it intentionally does nothing.
-                    FilterChip(
-                        selected = isLightSchemeActive,
-                        onClick = {},
-                        modifier = Modifier.defaultMinSize(minHeight = 48.dp),
-                        colors = FilterChipDefaults.quietChipColors(),
-                        label = {
-                            Text("Solar Dawn (only light theme)", style = MaterialTheme.typography.labelMedium)
-                        },
-                        // Selection is never colour-only.
-                        leadingIcon = { if (isLightSchemeActive) ChipLeadingCheck() },
-                    )
+                    // Single built-in light appearance: shown as a clear read-only status row
+                    // instead of a non-interactive FilterChip so users aren't misled by a dead tap.
+                    Surface(
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Solar Dawn",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    text = "Default light appearance when Light mode or daytime is active",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (isLightSchemeActive) "Active now" else "Built-in",
+                                style = MaterialTheme.typography.labelMedium,
+                                color =
+                                    if (isLightSchemeActive) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                            )
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -1391,7 +1434,7 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "Backups are stored locally (spec §8 [M]). Credentials and OAuth tokens are never included in backups.",
+                        text = "Backups are stored locally. Credentials and OAuth tokens are never included in backups.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1408,11 +1451,19 @@ fun SettingsScreen(
                             },
                             colors = ButtonDefaults.tonalPill(),
                             contentPadding = PillButtonContentPadding,
-                            modifier = Modifier.weight(1f),
+                            modifier =
+                                Modifier
+                                    .weight(1f)
+                                    .defaultMinSize(minHeight = PillButtonMinHeight),
                         ) {
                             Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Export Backup")
+                            Text(
+                                text = "Export JSON",
+                                style = MaterialTheme.typography.labelLarge,
+                                maxLines = 1,
+                                softWrap = false,
+                            )
                         }
 
                         Button(
@@ -1421,11 +1472,19 @@ fun SettingsScreen(
                             },
                             colors = ButtonDefaults.tonalPill(),
                             contentPadding = PillButtonContentPadding,
-                            modifier = Modifier.weight(1f),
+                            modifier =
+                                Modifier
+                                    .weight(1f)
+                                    .defaultMinSize(minHeight = PillButtonMinHeight),
                         ) {
                             Icon(Icons.Outlined.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Import Backup")
+                            Text(
+                                text = "Import JSON",
+                                style = MaterialTheme.typography.labelLarge,
+                                maxLines = 1,
+                                softWrap = false,
+                            )
                         }
                     }
 
@@ -1453,22 +1512,38 @@ fun SettingsScreen(
                                 onClick = { viewModel.pushDriveBackupNow() },
                                 colors = ButtonDefaults.tonalPill(),
                                 contentPadding = PillButtonContentPadding,
-                                modifier = Modifier.weight(1f),
+                                modifier =
+                                    Modifier
+                                        .weight(1f)
+                                        .defaultMinSize(minHeight = PillButtonMinHeight),
                             ) {
                                 Icon(Icons.Outlined.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Back up to Drive")
+                                Text(
+                                    text = "Drive Backup",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                )
                             }
 
                             Button(
                                 onClick = { viewModel.restoreDriveBackupNow() },
                                 colors = ButtonDefaults.tonalPill(),
                                 contentPadding = PillButtonContentPadding,
-                                modifier = Modifier.weight(1f),
+                                modifier =
+                                    Modifier
+                                        .weight(1f)
+                                        .defaultMinSize(minHeight = PillButtonMinHeight),
                             ) {
                                 Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Restore from Drive")
+                                Text(
+                                    text = "Restore Drive",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                )
                             }
                         }
                     }
@@ -1483,12 +1558,15 @@ fun SettingsScreen(
                             showResetConfirmDialog = true
                         },
                         colors = ButtonDefaults.destructivePill(),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .defaultMinSize(minHeight = PillButtonMinHeight),
                         contentPadding = PillButtonContentPadding,
                     ) {
                         Icon(Icons.Outlined.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Reset All Data")
+                        Text("Reset All Data", style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }

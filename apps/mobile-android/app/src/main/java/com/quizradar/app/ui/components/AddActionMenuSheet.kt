@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -55,6 +56,7 @@ fun AddActionMenuSheet(
             modifier =
                 Modifier
                     .fillMaxWidth()
+                    .navigationBarsPadding()
                     .padding(horizontal = 20.dp, vertical = 8.dp),
         ) {
             Text(
@@ -81,7 +83,7 @@ fun AddActionMenuSheet(
                         },
                         supportingContent = {
                             Text(
-                                text = "Type in a quiz, exam or assignment the teacher announced",
+                                text = "Add an announced quiz, exam or assignment",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -171,13 +173,13 @@ fun AddActionMenuSheet(
                     ListItem(
                         headlineContent = {
                             Text(
-                                text = "Import Backup File",
+                                text = "Restore Backup File",
                                 style = MaterialTheme.typography.titleMedium,
                             )
                         },
                         supportingContent = {
                             Text(
-                                text = "Restore courses and assessments from JSON",
+                                text = "Restore saved courses and exams from a JSON backup",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

@@ -4,6 +4,8 @@ import {
   roomLabel,
   computeBlockPosition,
   assignOverlapLanes,
+  filterActiveCalendarDates,
+  getActiveDayWindow,
   getClampedDayWindow,
   formatCompactTime,
   hourLabel,
@@ -175,5 +177,100 @@ describe("calendarLanes: honest labels (sweep fixes)", () => {
       "CSE263: In-Class Assignment 1",
     );
     expect(stripCoursePrefix("", "CSE263")).toBe("");
+  });
+});
+
+describe("calendarLanes: dynamic empty-day filtering", () => {
+  const buildWeek = () => Array.from({ length: 7 }, (_, i) => new Date(2026, 9, 18 + i, 0, 0, 0));
+
+  it("removes empty days when lectures, tutorials, exams, or custom events exist", () => {
+    const week = buildWeek();
+    const active = filterActiveCalendarDates({
+      dates: week,
+      scheduleSlots: [
+        {
+          id: "slot-mon",
+          day: "Monday",
+          dayIndex: 1,
+          courseId: "CS101",
+          courseName: "Intro to CS",
+          type: "Lecture",
+          startTime: "09:00",
+          endTime: "10:30",
+          displayTime: "09:00 - 10:30",
+        },
+        {
+          id: "slot-wed",
+          day: "Wednesday",
+          dayIndex: 3,
+          courseId: "CS101",
+          courseName: "Intro to CS",
+          type: "Tutorial",
+          startTime: "11:00",
+          endTime: "12:00",
+          displayTime: "11:00 - 12:00",
+        },
+      ],
+      assessments: [
+        {
+          id: "ex-thu",
+          courseId: "CS101",
+          title: "Quiz 1",
+          assessmentType: "Class Quiz",
+          dateIso: "2026-10-22",
+        } as never,
+      ],
+      customEvents: [
+        {
+          id: "ev-sat",
+          title: "Study Group",
+          dateIso: "2026-10-24",
+        },
+      ],
+      showClasses: true,
+      showExams: true,
+      isCourseSelected: () => true,
+      searchQuery: "",
+      weekParityFilter: "all",
+    });
+
+    expect(active.map(toIsoLocal)).toEqual([
+      "2026-10-19", // Mon (Lecture)
+      "2026-10-21", // Wed (Tutorial)
+      "2026-10-22", // Thu (Quiz)
+      "2026-10-24", // Sat (Custom Event)
+    ]);
+  });
+
+  it("falls back to all 7 days when every day in the week is empty", () => {
+    const week = buildWeek();
+    const active = filterActiveCalendarDates({
+      dates: week,
+      scheduleSlots: [],
+      assessments: [],
+      customEvents: [],
+      showClasses: true,
+      showExams: true,
+      isCourseSelected: () => true,
+      searchQuery: "",
+      weekParityFilter: "all",
+    });
+    expect(active).toHaveLength(7);
+  });
+
+  it("shows all active days when <= 3 exist on mobile and slices 3 active days when 4+ exist", () => {
+    const fourActive = [
+      new Date(2026, 9, 19),
+      new Date(2026, 9, 21),
+      new Date(2026, 9, 22),
+      new Date(2026, 9, 24),
+    ];
+    expect(getActiveDayWindow(fourActive.slice(0, 2), new Date(2026, 9, 19), true)).toHaveLength(2);
+    expect(getActiveDayWindow(fourActive, new Date(2026, 9, 22), true).map(toIsoLocal)).toEqual([
+      "2026-10-21",
+      "2026-10-22",
+      "2026-10-24",
+    ]);
+    expect(getActiveDayWindow(fourActive, new Date(2026, 9, 22), false)).toHaveLength(4);
   });
 });

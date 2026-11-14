@@ -95,7 +95,11 @@ export function SettingsView() {
   };
 
   return (
-    <div ref={rootRef} data-testid="view-settings" className="mx-auto flex w-full max-w-6xl gap-10">
+    <div
+      ref={rootRef}
+      data-testid="view-settings"
+      className="mx-auto flex w-full max-w-6xl min-w-0 gap-10"
+    >
       {/* Side rail (wide screens): anchored section navigation */}
       <nav
         aria-label="Settings sections"

@@ -6,6 +6,9 @@
  * 12-hour clock labels, and the same greedy lane-packing algorithm.
  */
 
+import { slotMatchesParity, type WeekParityFilter } from "./weekParity";
+import type { Assessment, CustomCalendarEvent, ScheduleSlot } from "../state/types";
+
 export const START_HOUR = 8; // 8 AM
 export const END_HOUR = 20; // 8 PM
 export const HOUR_HEIGHT = 56; // 56px per hour
@@ -129,6 +132,89 @@ export function getClampedDayWindow(
   const diffDays = Math.round((sel.getTime() - start.getTime()) / dayMs);
   const dayOffset = Math.min(4, Math.max(0, diffDays));
   return { dayOffset, dayCount: 3 };
+}
+
+export interface ActiveCalendarDaysInput {
+  dates: Date[];
+  scheduleSlots: ScheduleSlot[];
+  assessments: Assessment[];
+  customEvents: CustomCalendarEvent[];
+  showClasses: boolean;
+  showExams: boolean;
+  isCourseSelected: (courseId?: string | null) => boolean;
+  searchQuery: string;
+  weekParityFilter: WeekParityFilter;
+}
+
+/**
+ * Dynamically removes empty days (days with zero matching lectures, tutorials,
+ * labs, assessments, study blocks, or custom events) so active days expand to
+ * fill the calendar width cleanly. When every day in the week is empty, keeps
+ * all input dates so empty states remain clear and actionable.
+ */
+export function filterActiveCalendarDates({
+  dates,
+  scheduleSlots,
+  assessments,
+  customEvents,
+  showClasses,
+  showExams,
+  isCourseSelected,
+  searchQuery,
+  weekParityFilter,
+}: ActiveCalendarDaysInput): Date[] {
+  const nonEmpty = dates.filter((date) => {
+    const iso = toIsoLocal(date);
+    const dayIndex = date.getDay();
+
+    const hasSlot =
+      showClasses &&
+      scheduleSlots.some(
+        (s) =>
+          s.dayIndex === dayIndex &&
+          slotMatchesParity(s, iso, weekParityFilter) &&
+          isCourseSelected(s.courseId) &&
+          matchesGlobalSearch(searchQuery, s.courseId, s.courseName, s.type),
+      );
+    if (hasSlot) return true;
+
+    const hasExam =
+      showExams &&
+      assessments.some(
+        (a) =>
+          a.dateIso === iso &&
+          isCourseSelected(a.courseId) &&
+          matchesGlobalSearch(searchQuery, a.courseId, a.courseName, a.title),
+      );
+    if (hasExam) return true;
+
+    return customEvents.some((ev) => ev.dateIso === iso);
+  });
+
+  return nonEmpty.length > 0 ? nonEmpty : dates;
+}
+
+/**
+ * Selects the displayed slice of active days: desktop shows all active days,
+ * and mobile shows all active days when <= 3 fit or a 3-day window centered
+ * around [selectedDate] when 4+ active days exist.
+ */
+export function getActiveDayWindow(
+  activeDates: Date[],
+  selectedDate: Date,
+  isNarrow: boolean,
+): Date[] {
+  if (!isNarrow || activeDates.length <= 3) {
+    return activeDates;
+  }
+  const selIso = toIsoLocal(selectedDate);
+  let idx = activeDates.findIndex((d) => toIsoLocal(d) === selIso);
+  if (idx === -1) {
+    idx = activeDates.findIndex((d) => toIsoLocal(d) >= selIso);
+    if (idx === -1) idx = 0;
+  }
+  const offset = Math.min(activeDates.length - 3, Math.max(0, idx - 1));
+  return activeDates.slice(offset, offset + 3);
 }
 
 // ---------------------------------------------------------------------------

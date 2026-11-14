@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import { Clock, HelpCircle, Plus, Tag, Timer, Zap } from "lucide-react";
 import { copy } from "../copy";
+import { isTauriEnvironment } from "../state/rpc";
 import { useAppStore, addDaysToIsoDate } from "../state/store";
 import { computeSyncStatusSummary } from "../state/syncStatus";
 import { assessmentKind, type AssessmentKind } from "../lib/assessmentKind";
@@ -40,6 +41,40 @@ const WEEK_EXAM_KINDS: Readonly<Record<AssessmentKind, { label: string }>> = {
   assignment: { label: "Assignment" },
 };
 
+const SHORT_MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+
+/**
+ * Formats ISO / database sync timestamps (e.g. "Last synced: 2026-11-12T08:12:00Z")
+ * into a concise human-readable local date/time ("Last synced: Nov 12, 08:12").
+ */
+function formatHumanSyncText(text: string): string {
+  const prefix = "Last synced: ";
+  if (!text.startsWith(prefix)) return text;
+  const raw = text.slice(prefix.length).trim();
+  if (!raw) return text;
+  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(raw) ? raw.replace(" ", "T") : raw;
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return text;
+  const month = SHORT_MONTHS[parsed.getMonth()];
+  const day = parsed.getDate();
+  const hh = String(parsed.getHours()).padStart(2, "0");
+  const mm = String(parsed.getMinutes()).padStart(2, "0");
+  return `${prefix}${month} ${day}, ${hh}:${mm}`;
+}
+
 /**
  * Left rail — v4 parity port (v4-final:static/index.html `#left-sidebar`).
  *
@@ -74,8 +109,15 @@ export const Sidebar: React.FC = () => {
   const openEventModal = useAppStore((s) => s.openEventModal);
   const openAssessmentDetail = useAppStore((s) => s.openAssessmentDetail);
   const runGcalSync = useAppStore((s) => s.runGcalSync);
+  const exportIcs = useAppStore((s) => s.exportIcs);
 
   const syncSummary = computeSyncStatusSummary(config, auth);
+  const formattedLastSynced = useMemo(
+    () => formatHumanSyncText(syncSummary.lastSyncedText),
+    [syncSummary.lastSyncedText],
+  );
+  const isDesktop = isTauriEnvironment();
+  const canPushGcal = isDesktop && auth.authenticated;
 
   const assessmentDates = useMemo(
     () => assessments.map((a) => a.dateIso).filter((d): d is string => Boolean(d)),
@@ -125,7 +167,7 @@ export const Sidebar: React.FC = () => {
             onClick={() => openEventModal()}
             className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] px-4 py-2.5 text-xs font-semibold text-[var(--text)] transition hover:border-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_5%,transparent)] active:scale-[0.99]"
           >
-            <Plus className="h-4 w-4 text-[var(--accent)]" aria-hidden="true" />
+            <Plus className="h-4 w-4 text-[var(--accent-ink)]" aria-hidden="true" />
             <span>{copy.sidebar.createEvent}</span>
           </button>
 
@@ -371,17 +413,32 @@ export const Sidebar: React.FC = () => {
               />
               <span className="truncate font-medium text-[var(--text)]">{syncSummary.label}</span>
             </span>
-            <button
-              type="button"
-              onClick={() => void runGcalSync()}
-              className="min-h-6 shrink-0 cursor-pointer rounded px-2 py-1 font-medium text-[var(--accent-ink)] hover:underline"
-            >
-              {copy.sidebar.pushGcal}
-            </button>
+            {canPushGcal ? (
+              <button
+                type="button"
+                onClick={() => void runGcalSync()}
+                title="Push assessments and classes to Google Calendar"
+                className="min-h-6 shrink-0 cursor-pointer rounded px-2 py-1 font-medium text-[var(--accent-ink)] hover:underline"
+              >
+                {copy.sidebar.pushGcal}
+              </button>
+            ) : !isDesktop && assessments.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => void exportIcs()}
+                title={copy.calendar.exportAllIcs}
+                className="min-h-6 shrink-0 cursor-pointer rounded px-2 py-1 font-medium text-[var(--accent-ink)] hover:underline"
+              >
+                .ics export
+              </button>
+            ) : null}
           </div>
-          <div className="flex items-center gap-1.5 text-[11px] tabular-nums">
-            <Clock className="h-3 w-3" aria-hidden="true" />
-            <span>{syncSummary.lastSyncedText}</span>
+          <div
+            className="flex items-center gap-1.5 text-[11px] tabular-nums"
+            title={syncSummary.lastSyncedText}
+          >
+            <Clock className="h-3 w-3 shrink-0" aria-hidden="true" />
+            <span>{formattedLastSynced}</span>
           </div>
           <div className="flex items-center gap-1.5 pt-1 text-[11px]">
             <Tag className="h-3 w-3" aria-hidden="true" />

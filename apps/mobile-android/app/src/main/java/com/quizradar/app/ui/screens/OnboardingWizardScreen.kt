@@ -9,18 +9,25 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,13 +36,15 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -50,6 +59,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -57,9 +67,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -86,6 +98,7 @@ import com.quizradar.app.ui.ACADEMIC_TRACKS
 import com.quizradar.app.ui.QuizRadarViewModel
 import com.quizradar.app.ui.TimetableImportState
 import com.quizradar.app.ui.components.OAuthClientIdFields
+import com.quizradar.app.ui.components.QuizRadarLogo
 import com.quizradar.app.ui.components.TimetableImportErrorDialog
 import com.quizradar.app.ui.components.TimetableImportPreviewDialog
 import com.quizradar.app.ui.components.TimetableImportWorkingDialog
@@ -93,6 +106,7 @@ import com.quizradar.app.ui.detail.CourseEditorSheet
 import com.quizradar.app.ui.icons.Icons
 import com.quizradar.app.ui.readScaledImage
 import com.quizradar.app.ui.theme.ChipLeadingCheck
+import com.quizradar.app.ui.theme.CoursePalette
 import com.quizradar.app.ui.theme.PillButtonContentPadding
 import com.quizradar.app.ui.theme.PillButtonMinHeight
 import com.quizradar.app.ui.theme.StatusColors
@@ -123,7 +137,7 @@ private const val AI_FREE_TIER_DISCLOSURE =
         "when AI is used. On Google's free tier, Google may use that content to " +
         "improve its products."
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun OnboardingWizardScreen(
     snapshot: AppSnapshotModel,
@@ -139,7 +153,8 @@ fun OnboardingWizardScreen(
     // The persisted study-track preset (`01` §4.1) — the wizard shows what
     // was saved and writes the answer straight through.
     val savedTrack by viewModel.academicTrack.collectAsState()
-    val scrollState = rememberScrollState()
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val isAmoled = isDark && MaterialTheme.colorScheme.background == Color.Black
 
     var isAddCourseOpen by rememberSaveable { mutableStateOf(false) }
     val addCourseSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -271,18 +286,30 @@ fun OnboardingWizardScreen(
                     // step 1 and completes the wizard honestly (nothing was
                     // configured, and the checklist will say so).
                     actions = {
-                        TextButton(
-                            onClick = {
-                                viewModel.completeOnboarding()
-                                onComplete()
-                            },
-                        ) {
-                            Text("Skip")
+                        if (currentStep < ONBOARDING_STEP_COUNT) {
+                            TextButton(
+                                onClick = {
+                                    viewModel.completeOnboarding()
+                                    onComplete()
+                                },
+                                colors =
+                                    ButtonDefaults.textButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.onSurface,
+                                    ),
+                                modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                            ) {
+                                Text("Skip", style = MaterialTheme.typography.labelLarge)
+                            }
                         }
                     },
                     colors =
                         TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surface,
+                            containerColor =
+                                if (isAmoled) {
+                                    Color.Black.copy(alpha = 0.85f)
+                                } else {
+                                    MaterialTheme.colorScheme.surface
+                                },
                             titleContentColor = MaterialTheme.colorScheme.onSurface,
                         ),
                 )
@@ -291,16 +318,19 @@ fun OnboardingWizardScreen(
                     modifier = Modifier.fillMaxWidth(),
                     color = MaterialTheme.colorScheme.primary,
                     trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    gapSize = 0.dp,
+                    drawStopIndicator = {},
                 )
             }
         },
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = if (isAmoled) Color.Transparent else MaterialTheme.colorScheme.background,
         modifier = modifier.fillMaxSize(),
     ) { innerPadding ->
         Box(
             modifier =
                 Modifier
                     .padding(innerPadding)
+                    .consumeWindowInsets(innerPadding)
                     .fillMaxSize(),
         ) {
             AnimatedContent(
@@ -314,12 +344,13 @@ fun OnboardingWizardScreen(
                 },
                 label = "onboarding_step_crossfade",
             ) { step ->
+                val stepScrollState = rememberScrollState()
                 Column(
                     modifier =
                         Modifier
                             .fillMaxSize()
                             .imePadding()
-                            .verticalScroll(scrollState)
+                            .verticalScroll(stepScrollState)
                             .padding(horizontal = 20.dp, vertical = 16.dp),
                 ) {
                     when (step) {
@@ -437,23 +468,9 @@ private fun Step1Welcome(
     Column(
         modifier = modifier.fillMaxWidth(),
     ) {
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        Box(
-            modifier =
-                Modifier
-                    .size(72.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.AutoAwesome,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(32.dp),
-            )
-        }
+        QuizRadarLogo(size = 64.dp)
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -499,8 +516,7 @@ private fun Step1Welcome(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Zero-server privacy guarantee — a tonal container, so it reads as
-        // assurance beside the card above rather than as a second card.
+        // On-device privacy guarantee — a tonal container beside the card above.
         Surface(
             shape = MaterialTheme.shapes.medium,
             color = MaterialTheme.colorScheme.surfaceVariant,
@@ -519,15 +535,14 @@ private fun Step1Welcome(
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
                     Text(
-                        text = "100% Local-First & Zero-Server",
+                        text = "Private & Stored on This Device",
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text =
-                            "Your account tokens are kept in Keystore-backed encrypted storage, and your timetable " +
-                                "and grades stay in this app's private storage on this device. " +
-                                "Zero external servers, zero telemetry, zero analytics.",
+                            "Your account tokens stay in Keystore-backed encrypted storage, and your timetable " +
+                                "and grades stay in private app storage on this phone — no central servers, no telemetry, no analytics.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -535,7 +550,7 @@ private fun Step1Welcome(
             }
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(28.dp))
 
         Button(
             onClick = onGetStarted,
@@ -543,22 +558,21 @@ private fun Step1Welcome(
             colors = ButtonDefaults.filledPill(),
             contentPadding = PillButtonContentPadding,
         ) {
-            Text("Get Started")
+            Text("Get Started", style = MaterialTheme.typography.labelLarge)
             Spacer(modifier = Modifier.width(8.dp))
             Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
         }
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        FilledTonalButton(
+        OutlinedButton(
             onClick = onRestoreBackup,
             modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = PillButtonMinHeight),
-            colors = ButtonDefaults.tonalPill(),
             contentPadding = PillButtonContentPadding,
         ) {
             Icon(Icons.Outlined.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(8.dp))
-            Text("I Have a Backup File (Restore)")
+            Text("Restore from Backup", style = MaterialTheme.typography.labelLarge)
         }
     }
 }
@@ -573,18 +587,12 @@ private fun Step2AiConsent(
 ) {
     val storedKey by viewModel.geminiApiKey.collectAsState()
     val storedAiEnabled by viewModel.geminiEnabled.collectAsState()
-    // Drafts survive process recreation (`rememberSaveable`), and the initial
-    // value is whatever was already persisted — retyping a saved key is a
-    // regression, not a convenience.
-    var keyInput by rememberSaveable { mutableStateOf(storedKey) }
-    var consentChecked by rememberSaveable { mutableStateOf(storedAiEnabled) }
+    var keyInput by rememberSaveable(storedKey) { mutableStateOf(storedKey) }
+    var consentChecked by rememberSaveable(storedAiEnabled) { mutableStateOf(storedAiEnabled) }
     var isKeyVisible by rememberSaveable { mutableStateOf(false) }
 
     // The AI-enabled preference is the CONSENT, not key presence: typing a
-    // key alone used to flip the preference on (the old step 3 did
-    // `setGeminiEnabled(it.isNotBlank())`), which is exactly the A07 failure —
-    // a retained key silently re-arming network sends. Only an explicit
-    // checkbox over a non-blank key enables AI.
+    // key alone used to flip the preference on (A07 failure).
     val enableAi = { checked: Boolean, key: String ->
         viewModel.setGeminiEnabled(checked && key.isNotBlank())
     }
@@ -614,13 +622,13 @@ private fun Step2AiConsent(
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    text = "Gemini API Key (BYOK)",
+                    text = "Gemini API Key (Personal Key)",
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text =
-                        "Bring your own key from Google AI Studio - it is stored in this phone's " +
+                        "Bring your own key from Google AI Studio — it is stored in this phone's " +
                             "Keystore-backed encrypted storage and never enters a log or a backup.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -630,13 +638,10 @@ private fun Step2AiConsent(
                     value = keyInput,
                     onValueChange = {
                         keyInput = it
-                        // Persisted debounced and unannounced (a 30-character
-                        // key once queued 30 Keystore writes and 30 toasts).
-                        // The consent flag only moves on the checkbox.
                         viewModel.saveGeminiApiKey(it, announce = false)
                         enableAi(consentChecked, it)
                     },
-                    label = { Text("API Key (BYOK)") },
+                    label = { Text("Gemini API Key") },
                     singleLine = true,
                     visualTransformation = if (isKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -652,9 +657,6 @@ private fun Step2AiConsent(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            // One confirmation, when the user is done with the
-                            // field - not one per letter. Never announce a removal
-                            // toast if the user simply unfocused an empty field.
                             .onFocusChanged { focusState ->
                                 if (!focusState.isFocused) {
                                     if (keyInput.isNotBlank()) {
@@ -701,7 +703,7 @@ private fun Step2AiConsent(
                     Checkbox(checked = consentChecked, onCheckedChange = null)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        "I understand and want to enable AI features (BYOK Gemini)",
+                        "I understand and want to enable AI features with my Gemini API key",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -715,7 +717,7 @@ private fun Step2AiConsent(
             }
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(28.dp))
 
         Button(
             onClick = { viewModel.setOnboardingStep(3) },
@@ -724,7 +726,8 @@ private fun Step2AiConsent(
             contentPadding = PillButtonContentPadding,
         ) {
             Text(
-                if (storedAiEnabled) "Continue with AI Enabled" else "Continue Without AI",
+                text = if (storedAiEnabled) "Continue with AI Enabled" else "Continue Without AI",
+                style = MaterialTheme.typography.labelLarge,
             )
             Spacer(modifier = Modifier.width(8.dp))
             Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -735,6 +738,7 @@ private fun Step2AiConsent(
 // =============================================================================
 // STEP 3: TIMETABLE & COURSES (import requires the AI-consent step; A14/A07)
 // =============================================================================
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Step3Timetable(
     snapshot: AppSnapshotModel,
@@ -769,24 +773,26 @@ private fun Step3Timetable(
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Add your enrolled courses so the engine knows your recurring class times.",
+            text = "Add your enrolled courses so QuizRadar knows your recurring class times.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Study track chips
+        // Academic rhythm preset chips
         Text(
-            text = "Study Track / Field",
+            text = "Academic Rhythm Preset",
             style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(modifier = Modifier.height(8.dp))
-        LazyRow(
+        FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            items(STUDY_TRACKS) { (id, label) ->
+            STUDY_TRACKS.forEach { (id, label) ->
                 FilterChip(
                     selected = selectedTrack == id,
                     onClick = {
@@ -807,9 +813,9 @@ private fun Step3Timetable(
             Text(
                 text =
                     if (selectedTrack == null) {
-                        "Not set - pick the field that matches your programme (optional)."
+                        "Not set — pick the field that matches your programme (optional)."
                     } else {
-                        "Saved preset \"$selectedTrack\" is not one of the current options - " +
+                        "Saved preset \"$selectedTrack\" is not one of the current options — " +
                             "pick one to replace it."
                     },
                 style = MaterialTheme.typography.bodySmall,
@@ -837,9 +843,6 @@ private fun Step3Timetable(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    // No leading icons: at the narrowest supported width the
-                    // 24dp content padding plus an icon would squeeze the
-                    // label onto two lines.
                     FilledTonalButton(
                         onClick = onImportTimetablePhoto,
                         enabled = aiEnabled,
@@ -847,7 +850,7 @@ private fun Step3Timetable(
                         contentPadding = PillButtonContentPadding,
                         modifier = Modifier.weight(1f).defaultMinSize(minHeight = PillButtonMinHeight),
                     ) {
-                        Text("Import Photo", style = MaterialTheme.typography.labelMedium)
+                        Text("Import Photo", style = MaterialTheme.typography.labelLarge)
                     }
                     FilledTonalButton(
                         onClick = onImportTimetablePdf,
@@ -856,7 +859,7 @@ private fun Step3Timetable(
                         contentPadding = PillButtonContentPadding,
                         modifier = Modifier.weight(1f).defaultMinSize(minHeight = PillButtonMinHeight),
                     ) {
-                        Text("Import PDF", style = MaterialTheme.typography.labelMedium)
+                        Text("Import PDF", style = MaterialTheme.typography.labelLarge)
                     }
                 }
 
@@ -870,15 +873,12 @@ private fun Step3Timetable(
                     ) {
                         Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Add Course")
+                        Text("Add Course", style = MaterialTheme.typography.labelLarge)
                     }
                 }
 
                 if (!aiEnabled) {
                     Spacer(modifier = Modifier.height(8.dp))
-                    // A07: the import path is gated on the AI-enabled
-                    // preference (consent), not on key presence — say exactly
-                    // which step fixes it.
                     Surface(
                         shape = MaterialTheme.shapes.medium,
                         color = MaterialTheme.colorScheme.surfaceVariant,
@@ -888,7 +888,7 @@ private fun Step3Timetable(
                             Text(
                                 text =
                                     "Photo and PDF import need AI features, which are turned off " +
-                                        "(step 2). Enable them there, or add courses manually below.",
+                                        "(step 2). Enable them there, or tap Add Course above.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -896,7 +896,7 @@ private fun Step3Timetable(
                                 onClick = onEnableAi,
                                 modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
                             ) {
-                                Text("Go to AI step")
+                                Text("Go to AI step", style = MaterialTheme.typography.labelLarge)
                             }
                         }
                     }
@@ -936,7 +936,10 @@ private fun Step3Timetable(
                     }
                 } else {
                     snapshot.schedule.courses.forEachIndexed { index, course ->
-                        val slotCount = snapshot.schedule.slots.count { it.courseId == course.id }
+                        val slotCount =
+                            snapshot.schedule.slots.count {
+                                it.courseId.equals(course.id, ignoreCase = true)
+                            }
                         if (index > 0) {
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         }
@@ -953,7 +956,7 @@ private fun Step3Timetable(
                                     Modifier
                                         .size(12.dp)
                                         .clip(CircleShape)
-                                        .background(courseSwatch(course.color)),
+                                        .background(courseSwatch(course.id, course.color)),
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
@@ -973,13 +976,9 @@ private fun Step3Timetable(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // A14: a failed import is reported INLINE, naming the step that
-        // failed, with recovery paths that stay inside the wizard — the old
-        // flow dead-ended in a dialog and the user left onboarding with
-        // nothing imported and no obvious way back.
+        // Inline failed import recovery stays inside the wizard (A14).
         importErrorMessage?.let { message ->
+            Spacer(modifier = Modifier.height(16.dp))
             Surface(
                 shape = MaterialTheme.shapes.medium,
                 color = MaterialTheme.colorScheme.errorContainer,
@@ -1007,57 +1006,65 @@ private fun Step3Timetable(
                         color = MaterialTheme.colorScheme.onErrorContainer,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val errorButtonColors =
+                        ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
                         TextButton(
                             onClick = onAddCourse,
+                            colors = errorButtonColors,
                             modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
                         ) {
-                            Text("Add course manually")
+                            Text("Add course manually", style = MaterialTheme.typography.labelLarge)
                         }
                         TextButton(
                             onClick = onGoToSources,
+                            colors = errorButtonColors,
                             modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
                         ) {
-                            Text("Connect sources instead")
+                            Text("Connect sources instead", style = MaterialTheme.typography.labelLarge)
                         }
-                    }
-                    TextButton(
-                        onClick = onDismissImportError,
-                        modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
-                    ) {
-                        Text("Dismiss")
+                        TextButton(
+                            onClick = onDismissImportError,
+                            colors = errorButtonColors,
+                            modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                        ) {
+                            Text("Dismiss", style = MaterialTheme.typography.labelLarge)
+                        }
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Surface(
-            shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
-                Icon(
-                    imageVector = Icons.Outlined.AutoAwesome,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text =
-                        "Import a photo or PDF of your timetable right here (step 2 enables it), " +
-                            "or add your courses and weekly class slots manually. Preview always " +
-                            "shows what was extracted before anything is saved.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+        if (aiEnabled && snapshot.schedule.courses.isEmpty()) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
+                    Icon(
+                        imageVector = Icons.Outlined.AutoAwesome,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Extracted timetables always show a preview before saving.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(28.dp))
 
         Button(
             onClick = onNext,
@@ -1065,7 +1072,10 @@ private fun Step3Timetable(
             colors = ButtonDefaults.filledPill(),
             contentPadding = PillButtonContentPadding,
         ) {
-            Text(if (snapshot.schedule.courses.isEmpty()) "Continue Without Courses" else "Continue to Sources")
+            Text(
+                text = if (snapshot.schedule.courses.isEmpty()) "Continue Without Courses" else "Continue to Sources",
+                style = MaterialTheme.typography.labelLarge,
+            )
             Spacer(modifier = Modifier.width(8.dp))
             Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
         }
@@ -1083,8 +1093,12 @@ private fun Step4Sources(
     onNext: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val isGoogleConnected = viewModel.isGoogleConnected()
-    val isMicrosoftConnected = viewModel.isMicrosoftConnected()
+    val isGoogleConnected by viewModel.googleConnected.collectAsState()
+    val isMicrosoftConnected by viewModel.microsoftConnected.collectAsState()
+    val googleClientId by viewModel.googleClientId.collectAsState()
+    val teamsClientId by viewModel.teamsClientId.collectAsState()
+    val hasCustomClientIds = googleClientId.isNotBlank() || teamsClientId.isNotBlank()
+    var customIdsExpanded by rememberSaveable { mutableStateOf(false) }
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
     Column(modifier = modifier.fillMaxWidth()) {
@@ -1095,24 +1109,15 @@ private fun Step4Sources(
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text =
-                "Sign in and QuizRadar scans Gmail, Classroom and Teams announcements ON THIS DEVICE " +
-                    "and pins quiz and exam dates to your timetable. Tokens never leave your phone. " +
-                    "Google sign-in ships ready (a built-in client id); Microsoft needs your own " +
-                    "Azure app id - paste it below (it saves automatically). Fully skippable.",
+                "Sign in and QuizRadar scans Gmail, Classroom, and Teams announcements on this device " +
+                    "to pin quiz and exam dates to your timetable. Tokens never leave your phone, and this step is optional.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
-        // The client-id editors live HERE, where the user hits the refusal -
-        // sending them to Settings -> Sources mid-wizard was a detour long
-        // enough that the id was often typed somewhere and never saved. The
-        // shared component auto-saves as the user types.
-        Spacer(modifier = Modifier.height(12.dp))
-        OAuthClientIdFields(viewModel = viewModel)
-
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Google Card
+        // Google Card (primary connection action first)
         Card(
             shape = MaterialTheme.shapes.medium,
             colors = CardDefaults.quietCardColors(),
@@ -1121,7 +1126,7 @@ private fun Step4Sources(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .clickable { if (!isGoogleConnected) onStartGoogleLogin() },
+                    .clickable(enabled = !isGoogleConnected) { onStartGoogleLogin() },
         ) {
             Row(
                 modifier = Modifier.padding(16.dp),
@@ -1144,16 +1149,13 @@ private fun Step4Sources(
                             style = MaterialTheme.typography.titleMedium,
                         )
                         Text(
-                            text = "Gmail & Classroom (read-only) - scanned on this device once connected",
+                            text = "Gmail & Classroom (read-only) — scanned on this device",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
                 if (isGoogleConnected) {
-                    // The "Connected" chip was a light mint pill in
-                    // every theme - a light-mode chip punched into the
-                    // dark screen. The token carries both variants.
                     Surface(
                         shape = MaterialTheme.shapes.small,
                         color = StatusColors.successContainer(isDark),
@@ -1172,7 +1174,7 @@ private fun Step4Sources(
                         contentPadding = PillButtonContentPadding,
                         modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
                     ) {
-                        Text("Connect", style = MaterialTheme.typography.labelMedium)
+                        Text("Connect", style = MaterialTheme.typography.labelLarge)
                         Spacer(modifier = Modifier.width(8.dp))
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowForward,
@@ -1195,7 +1197,7 @@ private fun Step4Sources(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .clickable { if (!isMicrosoftConnected) onStartMicrosoftLogin() },
+                    .clickable(enabled = !isMicrosoftConnected) { onStartMicrosoftLogin() },
         ) {
             Row(
                 modifier = Modifier.padding(16.dp),
@@ -1218,7 +1220,7 @@ private fun Step4Sources(
                             style = MaterialTheme.typography.titleMedium,
                         )
                         Text(
-                            text = "Channel announcements (read-only) - scanned on this device once connected",
+                            text = "Channel announcements (read-only) — scanned on this device",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1243,7 +1245,7 @@ private fun Step4Sources(
                         contentPadding = PillButtonContentPadding,
                         modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
                     ) {
-                        Text("Connect", style = MaterialTheme.typography.labelMedium)
+                        Text("Connect", style = MaterialTheme.typography.labelLarge)
                         Spacer(modifier = Modifier.width(8.dp))
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowForward,
@@ -1255,7 +1257,80 @@ private fun Step4Sources(
             }
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Collapsible advanced client-ID editor BELOW primary source cards
+        Card(
+            shape = MaterialTheme.shapes.medium,
+            colors = CardDefaults.quietCardColors(),
+            border = CardDefaults.quietCardBorder(),
+            elevation = CardDefaults.quietCardElevation(),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = PillButtonMinHeight)
+                            .clickable { customIdsExpanded = !customIdsExpanded }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Custom sign-in client IDs (advanced)",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text =
+                                if (hasCustomClientIds) {
+                                    "Custom OAuth ID saved"
+                                } else {
+                                    "Optional — only needed if your university requires one"
+                                },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        imageVector =
+                            if (customIdsExpanded) {
+                                Icons.Outlined.ExpandLess
+                            } else {
+                                Icons.Outlined.ExpandMore
+                            },
+                        contentDescription =
+                            if (customIdsExpanded) {
+                                "Collapse custom client IDs"
+                            } else {
+                                "Expand custom client IDs"
+                            },
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                AnimatedVisibility(visible = customIdsExpanded) {
+                    Column(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                    ) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OAuthClientIdFields(
+                            viewModel = viewModel,
+                            microsoftConnected = isMicrosoftConnected,
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(28.dp))
 
         Button(
             onClick = onNext,
@@ -1263,7 +1338,7 @@ private fun Step4Sources(
             colors = ButtonDefaults.filledPill(),
             contentPadding = PillButtonContentPadding,
         ) {
-            Text("Continue to Theme")
+            Text("Continue to Theme", style = MaterialTheme.typography.labelLarge)
             Spacer(modifier = Modifier.width(8.dp))
             Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
         }
@@ -1271,9 +1346,17 @@ private fun Step4Sources(
 }
 
 // =============================================================================
-// STEP 5: THEME (mode + preferred dark scheme — the two orthogonal
-// preferences MainActivity resolves)
+// STEP 5: THEME (mode + preferred dark scheme — matching Settings names)
 // =============================================================================
+private data class ThemePreviewOption(
+    val mode: String,
+    val darkTheme: String?,
+    val label: String,
+    val description: String,
+    val swatchBg: Color,
+    val swatchAccent: Color,
+)
+
 @Composable
 private fun Step5Theme(
     viewModel: QuizRadarViewModel,
@@ -1282,18 +1365,40 @@ private fun Step5Theme(
 ) {
     val themeMode by viewModel.themeMode.collectAsState()
     val preferredDarkTheme by viewModel.preferredDarkTheme.collectAsState()
-    // Each option promises a concrete look, so a pick applies BOTH
-    // orthogonal preferences (mode + dark scheme). An AMOLED pick stores
-    // preferredDarkTheme="amoled" with mode dark - and because the dark
-    // scheme is no longer encoded as the mode, later mode switches in
-    // Settings can never silently drop it.
     val themeOptions =
         listOf(
-            // (mode, preferredDarkTheme, label)
-            Triple("system", "obsidian", "System default"),
-            Triple("light", "obsidian", "Light"),
-            Triple("dark", "obsidian", "Dark"),
-            Triple("dark", "amoled", "AMOLED (pure black)"),
+            ThemePreviewOption(
+                mode = "system",
+                darkTheme = null,
+                label = "System default",
+                description = "Follows your device's light or dark setting",
+                swatchBg = Color(0xFF475569),
+                swatchAccent = Color(0xFF93C5FD),
+            ),
+            ThemePreviewOption(
+                mode = "light",
+                darkTheme = null,
+                label = "Solar Dawn (Light)",
+                description = "Clean warm daylight surfaces",
+                swatchBg = Color(0xFFF8FAFC),
+                swatchAccent = Color(0xFF1D4ED8),
+            ),
+            ThemePreviewOption(
+                mode = "dark",
+                darkTheme = "obsidian",
+                label = "Obsidian Cosmic (Dark)",
+                description = "Deep slate canvas for night study",
+                swatchBg = Color(0xFF0F172A),
+                swatchAccent = Color(0xFF60A5FA),
+            ),
+            ThemePreviewOption(
+                mode = "dark",
+                darkTheme = "amoled",
+                label = "AMOLED Pure Black",
+                description = "True black OLED canvas with subtle stars",
+                swatchBg = Color(0xFF000000),
+                swatchAccent = Color(0xFF38BDF8),
+            ),
         )
 
     Column(modifier = modifier.fillMaxWidth()) {
@@ -1310,28 +1415,98 @@ private fun Step5Theme(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        themeOptions.forEach { (mode, darkTheme, label) ->
-            val isSelected = themeMode == mode && preferredDarkTheme == darkTheme
-            FilterChip(
-                selected = isSelected,
-                onClick = {
-                    viewModel.setThemeMode(mode)
-                    viewModel.setPreferredDarkTheme(darkTheme)
-                },
-                // The picked option carries the leading check, so the choice is
-                // never signalled by colour alone.
-                leadingIcon = { if (isSelected) ChipLeadingCheck() },
-                colors = FilterChipDefaults.quietChipColors(),
-                label = { Text(label, style = MaterialTheme.typography.labelMedium) },
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .defaultMinSize(minHeight = PillButtonMinHeight),
-            )
-            Spacer(modifier = Modifier.height(8.dp))
+        Column(
+            modifier = Modifier.fillMaxWidth().selectableGroup(),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            themeOptions.forEach { option ->
+                val isSelected =
+                    if (option.darkTheme == null) {
+                        themeMode == option.mode
+                    } else {
+                        themeMode == option.mode && preferredDarkTheme == option.darkTheme
+                    }
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color =
+                        if (isSelected) {
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                        } else {
+                            MaterialTheme.colorScheme.surface
+                        },
+                    border =
+                        BorderStroke(
+                            width = if (isSelected) 1.5.dp else 1.dp,
+                            color =
+                                if (isSelected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.outlineVariant
+                                },
+                        ),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = 60.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .selectable(
+                                selected = isSelected,
+                                role = Role.RadioButton,
+                                onClick = {
+                                    viewModel.setThemeMode(option.mode)
+                                    option.darkTheme?.let { viewModel.setPreferredDarkTheme(it) }
+                                },
+                            ),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier =
+                                Modifier
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .background(option.swatchBg)
+                                    .border(1.5.dp, option.swatchAccent, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Box(
+                                modifier =
+                                    Modifier
+                                        .size(10.dp)
+                                        .clip(CircleShape)
+                                        .background(option.swatchAccent),
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = option.label,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                text = option.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (isSelected) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(
+                                imageVector = Icons.Outlined.CheckCircle,
+                                contentDescription = "Selected",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                }
+            }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(28.dp))
 
         Button(
             onClick = onNext,
@@ -1339,7 +1514,7 @@ private fun Step5Theme(
             colors = ButtonDefaults.filledPill(),
             contentPadding = PillButtonContentPadding,
         ) {
-            Text("Continue to Reminders")
+            Text("Continue to Reminders", style = MaterialTheme.typography.labelLarge)
             Spacer(modifier = Modifier.width(8.dp))
             Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
         }
@@ -1349,6 +1524,7 @@ private fun Step5Theme(
 // =============================================================================
 // STEP 6: REMINDERS & FINISH
 // =============================================================================
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun Step6Reminders(
     viewModel: QuizRadarViewModel,
@@ -1361,6 +1537,7 @@ private fun Step6Reminders(
     val notifyExamSameDay by viewModel.notifyExamSameDay.collectAsState()
     val notifyMorningDigest by viewModel.notifyMorningDigest.collectAsState()
     val notifyMorningTime by viewModel.notifyMorningTime.collectAsState()
+    var showDigestTimePicker by rememberSaveable { mutableStateOf(false) }
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
     Column(modifier = modifier.fillMaxWidth()) {
@@ -1370,14 +1547,14 @@ private fun Step6Reminders(
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Never miss a deadline. Configure notification heads-up before upcoming assessments.",
+            text = "Never miss a deadline. Choose when QuizRadar alerts you before quizzes and exams.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Permission primer card
+        // Permission primer + toggles card
         Card(
             shape = MaterialTheme.shapes.medium,
             colors = CardDefaults.quietCardColors(),
@@ -1408,9 +1585,9 @@ private fun Step6Reminders(
                         Text(
                             text =
                                 if (hasNotificationPermission) {
-                                    "Notifications are enabled"
+                                    "Notifications are enabled on this device"
                                 } else {
-                                    "Required to deliver reminders"
+                                    "Allow Android notifications so exam reminders can appear"
                                 },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1428,9 +1605,6 @@ private fun Step6Reminders(
                 }
 
                 if (!hasNotificationPermission) {
-                    // The request sits under the description: as a trailing
-                    // button it squeezed the title into three lines at the
-                    // narrowest supported width.
                     Spacer(modifier = Modifier.height(8.dp))
                     FilledTonalButton(
                         onClick = onRequestPermission,
@@ -1438,7 +1612,7 @@ private fun Step6Reminders(
                         contentPadding = PillButtonContentPadding,
                         modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
                     ) {
-                        Text("Enable notifications", style = MaterialTheme.typography.labelMedium)
+                        Text("Enable notifications", style = MaterialTheme.typography.labelLarge)
                     }
                 }
 
@@ -1446,8 +1620,6 @@ private fun Step6Reminders(
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // T-24h Switch — the whole row toggles (TalkBack announces the
-                // switch state from the row, not just the 32dp thumb).
                 ReminderToggleRow(
                     title = "24-Hour Heads Up",
                     subtitle = "Notify the day before an upcoming exam",
@@ -1468,14 +1640,41 @@ private fun Step6Reminders(
 
                 ReminderToggleRow(
                     title = "Daily Morning Digest",
-                    subtitle = "Overview of day's classes at $notifyMorningTime",
+                    subtitle = "Overview of your day's classes at $notifyMorningTime",
                     checked = notifyMorningDigest,
                     onCheckedChange = { viewModel.setNotifyMorningDigest(it) },
                 )
+
+                if (notifyMorningDigest) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.Start,
+                    ) {
+                        OutlinedButton(
+                            onClick = { showDigestTimePicker = true },
+                            modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Timer,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Digest time: $notifyMorningTime",
+                                style =
+                                    MaterialTheme.typography.labelLarge.copy(
+                                        fontFeatureSettings = "tnum",
+                                    ),
+                            )
+                        }
+                    }
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(28.dp))
 
         Button(
             onClick = onFinish,
@@ -1485,8 +1684,51 @@ private fun Step6Reminders(
         ) {
             Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Finish Setup & Enter QuizRadar")
+            Text("Finish Setup & Enter QuizRadar", style = MaterialTheme.typography.labelLarge)
         }
+    }
+
+    if (showDigestTimePicker) {
+        val timeParts = notifyMorningTime.split(":")
+        val timePickerState =
+            rememberTimePickerState(
+                initialHour = timeParts.getOrNull(0)?.toIntOrNull()?.coerceIn(0, 23) ?: 8,
+                initialMinute = timeParts.getOrNull(1)?.toIntOrNull()?.coerceIn(0, 59) ?: 0,
+                is24Hour = true,
+            )
+        AlertDialog(
+            onDismissRequest = { showDigestTimePicker = false },
+            title = { Text("Digest time") },
+            text = { TimePicker(state = timePickerState) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.setNotifyMorningTime(
+                            String.format(
+                                java.util.Locale.US,
+                                "%02d:%02d",
+                                timePickerState.hour,
+                                timePickerState.minute,
+                            ),
+                        )
+                        showDigestTimePicker = false
+                    },
+                    colors = ButtonDefaults.filledPill(),
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                    contentPadding = PillButtonContentPadding,
+                ) {
+                    Text("Save", style = MaterialTheme.typography.labelLarge)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDigestTimePicker = false },
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                ) {
+                    Text("Cancel", style = MaterialTheme.typography.labelLarge)
+                }
+            },
+        )
     }
 }
 
@@ -1528,14 +1770,8 @@ private fun ReminderToggleRow(
     }
 }
 
-/** The course's own colour, or the app's accent when it has none or a broken value. */
-@Composable
-private fun courseSwatch(hex: String?): Color {
-    val parsed =
-        try {
-            hex?.let { Color(android.graphics.Color.parseColor(it)) }
-        } catch (_: Exception) {
-            null
-        }
-    return parsed ?: MaterialTheme.colorScheme.primary
-}
+/** The course's own colour, resolved through the canonical CoursePalette. */
+private fun courseSwatch(
+    courseId: String,
+    hex: String?,
+): Color = CoursePalette.get(courseId, hex).color

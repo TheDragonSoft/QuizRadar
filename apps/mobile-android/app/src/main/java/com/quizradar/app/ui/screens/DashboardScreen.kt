@@ -6,11 +6,14 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -23,10 +26,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -154,7 +159,16 @@ internal fun formatSourcesDisplay(
     return headline to subtitle
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+private fun resolveDashboardCourseColorHex(
+    courseId: String?,
+    courseColorById: Map<String, String?>,
+): String? {
+    if (courseId.isNullOrBlank()) return null
+    return courseColorById[courseId]
+        ?: courseColorById.entries.firstOrNull { it.key.equals(courseId, ignoreCase = true) }?.value
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun DashboardScreen(
     snapshot: AppSnapshotModel,
@@ -222,6 +236,10 @@ fun DashboardScreen(
     val assessments = snapshot.assessments
     val completedTopics = snapshot.completedTopics
     val radarIsEmpty = assessments.isEmpty()
+    val courseColorById =
+        remember(snapshot.schedule.courses) {
+            snapshot.schedule.courses.associate { it.id to it.color }
+        }
 
     // The timeline starts at the genuinely upcoming items; the type and
     // source chips narrow that list further. The type filter used to be
@@ -326,11 +344,13 @@ fun DashboardScreen(
                 label = "Course",
                 status =
                     if (coursesDone) {
-                        "Your timetable is in QuizRadar"
+                        "Timetable added"
                     } else {
-                        "No timetable yet"
+                        "Add your classes"
                     },
                 done = coursesDone,
+                actionLabel = if (coursesDone) null else "Add",
+                onAction = if (coursesDone) null else onAddCourse,
             ),
             CompactSetupStep(
                 icon = Icons.Outlined.RssFeed,
@@ -339,11 +359,11 @@ fun DashboardScreen(
                     if (sourcesDone) {
                         "Scanning runs on this device"
                     } else {
-                        "No account or feed connected — Settings → Sources"
+                        "Connect Gmail, Teams, or a feed"
                     },
                 done = sourcesDone,
-                actionLabel = if (sourcesDone) null else "Settings",
-                onAction = if (sourcesDone) null else onOpenSettings,
+                actionLabel = if (sourcesDone) null else "Connect",
+                onAction = if (sourcesDone) null else onOpenAccount,
             ),
             CompactSetupStep(
                 icon = Icons.Outlined.Notifications,
@@ -352,13 +372,14 @@ fun DashboardScreen(
                     if (remindersDone) {
                         "Exam reminders are on"
                     } else {
-                        "Turn on exam reminders"
+                        "Enable exam reminders"
                     },
                 done = remindersDone,
-                actionLabel = if (remindersDone) null else "Enable reminders",
+                actionLabel = if (remindersDone) null else "Enable",
                 onAction = if (remindersDone) null else enableReminders,
             ),
         )
+    val doneSetupCount = setupSteps.count { it.done }
 
     val setupPanel: @Composable () -> Unit = {
         CompactSetupPanel(
@@ -370,6 +391,7 @@ fun DashboardScreen(
             // When the empty-timeline state card below owns the filled action,
             // the panel's button recedes to tonal - one filled pill per flow.
             primaryTonal = !radarIsEmpty && filteredTimeline.isEmpty(),
+            compactBanner = !radarIsEmpty && doneSetupCount >= 1,
         )
     }
 
@@ -383,16 +405,31 @@ fun DashboardScreen(
                 Modifier
                     .fillMaxSize()
                     .padding(horizontal = 20.dp),
-            contentPadding = PaddingValues(bottom = 88.dp),
+            contentPadding = PaddingValues(bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item { Spacer(modifier = Modifier.height(8.dp)) }
 
-            // Empty radar: ONE compact setup panel replaces the old hero +
-            // checklist + four-KPI stack (audit P3-1). Nothing else can be
-            // true yet, so nothing else is shown.
+            // Empty radar: ONE compact setup panel (or a slim empty-state CTA
+            // if dismissed — never a blank void or "Setup dismissed" tombstone).
             if (radarIsEmpty) {
-                item { setupPanel() }
+                if (!isSetupChecklistDismissed) {
+                    item { setupPanel() }
+                } else {
+                    item {
+                        EmptyDashboardStateCard(
+                            title = "Ready to build your radar",
+                            desc =
+                                "Add a course timetable or connect Gmail / Microsoft Teams " +
+                                    "to start tracking quizzes and exams.",
+                            icon = Icons.Outlined.School,
+                            primaryButtonLabel = "Add Course",
+                            onPrimaryClick = onAddCourse,
+                            secondaryButtonLabel = "Connect Account",
+                            onSecondaryClick = onOpenAccount,
+                        )
+                    }
+                }
                 if (isScanning || lastScanReport != null) {
                     item {
                         ScanSourcesCard(
@@ -418,7 +455,7 @@ fun DashboardScreen(
                         ) {
                             Text(
                                 text = "Restore a backup",
-                                style = MaterialTheme.typography.labelMedium,
+                                style = MaterialTheme.typography.labelLarge,
                             )
                         }
                         TextButton(
@@ -430,7 +467,7 @@ fun DashboardScreen(
                         ) {
                             Text(
                                 text = "Add an event",
-                                style = MaterialTheme.typography.labelMedium,
+                                style = MaterialTheme.typography.labelLarge,
                             )
                         }
                     }
@@ -439,8 +476,6 @@ fun DashboardScreen(
             }
 
             // Next Up hero — the desktop radar card (gradient + starfield sky).
-            // It sits ABOVE the sub-tab bar: the banner is the one thing that
-            // is always true, whatever tab is open.
             item {
                 val nextUp = dash.nextUp
                 NextUpHeroCard(
@@ -450,7 +485,7 @@ fun DashboardScreen(
                 )
             }
 
-            // Conflict Banner
+            // Conflict Banner (compact summary by default, expandable inline)
             item {
                 ConflictBanner(
                     alerts = dash.conflictAlerts,
@@ -462,30 +497,8 @@ fun DashboardScreen(
                 )
             }
 
-            // Compact setup nudge — only while a step is still open.
-            if (!isSetupChecklistDismissed) {
-                item { setupPanel() }
-            }
-
-            // Live scan card: the per-source progress the Rust core reports
-            // while running, and the honest per-source outcomes of the last
-            // completed run afterwards. No Cancel affordance - the core has no
-            // mid-scan cancel, and a fake one would be a lie.
-            if (isScanning || lastScanReport != null) {
-                item {
-                    ScanSourcesCard(
-                        isScanning = isScanning,
-                        progress = scanProgress,
-                        report = lastScanReport,
-                        onScanNow = { viewModel.runScan() },
-                    )
-                }
-            }
-
-            // WHAT SHOULD I STUDY NOW? — the core's study recommendations,
-            // finally mounted (audit A12). A topic tick is optimistic: the
-            // ViewModel updates the state first and rolls the change back if
-            // the core refuses it.
+            // WHAT SHOULD I STUDY NOW? — prioritized above secondary setup
+            // prompts so study actions stay cleanly above the fold.
             if (dash.studyRecommendations.isNotEmpty()) {
                 item {
                     Column(modifier = Modifier.fillMaxWidth()) {
@@ -526,8 +539,7 @@ fun DashboardScreen(
                 }
             }
 
-            // TODAY — the study tasks the core planned for today. A task opens
-            // Focus with that task already selected.
+            // TODAY — the study tasks the core planned for today.
             val todayGroup = snapshot.tasks.days.firstOrNull { it.isToday }
             if (todayGroup != null && todayGroup.tasks.isNotEmpty()) {
                 item {
@@ -541,22 +553,38 @@ fun DashboardScreen(
                 }
             }
 
-            // NEXT ASSESSMENT — the soonest genuinely upcoming item, with a
-            // way into its detail sheet. The hero above already leads with
-            // the countdown, so this card stays a quiet facts strip in the
-            // same anatomy as a timeline row.
-            item {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "Next assessment",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
+            // Compact setup nudge — slim banner when >= 1 step is done.
+            if (!isSetupChecklistDismissed && doneSetupCount < setupSteps.size) {
+                item { setupPanel() }
+            }
+
+            // Live scan card: per-source progress while running, and outcomes afterwards.
+            if (isScanning || lastScanReport != null) {
+                item {
+                    ScanSourcesCard(
+                        isScanning = isScanning,
+                        progress = scanProgress,
+                        report = lastScanReport,
+                        onScanNow = { viewModel.runScan() },
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    NextAssessmentCard(
-                        assessment = nextAssessment,
-                        onOpen = { assessment -> viewModel.openAssessmentDetail(assessment.id) },
-                    )
+                }
+            }
+
+            // NEXT ASSESSMENT — only shown when it adds info not already in NextUpHeroCard.
+            if (nextAssessment != null && nextAssessment.id != dash.nextUp?.id) {
+                item {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "Next assessment",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        NextAssessmentCard(
+                            assessment = nextAssessment,
+                            onOpen = { assessment -> viewModel.openAssessmentDetail(assessment.id) },
+                        )
+                    }
                 }
             }
 
@@ -705,9 +733,10 @@ fun DashboardScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         typeChips.forEach { type ->
                             DashboardFilterChip(
@@ -724,9 +753,10 @@ fun DashboardScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         sourceChips.forEach { src ->
                             DashboardFilterChip(
@@ -786,6 +816,11 @@ fun DashboardScreen(
                 itemsIndexed(filteredTimeline, key = { _, assessment -> assessment.id }) { _, assessment ->
                     TimelineAssessmentRow(
                         assessment = assessment,
+                        courseColorHex =
+                            resolveDashboardCourseColorHex(
+                                assessment.courseId,
+                                courseColorById,
+                            ),
                         onClick = { viewModel.openAssessmentDetail(assessment.id) },
                     )
                 }
@@ -947,7 +982,7 @@ private fun EmptyDashboardStateCard(
             ) {
                 Text(
                     text = primaryButtonLabel,
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelLarge,
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
@@ -962,7 +997,7 @@ private fun EmptyDashboardStateCard(
             ) {
                 Text(
                     text = secondaryButtonLabel,
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelLarge,
                 )
             }
         }
@@ -1028,25 +1063,29 @@ private fun ScanSourcesCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            val rows: List<Pair<String, String>> =
+            val rows: List<Triple<String, String, Boolean>> =
                 if (isScanning) {
                     progress.map { row ->
                         val counts =
                             if (row.done > 0 || row.found > 0) "${row.done}/${row.found}" else ""
-                        row.name to
+                        Triple(
+                            row.name,
                             listOf(row.stage, counts)
                                 .filter { it.isNotBlank() }
-                                .joinToString(" · ")
+                                .joinToString(" · "),
+                            false,
+                        )
                     }
                 } else {
                     report?.perSource.orEmpty().map { row ->
+                        val formattedDetail = row.detail?.let { formatScanDetail(it) }
                         val status =
                             when (row.status) {
                                 "ran" -> "ran · found ${row.found}"
-                                "failed" -> "failed${row.detail?.let { ": $it" } ?: ""}"
-                                else -> "skipped${row.detail?.let { ": $it" } ?: ""}"
+                                "failed" -> "failed${formattedDetail?.let { ": $it" } ?: ""}"
+                                else -> "skipped${formattedDetail?.let { ": $it" } ?: ""}"
                             }
-                        row.name to status
+                        Triple(row.name, status, row.status == "failed")
                     }
                 }
 
@@ -1063,24 +1102,85 @@ private fun ScanSourcesCard(
                 )
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    rows.forEach { (name, status) ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = name,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Text(
-                                text = status,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.weight(1f),
-                            )
+                    rows.forEach { (name, status, isError) ->
+                        val rowShape = RoundedCornerShape(10.dp)
+                        val rowBg =
+                            if (isError) {
+                                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.28f)
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                            }
+                        val rowBorder =
+                            if (isError) {
+                                MaterialTheme.colorScheme.error.copy(alpha = 0.42f)
+                            } else {
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.38f)
+                            }
+                        if (isError || status.length > 28) {
+                            Column(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clip(rowShape)
+                                        .background(rowBg)
+                                        .border(1.dp, rowBorder, rowShape)
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = name,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    if (isError) {
+                                        StatusTag(
+                                            text = "FAILED",
+                                            containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.2f),
+                                            contentColor = MaterialTheme.colorScheme.error,
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = status,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color =
+                                        if (isError) {
+                                            MaterialTheme.colorScheme.onErrorContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        } else {
+                            Row(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clip(rowShape)
+                                        .background(rowBg)
+                                        .border(1.dp, rowBorder, rowShape)
+                                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.widthIn(min = 84.dp, max = 160.dp),
+                                )
+                                Text(
+                                    text = status,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 }
@@ -1088,9 +1188,9 @@ private fun ScanSourcesCard(
 
             if (!isScanning) {
                 Spacer(modifier = Modifier.height(16.dp))
-                FilledTonalButton(
+                Button(
                     onClick = onScanNow,
-                    colors = ButtonDefaults.tonalPill(),
+                    colors = ButtonDefaults.filledPill(),
                     contentPadding = PillButtonContentPadding,
                     modifier =
                         Modifier
@@ -1099,11 +1199,23 @@ private fun ScanSourcesCard(
                 ) {
                     Text(
                         text = "Scan now",
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelLarge,
                     )
                 }
             }
         }
+    }
+}
+
+private fun formatScanDetail(detail: String): String {
+    val cleanDetail =
+        detail.replace(Regex("\\s*\\(HTTP\\s+401\\)", RegexOption.IGNORE_CASE), " · HTTP 401")
+    return if (detail.contains("401", ignoreCase = true) ||
+        detail.contains("unauthorized", ignoreCase = true)
+    ) {
+        "Session expired — sign in again ($cleanDetail)"
+    } else {
+        detail
     }
 }
 
@@ -1243,7 +1355,7 @@ private fun NextAssessmentCard(
                     ) {
                         Text(
                             text = "Details",
-                            style = MaterialTheme.typography.labelMedium,
+                            style = MaterialTheme.typography.labelLarge,
                         )
                     }
                 }
@@ -1258,11 +1370,11 @@ private fun NextAssessmentCard(
                         buildString {
                             append(formatIsoDateForDisplay(assessment.dateIso?.toString()) ?: "Undated")
                             extractTimePart(assessment.displayTime)?.let { time ->
-                                append(" • ")
+                                append(" · ")
                                 append(time)
                             }
-                            append(" • Room: ")
-                            append(assessment.room ?: "—")
+                            append(" · Room: ")
+                            append(assessment.room?.takeIf { it.isNotBlank() } ?: "—")
                         },
                     style =
                         MaterialTheme.typography.bodySmall.copy(

@@ -241,6 +241,11 @@ export function OnboardingWizardModal({
         {/* STEP 1: Profile, Track & Theme */}
         {step === 1 && (
           <div className="mt-4 space-y-6">
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] px-3.5 py-2.5 text-xs text-[var(--text-muted)]">
+              <span className="font-bold text-[var(--text)]">Get Started:</span> Set your study
+              theme and pace, link optional course sources in Step 2, and confirm your timetable in
+              Step 3. Everything stays local on your device.
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label
@@ -345,56 +350,78 @@ export function OnboardingWizardModal({
               </div>
             </div>
 
-            {/* Visual Theme Choice — v4 sun/moon tiles */}
+            {/* Visual Theme Choice — all concrete Observatory themes */}
             <div>
               <div className="mb-2 block text-xs font-bold text-[var(--text)]">
                 Workspace Appearance
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setTheme("light")}
-                  aria-pressed={theme === "light"}
-                  className={`onboard-choice-card flex items-center gap-3 rounded-xl border p-3 text-left ${
-                    theme === "light"
-                      ? "is-selected border-[var(--accent)]"
-                      : "border-[var(--border)] bg-[var(--surface)]"
-                  }`}
-                >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300">
-                    <Sun className="h-4 w-4" aria-hidden="true" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-[var(--text)]">
-                      {copy.onboarding.themeLight}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {[
+                  {
+                    id: "solar" as const,
+                    name: "Solar Dawn (Light)",
+                    subtitle: "Clean daylight timetable",
+                    isSelected: theme === "solar" || theme === "light",
+                    swatchBg: "#F5F7FB",
+                    swatchAccent: "#1A73E8",
+                    icon: "sun" as const,
+                  },
+                  {
+                    id: "obsidian" as const,
+                    name: "Obsidian Cosmic (Dark)",
+                    subtitle: "Low-glare night study",
+                    isSelected: theme === "obsidian" || theme === "dark",
+                    swatchBg: "#070A12",
+                    swatchAccent: "#3B82F6",
+                    icon: "moon" as const,
+                  },
+                  {
+                    id: "amoled-nebula" as const,
+                    name: "AMOLED Cosmic Stardust",
+                    subtitle: "Pure black OLED night mode",
+                    isSelected: theme === "amoled-nebula",
+                    swatchBg: "#000000",
+                    swatchAccent: "#F59E0B",
+                    icon: "amoled" as const,
+                  },
+                ].map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => setTheme(option.id)}
+                    aria-pressed={option.isSelected}
+                    className={`onboard-choice-card flex items-center gap-3 rounded-xl border p-3 text-left ${
+                      option.isSelected
+                        ? "is-selected border-[var(--accent)]"
+                        : "border-[var(--border)] bg-[var(--surface)]"
+                    }`}
+                  >
+                    <div
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-300/30 shadow-xs"
+                      style={{ backgroundColor: option.swatchBg }}
+                    >
+                      {option.icon === "sun" ? (
+                        <Sun className="h-4 w-4 text-amber-600" aria-hidden="true" />
+                      ) : option.icon === "moon" ? (
+                        <Moon className="h-4 w-4 text-blue-400" aria-hidden="true" />
+                      ) : (
+                        <span
+                          className="h-3 w-3 rounded-full ring-2 ring-amber-400/40"
+                          style={{ backgroundColor: option.swatchAccent }}
+                          aria-hidden="true"
+                        />
+                      )}
                     </div>
-                    <div className="text-[11px] text-[var(--text-muted)]">
-                      Clean daylight timetable
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-[var(--text)] leading-snug">
+                        {option.name}
+                      </div>
+                      <div className="text-[11px] text-[var(--text-muted)] leading-snug">
+                        {option.subtitle}
+                      </div>
                     </div>
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTheme("dark")}
-                  aria-pressed={theme === "dark"}
-                  className={`onboard-choice-card flex items-center gap-3 rounded-xl border p-3 text-left ${
-                    theme === "dark"
-                      ? "is-selected border-[var(--accent)]"
-                      : "border-[var(--border)] bg-[var(--surface)]"
-                  }`}
-                >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-950 text-amber-300 dark:bg-indigo-950/70">
-                    <Moon className="h-4 w-4" aria-hidden="true" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-[var(--text)]">
-                      {copy.onboarding.themeDark}
-                    </div>
-                    <div className="text-[11px] text-[var(--text-muted)]">
-                      Low-glare night study
-                    </div>
-                  </div>
-                </button>
+                  </button>
+                ))}
               </div>
             </div>
           </div>

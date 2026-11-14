@@ -84,3 +84,5 @@ apps/web/e2e-results/
 apps/web/test-results/
 playwright-report/
 /ui-review/
+/audit-capture/
+/Gemini Assessment Audit/

@@ -3,10 +3,11 @@ package com.quizradar.app.ui.detail
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -14,6 +15,8 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -53,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -80,7 +84,7 @@ private val SLOT_TYPES = listOf("Lecture", "Tutorial", "Lab")
 // header) - a colour swatch must not be selectable by colour alone.
 private val COLOR_PRESET_NAMES = listOf("Blue", "Emerald", "Amber", "Red", "Purple", "Cyan", "Coral", "Indigo")
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CourseEditorSheet(
     course: CourseModel?,
@@ -122,6 +126,8 @@ fun CourseEditorSheet(
                 Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
+                    .imePadding()
+                    .navigationBarsPadding()
                     .padding(horizontal = 20.dp, vertical = 8.dp),
         ) {
             // Header
@@ -190,26 +196,30 @@ fun CourseEditorSheet(
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(modifier = Modifier.height(12.dp))
-            // 48dp swatches with 8dp gaps (Material touch-target rule); eight of
-            // them no longer fit side by side on a phone, so the row scrolls.
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            // 48dp swatches wrap cleanly in FlowRow so all presets stay visible without horizontal clipping.
+            val hasCustomHex =
+                CoursePalette.HEX_PRESETS.none {
+                    selectedColor.trim().equals(it, ignoreCase = true)
+                }
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 CoursePalette.HEX_PRESETS.forEachIndexed { index, hex ->
-                    val colorInt =
+                    val swatchColor =
                         try {
-                            android.graphics.Color.parseColor(hex)
+                            Color(android.graphics.Color.parseColor(hex))
                         } catch (_: Exception) {
-                            0xFF1A73E8.toInt()
+                            Color(0xFF1A73E8)
                         }
-                    val isSelected = selectedColor.equals(hex, ignoreCase = true)
+                    val isSelected = selectedColor.trim().equals(hex, ignoreCase = true)
                     Box(
                         modifier =
                             Modifier
                                 .size(48.dp)
                                 .clip(CircleShape)
-                                .background(Color(colorInt))
+                                .background(swatchColor)
                                 .border(
                                     width = if (isSelected) 3.dp else 1.dp,
                                     color =
@@ -219,6 +229,18 @@ fun CourseEditorSheet(
                                             Color.Transparent
                                         },
                                     shape = CircleShape,
+                                )
+                                .padding(if (isSelected) 3.dp else 0.dp)
+                                .then(
+                                    if (isSelected) {
+                                        Modifier.border(
+                                            width = 2.dp,
+                                            color = MaterialTheme.colorScheme.surface,
+                                            shape = CircleShape,
+                                        )
+                                    } else {
+                                        Modifier
+                                    },
                                 )
                                 .semantics {
                                     contentDescription =
@@ -231,10 +253,45 @@ fun CourseEditorSheet(
                             Icon(
                                 imageVector = Icons.Outlined.Check,
                                 contentDescription = "Selected",
-                                tint = Color.White,
-                                modifier = Modifier.size(24.dp),
+                                tint = if (swatchColor.luminance() > 0.55f) Color.Black else Color.White,
+                                modifier = Modifier.size(22.dp),
                             )
                         }
+                    }
+                }
+                if (hasCustomHex) {
+                    val customSwatchColor =
+                        try {
+                            Color(android.graphics.Color.parseColor(selectedColor.trim()))
+                        } catch (_: Exception) {
+                            MaterialTheme.colorScheme.primary
+                        }
+                    Box(
+                        modifier =
+                            Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(customSwatchColor)
+                                .border(
+                                    width = 3.dp,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    shape = CircleShape,
+                                )
+                                .padding(3.dp)
+                                .border(
+                                    width = 2.dp,
+                                    color = MaterialTheme.colorScheme.surface,
+                                    shape = CircleShape,
+                                )
+                                .semantics { contentDescription = "Custom course color $selectedColor" },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Check,
+                            contentDescription = "Selected",
+                            tint = if (customSwatchColor.luminance() > 0.55f) Color.Black else Color.White,
+                            modifier = Modifier.size(22.dp),
+                        )
                     }
                 }
             }
@@ -518,7 +575,7 @@ fun CourseEditorSheet(
                             ) {
                                 Text(
                                     text = "Add Slot",
-                                    style = MaterialTheme.typography.labelMedium,
+                                    style = MaterialTheme.typography.labelLarge,
                                 )
                             }
                         }
@@ -545,7 +602,7 @@ fun CourseEditorSheet(
                     ) {
                         Text(
                             text = "Delete Course",
-                            style = MaterialTheme.typography.labelMedium,
+                            style = MaterialTheme.typography.labelLarge,
                         )
                     }
                 }
@@ -571,7 +628,7 @@ fun CourseEditorSheet(
                 ) {
                     Text(
                         text = if (isEditMode) "Save Changes" else "Create Course",
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelLarge,
                     )
                 }
             }
@@ -602,18 +659,23 @@ fun CourseEditorSheet(
                         onDismiss()
                     },
                     colors = ButtonDefaults.destructivePill(),
+                    contentPadding = PillButtonContentPadding,
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
                 ) {
                     Text(
                         text = "Delete",
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelLarge,
                     )
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) {
+                TextButton(
+                    onClick = { showDeleteConfirm = false },
+                    modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                ) {
                     Text(
                         text = "Cancel",
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelLarge,
                     )
                 }
             },

@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -34,6 +35,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -106,6 +108,7 @@ import com.quizradar.app.ui.theme.filledPill
 import com.quizradar.app.ui.theme.quietCardBorder
 import com.quizradar.app.ui.theme.quietCardColors
 import com.quizradar.app.ui.theme.quietCardElevation
+import com.quizradar.app.ui.theme.tonalPill
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -137,6 +140,8 @@ fun AppScaffold(
     val activeDetailId by viewModel.activeDetailAssessmentId.collectAsState()
     val activeDraft by viewModel.activeCreateEventDraft.collectAsState()
     val toastMessage by viewModel.toastMessage.collectAsState()
+    val userName by viewModel.userName.collectAsState()
+    val userEmail by viewModel.userEmail.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState(initial = "system")
@@ -148,6 +153,13 @@ fun AppScaffold(
     val isAmoledDark =
         preferredDarkTheme == "amoled" &&
             (themeMode == "dark" || (themeMode == "system" && isSystemInDarkTheme()))
+    val isReady = uiState is UiState.Ready
+    val normalizedTab =
+        when {
+            selectedTab == "Grade Center" -> "Grades"
+            TABS.any { it.label == selectedTab } -> selectedTab
+            else -> "Dashboard"
+        }
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     // The drawer belongs to expanded widths (>= 600dp): the rail header opens
@@ -217,7 +229,7 @@ fun AppScaffold(
                 isAddMenuOpen ||
                 activeDraft != null ||
                 activeDetailId != null ||
-                selectedTab != "Dashboard",
+                (isReady && normalizedTab != "Dashboard"),
     ) {
         when {
             isExpanded && drawerState.isOpen -> scope.launch { drawerState.close() }
@@ -230,7 +242,7 @@ fun AppScaffold(
             isAddMenuOpen -> isAddMenuOpen = false
             activeDraft != null -> viewModel.dismissCreateEventDraft()
             activeDetailId != null -> viewModel.closeAssessmentDetail()
-            selectedTab != "Dashboard" -> viewModel.selectTab("Dashboard")
+            isReady && normalizedTab != "Dashboard" -> viewModel.selectTab("Dashboard")
         }
     }
 
@@ -279,10 +291,10 @@ fun AppScaffold(
 
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = isExpanded,
+        gesturesEnabled = isExpanded && isReady,
         drawerContent = {
             ModalDrawerSheet(
-                drawerContainerColor = MaterialTheme.colorScheme.surface,
+                drawerContainerColor = if (isAmoledDark) Color.Black else MaterialTheme.colorScheme.surface,
                 // A closed drawer sits off-screen but stays in the semantics
                 // tree. Without this, a screen reader walks into invisible
                 // menu items (and announces every destination twice), and a
@@ -315,9 +327,16 @@ fun AppScaffold(
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Spacer(modifier = Modifier.height(8.dp))
                     TABS.forEach { tab ->
+                        val isSelected = normalizedTab == tab.label
                         NavigationDrawerItem(
-                            label = { Text(tab.label, style = MaterialTheme.typography.bodyMedium) },
-                            selected = selectedTab == tab.label,
+                            label = {
+                                Text(
+                                    text = tab.label,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                                )
+                            },
+                            selected = isSelected,
                             onClick = {
                                 viewModel.selectTab(tab.label)
                                 scope.launch { drawerState.close() }
@@ -358,11 +377,11 @@ fun AppScaffold(
         },
     ) {
         Row(modifier = Modifier.fillMaxSize()) {
-            if (isExpanded) {
+            if (isExpanded && isReady) {
                 // Expanded window (>= 600dp): primary destinations move from the
                 // bottom bar to a navigation rail, and the brand mark heads it.
                 NavigationRail(
-                    containerColor = MaterialTheme.colorScheme.surface,
+                    containerColor = if (isAmoledDark) Color.Black else MaterialTheme.colorScheme.surface,
                     modifier =
                         Modifier
                             .padding(top = statusBarPadding)
@@ -380,8 +399,9 @@ fun AppScaffold(
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     TABS.forEach { tab ->
+                        val isSelected = normalizedTab == tab.label
                         NavigationRailItem(
-                            selected = selectedTab == tab.label,
+                            selected = isSelected,
                             onClick = { viewModel.selectTab(tab.label) },
                             icon = { Icon(tab.icon, contentDescription = tab.label) },
                             label = {
@@ -389,7 +409,7 @@ fun AppScaffold(
                                     text = tab.label,
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight =
-                                        if (selectedTab == tab.label) {
+                                        if (isSelected) {
                                             FontWeight.SemiBold
                                         } else {
                                             FontWeight.Medium
@@ -413,6 +433,7 @@ fun AppScaffold(
             }
             Scaffold(
                 containerColor = if (isAmoledDark) Color.Transparent else MaterialTheme.colorScheme.background,
+                contentColor = MaterialTheme.colorScheme.onBackground,
                 snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
                 topBar = {
                     Column {
@@ -421,9 +442,7 @@ fun AppScaffold(
                                 TopAppBarDefaults.topAppBarColors(
                                     containerColor =
                                         if (isAmoledDark) {
-                                            Color.Black.copy(
-                                                alpha = 0.85f,
-                                            )
+                                            Color.Black
                                         } else {
                                             MaterialTheme.colorScheme.surface
                                         },
@@ -432,10 +451,9 @@ fun AppScaffold(
                             navigationIcon = {
                                 // On expanded widths the mark sits in the rail header,
                                 // so the top bar does not show it twice.
-                                if (!isExpanded) {
-                                    // Brand mark heads the top bar on compact phones.
-                                    // Drawer is reserved for expanded screens (>=600dp);
-                                    // the bottom nav exclusively owns the primary tabs.
+                                if (!isExpanded || !isReady) {
+                                    // Brand mark heads the top bar on compact phones
+                                    // and on Loading/Error states.
                                     Box(
                                         modifier =
                                             Modifier
@@ -451,115 +469,119 @@ fun AppScaffold(
                             },
                             title = {
                                 Text(
-                                    text = selectedTab,
+                                    text = if (isReady) normalizedTab else "QuizRadar",
                                     style = MaterialTheme.typography.titleLarge,
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
                             },
                             actions = {
-                                // Sync button = the REAL scan (Gmail/Teams/
-                                // Classroom/feeds on this device, via the Rust
-                                // core). It no-ops honestly when no source is
-                                // configured, and shows live progress while the
-                                // core reports its per-source pulses.
-                                IconButton(
-                                    onClick = { viewModel.runScan() },
-                                    enabled = !isRefreshing && !isScanning,
-                                    modifier = Modifier.size(48.dp),
-                                ) {
-                                    if (isRefreshing || isScanning) {
-                                        // The sync icon gives way to the spinner
-                                        // while a scan runs, so the button needs
-                                        // its own label to stay speakable.
-                                        CircularProgressIndicator(
-                                            modifier =
-                                                Modifier
-                                                    .size(20.dp)
-                                                    .semantics {
-                                                        contentDescription = "Scanning announcement sources"
-                                                    },
-                                            strokeWidth = 2.dp,
-                                            color = MaterialTheme.colorScheme.primary,
-                                        )
-                                    } else {
+                                if (isReady) {
+                                    // Sync button = the REAL scan (Gmail/Teams/
+                                    // Classroom/feeds on this device, via the Rust
+                                    // core). It no-ops honestly when no source is
+                                    // configured, and shows live progress while the
+                                    // core reports its per-source pulses.
+                                    IconButton(
+                                        onClick = { viewModel.runScan() },
+                                        enabled = !isRefreshing && !isScanning,
+                                        modifier = Modifier.size(48.dp),
+                                    ) {
+                                        if (isRefreshing || isScanning) {
+                                            // The sync icon gives way to the spinner
+                                            // while a scan runs, so the button needs
+                                            // its own label to stay speakable.
+                                            CircularProgressIndicator(
+                                                modifier =
+                                                    Modifier
+                                                        .size(20.dp)
+                                                        .semantics {
+                                                            contentDescription = "Scanning announcement sources"
+                                                        },
+                                                strokeWidth = 2.dp,
+                                                color = MaterialTheme.colorScheme.primary,
+                                            )
+                                        } else {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Sync,
+                                                contentDescription = "Scan announcement sources now",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
+
+                                    // Search Button
+                                    IconButton(
+                                        onClick = { isSearchOpen = true },
+                                        modifier = Modifier.size(48.dp),
+                                    ) {
                                         Icon(
-                                            imageVector = Icons.Outlined.Sync,
-                                            contentDescription = "Scan announcement sources now",
+                                            imageVector = Icons.Outlined.Search,
+                                            contentDescription = "Search assessments and topics",
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
-                                }
 
-                                // Search Button
-                                IconButton(
-                                    onClick = { isSearchOpen = true },
-                                    modifier = Modifier.size(48.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Search,
-                                        contentDescription = "Search assessments and topics",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
+                                    // Settings Button (P3-2): settings used to hide
+                                    // behind the profile sheet; now it is one tap
+                                    // from every screen. The avatar stays account-only.
+                                    IconButton(
+                                        onClick = { isSettingsOpen = true },
+                                        modifier = Modifier.size(48.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Settings,
+                                            contentDescription = "Open settings",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
 
-                                // Settings Button (P3-2): settings used to hide
-                                // behind the profile sheet; now it is one tap
-                                // from every screen. The avatar stays account-only.
-                                IconButton(
-                                    onClick = { isSettingsOpen = true },
-                                    modifier = Modifier.size(48.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Settings,
-                                        contentDescription = "Open settings",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-
-                                // Profile / Avatar Button
-                                val hasAccounts = viewModel.isGoogleConnected() || viewModel.isMicrosoftConnected()
-                                IconButton(
-                                    onClick = { isAccountOpen = true },
-                                    modifier =
-                                        Modifier
-                                            .size(48.dp)
-                                            // The green dot is the only sign that an
-                                            // account is connected. A screen reader
-                                            // must hear it too - state by colour
-                                            // alone is invisible to one.
-                                            .semantics {
-                                                stateDescription =
-                                                    if (hasAccounts) "Connected" else "Not connected"
-                                            },
-                                ) {
-                                    Box(contentAlignment = Alignment.TopEnd) {
-                                        Box(
-                                            modifier =
-                                                Modifier
-                                                    .size(32.dp)
-                                                    .clip(CircleShape)
-                                                    .background(MaterialTheme.colorScheme.primaryContainer),
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Outlined.Person,
-                                                contentDescription = "Account and sources",
-                                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                                modifier = Modifier.size(20.dp),
-                                            )
-                                        }
-                                        if (hasAccounts) {
+                                    // Profile / Avatar Button
+                                    val hasAccounts =
+                                        viewModel.isGoogleConnected() || viewModel.isMicrosoftConnected()
+                                    IconButton(
+                                        onClick = { isAccountOpen = true },
+                                        modifier =
+                                            Modifier
+                                                .size(48.dp)
+                                                // The green dot is the only sign that an
+                                                // account is connected. A screen reader
+                                                // must hear it too - state by colour
+                                                // alone is invisible to one.
+                                                .semantics {
+                                                    stateDescription =
+                                                        if (hasAccounts) "Connected" else "Not connected"
+                                                },
+                                    ) {
+                                        Box(contentAlignment = Alignment.TopEnd) {
                                             Box(
                                                 modifier =
                                                     Modifier
-                                                        .size(8.dp)
+                                                        .size(32.dp)
                                                         .clip(CircleShape)
-                                                        .background(
-                                                            StatusColors.success(
-                                                                MaterialTheme.colorScheme.background.luminance() < 0.5f,
+                                                        .background(MaterialTheme.colorScheme.primaryContainer),
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.Person,
+                                                    contentDescription = "Account and sources",
+                                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                    modifier = Modifier.size(20.dp),
+                                                )
+                                            }
+                                            if (hasAccounts) {
+                                                Box(
+                                                    modifier =
+                                                        Modifier
+                                                            .size(8.dp)
+                                                            .clip(CircleShape)
+                                                            .background(
+                                                                StatusColors.success(
+                                                                    MaterialTheme.colorScheme.background.luminance() <
+                                                                        0.5f,
+                                                                ),
                                                             ),
-                                                        ),
-                                            )
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -572,7 +594,7 @@ fun AppScaffold(
                     }
                 },
                 floatingActionButton = {
-                    if (selectedTab == "Dashboard" || selectedTab == "Calendar") {
+                    if (isReady && (normalizedTab == "Dashboard" || normalizedTab == "Calendar")) {
                         FloatingActionButton(
                             onClick = { isAddMenuOpen = true },
                             containerColor = MaterialTheme.colorScheme.primary,
@@ -586,7 +608,7 @@ fun AppScaffold(
                     }
                 },
                 bottomBar = {
-                    if (!isExpanded) {
+                    if (isReady && !isExpanded) {
                         Column {
                             HorizontalDivider(
                                 thickness = 1.dp,
@@ -595,17 +617,16 @@ fun AppScaffold(
                             NavigationBar(
                                 containerColor =
                                     if (isAmoledDark) {
-                                        Color.Black.copy(
-                                            alpha = 0.85f,
-                                        )
+                                        Color.Black
                                     } else {
                                         MaterialTheme.colorScheme.surface
                                     },
                                 tonalElevation = 0.dp,
                             ) {
                                 TABS.forEach { tab ->
+                                    val isSelected = normalizedTab == tab.label
                                     NavigationBarItem(
-                                        selected = selectedTab == tab.label,
+                                        selected = isSelected,
                                         onClick = { viewModel.selectTab(tab.label) },
                                         icon = { Icon(tab.icon, contentDescription = tab.label) },
                                         // The drawer carries the SAME destination
@@ -619,7 +640,7 @@ fun AppScaffold(
                                                 text = tab.label,
                                                 style = MaterialTheme.typography.labelMedium,
                                                 fontWeight =
-                                                    if (selectedTab == tab.label) {
+                                                    if (isSelected) {
                                                         FontWeight.SemiBold
                                                     } else {
                                                         FontWeight.Medium
@@ -663,20 +684,50 @@ fun AppScaffold(
                     ) {
                         when (val state = uiState) {
                             is UiState.Loading -> {
-                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    CircularProgressIndicator()
+                                Column(
+                                    modifier =
+                                        Modifier
+                                            .fillMaxSize()
+                                            .padding(24.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center,
+                                ) {
+                                    CircularProgressIndicator(
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier =
+                                            Modifier.semantics {
+                                                contentDescription = "Loading your exam radar"
+                                            },
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text(
+                                        text = "Loading your exam radar…",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
                                 }
                             }
 
                             is UiState.Error -> {
                                 // The bare error text used to dead-end: no way
-                                // forward but killing the app. A Retry re-runs
-                                // the load (the failure may have been a cold
-                                // native-core start or a transient IO error).
-                                // The message sits in a quiet card so it reads as
-                                // part of the app, not as a stray red line.
+                                // forward but killing the app. Wrap raw SQLite /
+                                // core exceptions in a plain-English heading while
+                                // keeping the technical detail cleanly labeled
+                                // alongside real recovery actions.
+                                val errorHeadline =
+                                    if (state.message.contains("sqlite", ignoreCase = true) ||
+                                        state.message.contains("database", ignoreCase = true) ||
+                                        state.message.contains("disk image", ignoreCase = true)
+                                    ) {
+                                        "Unable to open local database"
+                                    } else {
+                                        "Something went wrong loading your schedule"
+                                    }
                                 Box(
-                                    modifier = Modifier.fillMaxSize(),
+                                    modifier =
+                                        Modifier
+                                            .fillMaxSize()
+                                            .padding(20.dp),
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Card(
@@ -686,29 +737,66 @@ fun AppScaffold(
                                         elevation = CardDefaults.quietCardElevation(),
                                         modifier =
                                             Modifier
-                                                .padding(20.dp)
                                                 .widthIn(max = 420.dp)
                                                 .fillMaxWidth(),
                                     ) {
-                                        Column(modifier = Modifier.padding(16.dp)) {
+                                        Column(modifier = Modifier.padding(20.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.Warning,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.error,
+                                                    modifier = Modifier.size(20.dp),
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = errorHeadline,
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(8.dp))
                                             Text(
-                                                text = "Error: ${state.message}",
+                                                text =
+                                                    "Your timetable and exams could not be loaded right now. " +
+                                                        "Try reloading or restoring a backup file.",
                                                 style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.error,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
-                                            Spacer(modifier = Modifier.height(16.dp))
+                                            Spacer(modifier = Modifier.height(12.dp))
+                                            Text(
+                                                text = "Technical details: ${state.message}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                            Spacer(modifier = Modifier.height(20.dp))
                                             Button(
                                                 onClick = { viewModel.loadState() },
                                                 colors = ButtonDefaults.filledPill(),
                                                 contentPadding = PillButtonContentPadding,
                                                 modifier =
-                                                    Modifier.defaultMinSize(
-                                                        minHeight = PillButtonMinHeight,
-                                                    ),
+                                                    Modifier
+                                                        .fillMaxWidth()
+                                                        .defaultMinSize(minHeight = PillButtonMinHeight),
                                             ) {
                                                 Text(
                                                     text = "Retry",
-                                                    style = MaterialTheme.typography.labelMedium,
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            FilledTonalButton(
+                                                onClick = { backupPickerLauncher.launch("application/json") },
+                                                colors = ButtonDefaults.tonalPill(),
+                                                contentPadding = PillButtonContentPadding,
+                                                modifier =
+                                                    Modifier
+                                                        .fillMaxWidth()
+                                                        .defaultMinSize(minHeight = PillButtonMinHeight),
+                                            ) {
+                                                Text(
+                                                    text = "Restore from backup",
+                                                    style = MaterialTheme.typography.labelLarge,
                                                 )
                                             }
                                         }
@@ -717,6 +805,18 @@ fun AppScaffold(
                             }
 
                             is UiState.Ready -> {
+                                val renderDashboard: @Composable () -> Unit = {
+                                    DashboardScreen(
+                                        snapshot = state.snapshot,
+                                        viewModel = viewModel,
+                                        onViewCalendar = { viewModel.selectTab("Calendar") },
+                                        onOpenAccount = { isAccountOpen = true },
+                                        onAddCourse = { isNewCourseOpen = true },
+                                        onImportBackup = { backupPickerLauncher.launch("application/json") },
+                                        onAddEvent = { isAddMenuOpen = true },
+                                        onOpenSettings = { isSettingsOpen = true },
+                                    )
+                                }
                                 AnimatedContent(
                                     targetState = selectedTab,
                                     transitionSpec = {
@@ -726,22 +826,13 @@ fun AppScaffold(
                                     label = "tab_crossfade",
                                 ) { currentTab ->
                                     when (currentTab) {
-                                        "Dashboard" ->
-                                            DashboardScreen(
-                                                snapshot = state.snapshot,
-                                                viewModel = viewModel,
-                                                onViewCalendar = { viewModel.selectTab("Calendar") },
-                                                onOpenAccount = { isAccountOpen = true },
-                                                onAddCourse = { isNewCourseOpen = true },
-                                                onImportBackup = { backupPickerLauncher.launch("application/json") },
-                                                onAddEvent = { isAddMenuOpen = true },
-                                                onOpenSettings = { isSettingsOpen = true },
-                                            )
+                                        "Dashboard" -> renderDashboard()
 
                                         "Tasks" ->
                                             TasksScreen(
                                                 snapshot = state.snapshot,
                                                 viewModel = viewModel,
+                                                onOpenGradeCenter = { viewModel.selectTab("Grades") },
                                             )
 
                                         "Calendar" ->
@@ -750,7 +841,7 @@ fun AppScaffold(
                                                 viewModel = viewModel,
                                             )
 
-                                        "Grades" ->
+                                        "Grades", "Grade Center" ->
                                             GradeCenterScreen(
                                                 snapshot = state.snapshot,
                                                 viewModel = viewModel,
@@ -761,6 +852,8 @@ fun AppScaffold(
                                                 snapshot = state.snapshot,
                                                 viewModel = viewModel,
                                             )
+
+                                        else -> renderDashboard()
                                     }
                                 }
 
@@ -796,6 +889,8 @@ fun AppScaffold(
                                             isAccountOpen = false
                                             isHelpOpen = true
                                         },
+                                        userName = userName,
+                                        userEmail = userEmail,
                                     )
                                 }
 
@@ -889,6 +984,8 @@ fun AppScaffold(
                                             viewModel.openPomodoro(selectedAssessment.id, topicTitle)
                                             viewModel.selectTab("Focus")
                                         },
+                                        courseColorsById =
+                                            state.snapshot.schedule.courses.associate { it.id to it.color },
                                     )
                                 }
 
@@ -905,6 +1002,7 @@ fun AppScaffold(
                                             viewModel.addCustomEvent(event)
                                         },
                                         onDismiss = { viewModel.dismissCreateEventDraft() },
+                                        courses = state.snapshot.schedule.courses,
                                     )
                                 }
                             }

@@ -36,10 +36,12 @@ fun ReadinessCard(
     card: ExamReadinessCardModel,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    courseColorHex: String? = null,
 ) {
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val palette = CoursePalette.get(card.courseId)
-    val courseTextColor = CoursePalette.textOnSurface(card.courseId, isDark)
+    val resolvedHex = courseColorHex ?: card.color
+    val palette = CoursePalette.get(card.courseId, resolvedHex)
+    val courseTextColor = CoursePalette.textOnSurface(card.courseId, isDark, resolvedHex)
     // No tracked topics means there is no readiness number to show. The core's
     // 0/0 = 100 means "nothing is pending", not "100% mastered" — rendering it
     // as a percentage would claim mastery the student never recorded.
@@ -86,7 +88,7 @@ fun ReadinessCard(
                 }
 
                 Text(
-                    text = "${card.daysUntil}d away",
+                    text = if (card.daysUntil == 0) "Today" else "${card.daysUntil}d away",
                     style =
                         MaterialTheme.typography.labelMedium.copy(
                             fontFeatureSettings = "tnum",
@@ -142,6 +144,8 @@ fun ReadinessCard(
                             .clip(CircleShape),
                     color = readinessColor,
                     trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    drawStopIndicator = {},
+                    gapSize = 0.dp,
                 )
             }
 

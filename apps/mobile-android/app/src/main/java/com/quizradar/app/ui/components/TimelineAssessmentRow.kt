@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
@@ -26,6 +28,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.quizradar.app.model.AssessmentModel
 import com.quizradar.app.ui.extractTimePart
@@ -127,13 +130,12 @@ internal fun urgencyTagStyle(daysUntil: Int?): StatusTagStyle? {
     val label =
         when (daysUntil) {
             null -> return null
-            0 -> "TODAY"
-            1 -> "TOMORROW"
-            else -> if (daysUntil < 0) "PAST" else "IN $daysUntil DAYS"
+            0 -> "Today"
+            1 -> "Tomorrow"
+            else -> if (daysUntil < 0) "Past" else "In $daysUntil days"
         }
     val container =
         when (daysUntil) {
-            null -> MaterialTheme.colorScheme.surface
             0 -> MaterialTheme.colorScheme.errorContainer
             1 -> StatusColors.warningBadge.copy(alpha = 0.18f)
             else ->
@@ -145,7 +147,6 @@ internal fun urgencyTagStyle(daysUntil: Int?): StatusTagStyle? {
         }
     val content =
         when (daysUntil) {
-            null -> MaterialTheme.colorScheme.onSurfaceVariant
             0 -> MaterialTheme.colorScheme.onErrorContainer
             1 -> MaterialTheme.colorScheme.onSurface
             else ->
@@ -158,15 +159,17 @@ internal fun urgencyTagStyle(daysUntil: Int?): StatusTagStyle? {
     return StatusTagStyle(label = label, container = container, content = content)
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TimelineAssessmentRow(
     assessment: AssessmentModel,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    courseColorHex: String? = null,
 ) {
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val palette = CoursePalette.get(assessment.courseId)
-    val courseTextColor = CoursePalette.textOnSurface(assessment.courseId, isDark)
+    val palette = CoursePalette.get(assessment.courseId, courseColorHex)
+    val courseTextColor = CoursePalette.textOnSurface(assessment.courseId, isDark, courseColorHex)
 
     val urgency = urgencyTagStyle(assessment.daysUntil)
     val provenance = assessmentDateProvenance(assessment)
@@ -190,7 +193,10 @@ fun TimelineAssessmentRow(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Box(
                         modifier =
                             Modifier
@@ -203,16 +209,21 @@ fun TimelineAssessmentRow(
                         text = assessment.courseName ?: assessment.courseId ?: "General",
                         style = MaterialTheme.typography.labelMedium,
                         color = courseTextColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = assessment.assessmentType,
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
                     )
                 }
 
                 if (urgency != null) {
+                    Spacer(modifier = Modifier.width(8.dp))
                     StatusTag(
                         text = urgency.label,
                         containerColor = urgency.container,
@@ -232,17 +243,19 @@ fun TimelineAssessmentRow(
             Spacer(modifier = Modifier.height(4.dp))
             // Date / Time / Room ("—" when null — Honesty Doctrine)
             val dateText = formatIsoDateForDisplay(assessment.dateIso?.toString()) ?: "Undated"
-            val timeText = extractTimePart(assessment.displayTime)
-            val roomDisplay = assessment.room ?: "—"
+            val timeText =
+                extractTimePart(assessment.displayTime)
+                    ?.takeIf { !it.equals(dateText, ignoreCase = true) }
+            val roomDisplay = assessment.room?.takeIf { it.isNotBlank() } ?: "—"
             Text(
                 text =
                     buildString {
                         append(dateText)
                         if (timeText != null) {
-                            append(" • ")
+                            append(" · ")
                             append(timeText)
                         }
-                        append(" • Room: ")
+                        append(" · Room: ")
                         append(roomDisplay)
                     },
                 style =
@@ -253,9 +266,9 @@ fun TimelineAssessmentRow(
             )
 
             Spacer(modifier = Modifier.height(12.dp))
-            Row(
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 StatusTag(

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -23,6 +24,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
@@ -59,6 +61,8 @@ fun AccountSheet(
     onOpenSettings: () -> Unit,
     onOpenHelp: () -> Unit = {},
     modifier: Modifier = Modifier,
+    userName: String = "",
+    userEmail: String = "",
 ) {
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     // The "connected" green needs a dark-theme variant: the light one
@@ -77,11 +81,10 @@ fun AccountSheet(
             modifier =
                 Modifier
                     .fillMaxWidth()
+                    .navigationBarsPadding()
                     .padding(horizontal = 20.dp, vertical = 8.dp),
         ) {
-            // Header: Profile Avatar + Title. The sheet is dismissed by
-            // dragging it down (the sheet's own drag handle), so the close
-            // button and the "Local-first" subtitle were redundant chrome.
+            // Header: Profile Avatar + Student Name/Email + accessible 48dp Close button.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -102,11 +105,30 @@ fun AccountSheet(
                     )
                 }
                 Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = "Student Profile",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = userName.trim().ifBlank { "Student Profile" },
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    val emailText = userEmail.trim()
+                    if (emailText.isNotEmpty()) {
+                        Text(
+                            text = emailText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Close,
+                        contentDescription = "Close",
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -191,7 +213,7 @@ fun AccountSheet(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "Google Services",
+                                text = "Google Account (Gmail & Classroom)",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold,
                             )

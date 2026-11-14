@@ -144,8 +144,8 @@ describe("Web UI Foundation & Chrome Components", () => {
     expect(sidebar.className).toContain("lg:flex");
   });
 
-  // 5. MobileNav renders 4 M3 destinations
-  it("mobilenav renders 4 destinations and collapses on desktop (lg:hidden)", () => {
+  // 5. MobileNav renders mobile destinations (including Settings & Help)
+  it("mobilenav renders all destinations including Settings and collapses on desktop (lg:hidden)", () => {
     render(<MobileNav />);
     const mobilenav = screen.getByTestId("app-mobilenav");
     expect(mobilenav.className).toContain("lg:hidden");
@@ -154,6 +154,12 @@ describe("Web UI Foundation & Chrome Components", () => {
     expect(screen.getByRole("button", { name: /tasks/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /calendar/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /focus/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /help/i })).toBeInTheDocument();
+
+    const settingsBtn = screen.getByRole("button", { name: /settings/i });
+    expect(settingsBtn).toBeInTheDocument();
+    fireEvent.click(settingsBtn);
+    expect(useAppStore.getState().view).toBe("settings");
   });
 
   // 6. Pull-to-refresh is gated by modal-open state
@@ -334,5 +340,90 @@ describe("Web UI Foundation & Chrome Components", () => {
     expect(loaded?.schedule.semester).toBe("Fall 2026");
     expect(loaded?.schedule.courses[0].id).toBe("CSE241");
     expect(window.localStorage.getItem(SWR_CACHE_KEY)).toContain("Fall 2026");
+  });
+
+  // 14. Mobile TopBar keeps Settings reachable and keeps Connect copy clear
+  it("exposes TopBar Settings on mobile viewports and shows Connect label when signed out", () => {
+    render(<TopBar />);
+    const settingsBtn = screen.getByRole("button", { name: /open settings/i });
+    expect(settingsBtn.className).not.toContain("hidden");
+
+    fireEvent.click(settingsBtn);
+    expect(useAppStore.getState().view).toBe("settings");
+
+    expect(screen.getByLabelText(/sign in/i)).toHaveTextContent(/Connect/);
+  });
+
+  // 15. Calendar view TopBar keeps shortcut badge single-line and Today button compact
+  it("keeps Calendar TopBar Today control compact and shortcut badge single-line", () => {
+    useAppStore.setState({ view: "calendar" });
+    render(<TopBar />);
+
+    const controls = screen.getByTestId("topbar-calendar-controls");
+    const todayBtn = screen.getByRole("button", { name: "Jump to Today" });
+    expect(controls).toContainElement(todayBtn);
+    expect(todayBtn).toHaveTextContent("Today");
+
+    const searchBtn = screen.getByRole("button", { name: /open search palette/i });
+    const kbd = searchBtn.querySelector("kbd");
+    expect(kbd).not.toBeNull();
+    expect(kbd?.className).toContain("whitespace-nowrap");
+    expect(kbd?.className).toContain("shrink-0");
+  });
+
+  // 16. Sidebar formats raw ISO timestamps cleanly and avoids Push GCal dead-end in browser mode
+  it("formats raw ISO sync timestamps in Sidebar and replaces Push GCal in web companion mode", () => {
+    useAppStore.setState({
+      data: {
+        ...initialFullState,
+        config: {
+          ...initialFullState.config,
+          lastGmailSync: "2026-10-23 14:00",
+        },
+        auth: { ...initialFullState.auth, authenticated: false },
+        assessments: [
+          {
+            id: "q1",
+            title: "Quiz 1",
+            courseId: "CS101",
+            courseName: "CS101",
+            assessmentType: "quiz",
+            dateIso: "2026-10-24",
+            startTime: "10:00",
+            room: null,
+            isUpcoming: true,
+            urgencyLevel: "high",
+            priorityScore: 10,
+            topics: [],
+            warnings: [],
+            source: "manual",
+          },
+        ],
+      },
+    });
+
+    render(<Sidebar />);
+    expect(screen.getByText("Last synced: Oct 23, 14:00")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /push gcal/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /\.ics export/i })).toBeInTheDocument();
+  });
+
+  // 17. Sidebar formats Z-suffixed ISO timestamps without exposing raw T/Z tokens
+  it("formats UTC ISO sync stamps into readable month/day/time", () => {
+    useAppStore.setState({
+      data: {
+        ...initialFullState,
+        config: {
+          ...initialFullState.config,
+          lastGmailSync: "2026-11-12T08:12:00Z",
+        },
+      },
+    });
+
+    render(<Sidebar />);
+    expect(screen.queryByText(/2026-11-12T08:12:00Z/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/^Last synced: [A-Z][a-z]{2} \d{1,2}, \d{2}:\d{2}$/),
+    ).toBeInTheDocument();
   });
 });

@@ -89,12 +89,18 @@ export const DailyStudyRoadmap: React.FC<DailyStudyRoadmapProps> = ({
   }, [filteredDays, scheduleSlots, customEvents, assessments]);
 
   if (filteredDays.length === 0) {
+    const isFreshInstall =
+      courses.length === 0 && assessments.length === 0 && (!propDays || propDays.length === 0);
     return (
       <div
         data-testid="daily-study-roadmap"
         className={`rounded-2xl border border-dashed border-[var(--surface-border)] p-6 sm:p-8 text-center text-xs text-[var(--text-muted)] ${className}`}
       >
-        <div data-testid="empty-tasks">{copy.emptyStates.noStudyTasksPending}</div>
+        <div data-testid="empty-tasks">
+          {isFreshInstall
+            ? "No study tasks yet — add a course or assessment to generate a daily study plan."
+            : copy.emptyStates.noStudyTasksPending}
+        </div>
       </div>
     );
   }

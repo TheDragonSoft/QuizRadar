@@ -39,6 +39,7 @@ export const FocusView: React.FC = () => {
   const practiceGenerate = useAppStore((s) => s.practiceGenerate);
   const openModal = useAppStore((s) => s.openModal);
   const openEventModal = useAppStore((s) => s.openEventModal);
+  const setView = useAppStore((s) => s.setView);
   const addToast = useAppStore((s) => s.addToast);
 
   // Pomodoro state unified with Zustand store (controlled app-wide by Space)
@@ -187,6 +188,8 @@ export const FocusView: React.FC = () => {
 
   const currentCard = relevantCards[cardIndex] || null;
 
+  const [mobileBannerOpen, setMobileBannerOpen] = useState(false);
+
   // Filter mistakes
   const relevantMistakes = mistakeBank.filter(
     (m) =>
@@ -240,28 +243,30 @@ export const FocusView: React.FC = () => {
   };
 
   return (
-    <div data-testid="focus-view" className="space-y-6">
+    <div data-testid="focus-view" className="space-y-3 sm:space-y-6">
       {/* Top Header & Tab Switcher */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[var(--surface-border)] pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4 border-b border-[var(--surface-border)] pb-3 sm:pb-4">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-[var(--text)]">{copy.nav.focus}</h1>
-          <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-            Deep-work Pomodoro sessions, interactive flashcards, practice quizzes, and mistake
-            revision.
+          <h1 className="text-lg sm:text-xl font-bold tracking-tight text-[var(--text)]">
+            {copy.nav.focus}
+          </h1>
+          <p className="hidden sm:block mt-0.5 text-xs text-[var(--text-muted)]">
+            Deep-work Pomodoro sessions, interactive flashcards, practice quizzes, and missed
+            question review.
           </p>
         </div>
 
         <div
           role="tablist"
           aria-label="Focus study modes"
-          className="inline-flex rounded-xl border border-[var(--surface-border)] bg-[var(--page)] p-1 flex-wrap gap-1"
+          className="inline-flex max-w-full overflow-x-auto rounded-xl border border-[var(--surface-border)] bg-[var(--page)] p-1 gap-1"
         >
           <button
             type="button"
             role="tab"
             aria-selected={activeTab === "pomodoro"}
             onClick={() => setActiveTab("pomodoro")}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+            className={`flex shrink-0 whitespace-nowrap items-center gap-1.5 rounded-lg px-2.5 sm:px-3 py-1.5 text-xs font-semibold transition ${
               activeTab === "pomodoro"
                 ? "bg-[var(--surface)] text-[var(--accent-ink)] shadow-xs"
                 : "text-[var(--text-muted)] hover:text-[var(--text)]"
@@ -275,7 +280,7 @@ export const FocusView: React.FC = () => {
             role="tab"
             aria-selected={activeTab === "practice"}
             onClick={() => setActiveTab("practice")}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+            className={`flex shrink-0 whitespace-nowrap items-center gap-1.5 rounded-lg px-2.5 sm:px-3 py-1.5 text-xs font-semibold transition ${
               activeTab === "practice"
                 ? "bg-[var(--surface)] text-[var(--accent-ink)] shadow-xs"
                 : "text-[var(--text-muted)] hover:text-[var(--text)]"
@@ -289,7 +294,7 @@ export const FocusView: React.FC = () => {
             role="tab"
             aria-selected={activeTab === "flashcards"}
             onClick={() => setActiveTab("flashcards")}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+            className={`flex shrink-0 whitespace-nowrap items-center gap-1.5 rounded-lg px-2.5 sm:px-3 py-1.5 text-xs font-semibold transition ${
               activeTab === "flashcards"
                 ? "bg-[var(--surface)] text-[var(--accent-ink)] shadow-xs"
                 : "text-[var(--text-muted)] hover:text-[var(--text)]"
@@ -308,14 +313,14 @@ export const FocusView: React.FC = () => {
             role="tab"
             aria-selected={activeTab === "mistakes"}
             onClick={() => setActiveTab("mistakes")}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+            className={`flex shrink-0 whitespace-nowrap items-center gap-1.5 rounded-lg px-2.5 sm:px-3 py-1.5 text-xs font-semibold transition ${
               activeTab === "mistakes"
                 ? "bg-[var(--surface)] text-[var(--accent-ink)] shadow-xs"
                 : "text-[var(--text-muted)] hover:text-[var(--text)]"
             }`}
           >
             <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>Mistake Bank</span>
+            <span>Missed Questions</span>
             {unresolvedMistakes.length > 0 && (
               <span className="rounded-full bg-red-500/20 text-red-600 dark:text-red-400 px-1.5 py-0.2 text-[10px] font-bold tabular-nums">
                 {unresolvedMistakes.length}
@@ -327,8 +332,8 @@ export const FocusView: React.FC = () => {
 
       {/* Target Exam Selector Bar */}
       {selectableAssessments.length > 0 ? (
-        <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface)] p-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface)] p-3 sm:p-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3">
             <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
               Study Target Assessment
             </div>
@@ -350,16 +355,32 @@ export const FocusView: React.FC = () => {
       ) : (
         <div
           data-testid="empty-focus"
-          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-dashed border-[var(--surface-border)] bg-[var(--surface)] p-4"
+          className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3 rounded-2xl border border-dashed border-[var(--surface-border)] bg-[var(--surface)] px-3 py-2.5 sm:p-4"
         >
-          <div className="text-xs text-[var(--text-muted)]">
-            <span className="font-semibold text-[var(--text)]">
-              {copy.emptyStates.noFocusTaskSelected}
-            </span>{" "}
-            You can run a standalone Pomodoro timer below or add an exam to unlock syllabus topic
-            tracking, flashcards, and practice quizzes.
+          <div className="flex items-center justify-between gap-2 sm:block min-w-0">
+            <div className="text-xs text-[var(--text-muted)] min-w-0">
+              <span className="font-semibold text-[var(--text)]">
+                {copy.emptyStates.noFocusTaskSelected}
+              </span>{" "}
+              <span className="hidden sm:inline">
+                You can run a standalone Pomodoro timer below or add an exam to unlock syllabus
+                topic tracking, flashcards, and practice quizzes.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMobileBannerOpen((v) => !v)}
+              aria-expanded={mobileBannerOpen}
+              className="sm:hidden shrink-0 rounded-lg border border-[var(--surface-border)] px-2 py-1 text-[11px] font-semibold text-[var(--accent-ink)]"
+            >
+              {mobileBannerOpen ? "Hide" : "Setup"}
+            </button>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div
+            className={`${
+              mobileBannerOpen ? "flex" : "hidden"
+            } sm:flex flex-wrap shrink-0 items-center gap-2`}
+          >
             <button
               type="button"
               onClick={() => openModal({ id: "add-course" })}
@@ -382,10 +403,10 @@ export const FocusView: React.FC = () => {
 
       {/* TAB 1: POMODORO TIMER + SYLLABUS CHECKLIST */}
       {activeTab === "pomodoro" && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-start">
           {/* Timer Card */}
-          <div className="lg:col-span-7 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface)] p-6 shadow-xs flex flex-col items-center">
-            <div className="flex w-full max-w-md rounded-xl border border-[var(--surface-border)] bg-[var(--page)] p-1">
+          <div className="lg:col-span-7 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface)] p-4 sm:p-6 shadow-xs flex flex-col items-center">
+            <div className="flex w-full max-w-md items-center gap-1 rounded-xl border border-[var(--surface-border)] bg-[var(--page)] p-1">
               {(
                 [
                   { id: "pomodoro", label: copy.pomodoro.modePomodoro },
@@ -397,7 +418,7 @@ export const FocusView: React.FC = () => {
                   key={m.id}
                   type="button"
                   onClick={() => switchTimerMode(m.id)}
-                  className={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition ${
+                  className={`flex-1 whitespace-nowrap rounded-lg px-1.5 sm:px-2 py-1.5 text-[11px] sm:text-xs font-semibold transition ${
                     timerMode === m.id
                       ? "bg-[var(--surface)] text-[var(--accent-ink)] shadow-xs"
                       : "text-[var(--text-muted)] hover:text-[var(--text)]"
@@ -409,8 +430,12 @@ export const FocusView: React.FC = () => {
             </div>
 
             {/* Circular Ring + Countdown */}
-            <div className="relative my-8 flex items-center justify-center">
-              <svg className="h-52 w-52 -rotate-90" viewBox="0 0 200 200" aria-hidden="true">
+            <div className="relative my-4 sm:my-8 flex items-center justify-center">
+              <svg
+                className="h-52 w-52 sm:h-60 sm:w-60 -rotate-90"
+                viewBox="0 0 200 200"
+                aria-hidden="true"
+              >
                 <circle
                   cx="100"
                   cy="100"
@@ -443,17 +468,18 @@ export const FocusView: React.FC = () => {
                   </g>
                 )}
               </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <div className="absolute inset-0 flex flex-col items-center justify-center px-6">
                 <span
                   data-testid="focus-timer-readout"
-                  className="font-mono text-5xl font-black tracking-tight tabular-nums text-[var(--text)]"
+                  className="font-mono text-4xl sm:text-5xl font-black tracking-tight tabular-nums text-[var(--text)]"
                 >
                   {formatTime(timeLeft)}
                 </span>
-                <span className="mt-1 text-xs font-semibold text-[var(--text-muted)]">
-                  {isRunning
-                    ? "Session in progress (Space to pause)"
-                    : "Ready to focus (Space to start)"}
+                <span className="mt-1.5 text-xs font-semibold text-[var(--text-muted)] text-center leading-tight">
+                  {isRunning ? "Session in progress" : "Ready to focus"}
+                </span>
+                <span className="mt-1 rounded-full border border-[var(--surface-border)] bg-[var(--page)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)]">
+                  {isRunning ? "Space to pause" : "Space to start"}
                 </span>
               </div>
             </div>
@@ -507,7 +533,7 @@ export const FocusView: React.FC = () => {
               <div className="space-y-4">
                 <p className="text-xs text-[var(--text-muted)] leading-relaxed">
                   Select or add an upcoming assessment to check off syllabus topics during your
-                  Pomodoro blocks, or set an ad-hoc session intention below.
+                  Pomodoro blocks, or set an ad-hoc focus topic below.
                 </p>
 
                 <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--page)] p-3 space-y-2">
@@ -515,7 +541,7 @@ export const FocusView: React.FC = () => {
                     htmlFor="adhoc-intention"
                     className="block text-[11px] font-bold text-[var(--text)] uppercase tracking-wider"
                   >
-                    Current Focus Intention
+                    Current Focus Topic
                   </label>
                   <input
                     id="adhoc-intention"
@@ -796,7 +822,7 @@ export const FocusView: React.FC = () => {
                         {isWrong && (
                           <div className="flex items-center justify-between pt-1">
                             <span className="text-[11px] text-red-600 dark:text-red-400 font-medium">
-                              Logged to Mistake Bank
+                              Logged to Missed Questions
                             </span>
                             <button
                               type="button"
@@ -817,13 +843,13 @@ export const FocusView: React.FC = () => {
                                 });
                                 addToast({
                                   type: "info",
-                                  message: "Question bookmarked in Mistake Bank.",
+                                  message: "Question saved to Missed Questions.",
                                 });
                               }}
                               className="inline-flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-2 py-1 text-[11px] font-semibold text-red-700 dark:text-red-300 hover:bg-red-500/20 transition cursor-pointer"
                             >
                               <BookmarkPlus className="h-3 w-3" aria-hidden="true" />
-                              <span>Bookmark to Mistakes</span>
+                              <span>Bookmark to Missed Questions</span>
                             </button>
                           </div>
                         )}
@@ -847,11 +873,11 @@ export const FocusView: React.FC = () => {
             <div>
               <h2 className="text-base font-bold text-[var(--text)] flex items-center gap-2">
                 <Layers className="h-4 w-4 text-[var(--accent-ink)]" aria-hidden="true" />
-                <span>Leitner Spaced Repetition Flashcards</span>
+                <span>Spaced Repetition Flashcards</span>
               </h2>
               <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                Active recall with 5-box spaced repetition. Mastered cards advance to higher boxes
-                with longer intervals.
+                Active recall with 5-stage spaced repetition. Mastered cards advance to higher
+                stages with longer intervals.
               </p>
             </div>
 
@@ -863,7 +889,7 @@ export const FocusView: React.FC = () => {
                   className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--accent)] bg-[var(--accent)]/10 px-3 py-1.5 text-xs font-semibold text-[var(--accent-ink)] hover:bg-[var(--accent)]/20 transition cursor-pointer"
                 >
                   <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Seed from Topics</span>
+                  <span>Generate cards</span>
                 </button>
               )}
               <button
@@ -964,19 +990,39 @@ export const FocusView: React.FC = () => {
               />
               <div className="text-sm font-bold text-[var(--text)]">No Flashcards in this Deck</div>
               <p className="text-xs text-[var(--text-muted)] max-w-md mx-auto">
-                Seed cards directly from your syllabus topics or create custom cards to begin active
+                Generate cards from your syllabus topics or create custom flashcards to begin active
                 recall practice.
               </p>
-              {rawTopics.length > 0 && (
+              <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                {rawTopics.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleSeedTopics}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-4 py-2 text-xs font-bold text-white hover:bg-[var(--accent-fill-hover)] transition cursor-pointer"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Generate Cards from Topics</span>
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={handleSeedTopics}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--accent-fill)] px-4 py-2 text-xs font-bold text-white hover:bg-[var(--accent-fill-hover)] transition cursor-pointer"
+                  onClick={() => setShowAddCard(true)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--page)] px-4 py-2 text-xs font-bold text-[var(--text)] hover:bg-[var(--surface-hover)] transition cursor-pointer"
                 >
-                  <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Seed from Syllabus Topics</span>
+                  <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>Create Flashcard</span>
                 </button>
-              )}
+                {assessments.length === 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setView("tasks")}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--surface-border)] bg-[var(--surface)] px-4 py-2 text-xs font-bold text-[var(--accent-ink)] hover:bg-[var(--surface-hover)] transition cursor-pointer"
+                  >
+                    <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Go to Assessments</span>
+                  </button>
+                )}
+              </div>
             </div>
           ) : currentCard ? (
             <div className="max-w-xl mx-auto space-y-4">
@@ -987,7 +1033,7 @@ export const FocusView: React.FC = () => {
                     Card {cardIndex + 1} of {relevantCards.length}
                   </span>
                   <span className="rounded-full bg-[var(--surface-border)] px-2 py-0.5 text-[11px] font-bold text-[var(--text)]">
-                    Box {currentCard.boxLevel}
+                    Stage {currentCard.boxLevel}
                   </span>
                 </div>
                 <button
@@ -1068,7 +1114,7 @@ export const FocusView: React.FC = () => {
                       });
                       addToast({
                         type: "info",
-                        message: "Reset to Box 1 — logged in Mistake Bank.",
+                        message: "Reset to Stage 1 — logged in Missed Questions.",
                       });
                       setIsFlipped(false);
                       if (cardIndex < relevantCards.length - 1) {
@@ -1078,7 +1124,7 @@ export const FocusView: React.FC = () => {
                     className="flex items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 py-2.5 text-xs font-bold text-red-700 dark:text-red-300 hover:bg-red-500/20 transition cursor-pointer"
                   >
                     <X className="h-4 w-4" aria-hidden="true" />
-                    <span>Needs Review (Box 1)</span>
+                    <span>Needs Review (Stage 1)</span>
                   </button>
 
                   <button
@@ -1087,7 +1133,7 @@ export const FocusView: React.FC = () => {
                       reviewFlashcard(currentCard.id, true);
                       addToast({
                         type: "success",
-                        message: `Mastered! Advanced to Box ${Math.min(5, currentCard.boxLevel + 1)}.`,
+                        message: `Mastered! Advanced to Stage ${Math.min(5, currentCard.boxLevel + 1)}.`,
                       });
                       setIsFlipped(false);
                       if (cardIndex < relevantCards.length - 1) {
@@ -1097,7 +1143,7 @@ export const FocusView: React.FC = () => {
                     className="flex items-center justify-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 py-2.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 transition cursor-pointer"
                   >
                     <Check className="h-4 w-4" aria-hidden="true" />
-                    <span>Mastered (Advance Box)</span>
+                    <span>Mastered (Advance Stage)</span>
                   </button>
                 </div>
               ) : (
@@ -1156,7 +1202,7 @@ export const FocusView: React.FC = () => {
             <div>
               <h2 className="text-base font-bold text-[var(--text)] flex items-center gap-2">
                 <AlertCircle className="h-4 w-4 text-red-500" aria-hidden="true" />
-                <span>Mistake Bank &amp; Revision Log</span>
+                <span>Missed Questions &amp; Review</span>
               </h2>
               <p className="text-xs text-[var(--text-muted)] mt-0.5">
                 Automatically records questions and concepts missed during practice quizzes and
@@ -1198,9 +1244,9 @@ export const FocusView: React.FC = () => {
               />
               <div className="text-sm font-bold text-[var(--text)]">No Mistakes Found</div>
               <p className="text-xs text-[var(--text-muted)] max-w-md mx-auto">
-                {mistakeFilter === "unresolved"
-                  ? "All caught up! You have resolved all recorded errors for this assessment."
-                  : "No mistakes logged yet. Practice quizzes and flashcards marked 'Needs Review' will be tracked here."}
+                {relevantMistakes.length === 0
+                  ? "No mistakes recorded yet — missed practice questions will appear here."
+                  : "All caught up! You have resolved all recorded errors for this assessment."}
               </p>
             </div>
           ) : (

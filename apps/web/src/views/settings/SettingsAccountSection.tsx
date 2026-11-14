@@ -146,7 +146,7 @@ export function SettingsAccountSection() {
           <div className="mb-2 text-xs font-semibold text-[var(--text)]">
             Active Appearance Mode
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {[
               {
                 id: "system",
@@ -340,12 +340,12 @@ export function SettingsAccountSection() {
 
       {/* Google account — v4 hub card with the real Google mark */}
       <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-100 dark:bg-blue-950/80">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-100 dark:bg-blue-950/80">
               <GoogleMark className="h-4 w-4" />
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="text-xs font-bold text-[var(--text)]">Personal Google Account</div>
               <div className="text-xs text-[var(--text-muted)]">
                 Gmail scanning, Calendar push & Drive backup
@@ -388,12 +388,12 @@ export function SettingsAccountSection() {
 
       {/* Microsoft Teams account — v4 university hub card */}
       <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-200 dark:bg-slate-800">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-200 dark:bg-slate-800">
               <MicrosoftMark className="h-4 w-4" />
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="text-xs font-bold text-[var(--text)]">
                 University Account (Microsoft 365)
               </div>
@@ -439,14 +439,14 @@ export function SettingsAccountSection() {
 
       {/* BYOK Gemini AI Configuration Card */}
       <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-[var(--accent)]" aria-hidden="true" />
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <Sparkles className="h-4 w-4 shrink-0 text-[var(--accent)]" aria-hidden="true" />
             <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
               Google Gemini AI (Bring Your Own Key)
             </h3>
           </div>
-          <label className="flex cursor-pointer items-center gap-2">
+          <label className="flex shrink-0 cursor-pointer items-center gap-2">
             <span className="text-xs font-semibold text-[var(--text)]">
               {config.geminiEnabled ? "AI Enabled" : "AI Disabled"}
             </span>
@@ -465,14 +465,14 @@ export function SettingsAccountSection() {
           <p className="font-semibold">{copy.ai.turnOff}</p>
         </div>
 
-        <div className="mt-4 flex gap-2">
+        <div className="mt-4 flex flex-wrap gap-2 sm:flex-nowrap">
           <input
             type="password"
             aria-label="Gemini API key"
             value={geminiKeyInput}
             onChange={(e) => setGeminiKeyInput(e.target.value)}
             placeholder={copy.ai.keyPlaceholder}
-            className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-base sm:text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none focus:border-[var(--accent)]"
+            className="min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-base sm:text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] outline-none focus:border-[var(--accent)]"
           />
           <button
             type="button"

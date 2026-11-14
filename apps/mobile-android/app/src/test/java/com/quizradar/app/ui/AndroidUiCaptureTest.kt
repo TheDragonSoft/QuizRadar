@@ -113,7 +113,10 @@ class AndroidUiCaptureTest {
 
     /** Bounded wait for visible text — never `waitForIdle`, which infinite
      *  animations starve forever. */
-    private fun waitForText(text: String, timeoutMs: Long = 8_000) {
+    private fun waitForText(
+        text: String,
+        timeoutMs: Long = 8_000,
+    ) {
         composeTestRule.waitUntil(timeoutMillis = timeoutMs) {
             composeTestRule.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isNotEmpty()
         }
@@ -200,7 +203,7 @@ class AndroidUiCaptureTest {
         renderApp(viewModel)
         waitForText("Quiz 1")
         viewModel.selectTab("Focus")
-        waitForText("Pomodoro")
+        waitForText("Focus 25m")
         capturePng("focus-dark")
     }
 

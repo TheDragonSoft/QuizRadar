@@ -1,10 +1,12 @@
 package com.quizradar.app.ui.screens
 
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,7 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -33,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.quizradar.app.model.AppSnapshotModel
 import com.quizradar.app.ui.QuizRadarViewModel
@@ -40,6 +43,7 @@ import com.quizradar.app.ui.components.DailyRoadmapCard
 import com.quizradar.app.ui.components.ReadinessCard
 import com.quizradar.app.ui.icons.Icons
 import com.quizradar.app.ui.theme.ChipLeadingCheck
+import com.quizradar.app.ui.theme.CoursePalette
 import com.quizradar.app.ui.theme.PillButtonContentPadding
 import com.quizradar.app.ui.theme.PillButtonMinHeight
 import com.quizradar.app.ui.theme.filledPill
@@ -48,6 +52,7 @@ import com.quizradar.app.ui.theme.quietCardColors
 import com.quizradar.app.ui.theme.quietCardElevation
 import com.quizradar.app.ui.theme.quietChipColors
 import com.quizradar.app.ui.theme.tonalPill
+import java.util.Locale
 
 /**
  * Label of a course filter chip: the course NAME (web parity - the web tier
@@ -95,7 +100,25 @@ private fun CourseFilterChip(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
+    courseId: String? = null,
+    colorHex: String? = null,
 ) {
+    val leading: (@Composable () -> Unit)? =
+        when {
+            selected -> ({ ChipLeadingCheck() })
+            courseId != null -> (
+                {
+                    Box(
+                        modifier =
+                            Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(CoursePalette.get(courseId, colorHex).color),
+                    )
+                }
+            )
+            else -> null
+        }
     FilterChip(
         selected = selected,
         onClick = onClick,
@@ -105,7 +128,7 @@ private fun CourseFilterChip(
                 style = MaterialTheme.typography.labelMedium,
             )
         },
-        leadingIcon = { if (selected) ChipLeadingCheck() },
+        leadingIcon = leading,
         colors = FilterChipDefaults.quietChipColors(),
         modifier = Modifier.defaultMinSize(minHeight = 48.dp),
     )
@@ -160,7 +183,7 @@ private fun TasksEmptyStateCard(
                     onClick = onShowAllCourses,
                     modifier = Modifier.defaultMinSize(minHeight = 48.dp),
                 ) {
-                    Text("Show all courses", style = MaterialTheme.typography.labelMedium)
+                    Text("Show all courses", style = MaterialTheme.typography.labelLarge)
                 }
                 return@Column
             }
@@ -172,7 +195,7 @@ private fun TasksEmptyStateCard(
                         contentPadding = PillButtonContentPadding,
                         modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
                     ) {
-                        Text("Add course", style = MaterialTheme.typography.labelMedium)
+                        Text("Add course", style = MaterialTheme.typography.labelLarge)
                     }
 
                 TasksBlocker.NoSource -> {
@@ -182,7 +205,7 @@ private fun TasksEmptyStateCard(
                         contentPadding = PillButtonContentPadding,
                         modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
                     ) {
-                        Text("Connect source", style = MaterialTheme.typography.labelMedium)
+                        Text("Connect source", style = MaterialTheme.typography.labelLarge)
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     FilledTonalButton(
@@ -191,7 +214,7 @@ private fun TasksEmptyStateCard(
                         contentPadding = PillButtonContentPadding,
                         modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
                     ) {
-                        Text("Scan sources", style = MaterialTheme.typography.labelMedium)
+                        Text("Scan sources", style = MaterialTheme.typography.labelLarge)
                     }
                 }
 
@@ -202,7 +225,7 @@ private fun TasksEmptyStateCard(
                         contentPadding = PillButtonContentPadding,
                         modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
                     ) {
-                        Text("Add assessment", style = MaterialTheme.typography.labelMedium)
+                        Text("Add assessment", style = MaterialTheme.typography.labelLarge)
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     FilledTonalButton(
@@ -211,7 +234,7 @@ private fun TasksEmptyStateCard(
                         contentPadding = PillButtonContentPadding,
                         modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
                     ) {
-                        Text("Scan sources", style = MaterialTheme.typography.labelMedium)
+                        Text("Scan sources", style = MaterialTheme.typography.labelLarge)
                     }
                 }
 
@@ -223,7 +246,7 @@ private fun TasksEmptyStateCard(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun TasksScreen(
     snapshot: AppSnapshotModel,
@@ -232,7 +255,7 @@ fun TasksScreen(
     onAddCourse: () -> Unit = { viewModel.selectTab("Dashboard") },
     onConnectSource: () -> Unit = { viewModel.selectTab("Dashboard") },
     onAddAssessment: () -> Unit = { viewModel.selectTab("Calendar") },
-    onOpenGradeCenter: () -> Unit = { viewModel.selectTab("Grade Center") },
+    onOpenGradeCenter: () -> Unit = { viewModel.selectTab("Grades") },
 ) {
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val courseFilter by viewModel.tasksCourseFilter.collectAsState()
@@ -246,6 +269,7 @@ fun TasksScreen(
     val tasks = snapshot.tasks
     val completedTopics = snapshot.completedTopics
     val courses = snapshot.schedule.courses
+    val courseColorsById = courses.associate { it.id to it.color }
 
     val filteredCards =
         tasks.readinessCards.filter { card ->
@@ -276,7 +300,12 @@ fun TasksScreen(
         } else {
             null
         }
-    val hoursStr = if (visibleHours != null) " • Est. $visibleHours hrs" else ""
+    val hoursStr =
+        if (visibleHours != null) {
+            " • Est. ${String.format(Locale.US, "%.1fh", visibleHours)}"
+        } else {
+            ""
+        }
 
     // A source is "connected" when a scan would really have something to do:
     // a signed-in account whose source toggle is on, or an enabled .ics feed.
@@ -364,138 +393,169 @@ fun TasksScreen(
                             modifier = Modifier.size(18.dp),
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Grade Center", style = MaterialTheme.typography.labelMedium)
+                        Text("Grade Center", style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }
 
-            // Course Filter Chips
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    CourseFilterChip(
-                        label = "All Courses",
-                        selected = courseFilter == "ALL",
-                        onClick = { viewModel.setTasksCourseFilter("ALL") },
-                    )
-
-                    courses.forEach { course ->
+            // Course Filter Chips (hidden when zero courses are enrolled)
+            if (courses.isNotEmpty()) {
+                item {
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                         CourseFilterChip(
-                            label = formatCourseFilterLabel(course.name, course.id),
-                            selected = courseFilter == course.id,
-                            onClick = { viewModel.setTasksCourseFilter(course.id) },
+                            label = "All Courses",
+                            selected = courseFilter == "ALL",
+                            onClick = { viewModel.setTasksCourseFilter("ALL") },
+                        )
+
+                        courses.forEach { course ->
+                            CourseFilterChip(
+                                label = formatCourseFilterLabel(course.name, course.id),
+                                selected = courseFilter == course.id,
+                                onClick = { viewModel.setTasksCourseFilter(course.id) },
+                                courseId = course.id,
+                                colorHex = course.color,
+                            )
+                        }
+                    }
+                }
+            }
+
+            val isCompletelyEmpty =
+                courses.isEmpty() &&
+                    snapshot.assessments.isEmpty() &&
+                    filteredCards.isEmpty() &&
+                    filteredDays.isEmpty()
+
+            if (isCompletelyEmpty) {
+                item {
+                    TasksEmptyStateCard(
+                        message =
+                            "Add a course and its weekly class times so QuizRadar can resolve " +
+                                "exam dates and build a personalized study roadmap.",
+                        blocker = blocker,
+                        courseFilterActive = false,
+                        scanFailure = scanFailure,
+                        onShowAllCourses = { viewModel.setTasksCourseFilter("ALL") },
+                        onAddCourse = onAddCourse,
+                        onConnectSource = onConnectSource,
+                        onAddAssessment = onAddAssessment,
+                        onScan = { viewModel.runScan() },
+                    )
+                }
+            } else {
+                // Section 1: Exam Readiness Cards
+                item {
+                    Text(
+                        text = "Exam Readiness (${filteredCards.size})",
+                        style =
+                            MaterialTheme.typography.titleMedium.copy(
+                                fontFeatureSettings = "tnum",
+                            ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+
+                if (filteredCards.isEmpty()) {
+                    item {
+                        val message =
+                            if (courseFilterActive) {
+                                "No exams matching this course filter."
+                            } else {
+                                when (blocker) {
+                                    TasksBlocker.NoCourses ->
+                                        "Add a course and its weekly class times so QuizRadar can resolve exam dates for it."
+
+                                    TasksBlocker.NoSource ->
+                                        "Your courses are ready, but no announcement source is " +
+                                            "connected yet - connect one, then scan for exam announcements."
+
+                                    TasksBlocker.NoAssessments ->
+                                        "Courses and a source are ready, but no assessment is on your radar yet."
+
+                                    TasksBlocker.AllCaughtUp ->
+                                        "No upcoming exams tracked on your radar yet."
+                                }
+                            }
+                        TasksEmptyStateCard(
+                            message = message,
+                            blocker = blocker,
+                            courseFilterActive = courseFilterActive,
+                            scanFailure = scanFailure,
+                            onShowAllCourses = { viewModel.setTasksCourseFilter("ALL") },
+                            onAddCourse = onAddCourse,
+                            onConnectSource = onConnectSource,
+                            onAddAssessment = onAddAssessment,
+                            onScan = { viewModel.runScan() },
+                        )
+                    }
+                } else {
+                    itemsIndexed(filteredCards, key = { _, card -> card.assessmentId }) { _, card ->
+                        ReadinessCard(
+                            card = card,
+                            onClick = { viewModel.openAssessmentDetail(card.assessmentId) },
+                            courseColorHex = courseColorsById[card.courseId],
                         )
                     }
                 }
-            }
 
-            // Section 1: Exam Readiness Cards
-            item {
-                Text(
-                    text = "Exam Readiness (${filteredCards.size})",
-                    style =
-                        MaterialTheme.typography.titleMedium.copy(
-                            fontFeatureSettings = "tnum",
-                        ),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
-
-            if (filteredCards.isEmpty()) {
+                // Section 2: Daily Study Roadmap Cards
                 item {
-                    val message =
-                        if (courseFilterActive) {
-                            "No exams matching this course filter."
-                        } else {
-                            when (blocker) {
-                                TasksBlocker.NoCourses ->
-                                    "Add a course and its weekly class times so QuizRadar can resolve exam dates for it."
+                    Text(
+                        text = "Daily Study Schedule",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
 
-                                TasksBlocker.NoSource ->
-                                    "Your courses are ready, but no announcement source is " +
-                                        "connected yet - connect one, then scan for exam announcements."
+                if (filteredDays.isEmpty()) {
+                    item {
+                        val message =
+                            if (courseFilterActive) {
+                                "No study tasks scheduled for this course."
+                            } else {
+                                when (blocker) {
+                                    TasksBlocker.NoCourses ->
+                                        "Add a course and its weekly class times so QuizRadar can build a personalized study roadmap."
 
-                                TasksBlocker.NoAssessments ->
-                                    "Courses and a source are ready, but no assessment is on your radar yet."
+                                    TasksBlocker.NoSource ->
+                                        "Your courses are ready, but no announcement source is " +
+                                            "connected yet - connect one, then scan for exam announcements."
 
-                                TasksBlocker.AllCaughtUp ->
-                                    "No upcoming exams tracked on your radar yet."
+                                    TasksBlocker.NoAssessments ->
+                                        "Courses and a source are ready, but there is no assessment to plan study steps from yet."
+
+                                    TasksBlocker.AllCaughtUp ->
+                                        "All caught up! No pending study tasks for the next 14 days."
+                                }
                             }
-                        }
-                    TasksEmptyStateCard(
-                        message = message,
-                        blocker = blocker,
-                        courseFilterActive = courseFilterActive,
-                        scanFailure = scanFailure,
-                        onShowAllCourses = { viewModel.setTasksCourseFilter("ALL") },
-                        onAddCourse = onAddCourse,
-                        onConnectSource = onConnectSource,
-                        onAddAssessment = onAddAssessment,
-                        onScan = { viewModel.runScan() },
-                    )
-                }
-            } else {
-                itemsIndexed(filteredCards, key = { _, card -> card.assessmentId }) { _, card ->
-                    ReadinessCard(
-                        card = card,
-                        onClick = { viewModel.openAssessmentDetail(card.assessmentId) },
-                    )
-                }
-            }
-
-            // Section 2: Daily Study Roadmap Cards
-            item {
-                Text(
-                    text = "Daily Study Schedule",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
-
-            if (filteredDays.isEmpty()) {
-                item {
-                    val message =
-                        if (courseFilterActive) {
-                            "No study tasks scheduled for this course."
-                        } else {
-                            when (blocker) {
-                                TasksBlocker.NoCourses ->
-                                    "Add a course and its weekly class times so QuizRadar can build a personalized study roadmap."
-
-                                TasksBlocker.NoSource ->
-                                    "Your courses are ready, but no announcement source is " +
-                                        "connected yet - connect one, then scan for exam announcements."
-
-                                TasksBlocker.NoAssessments ->
-                                    "Courses and a source are ready, but there is no assessment to plan study steps from yet."
-
-                                TasksBlocker.AllCaughtUp ->
-                                    "All caught up! No pending study tasks for the next 14 days."
-                            }
-                        }
-                    TasksEmptyStateCard(
-                        message = message,
-                        blocker = blocker,
-                        courseFilterActive = courseFilterActive,
-                        scanFailure = scanFailure,
-                        onShowAllCourses = { viewModel.setTasksCourseFilter("ALL") },
-                        onAddCourse = onAddCourse,
-                        onConnectSource = onConnectSource,
-                        onAddAssessment = onAddAssessment,
-                        onScan = { viewModel.runScan() },
-                    )
-                }
-            } else {
-                itemsIndexed(filteredDays, key = { _, dayGroup -> dayGroup.dayOffset }) { _, dayGroup ->
-                    DailyRoadmapCard(
-                        dayGroup = dayGroup,
-                        completedTopicsMap = completedTopics,
-                        onToggleTopic = { key, done -> viewModel.toggleTopic(key, done) },
-                    )
+                        TasksEmptyStateCard(
+                            message = message,
+                            blocker = blocker,
+                            courseFilterActive = courseFilterActive,
+                            // Avoid repeating the exact same scan-failure text when Section 1 already showed it.
+                            scanFailure = if (filteredCards.isEmpty()) null else scanFailure,
+                            onShowAllCourses = { viewModel.setTasksCourseFilter("ALL") },
+                            onAddCourse = onAddCourse,
+                            onConnectSource = onConnectSource,
+                            onAddAssessment = onAddAssessment,
+                            onScan = { viewModel.runScan() },
+                        )
+                    }
+                } else {
+                    itemsIndexed(filteredDays, key = { _, dayGroup -> dayGroup.dayOffset }) { _, dayGroup ->
+                        DailyRoadmapCard(
+                            dayGroup = dayGroup,
+                            completedTopicsMap = completedTopics,
+                            onToggleTopic = { key, done -> viewModel.toggleTopic(key, done) },
+                        )
+                    }
                 }
             }
 

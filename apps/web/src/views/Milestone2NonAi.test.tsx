@@ -391,8 +391,8 @@ describe("Milestone 2: Web & Desktop Non-AI Feature Suite", () => {
     fireEvent.click(flashcardsTab);
     expect(screen.getByTestId("flashcards-section")).toBeInTheDocument();
 
-    // Seed from syllabus topics
-    const seedBtn = screen.getByRole("button", { name: /Seed from Topics/i });
+    // Generate flashcards from syllabus topics
+    const seedBtn = screen.getByRole("button", { name: /^Generate cards$/i });
     fireEvent.click(seedBtn);
     expect(useAppStore.getState().flashcards.length).toBeGreaterThan(0);
 
@@ -401,13 +401,13 @@ describe("Milestone 2: Web & Desktop Non-AI Feature Suite", () => {
     fireEvent.click(flipCard);
     expect(screen.getByText("Answer / Explanation")).toBeInTheDocument();
 
-    // Rate Needs Review -> logs into Mistake Bank
+    // Rate Needs Review -> logs into Missed Questions
     const needsReviewBtn = screen.getByRole("button", { name: /Needs Review/i });
     fireEvent.click(needsReviewBtn);
     expect(useAppStore.getState().mistakeBank.length).toBeGreaterThan(0);
 
-    // Switch to Mistake Bank tab
-    const mistakesTab = screen.getByRole("tab", { name: /Mistake Bank/i });
+    // Switch to Missed Questions tab
+    const mistakesTab = screen.getByRole("tab", { name: /Missed Questions/i });
     fireEvent.click(mistakesTab);
     expect(screen.getByTestId("mistake-bank-section")).toBeInTheDocument();
 

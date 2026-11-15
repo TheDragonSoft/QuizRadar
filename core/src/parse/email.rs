@@ -839,10 +839,168 @@ fn find_week_phrase(lower: &str) -> Option<WeekPhrase> {
     }
 }
 
-/// Candidate filter, ported verbatim from v4 (`subject_lower`, `from_lower`,
-/// `body_lower` all lower-cased by the caller). The literal `"lecture 1
-/// slides"` reject is kept for parity and flagged in STATUS as the one
-/// literal-based filter that deserves a generic pass later.
+fn contains_ascii_word(haystack_lower: &str, word: &str) -> bool {
+    let bytes = haystack_lower.as_bytes();
+    let needle = word.as_bytes();
+    if needle.is_empty() || needle.len() > bytes.len() {
+        return false;
+    }
+    let mut from = 0usize;
+    while let Some(offset) = haystack_lower[from..].find(word) {
+        let abs = from + offset;
+        let before_ok = abs == 0 || !bytes[abs - 1].is_ascii_alphanumeric();
+        let after = abs + needle.len();
+        let after_ok = after == bytes.len() || !bytes[after].is_ascii_alphanumeric();
+        if before_ok && after_ok {
+            return true;
+        }
+        from = abs + 1;
+    }
+    false
+}
+
+fn contains_any_ascii_word(haystack_lower: &str, words: &[&str]) -> bool {
+    words
+        .iter()
+        .any(|word| contains_ascii_word(haystack_lower, word))
+}
+
+fn contains_ascii_prefix_digits(haystack_lower: &str, prefix: &str) -> bool {
+    let bytes = haystack_lower.as_bytes();
+    let needle = prefix.as_bytes();
+    if needle.is_empty() || needle.len() >= bytes.len() {
+        return false;
+    }
+    let mut from = 0usize;
+    while let Some(offset) = haystack_lower[from..].find(prefix) {
+        let abs = from + offset;
+        let before_ok = abs == 0 || !bytes[abs - 1].is_ascii_alphanumeric();
+        let after = abs + needle.len();
+        if before_ok && after < bytes.len() && bytes[after].is_ascii_digit() {
+            let mut end = after;
+            while end < bytes.len() && bytes[end].is_ascii_digit() {
+                end += 1;
+            }
+            let after_ok = end == bytes.len() || !bytes[end].is_ascii_alphabetic();
+            if after_ok {
+                return true;
+            }
+        }
+        from = abs + 1;
+    }
+    false
+}
+
+fn contains_ascii_phrase(haystack_lower: &str, phrase: &str) -> bool {
+    let bytes = haystack_lower.as_bytes();
+    let needle = phrase.as_bytes();
+    if needle.is_empty() || needle.len() > bytes.len() {
+        return false;
+    }
+    let mut from = 0usize;
+    while let Some(offset) = haystack_lower[from..].find(phrase) {
+        let abs = from + offset;
+        let before_ok = abs == 0 || !bytes[abs - 1].is_ascii_alphanumeric();
+        let after = abs + needle.len();
+        let after_ok = after == bytes.len() || !bytes[after].is_ascii_alphanumeric();
+        if before_ok && after_ok {
+            return true;
+        }
+        from = abs + 1;
+    }
+    false
+}
+
+/// Detects real clock meridiem tokens (`10am`, `10 am`, `1:30 pm`, `9 a.m.`)
+/// without falsely matching common English words like "campus", "team",
+/// "program", or "example".
+fn contains_time_meridiem(haystack_lower: &str) -> bool {
+    let bytes = haystack_lower.as_bytes();
+    for marker in ["am", "pm", "a.m.", "p.m."] {
+        let mut from = 0usize;
+        while let Some(offset) = haystack_lower[from..].find(marker) {
+            let abs = from + offset;
+            let after = abs + marker.len();
+            let after_ok = after == bytes.len() || !bytes[after].is_ascii_alphabetic();
+            if after_ok && abs > 0 {
+                let mut prev = abs;
+                let mut spaces = 0usize;
+                while prev > 0 && bytes[prev - 1].is_ascii_whitespace() {
+                    prev -= 1;
+                    spaces += 1;
+                }
+                if spaces <= 2 && prev > 0 && bytes[prev - 1].is_ascii_digit() {
+                    return true;
+                }
+            }
+            from = abs + 1;
+        }
+    }
+    false
+}
+
+fn is_decorative_symbol(ch: char) -> bool {
+    let code = ch as u32;
+    matches!(
+        code,
+        0x1F300..=0x1FAFF
+            | 0x2600..=0x27BF
+            | 0xFE0E..=0xFE0F
+            | 0x200D
+            | 0x200B
+            | 0x00AD
+    )
+}
+
+/// Strips decorative emojis, Markdown emphasis markers (`**`, `__`, `` ` ``),
+/// and excess whitespace from announcement titles, rooms, and topics while
+/// keeping normal text and balanced punctuation intact.
+#[must_use]
+pub(crate) fn clean_inline_decorations(raw: &str) -> String {
+    let mut cleaned = String::with_capacity(raw.len());
+    for ch in raw.chars() {
+        if is_decorative_symbol(ch) || matches!(ch, '\n' | '\r' | '\t') {
+            cleaned.push(' ');
+        } else {
+            cleaned.push(ch);
+        }
+    }
+    let cleaned = cleaned.replace("**", "").replace("__", "").replace('`', "");
+    let mut collapsed = String::with_capacity(cleaned.len());
+    let mut prev_space = true;
+    for ch in cleaned.chars() {
+        if ch.is_whitespace() {
+            if !prev_space {
+                collapsed.push(' ');
+                prev_space = true;
+            }
+        } else {
+            collapsed.push(ch);
+            prev_space = false;
+        }
+    }
+    let trimmed = collapsed
+        .trim()
+        .trim_matches(|c: char| matches!(c, '|' | '•' | '·'));
+    let trimmed = trimmed.trim();
+    let trimmed = trimmed
+        .strip_prefix(": ")
+        .or_else(|| trimmed.strip_prefix("- "))
+        .or_else(|| trimmed.strip_prefix("— "))
+        .unwrap_or(trimmed);
+    let trimmed = trimmed
+        .strip_suffix(" -")
+        .or_else(|| trimmed.strip_suffix(" —"))
+        .or_else(|| trimmed.strip_suffix(" :"))
+        .unwrap_or(trimmed);
+    trimmed.trim().to_string()
+}
+
+/// Candidate email filter: detects graded course assessment announcements
+/// while filtering replies, pure grade/material uploads, attendance warnings,
+/// course evaluation surveys, commercial student offers, and extracurricular
+/// workshops/club events (`subject_lower`, `from_lower`, `body_lower` all
+/// lower-cased by the caller).
 pub fn is_candidate_assessment_email(
     subject_lower: &str,
     from_lower: &str,
@@ -850,26 +1008,6 @@ pub fn is_candidate_assessment_email(
 ) -> bool {
     // Filter out the student's own outgoing replies
     if subject_lower.starts_with("re:") {
-        return false;
-    }
-
-    // Filter out pure grade/result announcements unless they announce a
-    // remake/makeup quiz
-    if (subject_lower.contains("result")
-        || subject_lower.contains("grades")
-        || subject_lower.contains("marks")
-        || subject_lower.contains("model answer")
-        || subject_lower.contains("cancellation")
-        || subject_lower.contains("appeal")
-        || subject_lower.contains("upload your course materials")
-        || subject_lower.contains("lecture 1 slides"))
-        && !body_lower.contains("remake will be held")
-    {
-        return false;
-    }
-
-    // Filter out pure file-upload notification emails
-    if body_lower.contains("is new in the course") && !body_lower.contains("will be held") {
         return false;
     }
 
@@ -881,46 +1019,280 @@ pub fn is_candidate_assessment_email(
         }
     }
 
+    // Filter out pure file-upload notification emails
+    if body_lower.contains("is new in the course") && !body_lower.contains("will be held") {
+        return false;
+    }
+
+    let from_is_lms = from_lower.contains("e-learning")
+        || from_lower.contains("canvas")
+        || from_lower.contains("moodle")
+        || from_lower.contains("blackboard")
+        || from_lower.contains("gradescope")
+        || from_lower.contains("classroom.google.com");
+
+    let has_remake = body_lower.contains("remake will be held")
+        || body_lower.contains("makeup will be held")
+        || body_lower.contains("make-up will be held")
+        || body_lower.contains("remake quiz")
+        || body_lower.contains("makeup quiz")
+        || body_lower.contains("make-up quiz");
+
     let has_assessment_keyword = |s: &str| {
-        s.contains("quiz")
-            || s.contains("midterm")
-            || s.contains("exam")
-            || s.contains("assignment")
-            || s.contains("assessment")
-            || s.contains("test")
+        contains_any_ascii_word(
+            s,
+            &[
+                "quiz",
+                "quizzes",
+                "midterm",
+                "midterms",
+                "exam",
+                "exams",
+                "assignment",
+                "assignments",
+                "assessment",
+                "assessments",
+                "test",
+                "tests",
+            ],
+        ) || s.contains("mid-term")
+            || s.contains("/mod/quiz/")
+            || contains_ascii_prefix_digits(s, "quiz")
+            || contains_ascii_prefix_digits(s, "test")
     };
+
+    let subject_has_core_assessment = contains_any_ascii_word(
+        subject_lower,
+        &[
+            "quiz",
+            "quizzes",
+            "midterm",
+            "midterms",
+            "assignment",
+            "assignments",
+        ],
+    ) || subject_lower.contains("mid-term")
+        || subject_lower.contains("final exam")
+        || contains_ascii_prefix_digits(subject_lower, "quiz");
+
+    // Transactional / auth / billing noise never represents a course exam.
+    if [
+        "verification code",
+        "one-time password",
+        "two-factor",
+        "2fa code",
+        "password reset",
+        "sign-in attempt",
+        "payment receipt",
+        "tax invoice",
+        "invoice #",
+        "billing statement",
+        "order confirmation",
+    ]
+    .iter()
+    .any(|phrase| subject_lower.contains(phrase))
+    {
+        return false;
+    }
+
+    // Filter out attendance/absence/disciplinary warnings (often mention
+    // "barred from the final exam" in the body without scheduling an exam).
+    let attendance_subject = (contains_ascii_word(subject_lower, "attendance")
+        || contains_ascii_word(subject_lower, "absence")
+        || contains_ascii_word(subject_lower, "absenteeism")
+        || contains_ascii_word(subject_lower, "disciplinary"))
+        && contains_any_ascii_word(
+            subject_lower,
+            &["warning", "alert", "notice", "barred", "deprived"],
+        );
+    let attendance_body = (body_lower.contains("attendance warning")
+        || body_lower.contains("absence warning")
+        || body_lower.contains("first warning")
+        || body_lower.contains("second warning")
+        || body_lower.contains("third warning")
+        || body_lower.contains("barred from")
+        || body_lower.contains("deprived from")
+        || body_lower.contains("not allowed to enter the final")
+        || (body_lower.contains("exceeded") && body_lower.contains("absence")))
+        && !subject_has_core_assessment;
+    if (attendance_subject || attendance_body) && !has_remake {
+        return false;
+    }
+
+    // Course/instructor evaluation surveys frequently use "final" and "deadline".
+    let is_survey = [
+        "course evaluation",
+        "instructor evaluation",
+        "teaching evaluation",
+        "faculty evaluation",
+        "evaluation survey",
+        "feedback survey",
+        "complete the survey",
+        "fill out the survey",
+    ]
+    .iter()
+    .any(|phrase| subject_lower.contains(phrase) || body_lower.contains(phrase))
+        || (contains_ascii_word(subject_lower, "survey") && !subject_has_core_assessment);
+    if is_survey && !has_remake {
+        return false;
+    }
+
+    // Filter out pure grade/result/cancellation/material-upload notices unless
+    // they announce a remake/makeup exam.
+    if (subject_lower.contains("result")
+        || subject_lower.contains("grades")
+        || subject_lower.contains("marks")
+        || subject_lower.contains("model answer")
+        || subject_lower.contains("cancellation")
+        || subject_lower.contains("appeal")
+        || subject_lower.contains("upload your course materials")
+        || subject_lower.contains("lecture 1 slides")
+        || ((contains_ascii_phrase(subject_lower, "lecture slides")
+            || contains_ascii_phrase(subject_lower, "slides uploaded")
+            || contains_ascii_phrase(subject_lower, "notes uploaded")
+            || contains_ascii_phrase(subject_lower, "recording available")
+            || ((contains_ascii_word(subject_lower, "cancelled")
+                || contains_ascii_word(subject_lower, "canceled"))
+                && !subject_lower.contains("rescheduled")))
+            && !subject_has_core_assessment))
+        && !has_remake
+    {
+        return false;
+    }
+
+    // Commercial product promos, subscriptions & student-discount blasts
+    // (e.g., Gemini AI Plus / Quizlet / Spotify promos).
+    let promo_hit = [
+        "exclusive student offer",
+        "student offer",
+        "claim your free",
+        "free subscription",
+        "free trial",
+        "limited-time offer",
+        "limited time offer",
+        "special offer",
+        "promo code",
+        "coupon code",
+        "upgrade now",
+        "upgrade to",
+        "pricing plan",
+        "google one",
+        "gemini ai",
+        "chatgpt plus",
+        "unsubscribe from promotional",
+    ]
+    .iter()
+    .any(|p| subject_lower.contains(p) || body_lower.contains(p));
+    let promo_footer_combo = (body_lower.contains("unsubscribe")
+        || body_lower.contains("manage email preferences")
+        || body_lower.contains("view in browser"))
+        && contains_any_ascii_word(
+            body_lower,
+            &["offer", "discount", "subscription", "upgrade", "trial"],
+        );
+    if (promo_hit || promo_footer_combo) && !from_is_lms && !has_remake {
+        let has_course_tag = find_course_code(subject_lower).is_some();
+        if !(has_course_tag && subject_has_core_assessment) {
+            return false;
+        }
+    }
+
+    // Extracurricular workshops, webinars, career events & student club/activities notices.
+    let org_event_hit = [
+        "activities dept",
+        "activities department",
+        "student activities",
+        "student affairs",
+        "student union",
+        "student club",
+        "career center",
+        "career services",
+        "careers office",
+        "digital content & activities",
+        "digital content and activities",
+    ]
+    .iter()
+    .any(|p| from_lower.contains(p) || subject_lower.contains(p) || body_lower.contains(p));
+    let workshop_subject_hit = [
+        "workshop",
+        "webinar",
+        "hackathon",
+        "bootcamp",
+        "career fair",
+        "job fair",
+        "info session",
+        "information session",
+        "open house",
+        "guest lecture",
+        "guest speaker",
+        "networking event",
+        "panel discussion",
+    ]
+    .iter()
+    .any(|p| contains_ascii_phrase(subject_lower, p));
+    let workshop_body_hit = [
+        "hands-on workshop",
+        "register now",
+        "register here",
+        "reserve your spot",
+        "reserve your seat",
+        "limited seats",
+        "rsvp",
+        "scan the qr",
+        "fun quiz",
+        "trivia quiz",
+    ]
+    .iter()
+    .any(|p| contains_ascii_phrase(body_lower, p));
+
+    if !from_is_lms && !has_remake {
+        if org_event_hit
+            && !(find_course_code(subject_lower).is_some() && subject_has_core_assessment)
+        {
+            return false;
+        }
+        if workshop_subject_hit && !subject_has_core_assessment {
+            return false;
+        }
+        if workshop_body_hit
+            && !subject_has_core_assessment
+            && !contains_ascii_word(body_lower, "midterm")
+            && !contains_ascii_phrase(body_lower, "final exam")
+        {
+            return false;
+        }
+    }
 
     if has_assessment_keyword(subject_lower) {
         return true;
     }
 
     if has_assessment_keyword(body_lower) {
-        if from_lower.contains("e-learning")
-            || from_lower.contains("canvas")
-            || from_lower.contains("moodle")
-            || from_lower.contains("blackboard")
-        {
+        if from_is_lms {
             return true;
         }
-        let body_has_scheduling = body_lower.contains("held")
-            || body_lower.contains("take place")
-            || body_lower.contains("due")
-            || body_lower.contains("scheduled")
-            || body_lower.contains("deadline")
-            || body_lower.contains("submission")
-            || body_lower.contains("room")
-            || body_lower.contains("hall")
-            || body_lower.contains("pm")
-            || body_lower.contains("am")
+        let body_has_scheduling = contains_any_ascii_word(
+            body_lower,
+            &[
+                "held",
+                "due",
+                "scheduled",
+                "deadline",
+                "submission",
+                "room",
+                "hall",
+                "tomorrow",
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday",
+                "saturday",
+                "sunday",
+            ],
+        ) || body_lower.contains("take place")
             || body_lower.contains("next week")
-            || body_lower.contains("tomorrow")
-            || body_lower.contains("monday")
-            || body_lower.contains("tuesday")
-            || body_lower.contains("wednesday")
-            || body_lower.contains("thursday")
-            || body_lower.contains("friday")
-            || body_lower.contains("saturday")
-            || body_lower.contains("sunday");
+            || contains_time_meridiem(body_lower);
         if body_has_scheduling {
             return true;
         }
@@ -974,18 +1346,36 @@ fn strip_via_groups(name: &str) -> String {
     working
 }
 
-/// Type ladder, ported from v4 `parse_single_email` (order matters: midterm
-/// first, final exam second — an email mentioning both counts as Midterm).
+/// Type ladder: midterm first, final exam second (excluding disciplinary/attendance
+/// negative phrasing), online quiz third, assignment/lab/class quiz after, with
+/// explicit subject cues preventing body chatter from hijacking a titled Quiz.
 fn classify_assessment(lower: &str, subject_lower: &str) -> AssessmentType {
-    if lower.contains("midterm") {
+    let scrubbed_for_final = lower
+        .replace("barred from the final exam", "")
+        .replace("barred from final exam", "")
+        .replace("deprived of the final exam", "")
+        .replace("deprived from the final exam", "");
+    let subject_mentions_quiz = contains_any_ascii_word(subject_lower, &["quiz", "quizzes"])
+        || contains_ascii_prefix_digits(subject_lower, "quiz");
+    let subject_mentions_assignment =
+        contains_any_ascii_word(subject_lower, &["assignment", "assignments"]);
+
+    if contains_ascii_word(lower, "midterm") || lower.contains("mid-term") {
         AssessmentType::MidtermExam
-    } else if lower.contains("final exam") {
+    } else if contains_ascii_phrase(&scrubbed_for_final, "final exam") {
         AssessmentType::FinalExam
     } else if lower.contains("online quiz") || lower.contains("/mod/quiz/") {
         AssessmentType::OnlineQuiz
-    } else if lower.contains("in-class assignment") || subject_lower.contains("assignment") {
+    } else if subject_mentions_assignment
+        || (lower.contains("in-class assignment") && !subject_mentions_quiz)
+    {
         AssessmentType::Assignment
-    } else if lower.contains("lab session") || lower.contains("during the lab") {
+    } else if lower.contains("lab session")
+        || lower.contains("during the lab")
+        || lower.contains("lab exam")
+        || lower.contains("lab quiz")
+        || lower.contains("lab assessment")
+    {
         AssessmentType::LabAssessment
     } else {
         AssessmentType::ClassQuiz
@@ -993,20 +1383,28 @@ fn classify_assessment(lower: &str, subject_lower: &str) -> AssessmentType {
 }
 
 /// Type ladder for calendar items (`summary` + `description`), used by
-/// `ics.rs` (v4 ICS variant, with the unified urgency/priority ladders from
-/// `01` §3 applied downstream).
+/// `ics.rs` and Classroom coursework. Word-boundary checks prevent `"syllabus"`
+/// or `"available"` from matching `"lab"`, and explicit Quiz summaries stay quizzes
+/// even if the body says `"assignment"`.
 #[must_use]
 pub fn classify_ics_text(summary: &str, description: &str) -> AssessmentType {
-    let mut text = summary.to_ascii_lowercase();
-    text.push(' ');
-    text.push_str(&description.to_ascii_lowercase());
-    if text.contains("midterm") {
+    let summary_lower = summary.to_ascii_lowercase();
+    let desc_lower = description.to_ascii_lowercase();
+    let text = format!("{summary_lower} {desc_lower}");
+
+    if contains_ascii_word(&text, "midterm") || text.contains("mid-term") {
         AssessmentType::MidtermExam
-    } else if text.contains("final exam") {
+    } else if contains_ascii_phrase(&text, "final exam") {
         AssessmentType::FinalExam
-    } else if text.contains("lab") {
+    } else if contains_any_ascii_word(&summary_lower, &["quiz", "quizzes"])
+        || contains_ascii_prefix_digits(&summary_lower, "quiz")
+    {
+        AssessmentType::OnlineQuiz
+    } else if contains_any_ascii_word(&text, &["lab", "laboratory"])
+        || contains_ascii_phrase(&text, "lab assessment")
+    {
         AssessmentType::LabAssessment
-    } else if text.contains("assignment") {
+    } else if contains_any_ascii_word(&text, &["assignment", "assignments"]) {
         AssessmentType::Assignment
     } else {
         AssessmentType::OnlineQuiz
@@ -1047,51 +1445,527 @@ fn decide_title(
             None => "Midterm Exam".to_string(),
         };
     }
-    if subject.trim().is_empty() || is_placeholder_header(subject) {
+    let cleaned_subject = clean_inline_decorations(subject);
+    if cleaned_subject.is_empty() || is_placeholder_header(&cleaned_subject) {
         return UNTITLED_ASSESSMENT.to_string();
     }
-    subject.to_string()
+    cleaned_subject
 }
 
 // ---------------------------------------------------------------------------
 // Topics / warnings / study plan (honest v5 replacements for v4 hardcoding)
 // ---------------------------------------------------------------------------
 
-/// Topic extraction for lecture-note announcements: bullet lines or lines
-/// mentioning "lecture"/"chapter" (raw casing preserved). v4 traded this for
-/// a hardcoded `BJT`/`MOSFET` keyword list — deleted per `03` `A3`. A
-/// course-agnostic fallback points to the course page instead of naming
-/// topics nobody announced.
-fn extract_topics(announcement: &str, course_code: Option<&str>) -> Vec<String> {
-    let mut items: Vec<String> = Vec::new();
-    for raw_line in announcement.lines() {
-        let line = raw_line.trim();
-        if line.is_empty() {
-            continue;
+fn strip_list_marker(line: &str) -> (bool, bool, &str) {
+    let trimmed = line.trim();
+    // Bullet prefixes (`•`, `-`, `*`, `▪`, `◦`, `‣`), avoiding `--` divider rules.
+    if let Some(first) = trimmed.chars().next() {
+        if matches!(first, '•' | '▪' | '◦' | '‣')
+            || (matches!(first, '-' | '*') && !trimmed.starts_with("--"))
+        {
+            let rest = trimmed
+                .trim_start_matches(['•', '▪', '◦', '‣', '-', '*'])
+                .trim_start();
+            return (true, false, rest);
         }
-        let is_bullet = line.starts_with('•') || line.starts_with('-') || line.starts_with('*');
-        let lower_line = line.to_ascii_lowercase();
-        let mentions_scope = lower_line.contains("lecture") || lower_line.contains("chapter");
-        if !is_bullet && !mentions_scope {
-            continue;
+    }
+    // Numbered list prefixes: `1. ...`, `2) ...`, `(1) ...` (1 or 2 digits, followed by space).
+    let bytes = trimmed.as_bytes();
+    if bytes.len() >= 3 && bytes[0].is_ascii_digit() {
+        let mut idx = 1usize;
+        if idx < bytes.len() && bytes[idx].is_ascii_digit() {
+            idx += 1;
         }
-        let candidate = if is_bullet {
-            let mut cursor = line;
-            while let Some(rest) = cursor.strip_prefix(|c: char| c == '•' || c == '-' || c == '*')
-            {
-                cursor = rest;
-            }
-            cursor.trim_start()
-        } else {
-            line
-        };
-        if candidate.chars().count() > 3 {
-            items.push(candidate.to_string());
-            if items.len() >= MAX_TOPICS {
-                break;
+        if idx < bytes.len() && matches!(bytes[idx], b'.' | b')') {
+            let after_sep = &trimmed[idx + 1..];
+            if after_sep.starts_with(char::is_whitespace) {
+                return (false, true, after_sep.trim_start());
             }
         }
     }
+    if let Some(after_open) = trimmed.strip_prefix('(') {
+        let inner = after_open.as_bytes();
+        if inner.len() >= 3 && inner[0].is_ascii_digit() {
+            let mut idx = 1usize;
+            if idx < inner.len() && inner[idx].is_ascii_digit() {
+                idx += 1;
+            }
+            if idx < inner.len() && inner[idx] == b')' {
+                let after = &after_open[idx + 1..];
+                if after.starts_with(char::is_whitespace) {
+                    return (false, true, after.trim_start());
+                }
+            }
+        }
+    }
+    (false, false, trimmed)
+}
+
+fn is_closing_signature_line(lower: &str) -> bool {
+    let prefixes = [
+        "best regards",
+        "kind regards",
+        "warm regards",
+        "regards,",
+        "sincerely",
+        "yours sincerely",
+        "with gratitude",
+        "thanks,",
+        "thank you,",
+        "cheers,",
+        "sent from my",
+        "to unsubscribe",
+    ];
+    prefixes.iter().any(|p| lower.starts_with(p)) || lower == "regards" || lower == "thanks"
+}
+
+fn is_metadata_key_prefix(lower: &str) -> bool {
+    let keys = [
+        "time",
+        "date",
+        "day",
+        "room",
+        "location",
+        "venue",
+        "hall",
+        "section",
+        "sections",
+        "group",
+        "groups",
+        "duration",
+        "when",
+        "where",
+        "instructor",
+        "professor",
+        "lecturer",
+        "ta",
+        "course",
+        "link",
+        "url",
+        "platform",
+        "format",
+        "weight",
+        "weightage",
+        "grade",
+        "grades",
+        "marks",
+        "points",
+        "total marks",
+        "submission",
+        "deadline",
+        "due",
+        "due date",
+        "note",
+        "notes",
+        "from",
+        "to",
+        "sent",
+        "subject",
+    ];
+    let Some((label, _rest)) = lower.split_once(':') else {
+        return false;
+    };
+    let clean_label = label.trim();
+    keys.contains(&clean_label)
+}
+
+fn is_topic_section_header(lower: &str) -> Option<&'static str> {
+    let headers = [
+        "topics covered:",
+        "covered topics:",
+        "topics included:",
+        "included topics:",
+        "topics for the quiz:",
+        "topics for the exam:",
+        "topics for the midterm:",
+        "exam topics:",
+        "quiz topics:",
+        "topics:",
+        "topic:",
+        "syllabus:",
+        "material covered:",
+        "covered material:",
+        "exam material:",
+        "quiz material:",
+        "scope of the exam:",
+        "scope:",
+        "will cover:",
+        "covers:",
+        "study guide:",
+    ];
+    headers
+        .into_iter()
+        .find(|&header| lower.starts_with(header))
+}
+
+/// Returns `true` when `cleaned` is metadata, a greeting/signature, URL,
+/// procedural exam rule, or conversational noise rather than a study topic.
+#[must_use]
+pub(crate) fn is_non_topic_text(cleaned: &str) -> bool {
+    let trimmed = cleaned.trim();
+    if trimmed.chars().count() <= 3 {
+        return true;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.contains("http://") || lower.contains("https://") || lower.contains("mailto:") {
+        return true;
+    }
+    if is_metadata_key_prefix(&lower) || is_closing_signature_line(&lower) {
+        return true;
+    }
+    // Greetings / filler / contact pointers
+    let non_topic_starts = [
+        "dear ",
+        "hello",
+        "hi ",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        "good luck",
+        "all the best",
+        "please find",
+        "please note",
+        "let me know",
+        "if you have any questions",
+        "for more details",
+        "for more information",
+        "do not reply",
+        "unsubscribe",
+    ];
+    if non_topic_starts.iter().any(|p| lower.starts_with(p)) {
+        return true;
+    }
+    // Pure clock ranges or single time tokens (e.g. "1:00 PM", "1:00 PM - 2:30 PM")
+    if contains_time_meridiem(&lower)
+        && trimmed.split_whitespace().count() <= 6
+        && !lower.contains("chapter")
+        && !lower.contains("lecture")
+    {
+        return true;
+    }
+    // Procedural / logistical exam rules that belong in warnings or prose, not study checkboxes
+    let rule_phrases = [
+        "you are allowed",
+        "are not allowed",
+        "strictly prohibited",
+        "not permitted",
+        "make sure to",
+        "please make sure",
+        "ensure that you",
+        "adhere to your",
+        "registered group",
+        "registered lecture",
+        "registered section",
+        "assigned group",
+        "assigned slot",
+        "assigned time slot",
+        "bring your",
+        "do not forget to",
+        "don't forget to",
+        "remember to bring",
+        "one a4",
+        "a4 page",
+        "a4 sheet",
+        "handwritten on",
+        "cheat sheet",
+        "formula sheet",
+        "no calculators",
+        "programmable calculator",
+        "mobile phone",
+        "smartwatch",
+        "electronic device",
+        "cannot go back",
+        "will not be able to go back",
+        "please arrive",
+        "be on time",
+        "seat number",
+        "late submission",
+        "no makeup",
+        "no make-up",
+        "attendance is mandatory",
+        "attendance will be taken",
+    ];
+    if rule_phrases.iter().any(|p| lower.contains(p)) {
+        return true;
+    }
+    // Must contain at least two letters so divider lines or numeric stubs stay out.
+    let letter_count = trimmed.chars().filter(|c| c.is_alphabetic()).count();
+    letter_count < 2
+}
+
+fn ends_with_wrap_connector(prev: &str, prev_raw_len: usize, prev_was_list_item: bool) -> bool {
+    let trimmed = prev.trim_end();
+    if trimmed.ends_with(['-', '&', '/', '(']) {
+        return true;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    let is_salutation = [
+        "dear ",
+        "hello",
+        "hi ",
+        "good morning",
+        "good afternoon",
+        "good evening",
+    ]
+    .iter()
+    .any(|p| lower.starts_with(p));
+    if is_salutation {
+        return false;
+    }
+    if trimmed.ends_with(',') && (prev_raw_len >= 35 || prev_was_list_item) {
+        return true;
+    }
+    let Some(last_word) = trimmed.split_whitespace().last() else {
+        return false;
+    };
+    let word = last_word
+        .trim_matches(|c: char| !c.is_ascii_alphanumeric())
+        .to_ascii_lowercase();
+    matches!(
+        word.as_str(),
+        "and"
+            | "or"
+            | "of"
+            | "in"
+            | "on"
+            | "at"
+            | "to"
+            | "for"
+            | "from"
+            | "with"
+            | "by"
+            | "the"
+            | "a"
+            | "an"
+            | "covering"
+            | "including"
+            | "using"
+            | "about"
+            | "until"
+            | "through"
+    )
+}
+
+fn unwrap_logical_lines(announcement: &str) -> Vec<String> {
+    let mut blocks: Vec<String> = Vec::new();
+    let mut prev_raw_len = 0usize;
+    let mut prev_was_list_item = false;
+
+    for raw_line in announcement.lines() {
+        let trimmed = raw_line.trim();
+        if trimmed.is_empty() {
+            if blocks.last().is_some_and(|s| !s.is_empty()) {
+                blocks.push(String::new());
+            }
+            prev_raw_len = 0;
+            prev_was_list_item = false;
+            continue;
+        }
+        let lower = trimmed.to_ascii_lowercase();
+        if is_closing_signature_line(&lower) {
+            break;
+        }
+        let (is_bullet, is_numbered, _) = strip_list_marker(trimmed);
+        let starts_label =
+            is_metadata_key_prefix(&lower) || is_topic_section_header(&lower).is_some();
+        let is_indented = raw_line.starts_with([' ', '\t']);
+        let starts_scope_heading = [
+            "chapter ",
+            "chapters ",
+            "lecture ",
+            "lectures ",
+            "unit ",
+            "module ",
+            "section ",
+            "week ",
+        ]
+        .iter()
+        .any(|p| lower.starts_with(p));
+        let prev_looks_wrapped = blocks.last().is_some_and(|prev| {
+            !prev.is_empty()
+                && !prev.ends_with(['.', '!', '?', ':'])
+                && (prev_raw_len >= 55
+                    || is_indented
+                    || ends_with_wrap_connector(prev, prev_raw_len, prev_was_list_item))
+                && !(prev_was_list_item
+                    && starts_scope_heading
+                    && !is_indented
+                    && !ends_with_wrap_connector(prev, prev_raw_len, prev_was_list_item))
+        });
+
+        let should_start_new = blocks.is_empty()
+            || blocks.last().is_some_and(String::is_empty)
+            || is_bullet
+            || is_numbered
+            || starts_label
+            || !prev_looks_wrapped;
+
+        if should_start_new {
+            if blocks.last().is_some_and(String::is_empty) {
+                blocks.pop();
+            }
+            blocks.push(trimmed.to_string());
+            prev_was_list_item = is_bullet || is_numbered;
+        } else if let Some(last) = blocks.last_mut() {
+            last.push(' ');
+            last.push_str(trimmed);
+        }
+        prev_raw_len = trimmed.chars().count();
+    }
+    blocks.into_iter().filter(|s| !s.is_empty()).collect()
+}
+
+fn push_unique_topic(items: &mut Vec<String>, candidate: String, max_topics: usize) -> bool {
+    let cleaned = clean_inline_decorations(&candidate);
+    let cleaned = cleaned.trim_end_matches([';', ',']).trim().to_string();
+    if cleaned.chars().count() > 140 || cleaned.split_whitespace().count() > 18 {
+        return false;
+    }
+    if is_non_topic_text(&cleaned) {
+        return false;
+    }
+    let key = cleaned.to_ascii_lowercase();
+    if items
+        .iter()
+        .any(|existing| existing.to_ascii_lowercase() == key)
+    {
+        return false;
+    }
+    items.push(cleaned);
+    items.len() >= max_topics
+}
+
+/// Extracts clean, unwrapped, de-duplicated syllabus topic strings without a
+/// fallback item (shared by email and ICS/Classroom extractors).
+#[must_use]
+pub(crate) fn extract_topics_from_text(announcement: &str, max_topics: usize) -> Vec<String> {
+    let mut items: Vec<String> = Vec::new();
+    let mut in_topic_section = false;
+
+    for block in unwrap_logical_lines(announcement) {
+        let block_cleaned = clean_inline_decorations(&block);
+        if block_cleaned.is_empty() {
+            continue;
+        }
+        let lower_block = block_cleaned.to_ascii_lowercase();
+
+        // Check explicit "Topics:" / "Syllabus:" headers (potentially inline CSV/list)
+        if let Some(header) = is_topic_section_header(&lower_block) {
+            in_topic_section = true;
+            let inline = block_cleaned[header.len()..].trim();
+            if !inline.is_empty() {
+                if inline.contains(',') || inline.contains(';') {
+                    for part in inline.split([';', ',']) {
+                        let part = part
+                            .trim()
+                            .strip_prefix("and ")
+                            .or_else(|| part.trim().strip_prefix("And "))
+                            .unwrap_or(part)
+                            .trim();
+                        if !part.is_empty()
+                            && push_unique_topic(&mut items, part.to_string(), max_topics)
+                        {
+                            return items;
+                        }
+                    }
+                } else if push_unique_topic(&mut items, inline.to_string(), max_topics) {
+                    return items;
+                }
+            }
+            continue;
+        }
+
+        let (is_bullet, is_numbered, body_after_marker) = strip_list_marker(&block);
+        let stripped = clean_inline_decorations(body_after_marker);
+        if stripped.is_empty() {
+            continue;
+        }
+        let lower_stripped = stripped.to_ascii_lowercase();
+
+        if is_bullet {
+            if push_unique_topic(&mut items, stripped, max_topics) {
+                return items;
+            }
+            continue;
+        }
+
+        let has_concrete_scope_term = contains_any_ascii_word(
+            &lower_stripped,
+            &[
+                "chapter",
+                "chapters",
+                "lecture",
+                "lectures",
+                "unit",
+                "units",
+                "module",
+                "modules",
+                "section",
+                "sections",
+                "week",
+                "weeks",
+                "topic",
+                "topics",
+                "tutorial",
+                "tutorials",
+                "sheet",
+                "sheets",
+                "deck",
+                "slides",
+            ],
+        );
+
+        if is_numbered {
+            // Outside an explicit "Topics:" section, skip numbered administrative prose
+            // starting with conversational cues ("1. We have...", "2. Please check...")
+            // unless it names concrete syllabus units/chapters.
+            let conversational_step = [
+                "we ",
+                "you ",
+                "please ",
+                "students ",
+                "all students",
+                "kindly ",
+                "attend ",
+                "submit ",
+                "upload ",
+                "check ",
+            ]
+            .iter()
+            .any(|p| lower_stripped.starts_with(p));
+            if (in_topic_section || has_concrete_scope_term)
+                && !(conversational_step && !in_topic_section)
+                && push_unique_topic(&mut items, stripped, max_topics)
+            {
+                return items;
+            }
+            continue;
+        }
+
+        // Non-bulleted prose lines only count when they concisely state a lecture/chapter scope.
+        let mentions_scope = contains_any_ascii_word(
+            &lower_stripped,
+            &["lecture", "lectures", "chapter", "chapters"],
+        );
+        if mentions_scope {
+            in_topic_section = false;
+            if push_unique_topic(&mut items, stripped, max_topics) {
+                return items;
+            }
+        } else if is_metadata_key_prefix(&lower_block) {
+            in_topic_section = false;
+        }
+    }
+
+    items
+}
+
+/// Topic extraction for lecture-note announcements: bullet lines, explicit
+/// topics sections, or concise lecture/chapter scope lines (with hard wraps
+/// rejoined and Markdown/metadata/exam-rules filtered). Falls back honestly to
+/// pointing at the course page when no syllabus topics are stated.
+fn extract_topics(announcement: &str, course_code: Option<&str>) -> Vec<String> {
+    let mut items = extract_topics_from_text(announcement, MAX_TOPICS);
     if items.is_empty() {
         items.push(match course_code {
             Some(code) => format!(
@@ -2607,5 +3481,98 @@ mod tests {
             "prof@university.edu",
             "Hope you enjoyed yesterday's lecture slides."
         ));
+    }
+
+    #[test]
+    fn rejects_promo_student_offer_and_workshop_blasts() {
+        assert!(!is_candidate_assessment_email(
+            "Students: Unlock Gemini AI Plus free for one year",
+            "Google AI <noreply@google.com>",
+            "Get Google AI Pro for students free for a year. Offer ends next week."
+        ));
+        assert!(!is_candidate_assessment_email(
+            "Reminder: Hands-on RAG Workshop ✨🚀",
+            "Digital Content & Activities Dept <activities@univ.edu>",
+            "Join our hands-on RAG workshop on Thursday at 2:00 PM in Hall 5. Register now!"
+        ));
+    }
+
+    #[test]
+    fn rejects_attendance_warning_and_evaluation_survey() {
+        assert!(!is_candidate_assessment_email(
+            "CSE354: First Attendance Warning",
+            "Academic Advising <advising@univ.edu>",
+            "Your attendance dropped below the threshold; further absences may result in being barred from the final exam."
+        ));
+        assert!(!is_candidate_assessment_email(
+            "Mid-Semester Course Evaluation Survey",
+            "Quality Assurance <qa@univ.edu>",
+            "Please fill in the course evaluation survey for your enrolled courses before Sunday."
+        ));
+    }
+
+    #[test]
+    fn word_boundaries_stop_substring_false_positives() {
+        assert!(!contains_ascii_word("this is the latest update", "test"));
+        assert!(!contains_ascii_word(
+            "programming contest on Friday",
+            "test"
+        ));
+        assert!(!contains_ascii_word("join our team on campus", "am"));
+        assert!(!contains_time_meridiem("join our team on campus"));
+        assert!(!contains_ascii_word("see the updated syllabus", "lab"));
+        assert!(!contains_ascii_word("materials are now available", "lab"));
+        assert!(contains_time_meridiem("quiz at 10:30am tomorrow"));
+        assert!(contains_ascii_word("midterm test on Monday", "test"));
+    }
+
+    #[test]
+    fn quiz_type_is_not_hijacked_by_assignment_or_lab_words_in_body() {
+        let schedule = fixture_schedule();
+        let email = announcement(
+            "mail-quiz-type",
+            "Quiz 1: CSE241",
+            "Dr. X <x@univ.edu>",
+            "Sat, 17 Oct 2026 09:00:00 +0000",
+            "Quiz 1 on 25 October 2026. Please review your previous homework solutions and syllabus.",
+        );
+        let parsed = parse_email_announcement(&email, &schedule, date(2026, 10, 23));
+        assert_eq!(parsed.assessment_type, AssessmentType::ClassQuiz);
+    }
+
+    #[test]
+    fn topic_extraction_strips_decorations_excludes_metadata_and_rules_and_unwraps_continuations() {
+        let body = "\
+Dear students,
+Reminder for ✨ **Quiz 2** 🚀
+TIME: 1:00 PM - 2:30 PM
+ROOM: Hall 102
+Topics:
+- Binary Search Trees and
+  Balanced AVL Trees
+- **Dynamic Programming** 📝
+- You are allowed one A4 sheet handwritten on both sides
+- Please make sure you attend your registered lecture section
+For more details: https://lms.univ.edu/quiz2
+Best regards,
+Dr. X";
+        let extracted = extract_topics(body, Some("CSE241"));
+        assert_eq!(
+            extracted,
+            vec![
+                "Binary Search Trees and Balanced AVL Trees",
+                "Dynamic Programming",
+            ]
+        );
+
+        let inline = "Topics covered: Finite Automata, Regular Expressions, and Context-Free Grammars\nROOM: H12";
+        assert_eq!(
+            extract_topics(inline, Some("CSE241")),
+            vec![
+                "Finite Automata",
+                "Regular Expressions",
+                "Context-Free Grammars",
+            ]
+        );
     }
 }

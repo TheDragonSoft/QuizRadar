@@ -142,7 +142,8 @@ export const StudyStatsCard: React.FC<StudyStatsCardProps> = ({
               {isZeroTopics ? "—" : `${stats.readinessPercent}%`}
             </div>
             <div className="mt-0.5 text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
-              {stats.completedTopicsCount} / {stats.totalTopicsCount} topics mastered
+              {stats.completedTopicsCount} / {stats.totalTopicsCount}{" "}
+              {stats.totalTopicsCount === 1 ? "topic" : "topics"} mastered
             </div>
           </div>
         </div>

@@ -120,7 +120,14 @@ class BackgroundScanWorker(
                         // No live UI in the background - pulses are dropped.
                     }
                 }
-            val reportJson = engine.runNativeSync(syncConfig, progress)
+            val geminiEnabled = engine.getConfigBool("gemini_enabled", false)
+            val geminiApiKey =
+                if (geminiEnabled) {
+                    engine.geminiApiKey()?.trim()?.takeIf { it.isNotEmpty() }
+                } else {
+                    null
+                }
+            val reportJson = engine.runNativeSync(syncConfig, progress, geminiApiKey)
             val report = QuizRadarJsonParser.parseSyncReport(reportJson)
             AnalyticsManager.trackScanCompleted(
                 source = "background",

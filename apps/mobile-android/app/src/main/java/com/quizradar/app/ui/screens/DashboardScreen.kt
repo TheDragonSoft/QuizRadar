@@ -61,6 +61,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.quizradar.app.model.AppSnapshotModel
@@ -79,6 +80,7 @@ import com.quizradar.app.ui.extractTimePart
 import com.quizradar.app.ui.formatIsoDateForDisplay
 import com.quizradar.app.ui.icons.Icons
 import com.quizradar.app.ui.theme.ChipLeadingCheck
+import com.quizradar.app.ui.theme.CoursePalette
 import com.quizradar.app.ui.theme.PillButtonContentPadding
 import com.quizradar.app.ui.theme.PillButtonMinHeight
 import com.quizradar.app.ui.theme.StatusColors
@@ -244,15 +246,18 @@ fun DashboardScreen(
             snapshot.schedule.courses.associate { it.id to it.color }
         }
 
-    // The timeline starts at the genuinely upcoming items; the type and
-    // source chips narrow that list further. The type filter used to be
-    // consumed here without any control at all (audit A12).
-    val upcomingAssessments = assessments.filter { it.isUpcoming }
+    // Use the core's canonical `radar_order` (dated ascending first, undated
+    // placeholders after) instead of SQLite row order where NULL dates led.
+    val upcomingAssessments =
+        dash.allUpcoming.ifEmpty { assessments.filter { it.isUpcoming } }
     val filteredTimeline =
         upcomingAssessments.filter { a ->
             if (sourceFilter != "ALL") {
-                val src = a.source.uppercase()
-                if (!src.contains(sourceFilter)) return@filter false
+                if (!a.source.equals(sourceFilter, ignoreCase = true) &&
+                    !a.source.contains(sourceFilter, ignoreCase = true)
+                ) {
+                    return@filter false
+                }
             }
             if (typeFilter == "UPCOMING") {
                 if (!a.isUpcoming) return@filter false
@@ -276,15 +281,16 @@ fun DashboardScreen(
         buildList {
             add("ALL")
             upcomingAssessments
-                .map { it.source }
+                .map { it.source.trim() }
                 .filter { it.isNotBlank() }
-                .map { it.uppercase() }
-                .distinct()
+                .distinctBy { it.lowercase() }
                 .sorted()
                 .forEach { add(it) }
-            if (sourceFilter != "ALL" && sourceFilter !in this) add(sourceFilter)
+            if (sourceFilter != "ALL" && none { it.equals(sourceFilter, ignoreCase = true) }) {
+                add(sourceFilter)
+            }
         }
-    val nextAssessment = upcomingAssessments.firstOrNull()
+    val nextAssessment = dash.nextUp ?: upcomingAssessments.firstOrNull()
 
     val weekCount = dash.upcomingThisWeek.size
     val hasTrackedTopics = dash.totalTopicsCount > 0
@@ -527,6 +533,7 @@ fun DashboardScreen(
                         recommendation = rec,
                         completedTopicsMap = completedTopics,
                         onToggleTopic = { key, done -> viewModel.toggleTopic(key, done) },
+                        courseColorHex = CoursePalette.hexFromCourses(rec.courseId, courseColorById) ?: rec.color,
                         onClick = {
                             val topic =
                                 rec.topics.firstOrNull { !it.completed }?.topic
@@ -626,9 +633,10 @@ fun DashboardScreen(
                             modifier = Modifier.weight(1f).fillMaxHeight(),
                         ) {
                             if (dash.examTypeCounts.isNotEmpty()) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                FlowRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
                                 ) {
                                     dash.examTypeCounts.forEach { (type, count) ->
                                         StatusTag(
@@ -692,6 +700,8 @@ fun DashboardScreen(
                                             .clip(CircleShape),
                                     color = readinessColor,
                                     trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    drawStopIndicator = {},
+                                    gapSize = 0.dp,
                                 )
                             }
                         }
@@ -764,7 +774,12 @@ fun DashboardScreen(
                         sourceChips.forEach { src ->
                             DashboardFilterChip(
                                 label = if (src == "ALL") "All sources" else src,
-                                selected = sourceFilter == src,
+                                selected =
+                                    if (src == "ALL") {
+                                        sourceFilter == "ALL"
+                                    } else {
+                                        sourceFilter.equals(src, ignoreCase = true)
+                                    },
                                 onClick = { viewModel.setActiveSourceFilter(src) },
                             )
                         }
@@ -1119,71 +1134,45 @@ private fun ScanSourcesCard(
                             } else {
                                 MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.38f)
                             }
-                        if (isError || status.length > 28) {
-                            Column(
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clip(rowShape)
-                                        .background(rowBg)
-                                        .border(1.dp, rowBorder, rowShape)
-                                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(
-                                        text = name,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                    )
-                                    if (isError) {
-                                        StatusTag(
-                                            text = "FAILED",
-                                            containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.2f),
-                                            contentColor = MaterialTheme.colorScheme.error,
-                                        )
-                                    }
-                                }
-                                Text(
-                                    text = status,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color =
-                                        if (isError) {
-                                            MaterialTheme.colorScheme.onErrorContainer
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            }
-                        } else {
+                        Column(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(rowShape)
+                                    .background(rowBg)
+                                    .border(1.dp, rowBorder, rowShape)
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
                             Row(
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clip(rowShape)
-                                        .background(rowBg)
-                                        .border(1.dp, rowBorder, rowShape)
-                                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                                modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Text(
                                     text = name,
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    style = MaterialTheme.typography.titleSmall,
                                     color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.widthIn(min = 84.dp, max = 160.dp),
                                 )
-                                Text(
-                                    text = status,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                                if (isError) {
+                                    StatusTag(
+                                        text = "FAILED",
+                                        containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.2f),
+                                        contentColor = MaterialTheme.colorScheme.error,
+                                    )
+                                }
                             }
+                            Text(
+                                text = status,
+                                style = MaterialTheme.typography.bodySmall,
+                                color =
+                                    if (isError) {
+                                        MaterialTheme.colorScheme.onErrorContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
                         }
                     }
                 }
@@ -1282,6 +1271,7 @@ private fun TodayStudyStrip(
                         Column(
                             modifier =
                                 Modifier
+                                    .widthIn(min = 176.dp, max = 248.dp)
                                     .defaultMinSize(minHeight = 48.dp)
                                     .clip(MaterialTheme.shapes.extraSmall)
                                     .background(MaterialTheme.colorScheme.surfaceVariant)
@@ -1293,12 +1283,14 @@ private fun TodayStudyStrip(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
                             )
                             Text(
                                 text = task.courseName ?: task.assessmentTitle,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }

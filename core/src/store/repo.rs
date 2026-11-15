@@ -634,7 +634,9 @@ impl<'a> AssessmentRepo<'a> {
     }
 
     pub fn list(&self) -> Result<Vec<Assessment>, StoreError> {
-        let sql = format!("SELECT {ASSESSMENT_COLS} FROM assessments ORDER BY date_iso, id");
+        let sql = format!(
+            "SELECT {ASSESSMENT_COLS} FROM assessments ORDER BY date_iso IS NULL, date_iso, id"
+        );
         let mut stmt = self.conn.prepare(&sql)?;
         let mut assessments = Vec::new();
         let rows = stmt.query_map([], row_to_assessment)?;
@@ -4573,5 +4575,29 @@ mod tests {
             ops::get_email_ai_extraction(&db, "hash-orphan").unwrap(),
             None
         );
+    }
+
+    #[test]
+    fn assessment_repo_list_places_dated_rows_before_undated_rows() {
+        let db = mem_db();
+        let mut undated = assessment(
+            "mail-undated",
+            Some("CSE241"),
+            "Undated Midterm",
+            "2026-10-25",
+        );
+        undated.date = None;
+        undated.days_until = None;
+        let dated = assessment("mail-dated", Some("CSE241"), "Quiz 1", "2026-10-28");
+
+        let snapshot =
+            ops::replace_assessments(&db, &[undated, dated], "2026-10-24T00:00:00Z", ref_date())
+                .unwrap();
+        let snapshot_ids: Vec<&str> = snapshot.assessments.iter().map(|a| a.id.as_str()).collect();
+        assert_eq!(snapshot_ids, vec!["mail-dated", "mail-undated"]);
+
+        let listed = AssessmentRepo::new(db.conn()).list().unwrap();
+        let ids: Vec<&str> = listed.iter().map(|a| a.id.as_str()).collect();
+        assert_eq!(ids, vec!["mail-dated", "mail-undated"]);
     }
 }

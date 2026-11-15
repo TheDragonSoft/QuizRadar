@@ -69,6 +69,11 @@ data class DateProvenanceLabel(
 fun assessmentDateProvenance(assessment: AssessmentModel): DateProvenanceLabel? {
     val note = assessment.aiInferenceNote?.trim().orEmpty()
     if (note.isEmpty()) return null
+    // When no date was established, never label the item as "Inferred date" or
+    // "Estimated date" alongside "Undated".
+    if (assessment.dateIso == null) {
+        return DateProvenanceLabel("Date not confirmed", DateProvenance.UNCONFIRMED)
+    }
     return when {
         note.startsWith("Parsed from announcement", ignoreCase = true) ->
             DateProvenanceLabel("Date from the announcement", DateProvenance.CONFIRMED)

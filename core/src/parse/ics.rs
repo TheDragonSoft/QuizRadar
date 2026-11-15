@@ -22,7 +22,9 @@
 use chrono::{Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use serde::{Deserialize, Serialize};
 
-use crate::parse::email::{classify_ics_text, find_course_code, strip_html_tags, ScanStats};
+use crate::parse::email::{
+    classify_ics_text, extract_topics_from_text, find_course_code, strip_html_tags, ScanStats,
+};
 use crate::parse::merge::merge_key;
 use crate::parse::util::{
     build_display_time, compute_priority_score, day_name_for, days_until, fnv1a64,
@@ -515,29 +517,7 @@ pub fn parse_ics_events(text: &str) -> Vec<IcsEvent> {
 /// falls back to generic-but-true guidance, never hardcoded course topics
 /// like v4's BJT/MOSFET bedroom lists.
 pub(crate) fn extract_ics_topics(description: &str, summary: &str) -> Vec<String> {
-    let mut topics: Vec<String> = Vec::new();
-    for raw in description.split('\n') {
-        let line = raw.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let lowered = line.to_ascii_lowercase();
-        let is_bullet = line.starts_with(['•', '-', '*']);
-        let is_keyword = lowered.contains("lecture") || lowered.contains("chapter");
-        if !(is_bullet || is_keyword) {
-            continue;
-        }
-        let cleaned = line
-            .trim_start_matches(['•', '-', '*', ' '])
-            .trim()
-            .to_string();
-        if cleaned.chars().count() > 3 {
-            topics.push(cleaned);
-        }
-        if topics.len() >= MAX_ICS_TOPICS {
-            break;
-        }
-    }
+    let topics = extract_topics_from_text(description, MAX_ICS_TOPICS);
     if topics.is_empty() {
         return vec![
             format!("Review all materials for \"{summary}\"."),

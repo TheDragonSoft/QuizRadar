@@ -1120,6 +1120,9 @@ pub fn is_candidate_assessment_email(
     }
 
     // Course/instructor evaluation surveys frequently use "final" and "deadline".
+    // A real assessment email that merely asks students to fill out a survey
+    // afterwards ("Quiz 3 on Sunday — please fill out the survey") survives:
+    // a core assessment word in the subject rescues it from this filter.
     let is_survey = [
         "course evaluation",
         "instructor evaluation",
@@ -1132,17 +1135,68 @@ pub fn is_candidate_assessment_email(
     ]
     .iter()
     .any(|phrase| subject_lower.contains(phrase) || body_lower.contains(phrase))
-        || (contains_ascii_word(subject_lower, "survey") && !subject_has_core_assessment);
-    if is_survey && !has_remake {
+        || contains_ascii_word(subject_lower, "survey");
+    if is_survey && !subject_has_core_assessment && !has_remake {
         return false;
     }
 
-    // Filter out pure grade/result/cancellation/material-upload notices unless
-    // they announce a remake/makeup exam.
-    if (subject_lower.contains("result")
-        || subject_lower.contains("grades")
-        || subject_lower.contains("marks")
-        || subject_lower.contains("model answer")
+    // Scheduling language anywhere in the email separates a combined
+    // announcement ("Quiz 3 grades — Quiz 4 moved to Sunday") from a pure
+    // results notice ("Quiz 3 grades posted"); the accept ladder reuses it.
+    let subject_has_scheduling = contains_any_ascii_word(
+        subject_lower,
+        &[
+            "moved",
+            "rescheduled",
+            "postponed",
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
+            "tomorrow",
+            "today",
+        ],
+    ) || contains_ascii_phrase(subject_lower, "next week")
+        || contains_time_meridiem(subject_lower);
+    let body_has_scheduling = contains_any_ascii_word(
+        body_lower,
+        &[
+            "held",
+            "due",
+            "scheduled",
+            "deadline",
+            "submission",
+            "room",
+            "hall",
+            "tomorrow",
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
+        ],
+    ) || body_lower.contains("take place")
+        || body_lower.contains("next week")
+        || contains_time_meridiem(body_lower);
+
+    // Pure grade/result notices are not assessments unless a remake/makeup is
+    // announced, or the subject pairs a core assessment word with concrete
+    // scheduling language ("Midterm Exam grades posted" stays out).
+    if contains_any_ascii_word(subject_lower, &["result", "results", "grades", "marks"])
+        && !has_remake
+        && !(subject_has_core_assessment && (subject_has_scheduling || body_has_scheduling))
+    {
+        return false;
+    }
+
+    // Filter out cancellation/appeal/material-upload notices unless they
+    // announce a remake/makeup exam.
+    if (subject_lower.contains("model answer")
         || subject_lower.contains("cancellation")
         || subject_lower.contains("appeal")
         || subject_lower.contains("upload your course materials")
@@ -1198,6 +1252,10 @@ pub fn is_candidate_assessment_email(
     }
 
     // Extracurricular workshops, webinars, career events & student club/activities notices.
+    // Org branding is matched against the sender and subject only: a course
+    // email that merely mentions an office ("cc: student affairs") in its
+    // body must not be dropped, while club blasts brand themselves in the
+    // From address or the subject line.
     let org_event_hit = [
         "activities dept",
         "activities department",
@@ -1212,7 +1270,7 @@ pub fn is_candidate_assessment_email(
         "digital content and activities",
     ]
     .iter()
-    .any(|p| from_lower.contains(p) || subject_lower.contains(p) || body_lower.contains(p));
+    .any(|p| from_lower.contains(p) || subject_lower.contains(p));
     let workshop_subject_hit = [
         "workshop",
         "webinar",
@@ -1271,28 +1329,6 @@ pub fn is_candidate_assessment_email(
         if from_is_lms {
             return true;
         }
-        let body_has_scheduling = contains_any_ascii_word(
-            body_lower,
-            &[
-                "held",
-                "due",
-                "scheduled",
-                "deadline",
-                "submission",
-                "room",
-                "hall",
-                "tomorrow",
-                "monday",
-                "tuesday",
-                "wednesday",
-                "thursday",
-                "friday",
-                "saturday",
-                "sunday",
-            ],
-        ) || body_lower.contains("take place")
-            || body_lower.contains("next week")
-            || contains_time_meridiem(body_lower);
         if body_has_scheduling {
             return true;
         }
@@ -3508,6 +3544,52 @@ mod tests {
             "Mid-Semester Course Evaluation Survey",
             "Quality Assurance <qa@univ.edu>",
             "Please fill in the course evaluation survey for your enrolled courses before Sunday."
+        ));
+    }
+
+    #[test]
+    fn a_core_assessment_subject_survives_survey_grade_and_org_filters() {
+        // A real quiz email that asks students to fill out a survey survives.
+        assert!(is_candidate_assessment_email(
+            "quiz 3",
+            "instructor@university.edu",
+            "quiz 3 will be held on sunday. please fill out the survey from last week."
+        ));
+        // A combined grades announcement keeps the upcoming quiz when the
+        // subject itself carries scheduling language.
+        assert!(is_candidate_assessment_email(
+            "quiz 3 grades - quiz 4 moved to sunday",
+            "instructor@university.edu",
+            "quiz 4 covers chapter 5."
+        ));
+        // ...and when the scheduling language only appears in the body.
+        assert!(is_candidate_assessment_email(
+            "quiz 3 grades",
+            "instructor@university.edu",
+            "quiz 4 will be held on sunday in hall 3."
+        ));
+        // Pure grades notices stay rejected even with a core subject word.
+        assert!(!is_candidate_assessment_email(
+            "quiz 3 grades posted",
+            "instructor@university.edu",
+            "check the portal for your marks."
+        ));
+        assert!(!is_candidate_assessment_email(
+            "midterm exam grades posted",
+            "instructor@university.edu",
+            "results are on the portal now."
+        ));
+        // An office mentioned only in the body footer must not drop a quiz.
+        assert!(is_candidate_assessment_email(
+            "quiz 3 on sunday",
+            "instructor@university.edu",
+            "quiz 3 is scheduled for sunday. cc: student affairs office."
+        ));
+        // Club blasts that brand themselves in the sender or subject stay rejected.
+        assert!(!is_candidate_assessment_email(
+            "student activities quiz night",
+            "activities@university.edu",
+            "join us for a fun quiz night, rsvp now!"
         ));
     }
 

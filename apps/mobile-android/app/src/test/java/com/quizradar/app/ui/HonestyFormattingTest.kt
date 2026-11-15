@@ -1,9 +1,12 @@
 package com.quizradar.app.ui
 
 import androidx.compose.ui.graphics.luminance
+import com.quizradar.app.model.AssessmentModel
 import com.quizradar.app.model.FeedConfigModel
 import com.quizradar.app.ui.calendar.CalendarDayResolver.formatCustomEventTime
 import com.quizradar.app.ui.calendar.CalendarDayResolver.shouldMergeExamWithSlot
+import com.quizradar.app.ui.components.DateProvenance
+import com.quizradar.app.ui.components.assessmentDateProvenance
 import com.quizradar.app.ui.screens.formatCourseFilterLabel
 import com.quizradar.app.ui.screens.formatReadinessDisplay
 import com.quizradar.app.ui.screens.formatSourcesDisplay
@@ -176,5 +179,42 @@ class HonestyFormattingTest {
             "Computer Science (not one of the current presets)",
             academicTrackLabel("Computer Science"),
         )
+    }
+
+    @Test
+    fun readinessDisplay_usesSingularTopicWhenTotalIsOne() {
+        val (headline, subtitle) =
+            formatReadinessDisplay(
+                totalTopicsCount = 1,
+                completedTopicsCount = 0,
+                readinessPercent = 0,
+            )
+        assertEquals("0%", headline)
+        assertEquals("0 of 1 topic mastered", subtitle)
+    }
+
+    @Test
+    fun assessmentDateProvenance_neverReportsInferredOrEstimatedWhenUndated() {
+        val undatedAiUnavailable =
+            AssessmentModel(
+                id = "a-1",
+                title = "CSE354 Midterm Exam",
+                dateIso = null,
+                aiInferenceNote = "[AI unavailable: rate limited]",
+            )
+        val label = assessmentDateProvenance(undatedAiUnavailable)
+        assertEquals("Date not confirmed", label?.label)
+        assertEquals(DateProvenance.UNCONFIRMED, label?.provenance)
+
+        val undatedMissingNote =
+            AssessmentModel(
+                id = "a-2",
+                title = "CSE354 Midterm Exam",
+                dateIso = null,
+                aiInferenceNote = "No date in the announcement - needs manual confirmation.",
+            )
+        val label2 = assessmentDateProvenance(undatedMissingNote)
+        assertEquals("Date not confirmed", label2?.label)
+        assertEquals(DateProvenance.UNCONFIRMED, label2?.provenance)
     }
 }

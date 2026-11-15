@@ -111,11 +111,21 @@ fn positive_hours(raw: Option<f32>) -> Option<f32> {
     raw.filter(|hours| hours.is_finite() && *hours > 0.0 && *hours <= 100.0)
 }
 
-/// Keeps trimmed, non-empty strings only.
-fn non_empty_strings(raw: Vec<String>) -> Vec<String> {
+/// Keeps trimmed, non-empty strings cleaned of decorative emojis/markdown.
+fn clean_ai_strings(raw: Vec<String>) -> Vec<String> {
     raw.into_iter()
-        .map(|item| item.trim().to_string())
+        .map(|item| crate::parse::email::clean_inline_decorations(&item))
         .filter(|item| !item.is_empty())
+        .collect()
+}
+
+/// Filters AI topic strings through the same non-topic metadata/rule guard so
+/// model outputs never smuggle schedule headers, greetings, or exam rules
+/// into the study checklist.
+fn clean_ai_topics(raw: Vec<String>) -> Vec<String> {
+    clean_ai_strings(raw)
+        .into_iter()
+        .filter(|topic| !crate::parse::email::is_non_topic_text(topic))
         .collect()
 }
 
@@ -192,16 +202,23 @@ const EXTRACT_INSTRUCTION: &str = r#"You are an intelligent university academic 
 Analyze the following university announcement email and determine the exact assessment details by cross-referencing the email's sent date and body with the student's enrolled weekly class schedule.
 
 Core Objectives:
-1. Assessment Intent: Determine if this email announces an upcoming quiz, exam, test, or assignment deadline ("is_assessment": true). If it is purely grades, results, lecture slides upload, or generic chat, set "is_assessment": false and leave all other fields null/empty.
-2. Intelligent Date & Time Reasoning: Understand complex natural language ("next Wednesday", "postponed to Monday at 10 AM", "during our regular lecture"). Cross-reference with the email's Sent Date and the course's weekly slots to find the exact date_iso (YYYY-MM-DD), start_time (HH:MM), and end_time (HH:MM).
-3. Honest Fact Extraction: Extract room, group, instructor, syllabus topics, and rules/warnings (e.g., "bring calculator", "closed book", "printed template required").
+1. Assessment Intent: Determine if this email announces a graded coursework assessment (quiz, exam, midterm, final exam, lab assessment, or graded assignment/project) ("is_assessment": true). Set "is_assessment": false and leave all other fields null/empty for ANY non-assessment email, including:
+   - grades, results, marks, model answers, regrade/appeal notices, or cancellations with no reschedule,
+   - lecture slide/note/recording uploads without an assessment,
+   - attendance warnings, absence alerts, or "barred from final exam" disciplinary notices,
+   - course/instructor evaluation surveys,
+   - promotional/student discount offers, software subscriptions, newsletters, fee/tuition/registration notices, or password/OTP alerts,
+   - extracurricular workshops, webinars, info sessions, career fairs, hackathons, or student club / Activities Department events not part of graded coursework.
+2. Intelligent Date & Time Reasoning: Understand natural language ("next Wednesday", "postponed to Monday at 10 AM", "during our regular lecture"). Cross-reference with the email's Sent Date and the course's weekly slots to find the exact date_iso (YYYY-MM-DD), start_time (HH:MM), and end_time (HH:MM).
+3. Clean Fact Extraction: Extract clean title (no decorative emojis or Markdown markers like **), room, group, instructor, syllabus topics, and rules/warnings.
+   - "topics" MUST contain ONLY concrete syllabus chapters, lectures, concepts, or problem sets covered by the exam — NEVER schedule metadata (TIME, DATE, ROOM, Hall), greetings ("Dear students"), signatures, URLs, or exam rules (e.g., "one A4 sheet", "bring calculator", "attend in your registered group", which belong in "warnings"). Return [] if no syllabus topics are stated.
 4. High-Value Actionable Guidance: Provide a concise 2-sentence study plan and honest estimated study hours (1.0 to 15.0).
 
 HONESTY RULES (strict):
 - If pre-matched course details are provided below, stick to them. Do not invent or guess different course codes.
 - Use null for any field the announcement and schedule do not establish. NEVER guess rooms, instructors, groups, times or dates.
-- "ai_inference_note" must explain exactly how the date, time, and room were derived; prefix with "Estimated:" whenever the date was not explicit in the announcement.
-- "topics" and "warnings" must quote what the announcement actually says — never invent syllabus content.
+- "ai_inference_note" must explain concisely how date, time, and room were derived; prefix with "Estimated:" ONLY when date_iso is non-null and inferred rather than explicitly stated (when date_iso is null, state that no confirmed date was found).
+- "topics" and "warnings" must faithfully reflect what the announcement says — never invent syllabus content.
 - "assessment_type" must be one of: "Class Quiz", "Online Quiz", "Midterm Exam", "Final Exam", "Lab Assessment", "Assignment".
 
 Return ONLY a valid JSON object matching this exact structure (null when unknown, never invented):
@@ -328,16 +345,25 @@ pub async fn extract_assessment(
         is_assessment: raw.is_assessment,
         course_id: final_course_id,
         course_name: final_course_name,
-        title: de_optional(raw.title.as_deref()),
+        title: de_optional(raw.title.as_deref())
+            .map(|t| crate::parse::email::clean_inline_decorations(&t))
+            .filter(|t| !t.is_empty()),
         assessment_type: raw.assessment_type.as_deref().and_then(normalize_ai_type),
         date: raw.date_iso.as_deref().and_then(parse_iso_date),
         start_time: raw.start_time.as_deref().and_then(parse_hm),
         end_time: raw.end_time.as_deref().and_then(parse_hm),
-        room: de_optional(raw.room.as_deref()),
+        room: de_optional(raw.room.as_deref())
+            .map(|r| crate::parse::email::clean_inline_decorations(&r))
+            .filter(|r| !r.is_empty()),
         group: de_optional(raw.group.as_deref()),
         instructor: de_optional(raw.instructor.as_deref()),
-        topics: non_empty_strings(raw.topics),
-        warnings: non_empty_strings(raw.warnings),
+        topics: clean_ai_topics(raw.topics),
+        warnings: raw
+            .warnings
+            .into_iter()
+            .map(|item| item.trim().to_string())
+            .filter(|item| !item.is_empty())
+            .collect(),
         ai_inference_note: de_optional(raw.ai_inference_note.as_deref()),
         ai_study_plan: de_optional(raw.ai_study_plan.as_deref()),
         estimated_study_hours: positive_hours(raw.estimated_study_hours),
@@ -1762,6 +1788,25 @@ mod tests {
                 .to_string()
                 .contains("no valid question survived validation"),
             "{error}"
+        );
+    }
+
+    #[test]
+    fn clean_ai_topics_strips_markdown_emojis_metadata_and_rules() {
+        let cleaned = clean_ai_topics(vec![
+            "✨ **Deadlock Avoidance** 🚀".to_string(),
+            "TIME: 1:00 PM".to_string(),
+            "ROOM: Hall 101".to_string(),
+            "You are allowed one A4 page handwritten".to_string(),
+            "Virtual Memory & Paging".to_string(),
+            "Best regards,".to_string(),
+        ]);
+        assert_eq!(
+            cleaned,
+            vec![
+                "Deadlock Avoidance".to_string(),
+                "Virtual Memory & Paging".to_string(),
+            ]
         );
     }
 }

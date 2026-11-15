@@ -113,6 +113,8 @@ fun SetupChecklistCard(
                 modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape),
                 color = MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                drawStopIndicator = {},
+                gapSize = 0.dp,
             )
 
             Spacer(modifier = Modifier.height(8.dp))

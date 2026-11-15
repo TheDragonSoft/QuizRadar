@@ -1685,12 +1685,14 @@ impl NativeStore {
             moodle_rest_token: sync_config.moodle_rest_token,
         };
         let cached_emails = self.inner.load_cached_emails().await?;
-        // Prior AI extractions keyed by email-content hash (desktop parity):
-        // an already-extracted email is re-merged without a second provider
-        // call, so a rescan is free for the quota ledger.
+        // Prior AI extractions keyed by context-sensitive extraction key
+        // (desktop parity: email hash + model ladder + task identity +
+        // schedule snapshot). An unchanged email against an unchanged schedule
+        // is re-merged without a second provider call.
         let mut cached_extractions = std::collections::HashMap::new();
         for email in &cached_emails {
-            let hash = crate::sources::sync::compute_email_hash(email);
+            let hash =
+                crate::sources::sync::compute_extraction_cache_key(email, &snapshot.schedule);
             if let Ok(Some(extraction)) = self.inner.get_email_ai_extraction(&hash).await {
                 cached_extractions.insert(hash, extraction);
             }

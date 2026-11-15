@@ -313,12 +313,19 @@ pub fn why_study_now(assessment: &Assessment, completed_topics: &CompletedTopics
         })
         .count();
 
+    let topic_word = |count: usize| if count == 1 { "topic" } else { "topics" };
     let with_review_tail = |remaining: usize| {
         if total == 0 {
             "No topics recorded yet — add topics in the assessment detail to track progress."
                 .to_string()
         } else {
-            format!("{remaining} of {total} topics still need review.")
+            let word = topic_word(total);
+            let verb = if total == 1 {
+                "still needs"
+            } else {
+                "still need"
+            };
+            format!("{remaining} of {total} {word} {verb} review.")
         }
     };
 
@@ -336,16 +343,17 @@ pub fn why_study_now(assessment: &Assessment, completed_topics: &CompletedTopics
         // The past arm MUST come first: `days <= 1` also matches negative
         // countdowns, which used to render "… is tomorrow" for past exams.
         Some(days) if days < 0 => {
-            let mut text = format!("{} already took place", assessment.title);
+            let clean_title = assessment.title.trim().trim_end_matches('.');
+            let mut text = format!("{clean_title} already took place");
             if let Some(start) = assessment.start_time {
                 text.push_str(&format!(" at {}", format_12h(start)));
             }
             text
         }
         Some(days) if days <= 1 => {
+            let clean_title = assessment.title.trim().trim_end_matches('.');
             let mut text = format!(
-                "Immediate priority! {} is {}",
-                assessment.title,
+                "Immediate priority! {clean_title} is {}",
                 if days == 0 { "today" } else { "tomorrow" }
             );
             if let Some(start) = assessment.start_time {
@@ -379,8 +387,9 @@ pub fn why_study_now(assessment: &Assessment, completed_topics: &CompletedTopics
                     "No topics recorded yet — add topics in the assessment detail to track progress.",
                 );
             } else if let Some(hours) = assessment.estimated_study_hours {
+                let word = topic_word(total);
                 text.push_str(&format!(
-                    "Est. {hours:.1} hrs needed across {total} topics."
+                    "Est. {hours:.1} hrs needed across {total} {word}."
                 ));
             } else {
                 text.push_str(&with_review_tail(remaining));
@@ -403,7 +412,8 @@ pub fn why_study_now(assessment: &Assessment, completed_topics: &CompletedTopics
                     "No topics recorded yet — add topics in the assessment detail to track progress.",
                 );
             } else {
-                text.push_str(&format!("Start early revision across {total} topics."));
+                let word = topic_word(total);
+                text.push_str(&format!("Start early revision across {total} {word}."));
             }
             text
         }
@@ -1112,5 +1122,80 @@ mod tests {
         );
         assert!(!remapped.contains_key("gmail-1::9"));
         assert!(!remapped.contains_key("gone::0"));
+    }
+
+    #[test]
+    fn why_study_now_uses_singular_topic_grammar_and_trims_trailing_period() {
+        let mut today_one_topic = assessment_on(
+            "gmail-1",
+            Some("CSE241"),
+            "Hands-on Workshop.",
+            Some(day(0)),
+            vec!["RAG Pipelines"],
+        );
+        today_one_topic.days_until = Some(0);
+        let card = build_recommendation(&today_one_topic, &CompletedTopics::new());
+        assert!(
+            card.why_study_now.contains("Hands-on Workshop is today."),
+            "trailing period should be trimmed: {}",
+            card.why_study_now
+        );
+        assert!(
+            card.why_study_now
+                .contains("1 of 1 topic still needs review."),
+            "expected singular topic grammar: {}",
+            card.why_study_now
+        );
+
+        let mut undated_one_topic = assessment_on(
+            "gmail-2",
+            Some("CSE241"),
+            "Undated Quiz",
+            None,
+            vec!["Pointers"],
+        );
+        undated_one_topic.days_until = None;
+        let undated_card = build_recommendation(&undated_one_topic, &CompletedTopics::new());
+        assert!(
+            undated_card
+                .why_study_now
+                .contains("1 of 1 topic still needs review."),
+            "undated singular grammar: {}",
+            undated_card.why_study_now
+        );
+
+        let done = completed_map(&[("gmail-1", "RAG Pipelines")]);
+        let mut future_done = assessment_on(
+            "gmail-1",
+            Some("CSE241"),
+            "Quiz 1",
+            Some(day(4)),
+            vec!["RAG Pipelines"],
+        );
+        future_done.days_until = Some(4);
+        let done_card = build_recommendation(&future_done, &done);
+        assert!(
+            done_card
+                .why_study_now
+                .contains("0 of 1 topic still needs review."),
+            "expected singular still needs review: {}",
+            done_card.why_study_now
+        );
+
+        let mut future_hours = assessment_on(
+            "gmail-3",
+            Some("CSE241"),
+            "Quiz 2",
+            Some(day(4)),
+            vec!["RAG Pipelines"],
+        );
+        future_hours.days_until = Some(4);
+        future_hours.estimated_study_hours = Some(2.5);
+        let hours_card = build_recommendation(&future_hours, &CompletedTopics::new());
+        assert!(
+            hours_card.why_study_now.contains("across 1 topic."),
+            "expected singular across 1 topic: {}",
+            hours_card.why_study_now
+        );
     }
 }

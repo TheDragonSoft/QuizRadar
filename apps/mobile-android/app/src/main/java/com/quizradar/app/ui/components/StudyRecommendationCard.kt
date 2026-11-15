@@ -43,11 +43,13 @@ fun StudyRecommendationCard(
     onToggleTopic: (key: String, done: Boolean) -> Unit,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    courseColorHex: String? = null,
 ) {
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val haptic = LocalHapticFeedback.current
-    val palette = CoursePalette.get(recommendation.courseId)
-    val courseTextColor = CoursePalette.textOnSurface(recommendation.courseId, isDark)
+    val resolvedColorHex = courseColorHex ?: recommendation.color
+    val palette = CoursePalette.get(recommendation.courseId, resolvedColorHex)
+    val courseTextColor = CoursePalette.textOnSurface(recommendation.courseId, isDark, resolvedColorHex)
 
     // The urgency badge is the one tag shape, tinted by the same recipe as the
     // timeline's urgencyTagStyle (TODAY = error container, TOMORROW = amber
@@ -133,6 +135,10 @@ fun StudyRecommendationCard(
                 }
             val progress = if (totalTopics == 0) 0f else completedCount.toFloat() / totalTopics.toFloat()
 
+            val topicUnit = if (totalTopics == 1) "topic" else "topics"
+            val progressPct =
+                if (totalTopics == 0) 0 else ((completedCount * 100 + totalTopics / 2) / totalTopics).coerceIn(0, 100)
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -143,7 +149,7 @@ fun StudyRecommendationCard(
                         if (totalTopics == 0) {
                             "No syllabus topics tracked"
                         } else {
-                            "$completedCount of $totalTopics topics mastered"
+                            "$completedCount of $totalTopics $topicUnit mastered"
                         },
                     style =
                         MaterialTheme.typography.bodySmall.copy(
@@ -152,7 +158,7 @@ fun StudyRecommendationCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    text = if (totalTopics == 0) "—" else "${(progress * 100).toInt()}%",
+                    text = if (totalTopics == 0) "—" else "$progressPct%",
                     style =
                         MaterialTheme.typography.titleMedium.copy(
                             fontFeatureSettings = "tnum",
@@ -171,6 +177,8 @@ fun StudyRecommendationCard(
                         .clip(MaterialTheme.shapes.small),
                 color = palette.color,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                drawStopIndicator = {},
+                gapSize = 0.dp,
             )
 
             if (topics.isNotEmpty()) {

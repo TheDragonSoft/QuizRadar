@@ -2,6 +2,21 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.15.3] — 2026-11-15
+
+### 🤝 Agent & Contributor Summaries
+
+- **[core, web, android]** Add 54-case deterministic + live Gemini/hybrid email parser eval benchmark, 12 new golden fixtures (13-24), p5-p7 property suites, mocked Gemini/sync-cache/FFI-cache tests, live Gemini #[ignore] harnesses, Android BackgroundScanWorkerTest, deterministic parser fixes in core/src/parse/email.rs (54-case faults 33->13->0), and live Gemini schema/prompt fixes in core/src/ai/tasks.rs (accept null JSON arrays on is_assessment=false replies, clarify LMS /mod/quiz/ & combined grade/appeal + remake extraction, and normalize typographic punctuation in clean_ai_topics, reducing live 54-case Gemini/hybrid false negatives 3->0 and topic defects 2->0 while cutting live calls 59.3% via deterministic pre-filtering).
+
+### 🐛 Fixes & Performance
+
+- `8ada8f4` fix(ai): accept null arrays and refine live Gemini extraction prompt
+
+### 🔧 Maintenance, Docs & Tests
+
+- `61b78a7` Merge pull request #32 from TheDragonSoft/test/email-parser-eval-and-coverage
+- `5fc0af9` test(core): add email parser eval benchmark, fixtures, AI/cache and worker tests, and fix uncovered bugs
+
 ## [5.15.2] — 2026-11-15
 
 ### 🤝 Agent & Contributor Summaries

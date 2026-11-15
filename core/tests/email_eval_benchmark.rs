@@ -15,12 +15,16 @@
 )]
 
 use chrono::NaiveDate;
+use quizradar_core::ai::gemini::GeminiProvider;
+use quizradar_core::ai::tasks::{extract_assessment, merge_extraction};
 use quizradar_core::parse::email::parse_emails;
 use quizradar_core::types::{Assessment, AssessmentType, CachedEmail, ScheduleData};
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy)]
 struct Case {
@@ -665,7 +669,25 @@ struct CategoryStats {
     total_faults: usize,
 }
 
-fn check_case(case: &Case, parsed: Option<&Assessment>, stats: &mut CategoryStats) -> Vec<String> {
+struct EvalOutcome {
+    assessment_type: AssessmentType,
+    date: Option<NaiveDate>,
+    title: String,
+    topics: Vec<String>,
+}
+
+impl From<&Assessment> for EvalOutcome {
+    fn from(a: &Assessment) -> Self {
+        Self {
+            assessment_type: a.assessment_type,
+            date: a.date,
+            title: a.title.clone(),
+            topics: a.topics.clone(),
+        }
+    }
+}
+
+fn check_case(case: &Case, parsed: Option<&EvalOutcome>, stats: &mut CategoryStats) -> Vec<String> {
     stats.total += 1;
     let mut faults = Vec::new();
     match (case.expect_detected, parsed) {
@@ -755,9 +777,10 @@ fn labeled_54_email_eval_suite_achieves_zero_defects() {
     for case in &cases {
         let email = build_email(case);
         let (items, _) = parse_emails(&[email], &schedule, ref_date());
+        let outcome = items.first().map(EvalOutcome::from);
         let cat_stats = per_cat.entry(case.category).or_default();
-        let faults = check_case(case, items.first(), cat_stats);
-        let _ = check_case(case, items.first(), &mut totals);
+        let faults = check_case(case, outcome.as_ref(), cat_stats);
+        let _ = check_case(case, outcome.as_ref(), &mut totals);
         if !faults.is_empty() {
             failure_details.push(format!(
                 "[{} / {}] {} => {}",
@@ -790,5 +813,193 @@ fn labeled_54_email_eval_suite_achieves_zero_defects() {
         totals.total_faults,
         totals.total,
         failure_details.join("\n")
+    );
+}
+
+fn percentile_ms(sorted: &[u128], pct: usize) -> u128 {
+    if sorted.is_empty() {
+        return 0;
+    }
+    let idx = ((sorted.len() - 1) * pct) / 100;
+    sorted[idx]
+}
+
+/// Live Gemini + Hybrid Pipeline 54-case evaluation benchmark.
+/// Run with:
+/// `$env:GEMINI_API_KEY="..."; cargo test -p quizradar-core --test email_eval_benchmark live_gemini_54_email_eval_benchmark -- --ignored --nocapture`
+#[tokio::test]
+#[ignore = "requires live GEMINI_API_KEY environment variable"]
+#[allow(clippy::too_many_lines)]
+async fn live_gemini_54_email_eval_benchmark() {
+    let key = std::env::var("GEMINI_API_KEY")
+        .expect("set GEMINI_API_KEY before running live Gemini eval");
+    let provider = GeminiProvider::production(Some(key), Arc::new(chrono::Utc::now), None)
+        .expect("GeminiProvider constructs cleanly");
+    let schedule = load_schedule();
+    let cases = corpus();
+
+    let mut ai_per_cat: BTreeMap<&'static str, CategoryStats> = BTreeMap::new();
+    let mut ai_totals = CategoryStats::default();
+    let mut ai_failures: Vec<String> = Vec::new();
+    let mut ai_api_errors = 0usize;
+
+    let mut hybrid_per_cat: BTreeMap<&'static str, CategoryStats> = BTreeMap::new();
+    let mut hybrid_totals = CategoryStats::default();
+    let mut hybrid_failures: Vec<String> = Vec::new();
+    let mut hybrid_gemini_calls = 0usize;
+    let mut hybrid_gemini_vetoes = 0usize;
+
+    let mut latencies_ms: Vec<u128> = Vec::with_capacity(cases.len());
+    let mut rate_limit_retries = 0usize;
+
+    for case in &cases {
+        let email = build_email(case);
+        let (det_items, _) = parse_emails(std::slice::from_ref(&email), &schedule, ref_date());
+
+        let started = Instant::now();
+        let mut res = extract_assessment(&provider, &email, &schedule).await;
+        if let Err(ref err) = res {
+            let msg = format!("{err}").to_ascii_lowercase();
+            if msg.contains("limit reached") || msg.contains("429") {
+                rate_limit_retries += 1;
+                tokio::time::sleep(Duration::from_secs(20)).await;
+                res = extract_assessment(&provider, &email, &schedule).await;
+            }
+        }
+        let elapsed_ms = started.elapsed().as_millis();
+        latencies_ms.push(elapsed_ms);
+
+        let (ai_outcome, hybrid_outcome, note) = match res {
+            Ok(ext) => {
+                let ai_out = if ext.is_assessment {
+                    Some(EvalOutcome {
+                        assessment_type: ext.assessment_type.unwrap_or(AssessmentType::ClassQuiz),
+                        date: ext.date,
+                        title: ext.title.clone().unwrap_or_default(),
+                        topics: ext.topics.clone(),
+                    })
+                } else {
+                    None
+                };
+
+                let hyb_out = match det_items.first() {
+                    None => None,
+                    Some(det_base) => {
+                        hybrid_gemini_calls += 1;
+                        if !ext.is_assessment {
+                            hybrid_gemini_vetoes += 1;
+                            None
+                        } else {
+                            let merged = merge_extraction(det_base.clone(), &ext, ref_date());
+                            Some(EvalOutcome::from(&merged))
+                        }
+                    }
+                };
+                (
+                    ai_out,
+                    hyb_out,
+                    format!(
+                        "is_assessment={} type={:?} date={:?} topics={}",
+                        ext.is_assessment,
+                        ext.assessment_type,
+                        ext.date,
+                        ext.topics.len()
+                    ),
+                )
+            }
+            Err(err) => {
+                ai_api_errors += 1;
+                if !det_items.is_empty() {
+                    hybrid_gemini_calls += 1;
+                }
+                let hyb_out = det_items.first().map(EvalOutcome::from);
+                (None, hyb_out, format!("ERR: {err}"))
+            }
+        };
+
+        let ai_cat = ai_per_cat.entry(case.category).or_default();
+        let af = check_case(case, ai_outcome.as_ref(), ai_cat);
+        let _ = check_case(case, ai_outcome.as_ref(), &mut ai_totals);
+        if !af.is_empty() {
+            ai_failures.push(format!("[{}/{}] {}", case.category, case.id, af.join("; ")));
+        }
+
+        let hyb_cat = hybrid_per_cat.entry(case.category).or_default();
+        let hf = check_case(case, hybrid_outcome.as_ref(), hyb_cat);
+        let _ = check_case(case, hybrid_outcome.as_ref(), &mut hybrid_totals);
+        if !hf.is_empty() {
+            hybrid_failures.push(format!("[{}/{}] {}", case.category, case.id, hf.join("; ")));
+        }
+
+        println!(
+            "LIVE_CASE id={} cat={} expect={} det={} ms={} ai_faults={} hyb_faults={} :: {}",
+            case.id,
+            case.category,
+            case.expect_detected,
+            !det_items.is_empty(),
+            elapsed_ms,
+            af.len(),
+            hf.len(),
+            note
+        );
+        let pace_ms = 4200u128.saturating_sub(elapsed_ms);
+        if pace_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(
+                u64::try_from(pace_ms).unwrap_or(4200),
+            ))
+            .await;
+        }
+    }
+
+    latencies_ms.sort_unstable();
+    let total_ms: u128 = latencies_ms.iter().sum();
+    let avg_ms = total_ms / u128::try_from(latencies_ms.len().max(1)).unwrap_or(1);
+
+    let ai_summary = json!({
+        "total_cases": ai_totals.total,
+        "api_errors": ai_api_errors,
+        "rate_limit_retries": rate_limit_retries,
+        "true_positives": ai_totals.true_positives,
+        "true_negatives": ai_totals.true_negatives,
+        "false_positives": ai_totals.false_positives,
+        "false_negatives": ai_totals.false_negatives,
+        "type_errors": ai_totals.type_errors,
+        "date_errors": ai_totals.date_errors,
+        "title_errors": ai_totals.title_errors,
+        "topic_defects": ai_totals.topic_defects,
+        "cases_with_any_fault": ai_totals.total_faults,
+        "latency_avg_ms": avg_ms,
+        "latency_p50_ms": percentile_ms(&latencies_ms, 50),
+        "latency_p95_ms": percentile_ms(&latencies_ms, 95),
+        "per_category": ai_per_cat,
+    });
+    let hyb_summary = json!({
+        "total_cases": hybrid_totals.total,
+        "gemini_calls_needed": hybrid_gemini_calls,
+        "gemini_calls_saved": cases.len() - hybrid_gemini_calls,
+        "gemini_vetoes": hybrid_gemini_vetoes,
+        "true_positives": hybrid_totals.true_positives,
+        "true_negatives": hybrid_totals.true_negatives,
+        "false_positives": hybrid_totals.false_positives,
+        "false_negatives": hybrid_totals.false_negatives,
+        "type_errors": hybrid_totals.type_errors,
+        "date_errors": hybrid_totals.date_errors,
+        "title_errors": hybrid_totals.title_errors,
+        "topic_defects": hybrid_totals.topic_defects,
+        "cases_with_any_fault": hybrid_totals.total_faults,
+        "per_category": hybrid_per_cat,
+    });
+    println!("LIVE_GEMINI_STANDALONE_JSON:{ai_summary}");
+    println!("LIVE_HYBRID_PIPELINE_JSON:{hyb_summary}");
+    for d in &ai_failures {
+        println!("AI_FAILURE:{d}");
+    }
+    for d in &hybrid_failures {
+        println!("HYBRID_FAILURE:{d}");
+    }
+    assert!(
+        ai_api_errors < cases.len(),
+        "every live Gemini request failed ({ai_api_errors}/{})",
+        cases.len()
     );
 }

@@ -119,12 +119,23 @@ fn clean_ai_strings(raw: Vec<String>) -> Vec<String> {
         .collect()
 }
 
+/// Normalizes typographic punctuation inside AI-extracted strings and filters
+/// out non-topic metadata, greetings, or exam rules so model outputs never
+/// smuggle schedule headers or typographic variants into the study checklist.
+fn normalize_ascii_punctuation(input: &str) -> String {
+    input
+        .replace(['\u{2018}', '\u{2019}'], "'")
+        .replace(['\u{201C}', '\u{201D}'], "\"")
+        .replace(['\u{2013}', '\u{2014}'], "-")
+}
+
 /// Filters AI topic strings through the same non-topic metadata/rule guard so
 /// model outputs never smuggle schedule headers, greetings, or exam rules
 /// into the study checklist.
 fn clean_ai_topics(raw: Vec<String>) -> Vec<String> {
     clean_ai_strings(raw)
         .into_iter()
+        .map(|topic| normalize_ascii_punctuation(&topic))
         .filter(|topic| !crate::parse::email::is_non_topic_text(topic))
         .collect()
 }
@@ -202,8 +213,11 @@ const EXTRACT_INSTRUCTION: &str = r#"You are an intelligent university academic 
 Analyze the following university announcement email and determine the exact assessment details by cross-referencing the email's sent date and body with the student's enrolled weekly class schedule.
 
 Core Objectives:
-1. Assessment Intent: Determine if this email announces a graded coursework assessment (quiz, exam, midterm, final exam, lab assessment, or graded assignment/project) ("is_assessment": true). Set "is_assessment": false and leave all other fields null/empty for ANY non-assessment email, including:
-   - grades, results, marks, model answers, regrade/appeal notices, or cancellations with no reschedule,
+1. Assessment Intent: Determine if this email announces a graded coursework assessment (quiz, exam, midterm, final exam, lab assessment, graded assignment/project, online LMS quiz/check-in, or a remake/makeup/rescheduled exam) ("is_assessment": true).
+   - Online LMS quiz links: Course emails linking to an online LMS quiz portal (such as Moodle `/mod/quiz/`, Canvas `/quizzes/`, or Blackboard quiz links), even if titled "Weekly Check-in" or "Activity", ARE graded assessments ("is_assessment": true, "assessment_type": "Online Quiz").
+   - Combined announcements: If an email mentions posted grades, model answers, appeal windows, or a cancellation AND ALSO announces, reschedules, or sets a remake/makeup for an exam or quiz (e.g., "Quiz 2 grades — Quiz 3 moved to..." or "Midterm Appeals & Remake"), set "is_assessment": true and extract THAT upcoming, rescheduled, or remake assessment.
+   Set "is_assessment": false and leave all other fields null/empty ONLY when NO upcoming, rescheduled, or remake assessment is announced, including:
+   - grades, results, marks, model answers, regrade/appeal notices, or cancellations with no upcoming, rescheduled, or remake assessment,
    - lecture slide/note/recording uploads without an assessment,
    - attendance warnings, absence alerts, or "barred from final exam" disciplinary notices,
    - course/instructor evaluation surveys,
@@ -212,6 +226,7 @@ Core Objectives:
 2. Intelligent Date & Time Reasoning: Understand natural language ("next Wednesday", "postponed to Monday at 10 AM", "during our regular lecture"). Cross-reference with the email's Sent Date and the course's weekly slots to find the exact date_iso (YYYY-MM-DD), start_time (HH:MM), and end_time (HH:MM).
 3. Clean Fact Extraction: Extract clean title (no decorative emojis or Markdown markers like **), room, group, instructor, syllabus topics, and rules/warnings.
    - "topics" MUST contain ONLY concrete syllabus chapters, lectures, concepts, or problem sets covered by the exam — NEVER schedule metadata (TIME, DATE, ROOM, Hall), greetings ("Dear students"), signatures, URLs, or exam rules (e.g., "one A4 sheet", "bring calculator", "attend in your registered group", which belong in "warnings"). Return [] if no syllabus topics are stated.
+   - Keep each single syllabus bullet/item whole even if it wraps across lines or joins two closely linked phrases with "and" (e.g., "Binary Search Trees and Balanced AVL Trees" is ONE topic, do not split it into two).
 4. High-Value Actionable Guidance: Provide a concise 2-sentence study plan and honest estimated study hours (1.0 to 15.0).
 
 HONESTY RULES (strict):
@@ -370,10 +385,28 @@ pub async fn extract_assessment(
     })
 }
 
+fn deserialize_null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    T: Default + serde::Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
+}
+
+fn deserialize_null_default_true<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<bool>::deserialize(deserializer)?.unwrap_or(true))
+}
+
 #[derive(Debug, Deserialize, Serialize, Default)]
 #[serde(default)]
 struct RawExtraction {
-    #[serde(default = "default_true")]
+    #[serde(
+        default = "default_true",
+        deserialize_with = "deserialize_null_default_true"
+    )]
     is_assessment: bool,
     course_id: Option<String>,
     course_name: Option<String>,
@@ -385,7 +418,9 @@ struct RawExtraction {
     room: Option<String>,
     group: Option<String>,
     instructor: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     topics: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     warnings: Vec<String>,
     ai_inference_note: Option<String>,
     ai_study_plan: Option<String>,
@@ -679,7 +714,9 @@ fn valid_hex_color(raw: Option<&str>) -> Option<String> {
 #[serde(default)]
 struct RawTimetable {
     semester: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     courses: Vec<Value>,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     slots: Vec<Value>,
 }
 
@@ -1009,7 +1046,9 @@ pub async fn optimize_plan(
 #[derive(Debug, Deserialize, Default)]
 #[serde(default)]
 struct RawPlan {
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     readiness_cards: Vec<Value>,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     tasks: Vec<Value>,
 }
 
@@ -1149,6 +1188,7 @@ Return ONLY a JSON array of 5 objects matching this exact structure:
 #[serde(default)]
 struct RawPracticeQuestion {
     question: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     options: Vec<String>,
     correct_index: Option<i64>,
     explanation: Option<String>,
@@ -1795,6 +1835,8 @@ mod tests {
     fn clean_ai_topics_strips_markdown_emojis_metadata_and_rules() {
         let cleaned = clean_ai_topics(vec![
             "✨ **Deadlock Avoidance** 🚀".to_string(),
+            "TCP\u{2019}s Flow Control & Buffering".to_string(),
+            "Congestion Control \u{2013} AIMD".to_string(),
             "TIME: 1:00 PM".to_string(),
             "ROOM: Hall 101".to_string(),
             "You are allowed one A4 page handwritten".to_string(),
@@ -1805,6 +1847,8 @@ mod tests {
             cleaned,
             vec![
                 "Deadlock Avoidance".to_string(),
+                "TCP's Flow Control & Buffering".to_string(),
+                "Congestion Control - AIMD".to_string(),
                 "Virtual Memory & Paging".to_string(),
             ]
         );
@@ -1819,6 +1863,9 @@ mod tests {
         assert!(EXTRACT_INSTRUCTION.contains("course/instructor evaluation surveys"));
         assert!(EXTRACT_INSTRUCTION.contains("promotional/student discount offers"));
         assert!(EXTRACT_INSTRUCTION.contains("extracurricular workshops"));
+        assert!(EXTRACT_INSTRUCTION.contains("/mod/quiz/"));
+        assert!(EXTRACT_INSTRUCTION.contains("remake/makeup"));
+        assert!(EXTRACT_INSTRUCTION.contains("Combined announcements"));
 
         let server = MockServer::start().await;
         mount_model(
@@ -1864,6 +1911,46 @@ mod tests {
             ],
             "model-returned decorations, metadata, and exam rules must be scrubbed"
         );
+    }
+
+    #[tokio::test]
+    async fn extract_assessment_accepts_null_arrays_on_non_assessment_reply() {
+        let server = MockServer::start().await;
+        mount_model(
+            &server,
+            "/models/gemini-3.5-flash-lite:generateContent",
+            r#"{
+  "is_assessment": false,
+  "course_id": null,
+  "course_name": null,
+  "title": null,
+  "assessment_type": null,
+  "date_iso": null,
+  "start_time": null,
+  "end_time": null,
+  "room": null,
+  "group": null,
+  "instructor": null,
+  "topics": null,
+  "warnings": null,
+  "ai_inference_note": null,
+  "ai_study_plan": null,
+  "estimated_study_hours": null
+}"#,
+        )
+        .await;
+
+        let draft = extract_assessment(
+            &fixture_provider(&server.uri()),
+            &email(),
+            &ScheduleData::default(),
+        )
+        .await
+        .expect("explicit null array fields on non-assessment replies must deserialize cleanly");
+
+        assert!(!draft.is_assessment);
+        assert!(draft.topics.is_empty());
+        assert!(draft.warnings.is_empty());
     }
 
     /// Manual evaluation harness against the real Gemini API (`GEMINI_API_KEY`).

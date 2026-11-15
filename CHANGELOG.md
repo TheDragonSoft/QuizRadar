@@ -2,6 +2,21 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.15.2] — 2026-11-15
+
+### 🤝 Agent & Contributor Summaries
+
+- **[core]** Follow-up to the email hardening branch: rescue real assessment emails from the new survey/grade/org-event filters. Survey-phrase and bare-word survey hits now honor a subject_has_core_assessment escape; subject result/results/grades/marks notices reject only when no remake is announced AND no scheduling language coexists with a core assessment word (combined 'Quiz 3 grades - Quiz 4 moved to Sunday' emails stay candidates, 'Midterm Exam grades posted' stays rejected); org-event branding matches sender/subject only so a body-only 'cc: student affairs' footer can no longer drop a course quiz. Adds a_core_assessment_subject_survives_survey_grade_and_org_filters covering all three rescues plus preserved rejections.
+
+### 🐛 Fixes & Performance
+
+- `9d6dd84` fix(core): rescue core-assessment subjects from over-eager email filters
+- `a1068f7` fix(core): harden email parser, Gemini cache, and dashboard UI
+
+### 🔧 Maintenance, Docs & Tests
+
+- `84371eb` Merge pull request #31 from TheDragonSoft/fix/email-parser-and-dashboard
+
 ## [5.15.1] — 2026-11-14
 
 ### 🤝 Agent & Contributor Summaries

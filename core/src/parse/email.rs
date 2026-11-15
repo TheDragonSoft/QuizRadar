@@ -268,14 +268,27 @@ pub fn strip_html_tags(html: &str) -> String {
     normalize_whitespace(&decoded)
 }
 
-const ENTITIES: [(&str, &str); 7] = [
+const ENTITIES: [(&str, &str); 20] = [
     ("&nbsp;", " "),
+    ("&#160;", " "),
     ("&lt;", "<"),
     ("&gt;", ">"),
     ("&amp;", "&"),
     ("&quot;", "\""),
     ("&#39;", "'"),
+    ("&#x27;", "'"),
     ("&apos;", "'"),
+    ("&ndash;", "-"),
+    ("&#8211;", "-"),
+    ("&mdash;", "—"),
+    ("&#8212;", "—"),
+    ("&rsquo;", "'"),
+    ("&#8217;", "'"),
+    ("&lsquo;", "'"),
+    ("&ldquo;", "\""),
+    ("&rdquo;", "\""),
+    ("&bull;", "•"),
+    ("&hellip;", "..."),
 ];
 
 /// Single-pass HTML entity decode — the v4 engine decoded twice, corrupting
@@ -350,6 +363,89 @@ pub fn extract_announcement_body(body: &str) -> &str {
         return after;
     }
     body
+}
+
+/// Removes Gmail/Outlook forwarded header blocks (`---------- Forwarded message ---------`
+/// followed by `From:` / `Date:` / `Sent:` / `To:` / `Cc:` / `Subject:`) and
+/// `"On <date>, <sender> wrote:"` quote attribution lines so forwarded send
+/// timestamps cannot hijack the assessment's actual exam date or leak header
+/// lines into topics.
+fn strip_forwarded_header_blocks(text: &str) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut kept: Vec<&str> = Vec::with_capacity(lines.len());
+    let mut i = 0usize;
+
+    let is_header_key = |trimmed_lower: &str| {
+        [
+            "from:",
+            "sent:",
+            "date:",
+            "to:",
+            "cc:",
+            "bcc:",
+            "subject:",
+            "reply-to:",
+        ]
+        .iter()
+        .any(|prefix| trimmed_lower.starts_with(prefix))
+    };
+
+    while i < lines.len() {
+        let trimmed = lines[i].trim();
+        let lower = trimmed.to_ascii_lowercase();
+
+        // Forwarded banner line + contiguous RFC-style header stanza.
+        if (lower.contains("forwarded message") || lower.contains("original message"))
+            && trimmed.starts_with("---")
+        {
+            i += 1;
+            while i < lines.len() && lines[i].trim().is_empty() {
+                i += 1;
+            }
+            while i < lines.len() && is_header_key(&lines[i].trim().to_ascii_lowercase()) {
+                i += 1;
+            }
+            continue;
+        }
+
+        // Outlook/inline forwarded header stanza without a dashed banner: requires
+        // `From:` plus a `Date:` or `Sent:` line in the same contiguous header block.
+        if lower.starts_with("from:") {
+            let mut end = i + 1;
+            let mut has_send_date = false;
+            while end < lines.len() && is_header_key(&lines[end].trim().to_ascii_lowercase()) {
+                let next_lower = lines[end].trim().to_ascii_lowercase();
+                if next_lower.starts_with("date:") || next_lower.starts_with("sent:") {
+                    has_send_date = true;
+                }
+                end += 1;
+            }
+            if has_send_date {
+                i = end;
+                continue;
+            }
+        }
+
+        // One- or two-line quote attribution (`On Sun, 11 Oct 2026 ... wrote:`).
+        if lower.starts_with("on ") && lower.chars().any(|c| c.is_ascii_digit()) {
+            if lower.ends_with("wrote:") {
+                i += 1;
+                continue;
+            }
+            if i + 1 < lines.len() {
+                let next_lower = lines[i + 1].trim().to_ascii_lowercase();
+                if next_lower.ends_with("wrote:") && !next_lower.is_empty() {
+                    i += 2;
+                    continue;
+                }
+            }
+        }
+
+        kept.push(lines[i]);
+        i += 1;
+    }
+
+    kept.join("\n")
 }
 
 // ---------------------------------------------------------------------------
@@ -1194,23 +1290,49 @@ pub fn is_candidate_assessment_email(
         return false;
     }
 
-    // Filter out cancellation/appeal/material-upload notices unless they
-    // announce a remake/makeup exam.
-    if (subject_lower.contains("model answer")
-        || subject_lower.contains("cancellation")
+    // Filter out bare cancellations, answer keys / solution posts, appeals, and
+    // slide/recording upload notices unless they carry an active reschedule or
+    // remake/makeup assessment.
+    let has_reschedule_or_remake = has_remake
+        || subject_lower.contains("rescheduled")
+        || body_lower.contains("rescheduled")
+        || body_lower.contains("moved to")
+        || body_lower.contains("new date")
+        || body_lower.contains("instead be held")
+        || body_lower.contains("postponed to")
+        || body_lower.contains("shifted to")
+        || subject_has_scheduling;
+
+    let is_cancellation_notice =
+        (contains_any_ascii_word(subject_lower, &["cancellation", "cancelled", "canceled"])
+            || subject_lower.contains("called off")
+            || subject_lower.contains("postponed until further notice")
+            || body_lower.contains("cancelled until further notice")
+            || body_lower.contains("canceled until further notice"))
+            && !has_reschedule_or_remake;
+    if is_cancellation_notice {
+        return false;
+    }
+
+    let is_solution_or_material_only = (subject_lower.contains("model answer")
+        || subject_lower.contains("answer key")
+        || subject_lower.contains("solution posted")
+        || subject_lower.contains("solutions posted")
+        || subject_lower.contains("solution uploaded")
+        || subject_lower.contains("solutions uploaded")
+        || subject_lower.contains("solution sheet")
+        || subject_lower.contains("marking scheme")
+        || subject_lower.contains("grading rubric")
         || subject_lower.contains("appeal")
         || subject_lower.contains("upload your course materials")
-        || subject_lower.contains("lecture 1 slides")
-        || ((contains_ascii_phrase(subject_lower, "lecture slides")
-            || contains_ascii_phrase(subject_lower, "slides uploaded")
+        || ((contains_ascii_word(subject_lower, "slides")
             || contains_ascii_phrase(subject_lower, "notes uploaded")
-            || contains_ascii_phrase(subject_lower, "recording available")
-            || ((contains_ascii_word(subject_lower, "cancelled")
-                || contains_ascii_word(subject_lower, "canceled"))
-                && !subject_lower.contains("rescheduled")))
-            && !subject_has_core_assessment))
-        && !has_remake
-    {
+            || contains_ascii_phrase(subject_lower, "recording available"))
+            && !subject_has_core_assessment
+            && !subject_has_scheduling
+            && !body_lower.contains("will be held")))
+        && !has_remake;
+    if is_solution_or_material_only {
         return false;
     }
 
@@ -1219,7 +1341,11 @@ pub fn is_candidate_assessment_email(
     let promo_hit = [
         "exclusive student offer",
         "student offer",
+        "student discount",
         "claim your free",
+        "activate your free",
+        "free for students",
+        "free access",
         "free subscription",
         "free trial",
         "limited-time offer",
@@ -1233,6 +1359,9 @@ pub fn is_candidate_assessment_email(
         "google one",
         "gemini ai",
         "chatgpt plus",
+        "quizlet plus",
+        "grammarly",
+        "perplexity",
         "unsubscribe from promotional",
     ]
     .iter()
@@ -1251,7 +1380,8 @@ pub fn is_candidate_assessment_email(
         }
     }
 
-    // Extracurricular workshops, webinars, career events & student club/activities notices.
+    // Extracurricular workshops, webinars, career events, club trivia nights,
+    // external coding assessments & student club/activities notices.
     // Org branding is matched against the sender and subject only: a course
     // email that merely mentions an office ("cc: student affairs") in its
     // body must not be dropped, while club blasts brand themselves in the
@@ -1271,6 +1401,28 @@ pub fn is_candidate_assessment_email(
     ]
     .iter()
     .any(|p| from_lower.contains(p) || subject_lower.contains(p));
+    let club_quiz_hit = find_course_code(subject_lower).is_none()
+        && (contains_ascii_phrase(subject_lower, "quiz night")
+            || contains_ascii_phrase(subject_lower, "trivia quiz")
+            || contains_ascii_phrase(subject_lower, "trivia night")
+            || contains_ascii_phrase(subject_lower, "pub quiz")
+            || contains_ascii_word(subject_lower, "kahoot"));
+    let external_recruiting_hit = find_course_code(subject_lower).is_none()
+        && (contains_ascii_phrase(subject_lower, "coding assessment")
+            || contains_ascii_phrase(subject_lower, "online assessment")
+            || contains_ascii_phrase(subject_lower, "coding challenge")
+            || contains_ascii_phrase(subject_lower, "technical assessment")
+            || contains_ascii_word(body_lower, "hackerrank")
+            || contains_ascii_word(body_lower, "codility")
+            || contains_ascii_word(body_lower, "codesignal"))
+        && (contains_any_ascii_word(
+            subject_lower,
+            &["intern", "internship", "career", "recruiting"],
+        ) || contains_any_ascii_word(
+            body_lower,
+            &["internship", "application", "recruiting", "recruitment"],
+        ) || body_lower.contains("software engineer")
+            || body_lower.contains("talent acquisition"));
     let workshop_subject_hit = [
         "workshop",
         "webinar",
@@ -1307,6 +1459,9 @@ pub fn is_candidate_assessment_email(
         if org_event_hit
             && !(find_course_code(subject_lower).is_some() && subject_has_core_assessment)
         {
+            return false;
+        }
+        if club_quiz_hit || external_recruiting_hit {
             return false;
         }
         if workshop_subject_hit && !subject_has_core_assessment {
@@ -1395,10 +1550,21 @@ fn classify_assessment(lower: &str, subject_lower: &str) -> AssessmentType {
         || contains_ascii_prefix_digits(subject_lower, "quiz");
     let subject_mentions_assignment =
         contains_any_ascii_word(subject_lower, &["assignment", "assignments"]);
+    let subject_is_midterm =
+        contains_ascii_word(subject_lower, "midterm") || subject_lower.contains("mid-term");
+    let subject_is_final = contains_ascii_phrase(subject_lower, "final exam");
 
-    if contains_ascii_word(lower, "midterm") || lower.contains("mid-term") {
+    if subject_is_midterm
+        || ((contains_ascii_word(lower, "midterm") || lower.contains("mid-term"))
+            && !subject_mentions_quiz
+            && !subject_mentions_assignment)
+    {
         AssessmentType::MidtermExam
-    } else if contains_ascii_phrase(&scrubbed_for_final, "final exam") {
+    } else if subject_is_final
+        || (contains_ascii_phrase(&scrubbed_for_final, "final exam")
+            && !subject_mentions_quiz
+            && !subject_mentions_assignment)
+    {
         AssessmentType::FinalExam
     } else if lower.contains("online quiz") || lower.contains("/mod/quiz/") {
         AssessmentType::OnlineQuiz
@@ -1605,33 +1771,89 @@ fn is_metadata_key_prefix(lower: &str) -> bool {
     keys.contains(&clean_label)
 }
 
+fn match_topic_section_header(cleaned: &str) -> Option<&str> {
+    let trimmed = cleaned.trim();
+    if let Some((label, inline)) = trimmed.split_once(':') {
+        let clean_label = label.trim();
+        let lower_label = clean_label.to_ascii_lowercase();
+        let exact_labels = [
+            "topics covered",
+            "covered topics",
+            "topics included",
+            "included topics",
+            "topics for the quiz",
+            "topics for the exam",
+            "topics for the midterm",
+            "exam topics",
+            "quiz topics",
+            "topics",
+            "topic",
+            "syllabus",
+            "material covered",
+            "covered material",
+            "material included",
+            "exam material",
+            "quiz material",
+            "scope of the exam",
+            "scope",
+            "will cover",
+            "covers",
+            "study guide",
+        ];
+        if exact_labels.contains(&lower_label.as_str()) {
+            return Some(inline.trim());
+        }
+        // Extended headings such as "Topics covered in Quiz 2:" or "Quiz 2 will cover:"
+        let trimmed_lower = trimmed.to_ascii_lowercase();
+        if clean_label.chars().count() <= 56 && !is_metadata_key_prefix(&trimmed_lower) {
+            let matches_phrase = [
+                "topics covered",
+                "covered topics",
+                "topics included",
+                "topics for ",
+                "chapters covered",
+                "chapters included",
+                "material covered",
+                "material included",
+                "material for ",
+                "exam scope",
+                "quiz scope",
+                "midterm scope",
+                "study guide",
+            ]
+            .iter()
+            .any(|p| lower_label.contains(p))
+                || lower_label.ends_with("will cover")
+                || lower_label.ends_with(" covers");
+            if matches_phrase {
+                return Some(inline.trim());
+            }
+        }
+        return None;
+    }
+
+    // Colonless headings on their own line (e.g. "Topics covered in Quiz 2")
+    let lower = trimmed.to_ascii_lowercase();
+    if trimmed.chars().count() <= 45
+        && !trimmed.ends_with('.')
+        && [
+            "topics covered",
+            "covered topics",
+            "topics included",
+            "topics for ",
+            "material covered",
+            "syllabus",
+        ]
+        .iter()
+        .any(|p| lower.starts_with(p))
+    {
+        return Some("");
+    }
+    None
+}
+
 fn is_topic_section_header(lower: &str) -> Option<&'static str> {
-    let headers = [
-        "topics covered:",
-        "covered topics:",
-        "topics included:",
-        "included topics:",
-        "topics for the quiz:",
-        "topics for the exam:",
-        "topics for the midterm:",
-        "exam topics:",
-        "quiz topics:",
-        "topics:",
-        "topic:",
-        "syllabus:",
-        "material covered:",
-        "covered material:",
-        "exam material:",
-        "quiz material:",
-        "scope of the exam:",
-        "scope:",
-        "will cover:",
-        "covers:",
-        "study guide:",
-    ];
-    headers
-        .into_iter()
-        .find(|&header| lower.starts_with(header))
+    match_topic_section_header(lower).map(|_| "")
 }
 
 /// Returns `true` when `cleaned` is metadata, a greeting/signature, URL,
@@ -1715,9 +1937,27 @@ pub(crate) fn is_non_topic_text(cleaned: &str) -> bool {
         "please arrive",
         "be on time",
         "seat number",
+        "student id card",
+        "bring your student id",
         "late submission",
         "no makeup",
         "no make-up",
+        "calculators are",
+        "no calculator",
+        "not allowed to",
+        "must be submitted",
+        "submit your",
+        "submission via",
+        "upload your",
+        "please bring",
+        "students must",
+        "arriving late",
+        "exam duration",
+        "quiz duration",
+        "duration of the",
+        "time limit",
+        "academic integrity",
+        "plagiarism policy",
         "attendance is mandatory",
         "attendance will be taken",
     ];
@@ -1886,9 +2126,8 @@ pub(crate) fn extract_topics_from_text(announcement: &str, max_topics: usize) ->
         let lower_block = block_cleaned.to_ascii_lowercase();
 
         // Check explicit "Topics:" / "Syllabus:" headers (potentially inline CSV/list)
-        if let Some(header) = is_topic_section_header(&lower_block) {
+        if let Some(inline) = match_topic_section_header(&block_cleaned) {
             in_topic_section = true;
-            let inline = block_cleaned[header.len()..].trim();
             if !inline.is_empty() {
                 if inline.contains(',') || inline.contains(';') {
                     for part in inline.split([';', ',']) {
@@ -1951,26 +2190,41 @@ pub(crate) fn extract_topics_from_text(announcement: &str, max_topics: usize) ->
             ],
         );
 
+        let is_conversational_or_logistics = [
+            "we ",
+            "you ",
+            "your ",
+            "please ",
+            "students ",
+            "all students",
+            "kindly ",
+            "attend ",
+            "submit ",
+            "upload ",
+            "check ",
+            "make sure",
+            "remember ",
+            "do not ",
+            "don't ",
+            "the quiz ",
+            "this quiz ",
+            "the exam ",
+            "this exam ",
+            "the midterm ",
+            "note that",
+            "for more",
+            "good luck",
+            "if you",
+        ]
+        .iter()
+        .any(|p| lower_stripped.starts_with(p));
+
         if is_numbered {
             // Outside an explicit "Topics:" section, skip numbered administrative prose
             // starting with conversational cues ("1. We have...", "2. Please check...")
             // unless it names concrete syllabus units/chapters.
-            let conversational_step = [
-                "we ",
-                "you ",
-                "please ",
-                "students ",
-                "all students",
-                "kindly ",
-                "attend ",
-                "submit ",
-                "upload ",
-                "check ",
-            ]
-            .iter()
-            .any(|p| lower_stripped.starts_with(p));
             if (in_topic_section || has_concrete_scope_term)
-                && !(conversational_step && !in_topic_section)
+                && !(is_conversational_or_logistics && !in_topic_section)
                 && push_unique_topic(&mut items, stripped, max_topics)
             {
                 return items;
@@ -1978,7 +2232,38 @@ pub(crate) fn extract_topics_from_text(announcement: &str, max_topics: usize) ->
             continue;
         }
 
-        // Non-bulleted prose lines only count when they concisely state a lecture/chapter scope.
+        // Unbulleted lines directly beneath a `Topics:` heading (including HTML `<ul><li>` blocks
+        // converted to plain lines by `strip_html_tags`) count while concise and non-procedural.
+        if in_topic_section {
+            let word_count = stripped.split_whitespace().count();
+            let looks_like_sentence = stripped.ends_with(['!', '?'])
+                || (stripped.ends_with('.')
+                    && (word_count > 6
+                        || contains_any_ascii_word(
+                            &lower_stripped,
+                            &[
+                                "is", "are", "was", "were", "will", "be", "have", "has", "can",
+                                "must", "should",
+                            ],
+                        )));
+            if is_metadata_key_prefix(&lower_block)
+                || is_closing_signature_line(&lower_stripped)
+                || is_non_topic_text(&stripped)
+                || is_conversational_or_logistics
+                || looks_like_sentence
+                || word_count > 12
+                || contains_time_meridiem(&lower_stripped)
+                || find_explicit_date(&lower_stripped).is_some()
+            {
+                in_topic_section = false;
+            } else if push_unique_topic(&mut items, stripped, max_topics) {
+                return items;
+            }
+            continue;
+        }
+
+        // Non-bulleted prose lines outside a topics block only count when they concisely
+        // state a lecture/chapter scope.
         let mentions_scope = contains_any_ascii_word(
             &lower_stripped,
             &["lecture", "lectures", "chapter", "chapters"],
@@ -2244,9 +2529,10 @@ pub fn parse_email_announcement_from_source(
         email.body.clone()
     };
     let announcement = extract_announcement_body(&sanitized).to_string();
+    let announcement_clean = strip_forwarded_header_blocks(&announcement);
 
     let subject_lower = email.subject.to_ascii_lowercase();
-    let announcement_lower = announcement.to_ascii_lowercase();
+    let announcement_lower = announcement_clean.to_ascii_lowercase();
     let lower = format!("{subject_lower} {announcement_lower}");
 
     let sent_date = parse_email_sent_date(&email.date);
@@ -2305,14 +2591,24 @@ pub fn parse_email_announcement_from_source(
         })
         .unwrap_or((None, None, None, None));
 
-    let assessment_type = classify_assessment(&lower, &subject_lower);
+    let elearning_url = find_announcement_url(&email.body);
+    let url_hint = elearning_url
+        .as_deref()
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default();
+    let lower_for_classify = if url_hint.is_empty() {
+        lower.clone()
+    } else {
+        format!("{lower} {url_hint}")
+    };
+    let assessment_type = classify_assessment(&lower_for_classify, &subject_lower);
     let title = decide_title(
         &lower,
         course_id.as_deref(),
         assessment_type,
         &email.subject,
     );
-    let topics = extract_topics(&announcement, course_id.as_deref());
+    let topics = extract_topics(&announcement_clean, course_id.as_deref());
     let warnings = extract_warnings(&lower);
     let (plan, hours) = fallback_study_plan(course_id.as_deref(), &topics, &warnings);
 
@@ -2394,7 +2690,7 @@ pub fn parse_email_announcement_from_source(
         ai_inference_note: Some(ai_inference_note),
         ai_study_plan: Some(plan),
         estimated_study_hours: Some(hours),
-        elearning_url: find_announcement_url(&email.body),
+        elearning_url,
         google_cal_url: None,
         gcal_synced: false,
         gcal_event_id: None,
@@ -2466,7 +2762,16 @@ pub fn parse_emails_from_source(
             }
         }
         let subject_lower = email.subject.to_ascii_lowercase();
-        let body_lower = email.body.to_ascii_lowercase();
+        let body_for_filter = if looks_like_html(&email.body) {
+            let stripped = strip_html_tags(&email.body);
+            match find_announcement_url(&email.body) {
+                Some(url) => format!("{stripped}\n{url}"),
+                None => stripped,
+            }
+        } else {
+            email.body.clone()
+        };
+        let body_lower = body_for_filter.to_ascii_lowercase();
         let from_lower = email.from.to_ascii_lowercase();
         if !is_candidate_assessment_email(&subject_lower, &from_lower, &body_lower) {
             continue;

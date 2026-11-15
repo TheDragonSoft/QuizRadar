@@ -3187,4 +3187,102 @@ mod ffi_sync_tests {
             .unwrap();
         store.reset_all().await.unwrap();
     }
+
+    #[tokio::test]
+    async fn extraction_cache_persistence_reuses_unchanged_schedule_and_invalidates_on_edit() {
+        let store = fresh_store();
+        let email = crate::types::CachedEmail {
+            id: "gmail-cache-1".to_string(),
+            subject: "CSE241 Quiz 2".to_string(),
+            from: "Dr. Ada <ada@univ.edu>".to_string(),
+            date: "Sat, 17 Oct 2026 09:00:00 +0000".to_string(),
+            snippet: None,
+            body: "Quiz 2 next week during lecture.".to_string(),
+            body_truncated: false,
+            internal_date_ms: None,
+            history_id: None,
+        };
+        let base_schedule = crate::types::ScheduleData {
+            semester: Some("Fall 2026".to_string()),
+            academic_week_start: None,
+            courses: vec![crate::types::Course {
+                id: "CSE241".to_string(),
+                name: "OOP".to_string(),
+                color: "#4285f4".to_string(),
+                bg: None,
+                border: None,
+                credits: None,
+                max_absences: None,
+            }],
+            slots: vec![crate::types::ScheduleSlot {
+                id: "s1".to_string(),
+                day: "Sun".to_string(),
+                day_index: 0,
+                course_id: "CSE241".to_string(),
+                course_name: String::new(),
+                slot_type: "Lecture".to_string(),
+                group: Some("Sec 1".to_string()),
+                room: Some("Lab A".to_string()),
+                start_time: chrono::NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+                end_time: chrono::NaiveTime::from_hms_opt(10, 0, 0).unwrap(),
+                display_time: String::new(),
+                has_quiz: false,
+                quiz_title: None,
+                week_parity: None,
+            }],
+        };
+
+        let key_before = crate::sources::sync::compute_extraction_cache_key(&email, &base_schedule);
+        let extraction = crate::ai::tasks::ExtractedAssessment {
+            is_assessment: true,
+            course_id: Some("CSE241".to_string()),
+            course_name: Some("OOP".to_string()),
+            title: Some("Quiz 2: CSE241".to_string()),
+            assessment_type: Some(crate::types::AssessmentType::ClassQuiz),
+            date: chrono::NaiveDate::from_ymd_opt(2026, 10, 25),
+            start_time: Some(chrono::NaiveTime::from_hms_opt(9, 0, 0).unwrap()),
+            end_time: Some(chrono::NaiveTime::from_hms_opt(10, 0, 0).unwrap()),
+            room: Some("Lab A".to_string()),
+            group: Some("Sec 1".to_string()),
+            instructor: Some("Dr. Ada".to_string()),
+            topics: vec!["Polymorphism".to_string()],
+            warnings: vec![],
+            ai_inference_note: Some("Estimated: next week snapped to Lecture".to_string()),
+            ai_study_plan: Some("Review polymorphism.".to_string()),
+            estimated_study_hours: Some(2.5),
+        };
+        store
+            .inner
+            .save_email_ai_extraction(
+                &key_before,
+                &email.id,
+                &extraction,
+                crate::ai::provider::AiModel::FlashLite.model_id(),
+                NOW_ISO.to_string(),
+            )
+            .await
+            .unwrap();
+
+        let hit = store
+            .inner
+            .get_email_ai_extraction(&key_before)
+            .await
+            .unwrap();
+        assert_eq!(
+            hit.as_ref().and_then(|e| e.title.as_deref()),
+            Some("Quiz 2: CSE241")
+        );
+
+        let mut edited_schedule = base_schedule.clone();
+        edited_schedule.slots[0].room = Some("Hall 9".to_string());
+        let key_after =
+            crate::sources::sync::compute_extraction_cache_key(&email, &edited_schedule);
+        assert_ne!(key_before, key_after);
+        let miss = store
+            .inner
+            .get_email_ai_extraction(&key_after)
+            .await
+            .unwrap();
+        assert_eq!(miss, None);
+    }
 }

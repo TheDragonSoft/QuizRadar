@@ -1809,4 +1809,146 @@ mod tests {
             ]
         );
     }
+
+    #[tokio::test]
+    async fn extract_assessment_sanitizes_messy_model_topics_and_preserves_prompt_guards() {
+        assert!(
+            EXTRACT_INSTRUCTION.contains("banned")
+                || EXTRACT_INSTRUCTION.contains("barred from final exam")
+        );
+        assert!(EXTRACT_INSTRUCTION.contains("course/instructor evaluation surveys"));
+        assert!(EXTRACT_INSTRUCTION.contains("promotional/student discount offers"));
+        assert!(EXTRACT_INSTRUCTION.contains("extracurricular workshops"));
+
+        let server = MockServer::start().await;
+        mount_model(
+            &server,
+            "/models/gemini-3.5-flash-lite:generateContent",
+            r#"{
+  "is_assessment": true,
+  "course_id": "CSE241",
+  "title": "Quiz 2: CSE241",
+  "assessment_type": "Class Quiz",
+  "date_iso": "2026-10-25",
+  "topics": [
+    "✨ **Binary Search Trees** 🚀",
+    "TIME: 1:00 PM - 2:30 PM",
+    "ROOM: Hall 102",
+    "You are allowed one A4 sheet handwritten on both sides",
+    "Please make sure you attend your registered lecture section",
+    "__Dynamic Programming__ 📝",
+    "Best regards,"
+  ],
+  "warnings": ["No calculators"],
+  "ai_inference_note": "Extracted cleanly.",
+  "ai_study_plan": "Review trees and DP.",
+  "estimated_study_hours": 3.0
+}"#,
+        )
+        .await;
+
+        let draft = extract_assessment(
+            &fixture_provider(&server.uri()),
+            &email(),
+            &ScheduleData::default(),
+        )
+        .await
+        .unwrap();
+
+        assert!(draft.is_assessment);
+        assert_eq!(
+            draft.topics,
+            vec![
+                "Binary Search Trees".to_string(),
+                "Dynamic Programming".to_string(),
+            ],
+            "model-returned decorations, metadata, and exam rules must be scrubbed"
+        );
+    }
+
+    /// Manual evaluation harness against the real Gemini API (`GEMINI_API_KEY`).
+    /// Skipped in CI; run locally via:
+    /// `$env:GEMINI_API_KEY="..."; cargo test -p quizradar-core live_gemini_extraction_eval_harness -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore = "requires live GEMINI_API_KEY environment variable"]
+    async fn live_gemini_extraction_eval_harness() {
+        let key = std::env::var("GEMINI_API_KEY")
+            .expect("set GEMINI_API_KEY before running live Gemini eval");
+        let provider =
+            GeminiProvider::production(Some(key), std::sync::Arc::new(chrono::Utc::now), None)
+                .expect("GeminiProvider constructs cleanly");
+
+        let cases = [
+            (
+                "real_quiz",
+                CachedEmail {
+                    id: "live-1".to_string(),
+                    subject: "CSE241 Quiz 2 Schedule".to_string(),
+                    from: "Dr. Ada <ada@univ.edu>".to_string(),
+                    date: "Fri, 16 Oct 2026 10:00:00 +0000".to_string(),
+                    snippet: None,
+                    body: "Quiz 2 will be held on 25 October 2026.\nTopics covered:\n- Binary Search Trees\n- Dynamic Programming\nTIME: 9:00 AM - 10:00 AM\nYou are allowed one A4 sheet.".to_string(),
+                    body_truncated: false,
+                    internal_date_ms: None,
+                    history_id: None,
+                },
+                true,
+            ),
+            (
+                "promo_blast",
+                CachedEmail {
+                    id: "live-2".to_string(),
+                    subject: "Students: Unlock Gemini AI Plus free for one year".to_string(),
+                    from: "Google AI <noreply@google.com>".to_string(),
+                    date: "Fri, 16 Oct 2026 10:00:00 +0000".to_string(),
+                    snippet: None,
+                    body: "Claim your free student offer for Gemini AI Pro today. Offer ends next week!".to_string(),
+                    body_truncated: false,
+                    internal_date_ms: None,
+                    history_id: None,
+                },
+                false,
+            ),
+            (
+                "workshop_event",
+                CachedEmail {
+                    id: "live-3".to_string(),
+                    subject: "Reminder: Hands-on RAG Workshop".to_string(),
+                    from: "Activities Dept <activities@univ.edu>".to_string(),
+                    date: "Fri, 16 Oct 2026 11:00:00 +0000".to_string(),
+                    snippet: None,
+                    body: "Join our hands-on RAG workshop on Thursday at 2:00 PM in Hall 5. Register now!".to_string(),
+                    body_truncated: false,
+                    internal_date_ms: None,
+                    history_id: None,
+                },
+                false,
+            ),
+            (
+                "attendance_warning",
+                CachedEmail {
+                    id: "live-4".to_string(),
+                    subject: "CSE346: First Attendance Warning".to_string(),
+                    from: "Academic Advising <advising@univ.edu>".to_string(),
+                    date: "Fri, 16 Oct 2026 12:00:00 +0000".to_string(),
+                    snippet: None,
+                    body: "Your attendance dropped below the threshold; further absences mean being barred from the final exam.".to_string(),
+                    body_truncated: false,
+                    internal_date_ms: None,
+                    history_id: None,
+                },
+                false,
+            ),
+        ];
+
+        for (label, mail, expect_assessment) in cases {
+            let extracted = extract_assessment(&provider, &mail, &ScheduleData::default())
+                .await
+                .unwrap_or_else(|e| panic!("{label}: Gemini call failed: {e}"));
+            assert_eq!(
+                extracted.is_assessment, expect_assessment,
+                "{label}: live Gemini misclassified is_assessment: {extracted:?}"
+            );
+        }
+    }
 }

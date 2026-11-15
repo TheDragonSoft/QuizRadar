@@ -42,6 +42,10 @@ class BackgroundScanWorker(
             } catch (_: Exception) {
                 return Result.retry()
             }
+        return executeWithEngine(engine)
+    }
+
+    internal suspend fun executeWithEngine(engine: QuizRadarEngine): Result {
         return try {
             if (!engine.getConfigBool("background_scan_enabled", default = false)) {
                 return Result.success()
@@ -120,13 +124,11 @@ class BackgroundScanWorker(
                         // No live UI in the background - pulses are dropped.
                     }
                 }
-            val geminiEnabled = engine.getConfigBool("gemini_enabled", false)
             val geminiApiKey =
-                if (geminiEnabled) {
-                    engine.geminiApiKey()?.trim()?.takeIf { it.isNotEmpty() }
-                } else {
-                    null
-                }
+                resolveGeminiApiKey(
+                    geminiEnabled = engine.getConfigBool("gemini_enabled", false),
+                    rawKey = engine.geminiApiKey(),
+                )
             val reportJson = engine.runNativeSync(syncConfig, progress, geminiApiKey)
             val report = QuizRadarJsonParser.parseSyncReport(reportJson)
             AnalyticsManager.trackScanCompleted(
@@ -148,7 +150,17 @@ class BackgroundScanWorker(
     }
 
     companion object {
-        private const val WORK_NAME = "quizradar_background_scan_periodic"
+        internal const val WORK_NAME = "quizradar_background_scan_periodic"
+
+        internal fun resolveGeminiApiKey(
+            geminiEnabled: Boolean,
+            rawKey: String?,
+        ): String? =
+            if (geminiEnabled) {
+                rawKey?.trim()?.takeIf { it.isNotEmpty() }
+            } else {
+                null
+            }
 
         /**
          * Enqueues or cancels the periodic scan. Called from the Settings

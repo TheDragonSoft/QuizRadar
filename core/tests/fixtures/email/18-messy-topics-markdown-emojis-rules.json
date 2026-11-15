@@ -1,0 +1,40 @@
+{
+  "ref_date": "2026-10-17",
+  "emails": [
+    {
+      "id": "ann-18",
+      "subject": "CSE241 Quiz 2 Details ✨",
+      "from": "Dr. Ada <ada@univ.edu>",
+      "date": "Fri, 16 Oct 2026 10:00:00 +0000",
+      "snippet": null,
+      "body": "Dear students,\n\nReminder for ✨ **Quiz 2** 🚀 on 25 October 2026\nTIME: 9:00 AM - 10:00 AM\nROOM: Lab A\nTopics covered:\n- Binary Search Trees and\n  Balanced AVL Trees\n- **Dynamic Programming** 📝\n- You are allowed one A4 sheet handwritten on both sides\n- Please make sure you attend your registered lecture section\nFor more details: https://lms.univ.edu/mod/quiz/view.php?id=88\nBest regards,\nDr. Ada"
+    }
+  ],
+  "expected": {
+    "stats": { "scanned": 1, "candidates": 1, "parsed": 1, "skipped_duplicates": 0 },
+    "items": [
+      {
+        "id": "ann-18",
+        "course": "CSE241",
+        "title": "Quiz 2: CSE241",
+        "type": "Online Quiz",
+        "date": "2026-10-25",
+        "topics": [
+          "Binary Search Trees and Balanced AVL Trees",
+          "Dynamic Programming"
+        ],
+        "topics_exclude": [
+          "TIME:",
+          "ROOM:",
+          "A4 sheet",
+          "registered lecture",
+          "Best regards",
+          "https://",
+          "**",
+          "📝",
+          "🚀"
+        ]
+      }
+    ]
+  }
+}

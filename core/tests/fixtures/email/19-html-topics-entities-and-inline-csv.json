@@ -1,0 +1,51 @@
+{
+  "ref_date": "2026-10-17",
+  "emails": [
+    {
+      "id": "ann-19a",
+      "subject": "CSE241 Quiz 2 Syllabus",
+      "from": "Dr. Ada <ada@univ.edu>",
+      "date": "Fri, 16 Oct 2026 09:00:00 +0000",
+      "snippet": null,
+      "body": "<p>Topics covered in Quiz 2:</p><ul><li>Object&rsquo;s Lifecycle &amp; Destructors</li><li>Inheritance &ndash; Virtual Dispatch</li><li>Please bring your student ID card</li></ul><p>Quiz 2 is on 25 October 2026.</p>"
+    },
+    {
+      "id": "ann-19b",
+      "subject": "CSE346 Quiz 1 Coverage",
+      "from": "Dr. Joy <joy@univ.edu>",
+      "date": "Fri, 16 Oct 2026 11:00:00 +0000",
+      "snippet": null,
+      "body": "Quiz 1 will be on Monday 26 October 2026.\nQuiz 1 covers: TCP Congestion Control, Sliding Window, and Flow Control\nROOM: Hall 2"
+    }
+  ],
+  "expected": {
+    "stats": { "scanned": 2, "candidates": 2, "parsed": 2, "skipped_duplicates": 0 },
+    "items": [
+      {
+        "id": "ann-19a",
+        "course": "CSE241",
+        "title": "Quiz 2: CSE241",
+        "type": "Class Quiz",
+        "date": "2026-10-25",
+        "topics": [
+          "Object's Lifecycle & Destructors",
+          "Inheritance - Virtual Dispatch"
+        ],
+        "topics_exclude": ["&rsquo;", "&ndash;", "student id"]
+      },
+      {
+        "id": "ann-19b",
+        "course": "CSE346",
+        "title": "Quiz 1: CSE346",
+        "type": "Class Quiz",
+        "date": "2026-10-26",
+        "topics": [
+          "TCP Congestion Control",
+          "Sliding Window",
+          "Flow Control"
+        ],
+        "topics_exclude": ["ROOM:"]
+      }
+    ]
+  }
+}

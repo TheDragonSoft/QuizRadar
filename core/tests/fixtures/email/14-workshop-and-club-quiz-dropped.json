@@ -1,0 +1,33 @@
+{
+  "ref_date": "2026-10-17",
+  "emails": [
+    {
+      "id": "ann-14a",
+      "subject": "Reminder: Hands-on RAG Workshop ✨🚀",
+      "from": "Digital Content & Activities Dept <activities@univ.edu>",
+      "date": "Fri, 16 Oct 2026 11:00:00 +0000",
+      "snippet": null,
+      "body": "Join our hands-on RAG workshop on Thursday at 2:00 PM in Hall 5. Register now! Note: a short practice test runs at the end."
+    },
+    {
+      "id": "ann-14b",
+      "subject": "ACM Student Club Quiz Night — Win Prizes!",
+      "from": "ACM Student Club <acm@univ.edu>",
+      "date": "Fri, 16 Oct 2026 13:00:00 +0000",
+      "snippet": null,
+      "body": "Join us tomorrow evening in Student Hall 3 for a fun trivia quiz competition! Limited seats, RSVP."
+    },
+    {
+      "id": "ann-14c",
+      "subject": "Online Coding Assessment Invitation — Software Engineer Intern",
+      "from": "University Careers Partner <recruiting@techcorp.example>",
+      "date": "Fri, 16 Oct 2026 16:00:00 +0000",
+      "snippet": null,
+      "body": "Thank you for your Software Engineer internship application. Complete your HackerRank technical assessment before Monday."
+    }
+  ],
+  "expected": {
+    "stats": { "scanned": 3, "candidates": 0, "parsed": 0, "skipped_duplicates": 0 },
+    "items": []
+  }
+}

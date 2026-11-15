@@ -148,6 +148,48 @@ fn assert_item(actual: &Assessment, exp: &Value, case: &str, index: usize) {
             "{case}[{index}]: topics count"
         );
     }
+    if let Some(expected) = at("topics").and_then(|v| v.as_array()) {
+        let expected_list: Vec<String> = expected
+            .iter()
+            .map(|v| {
+                v.as_str()
+                    .unwrap_or_else(|| panic!("{case}[{index}]: topics entry must be a string"))
+                    .to_string()
+            })
+            .collect();
+        assert_eq!(
+            actual.topics, expected_list,
+            "{case}[{index}]: exact topics list mismatch"
+        );
+    }
+    if let Some(expected) = at("topics_contains").and_then(|v| v.as_array()) {
+        for needle in expected {
+            let needle = needle
+                .as_str()
+                .unwrap_or_else(|| panic!("{case}[{index}]: topics_contains entry must be string"));
+            assert!(
+                actual.topics.iter().any(|t| t.contains(needle)),
+                "{case}[{index}]: expected a topic containing {needle:?} in {:?}",
+                actual.topics
+            );
+        }
+    }
+    if let Some(excluded) = at("topics_exclude").and_then(|v| v.as_array()) {
+        for forbidden in excluded {
+            let forbidden = forbidden
+                .as_str()
+                .unwrap_or_else(|| panic!("{case}[{index}]: topics_exclude entry must be string"));
+            let needle_lower = forbidden.to_ascii_lowercase();
+            assert!(
+                actual
+                    .topics
+                    .iter()
+                    .all(|t| !t.to_ascii_lowercase().contains(&needle_lower)),
+                "{case}[{index}]: forbidden fragment {forbidden:?} leaked into topics {:?}",
+                actual.topics
+            );
+        }
+    }
     if let Some(expected) = at("hours") {
         assert_eq!(
             actual.estimated_study_hours,
@@ -256,8 +298,8 @@ fn email_fixtures_match_golden() {
         checked += 1;
     }
     assert!(
-        checked >= 12,
-        "expected at least 12 email fixture cases, ran {checked}"
+        checked >= 24,
+        "expected at least 24 email fixture cases, ran {checked}"
     );
 }
 

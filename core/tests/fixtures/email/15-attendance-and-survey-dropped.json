@@ -1,0 +1,25 @@
+{
+  "ref_date": "2026-10-17",
+  "emails": [
+    {
+      "id": "ann-15a",
+      "subject": "CSE346: First Attendance Warning",
+      "from": "Academic Advising <advising@univ.edu>",
+      "date": "Fri, 16 Oct 2026 09:30:00 +0000",
+      "snippet": null,
+      "body": "Dear student, your attendance in CSE346 dropped below the threshold. Further absences will result in being barred from the final exam on 20 December 2026."
+    },
+    {
+      "id": "ann-15b",
+      "subject": "Mid-Semester Course Evaluation Survey",
+      "from": "Quality Assurance Office <qa@univ.edu>",
+      "date": "Thu, 15 Oct 2026 12:00:00 +0000",
+      "snippet": null,
+      "body": "Please complete the course evaluation survey for your enrolled courses before the final exam deadline on Sunday."
+    }
+  ],
+  "expected": {
+    "stats": { "scanned": 2, "candidates": 0, "parsed": 0, "skipped_duplicates": 0 },
+    "items": []
+  }
+}

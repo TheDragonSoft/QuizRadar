@@ -1,0 +1,25 @@
+{
+  "ref_date": "2026-10-17",
+  "emails": [
+    {
+      "id": "ann-13a",
+      "subject": "Students: Unlock Gemini AI Plus free for one year",
+      "from": "Google AI <noreply@google.com>",
+      "date": "Fri, 16 Oct 2026 10:00:00 +0000",
+      "snippet": null,
+      "body": "Claim your free student offer for Gemini AI Pro today. Offer ends next week. Unsubscribe from promotional announcements."
+    },
+    {
+      "id": "ann-13b",
+      "subject": "Quizlet Plus Student Discount — 50% off before the exam season",
+      "from": "Quizlet <offers@quizlet.example>",
+      "date": "Thu, 15 Oct 2026 15:00:00 +0000",
+      "snippet": null,
+      "body": "Prepare for your upcoming quiz or midterm with Quizlet Plus! Start your free trial tomorrow. Manage email preferences or unsubscribe."
+    }
+  ],
+  "expected": {
+    "stats": { "scanned": 2, "candidates": 0, "parsed": 0, "skipped_duplicates": 0 },
+    "items": []
+  }
+}

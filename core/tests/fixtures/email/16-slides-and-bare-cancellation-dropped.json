@@ -1,0 +1,41 @@
+{
+  "ref_date": "2026-10-17",
+  "emails": [
+    {
+      "id": "ann-16a",
+      "subject": "CSE241 Lecture 5 Slides Uploaded",
+      "from": "Course Coord <coord@univ.edu>",
+      "date": "Fri, 16 Oct 2026 10:00:00 +0000",
+      "snippet": null,
+      "body": "Lecture 5 slides have been uploaded to the portal for quiz preparation."
+    },
+    {
+      "id": "ann-16b",
+      "subject": "CSE241 Quiz 1 Solutions Uploaded",
+      "from": "TA Team <ta@univ.edu>",
+      "date": "Fri, 16 Oct 2026 11:00:00 +0000",
+      "snippet": null,
+      "body": "Solutions for yesterday's Quiz 1 are now on the course page."
+    },
+    {
+      "id": "ann-16c",
+      "subject": "CSE241 Quiz 1 Cancelled",
+      "from": "Dr. Ada <ada@univ.edu>",
+      "date": "Sat, 17 Oct 2026 08:00:00 +0000",
+      "snippet": null,
+      "body": "Dear students, Quiz 1 scheduled for Sunday at 9:00 AM is cancelled."
+    },
+    {
+      "id": "ann-16d",
+      "subject": "CSE346 Midterm Exam Grades Posted",
+      "from": "Dr. Joy <joy@univ.edu>",
+      "date": "Fri, 16 Oct 2026 18:00:00 +0000",
+      "snippet": null,
+      "body": "Midterm exam results are now posted on the student portal."
+    }
+  ],
+  "expected": {
+    "stats": { "scanned": 4, "candidates": 0, "parsed": 0, "skipped_duplicates": 0 },
+    "items": []
+  }
+}

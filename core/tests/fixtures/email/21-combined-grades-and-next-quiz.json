@@ -1,0 +1,29 @@
+{
+  "ref_date": "2026-10-17",
+  "emails": [
+    {
+      "id": "ann-21",
+      "subject": "CSE241 Quiz 2 grades — Quiz 3 moved to Sunday 25 October 2026",
+      "from": "Dr. Ada <ada@univ.edu>",
+      "date": "Fri, 16 Oct 2026 10:00:00 +0000",
+      "snippet": null,
+      "body": "Quiz 2 grades are posted.\nReminder: Quiz 3 is moved to Sunday, 25 October 2026.\nTopics:\n- Inheritance\n- Polymorphism"
+    }
+  ],
+  "expected": {
+    "stats": { "scanned": 1, "candidates": 1, "parsed": 1, "skipped_duplicates": 0 },
+    "items": [
+      {
+        "id": "ann-21",
+        "course": "CSE241",
+        "title": "Quiz 3: CSE241",
+        "type": "Class Quiz",
+        "date": "2026-10-25",
+        "day_name": "Sunday",
+        "start_time": "09:00",
+        "room": "Lab A",
+        "topics": ["Inheritance", "Polymorphism"]
+      }
+    ]
+  }
+}

@@ -342,135 +342,24 @@ pub async fn run_sync_with_ai(
                 AssessmentSource::Gmail,
             );
 
-            let mut assessments = Vec::new();
-            if let Some(ai_prov) = email_ai {
-                let mut ai_enhanced = 0usize;
-                let mut ai_dropped_non_assessment = 0usize;
-                let mut ai_fallback = 0usize;
-
-                use futures::stream::{self, StreamExt};
-
-                enum ExtractionWorkItem {
-                    Passthrough(Assessment),
-                    Cached {
-                        assessment: Assessment,
-                        cached: ExtractedAssessment,
-                    },
-                    NeedsAi {
-                        assessment: Assessment,
-                        email: CachedEmail,
-                        hash: String,
-                    },
+            let mut assessments = if let Some(ai_prov) = email_ai {
+                let outcome = apply_email_ai_extractions(
+                    raw_assessments,
+                    &emails_cache,
+                    &input.schedule,
+                    &input.cached_extractions,
+                    input.reference_date,
+                    ai_prov,
+                )
+                .await;
+                all_new_extractions.extend(outcome.new_extractions);
+                if let Some(note) = outcome.note {
+                    notes.push(note);
                 }
-
-                let mut work_items = Vec::new();
-                for assessment in raw_assessments {
-                    if let Some(email) = emails_cache.iter().find(|e| e.id == assessment.id) {
-                        let hash = compute_extraction_cache_key(email, &input.schedule);
-                        if let Some(cached) = input.cached_extractions.get(&hash) {
-                            work_items.push(ExtractionWorkItem::Cached {
-                                assessment,
-                                cached: cached.clone(),
-                            });
-                        } else {
-                            work_items.push(ExtractionWorkItem::NeedsAi {
-                                assessment,
-                                email: email.clone(),
-                                hash,
-                            });
-                        }
-                    } else {
-                        work_items.push(ExtractionWorkItem::Passthrough(assessment));
-                    }
-                }
-
-                // Process up to 5 concurrent AI extractions to keep latency low
-                // while respecting provider rate limits.
-                let schedule = &input.schedule;
-                let reference_date = input.reference_date;
-                let processed_results = stream::iter(work_items)
-                    .map(|item| async move {
-                        match item {
-                            ExtractionWorkItem::Passthrough(a) => (Some(a), None, None),
-                            ExtractionWorkItem::Cached { assessment, cached } => {
-                                if cached.is_assessment {
-                                    let merged =
-                                        merge_extraction(assessment, &cached, reference_date);
-                                    (Some(merged), None, Some(true))
-                                } else {
-                                    (None, None, Some(false))
-                                }
-                            }
-                            ExtractionWorkItem::NeedsAi {
-                                assessment,
-                                email,
-                                hash,
-                            } => match extract_assessment(ai_prov, &email, schedule).await {
-                                Ok(extraction) => {
-                                    let new_extraction =
-                                        (hash, email.id.clone(), extraction.clone());
-                                    if extraction.is_assessment {
-                                        let merged = merge_extraction(
-                                            assessment,
-                                            &extraction,
-                                            reference_date,
-                                        );
-                                        (Some(merged), Some(new_extraction), Some(true))
-                                    } else {
-                                        (None, Some(new_extraction), Some(false))
-                                    }
-                                }
-                                Err(e) => {
-                                    let mut fallback = assessment;
-                                    let note =
-                                        fallback.ai_inference_note.get_or_insert_with(String::new);
-                                    if !note.is_empty() {
-                                        note.push(' ');
-                                    }
-                                    note.push_str(&format!(
-                                        "[AI unavailable: {e}; used local heuristic]"
-                                    ));
-                                    (Some(fallback), None, None)
-                                }
-                            },
-                        }
-                    })
-                    .buffered(5)
-                    .collect::<Vec<_>>()
-                    .await;
-
-                for (assessment_opt, new_ext_opt, status) in processed_results {
-                    if let Some(new_ext) = new_ext_opt {
-                        all_new_extractions.push(new_ext);
-                    }
-                    match status {
-                        Some(true) => ai_enhanced += 1,
-                        Some(false) => ai_dropped_non_assessment += 1,
-                        None => {
-                            if assessment_opt.as_ref().is_some_and(|a| {
-                                a.ai_inference_note
-                                    .as_deref()
-                                    .unwrap_or("")
-                                    .contains("[AI unavailable:")
-                            }) {
-                                ai_fallback += 1;
-                            }
-                        }
-                    }
-                    if let Some(a) = assessment_opt {
-                        assessments.push(a);
-                    }
-                }
-
-                if ai_enhanced > 0 || ai_dropped_non_assessment > 0 || ai_fallback > 0 {
-                    notes.push(format!(
-                        "AI Email Reasoning: {} announcement(s) verified by Gemini Flash-Lite ({} non-assessment(s) filtered, {} fallback(s) to heuristics).",
-                        ai_enhanced, ai_dropped_non_assessment, ai_fallback
-                    ));
-                }
+                outcome.assessments
             } else {
-                assessments = raw_assessments;
-            }
+                raw_assessments
+            };
 
             // Provenance: this run of Gmail is what last reported these items.
             stamp_source_run(&mut assessments, run.run_id.as_deref());
@@ -653,6 +542,143 @@ fn stale_skip_note(parse_stats: &ScanStats) -> Option<String> {
         "Gmail: {} cached message(s) older than {MAX_EMAIL_AGE_DAYS} days were skipped (they are no longer part of the radar).",
         parse_stats.skipped_stale
     ))
+}
+
+struct AiRefinementOutcome {
+    assessments: Vec<Assessment>,
+    new_extractions: Vec<(String, String, ExtractedAssessment)>,
+    note: Option<String>,
+}
+
+async fn apply_email_ai_extractions(
+    raw_assessments: Vec<Assessment>,
+    emails_cache: &[CachedEmail],
+    schedule: &ScheduleData,
+    cached_extractions: &HashMap<String, ExtractedAssessment>,
+    reference_date: NaiveDate,
+    ai_prov: &dyn AiProvider,
+) -> AiRefinementOutcome {
+    use futures::stream::{self, StreamExt};
+
+    enum ExtractionWorkItem {
+        Passthrough(Assessment),
+        Cached {
+            assessment: Assessment,
+            cached: ExtractedAssessment,
+        },
+        NeedsAi {
+            assessment: Assessment,
+            email: CachedEmail,
+            hash: String,
+        },
+    }
+
+    let mut work_items = Vec::new();
+    for assessment in raw_assessments {
+        if let Some(email) = emails_cache.iter().find(|e| e.id == assessment.id) {
+            let hash = compute_extraction_cache_key(email, schedule);
+            if let Some(cached) = cached_extractions.get(&hash) {
+                work_items.push(ExtractionWorkItem::Cached {
+                    assessment,
+                    cached: cached.clone(),
+                });
+            } else {
+                work_items.push(ExtractionWorkItem::NeedsAi {
+                    assessment,
+                    email: email.clone(),
+                    hash,
+                });
+            }
+        } else {
+            work_items.push(ExtractionWorkItem::Passthrough(assessment));
+        }
+    }
+
+    let processed_results = stream::iter(work_items)
+        .map(|item| async move {
+            match item {
+                ExtractionWorkItem::Passthrough(a) => (Some(a), None, None),
+                ExtractionWorkItem::Cached { assessment, cached } => {
+                    if cached.is_assessment {
+                        let merged = merge_extraction(assessment, &cached, reference_date);
+                        (Some(merged), None, Some(true))
+                    } else {
+                        (None, None, Some(false))
+                    }
+                }
+                ExtractionWorkItem::NeedsAi {
+                    assessment,
+                    email,
+                    hash,
+                } => match extract_assessment(ai_prov, &email, schedule).await {
+                    Ok(extraction) => {
+                        let new_extraction = (hash, email.id.clone(), extraction.clone());
+                        if extraction.is_assessment {
+                            let merged = merge_extraction(assessment, &extraction, reference_date);
+                            (Some(merged), Some(new_extraction), Some(true))
+                        } else {
+                            (None, Some(new_extraction), Some(false))
+                        }
+                    }
+                    Err(e) => {
+                        let mut fallback = assessment;
+                        let note = fallback.ai_inference_note.get_or_insert_with(String::new);
+                        if !note.is_empty() {
+                            note.push(' ');
+                        }
+                        note.push_str(&format!("[AI unavailable: {e}; used local heuristic]"));
+                        (Some(fallback), None, None)
+                    }
+                },
+            }
+        })
+        .buffered(5)
+        .collect::<Vec<_>>()
+        .await;
+
+    let mut assessments = Vec::new();
+    let mut new_extractions = Vec::new();
+    let mut ai_enhanced = 0usize;
+    let mut ai_dropped_non_assessment = 0usize;
+    let mut ai_fallback = 0usize;
+
+    for (assessment_opt, new_ext_opt, status) in processed_results {
+        if let Some(new_ext) = new_ext_opt {
+            new_extractions.push(new_ext);
+        }
+        match status {
+            Some(true) => ai_enhanced += 1,
+            Some(false) => ai_dropped_non_assessment += 1,
+            None => {
+                if assessment_opt.as_ref().is_some_and(|a| {
+                    a.ai_inference_note
+                        .as_deref()
+                        .unwrap_or("")
+                        .contains("[AI unavailable:")
+                }) {
+                    ai_fallback += 1;
+                }
+            }
+        }
+        if let Some(a) = assessment_opt {
+            assessments.push(a);
+        }
+    }
+
+    let note = if ai_enhanced > 0 || ai_dropped_non_assessment > 0 || ai_fallback > 0 {
+        Some(format!(
+            "AI Email Reasoning: {} announcement(s) verified by Gemini Flash-Lite ({} non-assessment(s) filtered, {} fallback(s) to heuristics).",
+            ai_enhanced, ai_dropped_non_assessment, ai_fallback
+        ))
+    } else {
+        None
+    };
+
+    AiRefinementOutcome {
+        assessments,
+        new_extractions,
+        note,
+    }
 }
 
 async fn run_gmail_source(
@@ -1423,5 +1449,217 @@ mod tests {
             different_identity,
             "identical context → identical key"
         );
+    }
+
+    #[tokio::test]
+    async fn ai_email_refinement_uses_cache_hits_and_drops_cached_non_assessments() {
+        use chrono::TimeZone;
+
+        let server = MockServer::start().await;
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .unwrap();
+        let clock = crate::ai::provider::fixed_clock(
+            chrono::Utc
+                .with_ymd_and_hms(2026, 10, 24, 12, 0, 0)
+                .unwrap(),
+        );
+        let ai_provider = crate::ai::gemini::GeminiProvider::new(
+            client,
+            Some("k-test".to_string()),
+            server.uri(),
+            clock,
+            None,
+        );
+
+        let keep_email = CachedEmail {
+            id: "mail-keep".to_string(),
+            subject: "CSE241 Quiz 2".to_string(),
+            from: "Dr. Ada <ada@univ.edu>".to_string(),
+            date: "Sat, 17 Oct 2026 09:00:00 +0000".to_string(),
+            snippet: None,
+            body: "Quiz 2 will be held on 25 October 2026.".to_string(),
+            body_truncated: false,
+            internal_date_ms: None,
+            history_id: None,
+        };
+        let drop_email = CachedEmail {
+            id: "mail-noise".to_string(),
+            subject: "CSE241 Midterm Prep Optional Survey".to_string(),
+            from: "Dept <dept@univ.edu>".to_string(),
+            date: "Sat, 17 Oct 2026 10:00:00 +0000".to_string(),
+            snippet: None,
+            body: "Fill out the prep form next week.".to_string(),
+            body_truncated: false,
+            internal_date_ms: None,
+            history_id: None,
+        };
+
+        let keep_resp = serde_json::json!({
+            "candidates": [{
+                "content": { "parts": [{ "text": r#"{
+                    "is_assessment": true,
+                    "course_id": "CSE241",
+                    "title": "Quiz 2: CSE241",
+                    "assessment_type": "Class Quiz",
+                    "date_iso": "2026-10-25",
+                    "topics": ["Polymorphism"],
+                    "warnings": [],
+                    "ai_inference_note": "Confirmed Quiz 2 date from announcement.",
+                    "ai_study_plan": "Review polymorphism notes.",
+                    "estimated_study_hours": 3.0
+                }"# }] },
+                "finishReason": "STOP"
+            }]
+        });
+        let drop_resp = serde_json::json!({
+            "candidates": [{
+                "content": { "parts": [{ "text": r#"{ "is_assessment": false }"# }] },
+                "finishReason": "STOP"
+            }]
+        });
+
+        Mock::given(method("POST"))
+            .and(path("/models/gemini-3.5-flash-lite:generateContent"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(keep_resp))
+            .up_to_n_times(1)
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/models/gemini-3.5-flash-lite:generateContent"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(drop_resp))
+            .up_to_n_times(1)
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let sched = schedule();
+        let ref_date = NaiveDate::from_ymd_opt(2026, 10, 17).unwrap();
+        let emails = vec![keep_email.clone(), drop_email.clone()];
+        let (raw, _) = crate::parse::email::parse_emails_from_source(
+            &emails,
+            &sched,
+            ref_date,
+            AssessmentSource::Gmail,
+        );
+        assert_eq!(raw.len(), 2);
+
+        // Pass 1: cold cache calls Gemini once per candidate assessment.
+        let pass1 = apply_email_ai_extractions(
+            raw.clone(),
+            &emails,
+            &sched,
+            &HashMap::new(),
+            ref_date,
+            &ai_provider,
+        )
+        .await;
+        server.verify().await;
+        assert_eq!(pass1.assessments.len(), 1);
+        assert_eq!(pass1.assessments[0].id, "mail-keep");
+        assert_eq!(pass1.assessments[0].topics, vec!["Polymorphism"]);
+        assert_eq!(pass1.new_extractions.len(), 2);
+        assert!(pass1
+            .note
+            .as_deref()
+            .unwrap()
+            .contains("1 announcement(s) verified by Gemini Flash-Lite (1 non-assessment(s) filtered, 0 fallback(s) to heuristics)"));
+
+        // Hydrate cache from pass 1 and ensure pass 2 makes ZERO HTTP calls.
+        let mut hydrated = HashMap::new();
+        for (hash, _id, ext) in pass1.new_extractions {
+            hydrated.insert(hash, ext);
+        }
+        server.reset().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(500))
+            .expect(0)
+            .mount(&server)
+            .await;
+
+        let pass2 =
+            apply_email_ai_extractions(raw, &emails, &sched, &hydrated, ref_date, &ai_provider)
+                .await;
+        server.verify().await;
+        assert_eq!(pass2.assessments.len(), 1);
+        assert_eq!(pass2.assessments[0].id, "mail-keep");
+        assert!(pass2.new_extractions.is_empty());
+        assert_eq!(pass2.note, pass1.note);
+    }
+
+    #[tokio::test]
+    async fn ai_email_refinement_falls_back_gracefully_on_provider_error() {
+        use chrono::TimeZone;
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/models/gemini-3.5-flash-lite:generateContent"))
+            .respond_with(ResponseTemplate::new(429))
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .unwrap();
+        let clock = crate::ai::provider::fixed_clock(
+            chrono::Utc
+                .with_ymd_and_hms(2026, 10, 24, 12, 0, 0)
+                .unwrap(),
+        );
+        let ai_provider = crate::ai::gemini::GeminiProvider::new(
+            client,
+            Some("k-test".to_string()),
+            server.uri(),
+            clock,
+            None,
+        );
+
+        let keep_email = CachedEmail {
+            id: "mail-keep".to_string(),
+            subject: "CSE241 Quiz 2".to_string(),
+            from: "Dr. Ada <ada@univ.edu>".to_string(),
+            date: "Sat, 17 Oct 2026 09:00:00 +0000".to_string(),
+            snippet: None,
+            body: "Quiz 2 will be held on 25 October 2026.".to_string(),
+            body_truncated: false,
+            internal_date_ms: None,
+            history_id: None,
+        };
+        let sched = schedule();
+        let ref_date = NaiveDate::from_ymd_opt(2026, 10, 17).unwrap();
+        let emails = vec![keep_email];
+        let (raw, _) = crate::parse::email::parse_emails_from_source(
+            &emails,
+            &sched,
+            ref_date,
+            AssessmentSource::Gmail,
+        );
+
+        let outcome = apply_email_ai_extractions(
+            raw,
+            &emails,
+            &sched,
+            &HashMap::new(),
+            ref_date,
+            &ai_provider,
+        )
+        .await;
+        assert_eq!(outcome.assessments.len(), 1);
+        assert!(outcome.new_extractions.is_empty());
+        assert!(outcome.assessments[0]
+            .ai_inference_note
+            .as_deref()
+            .unwrap_or_default()
+            .contains("[AI unavailable:"));
+        assert!(outcome
+            .note
+            .as_deref()
+            .unwrap()
+            .contains("1 fallback(s) to heuristics"));
     }
 }

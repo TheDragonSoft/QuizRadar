@@ -1,7 +1,7 @@
 //! Property-based tests for the announcement → assessment pipeline
 //! (`core/src/parse/email.rs`).
 //!
-//! Four properties, all driven through the crate's public API only:
+//! Seven properties, all driven through the crate's public API only:
 //!
 //! - **P1 — never panics.** Arbitrary text (and realistic-but-mangled
 //!   announcements) go through the parser without a panic.
@@ -15,6 +15,13 @@
 //!   be parsed yields *no* date instead of a bogus one.
 //! - **P4 — time sanity.** Start/end are inherited verbatim from one of the
 //!   student's own slots, so they are never invented and never reordered.
+//! - **P5 — negative-corpus non-leakage.** Randomized promos, workshops, club
+//!   quizzes, recruiting tests, attendance warnings, surveys, grades, slides,
+//!   bare cancellations, and substring traps never produce radar assessments.
+//! - **P6 — topic hygiene.** Injected clock/room metadata, URLs, signatures,
+//!   Markdown/emojis, and exam rules never leak into extracted topics.
+//! - **P7 — quiz invariance.** Explicit Quiz subjects stay `ClassQuiz` despite
+//!   body chatter and multi-digit numbers (`Quiz 10`–`12`) never collapse.
 //!
 //! Three deterministic *controls* keep the properties from passing
 //! vacuously: they pin that room/group/instructor/dates really are populated
@@ -38,7 +45,7 @@ use chrono::{Datelike, Duration, NaiveDate, NaiveTime};
 use proptest::prelude::*;
 use quizradar_core::parse::email::{parse_email_announcement, parse_emails};
 use quizradar_core::parse::util::{month_full_name, weekday_index, weekday_to_index};
-use quizradar_core::types::{CachedEmail, Course, ScheduleData, ScheduleSlot};
+use quizradar_core::types::{AssessmentType, CachedEmail, Course, ScheduleData, ScheduleSlot};
 
 // ---------------------------------------------------------------------------
 // Fixed inputs — the parser takes "today" from its caller, so the tests never
@@ -805,4 +812,279 @@ fn p4_overnight_slot_times_are_preserved_verbatim() {
         Some(NaiveTime::from_hms_opt(2, 0, 0).unwrap())
     );
     assert!(assessment.end_time < assessment.start_time);
+}
+
+// ---------------------------------------------------------------------------
+// P5 — negative-corpus non-leakage
+// ---------------------------------------------------------------------------
+
+const NEGATIVE_SCENARIOS: &[(&str, &str, &str)] = &[
+    // Commercial promos & subscriptions
+    (
+        "Students: Unlock Gemini AI Plus free for one year",
+        "Google AI <noreply@google.com>",
+        "Claim your free student offer today. Offer ends next week. Unsubscribe anytime.",
+    ),
+    (
+        "Quizlet Plus Student Discount — save before midterm week",
+        "Quizlet <offers@quizlet.example>",
+        "Start your free trial tomorrow to study for any quiz or final exam. Manage email preferences.",
+    ),
+    // Workshops, clubs & recruiting tests
+    (
+        "Reminder: Hands-on RAG Workshop",
+        "Digital Content & Activities Dept <activities@univ.edu>",
+        "Join our hands-on workshop on Thursday at 2:00 PM in Hall 5. Register now!",
+    ),
+    (
+        "ACM Quiz Night — Win Prizes!",
+        "ACM Student Club <acm@univ.edu>",
+        "Join us for a trivia quiz competition tomorrow in Student Hall 3. RSVP!",
+    ),
+    (
+        "Online Coding Assessment Invitation — Software Engineer Intern",
+        "Careers Team <recruiting@techcorp.example>",
+        "Complete your HackerRank technical assessment by Monday for your internship application.",
+    ),
+    // Attendance warnings & surveys
+    (
+        "CSE241: First Attendance Warning",
+        "Academic Advising <advising@univ.edu>",
+        "Further absences will result in being barred from the final exam on 20 December 2026.",
+    ),
+    (
+        "Mid-Semester Course Evaluation Survey",
+        "Quality Assurance <qa@univ.edu>",
+        "Please complete the course evaluation survey before the final exam deadline on Sunday.",
+    ),
+    // Pure results, slides, solution keys & bare cancellations
+    (
+        "CSE346 Midterm Exam Grades Posted",
+        "Dr. Joy <joy@univ.edu>",
+        "Midterm exam marks are now available on the student portal.",
+    ),
+    (
+        "CSE241 Lecture 5 Slides Uploaded",
+        "Course Coord <coord@univ.edu>",
+        "Lecture 5 slides have been posted for your quiz preparation.",
+    ),
+    (
+        "CSE241 Quiz 1 Solutions Uploaded",
+        "TA Team <ta@univ.edu>",
+        "Solutions for Quiz 1 are now uploaded.",
+    ),
+    (
+        "CSE241 Quiz 1 Cancelled",
+        "Dr. Ada <ada@univ.edu>",
+        "Quiz 1 scheduled for Sunday at 9:00 AM is cancelled.",
+    ),
+    // Word-boundary traps ("latest", "contest", "syllabus", "available", "team")
+    (
+        "Department Bulletin",
+        "CS Dept <cs@univ.edu>",
+        "The latest contest materials and updated syllabus are now available for our campus team.",
+    ),
+];
+
+fn arb_negative_email() -> impl Strategy<Value = CachedEmail> {
+    (
+        prop::sample::select(NEGATIVE_SCENARIOS),
+        any::<bool>(),
+        0usize..4,
+    )
+        .prop_map(|((subject, from, body), upper_subject, day_offset)| {
+            let final_subject = if upper_subject {
+                subject.to_ascii_uppercase()
+            } else {
+                subject.to_string()
+            };
+            let sent = ref_date() - Duration::days(day_offset as i64);
+            let date_hdr = format!(
+                "{}, {:02} {} {} 09:00:00 +0000",
+                sent.format("%a"),
+                sent.day(),
+                sent.format("%b"),
+                sent.year()
+            );
+            CachedEmail {
+                id: "neg-1".to_string(),
+                subject: final_subject,
+                from: from.to_string(),
+                date: date_hdr,
+                snippet: None,
+                body: body.to_string(),
+                body_truncated: false,
+                internal_date_ms: None,
+                history_id: None,
+            }
+        })
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: 100,
+        max_shrink_iters: 2000,
+        ..ProptestConfig::default()
+    })]
+    /// P5 — known non-assessment blasts (promos, workshops, attendance alerts,
+    /// surveys, grade notices, slide uploads, bare cancellations, and substring
+    /// word-boundary traps) never produce radar items in `parse_emails`.
+    #[test]
+    fn p5_non_assessment_blasts_never_leak_into_radar(
+        schedule in Just(control_schedule()),
+        email in arb_negative_email(),
+    ) {
+        let (items, stats) = parse_emails(&[email], &schedule, ref_date());
+        prop_assert_eq!(stats.candidates, 0, "unexpected candidate leaked: {:?}", items);
+        prop_assert!(items.is_empty(), "non-assessment email parsed into: {:?}", items);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// P6 — topic hygiene under injected metadata, Markdown, emojis & exam rules
+// ---------------------------------------------------------------------------
+
+const CLEAN_TOPICS: &[&str] = &[
+    "Binary Search Trees",
+    "Dynamic Programming",
+    "TCP Congestion Control",
+    "Relational Algebra",
+    "Virtual Memory Paging",
+];
+
+const TOPIC_WRAPPERS: &[(&str, &str)] = &[
+    ("", ""),
+    ("**", "**"),
+    ("__", "__"),
+    ("`", "`"),
+    ("✨ ", " 🚀"),
+    ("**", "** 📝"),
+];
+
+const TOPIC_NOISE_LINES: &[&str] = &[
+    "TIME: 1:00 PM - 2:30 PM",
+    "ROOM: Hall 102",
+    "For more details: https://lms.univ.edu/quiz2",
+    "- You are allowed one A4 sheet handwritten on both sides",
+    "- Please make sure you attend your registered lecture section",
+    "- Bring your student ID card",
+];
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: 100,
+        max_shrink_iters: 2000,
+        ..ProptestConfig::default()
+    })]
+    /// P6 — real syllabus bullets survive decoration stripping while injected
+    /// clock ranges, room metadata, URLs, signatures, and exam rules never
+    /// leak into `assessment.topics`.
+    #[test]
+    fn p6_topics_strip_decorations_and_reject_injected_noise(
+        topic_a in prop::sample::select(CLEAN_TOPICS),
+        topic_b in prop::sample::select(CLEAN_TOPICS).prop_filter("distinct", |b| !b.is_empty()),
+        wrapper in prop::sample::select(TOPIC_WRAPPERS),
+        noise_a in prop::sample::select(TOPIC_NOISE_LINES),
+        noise_b in prop::sample::select(TOPIC_NOISE_LINES),
+    ) {
+        prop_assume!(topic_a != topic_b);
+        let body = format!(
+            "Dear students,\n\
+             Reminder for Quiz 2 on 2 November 2026\n\
+             {noise_a}\n\
+             Topics covered:\n\
+             - {0}{topic_a}{1}\n\
+             - {topic_b}\n\
+             {noise_b}\n\
+             Best regards,\n\
+             Dr. Alice Smith",
+            wrapper.0, wrapper.1
+        );
+        let email = CachedEmail {
+            id: "topic-hygiene-1".to_string(),
+            subject: "CSE241 Quiz 2".to_string(),
+            from: "Dr. Alice Smith <alice@univ.edu>".to_string(),
+            date: "Thu, 29 Oct 2026 09:00:00 +0000".to_string(),
+            snippet: None,
+            body,
+            body_truncated: false,
+            internal_date_ms: None,
+            history_id: None,
+        };
+        let assessment = parse_email_announcement(&email, &control_schedule(), ref_date());
+        prop_assert!(
+            assessment.topics.iter().any(|t| t == topic_a),
+            "expected clean topic {topic_a:?} in {:?}",
+            assessment.topics
+        );
+        prop_assert!(
+            assessment.topics.iter().any(|t| t == topic_b),
+            "expected clean topic {topic_b:?} in {:?}",
+            assessment.topics
+        );
+        for topic in &assessment.topics {
+            let lower = topic.to_ascii_lowercase();
+            prop_assert!(!lower.contains("time:"), "TIME metadata leaked: {topic:?}");
+            prop_assert!(!lower.contains("room:"), "ROOM metadata leaked: {topic:?}");
+            prop_assert!(!lower.contains("https://"), "URL leaked: {topic:?}");
+            prop_assert!(!lower.contains("a4 sheet"), "exam rule leaked: {topic:?}");
+            prop_assert!(!lower.contains("registered lecture"), "section rule leaked: {topic:?}");
+            prop_assert!(!lower.contains("student id"), "ID card rule leaked: {topic:?}");
+            prop_assert!(!lower.contains("best regards"), "signature leaked: {topic:?}");
+            prop_assert!(!topic.contains("**") && !topic.contains("__") && !topic.contains('`'));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// P7 — subject Quiz invariance and multi-digit quiz number disambiguation
+// ---------------------------------------------------------------------------
+
+const BODY_CHATTER: &[&str] = &[
+    "Please review your previous homework solutions and updated syllabus.",
+    "This quiz helps you prepare for the upcoming midterm and final exam.",
+    "Available study materials cover our lab exercises on OOP.",
+    "Review team project feedback before coming to class.",
+];
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: 100,
+        max_shrink_iters: 2000,
+        ..ProptestConfig::default()
+    })]
+    /// P7 — emails explicitly titled as a Quiz keep `ClassQuiz` regardless of
+    /// incidental body chatter ("homework", "syllabus", "midterm prep"), and
+    /// two-digit quiz numbers (Quiz 10/11/12) never collapse to "Quiz 1".
+    #[test]
+    fn p7_subject_quiz_is_not_hijacked_and_quiz10_keeps_its_number(
+        quiz_num in prop::sample::select(&[2u8, 3, 10, 11, 12]),
+        chatter in prop::sample::select(BODY_CHATTER),
+    ) {
+        let email = CachedEmail {
+            id: "quiz-inv-1".to_string(),
+            subject: format!("CSE241 Quiz {quiz_num} Schedule"),
+            from: "Dr. Alice Smith <alice@univ.edu>".to_string(),
+            date: "Thu, 29 Oct 2026 09:00:00 +0000".to_string(),
+            snippet: None,
+            body: format!("Quiz {quiz_num} will be held on 4 November 2026. {chatter}"),
+            body_truncated: false,
+            internal_date_ms: None,
+            history_id: None,
+        };
+        let assessment = parse_email_announcement(&email, &control_schedule(), ref_date());
+        prop_assert_eq!(assessment.assessment_type, AssessmentType::ClassQuiz);
+        if quiz_num >= 10 {
+            prop_assert!(
+                !assessment.title.starts_with("Quiz 1:"),
+                "Quiz {quiz_num} collapsed to Quiz 1 in title {:?}",
+                assessment.title
+            );
+            prop_assert!(
+                assessment.title.contains(&format!("Quiz {quiz_num}")),
+                "expected Quiz {quiz_num} in title {:?}",
+                assessment.title
+            );
+        }
+    }
 }

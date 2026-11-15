@@ -1,0 +1,28 @@
+{
+  "ref_date": "2026-10-17",
+  "emails": [
+    {
+      "id": "ann-20",
+      "subject": "CSE241 Quiz 2 Schedule",
+      "from": "Dr. Ada <ada@univ.edu>",
+      "date": "Fri, 16 Oct 2026 10:00:00 +0000",
+      "snippet": null,
+      "body": "Dear students,\n\nQuiz 2 will be held on 25 October 2026 during our regular lecture.\nThis quiz reviews your previous homework assignment solutions and helps prepare you for the midterm and final exam."
+    }
+  ],
+  "expected": {
+    "stats": { "scanned": 1, "candidates": 1, "parsed": 1, "skipped_duplicates": 0 },
+    "items": [
+      {
+        "id": "ann-20",
+        "course": "CSE241",
+        "title": "Quiz 2: CSE241",
+        "type": "Class Quiz",
+        "date": "2026-10-25",
+        "start_time": "09:00",
+        "end_time": "10:00",
+        "room": "Lab A"
+      }
+    ]
+  }
+}

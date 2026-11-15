@@ -1,0 +1,43 @@
+{
+  "ref_date": "2026-10-17",
+  "emails": [
+    {
+      "id": "ann-24a",
+      "subject": "CSE241 Quiz 10",
+      "from": "Dr. Ada <ada@univ.edu>",
+      "date": "Fri, 16 Oct 2026 09:00:00 +0000",
+      "snippet": null,
+      "body": "CSE241 Quiz 10 will take place on Sunday, 25 October 2026 in the regular lecture slot."
+    },
+    {
+      "id": "ann-24b",
+      "subject": "CSE346 Module Check",
+      "from": "Moodle LMS <lms@univ.edu>",
+      "date": "Fri, 16 Oct 2026 10:00:00 +0000",
+      "snippet": null,
+      "body": "<p>Your online assessment opens on Monday 26 October 2026.</p><p><a href=\"https://lms.univ.edu/mod/quiz/view.php?id=99\">Attempt quiz now</a></p>"
+    }
+  ],
+  "expected": {
+    "stats": { "scanned": 2, "candidates": 2, "parsed": 2, "skipped_duplicates": 0 },
+    "items": [
+      {
+        "id": "ann-24a",
+        "course": "CSE241",
+        "title": "CSE241 Quiz 10",
+        "type": "Class Quiz",
+        "date": "2026-10-25",
+        "start_time": "09:00",
+        "room": "Lab A"
+      },
+      {
+        "id": "ann-24b",
+        "course": "CSE346",
+        "title": "CSE346 Module Check",
+        "type": "Online Quiz",
+        "date": "2026-10-26",
+        "url": "https://lms.univ.edu/mod/quiz/view.php?id=99"
+      }
+    ]
+  }
+}

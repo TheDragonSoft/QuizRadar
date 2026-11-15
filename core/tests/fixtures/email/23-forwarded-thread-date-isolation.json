@@ -1,0 +1,30 @@
+{
+  "ref_date": "2026-10-17",
+  "emails": [
+    {
+      "id": "ann-23",
+      "subject": "Fwd: CSE241 Quiz 2",
+      "from": "Class Rep <rep@univ.edu>",
+      "date": "Fri, 16 Oct 2026 18:00:00 +0000",
+      "snippet": null,
+      "body": "FYI everyone.\n\n---------- Forwarded message ---------\nFrom: Dr. Ada <ada@univ.edu>\nDate: Tue, 13 October 2026 at 10:15 AM\nSubject: CSE241 Quiz 2\nTo: Students <students@univ.edu>\n\nDear students,\n\nQuiz 2 will be held on Sunday, 25 October 2026.\nTopics covered: Polymorphism, Templates\n\nBest regards,\nDr. Ada"
+    }
+  ],
+  "expected": {
+    "stats": { "scanned": 1, "candidates": 1, "parsed": 1, "skipped_duplicates": 0 },
+    "items": [
+      {
+        "id": "ann-23",
+        "course": "CSE241",
+        "title": "Quiz 2: CSE241",
+        "type": "Class Quiz",
+        "date": "2026-10-25",
+        "day_name": "Sunday",
+        "start_time": "09:00",
+        "room": "Lab A",
+        "topics": ["Polymorphism", "Templates"],
+        "topics_exclude": ["From:", "Date:", "Forwarded message"]
+      }
+    ]
+  }
+}

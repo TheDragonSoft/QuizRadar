@@ -1,0 +1,43 @@
+{
+  "ref_date": "2026-10-17",
+  "emails": [
+    {
+      "id": "ann-17a",
+      "subject": "Weekly Department Bulletin",
+      "from": "CS Dept <cs@univ.edu>",
+      "date": "Fri, 16 Oct 2026 09:00:00 +0000",
+      "snippet": null,
+      "body": "The latest programming contest materials and updated syllabus are now available for our campus robotics team."
+    },
+    {
+      "id": "ann-17b",
+      "subject": "CSE241 Quiz 3 on 25 October 2026",
+      "from": "Dr. Ada <ada@univ.edu>",
+      "date": "Fri, 16 Oct 2026 14:00:00 +0000",
+      "snippet": null,
+      "body": "Dear students,\n\nCSE241 Quiz 3 will be held on Sunday, 25 October 2026.\nAlso please fill out the survey afterwards. cc: student affairs office."
+    }
+  ],
+  "expected": {
+    "stats": { "scanned": 2, "candidates": 1, "parsed": 1, "skipped_duplicates": 0 },
+    "items": [
+      {
+        "id": "ann-17b",
+        "course": "CSE241",
+        "course_name": "Object-Oriented Programming",
+        "title": "Quiz 3: CSE241",
+        "type": "Class Quiz",
+        "date": "2026-10-25",
+        "day_name": "Sunday",
+        "start_time": "09:00",
+        "end_time": "10:00",
+        "room": "Lab A",
+        "group": "Sec 1",
+        "instructor": "Dr. Ada",
+        "days_until": 8,
+        "upcoming": true,
+        "urgency": "medium"
+      }
+    ]
+  }
+}

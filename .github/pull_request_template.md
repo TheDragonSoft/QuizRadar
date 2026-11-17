@@ -30,7 +30,7 @@
 - [ ] Desktop / Web screenshot(s) embedded directly in this PR description
 - [ ] Android (Compose M3, rendered without emulator) screenshot(s) embedded directly in this PR description
 
-> **Important:** Embed actual images directly in the PR description (`![caption](url)`), **not** as a GitHub Action artifact link or bot comment.
+> **Important:** Embed actual images directly in the PR description (`![caption](url)`), **not** as a GitHub Action artifact link or bot comment. Screenshots **must clearly show the new or changed UI element(s)** for review feedback.
 
 ### Desktop / Web
 <!-- Embed screenshot(s): ![Desktop UI](https://raw.githubusercontent.com/TheDragonSoft/QuizRadar/pr-screenshots/...) -->

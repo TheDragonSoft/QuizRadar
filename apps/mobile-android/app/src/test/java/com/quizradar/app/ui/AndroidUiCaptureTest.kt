@@ -228,4 +228,99 @@ class AndroidUiCaptureTest {
         waitForText("Settings")
         capturePng("settings-dark")
     }
+
+    @Test
+    @Config(qualifiers = "w390dp-h844dp-night")
+    fun capture_course_aliases_dark() {
+        val sampleCourse =
+            com.quizradar.app.model.CourseModel(
+                id = "CSE241",
+                name = "Digital Design",
+                color = "#1a73e8",
+                aliases = listOf("CS241", "COMP 241"),
+            )
+        composeTestRule.setContent {
+            QuizRadarTheme {
+                val sheetState =
+                    androidx.compose.material3.rememberModalBottomSheetState(
+                        skipPartiallyExpanded = true,
+                    )
+                com.quizradar.app.ui.detail.CourseEditorSheet(
+                    course = sampleCourse,
+                    initialSlots = emptyList(),
+                    sheetState = sheetState,
+                    onDismiss = {},
+                    onSave = { _, _ -> },
+                )
+            }
+        }
+        waitForText("Additional Course Codes / Aliases")
+        capturePng("course-aliases-dark")
+    }
+
+    @Test
+    @Config(qualifiers = "w390dp-h844dp-night")
+    fun capture_assessment_reassign_dark() {
+        val sampleAssessment =
+            com.quizradar.app.model.AssessmentModel(
+                id = "quiz-alias",
+                title = "Class Quiz 2",
+                courseId = "CS241",
+                courseName = null,
+                assessmentType = "Class Quiz",
+                dateIso = LocalDate.now().plusDays(3),
+                dayName = "Friday",
+                startTime = "10:00",
+                endTime = "10:45",
+                displayTime = "10:00–10:45",
+                room = "Lab 3",
+                group = null,
+                instructor = "Dr. Hassan",
+                isUpcoming = true,
+                daysUntil = 3,
+                urgencyLevel = "high",
+                priorityScore = 85,
+                topics = listOf("Inheritance", "Polymorphism"),
+                warnings = emptyList(),
+                source = "email",
+            )
+        val courses =
+            listOf(
+                com.quizradar.app.model.CourseModel(
+                    id = "CSE241",
+                    name = "Digital Design",
+                    color = "#1a73e8",
+                    aliases = listOf("CS241"),
+                ),
+                com.quizradar.app.model.CourseModel(
+                    id = "GSE211",
+                    name = "Discrete Mathematics",
+                    color = "#a142f4",
+                ),
+            )
+        composeTestRule.setContent {
+            QuizRadarTheme {
+                val sheetState =
+                    androidx.compose.material3.rememberModalBottomSheetState(
+                        skipPartiallyExpanded = true,
+                    )
+                com.quizradar.app.ui.detail.AssessmentDetailSheet(
+                    assessment = sampleAssessment,
+                    allAssessments = listOf(sampleAssessment),
+                    completedTopicsMap = emptyMap(),
+                    sheetState = sheetState,
+                    onDismiss = {},
+                    onToggleTopic = { _, _ -> },
+                    onSaveGrade = { _, _, _ -> GradeSaveResult.Saved },
+                    onExportIcs = { "" },
+                    onOpenPractice = {},
+                    onOpenPomodoro = {},
+                    courses = courses,
+                    onReassignCourse = { _, _ -> },
+                )
+            }
+        }
+        waitForText("Assign to Course")
+        capturePng("assessment-reassign-dark")
+    }
 }

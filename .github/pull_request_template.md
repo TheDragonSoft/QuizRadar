@@ -24,6 +24,14 @@
 - [ ] `cargo fmt --all --check` / `cargo clippy --workspace --all-targets -- -D warnings` / `cargo test --workspace`
 - [ ] `./gradlew ktlintCheck testDebugUnitTest` (in `apps/mobile-android`)
 
+## UI Screenshots (Required if Desktop/Web or Android UI changed)
+
+- [ ] Desktop/Web screenshot captured (`pnpm --dir apps/web e2e:showcase`)
+- [ ] Android Compose screenshot rendered without emulator (`./gradlew testDebugUnitTest --tests "*AndroidUiCaptureTest*"`)
+- [ ] Attached photos below (or verified `pr-ui-screenshots` CI artifacts):
+
+<!-- Paste Desktop & Android rendered screenshots here when UI changed -->
+
 ## Honesty & Security Checklist (`AGENTS.md` §3 & §8)
 
 - [ ] No fabricated data, default rooms, fake success states, or hardcoded user copy outside `copy.ts`

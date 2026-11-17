@@ -1463,7 +1463,7 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
       let gradesMerged = 0;
       for (const [k, v] of Object.entries(remoteGrades)) {
         if (v && !localGrades[k]) {
-          await saveGrade({ ...v, assessmentId: v.assessmentId || k });
+          await saveGrade({ ...v, assessment_id: v.assessment_id || k });
           gradesMerged += 1;
         }
       }

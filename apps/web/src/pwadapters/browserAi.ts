@@ -29,8 +29,8 @@ const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
  * caller's own key/quota and is surfaced honestly.
  */
 export const FLASH_MODEL_IDS: ReadonlyArray<string> = [
-  "gemini-3.5-flash",
   "gemini-3.8-flash",
+  "gemini-3.5-flash",
   "gemini-3.7-flash",
   "gemini-3.6-flash",
   "gemini-flash-latest",
@@ -391,6 +391,7 @@ export async function extractTimetableBrowser(
   };
 
   let lastError: Error | null = null;
+  let lastStatus: number | null = null;
   for (const modelId of FLASH_MODEL_IDS) {
     let response: Response;
     try {
@@ -414,9 +415,13 @@ export async function extractTimetableBrowser(
       detail = redactKey(detail, apiKey);
       const error = mapGeminiStatus(response.status, detail);
       // 404 = the model id is retired for this key's project, 503 = the model
-      // is congested: both are model-level, so the next id is tried.
+      // is congested: both are model-level, so the next id is tried. Keep an
+      // earlier 503 rather than letting a trailing retired-model 404 hide it.
       if (response.status === 404 || response.status === 503) {
-        lastError = error;
+        if (!(lastStatus === 503 && response.status === 404)) {
+          lastError = error;
+          lastStatus = response.status;
+        }
         continue;
       }
       throw error;

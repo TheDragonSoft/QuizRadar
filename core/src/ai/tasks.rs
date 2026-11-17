@@ -1512,7 +1512,7 @@ mod tests {
         let server = MockServer::start().await;
         mount_model(
             &server,
-            "/models/gemini-3.5-flash:generateContent",
+            "/models/gemini-3.8-flash:generateContent",
             r##"{
   "semester": "Fall 2026",
   "courses": [
@@ -1585,7 +1585,7 @@ mod tests {
         let server = MockServer::start().await;
         mount_model(
             &server,
-            "/models/gemini-3.5-flash:generateContent",
+            "/models/gemini-3.8-flash:generateContent",
             r#"{ "semester": "", "courses": [], "slots": [] }"#,
         )
         .await;
@@ -1605,7 +1605,7 @@ mod tests {
         let server = MockServer::start().await;
         mount_model(
             &server,
-            "/models/gemini-3.5-flash:generateContent",
+            "/models/gemini-3.8-flash:generateContent",
             r#"{
   "readiness_cards": [
     { "assessment_id": "gmail-1", "recommended_focus": "Quantum Entanglement", "readiness_percent": 95 }
@@ -1688,7 +1688,7 @@ mod tests {
         let server = MockServer::start().await;
         mount_model(
             &server,
-            "/models/gemini-3.5-flash:generateContent",
+            "/models/gemini-3.8-flash:generateContent",
             r#"{
   "readiness_cards": [],
   "tasks": [

@@ -622,6 +622,7 @@ pub async fn extract_timetable(
                     border,
                     credits: None,
                     max_absences: None,
+                    aliases: Vec::new(),
                 });
             }
             Err(_) => dropped_courses += 1,

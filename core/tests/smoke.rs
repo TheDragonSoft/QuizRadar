@@ -117,6 +117,7 @@ fn course_roundtrip() {
         border: None,
         credits: None,
         max_absences: None,
+        aliases: Vec::new(),
     };
     let json = serde_json::to_value(&course).unwrap();
     assert_eq!(json["id"], "MTH102");

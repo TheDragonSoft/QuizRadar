@@ -100,6 +100,7 @@ fun CourseEditorSheet(
 
     var code by rememberSaveable { mutableStateOf(course?.id ?: "") }
     var name by rememberSaveable { mutableStateOf(course?.name ?: "") }
+    var aliasesInput by rememberSaveable { mutableStateOf(course?.aliases?.joinToString(", ") ?: "") }
     var selectedColor by rememberSaveable { mutableStateOf(course?.color ?: CoursePalette.HEX_PRESETS.first()) }
     var instructor by rememberSaveable { mutableStateOf(initialSlots.firstOrNull()?.instructor ?: "") }
 
@@ -182,6 +183,19 @@ fun CourseEditorSheet(
                 value = instructor,
                 onValueChange = { instructor = it },
                 label = { Text("Instructor Name (optional)") },
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            OutlinedTextField(
+                value = aliasesInput,
+                onValueChange = { aliasesInput = it },
+                label = { Text("Additional Course Codes / Aliases (optional)") },
+                placeholder = { Text("e.g. CS241, COMP 241") },
+                supportingText = { Text("Comma-separated codes matched during scans") },
                 singleLine = true,
                 colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
                 modifier = Modifier.fillMaxWidth(),
@@ -609,11 +623,19 @@ fun CourseEditorSheet(
 
                 Button(
                     onClick = {
+                        val trimmedCode = code.trim().uppercase()
+                        val parsedAliases =
+                            aliasesInput
+                                .split(",")
+                                .map { it.trim() }
+                                .filter { it.isNotEmpty() && !it.equals(trimmedCode, ignoreCase = true) }
+                                .distinct()
                         val updatedCourse =
                             CourseModel(
-                                id = code.trim().uppercase(),
+                                id = trimmedCode,
                                 name = name.trim(),
                                 color = selectedColor,
+                                aliases = parsedAliases,
                             )
                         onSave(updatedCourse, slots.toList())
                         onDismiss()

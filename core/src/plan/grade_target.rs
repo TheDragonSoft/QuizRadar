@@ -361,6 +361,7 @@ mod tests {
             border: None,
             credits: Some(3.0),
             max_absences: None,
+            aliases: Vec::new(),
         }
     }
 

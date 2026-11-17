@@ -8,6 +8,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -37,6 +39,8 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +50,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,6 +72,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.quizradar.app.core.topicKey
 import com.quizradar.app.model.AssessmentModel
+import com.quizradar.app.model.CourseModel
 import com.quizradar.app.ui.GradeSaveResult
 import com.quizradar.app.ui.calendarEventBeginTimeMillis
 import com.quizradar.app.ui.components.StatusTag
@@ -121,6 +127,7 @@ private fun FactCell(
 
 @OptIn(
     ExperimentalMaterial3Api::class,
+    ExperimentalLayoutApi::class,
     androidx.compose.foundation.ExperimentalFoundationApi::class,
 )
 @Composable
@@ -145,6 +152,8 @@ fun AssessmentDetailSheet(
     modifier: Modifier = Modifier,
     courseColorsById: Map<String, String?> = emptyMap(),
     courseColorHex: String? = null,
+    courses: List<CourseModel> = emptyList(),
+    onReassignCourse: ((newCourseId: String, addAlias: Boolean) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -153,6 +162,15 @@ fun AssessmentDetailSheet(
     val storedColorHex = courseColorHex ?: assessment.courseId?.let { courseColorsById[it] }
     val palette = CoursePalette.get(assessment.courseId, storedColorHex)
     val courseTextColor = CoursePalette.textOnSurface(assessment.courseId, isDark, storedColorHex)
+
+    val isUnmatchedCourse =
+        courses.isNotEmpty() &&
+            courses.none { it.id.equals(assessment.courseId, ignoreCase = true) }
+    var showCourseAssign by remember(assessment.id) { mutableStateOf(false) }
+    var selectedCourseId by remember(assessment.id, courses) {
+        mutableStateOf(courses.firstOrNull()?.id ?: "")
+    }
+    var rememberAsAlias by remember(assessment.id) { mutableStateOf(true) }
 
     var scoreInput by remember(assessment.id) {
         mutableStateOf(assessment.achievedScore?.toString() ?: "")
@@ -231,6 +249,15 @@ fun AssessmentDetailSheet(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+                        if (courses.isNotEmpty() && onReassignCourse != null) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            TextButton(onClick = { showCourseAssign = !showCourseAssign }) {
+                                Text(
+                                    text = if (isUnmatchedCourse) "Assign Course" else "Change",
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
+                        }
                     }
                 }
                 // 48dp minimum touch target (Material a11y guideline).
@@ -263,6 +290,83 @@ fun AssessmentDetailSheet(
                         contentColor = urgency.content,
                         tabular = true,
                     )
+                }
+            }
+
+            if (courses.isNotEmpty() && onReassignCourse != null && (isUnmatchedCourse || showCourseAssign)) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    colors = CardDefaults.quietCardColors(),
+                    border = quietCardBorder(),
+                    elevation = CardDefaults.quietCardElevation(),
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            text =
+                                if (isUnmatchedCourse) {
+                                    "Course code \"${assessment.courseId ?: "Unassigned"}\" isn't linked to an enrolled course"
+                                } else {
+                                    "Reassign to a different course"
+                                },
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            courses.forEach { course ->
+                                FilterChip(
+                                    selected = selectedCourseId == course.id,
+                                    onClick = { selectedCourseId = course.id },
+                                    label = { Text("${course.id} • ${course.name}") },
+                                    colors = FilterChipDefaults.filterChipColors(),
+                                )
+                            }
+                        }
+                        val oldCode = assessment.courseId?.trim().orEmpty()
+                        val showAliasOption =
+                            oldCode.isNotEmpty() &&
+                                !oldCode.equals("UNASSIGNED", ignoreCase = true) &&
+                                !oldCode.equals("GENERAL", ignoreCase = true) &&
+                                !oldCode.equals(selectedCourseId, ignoreCase = true)
+                        if (showAliasOption) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.clickable { rememberAsAlias = !rememberAsAlias },
+                            ) {
+                                Checkbox(
+                                    checked = rememberAsAlias,
+                                    onCheckedChange = { rememberAsAlias = it },
+                                    colors = CheckboxDefaults.colors(),
+                                )
+                                Text(
+                                    text = "Also add $oldCode as an alias for $selectedCourseId",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Button(
+                            onClick = {
+                                if (selectedCourseId.isNotBlank()) {
+                                    onReassignCourse(selectedCourseId, showAliasOption && rememberAsAlias)
+                                    showCourseAssign = false
+                                }
+                            },
+                            enabled = selectedCourseId.isNotBlank(),
+                            colors = ButtonDefaults.filledPill(),
+                            contentPadding = PillButtonContentPadding,
+                            modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                        ) {
+                            Text("Assign to Course", style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
                 }
             }
 

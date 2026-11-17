@@ -1142,6 +1142,34 @@ class QuizRadarViewModel(
         }
     }
 
+    /** Reassigns an assessment to an enrolled course and optionally adds its old code as an alias. */
+    fun reassignAssessmentCourse(
+        assessmentId: String,
+        newCourseId: String,
+        addAlias: Boolean,
+        onResult: (AssessmentSaveResult) -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            try {
+                val refDate = clockDate()
+                val updatedJson = callCore {
+                    core.reassignAssessmentCourse(assessmentId, newCourseId, addAlias, refDate)
+                }
+                val snapshot = QuizRadarJsonParser.parseAppSnapshot(updatedJson)
+                _uiState.value = UiState.Ready(snapshot)
+                lastLoadedDate = refDate
+                onStateMutated?.invoke()
+                showToast("Assigned to $newCourseId")
+                onResult(AssessmentSaveResult.Saved)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                onResult(
+                    AssessmentSaveResult.Failed(e.message?.takeIf { it.isNotBlank() } ?: "unknown error"),
+                )
+            }
+        }
+    }
+
     /**
      * Edits an existing custom event (A08): an edit is an upsert under the
      * SAME id, so reminders and calendar identity survive the correction.
@@ -1915,6 +1943,7 @@ class QuizRadarViewModel(
                         put("color", course.color ?: "#1a73e8")
                         if (credits != null) put("credits", credits)
                         if (maxAbsences != null) put("max_absences", maxAbsences)
+                        if (course.aliases.isNotEmpty()) put("aliases", JSONArray(course.aliases))
                     }.toString()
 
                 val slotsArr = JSONArray()

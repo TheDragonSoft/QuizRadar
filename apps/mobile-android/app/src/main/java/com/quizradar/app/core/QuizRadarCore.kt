@@ -246,6 +246,14 @@ interface QuizRadarCore {
         refDate: LocalDate = LocalDate.now(),
     ): String = throw UnsupportedOperationException("deleteFeed is not supported by this fake")
 
+    /** Reassigns an assessment's course and optionally records the old code as an alias. */
+    suspend fun reassignAssessmentCourse(
+        assessmentId: String,
+        newCourseId: String,
+        addAlias: Boolean,
+        refDate: LocalDate = LocalDate.now(),
+    ): String = throw UnsupportedOperationException("reassignAssessmentCourse is not supported by this fake")
+
     /**
      * The canonical transactional reset: ONE SQLite transaction wipes every
      * owned table (feeds, config, tokens metadata, attendance, flashcards,

@@ -957,6 +957,30 @@ impl NativeStore {
         Ok(serde_json::to_string(&snapshot)?)
     }
 
+    /// Reassigns an assessment to `new_course_id` and optionally records its
+    /// previous unrecognized code as an alias on the target course.
+    pub async fn reassign_assessment_course(
+        &self,
+        assessment_id: String,
+        new_course_id: String,
+        add_alias: bool,
+        updated_at: String,
+        ref_date_iso: String,
+    ) -> Result<String, QuizRadarFfiError> {
+        let ref_date = parse_ref_date(&ref_date_iso)?;
+        let snapshot = self
+            .inner
+            .reassign_assessment_course(
+                assessment_id,
+                new_course_id,
+                add_alias,
+                updated_at,
+                ref_date,
+            )
+            .await?;
+        Ok(serde_json::to_string(&snapshot)?)
+    }
+
     pub async fn delete_assessment(
         &self,
         id: String,
@@ -2876,6 +2900,7 @@ mod ffi_sync_tests {
             border: None,
             credits: Some(3.0),
             max_absences: Some(4),
+            aliases: Vec::new(),
         };
         let schedule = ScheduleData {
             semester: Some("Fall 2026".to_string()),
@@ -3213,6 +3238,7 @@ mod ffi_sync_tests {
                 border: None,
                 credits: None,
                 max_absences: None,
+                aliases: Vec::new(),
             }],
             slots: vec![crate::types::ScheduleSlot {
                 id: "s1".to_string(),

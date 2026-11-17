@@ -12,14 +12,14 @@
     "core/src/types.rs"
   ],
   "sourceHashes": {
-    "core/src/types.rs": "d643b782670256df0ee3e6859a25760341e98d380661302bdb71f794eef151cc",
+    "core/src/types.rs": "01a0eb78d4010f04afa0f27b529ed657cd42b97cbd43c8ba13678cb49aa519ce",
     "core/src/plan/dashboard.rs": "c390e10665cfb17a11a81fa3361317695eefaf4dfe9350e80729f5056d90acfc",
     "core/src/plan/tasks.rs": "393b8f8badc358a850fe51df90c9b907be10749c1dd4f886bfd4e78d3a5dabba",
     "core/src/plan/conflicts.rs": "a953cf743da6a8fc45b43bc6c2dfd716c6842a65a2d4311b08c56a19e8729e74",
-    "apps/desktop/src-tauri/src/commands/state.rs": "3ae67738ab86d92dc8a3aff56a8d984453a414e64fc74bf902e36f521a22c671",
-    "core/src/store/repo.rs": "2182a907099e8d6b3a1742e3fb10794d84c160d3cc0bab6b129252ca78e4a98f",
-    "core/src/ffi.rs": "d93d4edf627b1e3429b9a84481a4a18786684d9cdf3b2cff150535e76994dd12",
-    "core/src/store/db.rs": "4625fe24dae9dc60232a5b7d84323ca67b5705a53e5ab257dcf690b268bb8bc7"
+    "apps/desktop/src-tauri/src/commands/state.rs": "3646be4dc9df1eed38bb73223a149ad51badd3055c46fda2cbe700f73b5e3e58",
+    "core/src/store/repo.rs": "87687f018f09df153db71d36defb3574075139c94ad4750b05f19e332f0cede1",
+    "core/src/ffi.rs": "faa0241331f5621c6ccf41077cb6694495c178c28a6970f0c34e70a0cf42f4f4",
+    "core/src/store/db.rs": "7bb13b760def20b915a1c214ddad9ea60b8c37702bcd69e9fee780cff4ecd4db"
   },
   "structs": {
     "CachedEmail": {
@@ -125,6 +125,12 @@
           "wireName": "max_absences",
           "rustType": "Option<u32>",
           "optional": true
+        },
+        {
+          "rustName": "aliases",
+          "wireName": "aliases",
+          "rustType": "Vec<String>",
+          "optional": false
         }
       ]
     },
@@ -2548,6 +2554,17 @@
       ],
       "returns": "Result<String, QuizRadarFfiError>"
     },
+    "NativeStore.reassign_assessment_course": {
+      "parameters": [
+        "&self",
+        "assessment_id: String",
+        "new_course_id: String",
+        "add_alias: bool",
+        "updated_at: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
     "NativeStore.delete_assessment": {
       "parameters": [
         "&self",
@@ -2767,7 +2784,7 @@
   },
   "store": {
     "source": "core/src/store/db.rs",
-    "schemaVersion": 5,
+    "schemaVersion": 6,
     "migrations": [
       {
         "version": 1,
@@ -2788,6 +2805,10 @@
       {
         "version": 5,
         "description": "cached_emails_and_ai_extractions"
+      },
+      {
+        "version": 6,
+        "description": "course_aliases"
       }
     ]
   }

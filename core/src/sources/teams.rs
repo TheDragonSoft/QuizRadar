@@ -192,6 +192,7 @@ pub fn explore_teams_heuristically(context: &TeamsContext) -> TeamsDiscovery {
             border,
             credits: None,
             max_absences: None,
+            aliases: Vec::new(),
         });
     }
     TeamsDiscovery {
@@ -648,6 +649,7 @@ mod tests {
                 border: None,
                 credits: None,
                 max_absences: None,
+                aliases: Vec::new(),
             }];
             Box::pin(std::future::ready(Some(TeamsDiscovery {
                 assessments: Vec::new(),

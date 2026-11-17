@@ -18,7 +18,7 @@ import type {
 import { aliasDeep } from "../state/ipcShape";
 
 export const IDB_DATABASE_NAME = "quizradar";
-export const IDB_SCHEMA_VERSION = 5;
+export const IDB_SCHEMA_VERSION = 6;
 
 export interface IdbMigrationStep {
   version: number;
@@ -89,6 +89,14 @@ export const IDB_MIGRATIONS: readonly IdbMigrationStep[] = [
       if (!db.objectStoreNames.contains("email_ai_extractions")) {
         db.createObjectStore("email_ai_extractions", { keyPath: "cache_key" });
       }
+    },
+  },
+  {
+    version: 6,
+    description: "course_aliases",
+    migrate: () => {
+      // IndexedDB courses object store holds Course JSON objects directly;
+      // the optional `aliases` array defaults to empty on existing records.
     },
   },
 ] as const;

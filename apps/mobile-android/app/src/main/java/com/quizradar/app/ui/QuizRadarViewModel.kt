@@ -123,9 +123,10 @@ private const val ONBOARDING_STEP_COUNT = 6
 private const val SCAN_SETTLE_TIMEOUT_MS = 5_000L
 
 /**
- * The honest one-line summary of a scan report: real counts, real per-source
- * outcomes, the core's own notes. A scan that found nothing says exactly
- * that; a skipped-only run is not dressed up as success.
+ * The honest one-line summary of a scan report for the toast popup: real
+ * counts and real per-source outcomes (ran / failed / all skipped). Detailed
+ * per-query and cache diagnostic `notes` live in `lastScanReport` rather
+ * than flooding the snackbar.
  */
 internal fun buildScanSummary(report: com.quizradar.app.model.SyncReportModel): String {
     val counts = "${report.totalNew} new · ${report.totalUpdated} updated"
@@ -143,7 +144,6 @@ internal fun buildScanSummary(report: com.quizradar.app.model.SyncReportModel): 
                 skipped.joinToString(", ") { "${it.name} (${it.detail ?: "no reason given"})" },
         )
     }
-    report.notes.forEach { parts.add(it) }
     return parts.joinToString(" · ")
 }
 

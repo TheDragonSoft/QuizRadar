@@ -7,12 +7,13 @@ import {
   DownloadCloud,
   Download,
   Upload,
+  Link2,
   X,
 } from "lucide-react";
 import { copy } from "../copy";
-import { isTauriEnvironment } from "../state/rpc";
+import { isTauriEnvironment, rpc } from "../state/rpc";
 import { useAppStore } from "../state/store";
-import { rpc } from "../state/rpc";
+import { decodePairSyncLink, encodePairSyncLink } from "../lib/pairSync";
 import type { MergeReport } from "../state/types";
 
 function formatBackupTimestamp(iso: string): string {
@@ -39,6 +40,9 @@ export function CloudSyncModal({
   const [pushing, setPushing] = useState(false);
   const [pulling, setPulling] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [copyingSync, setCopyingSync] = useState(false);
+  const [mergingSync, setMergingSync] = useState(false);
+  const [peerLinkInput, setPeerLinkInput] = useState("");
   const isDesktop = isTauriEnvironment();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastBackupPush = useAppStore((s) => s.data.config.lastBackupPush);
@@ -46,6 +50,56 @@ export function CloudSyncModal({
   const refreshState = useAppStore((s) => s.refreshState);
   const exportBackupFile = useAppStore((s) => s.exportBackupFile);
   const importBackupFile = useAppStore((s) => s.importBackupFile);
+
+  const handleCopyPeerSyncLink = async () => {
+    setCopyingSync(true);
+    try {
+      const payloadJson = await rpc<string>("export_sync_payload");
+      const link = await encodePairSyncLink(payloadJson);
+      await navigator.clipboard.writeText(link);
+      addToast({
+        type: "success",
+        message:
+          "Serverless sync link copied (quizradar://pair). Open or paste it on your other device to merge.",
+      });
+    } catch (err) {
+      addToast({
+        type: "error",
+        message: `Sync link export failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    } finally {
+      setCopyingSync(false);
+    }
+  };
+
+  const handleMergePeerSyncLink = async () => {
+    setMergingSync(true);
+    try {
+      const payloadJson = await decodePairSyncLink(peerLinkInput);
+      const report = await rpc<MergeReport>("merge_sync_payload", { payloadJson });
+      await refreshState();
+      setPeerLinkInput("");
+      addToast({
+        type: "success",
+        message: report
+          ? copy.cloudSync.mergedSummary(
+              report.assessments_replaced,
+              report.topics_merged,
+              report.grades_merged,
+              report.events_upserted,
+              report.schedule_replaced,
+            )
+          : copy.cloudSync.mergedUnknown,
+      });
+    } catch (err) {
+      addToast({
+        type: "error",
+        message: `Peer sync merge failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    } finally {
+      setMergingSync(false);
+    }
+  };
 
   const handleLocalExport = async () => {
     setExporting(true);
@@ -260,6 +314,52 @@ export function CloudSyncModal({
             >
               <Upload className="h-4 w-4 text-[var(--accent-ink)]" />
               <span>{copy.settings.importBackup}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Serverless Peer Sync (quizradar://pair) */}
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Link2 className="h-4 w-4 text-[var(--accent-ink)]" aria-hidden="true" />
+              <span className="text-xs font-bold text-[var(--text)]">
+                Serverless Peer Sync (quizradar://pair)
+              </span>
+            </div>
+            <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+              Two-Way Merge
+            </span>
+          </div>
+          <p className="text-xs text-[var(--text-muted)] mb-3">
+            Both devices scan independently. Share a secret-free sync link to additively merge
+            courses, assessments, topics, and grades with zero servers.
+          </p>
+          <button
+            type="button"
+            disabled={copyingSync}
+            onClick={handleCopyPeerSyncLink}
+            className="w-full mb-3 flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] transition disabled:opacity-50"
+          >
+            <Link2 className="h-4 w-4 text-[var(--accent-ink)]" />
+            <span>{copyingSync ? "Building link…" : "Copy Sync Link (quizradar://pair)"}</span>
+          </button>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={peerLinkInput}
+              onChange={(e) => setPeerLinkInput(e.target.value)}
+              placeholder="Paste quizradar://pair?d=... link from phone"
+              aria-label="Paste peer sync link"
+              className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-fill)]"
+            />
+            <button
+              type="button"
+              disabled={mergingSync || !peerLinkInput.trim()}
+              onClick={handleMergePeerSyncLink}
+              className="rounded-xl bg-[var(--accent-fill)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--accent-fill-hover)] transition disabled:opacity-50"
+            >
+              {mergingSync ? "Merging…" : "Merge"}
             </button>
           </div>
         </div>

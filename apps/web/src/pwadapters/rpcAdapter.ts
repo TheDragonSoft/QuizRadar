@@ -1320,6 +1320,207 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
       return null as T;
     }
 
+    case "export_sync_payload": {
+      const schedule = await loadScheduleData();
+      const assessments = await loadAssessments();
+      const topicsDone = await loadTopicsDone();
+      const grades = await loadGrades();
+      const events = await loadCustomEvents();
+      const feeds = await loadFeeds();
+      const { schedule: schedulePayload } = toRustSchedulePayload(schedule);
+
+      const payload = {
+        schema_version: 1,
+        client_device_id: "quizradar-pwa",
+        updated_at: new Date().toISOString(),
+        schedule: schedulePayload,
+        assessments: assessments.map(toRustAssessment),
+        completed_topics: topicsDone,
+        grades,
+        custom_events: events.map((ev) => {
+          const r = ev as unknown as Record<string, unknown>;
+          return {
+            id: ev.id,
+            title: ev.title,
+            course_id: r.course_id ?? ev.courseId ?? null,
+            event_type: r.event_type ?? ev.eventType ?? null,
+            date: r.date_iso ?? ev.dateIso ?? null,
+            date_iso: r.date_iso ?? ev.dateIso ?? null,
+            start_time: r.start_time ?? ev.startTime ?? null,
+            end_time: r.end_time ?? ev.endTime ?? null,
+            room: r.room ?? ev.room ?? null,
+            notes: r.notes ?? ev.notes ?? null,
+            color: r.color ?? ev.color ?? null,
+          };
+        }),
+        feeds,
+      };
+      return JSON.stringify(payload) as T;
+    }
+
+    case "merge_sync_payload": {
+      const payloadJson = String((args as Record<string, unknown> | undefined)?.payloadJson ?? "");
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = JSON.parse(payloadJson) as Record<string, unknown>;
+      } catch {
+        throw new Error("Invalid peer sync payload JSON.");
+      }
+      const rawSchedule = parsed.schedule as Record<string, unknown> | undefined;
+      if (!Array.isArray(parsed.assessments) || !Array.isArray(rawSchedule?.courses)) {
+        throw new Error("Invalid peer sync payload (missing assessments or schedule).");
+      }
+
+      // 1. Additive schedule merge (keep local courses/slots and add new remote ones)
+      const localSchedule = await loadScheduleData();
+      const courseMap = new Map<string, Course>();
+      for (const c of localSchedule.courses || []) courseMap.set(c.id, c);
+      let scheduleReplaced = false;
+      for (const rawC of rawSchedule.courses as Array<Record<string, unknown>>) {
+        const id = String(rawC.id ?? "");
+        if (id && !courseMap.has(id)) {
+          courseMap.set(id, {
+            id,
+            name: String(rawC.name ?? id),
+            color: String(rawC.color ?? "#1a73e8"),
+            bg: (rawC.bg as string | null) ?? null,
+            border: (rawC.border as string | null) ?? null,
+          });
+          scheduleReplaced = true;
+        }
+      }
+      const slotMap = new Map<string, ScheduleSlot>();
+      for (const s of localSchedule.slots || []) slotMap.set(s.id, s);
+      const rawSlots = Array.isArray(rawSchedule.slots)
+        ? (rawSchedule.slots as Array<Record<string, unknown>>)
+        : [];
+      for (const rawS of rawSlots) {
+        const id = String(rawS.id ?? "");
+        const start = parseSlotTime(rawS.startTime ?? rawS.start_time);
+        const end = parseSlotTime(rawS.endTime ?? rawS.end_time);
+        if (id && !slotMap.has(id) && start !== null && end !== null) {
+          slotMap.set(id, {
+            id,
+            day: String(rawS.day ?? ""),
+            dayIndex: Number(rawS.day_index ?? rawS.dayIndex ?? 0),
+            courseId: String(rawS.course_id ?? rawS.courseId ?? ""),
+            courseName: String(rawS.course_name ?? rawS.courseName ?? ""),
+            room: String(rawS.room ?? ""),
+            type: String(rawS.type ?? rawS.slot_type ?? rawS.slotType ?? "Lecture"),
+            group: (rawS.group as string | null) ?? null,
+            startTime: start,
+            endTime: end,
+            displayTime: `${start}-${end}`,
+            hasQuiz: Boolean(rawS.has_quiz ?? rawS.hasQuiz),
+            quizTitle: (rawS.quiz_title ?? rawS.quizTitle ?? null) as string | null,
+          });
+          scheduleReplaced = true;
+        }
+      }
+      if (scheduleReplaced) {
+        await saveScheduleData({
+          ...localSchedule,
+          courses: Array.from(courseMap.values()),
+          slots: Array.from(slotMap.values()),
+        });
+      }
+
+      // 2. Additive assessments merge
+      const localAssessments = await loadAssessments();
+      const assessmentMap = new Map<string, Assessment>();
+      for (const a of localAssessments) assessmentMap.set(a.id, a);
+      let assessmentsReplaced = 0;
+      let assessmentsKeptNewer = 0;
+      for (const rawA of parsed.assessments as Array<Record<string, unknown>>) {
+        const incoming = toJsAssessment(rawA);
+        if (!incoming.id) continue;
+        const existing = assessmentMap.get(incoming.id);
+        if (!existing) {
+          assessmentMap.set(incoming.id, incoming);
+          assessmentsReplaced += 1;
+        } else {
+          assessmentsKeptNewer += 1;
+        }
+      }
+      if (assessmentsReplaced > 0) {
+        await saveAssessments(Array.from(assessmentMap.values()));
+      }
+
+      // 3. Additive true-only topics merge
+      const localTopics = await loadTopicsDone();
+      const remoteTopics = (parsed.completed_topics as Record<string, unknown>) || {};
+      let topicsMerged = 0;
+      for (const [k, v] of Object.entries(remoteTopics)) {
+        if (v === true && localTopics[k] !== true) {
+          await setTopicDone(k, true);
+          topicsMerged += 1;
+        }
+      }
+
+      // 4. Grades upsert-fill
+      const localGrades = await loadGrades();
+      const remoteGrades = (parsed.grades as Record<string, IdbGradeRecord>) || {};
+      let gradesMerged = 0;
+      for (const [k, v] of Object.entries(remoteGrades)) {
+        if (v && !localGrades[k]) {
+          await saveGrade(k, v);
+          gradesMerged += 1;
+        }
+      }
+
+      // 5. Custom events upsert
+      const localEvents = await loadCustomEvents();
+      const eventMap = new Map<string, CustomCalendarEvent>();
+      for (const ev of localEvents) eventMap.set(ev.id, ev);
+      let eventsUpserted = 0;
+      if (Array.isArray(parsed.custom_events)) {
+        for (const rawEv of parsed.custom_events as Array<Record<string, unknown>>) {
+          const id = String(rawEv.id ?? "");
+          if (id && !eventMap.has(id)) {
+            const ev: CustomCalendarEvent = {
+              id,
+              title: String(rawEv.title ?? ""),
+              courseId: (rawEv.course_id ?? rawEv.courseId ?? null) as string | null,
+              eventType: (rawEv.event_type ?? rawEv.eventType ?? null) as string | null,
+              dateIso: String(rawEv.date_iso ?? rawEv.date ?? ""),
+              startTime: (rawEv.start_time ?? rawEv.startTime ?? null) as string | null,
+              endTime: (rawEv.end_time ?? rawEv.endTime ?? null) as string | null,
+              room: (rawEv.room ?? null) as string | null,
+              notes: (rawEv.notes ?? null) as string | null,
+              color: (rawEv.color ?? null) as string | null,
+            };
+            await upsertCustomEvent(ev);
+            eventMap.set(id, ev);
+            eventsUpserted += 1;
+          }
+        }
+      }
+
+      // 6. Feeds upsert
+      const localFeeds = await loadFeeds();
+      const feedUrls = new Set(localFeeds.map((f) => f.url));
+      let feedsUpserted = 0;
+      if (Array.isArray(parsed.feeds)) {
+        for (const rawF of parsed.feeds as Array<FeedConfig>) {
+          if (rawF?.url && !feedUrls.has(rawF.url)) {
+            await upsertFeed(rawF);
+            feedUrls.add(rawF.url);
+            feedsUpserted += 1;
+          }
+        }
+      }
+
+      return {
+        assessments_replaced: assessmentsReplaced,
+        assessments_kept_newer: assessmentsKeptNewer,
+        topics_merged: topicsMerged,
+        grades_merged: gradesMerged,
+        events_upserted: eventsUpserted,
+        feeds_upserted: feedsUpserted,
+        schedule_replaced: scheduleReplaced,
+      } as T;
+    }
+
     default:
       throw new Error(`RPC call "${fn}" is not implemented in browser tier`);
   }

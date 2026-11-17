@@ -121,6 +121,14 @@ interface QuizRadarCore {
         refDate: LocalDate = LocalDate.now(),
     ): String
 
+    suspend fun exportSyncPayload(deviceId: String = "quizradar-android"): String =
+        exportBackup(LocalDate.now())
+
+    suspend fun mergeSyncPayload(
+        payloadJson: String,
+        refDate: LocalDate = LocalDate.now(),
+    ): String = importBackup(payloadJson, refDate)
+
     /**
      * The AI timetable-image extraction (`01` §4.1).
      *

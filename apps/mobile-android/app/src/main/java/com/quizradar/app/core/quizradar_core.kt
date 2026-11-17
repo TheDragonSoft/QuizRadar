@@ -895,6 +895,10 @@ internal open class UniffiVTableCallbackInterfaceFfiTokenProvider(
 
 
 
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -938,6 +942,8 @@ internal interface UniffiLib : Library {
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_export_backup(`ptr`: Pointer,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
+    fun uniffi_quizradar_core_fn_method_nativestore_export_sync_payload(`ptr`: Pointer,`deviceId`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,
+    ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_extract_timetable_from_image(`ptr`: Pointer,`imageB64`: RustBuffer.ByValue,`mime`: RustBuffer.ByValue,`apiKey`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_generate_practice_quiz(`ptr`: Pointer,`assessmentJson`: RustBuffer.ByValue,`geminiApiKey`: RustBuffer.ByValue,
@@ -963,6 +969,8 @@ internal interface UniffiLib : Library {
     fun uniffi_quizradar_core_fn_method_nativestore_list_study_sessions(`ptr`: Pointer,`courseId`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_log_study_session(`ptr`: Pointer,`sessionJson`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
+    ): Long
+    fun uniffi_quizradar_core_fn_method_nativestore_merge_sync_payload(`ptr`: Pointer,`payloadJson`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_optimize_study_plan(`ptr`: Pointer,`refDateIso`: RustBuffer.ByValue,`geminiApiKey`: RustBuffer.ByValue,
     ): Long
@@ -1230,6 +1238,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_export_backup(
     ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_export_sync_payload(
+    ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_extract_timetable_from_image(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_generate_practice_quiz(
@@ -1255,6 +1265,8 @@ internal interface UniffiLib : Library {
     fun uniffi_quizradar_core_checksum_method_nativestore_list_study_sessions(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_log_study_session(
+    ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_merge_sync_payload(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_optimize_study_plan(
     ): Short
@@ -1414,6 +1426,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_export_backup() != 28902.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_export_sync_payload() != 17642.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_extract_timetable_from_image() != 30659.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1451,6 +1466,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_log_study_session() != 37497.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_merge_sync_payload() != 17632.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_optimize_study_plan() != 20624.toShort()) {
@@ -1993,6 +2011,12 @@ public interface NativeStoreInterface {
     suspend fun `exportBackup`(`updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
     
     /**
+     * Exports a data-only `BackupPayload` JSON (structurally token-free)
+     * for serverless peer-to-peer sync (`quizradar://pair`).
+     */
+    suspend fun `exportSyncPayload`(`deviceId`: kotlin.String, `updatedAt`: kotlin.String): kotlin.String
+    
+    /**
      * The timetable vision import (`01` §4.1, `05` §4 task b).
      *
      * The shell owns the picker and the key; the core owns the prompt, the
@@ -2063,6 +2087,13 @@ public interface NativeStoreInterface {
     suspend fun `listStudySessions`(`courseId`: kotlin.String?): kotlin.String
     
     suspend fun `logStudySession`(`sessionJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
+    
+    /**
+     * Additively merges a data-only `BackupPayload` JSON from a peer device
+     * (never overwrites newer local assessments/grades/topics). Returns
+     * serialized `MergeReport`.
+     */
+    suspend fun `mergeSyncPayload`(`payloadJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
     
     /**
      * Consent-gated "Optimize with AI" study plan (audit A07). With consent
@@ -2506,6 +2537,31 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
 
     
     /**
+     * Exports a data-only `BackupPayload` JSON (structurally token-free)
+     * for serverless peer-to-peer sync (`quizradar://pair`).
+     */
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `exportSyncPayload`(`deviceId`: kotlin.String, `updatedAt`: kotlin.String) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_export_sync_payload(
+                thisPtr,
+                FfiConverterString.lower(`deviceId`),FfiConverterString.lower(`updatedAt`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
+    /**
      * The timetable vision import (`01` §4.1, `05` §4 task b).
      *
      * The shell owns the picker and the key; the core owns the prompt, the
@@ -2811,6 +2867,32 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
             UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_log_study_session(
                 thisPtr,
                 FfiConverterString.lower(`sessionJson`),FfiConverterString.lower(`updatedAt`),FfiConverterString.lower(`refDateIso`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * Additively merges a data-only `BackupPayload` JSON from a peer device
+     * (never overwrites newer local assessments/grades/topics). Returns
+     * serialized `MergeReport`.
+     */
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `mergeSyncPayload`(`payloadJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_merge_sync_payload(
+                thisPtr,
+                FfiConverterString.lower(`payloadJson`),FfiConverterString.lower(`updatedAt`),FfiConverterString.lower(`refDateIso`),
             )
         },
         { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },

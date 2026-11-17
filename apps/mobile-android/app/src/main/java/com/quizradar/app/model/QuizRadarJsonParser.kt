@@ -667,4 +667,17 @@ object QuizRadarJsonParser {
             mergeReport = mergeReport,
         )
     }
+
+    fun parseMergeReportSummary(jsonStr: String): String {
+        return try {
+            val obj = JSONObject(jsonStr)
+            val assessments = obj.optInt("assessments_replaced", 0)
+            val topics = obj.optInt("topics_merged", 0)
+            val grades = obj.optInt("grades_merged", 0)
+            val events = obj.optInt("events_upserted", 0)
+            "Merged $assessments assessment(s), $topics topic(s), $grades grade(s), $events event(s)."
+        } catch (_: Exception) {
+            "Peer sync merged."
+        }
+    }
 }

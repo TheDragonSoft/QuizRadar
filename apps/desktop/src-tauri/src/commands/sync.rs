@@ -595,3 +595,30 @@ pub async fn pull_cloud_backup(state: State<'_, AppState>) -> Result<CloudPullRe
         }),
     }
 }
+
+#[tauri::command]
+pub async fn export_sync_payload(state: State<'_, AppState>) -> Result<String, String> {
+    let now = state.now_iso();
+    let payload = state
+        .store
+        .build_backup_payload("quizradar-desktop".to_string(), now)
+        .await
+        .map_err(|e| format!("Failed to build sync payload: {e}"))?;
+    serde_json::to_string(&payload).map_err(|e| format!("Failed to serialize sync payload: {e}"))
+}
+
+#[tauri::command]
+pub async fn merge_sync_payload(
+    state: State<'_, AppState>,
+    payload_json: String,
+) -> Result<quizradar_core::store::backup::MergeReport, String> {
+    let payload: quizradar_core::store::backup::BackupPayload = serde_json::from_str(&payload_json)
+        .map_err(|e| format!("Invalid peer sync payload: {e}"))?;
+    let now = state.now_iso();
+    let today = state.today();
+    state
+        .store
+        .merge_backup(payload, now, today)
+        .await
+        .map_err(|e| format!("Failed to merge peer sync payload: {e}"))
+}

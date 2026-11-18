@@ -115,7 +115,10 @@ object PairSyncCodec {
         return out.toString()
     }
 
-    private fun findJsonStringEnd(s: String, openQuoteIdx: Int): Int {
+    private fun findJsonStringEnd(
+        s: String,
+        openQuoteIdx: Int,
+    ): Int {
         var i = openQuoteIdx + 1
         while (i < s.length) {
             when (s[i]) {
@@ -127,7 +130,10 @@ object PairSyncCodec {
         return -1
     }
 
-    private fun skipWhitespace(s: String, start: Int): Int {
+    private fun skipWhitespace(
+        s: String,
+        start: Int,
+    ): Int {
         var i = start
         while (i < s.length && s[i].isWhitespace()) {
             i++
@@ -135,7 +141,10 @@ object PairSyncCodec {
         return i
     }
 
-    private fun skipJsonValue(s: String, start: Int): Int {
+    private fun skipJsonValue(
+        s: String,
+        start: Int,
+    ): Int {
         if (start >= s.length) return s.length
         return when (s[start]) {
             '"' -> {
@@ -175,7 +184,11 @@ object PairSyncCodec {
         }
     }
 
-    private fun truncateJsonStringContent(s: String, contentStart: Int, contentEnd: Int): String {
+    private fun truncateJsonStringContent(
+        s: String,
+        contentStart: Int,
+        contentEnd: Int,
+    ): String {
         val maxPrefixLen = 157
         val limit = minOf(contentStart + maxPrefixLen, contentEnd)
         var i = contentStart

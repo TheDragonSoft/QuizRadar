@@ -232,6 +232,13 @@ jobs:
         run: pnpm --dir apps/web exec playwright install --with-deps chromium
       - name: playwright visual baseline comparison
         run: pnpm --dir apps/web exec playwright test --grep @visual
+      - name: upload visual baseline diffs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-visual-diffs
+          path: apps/web/e2e-results
+          if-no-files-found: ignore
 
   android:
     name: android (ktlint / assembleDebug / test)

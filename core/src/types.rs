@@ -174,6 +174,36 @@ pub struct Course {
     /// Absence limit (warning threshold), e.g. 4.
     #[serde(default)]
     pub max_absences: Option<u32>,
+    /// Optional additional course codes/aliases (e.g. `["CS241", "COMP 241"]`)
+    /// that resolve to this canonical course during announcement/ICS parsing.
+    #[serde(default)]
+    pub aliases: Vec<String>,
+}
+
+impl Course {
+    /// Returns true if `code` matches this course's primary `id` or any of its
+    /// user-configured `aliases` (case-insensitive, ignoring spaces/hyphens for aliases).
+    #[must_use]
+    pub fn matches_code(&self, code: &str) -> bool {
+        let trimmed = code.trim();
+        if trimmed.is_empty() {
+            return false;
+        }
+        if self.id.eq_ignore_ascii_case(trimmed) {
+            return true;
+        }
+        let norm = |s: &str| -> String {
+            s.chars()
+                .filter(|c| !c.is_ascii_whitespace() && *c != '-')
+                .map(|c| c.to_ascii_lowercase())
+                .collect()
+        };
+        let target_norm = norm(trimmed);
+        self.aliases.iter().any(|alias| {
+            let a = alias.trim();
+            !a.is_empty() && (a.eq_ignore_ascii_case(trimmed) || norm(a) == target_norm)
+        })
+    }
 }
 
 /// Weekly recurring class slot (`02` §3.1 `"day": "Sun", "day_index": 0`).
@@ -236,9 +266,14 @@ impl ScheduleData {
     /// First enrolled course whose id equals `code` (ASCII-case-insensitive).
     #[must_use]
     pub fn find_course(&self, code: &str) -> Option<&Course> {
+        let trimmed = code.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
         self.courses
             .iter()
-            .find(|c| c.id.eq_ignore_ascii_case(code.trim()))
+            .find(|c| c.id.eq_ignore_ascii_case(trimmed))
+            .or_else(|| self.courses.iter().find(|c| c.matches_code(trimmed)))
     }
 }
 

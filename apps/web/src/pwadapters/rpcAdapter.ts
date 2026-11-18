@@ -225,6 +225,9 @@ export function toRustSchedulePayload(schedule: ScheduleData): {
         color: c.color,
         bg: c.bg ?? null,
         border: c.border ?? null,
+        credits: c.credits ?? null,
+        max_absences: c.max_absences ?? c.maxAbsences ?? null,
+        aliases: c.aliases ?? [],
       })),
       slots: timedSlots,
     },
@@ -555,6 +558,56 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
     case "upsert_assessment": {
       const assessment = (args?.assessment || args) as Assessment;
       await upsertAssessment(assessment);
+      return (await buildFullState()) as T;
+    }
+
+    case "reassign_assessment_course": {
+      const assessmentId = String(args?.assessmentId ?? "");
+      const newCourseId = String(args?.newCourseId ?? "").trim();
+      const addAlias = Boolean(args?.addAlias ?? false);
+      if (!newCourseId) {
+        throw new Error("Target course code must not be empty.");
+      }
+      const assessments = await loadAssessments();
+      const target = assessments.find((a) => a.id === assessmentId);
+      if (!target) {
+        throw new Error(`Assessment '${assessmentId}' not found.`);
+      }
+      const schedule = await loadScheduleData();
+      const targetCourse = (schedule.courses || []).find(
+        (c) => c.id.toLowerCase() === newCourseId.toLowerCase(),
+      );
+      if (!targetCourse) {
+        throw new Error(`Course '${newCourseId}' not found.`);
+      }
+      const oldCode = String(target.courseId ?? target.course_id ?? "").trim();
+      const updatedAssessment: Assessment = {
+        ...target,
+        courseId: targetCourse.id,
+        course_id: targetCourse.id,
+        courseName: targetCourse.name,
+        course_name: targetCourse.name,
+      };
+      await upsertAssessment(updatedAssessment);
+
+      if (
+        addAlias &&
+        oldCode &&
+        oldCode.toUpperCase() !== "UNASSIGNED" &&
+        oldCode.toUpperCase() !== "GENERAL"
+      ) {
+        const existingAliases = Array.isArray(targetCourse.aliases) ? targetCourse.aliases : [];
+        const norm = (s: string) => s.replace(/[\s-]/g, "").toLowerCase();
+        const alreadyMatches =
+          norm(targetCourse.id) === norm(oldCode) ||
+          existingAliases.some((a) => norm(a) === norm(oldCode));
+        if (!alreadyMatches) {
+          await upsertCourse({
+            ...targetCourse,
+            aliases: [...existingAliases, oldCode],
+          });
+        }
+      }
       return (await buildFullState()) as T;
     }
 

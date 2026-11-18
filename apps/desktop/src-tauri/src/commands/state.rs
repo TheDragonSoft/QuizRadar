@@ -584,6 +584,23 @@ pub async fn upsert_assessment(
 }
 
 #[tauri::command]
+pub async fn reassign_assessment_course(
+    state: State<'_, AppState>,
+    assessment_id: String,
+    new_course_id: String,
+    add_alias: bool,
+) -> Result<GetStatePayload, String> {
+    let now = state.now_iso();
+    let today = state.today();
+    state
+        .store
+        .reassign_assessment_course(assessment_id, new_course_id, add_alias, now, today)
+        .await
+        .map_err(|e| format!("Failed to reassign assessment course: {e}"))?;
+    build_full_state(&state).await
+}
+
+#[tauri::command]
 pub async fn delete_assessment(
     state: State<'_, AppState>,
     id: String,

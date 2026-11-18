@@ -363,6 +363,7 @@ mod tests {
             border: None,
             credits,
             max_absences: None,
+            aliases: Vec::new(),
         }
     }
 

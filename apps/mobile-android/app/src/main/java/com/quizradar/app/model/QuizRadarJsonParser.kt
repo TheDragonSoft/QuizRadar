@@ -70,6 +70,7 @@ object QuizRadarJsonParser {
             color = optString(obj, "color"),
             credits = optDouble(obj, "credits"),
             maxAbsences = optInt(obj, "max_absences"),
+            aliases = toStringList(obj.optJSONArray("aliases")).filter { it.isNotBlank() },
         )
     }
 

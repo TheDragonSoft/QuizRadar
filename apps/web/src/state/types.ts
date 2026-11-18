@@ -12,6 +12,7 @@ export interface Course {
   credits?: number | null;
   maxAbsences?: number | null;
   max_absences?: number | null;
+  aliases?: string[];
 }
 
 export interface ScheduleSlot {

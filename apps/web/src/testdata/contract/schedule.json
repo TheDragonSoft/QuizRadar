@@ -6,14 +6,16 @@
       "name": "Digital Design",
       "color": "#1a73e8",
       "bg": "#1a73e81a",
-      "border": "#1a73e833"
+      "border": "#1a73e833",
+      "aliases": []
     },
     {
       "id": "GSE211",
       "name": "Discrete Mathematics",
       "color": "#a142f4",
       "bg": null,
-      "border": null
+      "border": null,
+      "aliases": []
     }
   ],
   "slots": [

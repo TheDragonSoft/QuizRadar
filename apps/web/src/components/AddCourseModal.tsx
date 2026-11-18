@@ -29,6 +29,7 @@ export function AddCourseModal({
 
   const [code, setCode] = useState(initialCourse?.id || "");
   const [name, setName] = useState(initialCourse?.name || "");
+  const [aliasesInput, setAliasesInput] = useState((initialCourse?.aliases ?? []).join(", "));
   const [credits, setCredits] = useState<number>(initialCourse?.credits ?? 3.0);
   const [color, setColor] = useState(
     initialCourse?.color ||
@@ -124,11 +125,20 @@ export function AddCourseModal({
 
     setSubmitting(true);
     try {
+      const parsedAliases = Array.from(
+        new Set(
+          aliasesInput
+            .split(",")
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0 && s.toLowerCase() !== trimmedCode.toLowerCase()),
+        ),
+      );
       const courseData: Course = {
         id: trimmedCode,
         name: trimmedName,
         color,
         credits: credits > 0 ? credits : 3.0,
+        aliases: parsedAliases,
       };
 
       const slotPayload: ScheduleSlot[] = slots.map((s, idx) => ({
@@ -239,6 +249,29 @@ export function AddCourseModal({
                 placeholder="3.0"
               />
             </div>
+          </div>
+
+          {/* Additional Course Codes / Aliases */}
+          <div>
+            <label
+              htmlFor="course-aliases"
+              className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-1.5"
+            >
+              Additional Course Codes / Aliases
+            </label>
+            <input
+              id="course-aliases"
+              data-testid="course-aliases-input"
+              type="text"
+              value={aliasesInput}
+              onChange={(e) => setAliasesInput(e.target.value)}
+              placeholder="e.g. CS241, COMP 241 (comma-separated)"
+              className="w-full rounded-md border border-[var(--border)] bg-[var(--page)] px-2.5 py-2 text-xs font-medium text-[var(--text)] outline-none focus:border-[var(--accent)] placeholder:font-normal"
+            />
+            <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+              Announcements, ICS feeds, or Classroom items matching any of these codes will resolve
+              to {code.trim() ? code.trim().toUpperCase() : "this course"}.
+            </p>
           </div>
 
           {/* Color Palette Picker */}

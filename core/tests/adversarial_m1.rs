@@ -459,6 +459,7 @@ fn adversarial_gpa_zero_credits_and_empty_scenarios() {
         border: None,
         credits: Some(0.0),
         max_absences: None,
+        aliases: Vec::new(),
     };
     let a_zero = helper_assessment(
         "a1",
@@ -489,6 +490,7 @@ fn adversarial_gpa_zero_credits_and_empty_scenarios() {
         border: None,
         credits: Some(3.0),
         max_absences: None,
+        aliases: Vec::new(),
     };
     let summary_no_ass = calculate_gpa(&[c_no_ass], &[], &grades, "4.0");
     assert_eq!(summary_no_ass.total_credits, 3.0);
@@ -508,6 +510,7 @@ fn adversarial_gpa_zero_credits_and_empty_scenarios() {
         border: None,
         credits: Some(4.0),
         max_absences: None,
+        aliases: Vec::new(),
     };
     let a_fail = helper_assessment(
         "a2",

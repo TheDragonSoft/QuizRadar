@@ -44,7 +44,7 @@ pub enum StoreError {
 }
 
 /// The schema this build ships. Written by [`Db::apply_migrations`].
-pub const SCHEMA_VERSION: u32 = 5;
+pub const SCHEMA_VERSION: u32 = 6;
 
 pub(crate) const INITIAL_SCHEMA_SQL: &str = "
 CREATE TABLE courses (
@@ -185,6 +185,7 @@ pub const LOGICAL_MIGRATIONS: &[(u32, &str)] = &[
     (3, "content_addressed_topic_keys"),
     (4, "non_ai_suite_extensions"),
     (5, "cached_emails_and_ai_extractions"),
+    (6, "course_aliases"),
 ];
 
 /// Ordered migration steps. Each entry upgrades a database *at* the previous
@@ -303,6 +304,10 @@ pub const MIGRATIONS: &[(u32, &str)] = &[
              created_at TEXT NOT NULL
          );
          CREATE INDEX idx_email_ai_extractions_email ON email_ai_extractions(email_id);",
+    ),
+    (
+        6,
+        "ALTER TABLE courses ADD COLUMN aliases_json TEXT NOT NULL DEFAULT '[]';",
     ),
 ];
 
@@ -695,7 +700,7 @@ mod tests {
 
     #[test]
     fn logical_migrations_match_applied_migrations() {
-        assert_eq!(SCHEMA_VERSION, 5);
+        assert_eq!(SCHEMA_VERSION, 6);
         assert_eq!(MIGRATIONS.len(), LOGICAL_MIGRATIONS.len());
         assert_eq!(SCHEMA_VERSION, LOGICAL_MIGRATIONS.last().unwrap().0);
         for (i, ((m_ver, _), (l_ver, _))) in

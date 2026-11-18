@@ -109,6 +109,23 @@ class QuizRadarEngine(
         return onCore { store.replaceAssessments(assessmentsJson, nowIso(), refDate.toString()) }
     }
 
+    override suspend fun reassignAssessmentCourse(
+        assessmentId: String,
+        newCourseId: String,
+        addAlias: Boolean,
+        refDate: LocalDate,
+    ): String {
+        return onCore {
+            store.reassignAssessmentCourse(
+                assessmentId,
+                newCourseId,
+                addAlias,
+                nowIso(),
+                refDate.toString(),
+            )
+        }
+    }
+
     override suspend fun toggleTopic(
         topicKey: String,
         done: Boolean,

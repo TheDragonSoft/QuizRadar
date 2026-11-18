@@ -55,10 +55,18 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
   const openPracticeQuiz = useAppStore((s) => s.openPracticeQuiz);
   const openPomodoro = useAppStore((s) => s.openPomodoro);
   const openModal = useAppStore((s) => s.openModal);
+  const reassignAssessmentCourse = useAppStore((s) => s.reassignAssessmentCourse);
   const courses = useAppStore((s) => s.data.schedule.courses);
 
   const assessment = assessments.find((a) => a.id === assessmentId);
   const rec = recommendations.find((r) => r.assessmentId === assessmentId);
+  const isUnmatchedCourse = Boolean(
+    assessment && !courses.some((c) => c.id === assessment.courseId),
+  );
+  const [showCourseAssign, setShowCourseAssign] = useState(false);
+  const [selectedCourseId, setSelectedCourseId] = useState<string>(courses[0]?.id ?? "");
+  const [rememberAsAlias, setRememberAsAlias] = useState<boolean>(true);
+  const [assigningCourse, setAssigningCourse] = useState<boolean>(false);
 
   // Grade edit inputs state (allows string editing and explicit null/empty clearing)
   const [scoreInput, setScoreInput] = useState<string>(
@@ -98,6 +106,9 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
     setMaxInput(assessment?.maxScore != null ? String(assessment.maxScore) : "");
     setWeightInput(assessment?.weightagePercent != null ? String(assessment.weightagePercent) : "");
     setUntrackedTopicDone({});
+    setShowCourseAssign(false);
+    setSelectedCourseId(courses[0]?.id ?? "");
+    setRememberAsAlias(true);
     if (
       assessment?.achievedScore != null &&
       assessment?.maxScore != null &&
@@ -210,6 +221,16 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
               >
                 {courseDisplayName(assessment.courseId, courses)}
               </span>
+              {courses.length > 0 && (
+                <button
+                  type="button"
+                  data-testid="toggle-assign-course-btn"
+                  onClick={() => setShowCourseAssign((v) => !v)}
+                  className="px-2 py-0.5 rounded-full border border-[var(--border)] bg-[var(--surface)] text-[11px] font-semibold text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)] transition cursor-pointer"
+                >
+                  {isUnmatchedCourse ? "Assign Course" : "Change Course"}
+                </button>
+              )}
               <span className="px-2.5 py-0.5 rounded-full bg-red-600/10 text-red-700 dark:text-red-300 text-xs font-bold">
                 {assessment.assessmentType}
               </span>
@@ -312,6 +333,89 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
 
       {/* Scrollable Body */}
       <div className="min-h-0 flex-1 overflow-y-auto p-6 pb-12 space-y-6">
+        {courses.length > 0 && (isUnmatchedCourse || showCourseAssign) && (
+          <div
+            data-testid="assign-course-panel"
+            className="rounded-xl border border-[var(--border)] bg-[var(--surface-hover)]/60 p-4 space-y-3"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-bold text-[var(--text)]">
+                  {isUnmatchedCourse
+                    ? `Course code "${assessment.courseId || "Unassigned"}" isn't linked to an enrolled course`
+                    : "Reassign to a different course"}
+                </p>
+                <p className="text-[11px] text-[var(--text-muted)]">
+                  Choose the enrolled course this item belongs to.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                aria-label="Select course"
+                data-testid="assign-course-select"
+                value={selectedCourseId || courses[0]?.id || ""}
+                onChange={(e) => setSelectedCourseId(e.target.value)}
+                className="flex-1 min-w-[180px] rounded-lg border border-[var(--border)] bg-[var(--page)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] outline-none focus:border-[var(--accent)]"
+              >
+                {courses.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.id} — {c.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                data-testid="assign-course-submit-btn"
+                disabled={assigningCourse || !(selectedCourseId || courses[0]?.id)}
+                onClick={async () => {
+                  const targetId = selectedCourseId || courses[0]?.id;
+                  if (!targetId) return;
+                  setAssigningCourse(true);
+                  try {
+                    const oldCode = (assessment.courseId ?? "").trim();
+                    const canAddAlias =
+                      rememberAsAlias &&
+                      Boolean(oldCode) &&
+                      oldCode.toUpperCase() !== "UNASSIGNED" &&
+                      oldCode.toUpperCase() !== "GENERAL";
+                    await reassignAssessmentCourse(assessment.id, targetId, canAddAlias);
+                    setShowCourseAssign(false);
+                  } finally {
+                    setAssigningCourse(false);
+                  }
+                }}
+                className="rounded-lg bg-[var(--accent)] px-3.5 py-1.5 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50 transition cursor-pointer"
+              >
+                {assigningCourse ? "Assigning..." : "Assign"}
+              </button>
+            </div>
+            {(() => {
+              const oldCode = (assessment.courseId ?? "").trim();
+              const targetId = selectedCourseId || courses[0]?.id || "";
+              const showAliasOption =
+                Boolean(oldCode) &&
+                oldCode.toUpperCase() !== "UNASSIGNED" &&
+                oldCode.toUpperCase() !== "GENERAL" &&
+                oldCode.toLowerCase() !== targetId.toLowerCase();
+              if (!showAliasOption) return null;
+              return (
+                <label className="flex items-center gap-2 text-xs text-[var(--text-muted)] cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={rememberAsAlias}
+                    onChange={(e) => setRememberAsAlias(e.target.checked)}
+                    className="rounded border-[var(--border)] accent-[var(--accent)]"
+                  />
+                  <span>
+                    Also add <strong>{oldCode}</strong> as an alias for <strong>{targetId}</strong>{" "}
+                    for future scans
+                  </span>
+                </label>
+              );
+            })()}
+          </div>
+        )}
         {/* Details Card */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-hover)] p-3.5 text-xs">
           <div className="flex items-start gap-2 sm:col-span-2">

@@ -161,7 +161,7 @@ describe("browser timetable extraction (network contract)", () => {
     const result = await extractTimetableBrowser("data:image/png;base64,QUJD", "test-key");
 
     expect(calls).toHaveLength(1);
-    expect(calls[0].url).toContain("gemini-3.5-flash");
+    expect(calls[0].url).toContain("gemini-3.8-flash");
     const headers = calls[0].init.headers as Record<string, string>;
     expect(headers["x-goog-api-key"]).toBe("test-key");
     const body = JSON.parse(String(calls[0].init.body));
@@ -175,7 +175,7 @@ describe("browser timetable extraction (network contract)", () => {
     expect(result.schedule.slots[0].dayIndex).toBe(1);
     // The session counter records the completed call.
     expect(getBrowserAiSessionCalls()).toBe(1);
-    expect(getBrowserAiSessionPerModel()["gemini-3.5-flash"]).toBe(1);
+    expect(getBrowserAiSessionPerModel()["gemini-3.8-flash"]).toBe(1);
   });
 
   it("falls through to the next model id when one is retired (404)", async () => {
@@ -191,8 +191,21 @@ describe("browser timetable extraction (network contract)", () => {
     const result = await extractTimetableBrowser("data:image/png;base64,QUJD", "test-key");
 
     expect(urls).toHaveLength(2);
-    expect(urls[1]).toContain("gemini-3.8-flash");
+    expect(urls[1]).toContain("gemini-3.5-flash");
     expect(result.schedule.courses).toEqual([]);
+  });
+
+  it("preserves an earlier 503 error over a trailing 404 from a retired model", async () => {
+    globalThis.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes("gemini-3.8-flash")) {
+        return { ok: false, status: 503, text: async () => "high demand" };
+      }
+      return { ok: false, status: 404, text: async () => "no longer available to new users" };
+    }) as unknown as typeof fetch;
+
+    await expect(extractTimetableBrowser("data:image/png;base64,QUJD", "test-key")).rejects.toThrow(
+      /HTTP 503/,
+    );
   });
 
   it("surfaces an invalid key and never echoes the key back", async () => {

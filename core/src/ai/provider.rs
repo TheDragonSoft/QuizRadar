@@ -81,8 +81,8 @@ impl AiModel {
                 "gemini-2.5-flash-lite",
             ],
             Self::Flash => &[
-                "gemini-3.5-flash",
                 "gemini-3.8-flash",
+                "gemini-3.5-flash",
                 "gemini-3.7-flash",
                 "gemini-3.6-flash",
                 "gemini-flash-latest",
@@ -642,7 +642,7 @@ mod tests {
         let today = ledger.usage(day_a).await.unwrap();
         assert_eq!(today.total(), 3);
         assert_eq!(today.counts.get("gemini-3.5-flash-lite"), Some(&2));
-        assert_eq!(today.counts.get("gemini-3.5-flash"), Some(&1));
+        assert_eq!(today.counts.get("gemini-3.8-flash"), Some(&1));
 
         let tomorrow = ledger.usage(day_b).await.unwrap();
         assert_eq!(

@@ -299,7 +299,7 @@ fun AssessmentDetailSheet(
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.medium,
                     colors = CardDefaults.quietCardColors(),
-                    border = quietCardBorder(),
+                    border = CardDefaults.quietCardBorder(),
                     elevation = CardDefaults.quietCardElevation(),
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
@@ -331,7 +331,6 @@ fun AssessmentDetailSheet(
                         val showAliasOption =
                             oldCode.isNotEmpty() &&
                                 !oldCode.equals("UNASSIGNED", ignoreCase = true) &&
-                                !oldCode.equals("GENERAL", ignoreCase = true) &&
                                 !oldCode.equals(selectedCourseId, ignoreCase = true)
                         if (showAliasOption) {
                             Spacer(modifier = Modifier.height(8.dp))

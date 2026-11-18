@@ -375,10 +375,7 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
                   try {
                     const oldCode = (assessment.courseId ?? "").trim();
                     const canAddAlias =
-                      rememberAsAlias &&
-                      Boolean(oldCode) &&
-                      oldCode.toUpperCase() !== "UNASSIGNED" &&
-                      oldCode.toUpperCase() !== "GENERAL";
+                      rememberAsAlias && Boolean(oldCode) && oldCode.toUpperCase() !== "UNASSIGNED";
                     await reassignAssessmentCourse(assessment.id, targetId, canAddAlias);
                     setShowCourseAssign(false);
                   } finally {
@@ -396,7 +393,6 @@ export const AssessmentDetailModal: React.FC<AssessmentDetailModalProps> = ({ pr
               const showAliasOption =
                 Boolean(oldCode) &&
                 oldCode.toUpperCase() !== "UNASSIGNED" &&
-                oldCode.toUpperCase() !== "GENERAL" &&
                 oldCode.toLowerCase() !== targetId.toLowerCase();
               if (!showAliasOption) return null;
               return (

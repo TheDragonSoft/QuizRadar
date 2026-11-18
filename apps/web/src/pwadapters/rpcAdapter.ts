@@ -590,12 +590,7 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
       };
       await upsertAssessment(updatedAssessment);
 
-      if (
-        addAlias &&
-        oldCode &&
-        oldCode.toUpperCase() !== "UNASSIGNED" &&
-        oldCode.toUpperCase() !== "GENERAL"
-      ) {
+      if (addAlias && oldCode && oldCode.toUpperCase() !== "UNASSIGNED") {
         const existingAliases = Array.isArray(targetCourse.aliases) ? targetCourse.aliases : [];
         const norm = (s: string) => s.replace(/[\s-]/g, "").toLowerCase();
         const alreadyMatches =

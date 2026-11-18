@@ -1630,7 +1630,9 @@ fun SettingsScreen(
                             text = {
                                 Column {
                                     Text(
-                                        text = "Paste the quizradar://pair?d=... link from your desktop or web companion to additively merge data.",
+                                        text =
+                                            "Paste the quizradar://pair?d=... link from your desktop " +
+                                                "or web companion to additively merge data.",
                                         style = MaterialTheme.typography.bodySmall,
                                     )
                                     Spacer(modifier = Modifier.height(12.dp))

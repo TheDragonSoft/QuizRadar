@@ -351,7 +351,8 @@ class AndroidUiCaptureTest {
         composeTestRule.onNodeWithText("Show Pairing QR Code").performScrollTo()
         capturePng("peer-sync-dark")
         composeTestRule.onNodeWithText("Show Pairing QR Code").performClick()
-        waitForText("Pairing QR Code (quizradar://pair)")
+        waitForText("Scan with another phone's camera", timeoutMs = 10_000)
+        composeTestRule.onNodeWithText("Scan with another phone's camera", substring = true).performScrollTo()
         capturePng("peer-qr-dark")
     }
 }

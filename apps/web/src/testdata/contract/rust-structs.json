@@ -18,7 +18,7 @@
     "core/src/plan/conflicts.rs": "a953cf743da6a8fc45b43bc6c2dfd716c6842a65a2d4311b08c56a19e8729e74",
     "apps/desktop/src-tauri/src/commands/state.rs": "3646be4dc9df1eed38bb73223a149ad51badd3055c46fda2cbe700f73b5e3e58",
     "core/src/store/repo.rs": "87687f018f09df153db71d36defb3574075139c94ad4750b05f19e332f0cede1",
-    "core/src/ffi.rs": "faa0241331f5621c6ccf41077cb6694495c178c28a6970f0c34e70a0cf42f4f4",
+    "core/src/ffi.rs": "8e16cf7be2b29583e577fea84e42958f2baca9dddc2816ab657b4253a81073a6",
     "core/src/store/db.rs": "7bb13b760def20b915a1c214ddad9ea60b8c37702bcd69e9fee780cff4ecd4db"
   },
   "structs": {
@@ -2534,6 +2534,23 @@
       "parameters": [
         "&self",
         "backup_json: String",
+        "updated_at: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.export_sync_payload": {
+      "parameters": [
+        "&self",
+        "device_id: String",
+        "updated_at: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.merge_sync_payload": {
+      "parameters": [
+        "&self",
+        "payload_json: String",
         "updated_at: String",
         "ref_date_iso: String"
       ],

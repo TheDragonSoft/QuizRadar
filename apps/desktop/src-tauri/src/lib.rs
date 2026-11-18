@@ -190,6 +190,8 @@ pub fn run() -> tauri::Result<()> {
             commands::run_gcal_sync,
             commands::push_cloud_backup,
             commands::pull_cloud_backup,
+            commands::export_sync_payload,
+            commands::merge_sync_payload,
             commands::google_login_start,
             commands::google_logout,
             commands::microsoft_login_start,

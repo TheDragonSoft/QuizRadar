@@ -373,7 +373,7 @@ export function validateConventionalCommit(rawMessage) {
     return { ok: true, type: "merge", breaking: false, subject: firstLine };
   }
   const re = new RegExp(
-    `^(${CONVENTIONAL_TYPES.join("|")})(\\([a-zA-Z0-9._/-]+\\))?(!)?:\\s+(.+)$`,
+    `^(${CONVENTIONAL_TYPES.join("|")})(\\([a-zA-Z0-9._/,-]+\\))?(!)?:\\s+(.+)$`,
   );
   const match = re.exec(firstLine);
   if (!match) {

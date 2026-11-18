@@ -209,6 +209,17 @@ class QuizRadarEngine(
         return onCore { store.importBackup(backupJson, nowIso(), refDate.toString()) }
     }
 
+    override suspend fun exportSyncPayload(deviceId: String): String {
+        return onCore { store.exportSyncPayload(deviceId, nowIso()) }
+    }
+
+    override suspend fun mergeSyncPayload(
+        payloadJson: String,
+        refDate: LocalDate,
+    ): String {
+        return onCore { store.mergeSyncPayload(payloadJson, nowIso(), refDate.toString()) }
+    }
+
     override suspend fun extractTimetableFromImage(
         imageB64: String,
         mime: String,

@@ -5,6 +5,8 @@ import android.graphics.Canvas
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
 import com.quizradar.app.core.QuizRadarEngine
 import com.quizradar.app.ui.theme.QuizRadarTheme
 import kotlinx.coroutines.Dispatchers
@@ -322,5 +324,28 @@ class AndroidUiCaptureTest {
         }
         waitForText("Assign to Course")
         capturePng("assessment-reassign-dark")
+    }
+
+    @Test
+    @Config(qualifiers = "w390dp-h844dp-night")
+    fun capture_peer_sync_dark() {
+        val engine = seededEngine()
+        val viewModel = newViewModel(engine)
+        viewModel.loadState()
+        composeTestRule.setContent {
+            QuizRadarTheme {
+                val state = viewModel.uiState.value
+                if (state is UiState.Ready) {
+                    com.quizradar.app.ui.screens.SettingsScreen(
+                        snapshot = state.snapshot,
+                        viewModel = viewModel,
+                        onNavigateBack = {},
+                    )
+                }
+            }
+        }
+        waitForText("Copy Sync Link")
+        composeTestRule.onNodeWithText("Copy Sync Link").performScrollTo()
+        capturePng("peer-sync-dark")
     }
 }

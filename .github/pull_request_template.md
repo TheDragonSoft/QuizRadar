@@ -27,15 +27,17 @@
 ## UI Screenshots (Required in PR Description for UI Changes)
 
 - [ ] No UI changes in this PR
-- [ ] Desktop / Web screenshot(s) embedded directly in this PR description
-- [ ] Android (Compose M3, rendered without emulator) screenshot(s) embedded directly in this PR description
+- [ ] Desktop / Web screenshot(s) embedded directly in this PR description (`pnpm --dir apps/web e2e:showcase`)
+- [ ] Android (Compose M3, rendered without emulator) screenshot(s) embedded directly in this PR description (`./gradlew testDebugUnitTest --tests "*AndroidUiCaptureTest*"`)
 
-> **Important:** Embed actual images directly in the PR description (`![caption](url)`), **not** as a GitHub Action artifact link or bot comment. Screenshots **must clearly show the new or changed UI element(s)** for review feedback.
+> **Important:** Embed actual images directly in the PR description (`![caption](url)`), **not** only as a GitHub Action artifact link. Screenshots **must clearly show the new or changed UI element(s)** for review feedback.
 
 ### Desktop / Web
+
 <!-- Embed screenshot(s): ![Desktop UI](https://raw.githubusercontent.com/TheDragonSoft/QuizRadar/pr-screenshots/...) -->
 
 ### Android (Compose M3 — Rendered Without Emulator)
+
 <!-- Embed screenshot(s): ![Android UI](https://raw.githubusercontent.com/TheDragonSoft/QuizRadar/pr-screenshots/...) -->
 
 ## Honesty & Security Checklist (`AGENTS.md` §3 & §8)

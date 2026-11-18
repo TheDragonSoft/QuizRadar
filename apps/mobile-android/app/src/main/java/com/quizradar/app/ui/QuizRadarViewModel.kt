@@ -2780,6 +2780,32 @@ class QuizRadarViewModel(
         }
     }
 
+    fun exportPeerSyncLink(onResult: (String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val payloadJson = callCore { core.exportSyncPayload("quizradar-android") }
+                val link = com.quizradar.app.core.PairSyncCodec.encode(payloadJson)
+                onResult(link)
+            } catch (e: Exception) {
+                showToast("Sync link export failed: ${e.message}")
+            }
+        }
+    }
+
+    fun mergePeerSyncLink(linkOrPayload: String) {
+        viewModelScope.launch {
+            try {
+                val payloadJson = com.quizradar.app.core.PairSyncCodec.decode(linkOrPayload)
+                val reportJson = callCore { core.mergeSyncPayload(payloadJson, clockDate()) }
+                val report = com.quizradar.app.model.QuizRadarJsonParser.parseMergeReportSummary(reportJson)
+                refreshState()
+                showToast(report)
+            } catch (e: Exception) {
+                showToast("Peer sync failed: ${e.message}")
+            }
+        }
+    }
+
     fun resetAllData(onComplete: () -> Unit) {
         viewModelScope.launch {
             // Stop everything that could touch the store while (or after) the

@@ -239,7 +239,15 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        // 3. App Shortcuts & Deep Links (quizradar://action/...)
+        // 3. Serverless Peer Sync Deep Link (quizradar://pair?d=...)
+        if (data != null && data.scheme == "quizradar" && data.host == "pair") {
+            viewModel.mergePeerSyncLink(data.toString())
+            intent.data = null
+            intent.action = null
+            return
+        }
+
+        // 4. App Shortcuts & Deep Links (quizradar://action/...)
         if (data != null && data.scheme == "quizradar" && data.host == "action") {
             when (data.path) {
                 "/add_event" -> {

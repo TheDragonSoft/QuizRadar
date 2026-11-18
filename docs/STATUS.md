@@ -104,11 +104,13 @@ _Executed the complete non-AI feature expansion across Rust Core, Web/Desktop, a
 
 ## Open Backlog & Known Limitations (Honest State)
 
-- **Android direct `deriveStudyTasks` track passthrough:** Native-store snapshots apply `academic_track` (`med|eng|biz`), while the direct stateless `QuizRadarEngine.deriveStudyTasks` wrapper still defaults to `""` (`eng`) until the ViewModel forwards the config string.
-- **Web first-boot SWR cache after `v2 -> v3` topic-key update:** Cached `localStorage` state on the very first cold frame can briefly show pre-migration positional topic keys as unchecked until the synchronous IndexedDB/IPC refresh resolves (~1 tick).
-- **Manual standalone assessment creation UI on Desktop/Web:** Core store CRUD (`upsert_assessment`) is implemented, while Desktop/Web UI currently exposes custom calendar events rather than a manual assessment form.
-- **Moodle REST token availability:** Both iCal and REST channels exist in `core/src/sources/moodle.rs`, but most university Moodle instances only expose student iCal URLs without issuing REST app tokens.
-- **Serverless Pair Phone (`quizradar://pair`):** Intentionally unimplemented pending a zero-server transport design (`AGENTS.md` §1 bans HTTP/LAN relay servers); JSON Backup Export/Import and Drive AppData backup are the supported cross-device data paths.
+- **Technical backlog cleared (v5.16.0 candidate):**
+  - `deriveStudyTasks` track passthrough on Android is wired via [`QuizRadarViewModel.kt`](../apps/mobile-android/app/src/main/java/com/quizradar/app/ui/QuizRadarViewModel.kt).
+  - Web first-boot SWR cache guard (`hasLegacyPositionalKeys`) is implemented and tested in [`swr.ts`](../apps/web/src/state/swr.ts).
+  - Manual standalone assessment creation/edit UI is wired via [`CreateEditAssessmentModal.tsx`](../apps/web/src/components/CreateEditAssessmentModal.tsx).
+  - Serverless two-way peer sync (`quizradar://pair?d=...`) is implemented across Core, Desktop, PWA, and Android using additive `BackupPayload` merge (both devices scan independently; zero tokens leave the device; zero servers).
+- **External ecosystem limitation — Moodle REST token availability:** Both iCal and REST channels exist in `core/src/sources/moodle.rs`, but most university Moodle instances only expose student iCal URLs without issuing REST app tokens.
+- **Commercial / Growth Roadmap:** Tracked in [`docs/ROADMAP-COMMERCIAL.md`](./ROADMAP-COMMERCIAL.md) (Syllabus PDF ingestion, zero-key trial AI relay, Google OAuth verification, opt-in E2EE sync server, App Store / Play Store distribution, and Pro tier).
 
 ## Reference & History Map
 

@@ -932,6 +932,38 @@ impl NativeStore {
         Ok(serde_json::to_string(&report)?)
     }
 
+    /// Exports a data-only `BackupPayload` JSON (structurally token-free)
+    /// for serverless peer-to-peer sync (`quizradar://pair`).
+    pub async fn export_sync_payload(
+        &self,
+        device_id: String,
+        updated_at: String,
+    ) -> Result<String, QuizRadarFfiError> {
+        let payload = self
+            .inner
+            .build_backup_payload(device_id, updated_at)
+            .await?;
+        Ok(serde_json::to_string(&payload)?)
+    }
+
+    /// Additively merges a data-only `BackupPayload` JSON from a peer device
+    /// (never overwrites newer local assessments/grades/topics). Returns
+    /// serialized `MergeReport`.
+    pub async fn merge_sync_payload(
+        &self,
+        payload_json: String,
+        updated_at: String,
+        ref_date_iso: String,
+    ) -> Result<String, QuizRadarFfiError> {
+        let payload: crate::store::backup::BackupPayload = serde_json::from_str(&payload_json)?;
+        let ref_date = parse_ref_date(&ref_date_iso)?;
+        let report = self
+            .inner
+            .merge_backup(payload, updated_at, ref_date)
+            .await?;
+        Ok(serde_json::to_string(&report)?)
+    }
+
     /// The transactional whole-store reset (`store::Store::reset_all`): one
     /// SQLite transaction wipes every owned table — feeds, config, tokens
     /// metadata, attendance, flashcards, quiz attempts, mistake bank, study

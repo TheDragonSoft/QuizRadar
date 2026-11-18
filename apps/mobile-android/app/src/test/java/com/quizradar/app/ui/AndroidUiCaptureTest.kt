@@ -2,10 +2,12 @@ package com.quizradar.app.ui
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.quizradar.app.core.QuizRadarEngine
 import com.quizradar.app.ui.theme.QuizRadarTheme
@@ -45,6 +47,7 @@ import java.time.LocalDate
  * `app/build.gradle.kts`) with dates relative to today so the captures stay
  * evergreen — same honesty contract as the web workbench fixtures.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(qualifiers = "w390dp-h844dp")
@@ -344,8 +347,11 @@ class AndroidUiCaptureTest {
                 }
             }
         }
-        waitForText("Copy Sync Link")
-        composeTestRule.onNodeWithText("Copy Sync Link").performScrollTo()
+        waitForText("Show Pairing QR Code")
+        composeTestRule.onNodeWithText("Show Pairing QR Code").performScrollTo()
         capturePng("peer-sync-dark")
+        composeTestRule.onNodeWithText("Show Pairing QR Code").performClick()
+        waitForText("Pairing QR Code (quizradar://pair)")
+        capturePng("peer-qr-dark")
     }
 }

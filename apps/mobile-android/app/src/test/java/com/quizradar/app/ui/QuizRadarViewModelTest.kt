@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -1066,7 +1067,7 @@ class QuizRadarViewModelTest {
         }
 
     @Test
-    fun buildScanSummary_reportsCountsFailuresAndNotes() {
+    fun buildScanSummary_reportsCountsAndFailuresWithoutDiagnosticNotes() {
         val report =
             com.quizradar.app.model.SyncReportModel(
                 success = true,
@@ -1085,7 +1086,10 @@ class QuizRadarViewModelTest {
         assertTrue(summary.contains("3 new · 2 updated"))
         assertTrue(summary.contains("ran: Gmail"))
         assertTrue("a failed source is named with its real error", summary.contains("Teams failed: HTTP 401"))
-        assertTrue(summary.contains("4 announcements outside the 60-day window were skipped"))
+        assertFalse(
+            "diagnostic notes belong in the scan report, not the toast popup",
+            summary.contains("4 announcements outside the 60-day window were skipped"),
+        )
     }
 
     @Test

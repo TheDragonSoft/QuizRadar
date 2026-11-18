@@ -39,6 +39,26 @@ class PairSyncCodecTest {
         assertTrue(decoded.contains("Quiz 1"))
     }
 
+    @Test
+    fun compactsTrailingRawTextAndEscapedLongSnippetsCleanly() {
+        val longSnippet = ("line\\n\\\"quote\\\" ").repeat(30)
+        val rawBody = "trailing-verbose-body ".repeat(250)
+        val sample =
+            """{"schema_version":1,"client_device_id":"quizradar-android",""" +
+                """"updated_at":"2026-11-16T22:00:00Z","schedule":{"courses":[],"slots":[]},""" +
+                """"assessments":[{"id":"a1","course_id":"CSE241","title":"Quiz 2",""" +
+                """"snippet":"$longSnippet","raw_text":"$rawBody"}],""" +
+                """"completed_topics":{},"grades":{},"custom_events":[],"feeds":[]}"""
+
+        val (compacted, wasCompacted) = PairSyncCodec.compactPayloadIfNeeded(sample, maxLinkBytes = 120)
+        assertTrue(wasCompacted)
+        assertTrue(!compacted.contains("raw_text"))
+        assertTrue(!compacted.contains(",}"))
+        val decoded = PairSyncCodec.decode(PairSyncCodec.encode(compacted))
+        assertTrue(decoded.contains("Quiz 2"))
+        assertTrue(decoded.contains("..."))
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun rejectsEmptyInput() {
         PairSyncCodec.decode("")

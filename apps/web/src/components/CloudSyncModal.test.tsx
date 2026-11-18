@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { CloudSyncModal } from "./CloudSyncModal";
 import { useAppStore, initialFullState } from "../state/store";
+import { setRpcMockHandler } from "../state/rpc";
 import { setupMockIndexedDb } from "../test/mockIndexedDb";
 
 describe("CloudSyncModal Tier Honesty & Last Backup Status", () => {
@@ -12,6 +13,7 @@ describe("CloudSyncModal Tier Honesty & Last Backup Status", () => {
   });
 
   afterEach(() => {
+    setRpcMockHandler(null);
     delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
     teardownIdb();
     vi.restoreAllMocks();
@@ -57,5 +59,41 @@ describe("CloudSyncModal Tier Honesty & Last Backup Status", () => {
 
     expect(screen.getByRole("heading", { name: "Cloud Backup & Transfer" })).toBeInTheDocument();
     expect(screen.getByText("Google Drive AppData Backup")).toBeInTheDocument();
+  });
+
+  it("renders the pairing QR SVG when Show Pairing QR Code is clicked", async () => {
+    setRpcMockHandler((fn) => {
+      if (fn === "export_sync_payload") {
+        return Promise.resolve(
+          JSON.stringify({
+            schema_version: 1,
+            client_device_id: "quizradar-pwa",
+            updated_at: "2026-11-16T22:00:00Z",
+            schedule: { semester: null, courses: [], slots: [] },
+            assessments: [],
+            completed_topics: {},
+            grades: {},
+            custom_events: [],
+            feeds: [],
+          }) as never,
+        );
+      }
+      return null;
+    });
+    useAppStore.setState({
+      data: {
+        ...initialFullState,
+        config: { ...initialFullState.config, lastBackupPush: null },
+      },
+    });
+
+    render(<CloudSyncModal modalId="cloud-sync" onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Show Pairing QR Code" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pair-qr-svg")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: "Hide QR Code" })).toBeInTheDocument();
   });
 });

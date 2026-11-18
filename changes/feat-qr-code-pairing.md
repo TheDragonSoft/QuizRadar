@@ -12,7 +12,7 @@ Add ISO/IEC 18004 QR code generation, SVG/Compose rendering, BarcodeDetector ima
 
 ### Verification
 
-- pnpm --dir apps/web exec vitest run src/lib/qrCode.test.ts src/lib/pairSync.test.ts, pnpm format:check, pnpm lint, node tooling/agent-gate.mjs --ci
+- pnpm --dir apps/web exec vitest run src/lib/qrCode.test.ts src/lib/pairSync.test.ts src/components/CloudSyncModal.test.tsx, pnpm format:check, pnpm lint, node tooling/agent-gate.mjs --ci
 
 ### Handoff / Follow-ups
 

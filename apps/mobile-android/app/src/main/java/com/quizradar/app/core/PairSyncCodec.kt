@@ -47,21 +47,152 @@ object PairSyncCodec {
         if (fullLink.toByteArray(StandardCharsets.UTF_8).size <= maxLinkBytes) {
             return Pair(payloadJson, false)
         }
-        val withoutRaw =
-            payloadJson
-                .replace(Regex(""""raw_text"\s*:\s*"(?:\\.|[^"\\])*"\s*,\s*"""), "")
-                .replace(Regex(""",\s*"raw_text"\s*:\s*"(?:\\.|[^"\\])*""""), "")
-                .replace(Regex(""""raw_text"\s*:\s*"(?:\\.|[^"\\])*""""), "")
-        val compacted =
-            withoutRaw.replace(
-                Regex(""""(snippet|notes)"\s*:\s*"((?:\\.|[^"\\]){161,})""""),
-            ) { match ->
-                val field = match.groupValues[1]
-                val rawVal = match.groupValues[2]
-                val safePrefix = rawVal.take(157).trimEnd('\\')
-                """"$field":"$safePrefix...""""
+        return Pair(compactJsonPayload(payloadJson), true)
+    }
+
+    private fun compactJsonPayload(json: String): String {
+        val out = StringBuilder(json.length)
+        var i = 0
+        while (i < json.length) {
+            val ch = json[i]
+            if (ch != '"') {
+                out.append(ch)
+                i++
+                continue
             }
-        return Pair(compacted, true)
+
+            val closeQuote = findJsonStringEnd(json, i)
+            if (closeQuote == -1) {
+                out.append(json, i, json.length)
+                break
+            }
+
+            val afterQuote = skipWhitespace(json, closeQuote + 1)
+            if (afterQuote >= json.length || json[afterQuote] != ':') {
+                out.append(json, i, closeQuote + 1)
+                i = closeQuote + 1
+                continue
+            }
+
+            val key = json.substring(i + 1, closeQuote)
+            val afterColon = skipWhitespace(json, afterQuote + 1)
+
+            if (key == "raw_text" && afterColon < json.length) {
+                val valEnd = skipJsonValue(json, afterColon)
+                val afterVal = skipWhitespace(json, valEnd)
+                if (afterVal < json.length && json[afterVal] == ',') {
+                    i = afterVal + 1
+                } else {
+                    while (out.isNotEmpty() && out[out.length - 1].isWhitespace()) {
+                        out.setLength(out.length - 1)
+                    }
+                    if (out.isNotEmpty() && out[out.length - 1] == ',') {
+                        out.setLength(out.length - 1)
+                    }
+                    i = valEnd
+                }
+                continue
+            }
+
+            if ((key == "snippet" || key == "notes") && afterColon < json.length && json[afterColon] == '"') {
+                val valClose = findJsonStringEnd(json, afterColon)
+                if (valClose != -1) {
+                    val contentLen = valClose - (afterColon + 1)
+                    if (contentLen > 160) {
+                        out.append(json, i, afterColon + 1)
+                        val truncated = truncateJsonStringContent(json, afterColon + 1, valClose)
+                        out.append(truncated)
+                        out.append('"')
+                        i = valClose + 1
+                        continue
+                    }
+                }
+            }
+
+            out.append(json, i, afterQuote + 1)
+            i = afterQuote + 1
+        }
+        return out.toString()
+    }
+
+    private fun findJsonStringEnd(s: String, openQuoteIdx: Int): Int {
+        var i = openQuoteIdx + 1
+        while (i < s.length) {
+            when (s[i]) {
+                '\\' -> i += 2
+                '"' -> return i
+                else -> i++
+            }
+        }
+        return -1
+    }
+
+    private fun skipWhitespace(s: String, start: Int): Int {
+        var i = start
+        while (i < s.length && s[i].isWhitespace()) {
+            i++
+        }
+        return i
+    }
+
+    private fun skipJsonValue(s: String, start: Int): Int {
+        if (start >= s.length) return s.length
+        return when (s[start]) {
+            '"' -> {
+                val end = findJsonStringEnd(s, start)
+                if (end == -1) s.length else end + 1
+            }
+            '{', '[' -> {
+                var depth = 0
+                var i = start
+                while (i < s.length) {
+                    when (s[i]) {
+                        '"' -> {
+                            val end = findJsonStringEnd(s, i)
+                            i = if (end == -1) s.length else end + 1
+                        }
+                        '{', '[' -> {
+                            depth++
+                            i++
+                        }
+                        '}', ']' -> {
+                            depth--
+                            i++
+                            if (depth == 0) return i
+                        }
+                        else -> i++
+                    }
+                }
+                s.length
+            }
+            else -> {
+                var i = start
+                while (i < s.length && s[i] != ',' && s[i] != '}' && s[i] != ']' && !s[i].isWhitespace()) {
+                    i++
+                }
+                i
+            }
+        }
+    }
+
+    private fun truncateJsonStringContent(s: String, contentStart: Int, contentEnd: Int): String {
+        val maxPrefixLen = 157
+        val limit = minOf(contentStart + maxPrefixLen, contentEnd)
+        var i = contentStart
+        while (i < limit) {
+            val c = s[i]
+            val step =
+                if (c == '\\') {
+                    if (i + 1 < contentEnd && s[i + 1] == 'u') 6 else 2
+                } else if (Character.isHighSurrogate(c)) {
+                    2
+                } else {
+                    1
+                }
+            if (i + step > limit) break
+            i += step
+        }
+        return "${s.substring(contentStart, i)}..."
     }
 
     fun extractParam(rawInput: String): String {

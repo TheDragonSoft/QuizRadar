@@ -30,28 +30,36 @@ function fromBase64Url(b64url: string): Uint8Array {
   return bytes;
 }
 
+async function runTransformStream(
+  stream: CompressionStream | DecompressionStream,
+  input: Uint8Array,
+): Promise<Uint8Array> {
+  const readPromise = new Response(stream.readable).arrayBuffer();
+  const writer = stream.writable.getWriter();
+  const writePromise = (async () => {
+    await writer.write(input as unknown as BufferSource);
+    await writer.close();
+  })();
+  // Attach no-op handlers so neither promise triggers an unhandled rejection
+  // if the peer rejects slightly before Promise.all observes it.
+  readPromise.catch(() => {});
+  writePromise.catch(() => {});
+  const [buf] = await Promise.all([readPromise, writePromise]);
+  return new Uint8Array(buf);
+}
+
 async function deflateRaw(input: Uint8Array): Promise<Uint8Array> {
   if (typeof CompressionStream === "undefined") {
     throw new Error("CompressionStream is not supported in this browser environment.");
   }
-  const cs = new CompressionStream("deflate-raw");
-  const writer = cs.writable.getWriter();
-  await writer.write(input as unknown as BufferSource);
-  await writer.close();
-  const buf = await new Response(cs.readable).arrayBuffer();
-  return new Uint8Array(buf);
+  return runTransformStream(new CompressionStream("deflate-raw"), input);
 }
 
 async function inflateRaw(input: Uint8Array): Promise<Uint8Array> {
   if (typeof DecompressionStream === "undefined") {
     throw new Error("DecompressionStream is not supported in this browser environment.");
   }
-  const ds = new DecompressionStream("deflate-raw");
-  const writer = ds.writable.getWriter();
-  await writer.write(input as unknown as BufferSource);
-  await writer.close();
-  const buf = await new Response(ds.readable).arrayBuffer();
-  return new Uint8Array(buf);
+  return runTransformStream(new DecompressionStream("deflate-raw"), input);
 }
 
 export async function encodePairSyncLink(payloadJson: string): Promise<string> {

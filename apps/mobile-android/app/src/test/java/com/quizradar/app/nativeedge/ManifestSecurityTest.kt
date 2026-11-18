@@ -53,8 +53,8 @@ class ManifestSecurityTest {
             content.contains("""android:host="oauth""""),
         )
         assertFalse(
-            "Manifest must not handle obsolete pair host in zero-server mode",
-            content.contains("""android:host="pair""""),
+            "Manifest must not handle obsolete com.quizradar.app://pair LAN server pairing",
+            Regex("""android:scheme="com\.quizradar\.app"[^>]*android:host="pair"""").containsMatchIn(content),
         )
 
         // 5. Share-sheet ingest must be registered

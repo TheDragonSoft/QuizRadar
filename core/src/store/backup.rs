@@ -542,6 +542,7 @@ mod tests {
                 border: None,
                 credits: None,
                 max_absences: None,
+                aliases: Vec::new(),
             }],
             slots: Vec::new(),
         }
@@ -811,6 +812,7 @@ mod tests {
                             border: None,
                             credits: None,
                             max_absences: None,
+                            aliases: Vec::new(),
                         }],
                         slots: Vec::new(),
                     },
@@ -855,6 +857,7 @@ mod tests {
             border: None,
             credits: None,
             max_absences: None,
+            aliases: Vec::new(),
         };
         let payload = payload_with(
             remote_schedule,

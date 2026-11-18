@@ -339,6 +339,7 @@ mod tests {
                 border: None,
                 credits: None,
                 max_absences: None,
+                aliases: Vec::new(),
             }],
             slots: vec![ScheduleSlot {
                 id: "slot-1".to_string(),

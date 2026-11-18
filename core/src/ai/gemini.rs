@@ -136,7 +136,11 @@ impl GeminiProvider {
                 let detail = redact_key(&detail, key);
                 let error = map_status(status.as_u16(), &detail);
                 if is_model_level_failure(status.as_u16()) {
-                    last_error = Some(error);
+                    let keep_existing =
+                        matches!(last_error, Some(AiError::Retryable(_))) && status.as_u16() == 404;
+                    if !keep_existing {
+                        last_error = Some(error);
+                    }
                     continue;
                 }
                 return Err(error);
@@ -689,7 +693,7 @@ mod tests {
     async fn vision_requests_send_inline_data_with_a_stripped_data_url() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/models/gemini-3.5-flash:generateContent"))
+            .and(path("/models/gemini-3.8-flash:generateContent"))
             .and(body_partial_json(json!({
                 "contents": [{ "parts": [
                     { "text": "Read the timetable." },
@@ -717,6 +721,43 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(result.value(), &json!({ "semester": null }));
+    }
+
+    #[tokio::test]
+    async fn retired_404_does_not_clobber_earlier_503() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/models/gemini-3.8-flash:generateContent"))
+            .respond_with(ResponseTemplate::new(503).set_body_string("high demand"))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(404).set_body_string("no longer available to new users"),
+            )
+            .mount(&server)
+            .await;
+
+        let error = provider(
+            &server.uri(),
+            Some("k"),
+            None,
+            std::time::Duration::from_secs(5),
+        )
+        .chat_json(StructuredPrompt::new(
+            AiModel::Flash,
+            0.1,
+            "Read the timetable.",
+        ))
+        .await
+        .unwrap_err();
+
+        match error {
+            AiError::Retryable(msg) => assert!(msg.contains("503"), "expected 503, got {msg}"),
+            other => panic!("expected Retryable(503), got {other:?}"),
+        }
+        server.verify().await;
     }
 
     #[test]

@@ -109,6 +109,23 @@ class QuizRadarEngine(
         return onCore { store.replaceAssessments(assessmentsJson, nowIso(), refDate.toString()) }
     }
 
+    override suspend fun reassignAssessmentCourse(
+        assessmentId: String,
+        newCourseId: String,
+        addAlias: Boolean,
+        refDate: LocalDate,
+    ): String {
+        return onCore {
+            store.reassignAssessmentCourse(
+                assessmentId,
+                newCourseId,
+                addAlias,
+                nowIso(),
+                refDate.toString(),
+            )
+        }
+    }
+
     override suspend fun toggleTopic(
         topicKey: String,
         done: Boolean,
@@ -190,6 +207,17 @@ class QuizRadarEngine(
         refDate: LocalDate,
     ): String {
         return onCore { store.importBackup(backupJson, nowIso(), refDate.toString()) }
+    }
+
+    override suspend fun exportSyncPayload(deviceId: String): String {
+        return onCore { store.exportSyncPayload(deviceId, nowIso()) }
+    }
+
+    override suspend fun mergeSyncPayload(
+        payloadJson: String,
+        refDate: LocalDate,
+    ): String {
+        return onCore { store.mergeSyncPayload(payloadJson, nowIso(), refDate.toString()) }
     }
 
     override suspend fun extractTimetableFromImage(

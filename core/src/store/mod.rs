@@ -233,6 +233,29 @@ impl Store {
         .await
     }
 
+    /// Reassigns an assessment to another enrolled course and optionally adds
+    /// its previous unrecognized course code as an alias on that course.
+    pub async fn reassign_assessment_course(
+        &self,
+        assessment_id: String,
+        new_course_id: String,
+        add_alias: bool,
+        updated_at: String,
+        reference_date: NaiveDate,
+    ) -> Result<repo::AppSnapshot, StoreError> {
+        self.run(move |db| {
+            repo::ops::reassign_assessment_course(
+                db,
+                &assessment_id,
+                &new_course_id,
+                add_alias,
+                &updated_at,
+                reference_date,
+            )
+        })
+        .await
+    }
+
     /// Assessment delete.
     pub async fn delete_assessment(
         &self,

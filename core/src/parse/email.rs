@@ -859,6 +859,15 @@ pub fn match_course_from_text<'a>(
             }
         }
     }
+    // 1b. User-configured course code alias match
+    for course in &schedule.courses {
+        for alias in &course.aliases {
+            let alias_lower = alias.trim().to_ascii_lowercase();
+            if !alias_lower.is_empty() && text_lower.contains(&alias_lower) {
+                return Some((course, "alias-match"));
+            }
+        }
+    }
     // 2. Direct course Name match
     for course in &schedule.courses {
         let name_lower = course.name.trim().to_ascii_lowercase();
@@ -2831,6 +2840,7 @@ mod tests {
                 border: None,
                 credits: None,
                 max_absences: None,
+                aliases: Vec::new(),
             },
             Course {
                 id: "CSE346".to_string(),
@@ -2840,6 +2850,7 @@ mod tests {
                 border: None,
                 credits: None,
                 max_absences: None,
+                aliases: Vec::new(),
             },
         ];
         let slot = |id: &str,
@@ -3806,6 +3817,20 @@ mod tests {
         // 4. Non-matching text
         let m4 = match_course_from_text("Welcome back everyone", &schedule);
         assert!(m4.is_none());
+    }
+
+    #[test]
+    fn match_course_by_alias() {
+        let mut schedule = fixture_schedule();
+        schedule.courses[0].aliases = vec!["CS241".to_string(), "COMP-241".to_string()];
+        let m1 = match_course_from_text("Quiz 1 for CS241 next Tuesday", &schedule);
+        assert!(m1.is_some());
+        assert_eq!(m1.unwrap().0.id, "CSE241");
+        assert_eq!(m1.unwrap().1, "alias-match");
+
+        let m2 = match_course_from_text("Lab in comp-241 tomorrow", &schedule);
+        assert!(m2.is_some());
+        assert_eq!(m2.unwrap().0.id, "CSE241");
     }
 
     #[test]

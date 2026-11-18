@@ -14,6 +14,7 @@ data class CourseModel(
     val credits: Double? = null,
     /** Absence warning threshold (`Course.max_absences`), same round-trip rule. */
     val maxAbsences: Int? = null,
+    val aliases: List<String> = emptyList(),
 )
 
 data class ScheduleSlotModel(

@@ -123,9 +123,10 @@ private const val ONBOARDING_STEP_COUNT = 6
 private const val SCAN_SETTLE_TIMEOUT_MS = 5_000L
 
 /**
- * The honest one-line summary of a scan report: real counts, real per-source
- * outcomes, the core's own notes. A scan that found nothing says exactly
- * that; a skipped-only run is not dressed up as success.
+ * The honest one-line summary of a scan report for the toast popup: real
+ * counts and real per-source outcomes (ran / failed / all skipped). Detailed
+ * per-query and cache diagnostic `notes` live in `lastScanReport` rather
+ * than flooding the snackbar.
  */
 internal fun buildScanSummary(report: com.quizradar.app.model.SyncReportModel): String {
     val counts = "${report.totalNew} new · ${report.totalUpdated} updated"
@@ -143,7 +144,6 @@ internal fun buildScanSummary(report: com.quizradar.app.model.SyncReportModel): 
                 skipped.joinToString(", ") { "${it.name} (${it.detail ?: "no reason given"})" },
         )
     }
-    report.notes.forEach { parts.add(it) }
     return parts.joinToString(" · ")
 }
 
@@ -1142,6 +1142,34 @@ class QuizRadarViewModel(
         }
     }
 
+    /** Reassigns an assessment to an enrolled course and optionally adds its old code as an alias. */
+    fun reassignAssessmentCourse(
+        assessmentId: String,
+        newCourseId: String,
+        addAlias: Boolean,
+        onResult: (AssessmentSaveResult) -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            try {
+                val refDate = clockDate()
+                val updatedJson = callCore {
+                    core.reassignAssessmentCourse(assessmentId, newCourseId, addAlias, refDate)
+                }
+                val snapshot = QuizRadarJsonParser.parseAppSnapshot(updatedJson)
+                _uiState.value = UiState.Ready(snapshot)
+                lastLoadedDate = refDate
+                onStateMutated?.invoke()
+                showToast("Assigned to $newCourseId")
+                onResult(AssessmentSaveResult.Saved)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                onResult(
+                    AssessmentSaveResult.Failed(e.message?.takeIf { it.isNotBlank() } ?: "unknown error"),
+                )
+            }
+        }
+    }
+
     /**
      * Edits an existing custom event (A08): an edit is an upsert under the
      * SAME id, so reminders and calendar identity survive the correction.
@@ -1915,6 +1943,7 @@ class QuizRadarViewModel(
                         put("color", course.color ?: "#1a73e8")
                         if (credits != null) put("credits", credits)
                         if (maxAbsences != null) put("max_absences", maxAbsences)
+                        if (course.aliases.isNotEmpty()) put("aliases", JSONArray(course.aliases))
                     }.toString()
 
                 val slotsArr = JSONArray()
@@ -2747,6 +2776,32 @@ class QuizRadarViewModel(
                 onResult(json)
             } catch (e: Exception) {
                 showToast("Export failed: ${e.message}")
+            }
+        }
+    }
+
+    fun exportPeerSyncLink(onResult: (String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val payloadJson = callCore { core.exportSyncPayload("quizradar-android") }
+                val link = com.quizradar.app.core.PairSyncCodec.encode(payloadJson)
+                onResult(link)
+            } catch (e: Exception) {
+                showToast("Sync link export failed: ${e.message}")
+            }
+        }
+    }
+
+    fun mergePeerSyncLink(linkOrPayload: String) {
+        viewModelScope.launch {
+            try {
+                val payloadJson = com.quizradar.app.core.PairSyncCodec.decode(linkOrPayload)
+                val reportJson = callCore { core.mergeSyncPayload(payloadJson, clockDate()) }
+                val report = com.quizradar.app.model.QuizRadarJsonParser.parseMergeReportSummary(reportJson)
+                refreshState()
+                showToast(report)
+            } catch (e: Exception) {
+                showToast("Peer sync failed: ${e.message}")
             }
         }
     }

@@ -121,6 +121,14 @@ interface QuizRadarCore {
         refDate: LocalDate = LocalDate.now(),
     ): String
 
+    suspend fun exportSyncPayload(deviceId: String = "quizradar-android"): String =
+        exportBackup(LocalDate.now())
+
+    suspend fun mergeSyncPayload(
+        payloadJson: String,
+        refDate: LocalDate = LocalDate.now(),
+    ): String = importBackup(payloadJson, refDate)
+
     /**
      * The AI timetable-image extraction (`01` §4.1).
      *
@@ -245,6 +253,14 @@ interface QuizRadarCore {
         id: String,
         refDate: LocalDate = LocalDate.now(),
     ): String = throw UnsupportedOperationException("deleteFeed is not supported by this fake")
+
+    /** Reassigns an assessment's course and optionally records the old code as an alias. */
+    suspend fun reassignAssessmentCourse(
+        assessmentId: String,
+        newCourseId: String,
+        addAlias: Boolean,
+        refDate: LocalDate = LocalDate.now(),
+    ): String = throw UnsupportedOperationException("reassignAssessmentCourse is not supported by this fake")
 
     /**
      * The canonical transactional reset: ONE SQLite transaction wipes every

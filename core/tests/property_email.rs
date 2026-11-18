@@ -221,6 +221,7 @@ fn arb_schedule() -> impl Strategy<Value = ScheduleData> {
                     border: None,
                     credits: None,
                     max_absences: None,
+                    aliases: Vec::new(),
                 });
             }
             built.push(ScheduleSlot {
@@ -699,6 +700,7 @@ fn control_schedule() -> ScheduleData {
             border: None,
             credits: None,
             max_absences: None,
+            aliases: Vec::new(),
         }],
         slots: vec![ScheduleSlot {
             id: "s1".to_string(),

@@ -412,6 +412,14 @@ pub(crate) fn match_course_with_how<'a>(
         }
     }
     for course in &schedule.courses {
+        for alias in &course.aliases {
+            let trimmed = alias.trim();
+            if !trimmed.is_empty() && ascii_ci_contains(context_lower.as_bytes(), trimmed) {
+                return Some((course, "alias-matching"));
+            }
+        }
+    }
+    for course in &schedule.courses {
         if !course.name.is_empty() && ascii_ci_contains(context_lower.as_bytes(), &course.name) {
             return Some((course, "name-matching"));
         }
@@ -850,6 +858,7 @@ mod tests {
                     border: None,
                     credits: None,
                     max_absences: None,
+                    aliases: Vec::new(),
                 },
                 Course {
                     id: "MATH201".to_string(),
@@ -859,6 +868,7 @@ mod tests {
                     border: None,
                     credits: None,
                     max_absences: None,
+                    aliases: Vec::new(),
                 },
             ],
             slots: vec![slot("slot-1", "CS101", "Lecture", "Sun", 0, "Room CT S1 9")],

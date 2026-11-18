@@ -232,6 +232,7 @@ async fn test_study_streak_reference_dates_and_resilience() {
         border: None,
         credits: Some(4.0),
         max_absences: Some(3),
+        aliases: Vec::new(),
     }];
 
     store
@@ -430,6 +431,7 @@ async fn test_attendance_absence_limits_warning_chips_and_thresholds() {
             border: None,
             credits: Some(3.0),
             max_absences: Some(4),
+            aliases: Vec::new(),
         })
         .unwrap();
 
@@ -442,6 +444,7 @@ async fn test_attendance_absence_limits_warning_chips_and_thresholds() {
             border: None,
             credits: Some(3.0),
             max_absences: Some(1),
+            aliases: Vec::new(),
         })
         .unwrap();
 
@@ -454,6 +457,7 @@ async fn test_attendance_absence_limits_warning_chips_and_thresholds() {
             border: None,
             credits: Some(4.0),
             max_absences: None,
+            aliases: Vec::new(),
         })
         .unwrap();
 

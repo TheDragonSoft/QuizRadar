@@ -283,9 +283,13 @@ impl<'a> CourseRepo<'a> {
 
     pub fn list(&self) -> Result<Vec<Course>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, color, bg, border, credits, max_absences FROM courses ORDER BY id",
+            "SELECT id, name, color, bg, border, credits, max_absences, aliases_json FROM courses ORDER BY id",
         )?;
         let rows = stmt.query_map([], |row| {
+            let aliases_str: String = row
+                .get::<_, Option<String>>(7)?
+                .unwrap_or_else(|| "[]".to_string());
+            let aliases: Vec<String> = serde_json::from_str(&aliases_str).unwrap_or_default();
             Ok(Course {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -296,6 +300,7 @@ impl<'a> CourseRepo<'a> {
                 max_absences: row
                     .get::<_, Option<i64>>(6)?
                     .map(|v| u32::try_from(v).unwrap_or(0)),
+                aliases,
             })
         })?;
         let mut courses = Vec::new();
@@ -307,9 +312,13 @@ impl<'a> CourseRepo<'a> {
 
     pub fn get(&self, code: &str) -> Result<Option<Course>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, color, bg, border, credits, max_absences FROM courses WHERE id = ?1 COLLATE NOCASE",
+            "SELECT id, name, color, bg, border, credits, max_absences, aliases_json FROM courses WHERE id = ?1 COLLATE NOCASE",
         )?;
         let mut rows = stmt.query_map([code.trim()], |row| {
+            let aliases_str: String = row
+                .get::<_, Option<String>>(7)?
+                .unwrap_or_else(|| "[]".to_string());
+            let aliases: Vec<String> = serde_json::from_str(&aliases_str).unwrap_or_default();
             Ok(Course {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -320,6 +329,7 @@ impl<'a> CourseRepo<'a> {
                 max_absences: row
                     .get::<_, Option<i64>>(6)?
                     .map(|v| u32::try_from(v).unwrap_or(0)),
+                aliases,
             })
         })?;
         if let Some(r) = rows.next() {
@@ -345,8 +355,9 @@ impl<'a> CourseRepo<'a> {
         }
         // Case-insensitive replacement of any near-duplicate id/label pair.
         self.delete(&course.id)?;
+        let aliases_json = serde_json::to_string(&course.aliases)?;
         self.conn.execute(
-            "INSERT INTO courses (id, name, color, bg, border, credits, max_absences) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO courses (id, name, color, bg, border, credits, max_absences, aliases_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 course.id,
                 course.name,
@@ -355,6 +366,7 @@ impl<'a> CourseRepo<'a> {
                 course.border,
                 course.credits,
                 course.max_absences.map(i64::from),
+                aliases_json,
             ],
         )?;
         Ok(())
@@ -2704,6 +2716,58 @@ pub mod ops {
         read_snapshot(db.conn(), reference_date)
     }
 
+    /// Reassigns an assessment's `course_id` to `new_course_id`. When
+    /// `add_alias` is true and the assessment's previous `course_id` is a
+    /// non-empty, non-"UNASSIGNED" code distinct from `new_course_id`, appends
+    /// that previous code to the target course's `aliases` list so future
+    /// scans resolve it automatically.
+    pub fn reassign_assessment_course(
+        db: &Db,
+        assessment_id: &str,
+        new_course_id: &str,
+        add_alias: bool,
+        updated_at: &str,
+        reference_date: NaiveDate,
+    ) -> Result<AppSnapshot, StoreError> {
+        let target_code = new_course_id.trim();
+        if target_code.is_empty() {
+            return Err(StoreError::Validation(
+                "Target course code must not be empty.".to_string(),
+            ));
+        }
+        {
+            let tx = db.transaction()?;
+            let a_repo = AssessmentRepo::new(&tx);
+            let mut assessment = a_repo.get(assessment_id)?.ok_or_else(|| {
+                StoreError::Validation(format!("Assessment '{assessment_id}' not found."))
+            })?;
+            let old_code = assessment
+                .course_id
+                .as_deref()
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let c_repo = CourseRepo::new(&tx);
+            let mut target_course = c_repo.get(target_code)?.ok_or_else(|| {
+                StoreError::Validation(format!("Course '{target_code}' not found."))
+            })?;
+            assessment.course_id = Some(target_course.id.clone());
+            a_repo.upsert(&assessment, updated_at)?;
+
+            if add_alias
+                && !old_code.is_empty()
+                && !old_code.eq_ignore_ascii_case("UNASSIGNED")
+                && !old_code.eq_ignore_ascii_case("GENERAL")
+                && !target_course.matches_code(&old_code)
+            {
+                target_course.aliases.push(old_code);
+                c_repo.upsert(&target_course)?;
+            }
+            tx.commit()?;
+        }
+        read_snapshot(db.conn(), reference_date)
+    }
+
     pub fn delete_assessment(
         db: &Db,
         id: &str,
@@ -3143,6 +3207,7 @@ mod tests {
             border: None,
             credits: None,
             max_absences: None,
+            aliases: Vec::new(),
         }
     }
 
@@ -3973,6 +4038,7 @@ mod tests {
                     border: None,
                     credits: Some(3.0),
                     max_absences: Some(4),
+                    aliases: Vec::new(),
                 }],
                 slots: vec![ScheduleSlot {
                     id: "slot-1".into(),
@@ -4599,5 +4665,47 @@ mod tests {
         let listed = AssessmentRepo::new(db.conn()).list().unwrap();
         let ids: Vec<&str> = listed.iter().map(|a| a.id.as_str()).collect();
         assert_eq!(ids, vec!["mail-dated", "mail-undated"]);
+    }
+
+    #[test]
+    fn reassign_assessment_course_updates_course_and_records_alias() {
+        let db = mem_db();
+        let mut course = course("CSE241", "OOP");
+        course.aliases = vec!["COMP 241".to_string()];
+        CourseRepo::new(db.conn()).upsert(&course).unwrap();
+
+        let loaded = CourseRepo::new(db.conn()).get("CSE241").unwrap().unwrap();
+        assert_eq!(loaded.aliases, vec!["COMP 241".to_string()]);
+
+        let item = assessment("mail-alias", Some("CS241"), "Quiz 2", "2026-10-28");
+        ops::replace_assessments(&db, &[item], "2026-10-24T00:00:00Z", ref_date()).unwrap();
+
+        let snap = ops::reassign_assessment_course(
+            &db,
+            "mail-alias",
+            "CSE241",
+            true,
+            "2026-10-24T01:00:00Z",
+            ref_date(),
+        )
+        .unwrap();
+
+        let updated_item = snap
+            .assessments
+            .iter()
+            .find(|a| a.id == "mail-alias")
+            .unwrap();
+        assert_eq!(updated_item.course_id.as_deref(), Some("CSE241"));
+
+        let updated_course = snap
+            .schedule
+            .courses
+            .iter()
+            .find(|c| c.id == "CSE241")
+            .unwrap();
+        assert_eq!(
+            updated_course.aliases,
+            vec!["COMP 241".to_string(), "CS241".to_string()]
+        );
     }
 }

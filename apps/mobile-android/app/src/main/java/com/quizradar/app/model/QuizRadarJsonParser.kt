@@ -70,6 +70,7 @@ object QuizRadarJsonParser {
             color = optString(obj, "color"),
             credits = optDouble(obj, "credits"),
             maxAbsences = optInt(obj, "max_absences"),
+            aliases = toStringList(obj.optJSONArray("aliases")).filter { it.isNotBlank() },
         )
     }
 
@@ -666,5 +667,18 @@ object QuizRadarJsonParser {
             found = root.optBoolean("found", false),
             mergeReport = mergeReport,
         )
+    }
+
+    fun parseMergeReportSummary(jsonStr: String): String {
+        return try {
+            val obj = JSONObject(jsonStr)
+            val assessments = obj.optInt("assessments_replaced", 0)
+            val topics = obj.optInt("topics_merged", 0)
+            val grades = obj.optInt("grades_merged", 0)
+            val events = obj.optInt("events_upserted", 0)
+            "Merged $assessments assessment(s), $topics topic(s), $grades grade(s), $events event(s)."
+        } catch (_: Exception) {
+            "Peer sync merged."
+        }
     }
 }

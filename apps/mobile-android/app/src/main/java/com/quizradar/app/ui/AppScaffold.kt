@@ -990,6 +990,14 @@ fun AppScaffold(
                                         },
                                         courseColorsById =
                                             state.snapshot.schedule.courses.associate { it.id to it.color },
+                                        courses = state.snapshot.schedule.courses,
+                                        onReassignCourse = { newCourseId, addAlias ->
+                                            viewModel.reassignAssessmentCourse(
+                                                selectedAssessment.id,
+                                                newCourseId,
+                                                addAlias,
+                                            )
+                                        },
                                     )
                                 }
 

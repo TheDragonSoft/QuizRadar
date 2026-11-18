@@ -398,6 +398,11 @@ export interface AppStoreState {
   deleteCourse: (code: string) => Promise<void>;
   saveSchedule: (schedule: ScheduleData) => Promise<void>;
   upsertAssessment: (assessment: Assessment) => Promise<void>;
+  reassignAssessmentCourse: (
+    assessmentId: string,
+    newCourseId: string,
+    addAlias: boolean,
+  ) => Promise<void>;
   deleteAssessment: (id: string) => Promise<void>;
   addCustomEvent: (event: CustomCalendarEvent) => Promise<void>;
   deleteCustomEvent: (id: string) => Promise<void>;
@@ -1680,6 +1685,28 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       get().addToast({
         type: "error",
         message: `Failed to save assessment: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      throw err;
+    }
+  },
+
+  reassignAssessmentCourse: async (assessmentId, newCourseId, addAlias) => {
+    try {
+      const fresh = await rpc<GetStatePayload>("reassign_assessment_course", {
+        assessmentId,
+        newCourseId,
+        addAlias,
+      });
+      saveCachedState(fresh);
+      set({ data: fresh });
+      get().addToast({
+        type: "success",
+        message: `Assigned to ${newCourseId}`,
+      });
+    } catch (err) {
+      get().addToast({
+        type: "error",
+        message: `Failed to reassign course: ${err instanceof Error ? err.message : String(err)}`,
       });
       throw err;
     }

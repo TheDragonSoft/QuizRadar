@@ -1556,6 +1556,118 @@ fun SettingsScreen(
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Spacer(modifier = Modifier.height(12.dp))
 
+                    var showPeerMergeDialog by remember { mutableStateOf(false) }
+                    var peerSyncLinkInput by remember { mutableStateOf("") }
+
+                    Text(
+                        text =
+                            "Serverless Peer Sync (quizradar://pair): Both devices scan independently. " +
+                                "Share a secret-free sync link to additively merge courses, assessments, topics, and grades.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Button(
+                            onClick = {
+                                viewModel.exportPeerSyncLink { link ->
+                                    val clipboard =
+                                        context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                                            as android.content.ClipboardManager
+                                    clipboard.setPrimaryClip(
+                                        android.content.ClipData.newPlainText("QuizRadar Peer Sync", link),
+                                    )
+                                    viewModel.showToast("Sync link copied (quizradar://pair)")
+                                }
+                            },
+                            colors = ButtonDefaults.tonalPill(),
+                            contentPadding = PillButtonContentPadding,
+                            modifier =
+                                Modifier
+                                    .weight(1f)
+                                    .defaultMinSize(minHeight = PillButtonMinHeight),
+                        ) {
+                            Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Copy Sync Link",
+                                style = MaterialTheme.typography.labelLarge,
+                                maxLines = 1,
+                                softWrap = false,
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                peerSyncLinkInput = ""
+                                showPeerMergeDialog = true
+                            },
+                            colors = ButtonDefaults.tonalPill(),
+                            contentPadding = PillButtonContentPadding,
+                            modifier =
+                                Modifier
+                                    .weight(1f)
+                                    .defaultMinSize(minHeight = PillButtonMinHeight),
+                        ) {
+                            Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Merge Sync Link",
+                                style = MaterialTheme.typography.labelLarge,
+                                maxLines = 1,
+                                softWrap = false,
+                            )
+                        }
+                    }
+
+                    if (showPeerMergeDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showPeerMergeDialog = false },
+                            title = { Text("Merge Peer Sync Link") },
+                            text = {
+                                Column {
+                                    Text(
+                                        text = "Paste the quizradar://pair?d=... link from your desktop or web companion to additively merge data.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    OutlinedTextField(
+                                        value = peerSyncLinkInput,
+                                        onValueChange = { peerSyncLinkInput = it },
+                                        placeholder = { Text("quizradar://pair?d=...") },
+                                        singleLine = true,
+                                        colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        val input = peerSyncLinkInput
+                                        showPeerMergeDialog = false
+                                        viewModel.mergePeerSyncLink(input)
+                                    },
+                                    enabled = peerSyncLinkInput.isNotBlank(),
+                                ) {
+                                    Text("Merge")
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showPeerMergeDialog = false }) {
+                                    Text("Cancel")
+                                }
+                            },
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Spacer(modifier = Modifier.height(12.dp))
+
                     Button(
                         onClick = {
                             resetInputText = ""

@@ -2,6 +2,7 @@ package com.quizradar.app.ui
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -231,6 +232,7 @@ class AndroidUiCaptureTest {
         capturePng("settings-dark")
     }
 
+    @OptIn(ExperimentalMaterial3Api::class)
     @Test
     @Config(qualifiers = "w390dp-h844dp-night")
     fun capture_course_aliases_dark() {
@@ -260,6 +262,7 @@ class AndroidUiCaptureTest {
         capturePng("course-aliases-dark")
     }
 
+    @OptIn(ExperimentalMaterial3Api::class)
     @Test
     @Config(qualifiers = "w390dp-h844dp-night")
     fun capture_assessment_reassign_dark() {

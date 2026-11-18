@@ -379,6 +379,50 @@ mod tests {
     }
 
     #[test]
+    fn stale_or_untimed_block_ids_do_not_mitigate() {
+        let day = NaiveDate::from_ymd_opt(2026, 11, 2).unwrap();
+        let first = assessment_on("gmail-1", Some("CSE241"), "Quiz 1", Some(day), Vec::new());
+        let second = assessment_on(
+            "gmail-2",
+            Some("MATH101"),
+            "Final Exam",
+            Some(day),
+            Vec::new(),
+        );
+        let stale_date = event(
+            "study-block-gmail-1",
+            Some(day),
+            Some(NaiveTime::from_hms_opt(17, 0, 0).unwrap()),
+            Some(NaiveTime::from_hms_opt(18, 30, 0).unwrap()),
+        );
+        let undated = event(
+            "study-block-gmail-1",
+            None,
+            Some(NaiveTime::from_hms_opt(17, 0, 0).unwrap()),
+            Some(NaiveTime::from_hms_opt(18, 30, 0).unwrap()),
+        );
+        let untimed = event(
+            "study-block-gmail-1",
+            Some(day - Duration::days(1)),
+            None,
+            None,
+        );
+        let alerts = detect_conflicts(
+            &[
+                crate::plan::dashboard::refresh_assessment(&first, ref_date()),
+                crate::plan::dashboard::refresh_assessment(&second, ref_date()),
+            ],
+            &[stale_date, undated, untimed],
+        );
+        assert_eq!(alerts.len(), 1);
+        assert!(
+            !alerts[0].is_mitigated,
+            "an id match without the expected dated/timed prep window mitigates nothing"
+        );
+        assert!(!conflict_chips(&alerts).is_empty());
+    }
+
+    #[test]
     fn chip_copy_for_both_sides_honest_labels_and_dates() {
         let day = NaiveDate::from_ymd_opt(2026, 11, 2).unwrap();
         let first = assessment_on("gmail-1", Some("CSE241"), "Quiz 1", Some(day), Vec::new());

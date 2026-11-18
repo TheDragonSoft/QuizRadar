@@ -680,6 +680,27 @@ pub fn find_explicit_date(text: &str) -> Option<NaiveDate> {
     }
 }
 
+/// A date introduced by active rescheduling wording supersedes the original
+/// date elsewhere in the announcement. Each marker points at the destination
+/// date, so this deliberately avoids a fragile "last date in the email wins"
+/// rule that could capture a submission deadline or a quoted thread footer.
+fn find_rescheduled_date(text: &str) -> Option<NaiveDate> {
+    const DESTINATION_MARKERS: &[&str] = &[
+        "moved to",
+        "postponed to",
+        "rescheduled to",
+        "new date:",
+        "new date is",
+        "instead be held",
+    ];
+
+    DESTINATION_MARKERS.iter().find_map(|marker| {
+        let marker_at = text.find(marker)?;
+        let destination = &text[marker_at + marker.len()..];
+        find_explicit_date(destination)
+    })
+}
+
 /// Sender date header → date, porting `(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})`
 /// (no word boundaries in v4 — quirks preserved: any digit-run ≤ 2 may be
 /// the day, month letters must be exactly three followed by whitespace).
@@ -2563,7 +2584,8 @@ pub fn parse_email_announcement_from_source(
     // nearest candidate slot weekday) → undated draft (no invented date).
     let preferred = preferred_slot_type(&lower);
     let candidates = candidate_slots(schedule, course_id.as_deref(), preferred);
-    let explicit_date = find_explicit_date(&lower);
+    let rescheduled_date = find_rescheduled_date(&lower);
+    let explicit_date = rescheduled_date.or_else(|| find_explicit_date(&lower));
     let week_phrase = find_week_phrase(&lower);
     let base_date = explicit_date
         .or_else(|| week_phrase.map(|phrase| anchor + Duration::days(phrase.offset_days())));
@@ -2644,14 +2666,23 @@ pub fn parse_email_announcement_from_source(
         .unwrap_or_default();
 
     let ai_inference_note: String = if explicit_date.is_some() {
+        let date_kind = if rescheduled_date.is_some() {
+            "explicit rescheduled date"
+        } else {
+            "explicit date"
+        };
         match carrier {
             Some(_) => format!(
-                "Parsed from announcement: explicit date found and aligned with your {course_label} {preferred} slot {slot_detail}"
+                "Parsed from announcement: {date_kind} found and aligned with your {course_label} {preferred} slot {slot_detail}"
             ),
             None if candidates.is_empty() => {
-                "Parsed from announcement: explicit date found. Time/room are not in the announcement and this course is not in your weekly schedule.".to_string()
+                format!(
+                    "Parsed from announcement: {date_kind} found. Time/room are not in the announcement and this course is not in your weekly schedule."
+                )
             }
-            None => "Parsed from announcement: explicit date found. The course's weekly slots do not run on that weekday, so no time/room were inherited.".to_string(),
+            None => format!(
+                "Parsed from announcement: {date_kind} found. The course's weekly slots do not run on that weekday, so no time/room were inherited."
+            ),
         }
     } else if date.is_some() {
         if candidates.is_empty() {

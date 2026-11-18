@@ -20,6 +20,7 @@ use std::collections::BTreeMap;
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
+use crate::plan::study_blocks::block_date_for;
 use crate::types::{Assessment, CustomCalendarEvent};
 
 /// Severity of an overload pair.
@@ -51,7 +52,8 @@ pub struct ConflictAlert {
     pub gap_hours: i32,
     pub severity: ConflictSeverity,
     pub message: String,
-    /// True when a `study-block-` event already covers either assessment.
+    /// True when a timed `study-block-` event is booked on either
+    /// assessment's expected preparation date.
     pub is_mitigated: bool,
 }
 
@@ -86,9 +88,12 @@ pub fn detect_conflicts(
     ordered_upcoming: &[Assessment],
     custom_events: &[CustomCalendarEvent],
 ) -> Vec<ConflictAlert> {
-    let block_ids: Vec<&str> = study_block_suffixes(custom_events)
-        .map(|(_, suffix)| suffix)
-        .collect();
+    let mut study_blocks: BTreeMap<&str, Vec<&CustomCalendarEvent>> = BTreeMap::new();
+    for event in custom_events {
+        if let Some(assessment_id) = study_block_assessment_id(event) {
+            study_blocks.entry(assessment_id).or_default().push(event);
+        }
+    }
 
     // (radar position, date), date-sorted; stable for equal dates.
     let mut dated: Vec<(usize, NaiveDate, &Assessment)> = ordered_upcoming
@@ -129,7 +134,7 @@ pub fn detect_conflicts(
                 gap_hours
             );
             let is_mitigated =
-                block_ids.contains(&a1.id.as_str()) || block_ids.contains(&a2.id.as_str());
+                has_mitigating_block(&study_blocks, a1) || has_mitigating_block(&study_blocks, a2);
             alerts.push((
                 position_a,
                 position_b,
@@ -154,6 +159,36 @@ pub fn detect_conflicts(
     alerts.into_iter().map(|(_, _, alert)| alert).collect()
 }
 
+/// A block mitigates only the assessment date it was actually booked for.
+/// This prevents an orphaned id or an undated placeholder from hiding a new
+/// overload after the assessment moves.
+fn has_mitigating_block(
+    study_blocks: &BTreeMap<&str, Vec<&CustomCalendarEvent>>,
+    assessment: &Assessment,
+) -> bool {
+    let Some(assessment_date) = assessment.date else {
+        return false;
+    };
+    study_blocks
+        .get(assessment.id.as_str())
+        .is_some_and(|events| {
+            events.iter().any(|event| {
+                event.date == Some(block_date_for(assessment_date))
+                    && matches!(
+                        (event.start_time, event.end_time),
+                        (Some(start), Some(end)) if start < end
+                    )
+            })
+        })
+}
+
+fn study_block_assessment_id(event: &CustomCalendarEvent) -> Option<&str> {
+    event
+        .id
+        .strip_prefix("study-block-")
+        .filter(|suffix| !suffix.is_empty())
+}
+
 fn side_label_parts(assessment: &Assessment) -> String {
     match assessment
         .course_id
@@ -171,10 +206,7 @@ pub fn study_block_suffixes(
     custom_events: &[CustomCalendarEvent],
 ) -> impl Iterator<Item = (String, &'_ str)> {
     custom_events.iter().filter_map(|event| {
-        let suffix = event
-            .id
-            .strip_prefix("study-block-")
-            .filter(|suffix| !suffix.is_empty())?;
+        let suffix = study_block_assessment_id(event)?;
         Some((event.id.clone(), suffix))
     })
 }

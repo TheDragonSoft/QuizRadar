@@ -2,6 +2,16 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.17.0] — 2026-11-18
+
+### 🚀 New Features
+
+- `5fd904c` feat(web,android): add ISO/IEC 18004 QR code device pairing for quizradar://pair [skip-note]
+
+### 🔧 Maintenance, Docs & Tests
+
+- `c335b44` docs(repo): refresh README, architecture docs, landing copy, and ktlint for v5.16.0 [skip-note]
+
 ## [5.16.0] — 2026-11-18
 
 ### 🤝 Agent & Contributor Summaries

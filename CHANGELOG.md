@@ -2,6 +2,49 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.16.0] — 2026-11-18
+
+### 🤝 Agent & Contributor Summaries
+
+- **[core, desktop, web, android]** Add multiple course codes/aliases per course and assessment course reassignment with optional alias recording.
+
+- **[core, web, desktop, android, docs]** Clear technical backlog in STATUS.md, implement serverless two-way peer sync (quizradar://pair?d=...) across Core/Desktop/PWA/Android, and add docs/ROADMAP-COMMERCIAL.md for future E2EE sync-server and commercial plans
+
+- **[ci]** Fix android-emulator CI job in .github/workflows/ci.yml so gradlew runs from apps/mobile-android instead of failing with ./gradlew: not found across per-line sh -c invocations.
+
+- **[ci, web]** Refresh stale Playwright visual baselines in apps/web/e2e-baselines/ and upload visual diff artifacts on failure in .github/workflows/ci.yml.
+
+- **[android]** Keep Android scan completion toast concise (counts and per-source status only) by omitting verbose diagnostic notes that already live in lastScanReport.
+
+- **[core, web]** Prioritize gemini-3.8-flash first in the Flash model ladder (core and PWA browser adapter) and preserve earlier 503 congestion errors instead of letting a trailing retired-model 404 (gemini-2.5-flash) overwrite them.
+
+### 🚀 New Features
+
+- `d37c053` feat(core,web,desktop,android): support multiple course codes/aliases and assessment course reassignment
+- `318d066` feat(sync): clear technical backlog, add serverless quizradar://pair sync, and add commercial roadmap
+
+### 🐛 Fixes & Performance
+
+- `57cbc96` fix(android): keep scan completion toast concise without diagnostic notes
+- `8b1bafb` fix(web): fix assessment_id in rpcAdapter and add Android peer sync UI capture
+- `c86d128` fix(ai): prioritize gemini-3.8-flash and preserve 503 errors over retired-model 404s
+- `214cbcb` fix(ci,web): fix pnpm action version conflict and saveGrade argument in merge_sync_payload
+
+### 🔧 Maintenance, Docs & Tests
+
+- `e7499f2` Merge pull request #34 from TheDragonSoft/feat/serverless-sync-and-backlog-cleanup
+- `eb7ea69` chore(merge): resolve conflicts between PR #34 and PR #35
+- `8e3b1c0` Merge remote-tracking branch 'origin/feat/course-aliases-and-reassignment' into chore/verify-merges
+- `dbd7e89` Merge remote-tracking branch 'origin/fix/gemini-model-ladder' into chore/verify-merges
+- `94b571c` Merge remote-tracking branch 'origin/fix/concise-sync-toast' into chore/verify-merges
+- `8d1d475` Merge remote-tracking branch 'origin/fix/ci-visual-baselines' into chore/verify-merges
+- `9641b3e` chore(web): update Playwright visual baselines from ubuntu-latest CI
+- `ac08e36` ci(web): upload visual baseline diffs on failure and refresh baselines
+- `175dc9a` ci(android): invoke gradlew with -p apps/mobile-android in emulator runner
+- `f760f68` test(android): capture new course aliases and assessment reassignment sheets
+- `521b5e9` docs(ci): require embedded UI screenshots in PR template
+- `7a8d436` ci(screenshots): render Desktop and no-emulator Android UI screenshots on UI PRs
+
 ## [5.15.3] — 2026-11-15
 
 ### 🤝 Agent & Contributor Summaries

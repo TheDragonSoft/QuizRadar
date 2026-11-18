@@ -2,6 +2,16 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.17.1] — 2026-11-18
+
+### 🤝 Agent & Contributor Summaries
+
+- **[core, web, android]** Correct rescheduled announcement dates, require timely timed study blocks before suppressing conflicts, retain explicit ICS venues, and emit exclusive all-day Google Calendar end dates; align conflict fixtures with the corrected semantics and make Android QR compaction linear instead of regex-backtracking.
+
+### 🐛 Fixes & Performance
+
+- `0f3517d` fix(core): harden assessment scheduling correctness (#41)
+
 ## [5.17.0] — 2026-11-18
 
 ### 🚀 New Features

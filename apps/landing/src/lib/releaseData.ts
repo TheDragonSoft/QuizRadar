@@ -69,7 +69,7 @@ export const PLATFORM_DOWNLOADS: Record<PlatformKey, PlatformDownload> = {
     primaryUrl: `${GITHUB_DOWNLOAD_BASE}/QuizRadar-v${APP_VERSION}.apk`,
     requirements: "Android 8.0 or newer",
     notes:
-      "Native Android app featuring a 2×1 home-screen countdown widget, exam reminders, and share-sheet quick import.",
+      "Native Android app featuring 4×2 Today's Schedule & 2×1 Countdown Glance widgets, T-3h lock-screen exam chronometer, attendance tracker, and share-sheet import.",
   },
 };
 
@@ -273,7 +273,7 @@ export const FAQ_ITEMS: FaqItem[] = [
   {
     question: "Do I need a Gemini API key for QuizRadar to work?",
     answer:
-      "No. Every core feature — announcement parsing, timetable matching, conflict detection, study session scheduling, Grade What-If projections, and flashcard quizzes — works 100% offline using built-in rules. Adding an optional AI key is completely up to you.",
+      "No. Every core feature — announcement parsing, course-alias matching, timetable anchoring, conflict & study cushion detection, multi-scale GPA & Grade What-If projections, Week A/B parity, and Leitner 5-box flashcards — works 100% offline using built-in deterministic rules. Adding an optional AI key is completely up to you.",
   },
   {
     question: "What happens when a professor hasn’t announced the exam room yet?",
@@ -288,12 +288,12 @@ export const FAQ_ITEMS: FaqItem[] = [
   {
     question: "How do I move my semester schedule between Desktop, Web, and Android?",
     answer:
-      "Use Data & Backup to export an encrypted snapshot file (or use your private Google Drive backup) and open it on your other device. Each device connects to your class sources independently, so your passwords never travel across the internet.",
+      "Use Settings → Sync & Data to generate a serverless quizradar://pair sync link (or export a JSON snapshot / private Google Drive AppData backup) and open or paste it on your other device for an instant additive merge. Each device connects to your class sources independently, so your credentials never travel across the internet.",
   },
   {
     question: "What is the difference between the Desktop/Android apps and the Web Companion?",
     answer:
-      "All three versions share the exact same core scheduling engine. The Desktop and Android apps add persistent on-device background checks, lock-screen notifications, and the Android home-screen widget, while the Web Companion runs instantly in any modern browser with zero installation.",
+      "All three versions share the exact same Rust scheduling engine. The Desktop and Android apps add persistent on-device background checks, lock-screen exam chronometer notifications, and the Android 4×2 Today's Schedule & 2×1 Countdown widgets, while the Web Companion runs instantly in any modern browser with zero installation.",
   },
 ];
 

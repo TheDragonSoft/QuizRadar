@@ -1152,9 +1152,10 @@ class QuizRadarViewModel(
         viewModelScope.launch {
             try {
                 val refDate = clockDate()
-                val updatedJson = callCore {
-                    core.reassignAssessmentCourse(assessmentId, newCourseId, addAlias, refDate)
-                }
+                val updatedJson =
+                    callCore {
+                        core.reassignAssessmentCourse(assessmentId, newCourseId, addAlias, refDate)
+                    }
                 val snapshot = QuizRadarJsonParser.parseAppSnapshot(updatedJson)
                 _uiState.value = UiState.Ready(snapshot)
                 lastLoadedDate = refDate

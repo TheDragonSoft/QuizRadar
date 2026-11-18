@@ -50,22 +50,23 @@
 
 ## Milestones
 
-| #   | Name                                | Scope                                                                                                              | Dependencies | Status      |
-| --- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------ | ----------- |
-| M0  | Branch Setup & Baseline             | Git branch `feature/non-ai-suite` creation and baseline check                                                      | none         | IN_PROGRESS |
-| M1  | Core & Cross-Platform Engine        | Data models, SQLite v4, cushion, GPA, week parity, flashcards/mistakes, attendance, session analytics, UniFFI/WASM | M0           | PLANNED     |
-| M2  | Web & Desktop Suite                 | Multi-pane density, Grade Center, shortcuts, clean PDF, cushion UI, LMS guides, alternating UI, flashcards UI      | M1           | PLANNED     |
-| M3  | Android Mobile Suite                | 4x2/4x1 Today's widget, agenda/list toggle, attendance tracker, persistent exam notification, focus analytics      | M1           | PLANNED     |
-| M4  | Full Automated Test Verification    | Full test suite execution across core, web, and android                                                            | M2, M3       | PLANNED     |
-| M5  | Visual Before-and-After Comparisons | Capture desktop and android screenshots; author comparison markdown document                                       | M4           | PLANNED     |
-| M6  | Forensic Integrity Audit            | Teamwork auditor integrity verification and victory handoff                                                        | M5           | PLANNED     |
+| #   | Name                                     | Scope                                                                                                              | Dependencies | Status    |
+| --- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------ | --------- |
+| M0  | Branch Setup & Baseline                  | Git branch `feature/non-ai-suite` creation and baseline check                                                      | none         | COMPLETED |
+| M1  | Core & Cross-Platform Engine             | Data models, SQLite v4, cushion, GPA, week parity, flashcards/mistakes, attendance, session analytics, UniFFI/WASM | M0           | COMPLETED |
+| M2  | Web & Desktop Suite                      | Multi-pane density, Grade Center, shortcuts, clean PDF, cushion UI, LMS guides, alternating UI, flashcards UI      | M1           | COMPLETED |
+| M3  | Android Mobile Suite                     | 4x2/4x1 Today's widget, agenda/list toggle, attendance tracker, persistent exam notification, focus analytics      | M1           | COMPLETED |
+| M4  | Full Automated Test Verification         | Full test suite execution across core, web, and android                                                            | M2, M3       | COMPLETED |
+| M5  | Visual Before-and-After Comparisons      | Capture desktop and android screenshots; author comparison markdown document (`docs/NON_AI_SUITE_DEMO.md`)         | M4           | COMPLETED |
+| M6  | Forensic Integrity Audit                 | Teamwork auditor integrity verification and merge to `main`                                                        | M5           | COMPLETED |
+| M7  | Course Aliases & Serverless Sync (v5.16) | Multiple course codes (`Course.aliases`, SQLite v6), course reassignment, and `quizradar://pair` additive sync     | M6           | COMPLETED |
 
 ## Interface Contracts
 
 ### Core ↔ Web/Desktop
 
 - **Data Models**:
-  - `Course`: includes `credits?: number | null`, `max_absences?: number | null`.
+  - `Course`: includes `credits?: number | null`, `max_absences?: number | null`, `aliases?: string[]`.
   - `ScheduleSlot`: includes `week_parity?: "all" | "week_a" | "week_b"`.
   - `StudyTasksPayload`: includes `today_cushion?: DailyStudyCushion`.
   - `DailyStudyDayGroup`: includes `cushion?: DailyStudyCushion`.
@@ -73,6 +74,8 @@
   - `calculate_study_cushion(slots, events, tasks, ref_date, waking_hours) -> DailyStudyCushion`
   - `calculate_gpa(courses, assessments, grades, scale) -> GpaSummary`
   - `get_week_parity(date_iso) -> "week_a" | "week_b"`
+  - `reassign_assessment_course(assessment_id, target_course_id, add_alias, updated_at) -> Assessment`
+  - `merge_sync_payload(payload_json, now_iso) -> ImportSummary`
 
 ### Core ↔ Android UniFFI
 
@@ -85,6 +88,8 @@
   - `resolve_mistake(mistake_id, updated_at) -> Result<String, QuizRadarFfiError>`
   - `upsert_flashcard(card_json, updated_at) -> Result<String, QuizRadarFfiError>`
   - `list_flashcards(course_id) -> Result<String, QuizRadarFfiError>`
+  - `reassign_assessment_course(assessment_id, target_course_id, add_alias, updated_at) -> Result<String, QuizRadarFfiError>`
+  - `merge_sync_payload(payload_json, now_iso) -> Result<String, QuizRadarFfiError>`
 
 ## Code Layout
 

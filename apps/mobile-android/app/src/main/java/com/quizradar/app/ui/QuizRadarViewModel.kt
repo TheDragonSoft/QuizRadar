@@ -2793,6 +2793,19 @@ class QuizRadarViewModel(
         }
     }
 
+    fun exportPeerSyncQr(onResult: (String, Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val payloadJson = callCore { core.exportSyncPayload("quizradar-android") }
+                val (qrJson, compacted) = com.quizradar.app.core.PairSyncCodec.compactPayloadIfNeeded(payloadJson)
+                val link = com.quizradar.app.core.PairSyncCodec.encode(qrJson)
+                onResult(link, compacted)
+            } catch (e: Exception) {
+                showToast("QR export failed: ${e.message}")
+            }
+        }
+    }
+
     fun mergePeerSyncLink(linkOrPayload: String) {
         viewModelScope.launch {
             try {

@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -65,6 +66,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -81,6 +84,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.quizradar.app.core.BackgroundScanWorker
+import com.quizradar.app.core.QrCodeEncoder
 import com.quizradar.app.model.AppSnapshotModel
 import com.quizradar.app.model.CourseModel
 import com.quizradar.app.model.ScheduleSlotModel
@@ -1558,11 +1562,15 @@ fun SettingsScreen(
 
                     var showPeerMergeDialog by remember { mutableStateOf(false) }
                     var peerSyncLinkInput by remember { mutableStateOf("") }
+                    var peerQrMatrix by remember { mutableStateOf<QrCodeEncoder.QrMatrix?>(null) }
+                    var peerQrCompacted by remember { mutableStateOf(false) }
 
                     Text(
                         text =
                             "Serverless Peer Sync (quizradar://pair): Both devices scan independently. " +
-                                "Share a secret-free sync link to additively merge courses, assessments, topics, and grades.",
+                                "Share a secret-free sync link or QR code to additively merge courses, " +
+                                "assessments, topics, and grades. Tip: scan a Desktop/Web pairing QR " +
+                                "with your Android camera or Google Lens to open it directly in QuizRadar.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1621,6 +1629,94 @@ fun SettingsScreen(
                                 softWrap = false,
                             )
                         }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            viewModel.exportPeerSyncQr { link, compacted ->
+                                try {
+                                    peerQrMatrix = QrCodeEncoder.encode(link)
+                                    peerQrCompacted = compacted
+                                } catch (e: Exception) {
+                                    viewModel.showToast("Schedule exceeds QR capacity; use Copy Sync Link instead.")
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.tonalPill(),
+                        contentPadding = PillButtonContentPadding,
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .defaultMinSize(minHeight = PillButtonMinHeight),
+                    ) {
+                        Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Show Pairing QR Code",
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    }
+
+                    val activeQr = peerQrMatrix
+                    if (activeQr != null) {
+                        AlertDialog(
+                            onDismissRequest = { peerQrMatrix = null },
+                            title = { Text("Pairing QR Code (quizradar://pair)") },
+                            text = {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier =
+                                            Modifier
+                                                .size(232.dp)
+                                                .background(Color.White)
+                                                .padding(8.dp),
+                                    ) {
+                                        Canvas(modifier = Modifier.fillMaxSize()) {
+                                            val totalModules = activeQr.size + 8
+                                            val cellSize = size.width / totalModules
+                                            drawRect(color = Color.White, size = size)
+                                            for (y in 0 until activeQr.size) {
+                                                for (x in 0 until activeQr.size) {
+                                                    if (activeQr.get(x, y)) {
+                                                        drawRect(
+                                                            color = Color.Black,
+                                                            topLeft =
+                                                                Offset(
+                                                                    (x + 4) * cellSize,
+                                                                    (y + 4) * cellSize,
+                                                                ),
+                                                            size = Size(cellSize, cellSize),
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text(
+                                        text =
+                                            "Scan with another phone's camera or upload on Desktop/Web " +
+                                                "(QR v${activeQr.version}-L" +
+                                                (if (peerQrCompacted) ", compact mode" else "") +
+                                                ").",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(onClick = { peerQrMatrix = null }) {
+                                    Text("Close")
+                                }
+                            },
+                        )
                     }
 
                     if (showPeerMergeDialog) {

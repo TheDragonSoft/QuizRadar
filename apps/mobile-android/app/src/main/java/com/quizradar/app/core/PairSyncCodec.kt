@@ -32,6 +32,38 @@ object PairSyncCodec {
         return "$PREFIX$encoded"
     }
 
+    /**
+     * Strips verbose `raw_text` fields and truncates long `snippet` / `notes` values
+     * in `payloadJson` when the full compressed `quizradar://pair?d=...` link exceeds
+     * `maxLinkBytes` (ISO/IEC 18004 QR Version 40-L capacity = 2,953 bytes).
+     *
+     * Returns `(compactedOrOriginalJson, wasCompacted)`.
+     */
+    fun compactPayloadIfNeeded(
+        payloadJson: String,
+        maxLinkBytes: Int = QrCodeEncoder.MAX_QR_BYTE_CAPACITY,
+    ): Pair<String, Boolean> {
+        val fullLink = encode(payloadJson)
+        if (fullLink.toByteArray(StandardCharsets.UTF_8).size <= maxLinkBytes) {
+            return Pair(payloadJson, false)
+        }
+        val withoutRaw =
+            payloadJson
+                .replace(Regex(""""raw_text"\s*:\s*"(?:\\.|[^"\\])*"\s*,\s*"""), "")
+                .replace(Regex(""",\s*"raw_text"\s*:\s*"(?:\\.|[^"\\])*""""), "")
+                .replace(Regex(""""raw_text"\s*:\s*"(?:\\.|[^"\\])*""""), "")
+        val compacted =
+            withoutRaw.replace(
+                Regex(""""(snippet|notes)"\s*:\s*"((?:\\.|[^"\\]){161,})""""),
+            ) { match ->
+                val field = match.groupValues[1]
+                val rawVal = match.groupValues[2]
+                val safePrefix = rawVal.take(157).trimEnd('\\')
+                """"$field":"$safePrefix...""""
+            }
+        return Pair(compacted, true)
+    }
+
     fun extractParam(rawInput: String): String {
         val trimmed = rawInput.trim()
         require(trimmed.isNotEmpty()) { "Paste a quizradar://pair?d=... sync link first." }

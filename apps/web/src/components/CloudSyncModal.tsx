@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Cloud,
   HardDrive,
@@ -8,13 +8,20 @@ import {
   Download,
   Upload,
   Link2,
+  QrCode,
+  Camera,
   X,
 } from "lucide-react";
 import { copy } from "../copy";
 import { isTauriEnvironment, rpc } from "../state/rpc";
 import { useAppStore } from "../state/store";
-import { decodePairSyncLink, encodePairSyncLink } from "../lib/pairSync";
+import { decodePairSyncLink, encodePairSyncLink, encodePairSyncQrPayload } from "../lib/pairSync";
+import { encodeQrMatrix, MAX_QR_BYTE_CAPACITY, type QrMatrix } from "../lib/qrCode";
 import type { MergeReport } from "../state/types";
+
+interface BarcodeDetectorLike {
+  detect(image: ImageBitmapSource): Promise<Array<{ rawValue?: string }>>;
+}
 
 function formatBackupTimestamp(iso: string): string {
   const parsed = new Date(iso);
@@ -41,15 +48,37 @@ export function CloudSyncModal({
   const [pulling, setPulling] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [copyingSync, setCopyingSync] = useState(false);
+  const [buildingQr, setBuildingQr] = useState(false);
   const [mergingSync, setMergingSync] = useState(false);
   const [peerLinkInput, setPeerLinkInput] = useState("");
+  const [qrState, setQrState] = useState<{
+    matrix: QrMatrix | null;
+    compacted: boolean;
+    fitsQr: boolean;
+    byteLength: number;
+  } | null>(null);
   const isDesktop = isTauriEnvironment();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const qrImageInputRef = useRef<HTMLInputElement>(null);
   const lastBackupPush = useAppStore((s) => s.data.config.lastBackupPush);
   const addToast = useAppStore((s) => s.addToast);
   const refreshState = useAppStore((s) => s.refreshState);
   const exportBackupFile = useAppStore((s) => s.exportBackupFile);
   const importBackupFile = useAppStore((s) => s.importBackupFile);
+
+  const qrSvgPath = useMemo(() => {
+    if (!qrState?.matrix) return "";
+    const { size, modules } = qrState.matrix;
+    const parts: string[] = [];
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        if (modules[y][x]) {
+          parts.push(`M${x + 4},${y + 4}h1v1h-1z`);
+        }
+      }
+    }
+    return parts.join("");
+  }, [qrState]);
 
   const handleCopyPeerSyncLink = async () => {
     setCopyingSync(true);
@@ -69,6 +98,89 @@ export function CloudSyncModal({
       });
     } finally {
       setCopyingSync(false);
+    }
+  };
+
+  const handleShowPeerQr = async () => {
+    if (qrState) {
+      setQrState(null);
+      return;
+    }
+    setBuildingQr(true);
+    try {
+      const payloadJson = await rpc<string>("export_sync_payload");
+      const { link, compacted, fitsQr } = await encodePairSyncQrPayload(payloadJson);
+      const byteLength = new TextEncoder().encode(link).length;
+      if (!fitsQr) {
+        setQrState({ matrix: null, compacted, fitsQr: false, byteLength });
+      } else {
+        const matrix = encodeQrMatrix(link);
+        setQrState({ matrix, compacted, fitsQr: true, byteLength });
+      }
+    } catch (err) {
+      addToast({
+        type: "error",
+        message: `QR generation failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    } finally {
+      setBuildingQr(false);
+    }
+  };
+
+  const handleQrImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    const DetectorCtor = (
+      globalThis as unknown as {
+        BarcodeDetector?: new (opts?: { formats?: string[] }) => BarcodeDetectorLike;
+      }
+    ).BarcodeDetector;
+
+    if (!DetectorCtor || typeof createImageBitmap === "undefined") {
+      addToast({
+        type: "info",
+        message:
+          "This browser does not support native BarcodeDetector QR decoding. Scan the QR with your phone camera or paste the quizradar://pair link directly.",
+      });
+      return;
+    }
+
+    try {
+      const detector = new DetectorCtor({ formats: ["qr_code"] });
+      const bitmap = await createImageBitmap(file);
+      const codes = await detector.detect(bitmap);
+      const rawValue = codes.find((c) => c.rawValue?.trim())?.rawValue?.trim();
+      if (!rawValue) {
+        addToast({
+          type: "error",
+          message: "No QR code was detected in the selected image.",
+        });
+        return;
+      }
+      setPeerLinkInput(rawValue);
+      const payloadJson = await decodePairSyncLink(rawValue);
+      const report = await rpc<MergeReport>("merge_sync_payload", { payloadJson });
+      await refreshState();
+      setPeerLinkInput("");
+      addToast({
+        type: "success",
+        message: report
+          ? copy.cloudSync.mergedSummary(
+              report.assessments_replaced,
+              report.topics_merged,
+              report.grades_merged,
+              report.events_upserted,
+              report.schedule_replaced,
+            )
+          : copy.cloudSync.mergedUnknown,
+      });
+    } catch (err) {
+      addToast({
+        type: "error",
+        message: `QR scan failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
     }
   };
 
@@ -332,18 +444,87 @@ export function CloudSyncModal({
             </span>
           </div>
           <p className="text-xs text-[var(--text-muted)] mb-3">
-            Both devices scan independently. Share a secret-free sync link to additively merge
-            courses, assessments, topics, and grades with zero servers.
+            Both devices scan independently. Share a secret-free sync link or QR code to additively
+            merge courses, assessments, topics, and grades with zero servers.
           </p>
-          <button
-            type="button"
-            disabled={copyingSync}
-            onClick={handleCopyPeerSyncLink}
-            className="w-full mb-3 flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] transition disabled:opacity-50"
-          >
-            <Link2 className="h-4 w-4 text-[var(--accent-ink)]" />
-            <span>{copyingSync ? "Building link…" : "Copy Sync Link (quizradar://pair)"}</span>
-          </button>
+          <input
+            ref={qrImageInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleQrImageSelect}
+            aria-label="Scan or upload pairing QR image"
+            className="hidden"
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
+            <button
+              type="button"
+              disabled={copyingSync}
+              onClick={handleCopyPeerSyncLink}
+              className="flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2 px-3 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] transition disabled:opacity-50"
+            >
+              <Link2 className="h-4 w-4 shrink-0 text-[var(--accent-ink)]" />
+              <span>{copyingSync ? "Building…" : "Copy Sync Link"}</span>
+            </button>
+            <button
+              type="button"
+              disabled={buildingQr}
+              onClick={handleShowPeerQr}
+              className="flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2 px-3 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] transition disabled:opacity-50"
+            >
+              <QrCode className="h-4 w-4 shrink-0 text-[var(--accent-ink)]" />
+              <span>
+                {buildingQr ? "Encoding…" : qrState ? "Hide QR Code" : "Show Pairing QR Code"}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => qrImageInputRef.current?.click()}
+              className="flex items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] py-2 px-3 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] transition"
+            >
+              <Camera className="h-4 w-4 shrink-0 text-[var(--accent-ink)]" />
+              <span>Scan / Upload QR Image</span>
+            </button>
+          </div>
+
+          {qrState && (
+            <div className="mb-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-center">
+              {qrState.fitsQr && qrState.matrix ? (
+                <div className="flex flex-col items-center gap-2">
+                  <div className="rounded-lg bg-white p-2 shadow-sm">
+                    <svg
+                      data-testid="pair-qr-svg"
+                      viewBox={`0 0 ${qrState.matrix.size + 8} ${qrState.matrix.size + 8}`}
+                      width="208"
+                      height="208"
+                      shapeRendering="crispEdges"
+                      role="img"
+                      aria-label="QuizRadar pairing QR code"
+                    >
+                      <rect
+                        width={qrState.matrix.size + 8}
+                        height={qrState.matrix.size + 8}
+                        fill="#ffffff"
+                      />
+                      <path d={qrSvgPath} fill="#000000" />
+                    </svg>
+                  </div>
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    Scan with your Android camera or Google Lens to open{" "}
+                    <span className="font-mono font-semibold">quizradar://pair</span> directly in
+                    QuizRadar (v{qrState.matrix.version}-L, {qrState.byteLength} bytes
+                    {qrState.compacted ? ", compact mode" : ""}).
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  Compressed sync link is {qrState.byteLength} bytes, which exceeds the ISO/IEC
+                  18004 QR capacity ({MAX_QR_BYTE_CAPACITY} bytes). Use &ldquo;Copy Sync Link&rdquo;
+                  or JSON transfer instead.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="flex items-center gap-2">
             <input
               type="text"

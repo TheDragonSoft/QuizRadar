@@ -6,6 +6,8 @@
  * `PairSyncCodec.kt` (`Deflater(BEST_COMPRESSION, nowrap=true)` / `Inflater(true)`).
  */
 
+import { MAX_QR_BYTE_CAPACITY } from "./qrCode";
+
 export const PAIR_SYNC_PREFIX = "quizradar://pair?d=";
 
 function toBase64Url(bytes: Uint8Array): string {
@@ -56,6 +58,45 @@ export async function encodePairSyncLink(payloadJson: string): Promise<string> {
   const rawBytes = new TextEncoder().encode(payloadJson);
   const compressed = await deflateRaw(rawBytes);
   return `${PAIR_SYNC_PREFIX}${toBase64Url(compressed)}`;
+}
+
+/**
+ * Strips verbose source text (`raw_text`, long `snippet` / `notes` > 160 chars)
+ * from assessments so large exam radars fit within QR Version 40-L (2,953 bytes)
+ * while preserving all courses, slots, assessment dates, topics, and grades.
+ */
+export function compactPairSyncPayload(payloadJson: string): string {
+  const parsed = JSON.parse(payloadJson) as Record<string, unknown>;
+  if (Array.isArray(parsed.assessments)) {
+    parsed.assessments = parsed.assessments.map((item) => {
+      if (!item || typeof item !== "object") return item;
+      const copy = { ...(item as Record<string, unknown>) };
+      delete copy.raw_text;
+      if (typeof copy.snippet === "string" && copy.snippet.length > 160) {
+        copy.snippet = `${copy.snippet.slice(0, 157)}...`;
+      }
+      if (typeof copy.notes === "string" && copy.notes.length > 160) {
+        copy.notes = `${copy.notes.slice(0, 157)}...`;
+      }
+      return copy;
+    });
+  }
+  return JSON.stringify(parsed);
+}
+
+export async function encodePairSyncQrPayload(payloadJson: string): Promise<{
+  link: string;
+  compacted: boolean;
+  fitsQr: boolean;
+}> {
+  const fullLink = await encodePairSyncLink(payloadJson);
+  if (new TextEncoder().encode(fullLink).length <= MAX_QR_BYTE_CAPACITY) {
+    return { link: fullLink, compacted: false, fitsQr: true };
+  }
+  const compactJson = compactPairSyncPayload(payloadJson);
+  const compactLink = await encodePairSyncLink(compactJson);
+  const fitsQr = new TextEncoder().encode(compactLink).length <= MAX_QR_BYTE_CAPACITY;
+  return { link: compactLink, compacted: true, fitsQr };
 }
 
 export function extractPairPayloadParam(rawInput: string): string {

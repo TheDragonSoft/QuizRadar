@@ -23,6 +23,22 @@ class PairSyncCodecTest {
         assertEquals(sample, decoded)
     }
 
+    @Test
+    fun compactsVerboseRawTextWhenLinkExceedsThreshold() {
+        val rawBody = " verbose-announcement ".repeat(250)
+        val sample =
+            """{"schema_version":1,"client_device_id":"quizradar-android",""" +
+                """"updated_at":"2026-11-16T22:00:00Z","schedule":{"courses":[],"slots":[]},""" +
+                """"assessments":[{"id":"a1","course_id":"CSE241","raw_text":"$rawBody","title":"Quiz 1"}],""" +
+                """"completed_topics":{},"grades":{},"custom_events":[],"feeds":[]}"""
+
+        val (compacted, wasCompacted) = PairSyncCodec.compactPayloadIfNeeded(sample, maxLinkBytes = 120)
+        assertTrue(wasCompacted)
+        assertTrue(!compacted.contains("raw_text"))
+        val decoded = PairSyncCodec.decode(PairSyncCodec.encode(compacted))
+        assertTrue(decoded.contains("Quiz 1"))
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun rejectsEmptyInput() {
         PairSyncCodec.decode("")

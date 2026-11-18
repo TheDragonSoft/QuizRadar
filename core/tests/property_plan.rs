@@ -20,8 +20,8 @@
 //!   Per-topic hours are `None` or inside the documented 0.5–2.5 clamp.
 //! - **P5 — conflict shape.** Every alert pairs two *dated upcoming*
 //!   assessments 0 or 1 days apart; same-day ⇒ Critical/4h, adjacent-day ⇒
-//!   Warning/26h; `is_mitigated` is true exactly when a `study-block-`
-//!   event covers one of the two ids.
+//!   Warning/26h; `is_mitigated` is true exactly when a timed
+//!   `study-block-` event covers one of the two ids on its prep date.
 //! - **P6 — study blocks.** Every candidate is a 90-minute window inside
 //!   08:00–21:30 that overlaps no timetabled slot on that weekday and no
 //!   timed custom event on that date; a dated-but-untimed custom event
@@ -148,6 +148,18 @@ fn event(
         notes: None,
         color: None,
     }
+}
+
+/// A block shaped like the store's auto block: previous day, timed interval.
+fn mitigation_block(id: &str, assessment_date: NaiveDate) -> CustomCalendarEvent {
+    event(
+        &format!("study-block-{id}"),
+        Some(quizradar_core::plan::study_blocks::block_date_for(
+            assessment_date,
+        )),
+        Some(NaiveTime::from_hms_opt(17, 0, 0).expect("valid prep start")),
+        Some(NaiveTime::from_hms_opt(18, 30, 0).expect("valid prep end")),
+    )
 }
 
 fn slot(day_index: u8, start: NaiveTime, end: NaiveTime) -> ScheduleSlot {
@@ -461,12 +473,15 @@ proptest! {
         assessments in arb_assessment_vec(),
         events in arb_event_vec(),
     ) {
-        // Mitigation blocks for some assessments (the convention the store
-        // writes: id = `study-block-{assessment_id}`).
+        // Mitigation blocks for some dated assessments (the convention the
+        // store writes: a timed event on the preparation date with id
+        // `study-block-{assessment_id}`).
         let mut blocks: Vec<CustomCalendarEvent> = Vec::new();
         for (index, item) in assessments.iter().enumerate() {
             if index % 3 == 1 {
-                blocks.push(event(&format!("study-block-{}", item.id), item.date.map(|d| d - Duration::days(1)), None, None));
+                if let Some(date) = item.date {
+                    blocks.push(mitigation_block(&item.id, date));
+                }
             }
         }
         let mut all_events = events.clone();
@@ -788,12 +803,7 @@ fn control_mitigated_pair_is_reported_mitigated() {
             None,
         ),
     ];
-    let block = event(
-        &quizradar_core::plan::study_blocks::block_id_for("m1"),
-        Some(ref_date()),
-        None,
-        None,
-    );
+    let block = mitigation_block("m1", ref_date());
     let ordered = radar_order(&pair, ref_date());
     let alerts = detect_conflicts(&ordered, std::slice::from_ref(&block));
     assert_eq!(alerts.len(), 1);

@@ -47,21 +47,136 @@ object PairSyncCodec {
         if (fullLink.toByteArray(StandardCharsets.UTF_8).size <= maxLinkBytes) {
             return Pair(payloadJson, false)
         }
-        val withoutRaw =
-            payloadJson
-                .replace(Regex(""""raw_text"\s*:\s*"(?:\\.|[^"\\])*"\s*,\s*"""), "")
-                .replace(Regex(""",\s*"raw_text"\s*:\s*"(?:\\.|[^"\\])*""""), "")
-                .replace(Regex(""""raw_text"\s*:\s*"(?:\\.|[^"\\])*""""), "")
-        val compacted =
-            withoutRaw.replace(
-                Regex(""""(snippet|notes)"\s*:\s*"((?:\\.|[^"\\]){161,})""""),
-            ) { match ->
-                val field = match.groupValues[1]
-                val rawVal = match.groupValues[2]
-                val safePrefix = rawVal.take(157).trimEnd('\\')
-                """"$field":"$safePrefix...""""
-            }
+        val withoutRaw = removeJsonStringField(payloadJson, "raw_text")
+        val compacted = truncateJsonStringFields(withoutRaw, setOf("snippet", "notes"), 161)
         return Pair(compacted, true)
+    }
+
+    /** End offset (exclusive) of the JSON string beginning at `openingQuote`. */
+    private fun jsonStringEnd(
+        json: String,
+        openingQuote: Int,
+    ): Int {
+        var cursor = openingQuote + 1
+        while (cursor < json.length) {
+            when (json[cursor]) {
+                '\\' -> cursor += 2
+                '"' -> return cursor + 1
+                else -> cursor += 1
+            }
+        }
+        return -1
+    }
+
+    private fun jsonStringFieldEnd(
+        json: String,
+        keyStart: Int,
+        key: String,
+    ): Int? {
+        val keyEnd = keyStart + "\"$key\"".length
+        var cursor = keyEnd
+        while (cursor < json.length && json[cursor].isWhitespace()) cursor += 1
+        if (cursor >= json.length || json[cursor] != ':') return null
+        cursor += 1
+        while (cursor < json.length && json[cursor].isWhitespace()) cursor += 1
+        if (cursor >= json.length || json[cursor] != '"') return null
+        val end = jsonStringEnd(json, cursor)
+        return if (end == -1) null else end
+    }
+
+    private fun removeTrailingComma(builder: StringBuilder) {
+        var last = builder.length - 1
+        while (last >= 0 && builder[last].isWhitespace()) last -= 1
+        if (last >= 0 && builder[last] == ',') builder.setLength(last)
+    }
+
+    private fun removeJsonStringField(
+        json: String,
+        key: String,
+    ): String {
+        val fieldKey = "\"$key\""
+        val out = StringBuilder(json.length)
+        var cursor = 0
+        while (cursor < json.length) {
+            if (json[cursor] != '"') {
+                out.append(json[cursor])
+                cursor += 1
+                continue
+            }
+            val stringEnd = jsonStringEnd(json, cursor)
+            if (stringEnd == -1) {
+                out.append(json, cursor, json.length)
+                break
+            }
+            if (!json.startsWith(fieldKey, cursor)) {
+                out.append(json, cursor, stringEnd)
+                cursor = stringEnd
+                continue
+            }
+            val valueEnd = jsonStringFieldEnd(json, cursor, key)
+            if (valueEnd == null) {
+                out.append(json, cursor, stringEnd)
+                cursor = stringEnd
+                continue
+            }
+            var afterValue = valueEnd
+            while (afterValue < json.length && json[afterValue].isWhitespace()) afterValue += 1
+            if (afterValue < json.length && json[afterValue] == ',') {
+                cursor = afterValue + 1
+            } else {
+                removeTrailingComma(out)
+                cursor = valueEnd
+            }
+        }
+        return out.toString()
+    }
+
+    private fun truncateJsonStringFields(
+        json: String,
+        keys: Set<String>,
+        maxUnits: Int,
+    ): String {
+        val out = StringBuilder(json.length)
+        var cursor = 0
+        while (cursor < json.length) {
+            if (json[cursor] != '"') {
+                out.append(json[cursor])
+                cursor += 1
+                continue
+            }
+            val stringEnd = jsonStringEnd(json, cursor)
+            if (stringEnd == -1) {
+                out.append(json, cursor, json.length)
+                break
+            }
+            val matchedKey = keys.firstOrNull { key -> json.startsWith("\"$key\"", cursor) }
+            val valueEnd = matchedKey?.let { jsonStringFieldEnd(json, cursor, it) }
+            if (matchedKey == null || valueEnd == null) {
+                out.append(json, cursor, stringEnd)
+                cursor = stringEnd
+                continue
+            }
+            val rawValue = json.substring(cursor + 1, valueEnd - 1)
+            if (regexUnitCount(rawValue) <= maxUnits) {
+                out.append(json, cursor, stringEnd)
+                cursor = stringEnd
+                continue
+            }
+            val safePrefix = rawValue.take(157).trimEnd('\\')
+            out.append("\"$matchedKey\":\"$safePrefix...\"")
+            cursor = valueEnd
+        }
+        return out.toString()
+    }
+
+    private fun regexUnitCount(value: String): Int {
+        var count = 0
+        var cursor = 0
+        while (cursor < value.length) {
+            count += 1
+            cursor += if (value[cursor] == '\\') 2 else 1
+        }
+        return count
     }
 
     fun extractParam(rawInput: String): String {

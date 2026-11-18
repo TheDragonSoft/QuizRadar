@@ -121,9 +121,7 @@ interface QuizRadarCore {
         refDate: LocalDate = LocalDate.now(),
     ): String
 
-    suspend fun exportSyncPayload(
-        deviceId: String = "quizradar-android",
-    ): String = exportBackup(LocalDate.now())
+    suspend fun exportSyncPayload(deviceId: String = "quizradar-android"): String = exportBackup(LocalDate.now())
 
     suspend fun mergeSyncPayload(
         payloadJson: String,

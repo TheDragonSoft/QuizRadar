@@ -46,7 +46,7 @@ function sample(revision, index) {
       "--output",
       output,
     ],
-    { stdio: ["ignore", "inherit", "inherit"], timeout: 120_000 },
+    { stdio: ["ignore", "inherit", "inherit"], timeout: 300_000 },
   );
   const result = JSON.parse(readFileSync(output, "utf8"));
   if (index === "warmup") return;

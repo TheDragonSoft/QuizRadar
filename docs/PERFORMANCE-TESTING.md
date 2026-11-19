@@ -50,13 +50,16 @@ Rules encoded by the suite:
 - Warmups are discarded from aggregates.
 - Base/head samples are interleaved (`base,head`, then `head,base`, …) to
   reduce thermal/order bias.
+- Web uses 15 samples because the first live PR runs showed different
+  navigation regressions on different runs at 7 samples. The relative and
+  absolute thresholds were not loosened to accommodate that noise.
 
 Initial thresholds (`performance/thresholds.json`):
 
 | Surface | Samples | Blocking rule |
 |---|---:|---|
 | `core` | 15 | `>10%` and `>0.25 ms` |
-| `web` | 7 | `>15%` and `>50 ms` |
+| `web` | 15 | `>15%` and `>50 ms` |
 | `android` | 7 | `>15%` and `>150 ms` |
 | `desktop` | 5 | `>15%` and `>100 ms` |
 
@@ -146,7 +149,7 @@ use the same local build for a no-regression sanity run.
 ```powershell
 pnpm perf:core -- --base-bin target/release/quizradar-performance-core.exe --head-bin target/release/quizradar-performance-core.exe --samples 15
 
-pnpm perf:web -- --base-dist apps/web/dist --head-dist apps/web/dist --samples 7
+pnpm perf:web -- --base-dist apps/web/dist --head-dist apps/web/dist --samples 15
 
 pnpm perf:android -- --base-apk performance/artifacts/base.apk --head-apk performance/artifacts/head.apk --serial emulator-5554
 

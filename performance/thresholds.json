@@ -7,7 +7,7 @@
       "minAbsoluteDeltaMs": 0.25
     },
     "web": {
-      "samples": 7,
+      "samples": 15,
       "maxRegressionPercent": 15,
       "minAbsoluteDeltaMs": 50
     },

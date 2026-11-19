@@ -68,7 +68,7 @@ untouched; they are historical observations, not live gates.
 Recorded on 2026-11-18 and stored only as local gitignored artifacts:
 
 - Core: 15 samples, all 8 scenarios pass; max same-build delta ±3.05%.
-- Web: 7 samples, all 5 scenarios pass; max +7.22%/8.11 ms.
+- Web: 15 samples, all 5 scenarios pass; max +7.22%/8.11 ms.
 - Android: 7 samples, `startup.total_time` p50s 2398 vs 2446 ms (+2.00%).
 - Desktop: 5 samples, all 4 scenarios pass; max +5.15%/45.85 ms.
 

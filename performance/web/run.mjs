@@ -13,11 +13,11 @@ import {
 const { flags } = parseCliArgs(process.argv.slice(2));
 if (!flags["base-dist"] || !flags["head-dist"]) {
   console.error(
-    "usage: node performance/web/run.mjs --base-dist <dir> --head-dist <dir> [--samples 7] [--output-dir performance/results/web]",
+    "usage: node performance/web/run.mjs --base-dist <dir> --head-dist <dir> [--samples 15] [--output-dir performance/results/web]",
   );
   process.exit(2);
 }
-const samples = Number(flags.samples ?? 7);
+const samples = Number(flags.samples ?? 15);
 if (!Number.isInteger(samples) || samples < 1)
   throw new Error("--samples must be a positive integer");
 const outputDir = path.resolve(String(flags["output-dir"] ?? "performance/results/web"));

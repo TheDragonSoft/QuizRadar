@@ -23,8 +23,13 @@ const run = (args, options = {}) =>
 
 try {
   // Dedicated performance emulators must not inherit an app signed with a
-  // different key; a stale install is not a QuizRadar performance regression.
-  run(["uninstall", "com.quizradar.app"]);
+  // different key; a fresh emulator may simply have nothing to uninstall.
+  try {
+    run(["uninstall", "com.quizradar.app"]);
+  } catch {
+    // Fresh device: proceed to install; signature mismatch is handled by a
+    // successful uninstall when a previous package actually exists.
+  }
   run(["install", "-r", apk], { maxBuffer: 16 * 1024 * 1024 });
   run(["shell", "am", "force-stop", "com.quizradar.app"]);
   run(["logcat", "-c"]);

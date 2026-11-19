@@ -1,0 +1,373 @@
+name: Performance
+
+# Every PR compares base/head on the same runner, per surface. A median that
+# crosses the versioned threshold fails the required performance-review check;
+# raw samples and reports are always uploaded. This workflow never edits a
+# threshold, creates a baseline, or approves its own regression.
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: "Base ref/SHA to compare against"
+        required: true
+        type: string
+      head_ref:
+        description: "Head ref/SHA to benchmark"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: performance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  perf-core:
+    name: core (rust release sampler)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.head_ref || github.ref }}
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: resolve merge base
+        id: base
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          INPUT_BASE_REF: ${{ inputs.base_ref }}
+        run: |
+          if [ -n "$INPUT_BASE_REF" ]; then
+            MERGE_BASE=$(git merge-base HEAD "$INPUT_BASE_REF")
+          else
+            MERGE_BASE=$(git merge-base HEAD "$PR_BASE_SHA")
+          fi
+          echo "sha=$MERGE_BASE" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.base.outputs.sha }}
+          path: perf-base
+      - name: build head sampler
+        run: cargo build --release -p quizradar-performance-core
+      - name: preserve head sampler
+        run: mkdir -p performance/artifacts && cp target/release/quizradar-performance-core performance/artifacts/head
+      - name: build base sampler
+        working-directory: perf-base
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
+        run: cargo build --release -p quizradar-performance-core
+      - name: preserve base sampler
+        run: cp target/release/quizradar-performance-core performance/artifacts/base
+      - name: benchmark base vs head
+        run: node performance/core/run.mjs --base-bin performance/artifacts/base --head-bin performance/artifacts/head --base-revision "${{ steps.base.outputs.sha }}" --head-revision "${{ github.sha }}" --output-dir performance/results/core
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-core
+          path: performance/results/core
+          if-no-files-found: error
+          retention-days: 14
+
+  perf-web:
+    name: web (production pwa sampler)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.head_ref || github.ref }}
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: install wasm-bindgen-cli (version pinned by Cargo.lock)
+        run: |
+          WASM_BINDGEN_VERSION="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep '^version' | head -1 | cut -d'"' -f2)"
+          cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked
+      - name: resolve merge base
+        id: base
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          INPUT_BASE_REF: ${{ inputs.base_ref }}
+        run: |
+          if [ -n "$INPUT_BASE_REF" ]; then
+            MERGE_BASE=$(git merge-base HEAD "$INPUT_BASE_REF")
+          else
+            MERGE_BASE=$(git merge-base HEAD "$PR_BASE_SHA")
+          fi
+          echo "sha=$MERGE_BASE" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.base.outputs.sha }}
+          path: perf-base
+      - name: install head dependencies
+        run: pnpm install --frozen-lockfile
+      - name: build head production bundle
+        run: pnpm --dir apps/web build
+      - name: preserve head bundle
+        run: mkdir -p performance/artifacts && cp -a apps/web/dist performance/artifacts/head-dist
+      - name: install base dependencies
+        working-directory: perf-base
+        run: pnpm install --frozen-lockfile
+      - name: build base production bundle
+        working-directory: perf-base
+        run: pnpm --dir apps/web build
+      - name: preserve base bundle
+        run: cp -a perf-base/apps/web/dist performance/artifacts/base-dist
+      - name: benchmark base vs head
+        run: node performance/web/run.mjs --base-dist performance/artifacts/base-dist --head-dist performance/artifacts/head-dist --base-revision "${{ steps.base.outputs.sha }}" --head-revision "${{ github.sha }}" --output-dir performance/results/web
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-web
+          path: performance/results/web
+          if-no-files-found: error
+          retention-days: 14
+
+  perf-android:
+    name: android (staging cold start)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.head_ref || github.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-linux-android, aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+      - name: install NDK r27b
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.1.12297006" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.1.12297006" >> "$GITHUB_ENV"
+      - name: build native core cdylib for tests
+        run: cargo build -p quizradar-core --features uniffi
+      - uses: gradle/actions/setup-gradle@v4
+      - name: enable KVM hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: create AVD and generate snapshot for caching
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: echo "Generated AVD snapshot."
+      - name: resolve merge base
+        id: base
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          INPUT_BASE_REF: ${{ inputs.base_ref }}
+        run: |
+          if [ -n "$INPUT_BASE_REF" ]; then
+            MERGE_BASE=$(git merge-base HEAD "$INPUT_BASE_REF")
+          else
+            MERGE_BASE=$(git merge-base HEAD "$PR_BASE_SHA")
+          fi
+          echo "sha=$MERGE_BASE" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.base.outputs.sha }}
+          path: perf-base
+      - name: build head staging apk
+        working-directory: apps/mobile-android
+        run: ./gradlew assembleStaging
+      - name: build base staging apk
+        working-directory: perf-base/apps/mobile-android
+        run: ./gradlew assembleStaging
+      - name: sign benchmark apks with a throwaway test key
+        env:
+          PR_BASE_SHA: ${{ steps.base.outputs.sha }}
+        run: |
+          mkdir -p performance/artifacts
+          keytool -genkeypair -v -keystore performance/artifacts/perf-test.keystore \
+            -storepass perf-test -keypass perf-test -alias perf-test \
+            -keyalg RSA -keysize 2048 -validity 1 \
+            -dname "CN=QuizRadar Performance Test, OU=CI, O=QuizRadar, C=US"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          "$APKSIGNER" sign \
+            --ks performance/artifacts/perf-test.keystore \
+            --ks-pass pass:perf-test --key-pass pass:perf-test --ks-key-alias perf-test \
+            --out performance/artifacts/base.apk \
+            "perf-base/apps/mobile-android/app/build/outputs/apk/staging/app-staging-unsigned.apk"
+          "$APKSIGNER" sign \
+            --ks performance/artifacts/perf-test.keystore \
+            --ks-pass pass:perf-test --key-pass pass:perf-test --ks-key-alias perf-test \
+            --out performance/artifacts/head.apk \
+            "apps/mobile-android/app/build/outputs/apk/staging/app-staging-unsigned.apk"
+      # The emulator lives only inside android-emulator-runner's script, so
+      # the base/head comparison itself runs there.
+      - name: benchmark base vs head cold starts
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            node performance/android/run.mjs \
+              --base-apk performance/artifacts/base.apk \
+              --head-apk performance/artifacts/head.apk \
+              --base-revision "${{ steps.base.outputs.sha }}" \
+              --head-revision "${{ github.sha }}" \
+              --output-dir performance/results/android
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-android
+          path: performance/results/android
+          if-no-files-found: error
+          retention-days: 14
+
+  perf-desktop:
+    name: desktop (windows tauri native)
+    runs-on: windows-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.head_ref || github.ref }}
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: install wasm-bindgen-cli (version pinned by Cargo.lock)
+        run: |
+          WASM_BINDGEN_VERSION="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep '^version' | head -1 | cut -d'"' -f2)"
+          cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked
+      - name: resolve merge base
+        id: base
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          INPUT_BASE_REF: ${{ inputs.base_ref }}
+        run: |
+          if [ -n "$INPUT_BASE_REF" ]; then
+            MERGE_BASE=$(git merge-base HEAD "$INPUT_BASE_REF")
+          else
+            MERGE_BASE=$(git merge-base HEAD "$PR_BASE_SHA")
+          fi
+          echo "sha=$MERGE_BASE" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.base.outputs.sha }}
+          path: perf-base
+      - name: install head dependencies
+        run: pnpm install --frozen-lockfile
+      - name: install tauri-cli
+        run: cargo install tauri-cli --version "2.12.4" --locked
+      - name: build head release executable
+        run: cargo tauri build --no-bundle
+      - name: preserve head executable
+        run: mkdir -p performance/artifacts && cp target/release/quizradar-desktop.exe performance/artifacts/head.exe
+      - name: install base dependencies
+        working-directory: perf-base
+        run: pnpm install --frozen-lockfile
+      - name: build base release executable
+        working-directory: perf-base
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
+        run: cargo tauri build --no-bundle
+      - name: preserve base executable
+        run: cp target/release/quizradar-desktop.exe performance/artifacts/base.exe
+      - name: benchmark base vs head native startup and ipc
+        run: node performance/desktop/run.mjs --base-exe performance/artifacts/base.exe --head-exe performance/artifacts/head.exe --base-revision "${{ steps.base.outputs.sha }}" --head-revision "${{ github.sha }}" --output-dir performance/results/desktop
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-desktop
+          path: performance/results/desktop
+          if-no-files-found: error
+          retention-days: 14
+
+  performance-review:
+    name: performance-review (all surfaces)
+    needs: [perf-core, perf-web, perf-android, perf-desktop]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.head_ref || github.ref }}
+      - uses: actions/download-artifact@v4
+        with:
+          path: performance/results
+          pattern: performance-*
+          merge-multiple: false
+      - name: flatten downloaded surface artifacts
+        run: |
+          for dir in performance/results/performance-*; do
+            surface="${dir##performance-}"
+            mkdir -p "performance/results/$surface"
+            cp -a "$dir"/* "performance/results/$surface/"
+          done
+      - id: verdict
+        run: node performance/review.mjs --results performance/results
+      - name: review PR threshold breach
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Fork PRs may have a read-only token; evidence still exists, but the
+          # workflow must not pretend it could mutate the parent repository.
+          if ! gh pr view "$PR_NUMBER" --json url > /dev/null 2>&1; then
+            echo "::warning::PR is not writable with this token; review evidence is in the artifacts."
+            exit 0
+          fi
+          gh label create needs-performance-review --color D93F0B --description "A performance threshold regressed and requires review" --force
+          gh pr edit "$PR_NUMBER" --add-label needs-performance-review
+          gh pr comment "$PR_NUMBER" --body-file performance/results/performance-review.md
+      - name: clear review state after passing run
+        if: success() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if gh pr view "$PR_NUMBER" --json url > /dev/null 2>&1; then
+            gh pr edit "$PR_NUMBER" --remove-label needs-performance-review || true
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-review
+          path: performance/results/performance-review.*
+          if-no-files-found: error
+          retention-days: 14

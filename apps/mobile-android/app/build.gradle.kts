@@ -166,8 +166,16 @@ android {
     }
 
     lint {
+        // A release-only finding must fail `lintRelease`, not hide behind the
+        // debug variant. CI runs lintRelease explicitly; do not silently
+        // re-enable lint during every assembleRelease build.
         checkReleaseBuilds = false
-        abortOnError = false
+        checkTestSources = false
+        abortOnError = true
+        // Only pre-existing UniFFI-generated NewApi findings are snapshotted.
+        // New findings still fail this task; never refresh the baseline to
+        // make a failing PR pass.
+        baseline = file("lint-baseline.xml")
     }
 }
 

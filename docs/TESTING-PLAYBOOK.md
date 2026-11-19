@@ -16,6 +16,7 @@ regression test in Layers 1–5 so it can never recur silently.
 | 4 | Cross-language contract tests | Core↔UI wire-shape drift (`serde` ↔ TypeScript ↔ UniFFI) | seconds |
 | 5 | Deterministic visual baselines | Pixel drift on first-run Light & Dark surfaces | ~1 min |
 | 6 | Android Emulator + ARTEMIS Closed-Loop Sweep | Edge-to-edge insets, M3 token drift, clipped icons, sheet interactions, Light/Dark device parity | ~3–5 min |
+| 7 | Per-PR performance regression gate (`performance/`) | Median base/head slowdowns in core, web, Android staging, and Windows desktop | CI-local (base+head builds) |
 
 ---
 
@@ -125,6 +126,21 @@ For Android (`apps/mobile-android`) or any native mobile target:
 
 ---
 
+## 7. Per-PR Performance Regression Gate
+
+Runtime performance is **not** part of `pnpm test`: it has its own dedicated
+suite and required GitHub check. It compares the PR merge base and head on the
+same runner, uses production artifacts, interleaves samples, and gates on
+median deltas. Missing/incompatible scenarios fail for review; thresholds are
+versioned and never silently re-baselined.
+
+Canonical entry points and scenario details live in
+[`docs/PERFORMANCE-TESTING.md`](./PERFORMANCE-TESTING.md). The required check
+is `performance-review`; branch protection should require it alongside
+`ci-success`.
+
+---
+
 ## Authenticated UX sweep (manual — real accounts)
 
 A developer-facing harness that drives a real Chromium window against the local web app **while the user is signed in**, so a UX audit is grounded in the user's actual data instead of a mock. It captures, per surface: a full-page screenshot, a DOM outline (roles, accessible names, test ids, disabled state, aria attributes — never input values), an axe-core scan, console/page/network errors and the app's own toast messages. This is not a CI layer and not a gate: it needs real accounts, so it **refuses to start when the `CI` environment variable is set** and never runs in CI.
@@ -154,3 +170,6 @@ Screenshots of signed-in surfaces contain the user's own name and email address,
 2. Enforce a single outer modal container (`ModalStack` + `modalRegistry` `flush` flag) so child views never draw duplicate dialog borders or simultaneous stacked backdrops.
 3. Add `DATA_DIR` + `EPHEMERAL_KEYRING` env overrides to any desktop shell (Tauri / Electron) so CDP sweeps run in a clean temp directory with zero risk to user data.
 4. Pair every UI sweep with a 1:1 **Before & After** visual artifact (`carousel` slides + JSON issue counts) so human review takes minutes instead of hours.
+5. Port the performance suite's base/head interleaving and tested comparator
+   (`tooling/lib/performance.mjs`) rather than comparing absolute timings
+   across runners.

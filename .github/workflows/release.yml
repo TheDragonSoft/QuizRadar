@@ -24,60 +24,29 @@ permissions:
   contents: read
 
 jobs:
-  validate:
-    name: Validate Version & Gates
+  validate-release-metadata:
+    name: Validate Release Tag & Version
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag || github.event.inputs.tag || github.ref }}
-      - uses: pnpm/action-setup@v4
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: pnpm
-      - name: Install Node dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Verify Version Sinks
-        run: node tooling/generate-version.mjs --check
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
-      # `cargo clippy --workspace` compiles the Tauri desktop shell, which on
-      # Linux needs the same system libraries ci.yml's rust job installs —
-      # without them glib-sys/webkit2gtk-sys fail their pkg-config probes.
-      - name: Install Tauri Linux build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
-      - name: install wasm-bindgen-cli (version pinned by Cargo.lock)
-        run: |
-          WASM_BINDGEN_VERSION="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep '^version' | head -1 | cut -d'"' -f2)"
-          echo "wasm-bindgen-cli ${WASM_BINDGEN_VERSION}"
-          cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked
-      # The WASM artifact must exist before `tsc` runs: `wasmBridge.ts` imports
-      # the generated `public/wasm/quizradar_wasm.js` (same ordering as ci.yml).
-      - name: Build Web WASM Bundle
-        run: pnpm --dir apps/web build:wasm
-      - name: Rust format check
-        run: cargo fmt --all --check
-      - name: Clippy check
-        run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: Web tests & typecheck
-        run: |
-          pnpm typecheck
-          pnpm test
+      - name: require strict SemVer and tag/version equality
+        run: node tooling/validate-release.mjs --tag "${{ inputs.tag || github.event.inputs.tag || github.ref_name }}"
+
+  # The release pipeline no longer trusts a reduced validation subset: the
+  # exact tagged commit runs the same required CI as a PR.
+  validate:
+    name: Validate Version & Gates (full CI)
+    needs: validate-release-metadata
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ inputs.tag || github.event.inputs.tag || github.ref }}
 
   build-desktop:
     name: Desktop (${{ matrix.platform.name }})
@@ -140,6 +109,15 @@ jobs:
       - name: Build Web Bundle
         run: pnpm --filter @quizradar/web build
 
+      - name: require updater signing credentials
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is required for a published desktop release"
+            exit 1
+          fi
+
       - name: Build Tauri Desktop Application & Updater
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -185,7 +163,8 @@ jobs:
             target/${{ matrix.platform.target }}/release/bundle/appimage/*.tar.gz
             target/${{ matrix.platform.target }}/release/bundle/appimage/*.sig
             target/${{ matrix.platform.target }}/release/bundle/*.zip
-          if-no-files-found: warn
+          if-no-files-found: error
+          retention-days: 14
 
   build-android:
     name: Android Release (APK & AAB)
@@ -225,12 +204,27 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      - name: require Android signing credentials
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "$(eval "echo \"\${$name}\"")" ]; then
+              echo "::error::$name is required for a published Android release"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
       - name: Setup Android Release Keystore
         # The `secrets` context is not available inside `if:` expressions on
         # GitHub Actions (workflow startup fails) — route it through env.
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        if: env.ANDROID_KEYSTORE_BASE64 != ''
         run: |
           echo "::add-mask::${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
           echo "::add-mask::${{ secrets.ANDROID_KEY_PASSWORD }}"
@@ -247,34 +241,19 @@ jobs:
           ./gradlew assembleRelease bundleRelease
 
       - name: Verify Signed APK with apksigner
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        if: env.ANDROID_KEYSTORE_BASE64 != ''
         run: |
+          if [ ! -f apps/mobile-android/app/build/outputs/apk/release/app-release.apk ]; then
+            echo "::error::signed app-release.apk is missing; a production release must never publish app-release-unsigned.apk"
+            exit 1
+          fi
           $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose apps/mobile-android/app/build/outputs/apk/release/app-release.apk
 
       # The app cannot start without the native core - the release must never
       # ship an APK/AAB whose Rust library is missing for a device ABI.
       - name: Verify the native core ships in the release artifacts
         run: |
-          # Without a keystore the APK is unsigned, so the file name differs.
-          APK=$(ls apps/mobile-android/app/build/outputs/apk/release/app-release*.apk | head -1)
-          echo "checking $APK"
-          unzip -l "$APK" \
-            | grep -E "lib/(arm64-v8a|x86_64)/libquizradar_core\.so"
-          unzip -l apps/mobile-android/app/build/outputs/bundle/release/app-release.aab \
-            | grep -E "base/lib/(arm64-v8a|x86_64)/libquizradar_core\.so"
-          # Only the ABIs the core is cross-built for may be advertised: a
-          # 32-bit device would install the release and then crash with an
-          # UnsatisfiedLinkError the moment the core is called.
-          for artifact in \
-            "$APK" \
-            apps/mobile-android/app/build/outputs/bundle/release/app-release.aab; do
-            if unzip -l "$artifact" | grep -E "lib/(armeabi|armeabi-v7a|mips|mips64|x86)/"; then
-              echo "::error::$artifact advertises ABIs the Rust core is not built for"
-              exit 1
-            fi
-          done
+          node tooling/verify-android-artifacts.mjs --kind apk --path apps/mobile-android/app/build/outputs/apk/release/app-release.apk
+          node tooling/verify-android-artifacts.mjs --kind aab --path apps/mobile-android/app/build/outputs/bundle/release/app-release.aab
 
       - name: Cleanup Keystore File
         if: always()
@@ -285,24 +264,20 @@ jobs:
         run: |
           mkdir -p android-dist
           VER=$(node -e 'console.log(require("./tooling/version.json").version)')
-          # Unsigned local builds are named app-release-unsigned.apk.
-          APK=$(ls apps/mobile-android/app/build/outputs/apk/release/app-release*.apk | head -1)
-          if [ -n "$APK" ]; then
-            cp "$APK" "android-dist/QuizRadar-v${VER}.apk"
-          fi
-          if [ -f apps/mobile-android/app/build/outputs/bundle/release/app-release.aab ]; then
-            cp apps/mobile-android/app/build/outputs/bundle/release/app-release.aab "android-dist/QuizRadar-v${VER}.aab"
-          fi
+          cp apps/mobile-android/app/build/outputs/apk/release/app-release.apk "android-dist/QuizRadar-v${VER}.apk"
+          cp apps/mobile-android/app/build/outputs/bundle/release/app-release.aab "android-dist/QuizRadar-v${VER}.aab"
 
       - name: Upload Android Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: android-release
           path: android-dist/*
+          if-no-files-found: error
+          retention-days: 14
 
   deploy-pwa:
     name: Deploy PWA to GitHub Pages
-    needs: validate
+    needs: [validate, build-desktop, build-android]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -433,6 +408,8 @@ jobs:
           name: "QuizRadar ${{ steps.meta.outputs.tag }} — Academic Radar & Exam Calendar"
           body_path: release_notes.md
           draft: false
-          prerelease: ${{ contains(steps.meta.outputs.version, 'alpha') || contains(steps.meta.outputs.version, 'beta') }}
+          # validate-release-metadata failed the run for any non-SemVer or
+          # mismatched tag; any SemVer prerelease component is non-stable.
+          prerelease: ${{ contains(steps.meta.outputs.version, '-alpha') || contains(steps.meta.outputs.version, '-beta') || contains(steps.meta.outputs.version, '-rc') }}
           files: |
             release-assets/*

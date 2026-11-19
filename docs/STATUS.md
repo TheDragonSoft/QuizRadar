@@ -29,6 +29,8 @@ _Concise status index for AI agents and maintainers (enforced `<= 250` lines by 
 pnpm agent:preflight                             # branch, worktree collision radar, pending notes, required gates
 pnpm generate:version:check                      # verify all 5 version sinks match tooling/version.json
 node apps/web/src/contract/regenerate.mjs --check # verify Rust <-> TS wire contract map is fresh
+pnpm test:tooling                                # version pipeline, coordination, perf gate & CI validator meta-tests
+node tooling/validate-release.mjs --tag vX.Y.Z   # release tag/version/prerelease dry check
 pnpm agent:note --validate                       # validate all changes/*.md handoff fragments
 ```
 
@@ -57,8 +59,21 @@ pnpm --dir apps/web exec playwright test         # Visual regression vs apps/web
 ```powershell
 $env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot"
 cd apps/mobile-android
-.\gradlew.bat ktlintCheck testDebugUnitTest assembleDebug
+.\gradlew.bat ktlintCheck lintRelease testDebugUnitTest assembleDebug
 ```
+
+### Performance Regression Gate (`performance/`, separate from correctness)
+
+```powershell
+pnpm perf:core -- --base-bin <core-sampler> --head-bin <core-sampler> --samples 15
+pnpm perf:web -- --base-dist <web-dist> --head-dist <web-dist> --samples 7
+pnpm perf:android -- --base-apk <test-signed.apk> --head-apk <test-signed.apk> --serial emulator-5554
+pnpm perf:desktop -- --base-exe <quizradar-desktop.exe> --head-exe <quizradar-desktop.exe> --samples 5
+pnpm perf:review                                  # aggregate all surface comparison reports
+```
+
+See `docs/PERFORMANCE-TESTING.md`. CI required checks: `ci-success` and
+`performance-review`.
 
 ## Round 16: Non-AI Academic Productivity Suite & Live Dogfooding (Desktop & Android)
 

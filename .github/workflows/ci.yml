@@ -393,6 +393,9 @@ jobs:
             adb wait-for-device
             mkdir -p apps/mobile-android/build/outputs/emulator-screenshots
             adb exec-out screencap -p > apps/mobile-android/build/outputs/emulator-screenshots/emulator-booted.png
+            # Cached AVDs may contain a build signed with a different key.
+            # A fresh emulator may have nothing to uninstall; both are fine.
+            adb uninstall com.quizradar.app || true
             adb install -r apps/mobile-android/app/build/outputs/apk/debug/app-debug.apk
             adb logcat -c
             adb shell am start -W -n com.quizradar.app/.MainActivity

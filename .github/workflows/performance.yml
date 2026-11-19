@@ -302,10 +302,12 @@ jobs:
       - name: build base release executable
         working-directory: perf-base
         env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/target
+          # build-wasm.mjs resolves artifacts relative to each checkout. Keep
+          # base output separate so it never reads/writes the head target.
+          CARGO_TARGET_DIR: ${{ github.workspace }}/perf-base/target
         run: cargo tauri build --no-bundle
       - name: preserve base executable
-        run: cp target/release/quizradar-desktop.exe performance/artifacts/base.exe
+        run: cp perf-base/target/release/quizradar-desktop.exe performance/artifacts/base.exe
       - name: benchmark base vs head native startup and ipc
         run: node performance/desktop/run.mjs --base-exe performance/artifacts/base.exe --head-exe performance/artifacts/head.exe --base-revision "${{ steps.base.outputs.sha }}" --head-revision "${{ github.sha }}" --output-dir performance/results/desktop
       - uses: actions/upload-artifact@v4

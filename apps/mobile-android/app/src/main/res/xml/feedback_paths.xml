@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Only generated feedback drafts/packages are shareable; no database or token path is exposed. -->
+    <cache-path
+        name="beta_feedback"
+        path="beta-feedback/" />
+</paths>

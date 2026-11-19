@@ -50,6 +50,14 @@ private data class FaqItem(val question: String, val answer: String)
 private val FAQS =
     listOf(
         FaqItem(
+            question = "How do I report an Android problem with shake-to-feedback?",
+            answer =
+                "Give your phone three firm shakes while QuizRadar is open, or use Settings → Beta feedback → " +
+                    "Create feedback report. Review or remove the screenshot, add a written or voice description, " +
+                    "then tap Reviewed — share ZIP. Nothing uploads until you choose a share destination. " +
+                    "The feature is included in debug, staging, and GitHub release APKs.",
+        ),
+        FaqItem(
             question = "Where are my credentials and tokens stored?",
             answer =
                 "On Android, your tokens reside in EncryptedSharedPreferences backed by Android Keystore. " +

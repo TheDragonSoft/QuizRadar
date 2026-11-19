@@ -134,6 +134,10 @@ fun AppScaffold(
     onStartGoogleLogin: () -> Unit = {},
     onStartMicrosoftLogin: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    betaFeedbackAvailable: Boolean = false,
+    betaFeedbackShakeEnabled: Boolean = false,
+    onBetaFeedbackShakeEnabledChange: (Boolean) -> Unit = {},
+    onOpenBetaFeedback: () -> Unit = {},
 ) {
     val selectedTab by viewModel.selectedTab.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
@@ -285,6 +289,10 @@ fun AppScaffold(
                         isSettingsOpen = false
                         viewModel.reRunOnboarding()
                     },
+                    betaFeedbackAvailable = betaFeedbackAvailable,
+                    betaFeedbackShakeEnabled = betaFeedbackShakeEnabled,
+                    onBetaFeedbackShakeEnabledChange = onBetaFeedbackShakeEnabledChange,
+                    onOpenBetaFeedback = onOpenBetaFeedback,
                     snackbarHostState = snackbarHostState,
                 )
                 return

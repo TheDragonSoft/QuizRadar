@@ -127,6 +127,10 @@ fun SettingsScreen(
     onStartGoogleLogin: () -> Unit = {},
     onStartMicrosoftLogin: () -> Unit = {},
     onReRunOnboarding: () -> Unit = {},
+    betaFeedbackAvailable: Boolean = false,
+    betaFeedbackShakeEnabled: Boolean = false,
+    onBetaFeedbackShakeEnabledChange: (Boolean) -> Unit = {},
+    onOpenBetaFeedback: () -> Unit = {},
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     modifier: Modifier = Modifier,
 ) {
@@ -1788,7 +1792,78 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             // =========================================================================
-            // 9. ABOUT
+            // 9. BETA FEEDBACK (INCLUDING GITHUB RELEASE APKS)
+            // =========================================================================
+            if (betaFeedbackAvailable) {
+                SettingsSectionHeader(
+                    icon = Icons.Outlined.Quiz,
+                    title = "Beta feedback",
+                )
+                Card(
+                    shape = MaterialTheme.shapes.medium,
+                    colors = CardDefaults.quietCardColors().copy(containerColor = MaterialTheme.colorScheme.surface),
+                    border = CardDefaults.quietCardBorder(),
+                    elevation = CardDefaults.quietCardElevation(),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "Shake. Review. Share.",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text =
+                                "Capture this screen, explain the problem in writing or with a voice note, " +
+                                    "then share a ZIP with your QuizRadar maintainer for AI-assisted review.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        SettingsSwitchRow(
+                            name = "Shake to send feedback",
+                            desc =
+                                if (betaFeedbackShakeEnabled) {
+                                    "On while QuizRadar is open. Use three firm shakes; the button below also works."
+                                } else {
+                                    "Shake detection is off. The feedback button below still works."
+                                },
+                            checked = betaFeedbackShakeEnabled,
+                            onCheckedChange = onBetaFeedbackShakeEnabledChange,
+                        )
+                        Surface(
+                            shape = MaterialTheme.shapes.small,
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                        ) {
+                            Text(
+                                text =
+                                    "Nothing uploads automatically. Review the screenshot and remove it if it shows " +
+                                        "private information. Packages never include tokens, API keys, logcat, or your database. " +
+                                        "Sharing does not confirm delivery or a fix.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(12.dp),
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = onOpenBetaFeedback,
+                            colors = ButtonDefaults.filledPill(),
+                            contentPadding = PillButtonContentPadding,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .defaultMinSize(minHeight = PillButtonMinHeight),
+                        ) {
+                            Text("Create feedback report")
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+
+            // =========================================================================
+            // 10. ABOUT
             // =========================================================================
             SettingsSectionHeader(
                 icon = Icons.Outlined.Info,
@@ -1833,7 +1908,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             // =========================================================================
-            // 10. ADVANCED (FOLDED ACCORDION)
+            // 11. ADVANCED (FOLDED ACCORDION)
             // =========================================================================
             SettingsSectionHeader(
                 icon = Icons.Outlined.Settings,

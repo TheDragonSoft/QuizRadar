@@ -22,6 +22,8 @@ import com.quizradar.app.auth.OAuthRedirectResult
 import com.quizradar.app.auth.OAuthTransactionStore
 import com.quizradar.app.core.BackgroundScanWorker
 import com.quizradar.app.core.QuizRadarEngine
+import com.quizradar.app.feedback.BetaFeedbackController
+import com.quizradar.app.feedback.BetaFeedbackHost
 import com.quizradar.app.glance.QuizRadarWidget
 import com.quizradar.app.glance.TodayScheduleWidget
 import com.quizradar.app.glance.WidgetUpdateWorker
@@ -39,6 +41,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var engine: QuizRadarEngine
     private lateinit var viewModel: QuizRadarViewModel
     private lateinit var oauthManager: OAuthManager
+    private lateinit var feedbackController: BetaFeedbackController
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -86,6 +89,12 @@ class MainActivity : ComponentActivity() {
                     },
                 ),
             )[QuizRadarViewModel::class.java]
+        feedbackController =
+            BetaFeedbackController(
+                activity = this,
+                scope = lifecycleScope,
+                currentScreenName = { viewModel.selectedTab.value },
+            )
 
         // Initialize background tasks and notification channels
         NotificationHelper.createNotificationChannels(this)
@@ -119,6 +128,7 @@ class MainActivity : ComponentActivity() {
         handleIncomingIntent(intent)
 
         setContent {
+            val betaFeedbackShakeEnabled by feedbackController.shakeEnabled.collectAsState()
             // The persisted appearance mode and the preferred dark scheme are
             // two orthogonal preferences: the mode decides whether a dark
             // scheme renders at all, and only then does the dark preference
@@ -171,7 +181,12 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         onOpenSettings = {},
+                        betaFeedbackAvailable = feedbackController.isAvailable,
+                        betaFeedbackShakeEnabled = betaFeedbackShakeEnabled,
+                        onBetaFeedbackShakeEnabledChange = feedbackController::setShakeEnabled,
+                        onOpenBetaFeedback = { feedbackController.openFeedback("Settings") },
                     )
+                    BetaFeedbackHost(controller = feedbackController)
                 }
             }
         }
@@ -182,6 +197,17 @@ class MainActivity : ComponentActivity() {
         // Midnight rollover while backgrounded: due dates/countdowns must
         // recompute against the new day, not the stale snapshot.
         viewModel.onAppResumed()
+        feedbackController.onResume()
+    }
+
+    override fun onPause() {
+        feedbackController.onPause()
+        super.onPause()
+    }
+
+    override fun onDestroy() {
+        feedbackController.onDestroy()
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -250,6 +276,14 @@ class MainActivity : ComponentActivity() {
         // 4. App Shortcuts & Deep Links (quizradar://action/...)
         if (data != null && data.scheme == "quizradar" && data.host == "action") {
             when (data.path) {
+                "/feedback" -> {
+                    feedbackController.openFeedback("Quick actions")
+                    // Do not replay a consumed tester shortcut after rotation.
+                    intent.data = null
+                    intent.action = null
+                    return
+                }
+
                 "/add_event" -> {
                     viewModel.openCreateEventDraft(
                         ShareIngestParser.parse(null, null),

@@ -63,6 +63,8 @@ jobs:
         run: cargo build --release -p quizradar-performance-core
       - name: preserve head sampler
         run: mkdir -p performance/artifacts && cp target/release/quizradar-performance-core performance/artifacts/head
+      - name: backfill benchmark harness into older base revisions
+        run: node performance/prepare-base.mjs --base-dir perf-base
       - name: build base sampler
         working-directory: perf-base
         env:
@@ -132,6 +134,8 @@ jobs:
         run: pnpm --dir apps/web build
       - name: preserve base bundle
         run: cp -a perf-base/apps/web/dist performance/artifacts/base-dist
+      - name: install playwright chromium
+        run: pnpm --dir apps/web exec playwright install --with-deps chromium
       - name: benchmark base vs head
         run: node performance/web/run.mjs --base-dist performance/artifacts/base-dist --head-dist performance/artifacts/head-dist --base-revision "${{ steps.base.outputs.sha }}" --head-revision "${{ github.sha }}" --output-dir performance/results/web
       - uses: actions/upload-artifact@v4
@@ -164,7 +168,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: install NDK r27b
         run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.1.12297006" > /dev/null
+          # sdkmanager may close stdin early; only tolerate yes(1)'s SIGPIPE.
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.1.12297006" > /dev/null || {
+            code=$?
+            [ "$code" -eq 141 ] || exit "$code"
+          }
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.1.12297006" >> "$GITHUB_ENV"
       - name: build native core cdylib for tests
         run: cargo build -p quizradar-core --features uniffi

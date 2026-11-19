@@ -300,7 +300,11 @@ jobs:
       # `tooling/build-android-libs.mjs` locates it via ANDROID_NDK_HOME.
       - name: install NDK r27b
         run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.1.12297006" > /dev/null
+          # sdkmanager may close stdin early; only tolerate yes(1)'s SIGPIPE.
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.1.12297006" > /dev/null || {
+            code=$?
+            [ "$code" -eq 141 ] || exit "$code"
+          }
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.1.12297006" >> "$GITHUB_ENV"
       - name: build native core cdylib for tests
         run: cargo build -p quizradar-core --features uniffi

@@ -397,16 +397,9 @@ jobs:
             adb logcat -c
             adb shell am start -W -n com.quizradar.app/.MainActivity
             sleep 10
-            if [ -z "$(adb shell pidof com.quizradar.app)" ]; then
-              echo "::error::QuizRadar did not stay running after launch"
-              adb logcat -d > apps/mobile-android/build/outputs/emulator-screenshots/emulator-post-launch.logcat.txt
-              exit 1
-            fi
+            test -n "$(adb shell pidof com.quizradar.app)" || { echo "::error::QuizRadar did not stay running after launch"; adb logcat -d > apps/mobile-android/build/outputs/emulator-screenshots/emulator-post-launch.logcat.txt; exit 1; }
             adb logcat -d > apps/mobile-android/build/outputs/emulator-screenshots/emulator-post-launch.logcat.txt
-            if grep -E "FATAL EXCEPTION|ANR in com\.quizradar\.app|UnsatisfiedLinkError" apps/mobile-android/build/outputs/emulator-screenshots/emulator-post-launch.logcat.txt; then
-              echo "::error::QuizRadar startup hit a fatal/native-link failure"
-              exit 1
-            fi
+            ! grep -E "FATAL EXCEPTION|ANR in com\.quizradar\.app|UnsatisfiedLinkError" apps/mobile-android/build/outputs/emulator-screenshots/emulator-post-launch.logcat.txt || { echo "::error::QuizRadar startup hit a fatal/native-link failure"; exit 1; }
             adb exec-out screencap -p > apps/mobile-android/build/outputs/emulator-screenshots/emulator-post-launch.png
       - name: upload emulator evidence
         if: always()

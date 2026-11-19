@@ -72,7 +72,8 @@ try {
   });
 
   let connected = false;
-  for (let attempt = 0; attempt < 300; attempt += 1) {
+  // Cold Windows runners can spend >60s starting WebView2 and its profile.
+  for (let attempt = 0; attempt < 900; attempt += 1) {
     if (childExit)
       throw new Error(`desktop exited before CDP was ready: ${JSON.stringify(childExit)}`);
     try {
@@ -137,6 +138,20 @@ try {
 } catch (error) {
   mkdirSync(path.dirname(output), { recursive: true });
   if (existsSync(bootLog)) copyFileSync(bootLog, `${output}.boot.log`);
+  try {
+    const diagnostics = execFileSync(
+      "powershell",
+      [
+        "-NoProfile",
+        "-Command",
+        "Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'quizradar|msedge|webview' } | Select-Object Name,ProcessId,CommandLine | ConvertTo-Json -Depth 2",
+      ],
+      { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
+    );
+    writeFileSync(`${output}.processes.json`, diagnostics);
+  } catch {
+    // Keep the original CDP/launch error if process inspection is unavailable.
+  }
   if (browser) {
     const page = browser.contexts().flatMap((context) => context.pages())[0];
     if (page) await page.screenshot({ path: `${output}.png` }).catch(() => undefined);

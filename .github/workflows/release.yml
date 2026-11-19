@@ -196,11 +196,8 @@ jobs:
       # `tooling/build-android-libs.mjs` locates the NDK via ANDROID_NDK_HOME.
       - name: install NDK r27b
         run: |
-          # sdkmanager may close stdin early; only tolerate yes(1)'s SIGPIPE.
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.1.12297006" > /dev/null || {
-            code=$?
-            [ "$code" -eq 141 ] || exit "$code"
-          }
+          # Bounded license responses avoid yes(1) exiting nonzero on a broken pipe.
+          printf 'y\n%.0s' {1..100} | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.1.12297006" > /dev/null
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.1.12297006" >> "$GITHUB_ENV"
 
       - name: Build native core cdylib for uniffi

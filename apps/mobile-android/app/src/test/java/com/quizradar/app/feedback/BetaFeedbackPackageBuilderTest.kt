@@ -144,6 +144,40 @@ class BetaFeedbackPackageBuilderTest {
         }
     }
 
+    @Test
+    fun `batch export preserves per-issue build info when saved on an earlier version`() {
+        val dir = temporaryFolder.newFolder("older-issue")
+        val olderInfo =
+            FeedbackBuildInfo(
+                appVersion = "5.17.0",
+                buildType = "release",
+                androidSdk = 34,
+                device = "Pixel 8",
+            )
+        val item =
+            BetaFeedbackInboxItem(
+                id = "12345678-older-issue",
+                directory = dir,
+                screenName = "Tasks",
+                createdAt = Instant.parse("2026-11-18T10:11:12Z"),
+                note = "Captured before upgrading",
+                screenshot = null,
+                voiceNote = null,
+                buildInfo = olderInfo,
+            )
+
+        val output = builder.buildBatch(listOf(item), temporaryFolder.newFolder("packages"))
+        ZipFile(output).use { zip ->
+            val brief =
+                zip.getInputStream(zip.getEntry("issues/issue-001-12345678/agent-brief.md")).bufferedReader().use {
+                    it.readText()
+                }
+            assertTrue(brief.contains("App version: 5.17.0"))
+            assertTrue(brief.contains("Build type: release"))
+            assertTrue(brief.contains("Device: Pixel 8"))
+        }
+    }
+
     private fun draft(directory: File): BetaFeedbackDraft =
         BetaFeedbackDraft(
             id = "12345678-test-feedback",

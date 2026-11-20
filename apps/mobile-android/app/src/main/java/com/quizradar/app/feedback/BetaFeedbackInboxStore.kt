@@ -15,6 +15,7 @@ data class BetaFeedbackInboxItem(
     val note: String,
     val screenshot: File?,
     val voiceNote: File?,
+    val buildInfo: FeedbackBuildInfo? = null,
 ) {
     fun toDraft(): BetaFeedbackDraft =
         BetaFeedbackDraft(
@@ -30,9 +31,11 @@ data class BetaFeedbackInboxItem(
 /** App-private, persistent issue queue. Metadata and attachments always share one issue directory. */
 class BetaFeedbackInboxStore internal constructor(
     private val rootDirectory: File,
+    preload: Boolean = true,
 ) {
-    constructor(context: Context) : this(File(context.filesDir, "beta-feedback/inbox"))
+    constructor(context: Context, preload: Boolean = true) : this(File(context.filesDir, "beta-feedback/inbox"), preload)
 
+    private val lock = Any()
     private val _items = MutableStateFlow<List<BetaFeedbackInboxItem>>(emptyList())
     val items: StateFlow<List<BetaFeedbackInboxItem>> = _items
 
@@ -40,84 +43,101 @@ class BetaFeedbackInboxStore internal constructor(
     val loadErrors: StateFlow<List<String>> = _loadErrors
 
     init {
-        reload()
+        if (preload) reload()
     }
 
     fun reload() {
-        val issuesDirectory = File(rootDirectory, "issues")
-        val loaded = mutableListOf<BetaFeedbackInboxItem>()
-        val errors = mutableListOf<String>()
-        issuesDirectory.listFiles()?.sortedBy { it.name }?.forEach { directory ->
-            if (!directory.isDirectory) return@forEach
-            try {
-                loaded += readItem(directory)
-            } catch (_: Exception) {
-                errors += "A saved feedback item could not be read (${directory.name.take(8)})."
+        synchronized(lock) {
+            val issuesDirectory = File(rootDirectory, "issues")
+            val loaded = mutableListOf<BetaFeedbackInboxItem>()
+            val errors = mutableListOf<String>()
+            issuesDirectory.listFiles()?.sortedBy { it.name }?.forEach { directory ->
+                if (!directory.isDirectory) return@forEach
+                try {
+                    loaded += readItem(directory)
+                } catch (_: Exception) {
+                    errors += "A saved feedback item could not be read (${directory.name.take(8)})."
+                }
             }
+            _items.value = loaded.sortedWith(compareBy({ it.createdAt }, { it.id }))
+            _loadErrors.value = errors
         }
-        _items.value = loaded.sortedWith(compareBy({ it.createdAt }, { it.id }))
-        _loadErrors.value = errors
     }
 
     fun saveDraft(
         draft: BetaFeedbackDraft,
         note: String,
+        buildInfo: FeedbackBuildInfo = FeedbackBuildInfo.current(),
     ): BetaFeedbackInboxItem {
-        val cleanNote = note.trim().take(MAX_FEEDBACK_NOTE_LENGTH)
-        require(cleanNote.isNotEmpty() || draft.voiceNote?.isFile == true) {
-            "Add a written or voice description before saving"
-        }
-        val issuesDirectory = File(rootDirectory, "issues")
-        val destination = File(issuesDirectory, draft.id)
-        require(!destination.exists()) { "This issue is already in the feedback inbox" }
-        check(issuesDirectory.exists() || issuesDirectory.mkdirs()) { "Could not create the feedback inbox" }
-
-        try {
-            if (draft.directory.isDirectory) {
-                check(draft.directory.copyRecursively(destination, overwrite = false)) {
-                    "Could not copy feedback attachments"
-                }
-            } else {
-                check(destination.mkdirs()) { "Could not create the saved issue directory" }
+        synchronized(lock) {
+            val cleanNote = note.trim().take(MAX_FEEDBACK_NOTE_LENGTH)
+            require(cleanNote.isNotEmpty() || draft.voiceNote?.isFile == true) {
+                "Add a written or voice description before saving"
             }
-            val item =
-                BetaFeedbackInboxItem(
-                    id = draft.id,
-                    directory = destination,
-                    screenName = draft.screenName,
-                    createdAt = draft.createdAt,
-                    note = cleanNote,
-                    screenshot = File(destination, "screenshot.png").takeIf { it.isFile },
-                    voiceNote = File(destination, "voice-note.m4a").takeIf { it.isFile },
-                )
-            writeMetadata(item)
-            draft.directory.deleteRecursively()
-            _items.value = (_items.value + item).sortedWith(compareBy({ it.createdAt }, { it.id }))
-            return item
-        } catch (error: Exception) {
-            destination.deleteRecursively()
-            throw error
+            val issuesDirectory = File(rootDirectory, "issues")
+            val destination = File(issuesDirectory, draft.id)
+            require(!destination.exists()) { "This issue is already in the feedback inbox" }
+            check(issuesDirectory.exists() || issuesDirectory.mkdirs()) { "Could not create the feedback inbox" }
+
+            try {
+                if (draft.directory.isDirectory) {
+                    check(draft.directory.copyRecursively(destination, overwrite = false)) {
+                        "Could not copy feedback attachments"
+                    }
+                } else {
+                    check(destination.mkdirs()) { "Could not create the saved issue directory" }
+                }
+                val item =
+                    BetaFeedbackInboxItem(
+                        id = draft.id,
+                        directory = destination,
+                        screenName = draft.screenName,
+                        createdAt = draft.createdAt,
+                        note = cleanNote,
+                        screenshot = File(destination, "screenshot.png").takeIf { it.isFile },
+                        voiceNote = File(destination, "voice-note.m4a").takeIf { it.isFile },
+                        buildInfo = buildInfo,
+                    )
+                writeMetadata(item)
+                draft.directory.deleteRecursively()
+                _items.value = (_items.value + item).sortedWith(compareBy({ it.createdAt }, { it.id }))
+                return item
+            } catch (error: Exception) {
+                destination.deleteRecursively()
+                throw error
+            }
         }
     }
 
     fun deleteItem(id: String) {
-        val item = _items.value.firstOrNull { it.id == id } ?: return
-        if (item.directory.exists() && !item.directory.deleteRecursively()) {
-            throw IllegalStateException("The saved issue could not be deleted")
+        synchronized(lock) {
+            val item = _items.value.firstOrNull { it.id == id } ?: return
+            if (item.directory.exists() && !item.directory.deleteRecursively()) {
+                throw IllegalStateException("The saved issue could not be deleted")
+            }
+            _items.value = _items.value.filterNot { it.id == id }
         }
-        _items.value = _items.value.filterNot { it.id == id }
     }
 
     fun clear() {
-        val failures = mutableListOf<String>()
-        _items.value.forEach { item ->
-            if (item.directory.exists() && !item.directory.deleteRecursively()) failures += item.id
+        synchronized(lock) {
+            val failures = mutableListOf<String>()
+            val issuesDirectory = File(rootDirectory, "issues")
+            // Delete every child under issues/, including damaged entries that failed reload().
+            val entries = issuesDirectory.listFiles().orEmpty()
+            entries.forEach { entry ->
+                if (entry.exists() && !entry.deleteRecursively()) failures += entry.name
+            }
+            _items.value.forEach { item ->
+                if (item.directory.exists() && !item.directory.deleteRecursively()) failures += item.id
+            }
+            if (failures.isNotEmpty()) {
+                reload()
+                throw IllegalStateException("Some saved issues could not be deleted")
+            }
+            _items.value = emptyList()
+            _loadErrors.value = emptyList()
         }
-        if (failures.isNotEmpty()) {
-            reload()
-            throw IllegalStateException("Some saved issues could not be deleted")
-        }
-        _items.value = emptyList()
     }
 
     private fun readItem(directory: File): BetaFeedbackInboxItem {
@@ -139,6 +159,19 @@ class BetaFeedbackInboxStore internal constructor(
             } else {
                 null
             }
+        val savedAppVersion = metadata.optString("app_version")
+        val savedBuildType = metadata.optString("build_type")
+        val savedBuildInfo =
+            if (savedAppVersion.isNotEmpty() && savedBuildType.isNotEmpty()) {
+                FeedbackBuildInfo(
+                    appVersion = savedAppVersion,
+                    buildType = savedBuildType,
+                    androidSdk = metadata.optInt("android_sdk", FeedbackBuildInfo.current().androidSdk),
+                    device = metadata.optString("device", ""),
+                )
+            } else {
+                null
+            }
         return BetaFeedbackInboxItem(
             id = id,
             directory = directory,
@@ -147,6 +180,7 @@ class BetaFeedbackInboxStore internal constructor(
             note = metadata.getString("note"),
             screenshot = screenshot,
             voiceNote = voiceNote,
+            buildInfo = savedBuildInfo,
         )
     }
 
@@ -160,6 +194,13 @@ class BetaFeedbackInboxStore internal constructor(
                 .put("note", item.note)
                 .put("screenshot", item.screenshot?.name ?: JSONObject.NULL)
                 .put("voice_note", item.voiceNote?.name ?: JSONObject.NULL)
+        item.buildInfo?.let { info ->
+            metadata
+                .put("app_version", info.appVersion)
+                .put("build_type", info.buildType)
+                .put("android_sdk", info.androidSdk)
+                .put("device", info.device)
+        }
         val metadataFile = File(item.directory, METADATA_FILE)
         metadataFile.writeText(metadata.toString(2))
         check(metadataFile.isFile && metadataFile.length() > 0L) { "Could not save issue metadata" }

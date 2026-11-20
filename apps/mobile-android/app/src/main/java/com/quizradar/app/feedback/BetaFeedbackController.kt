@@ -1,6 +1,7 @@
 package com.quizradar.app.feedback
 
 import android.Manifest
+import android.app.Application
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.MediaPlayer
@@ -9,60 +10,104 @@ import android.os.Build
 import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
 import com.quizradar.app.BuildConfig
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
 class BetaFeedbackController internal constructor(
-    private val activity: ComponentActivity,
+    context: Context,
     private val scope: CoroutineScope,
-    private val currentScreenName: () -> String,
-    private val captureScreenshot: (File) -> File?,
-    private val sharePackage: (File) -> Unit,
+    currentScreenName: () -> String,
+    private val captureScreenshot: (ComponentActivity?, File) -> File?,
+    private val sharePackage: (ComponentActivity?, File) -> Unit,
     private val packageBuilder: BetaFeedbackPackageBuilder,
     private val exportDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val inboxStore: BetaFeedbackInboxStore = BetaFeedbackInboxStore(activity),
-    private val showMessage: (String) -> Unit = {},
+    private val inboxStore: BetaFeedbackInboxStore = BetaFeedbackInboxStore(context.applicationContext),
+    showMessage: (String) -> Unit = {},
+    initialActivity: ComponentActivity? = null,
+    asyncInit: Boolean = false,
 ) {
+    internal constructor(
+        activity: ComponentActivity,
+        scope: CoroutineScope,
+        currentScreenName: () -> String,
+        captureScreenshot: (File) -> File?,
+        sharePackage: (File) -> Unit,
+        packageBuilder: BetaFeedbackPackageBuilder,
+        exportDispatcher: CoroutineDispatcher = Dispatchers.IO,
+        inboxStore: BetaFeedbackInboxStore = BetaFeedbackInboxStore(activity),
+        showMessage: (String) -> Unit = {},
+    ) : this(
+        context = activity.applicationContext,
+        scope = scope,
+        currentScreenName = currentScreenName,
+        captureScreenshot = { _, destination -> captureScreenshot(destination) },
+        sharePackage = { _, packageFile -> sharePackage(packageFile) },
+        packageBuilder = packageBuilder,
+        exportDispatcher = exportDispatcher,
+        inboxStore = inboxStore,
+        showMessage = showMessage,
+        initialActivity = activity,
+        asyncInit = false,
+    )
+
     constructor(
         activity: ComponentActivity,
         scope: CoroutineScope,
         currentScreenName: () -> String,
         showMessage: (String) -> Unit = {},
     ) : this(
-        activity = activity,
+        context = activity.applicationContext,
         scope = scope,
         currentScreenName = currentScreenName,
-        captureScreenshot = { destination -> AppScreenshotCapture.capture(activity, destination) },
-        sharePackage = { packageFile -> BetaFeedbackSharer.share(activity, packageFile) },
+        captureScreenshot = { attached, destination ->
+            attached?.let { AppScreenshotCapture.capture(it, destination) }
+        },
+        sharePackage = { attached, packageFile ->
+            val host = checkNotNull(attached) { "No active screen is available to open the share sheet" }
+            BetaFeedbackSharer.share(host, packageFile)
+        },
         packageBuilder = BetaFeedbackPackageBuilder(),
+        inboxStore = BetaFeedbackInboxStore(activity.applicationContext, preload = false),
         showMessage = showMessage,
+        initialActivity = activity,
+        asyncInit = true,
     )
+
+    private val appContext: Context = context.applicationContext
+    private var attachedActivity: ComponentActivity? = initialActivity
+    private var currentScreenNameProvider: () -> String = currentScreenName
+    private var showMessageHandler: (String) -> Unit = showMessage
 
     val isAvailable: Boolean = BuildConfig.BETA_FEEDBACK_ENABLED
 
-    private val preferences = activity.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+    private val preferences = appContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
     private val _shakeEnabled =
-        kotlinx.coroutines.flow.MutableStateFlow(
+        MutableStateFlow(
             isAvailable && preferences.getBoolean(SHAKE_ENABLED_KEY, true),
         )
-    val shakeEnabled: kotlinx.coroutines.flow.StateFlow<Boolean> = _shakeEnabled
+    val shakeEnabled: StateFlow<Boolean> = _shakeEnabled
 
-    private val _uiState = kotlinx.coroutines.flow.MutableStateFlow(BetaFeedbackUiState())
-    val uiState: kotlinx.coroutines.flow.StateFlow<BetaFeedbackUiState> = _uiState
-    val inboxItems: kotlinx.coroutines.flow.StateFlow<List<BetaFeedbackInboxItem>> = inboxStore.items
-    val inboxLoadErrors: kotlinx.coroutines.flow.StateFlow<List<String>> = inboxStore.loadErrors
+    private val _uiState = MutableStateFlow(BetaFeedbackUiState())
+    val uiState: StateFlow<BetaFeedbackUiState> = _uiState
+    val inboxItems: StateFlow<List<BetaFeedbackInboxItem>> = inboxStore.items
+    val inboxLoadErrors: StateFlow<List<String>> = inboxStore.loadErrors
 
     private val shakeDetector =
-        ShakeDetector(activity) {
-            openFeedback(currentScreenName())
+        ShakeDetector(appContext) {
+            openFeedback(currentScreenNameProvider())
         }
     private var resumed = false
     private var destroyed = false
@@ -70,6 +115,42 @@ class BetaFeedbackController internal constructor(
     private var player: MediaPlayer? = null
     private var recordingJob: Job? = null
     private var recordingStartedAtMs = 0L
+
+    init {
+        if (asyncInit && isAvailable) {
+            scope.launch {
+                runCatching {
+                    withContext(exportDispatcher) {
+                        inboxStore.reload()
+                        pruneStaleCache(
+                            cacheDir = appContext.cacheDir,
+                            activeDraftId = _uiState.value.draft?.id,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun attachActivity(
+        activity: ComponentActivity,
+        currentScreenName: () -> String,
+        showMessage: (String) -> Unit,
+    ) {
+        attachedActivity = activity
+        currentScreenNameProvider = currentScreenName
+        showMessageHandler = showMessage
+    }
+
+    fun detachActivity(activity: ComponentActivity) {
+        if (attachedActivity === activity) {
+            resumed = false
+            shakeDetector.stop()
+            if (_uiState.value.isRecording) stopRecording()
+            stopPlayback()
+            attachedActivity = null
+        }
+    }
 
     fun onResume() {
         if (!isAvailable || destroyed) return
@@ -87,10 +168,12 @@ class BetaFeedbackController internal constructor(
     fun onDestroy() {
         destroyed = true
         resumed = false
+        attachedActivity = null
         shakeDetector.stop()
         recordingJob?.cancel()
         releaseRecorder()
         stopPlayback()
+        _uiState.value.draft?.directory?.deleteRecursively()
     }
 
     fun setShakeEnabled(enabled: Boolean) {
@@ -103,11 +186,11 @@ class BetaFeedbackController internal constructor(
     fun openFeedback(screenName: String) {
         if (!isAvailable || destroyed || _uiState.value.draft != null || _uiState.value.isInboxOpen) return
         shakeDetector.stop()
-        val initialDraft = newFeedbackDraft(activity.cacheDir, screenName)
+        val initialDraft = newFeedbackDraft(appContext.cacheDir, screenName)
         var captureFailed = false
         val screenshot =
             try {
-                captureScreenshot(File(initialDraft.directory, "screenshot.png"))
+                captureScreenshot(attachedActivity, File(initialDraft.directory, "screenshot.png"))
             } catch (_: Exception) {
                 captureFailed = true
                 null
@@ -160,7 +243,7 @@ class BetaFeedbackController internal constructor(
             return
         }
         if (
-            ContextCompat.checkSelfPermission(activity, Manifest.permission.RECORD_AUDIO) !=
+            ContextCompat.checkSelfPermission(appContext, Manifest.permission.RECORD_AUDIO) !=
             PackageManager.PERMISSION_GRANTED
         ) {
             _uiState.value = _uiState.value.copy(errorMessage = "Microphone permission is required only for a voice note.")
@@ -173,7 +256,7 @@ class BetaFeedbackController internal constructor(
             draft.directory.mkdirs()
             val newRecorder =
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    MediaRecorder(activity)
+                    MediaRecorder(appContext)
                 } else {
                     @Suppress("DEPRECATION")
                     MediaRecorder()
@@ -200,6 +283,10 @@ class BetaFeedbackController internal constructor(
                     while (isActive) {
                         delay(1_000L)
                         val elapsed = (SystemClock.elapsedRealtime() - recordingStartedAtMs) / 1_000L
+                        if (elapsed >= MAX_RECORDING_SECONDS) {
+                            stopRecording(limitReachedMessage = "Reached the 3-minute voice note limit. Play it back or delete it below.")
+                            break
+                        }
                         _uiState.value = _uiState.value.copy(recordingSeconds = elapsed)
                     }
                 }
@@ -215,13 +302,13 @@ class BetaFeedbackController internal constructor(
         }
     }
 
-    fun stopRecording() {
+    fun stopRecording(limitReachedMessage: String? = null) {
         val activeRecorder = recorder ?: return
         val draft = _uiState.value.draft
         val output = draft?.let { File(it.directory, "voice-note.m4a") }
         recordingJob?.cancel()
         recordingJob = null
-        var errorMessage: String? = null
+        var errorMessage: String? = limitReachedMessage
         var recordedFile: File? = null
         try {
             activeRecorder.stop()
@@ -263,22 +350,48 @@ class BetaFeedbackController internal constructor(
             return
         }
         val voiceNote = _uiState.value.draft?.voiceNote ?: return
+        playAudioFile(
+            file = voiceNote,
+            onStarted = { _uiState.value = _uiState.value.copy(isPlaying = true, playingInboxItemId = null, errorMessage = null) },
+            onError = { _uiState.value = _uiState.value.copy(errorMessage = "The voice note could not be played.") },
+        )
+    }
+
+    fun toggleInboxVoicePlayback(item: BetaFeedbackInboxItem) {
+        if (_uiState.value.playingInboxItemId == item.id) {
+            stopPlayback()
+            return
+        }
+        val voiceNote = item.voiceNote ?: return
+        stopPlayback()
+        playAudioFile(
+            file = voiceNote,
+            onStarted = { _uiState.value = _uiState.value.copy(isPlaying = false, playingInboxItemId = item.id, inboxErrorMessage = null) },
+            onError = { _uiState.value = _uiState.value.copy(inboxErrorMessage = "The saved voice note could not be played.") },
+        )
+    }
+
+    private fun playAudioFile(
+        file: File,
+        onStarted: () -> Unit,
+        onError: () -> Unit,
+    ) {
         try {
             val mediaPlayer = MediaPlayer()
             player = mediaPlayer
-            mediaPlayer.setDataSource(voiceNote.absolutePath)
+            mediaPlayer.setDataSource(file.absolutePath)
             mediaPlayer.setOnCompletionListener { stopPlayback() }
             mediaPlayer.setOnErrorListener { _, _, _ ->
                 stopPlayback()
-                _uiState.value = _uiState.value.copy(errorMessage = "The voice note could not be played.")
+                onError()
                 true
             }
             mediaPlayer.prepare()
             mediaPlayer.start()
-            _uiState.value = _uiState.value.copy(isPlaying = true, errorMessage = null)
+            onStarted()
         } catch (_: Exception) {
             stopPlayback()
-            _uiState.value = _uiState.value.copy(errorMessage = "The voice note could not be played.")
+            onError()
         }
     }
 
@@ -289,11 +402,14 @@ class BetaFeedbackController internal constructor(
         }
         player?.release()
         player = null
-        if (_uiState.value.isPlaying) _uiState.value = _uiState.value.copy(isPlaying = false)
+        if (_uiState.value.isPlaying || _uiState.value.playingInboxItemId != null) {
+            _uiState.value = _uiState.value.copy(isPlaying = false, playingInboxItemId = null)
+        }
     }
 
     fun shareFeedback(note: String) {
         if (_uiState.value.isRecording) stopRecording()
+        stopPlayback()
         val draft = _uiState.value.draft ?: return
         val cleanNote = note.trim().take(MAX_FEEDBACK_NOTE_LENGTH)
         if (cleanNote.isEmpty() && draft.voiceNote?.isFile != true) {
@@ -304,15 +420,21 @@ class BetaFeedbackController internal constructor(
             return
         }
         if (_uiState.value.isExporting) return
-        _uiState.value = _uiState.value.copy(isExporting = true, errorMessage = null)
+        _uiState.value =
+            _uiState.value.copy(
+                pendingAction = BetaFeedbackPendingAction.SHARING_SINGLE,
+                errorMessage = null,
+            )
         scope.launch {
             val result =
                 runCatching {
                     withContext(exportDispatcher) {
+                        val packagesDir = File(appContext.cacheDir, "beta-feedback/packages")
+                        pruneOldPackages(packagesDir)
                         packageBuilder.build(
                             draft = draft,
                             note = cleanNote,
-                            packageDirectory = File(activity.cacheDir, "beta-feedback/packages"),
+                            packageDirectory = packagesDir,
                         )
                     }
                 }
@@ -321,20 +443,20 @@ class BetaFeedbackController internal constructor(
             if (packageFile == null) {
                 _uiState.value =
                     _uiState.value.copy(
-                        isExporting = false,
+                        pendingAction = BetaFeedbackPendingAction.NONE,
                         errorMessage = "The feedback ZIP could not be created. Nothing was shared; please try again.",
                     )
                 return@launch
             }
             try {
-                sharePackage(packageFile)
+                sharePackage(attachedActivity, packageFile)
                 draft.directory.deleteRecursively()
                 _uiState.value = BetaFeedbackUiState()
                 updateShakeRegistration()
             } catch (_: Exception) {
                 _uiState.value =
                     _uiState.value.copy(
-                        isExporting = false,
+                        pendingAction = BetaFeedbackPendingAction.NONE,
                         errorMessage = "No application could open the share sheet. The ZIP remains on this device; nothing was uploaded.",
                     )
             }
@@ -343,6 +465,7 @@ class BetaFeedbackController internal constructor(
 
     fun saveFeedback(note: String) {
         if (_uiState.value.isRecording) stopRecording()
+        stopPlayback()
         val draft = _uiState.value.draft ?: return
         val cleanNote = note.trim().take(MAX_FEEDBACK_NOTE_LENGTH)
         if (cleanNote.isEmpty() && draft.voiceNote?.isFile != true) {
@@ -353,7 +476,11 @@ class BetaFeedbackController internal constructor(
             return
         }
         if (_uiState.value.isExporting) return
-        _uiState.value = _uiState.value.copy(isExporting = true, errorMessage = null)
+        _uiState.value =
+            _uiState.value.copy(
+                pendingAction = BetaFeedbackPendingAction.SAVING_TO_INBOX,
+                errorMessage = null,
+            )
         scope.launch {
             val result =
                 runCatching {
@@ -365,11 +492,11 @@ class BetaFeedbackController internal constructor(
             if (result.isSuccess) {
                 _uiState.value = BetaFeedbackUiState()
                 updateShakeRegistration()
-                showMessage("Issue saved to feedback inbox (${inboxItems.value.size} pending)")
+                showMessageHandler("Issue saved to feedback inbox (${inboxItems.value.size} pending)")
             } else {
                 _uiState.value =
                     _uiState.value.copy(
-                        isExporting = false,
+                        pendingAction = BetaFeedbackPendingAction.NONE,
                         errorMessage = "The issue could not be saved to the feedback inbox. Your draft is still open; please try again.",
                     )
             }
@@ -384,6 +511,7 @@ class BetaFeedbackController internal constructor(
 
     fun closeInbox() {
         if (_uiState.value.isBatchExporting) return
+        stopPlayback()
         _uiState.value = _uiState.value.copy(isInboxOpen = false, inboxErrorMessage = null)
         updateShakeRegistration()
     }
@@ -394,11 +522,14 @@ class BetaFeedbackController internal constructor(
 
     fun deleteInboxItem(id: String) {
         if (_uiState.value.isBatchExporting) return
+        if (_uiState.value.playingInboxItemId == id) stopPlayback()
+        _uiState.value = _uiState.value.copy(isBatchExporting = true, inboxErrorMessage = null)
         scope.launch {
             val result = runCatching { withContext(exportDispatcher) { inboxStore.deleteItem(id) } }
             if (destroyed) return@launch
             _uiState.value =
                 _uiState.value.copy(
+                    isBatchExporting = false,
                     inboxErrorMessage =
                         if (result.isFailure) {
                             "The saved issue could not be deleted. It remains in the inbox."
@@ -411,6 +542,7 @@ class BetaFeedbackController internal constructor(
 
     fun clearInbox() {
         if (_uiState.value.isBatchExporting) return
+        stopPlayback()
         _uiState.value = _uiState.value.copy(isBatchExporting = true, inboxErrorMessage = null)
         scope.launch {
             val result = runCatching { withContext(exportDispatcher) { inboxStore.clear() } }
@@ -425,12 +557,13 @@ class BetaFeedbackController internal constructor(
                             null
                         },
                 )
-            if (result.isSuccess) showMessage("Feedback inbox cleared")
+            if (result.isSuccess) showMessageHandler("Feedback inbox cleared")
         }
     }
 
     fun shareInbox() {
         if (_uiState.value.isBatchExporting) return
+        stopPlayback()
         val items = inboxItems.value
         if (items.isEmpty()) {
             _uiState.value = _uiState.value.copy(inboxErrorMessage = "Save at least one issue before exporting the feedback inbox.")
@@ -441,9 +574,11 @@ class BetaFeedbackController internal constructor(
             val result =
                 runCatching {
                     withContext(exportDispatcher) {
+                        val packagesDir = File(appContext.cacheDir, "beta-feedback/packages")
+                        pruneOldPackages(packagesDir)
                         packageBuilder.buildBatch(
                             items = items,
-                            packageDirectory = File(activity.cacheDir, "beta-feedback/packages"),
+                            packageDirectory = packagesDir,
                         )
                     }
                 }
@@ -458,7 +593,7 @@ class BetaFeedbackController internal constructor(
                 return@launch
             }
             try {
-                sharePackage(packageFile)
+                sharePackage(attachedActivity, packageFile)
                 _uiState.value =
                     _uiState.value.copy(
                         isInboxOpen = false,
@@ -466,7 +601,8 @@ class BetaFeedbackController internal constructor(
                         inboxErrorMessage = null,
                     )
                 updateShakeRegistration()
-                showMessage("Share sheet opened for ${items.size} issues. Delivery is not confirmed; the inbox is still saved.")
+                val issueLabel = if (items.size == 1) "1 issue" else "${items.size} issues"
+                showMessageHandler("Share sheet opened for $issueLabel. Delivery is not confirmed; the inbox is still saved.")
             } catch (_: Exception) {
                 _uiState.value =
                     _uiState.value.copy(
@@ -478,11 +614,12 @@ class BetaFeedbackController internal constructor(
     }
 
     fun resetFeedbackData() {
+        stopPlayback()
         scope.launch {
             runCatching {
                 withContext(exportDispatcher) {
                     inboxStore.clear()
-                    File(activity.cacheDir, "beta-feedback").deleteRecursively()
+                    File(appContext.cacheDir, "beta-feedback").deleteRecursively()
                 }
             }
             if (!destroyed) _uiState.value = BetaFeedbackUiState()
@@ -508,8 +645,75 @@ class BetaFeedbackController internal constructor(
         recorder = null
     }
 
-    private companion object {
+    internal companion object {
         const val PREFERENCES_NAME = "quizradar_beta_feedback"
         const val SHAKE_ENABLED_KEY = "shake_enabled"
+        const val MAX_RECORDING_SECONDS = 180L
+        private const val PACKAGE_RETENTION_MS = 24L * 60L * 60L * 1_000L
+        private const val MIN_PACKAGES_TO_KEEP = 3
+
+        internal fun pruneStaleCache(
+            cacheDir: File,
+            activeDraftId: String?,
+            nowMs: Long = System.currentTimeMillis(),
+        ) {
+            val draftsDir = File(cacheDir, "beta-feedback/drafts")
+            draftsDir.listFiles().orEmpty().forEach { entry ->
+                if (entry.name != activeDraftId) {
+                    entry.deleteRecursively()
+                }
+            }
+            pruneOldPackages(File(cacheDir, "beta-feedback/packages"), nowMs)
+        }
+
+        internal fun pruneOldPackages(
+            packagesDir: File,
+            nowMs: Long = System.currentTimeMillis(),
+        ) {
+            val files =
+                packagesDir.listFiles().orEmpty()
+                    .filter { it.isFile && it.name.endsWith(".zip") }
+                    .sortedByDescending { it.lastModified() }
+            files.drop(MIN_PACKAGES_TO_KEEP).forEach { file ->
+                if (nowMs - file.lastModified() > PACKAGE_RETENTION_MS) {
+                    file.delete()
+                }
+            }
+        }
+    }
+}
+
+/** Keeps the active feedback draft and inbox state alive across Activity configuration changes. */
+class BetaFeedbackViewModel(
+    application: Application,
+) : ViewModel() {
+    val controller: BetaFeedbackController =
+        BetaFeedbackController(
+            context = application,
+            scope = viewModelScope,
+            currentScreenName = { "Dashboard" },
+            captureScreenshot = { attached, destination ->
+                attached?.let { AppScreenshotCapture.capture(it, destination) }
+            },
+            sharePackage = { attached, packageFile ->
+                val host = checkNotNull(attached) { "No active screen is available to open the share sheet" }
+                BetaFeedbackSharer.share(host, packageFile)
+            },
+            packageBuilder = BetaFeedbackPackageBuilder(),
+            inboxStore = BetaFeedbackInboxStore(application, preload = false),
+            asyncInit = true,
+        )
+
+    override fun onCleared() {
+        controller.onDestroy()
+        super.onCleared()
+    }
+
+    companion object {
+        fun provideFactory(application: Application): ViewModelProvider.Factory =
+            object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T = BetaFeedbackViewModel(application) as T
+            }
     }
 }

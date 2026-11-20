@@ -42,4 +42,37 @@ class ShakeMotionEvaluatorTest {
         assertFalse(peak(3_200L))
         assertTrue(peak(3_400L))
     }
+
+    @Test
+    fun `an earlier stray bump does not break three rapid shakes`() {
+        val evaluator = ShakeMotionEvaluator()
+        evaluator.onSample(0f, 0f, 9.81f, 0L)
+
+        fun peak(timestampMs: Long): Boolean {
+            evaluator.onSample(0f, 0f, 9.81f, timestampMs - 50L)
+            return evaluator.onSample(30f, 0f, 9.81f, timestampMs)
+        }
+        assertFalse(peak(200L))
+        assertFalse(peak(1_200L))
+        assertFalse(peak(1_450L))
+        assertTrue(peak(1_700L))
+    }
+
+    @Test
+    fun `high frequency 200hz sensor still triggers on three shakes`() {
+        val evaluator = ShakeMotionEvaluator()
+        var triggered = false
+        var t = 0L
+        evaluator.onSample(0f, 0f, 9.81f, t)
+        repeat(180) { step ->
+            t += 5L
+            val x =
+                when (step) {
+                    in 10..15, in 55..60, in 100..105 -> 28f
+                    else -> 0f
+                }
+            if (evaluator.onSample(x, 0f, 9.81f, t)) triggered = true
+        }
+        assertTrue("200 Hz accelerometers should trigger consistently", triggered)
+    }
 }

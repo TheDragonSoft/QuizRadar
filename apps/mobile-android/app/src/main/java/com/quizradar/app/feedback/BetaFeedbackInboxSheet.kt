@@ -1,6 +1,5 @@
 package com.quizradar.app.feedback
 
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -28,6 +27,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
@@ -56,6 +56,10 @@ import com.quizradar.app.ui.theme.quietCardBorder
 import com.quizradar.app.ui.theme.quietCardColors
 import com.quizradar.app.ui.theme.quietCardElevation
 import java.io.File
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,12 +72,16 @@ internal fun BetaFeedbackInboxSheet(
     onDeleteItem: (String) -> Unit,
     onClear: () -> Unit,
     onExport: () -> Unit,
+    playingItemId: String? = null,
+    onToggleVoicePlayback: (BetaFeedbackInboxItem) -> Unit = {},
 ) {
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var pendingDelete by remember { mutableStateOf<BetaFeedbackInboxItem?>(null) }
     var showClearConfirmation by remember { mutableStateOf(false) }
     var previewScreenshot by remember { mutableStateOf<File?>(null) }
+    val issueCountLabel = if (items.size == 1) "1 saved issue" else "${items.size} saved issues"
+    val canClearInbox = (items.isNotEmpty() || loadErrors.isNotEmpty()) && !isExporting
 
     ModalBottomSheet(
         onDismissRequest = { if (!isExporting) onDismiss() },
@@ -90,7 +98,7 @@ internal fun BetaFeedbackInboxSheet(
         ) {
             Text("Feedback inbox", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
             Text(
-                text = "${items.size} saved issue(s) · each screenshot stays with its report",
+                text = "$issueCountLabel · each screenshot stays with its report",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -145,24 +153,22 @@ internal fun BetaFeedbackInboxSheet(
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Row(verticalAlignment = Alignment.Top) {
                                     val screenshot = item.screenshot
-                                    if (screenshot?.isFile == true) {
-                                        val bitmap =
-                                            remember(screenshot.absolutePath, screenshot.lastModified()) {
-                                                BitmapFactory.decodeFile(screenshot.absolutePath)
-                                            }
-                                        if (bitmap != null) {
-                                            Image(
-                                                bitmap = bitmap.asImageBitmap(),
-                                                contentDescription = "Screenshot for issue ${index + 1}. Tap to enlarge.",
-                                                contentScale = ContentScale.Crop,
-                                                modifier =
-                                                    Modifier
-                                                        .size(width = 88.dp, height = 116.dp)
-                                                        .clip(MaterialTheme.shapes.small)
-                                                        .clickable { previewScreenshot = screenshot }
-                                                        .testTag("inbox-screenshot-${item.id}"),
-                                            )
+                                    val thumbnail =
+                                        remember(screenshot?.absolutePath, screenshot?.lastModified()) {
+                                            screenshot?.takeIf { it.isFile }?.let { AppScreenshotCapture.decodeSampledBitmap(it, 320) }
                                         }
+                                    if (screenshot?.isFile == true && thumbnail != null) {
+                                        Image(
+                                            bitmap = thumbnail.asImageBitmap(),
+                                            contentDescription = "Screenshot for issue ${index + 1}. Tap to enlarge.",
+                                            contentScale = ContentScale.Crop,
+                                            modifier =
+                                                Modifier
+                                                    .size(width = 88.dp, height = 116.dp)
+                                                    .clip(MaterialTheme.shapes.small)
+                                                    .clickable { previewScreenshot = screenshot }
+                                                    .testTag("inbox-screenshot-${item.id}"),
+                                        )
                                     } else {
                                         Surface(
                                             shape = MaterialTheme.shapes.small,
@@ -173,7 +179,10 @@ internal fun BetaFeedbackInboxSheet(
                                                 verticalArrangement = Arrangement.Center,
                                                 horizontalAlignment = Alignment.CenterHorizontally,
                                             ) {
-                                                Text("No\nscreenshot", style = MaterialTheme.typography.labelSmall)
+                                                Text(
+                                                    text = if (screenshot?.isFile == true) "Preview\nunavailable" else "No\nscreenshot",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                )
                                             }
                                         }
                                     }
@@ -184,7 +193,7 @@ internal fun BetaFeedbackInboxSheet(
                                             style = MaterialTheme.typography.titleSmall,
                                         )
                                         Text(
-                                            text = item.createdAt.toString(),
+                                            text = formatInboxTimestamp(item.createdAt),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
@@ -208,14 +217,34 @@ internal fun BetaFeedbackInboxSheet(
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
-                                TextButton(
-                                    onClick = { pendingDelete = item },
-                                    enabled = !isExporting,
-                                    modifier = Modifier.align(Alignment.End).testTag("inbox-delete-${item.id}"),
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Icon(Icons.Outlined.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Delete issue", color = MaterialTheme.colorScheme.error)
+                                    if (item.voiceNote?.isFile == true) {
+                                        val isThisPlaying = playingItemId == item.id
+                                        TextButton(
+                                            onClick = { onToggleVoicePlayback(item) },
+                                            enabled = !isExporting,
+                                            modifier = Modifier.testTag("inbox-voice-${item.id}"),
+                                        ) {
+                                            Icon(Icons.Outlined.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(if (isThisPlaying) "Stop voice note" else "Play voice note")
+                                        }
+                                    } else {
+                                        Spacer(modifier = Modifier.width(1.dp))
+                                    }
+                                    TextButton(
+                                        onClick = { pendingDelete = item },
+                                        enabled = !isExporting,
+                                        modifier = Modifier.testTag("inbox-delete-${item.id}"),
+                                    ) {
+                                        Icon(Icons.Outlined.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Delete issue", color = MaterialTheme.colorScheme.error)
+                                    }
                                 }
                             }
                         }
@@ -239,20 +268,26 @@ internal fun BetaFeedbackInboxSheet(
                     CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
                         strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
+                        color = LocalContentColor.current,
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Preparing batch ZIP…")
                 } else {
                     Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Export all ${items.size} issue(s) as ZIP")
+                    Text(
+                        if (items.size == 1) {
+                            "Export 1 issue as ZIP"
+                        } else {
+                            "Export all ${items.size} issues as ZIP"
+                        },
+                    )
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
             Button(
                 onClick = { showClearConfirmation = true },
-                enabled = items.isNotEmpty() && !isExporting,
+                enabled = canClearInbox,
                 colors = ButtonDefaults.destructivePill(),
                 contentPadding = PillButtonContentPadding,
                 modifier =
@@ -290,10 +325,16 @@ internal fun BetaFeedbackInboxSheet(
     }
 
     if (showClearConfirmation) {
+        val clearDescription =
+            when {
+                items.isEmpty() -> "Any unreadable feedback entries on this device will be removed. Exported ZIPs are not affected."
+                items.size == 1 -> "This saved issue and its attachments will be deleted. Exported ZIPs are not affected."
+                else -> "All ${items.size} saved issues and their attachments will be deleted. Exported ZIPs are not affected."
+            }
         AlertDialog(
             onDismissRequest = { showClearConfirmation = false },
             title = { Text("Clear the entire feedback inbox?") },
-            text = { Text("All ${items.size} saved issues and their attachments will be deleted. Exported ZIPs are not affected.") },
+            text = { Text(clearDescription) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -309,7 +350,10 @@ internal fun BetaFeedbackInboxSheet(
     }
 
     previewScreenshot?.let { screenshot ->
-        val bitmap = remember(screenshot.absolutePath) { BitmapFactory.decodeFile(screenshot.absolutePath) }
+        val bitmap =
+            remember(screenshot.absolutePath, screenshot.lastModified()) {
+                AppScreenshotCapture.decodeSampledBitmap(screenshot, 1_280)
+            }
         AlertDialog(
             onDismissRequest = { previewScreenshot = null },
             title = { Text("Issue screenshot") },
@@ -329,3 +373,9 @@ internal fun BetaFeedbackInboxSheet(
         )
     }
 }
+
+internal fun formatInboxTimestamp(
+    instant: Instant,
+    zoneId: ZoneId = ZoneId.systemDefault(),
+    locale: Locale = Locale.getDefault(),
+): String = DateTimeFormatter.ofPattern("MMM d, yyyy · HH:mm", locale).withZone(zoneId).format(instant)

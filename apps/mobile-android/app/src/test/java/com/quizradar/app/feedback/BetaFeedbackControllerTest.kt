@@ -162,6 +162,65 @@ class BetaFeedbackControllerTest {
             controller.onDestroy()
         }
 
+    @Test
+    fun `detaching and reattaching activity preserves active draft across rotation`() {
+        val firstActivity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
+        val secondActivity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
+        val controller =
+            BetaFeedbackController(
+                activity = firstActivity,
+                scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined),
+                currentScreenName = { "Settings" },
+                captureScreenshot = { destination ->
+                    destination.parentFile?.mkdirs()
+                    destination.writeBytes(byteArrayOf(7, 8, 9))
+                    destination
+                },
+                sharePackage = { error("not expected") },
+                packageBuilder = BetaFeedbackPackageBuilder(testBuildInfo),
+            )
+
+        controller.openFeedback("Settings")
+        val draftId = controller.uiState.value.draft?.id
+        assertNotNull(draftId)
+
+        controller.detachActivity(firstActivity)
+        controller.attachActivity(secondActivity, currentScreenName = { "Settings" }, showMessage = {})
+
+        assertEquals(draftId, controller.uiState.value.draft?.id)
+        assertTrue(controller.uiState.value.draft?.screenshot?.isFile == true)
+        controller.onDestroy()
+        assertFalse(controller.uiState.value.draft?.directory?.exists() == true)
+    }
+
+    @Test
+    fun `stale cache pruning removes orphaned drafts and expired packages while keeping recent ones`() {
+        val cacheDir = Files.createTempDirectory("feedback-cache-prune").toFile()
+        val activeDraftDir = File(cacheDir, "beta-feedback/drafts/active-id").apply { mkdirs() }
+        val orphanedDraftDir = File(cacheDir, "beta-feedback/drafts/orphaned-id").apply { mkdirs() }
+        val packagesDir = File(cacheDir, "beta-feedback/packages").apply { mkdirs() }
+        val nowMs = 10_000_000_000L
+        val oldZip =
+            File(packagesDir, "old.zip").apply {
+                writeBytes(byteArrayOf(1))
+                setLastModified(nowMs - 48L * 60L * 60L * 1_000L)
+            }
+        val recentZips =
+            (1..3).map { index ->
+                File(packagesDir, "recent-$index.zip").apply {
+                    writeBytes(byteArrayOf(index.toByte()))
+                    setLastModified(nowMs - index * 60_000L)
+                }
+            }
+
+        BetaFeedbackController.pruneStaleCache(cacheDir, activeDraftId = "active-id", nowMs = nowMs)
+
+        assertTrue(activeDraftDir.exists())
+        assertFalse(orphanedDraftDir.exists())
+        assertFalse(oldZip.exists())
+        recentZips.forEach { assertTrue(it.exists()) }
+    }
+
     private companion object {
         val testBuildInfo =
             FeedbackBuildInfo(

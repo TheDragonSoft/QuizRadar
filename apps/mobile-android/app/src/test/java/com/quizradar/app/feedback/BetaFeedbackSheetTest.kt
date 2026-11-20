@@ -112,6 +112,33 @@ class BetaFeedbackSheetTest {
         assertEquals("10:00", formatRecordingTime(600))
     }
 
+    @Test
+    fun `saving to inbox shows spinner only on the save button`() {
+        composeTestRule.setContent {
+            QuizRadarTheme {
+                BetaFeedbackSheet(
+                    state =
+                        BetaFeedbackUiState(
+                            draft = draft(),
+                            pendingAction = BetaFeedbackPendingAction.SAVING_TO_INBOX,
+                        ),
+                    onDismiss = {},
+                    onRemoveScreenshot = {},
+                    onRecordClick = {},
+                    onDeleteVoiceNote = {},
+                    onPlaybackClick = {},
+                    onShare = {},
+                    onSaveToInbox = {},
+                    onClearError = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Saving to inbox…").performScrollTo().assertExists()
+        composeTestRule.onNodeWithText("Share this issue now").performScrollTo().assertExists()
+        composeTestRule.onNodeWithText("Preparing ZIP…").assertDoesNotExist()
+    }
+
     private fun draft(): BetaFeedbackDraft =
         BetaFeedbackDraft(
             id = "sheet-test",

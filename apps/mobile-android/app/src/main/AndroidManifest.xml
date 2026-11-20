@@ -96,7 +96,7 @@
         </receiver>
 
         <!-- Read-only, temporary beta-feedback ZIP sharing. The authority exposes
-             only cache/beta-feedback via feedback_paths.xml, never app data. -->
+             only cache/beta-feedback/packages via feedback_paths.xml, never drafts or app data. -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.feedback"

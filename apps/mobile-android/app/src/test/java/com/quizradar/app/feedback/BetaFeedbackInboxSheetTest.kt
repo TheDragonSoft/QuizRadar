@@ -1,6 +1,7 @@
 package com.quizradar.app.feedback
 
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -72,6 +73,54 @@ class BetaFeedbackInboxSheetTest {
         composeTestRule.onNodeWithText("Delete this saved issue?").assertExists()
         composeTestRule.onNodeWithText("Delete", substring = false).performSemanticsAction(SemanticsActions.OnClick)
         assertEquals(listOf("first"), deleted)
+    }
+
+    @Test
+    fun `saved voice note can be played from the inbox`() {
+        val voiceFile = File.createTempFile("inbox-voice", ".m4a").apply { writeBytes(byteArrayOf(1, 2)) }
+        var playedId: String? = null
+        try {
+            composeTestRule.setContent {
+                QuizRadarTheme {
+                    BetaFeedbackInboxSheet(
+                        items = listOf(item("voice-1", "With voice").copy(voiceNote = voiceFile)),
+                        loadErrors = emptyList(),
+                        isExporting = false,
+                        errorMessage = null,
+                        onDismiss = {},
+                        onDeleteItem = {},
+                        onClear = {},
+                        onExport = {},
+                        onToggleVoicePlayback = { playedId = it.id },
+                    )
+                }
+            }
+
+            composeTestRule.onNodeWithTag("inbox-voice-voice-1").performSemanticsAction(SemanticsActions.OnClick)
+            assertEquals("voice-1", playedId)
+        } finally {
+            voiceFile.delete()
+        }
+    }
+
+    @Test
+    fun `clear inbox remains enabled when only damaged items failed to load`() {
+        composeTestRule.setContent {
+            QuizRadarTheme {
+                BetaFeedbackInboxSheet(
+                    items = emptyList(),
+                    loadErrors = listOf("A saved feedback item could not be read (bad12345)."),
+                    isExporting = false,
+                    errorMessage = null,
+                    onDismiss = {},
+                    onDeleteItem = {},
+                    onClear = {},
+                    onExport = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag("beta-feedback-clear-inbox").assertIsEnabled()
     }
 
     private fun item(

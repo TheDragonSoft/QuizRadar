@@ -139,7 +139,9 @@ fun AppScaffold(
     onBetaFeedbackShakeEnabledChange: (Boolean) -> Unit = {},
     onOpenBetaFeedback: () -> Unit = {},
     betaFeedbackInboxCount: Int = 0,
+    betaFeedbackInboxHasErrors: Boolean = false,
     onOpenBetaFeedbackInbox: () -> Unit = {},
+    onActiveScreenChanged: (String) -> Unit = {},
 ) {
     val selectedTab by viewModel.selectedTab.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
@@ -256,6 +258,16 @@ fun AppScaffold(
 
     val isOnboardingCompleted by viewModel.onboardingCompleted.collectAsState()
 
+    LaunchedEffect(isOnboardingCompleted, isSettingsOpen, normalizedTab) {
+        onActiveScreenChanged(
+            when {
+                !isOnboardingCompleted -> "Onboarding"
+                isSettingsOpen -> "Settings"
+                else -> normalizedTab
+            },
+        )
+    }
+
     if (!isOnboardingCompleted) {
         when (val state = uiState) {
             is UiState.Ready -> {
@@ -296,6 +308,7 @@ fun AppScaffold(
                     onBetaFeedbackShakeEnabledChange = onBetaFeedbackShakeEnabledChange,
                     onOpenBetaFeedback = onOpenBetaFeedback,
                     betaFeedbackInboxCount = betaFeedbackInboxCount,
+                    betaFeedbackInboxHasErrors = betaFeedbackInboxHasErrors,
                     onOpenBetaFeedbackInbox = onOpenBetaFeedbackInbox,
                     snackbarHostState = snackbarHostState,
                 )

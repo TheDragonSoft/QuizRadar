@@ -35,7 +35,7 @@ class BetaFeedbackBuildGateTest {
 
         val paths = File(sourceRoot, "main/res/xml/feedback_paths.xml").readText()
         assertTrue(paths.contains("<cache-path"))
-        assertTrue(paths.contains("path=\"beta-feedback/\""))
+        assertTrue(paths.contains("path=\"beta-feedback/packages/\""))
         assertFalse(paths.contains("<files-path"))
         assertFalse(paths.contains("<root-path"))
         assertFalse(paths.contains("<external-path"))

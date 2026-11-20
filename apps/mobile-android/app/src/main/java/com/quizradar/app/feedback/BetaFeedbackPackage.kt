@@ -11,12 +11,19 @@ import java.io.FileOutputStream
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 
 internal const val MAX_FEEDBACK_NOTE_LENGTH = 4_000
+
+enum class BetaFeedbackPendingAction {
+    NONE,
+    SAVING_TO_INBOX,
+    SHARING_SINGLE,
+}
 
 data class BetaFeedbackDraft(
     val id: String,
@@ -32,14 +39,18 @@ data class BetaFeedbackUiState(
     val isRecording: Boolean = false,
     val recordingSeconds: Long = 0L,
     val isPlaying: Boolean = false,
-    val isExporting: Boolean = false,
+    val pendingAction: BetaFeedbackPendingAction = BetaFeedbackPendingAction.NONE,
     val errorMessage: String? = null,
     val isInboxOpen: Boolean = false,
     val isBatchExporting: Boolean = false,
+    val playingInboxItemId: String? = null,
     val inboxErrorMessage: String? = null,
-)
+) {
+    val isExporting: Boolean
+        get() = pendingAction != BetaFeedbackPendingAction.NONE
+}
 
-internal data class FeedbackBuildInfo(
+data class FeedbackBuildInfo(
     val appVersion: String,
     val buildType: String,
     val androidSdk: Int,
@@ -75,20 +86,25 @@ internal class BetaFeedbackPackageBuilder(
         val hasScreenshot = draft.screenshot?.isFile == true
         val hasVoiceNote = draft.voiceNote?.isFile == true
 
-        ZipOutputStream(FileOutputStream(output)).use { zip ->
-            zip.putText(
-                name = "agent-brief.md",
-                content = agentBrief(draft, cleanNote, hasScreenshot, hasVoiceNote),
-            )
-            if (hasScreenshot) zip.putFile("screenshot.png", requireNotNull(draft.screenshot), draft.createdAt)
-            if (hasVoiceNote) zip.putFile("voice-note.m4a", requireNotNull(draft.voiceNote), draft.createdAt)
+        try {
+            ZipOutputStream(FileOutputStream(output)).use { zip ->
+                zip.putText(
+                    name = "agent-brief.md",
+                    content = agentBrief(draft, cleanNote, hasScreenshot, hasVoiceNote, buildInfo),
+                )
+                if (hasScreenshot) zip.putFile("screenshot.png", requireNotNull(draft.screenshot), draft.createdAt)
+                if (hasVoiceNote) zip.putFile("voice-note.m4a", requireNotNull(draft.voiceNote), draft.createdAt)
+            }
+            check(output.isFile && output.length() > 0L) { "The feedback ZIP was not created" }
+            // Verify our own artifact before handing it to another application.
+            ZipFile(output).use { zip ->
+                check(zip.getEntry("agent-brief.md") != null) { "The feedback brief is missing" }
+            }
+            return output
+        } catch (error: Throwable) {
+            output.delete()
+            throw error
         }
-        check(output.isFile && output.length() > 0L) { "The feedback ZIP was not created" }
-        // Verify our own artifact before handing it to another application.
-        ZipFile(output).use { zip ->
-            check(zip.getEntry("agent-brief.md") != null) { "The feedback brief is missing" }
-        }
-        return output
     }
 
     fun buildBatch(
@@ -126,40 +142,46 @@ internal class BetaFeedbackPackageBuilder(
                 )
             }
 
-        ZipOutputStream(FileOutputStream(output)).use { zip ->
-            zip.putText("batch-index.md", batchIndex(entries, exportTime))
-            zip.putText("batch-manifest.json", batchManifest(entries, exportTime))
-            entries.forEach { entry ->
-                val item = entry.item
-                zip.putText(
-                    name = "${entry.directory}/agent-brief.md",
-                    content =
-                        agentBrief(
-                            draft = item.toDraft(),
-                            note = item.note,
-                            hasScreenshot = entry.screenshotPath != null,
-                            hasVoiceNote = entry.voiceNotePath != null,
-                        ),
-                )
-                if (entry.screenshotPath != null) {
-                    zip.putFile(entry.screenshotPath, requireNotNull(item.screenshot), item.createdAt)
-                }
-                if (entry.voiceNotePath != null) {
-                    zip.putFile(entry.voiceNotePath, requireNotNull(item.voiceNote), item.createdAt)
-                }
-            }
-        }
-        check(output.isFile && output.length() > 0L) { "The feedback batch ZIP was not created" }
-        ZipFile(output).use { zip ->
-            check(zip.getEntry("batch-index.md") != null) { "The batch index is missing" }
-            check(zip.getEntry("batch-manifest.json") != null) { "The batch manifest is missing" }
-            entries.forEach { entry ->
-                check(zip.getEntry("${entry.directory}/agent-brief.md") != null) {
-                    "An issue brief is missing from the batch"
+        try {
+            ZipOutputStream(FileOutputStream(output)).use { zip ->
+                zip.putText("batch-index.md", batchIndex(entries, exportTime))
+                zip.putText("batch-manifest.json", batchManifest(entries, exportTime))
+                entries.forEach { entry ->
+                    val item = entry.item
+                    zip.putText(
+                        name = "${entry.directory}/agent-brief.md",
+                        content =
+                            agentBrief(
+                                draft = item.toDraft(),
+                                note = item.note,
+                                hasScreenshot = entry.screenshotPath != null,
+                                hasVoiceNote = entry.voiceNotePath != null,
+                                itemBuildInfo = item.buildInfo ?: buildInfo,
+                            ),
+                    )
+                    if (entry.screenshotPath != null) {
+                        zip.putFile(entry.screenshotPath, requireNotNull(item.screenshot), item.createdAt)
+                    }
+                    if (entry.voiceNotePath != null) {
+                        zip.putFile(entry.voiceNotePath, requireNotNull(item.voiceNote), item.createdAt)
+                    }
                 }
             }
+            check(output.isFile && output.length() > 0L) { "The feedback batch ZIP was not created" }
+            ZipFile(output).use { zip ->
+                check(zip.getEntry("batch-index.md") != null) { "The batch index is missing" }
+                check(zip.getEntry("batch-manifest.json") != null) { "The batch manifest is missing" }
+                entries.forEach { entry ->
+                    check(zip.getEntry("${entry.directory}/agent-brief.md") != null) {
+                        "An issue brief is missing from the batch"
+                    }
+                }
+            }
+            return output
+        } catch (error: Throwable) {
+            output.delete()
+            throw error
         }
-        return output
     }
 
     private fun batchIndex(
@@ -247,6 +269,7 @@ internal class BetaFeedbackPackageBuilder(
         note: String,
         hasScreenshot: Boolean,
         hasVoiceNote: Boolean,
+        itemBuildInfo: FeedbackBuildInfo,
     ): String =
         buildString {
             appendLine("# QuizRadar beta feedback")
@@ -258,11 +281,11 @@ internal class BetaFeedbackPackageBuilder(
             appendLine("## Minimal diagnostics")
             appendLine()
             appendLine("- Created (UTC): ${draft.createdAt}")
-            appendLine("- App version: ${buildInfo.appVersion}")
-            appendLine("- Build type: ${buildInfo.buildType}")
+            appendLine("- App version: ${itemBuildInfo.appVersion}")
+            appendLine("- Build type: ${itemBuildInfo.buildType}")
             appendLine("- Current screen: ${draft.screenName}")
-            appendLine("- Android API: ${buildInfo.androidSdk}")
-            appendLine("- Device: ${buildInfo.device.ifBlank { "Not available" }}")
+            appendLine("- Android API: ${itemBuildInfo.androidSdk}")
+            appendLine("- Device: ${itemBuildInfo.device.ifBlank { "Not available" }}")
             appendLine("- Screenshot attached: ${if (hasScreenshot) "yes" else "no"}")
             appendLine("- Voice note attached: ${if (hasVoiceNote) "yes" else "no"}")
             appendLine()
@@ -335,7 +358,7 @@ private fun jsonString(value: String): String =
                 '\t' -> append("\\t")
                 else -> {
                     if (character.code < 0x20) {
-                        append(String.format("\\u%04x", character.code))
+                        append(String.format(Locale.US, "\\u%04x", character.code))
                     } else {
                         append(character)
                     }

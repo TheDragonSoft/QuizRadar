@@ -69,6 +69,31 @@ class BetaFeedbackInboxStoreTest {
         assertEquals(listOf("valid"), reloaded.items.value.map { it.id })
         assertEquals(1, reloaded.loadErrors.value.size)
         assertTrue(reloaded.loadErrors.value.single().contains("could not be read"))
+
+        reloaded.clear()
+        assertFalse(damaged.exists())
+        assertTrue(reloaded.items.value.isEmpty())
+        assertTrue(reloaded.loadErrors.value.isEmpty())
+        val afterClear = BetaFeedbackInboxStore(root)
+        assertTrue(afterClear.items.value.isEmpty())
+        assertTrue(afterClear.loadErrors.value.isEmpty())
+    }
+
+    @Test
+    fun `saved build info survives reload for accurate post-upgrade diagnostics`() {
+        val root = temporaryFolder.newFolder("inbox")
+        val store = BetaFeedbackInboxStore(root)
+        val capturedInfo =
+            FeedbackBuildInfo(
+                appVersion = "5.17.1",
+                buildType = "release",
+                androidSdk = 35,
+                device = "Pixel 9",
+            )
+        store.saveDraft(draft("first", hasVoice = false), "Saved before upgrade", capturedInfo)
+
+        val reloaded = BetaFeedbackInboxStore(root)
+        assertEquals(capturedInfo, reloaded.items.value.single().buildInfo)
     }
 
     private fun draft(

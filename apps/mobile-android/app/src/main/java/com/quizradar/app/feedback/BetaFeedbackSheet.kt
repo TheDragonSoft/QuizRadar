@@ -2,7 +2,6 @@ package com.quizradar.app.feedback
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -33,10 +32,12 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -46,6 +47,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -68,6 +70,7 @@ import com.quizradar.app.ui.theme.quietCardColors
 import com.quizradar.app.ui.theme.quietCardElevation
 import com.quizradar.app.ui.theme.quietTextFieldColors
 import com.quizradar.app.ui.theme.tonalPill
+import kotlinx.coroutines.launch
 
 @Composable
 fun BetaFeedbackHost(controller: BetaFeedbackController) {
@@ -89,6 +92,8 @@ fun BetaFeedbackHost(controller: BetaFeedbackController) {
             loadErrors = inboxLoadErrors,
             isExporting = state.isBatchExporting,
             errorMessage = state.inboxErrorMessage,
+            playingItemId = state.playingInboxItemId,
+            onToggleVoicePlayback = controller::toggleInboxVoicePlayback,
             onDismiss = controller::closeInbox,
             onDeleteItem = controller::deleteInboxItem,
             onClear = controller::clearInbox,
@@ -136,12 +141,29 @@ internal fun BetaFeedbackSheet(
 ) {
     val draft = state.draft ?: return
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetScope = rememberCoroutineScope()
     var note by rememberSaveable(draft.id) { mutableStateOf("") }
     var showDiscardConfirmation by remember { mutableStateOf(false) }
     var showScreenshotPreview by remember { mutableStateOf(false) }
+    val sheetState =
+        rememberModalBottomSheetState(
+            skipPartiallyExpanded = true,
+            confirmValueChange = { target ->
+                if (target == SheetValue.Hidden) {
+                    if (!state.isExporting) showDiscardConfirmation = true
+                    false
+                } else {
+                    true
+                }
+            },
+        )
     val hasVoiceNote = draft.voiceNote?.isFile == true
     val canShare = !state.isExporting && !state.isRecording && (note.isNotBlank() || hasVoiceNote)
+    val screenshot = draft.screenshot
+    val screenshotBitmap =
+        remember(screenshot?.absolutePath, screenshot?.lastModified()) {
+            screenshot?.takeIf { it.isFile }?.let { AppScreenshotCapture.decodeSampledBitmap(it, 1_024) }
+        }
 
     ModalBottomSheet(
         onDismissRequest = {
@@ -199,12 +221,7 @@ internal fun BetaFeedbackSheet(
             Spacer(modifier = Modifier.height(16.dp))
             Text("1. Review the screenshot", style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))
-            val screenshot = draft.screenshot
             if (screenshot?.isFile == true) {
-                val bitmap =
-                    remember(screenshot.absolutePath, screenshot.lastModified()) {
-                        BitmapFactory.decodeFile(screenshot.absolutePath)
-                    }
                 Card(
                     colors = CardDefaults.quietCardColors(),
                     border = CardDefaults.quietCardBorder(),
@@ -212,9 +229,9 @@ internal fun BetaFeedbackSheet(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
-                        if (bitmap != null) {
+                        if (screenshotBitmap != null) {
                             Image(
-                                bitmap = bitmap.asImageBitmap(),
+                                bitmap = screenshotBitmap.asImageBitmap(),
                                 contentDescription = "Screenshot attached to this feedback. Tap to enlarge.",
                                 contentScale = ContentScale.Fit,
                                 modifier =
@@ -372,11 +389,11 @@ internal fun BetaFeedbackSheet(
                         .defaultMinSize(minHeight = PillButtonMinHeight)
                         .testTag("beta-feedback-save-inbox"),
             ) {
-                if (state.isExporting) {
+                if (state.pendingAction == BetaFeedbackPendingAction.SAVING_TO_INBOX) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
                         strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
+                        color = LocalContentColor.current,
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Saving to inbox…")
@@ -398,11 +415,11 @@ internal fun BetaFeedbackSheet(
                         .defaultMinSize(minHeight = PillButtonMinHeight)
                         .testTag("beta-feedback-share"),
             ) {
-                if (state.isExporting) {
+                if (state.pendingAction == BetaFeedbackPendingAction.SHARING_SINGLE) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
                         strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
+                        color = LocalContentColor.current,
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Preparing ZIP…")
@@ -438,8 +455,14 @@ internal fun BetaFeedbackSheet(
     }
 
     if (showDiscardConfirmation) {
+        val keepEditing = {
+            showDiscardConfirmation = false
+            if (!sheetState.isVisible) {
+                sheetScope.launch { sheetState.show() }
+            }
+        }
         AlertDialog(
-            onDismissRequest = { showDiscardConfirmation = false },
+            onDismissRequest = keepEditing,
             title = { Text("Discard this feedback?") },
             text = { Text("The draft screenshot and voice note will be deleted. Nothing has been uploaded.") },
             confirmButton = {
@@ -453,21 +476,19 @@ internal fun BetaFeedbackSheet(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDiscardConfirmation = false }) { Text("Keep editing") }
+                TextButton(onClick = keepEditing) { Text("Keep editing") }
             },
         )
     }
 
-    val screenshot = draft.screenshot
     if (showScreenshotPreview && screenshot?.isFile == true) {
-        val bitmap = remember(screenshot.absolutePath) { BitmapFactory.decodeFile(screenshot.absolutePath) }
         AlertDialog(
             onDismissRequest = { showScreenshotPreview = false },
             title = { Text("Screenshot review") },
             text = {
-                if (bitmap != null) {
+                if (screenshotBitmap != null) {
                     Image(
-                        bitmap = bitmap.asImageBitmap(),
+                        bitmap = screenshotBitmap.asImageBitmap(),
                         contentDescription = "Full screenshot attached to this feedback",
                         contentScale = ContentScale.Fit,
                         modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp),

@@ -5,6 +5,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import kotlin.math.exp
 import kotlin.math.sqrt
 
 /** Requires three distinct acceleration peaks, not one hard movement or a noisy sensor. */
@@ -19,15 +20,15 @@ internal class ShakeMotionEvaluator(
     private var gravityY = 0f
     private var gravityZ = 0f
     private var initialized = false
-    private var peakCount = 0
-    private var firstPeakAtMs = 0L
+    private var lastSampleAtMs = Long.MIN_VALUE
+    private val recentPeakTimestampsMs = ArrayDeque<Long>()
     private var lastPeakAtMs = Long.MIN_VALUE
     private var lastTriggerAtMs = Long.MIN_VALUE
 
     fun reset() {
         initialized = false
-        peakCount = 0
-        firstPeakAtMs = 0L
+        lastSampleAtMs = Long.MIN_VALUE
+        recentPeakTimestampsMs.clear()
         lastPeakAtMs = Long.MIN_VALUE
         lastTriggerAtMs = Long.MIN_VALUE
     }
@@ -42,18 +43,22 @@ internal class ShakeMotionEvaluator(
             gravityX = x
             gravityY = y
             gravityZ = z
+            lastSampleAtMs = timestampMs
             initialized = true
             return false
         }
-        if (timestampMs < 0L || (lastPeakAtMs != Long.MIN_VALUE && timestampMs < lastPeakAtMs)) {
+        if (timestampMs < 0L || (lastSampleAtMs != Long.MIN_VALUE && timestampMs < lastSampleAtMs)) {
             reset()
             return false
         }
 
-        // A low-pass gravity estimate leaves the phone's linear acceleration.
-        gravityX = GRAVITY_ALPHA * gravityX + (1f - GRAVITY_ALPHA) * x
-        gravityY = GRAVITY_ALPHA * gravityY + (1f - GRAVITY_ALPHA) * y
-        gravityZ = GRAVITY_ALPHA * gravityZ + (1f - GRAVITY_ALPHA) * z
+        // Time-constant low-pass gravity estimate so 50 Hz emulators and 200-400 Hz phones behave consistently.
+        val dtMs = (timestampMs - lastSampleAtMs).coerceIn(1L, 1_000L)
+        lastSampleAtMs = timestampMs
+        val alpha = exp(-dtMs.toDouble() / GRAVITY_TIME_CONSTANT_MS).toFloat()
+        gravityX = alpha * gravityX + (1f - alpha) * x
+        gravityY = alpha * gravityY + (1f - alpha) * y
+        gravityZ = alpha * gravityZ + (1f - alpha) * z
         val linearX = x - gravityX
         val linearY = y - gravityY
         val linearZ = z - gravityZ
@@ -62,21 +67,20 @@ internal class ShakeMotionEvaluator(
         if (lastTriggerAtMs != Long.MIN_VALUE && timestampMs - lastTriggerAtMs < cooldownMs) return false
         if (lastPeakAtMs != Long.MIN_VALUE && timestampMs - lastPeakAtMs < minimumPeakGapMs) return false
 
-        if (peakCount == 0 || timestampMs - firstPeakAtMs > peakWindowMs) {
-            peakCount = 0
-            firstPeakAtMs = timestampMs
+        while (recentPeakTimestampsMs.isNotEmpty() && timestampMs - recentPeakTimestampsMs.first() > peakWindowMs) {
+            recentPeakTimestampsMs.removeFirst()
         }
-        peakCount += 1
+        recentPeakTimestampsMs.addLast(timestampMs)
         lastPeakAtMs = timestampMs
-        if (peakCount < requiredPeaks) return false
+        if (recentPeakTimestampsMs.size < requiredPeaks) return false
 
-        peakCount = 0
+        recentPeakTimestampsMs.clear()
         lastTriggerAtMs = timestampMs
         return true
     }
 
     private companion object {
-        const val GRAVITY_ALPHA = 0.8f
+        const val GRAVITY_TIME_CONSTANT_MS = 800.0
     }
 }
 
@@ -84,20 +88,21 @@ internal class ShakeDetector(
     context: Context,
     private val onShake: () -> Unit,
 ) : SensorEventListener {
-    private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-    private val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+    private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+    private val accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
     private val evaluator = ShakeMotionEvaluator()
     private var registered = false
 
     fun start(): Boolean {
         if (registered) return true
+        val manager = sensorManager ?: return false
         val sensor = accelerometer ?: return false
-        registered = sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_GAME)
+        registered = manager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_GAME)
         return registered
     }
 
     fun stop() {
-        if (registered) sensorManager.unregisterListener(this)
+        if (registered) sensorManager?.unregisterListener(this)
         registered = false
         evaluator.reset()
     }

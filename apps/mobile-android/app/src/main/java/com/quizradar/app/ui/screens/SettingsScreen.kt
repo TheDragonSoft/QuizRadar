@@ -133,6 +133,7 @@ fun SettingsScreen(
     onBetaFeedbackShakeEnabledChange: (Boolean) -> Unit = {},
     onOpenBetaFeedback: () -> Unit = {},
     betaFeedbackInboxCount: Int = 0,
+    betaFeedbackInboxHasErrors: Boolean = false,
     onOpenBetaFeedbackInbox: () -> Unit = {},
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     modifier: Modifier = Modifier,
@@ -1863,7 +1864,7 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                         Button(
                             onClick = onOpenBetaFeedbackInbox,
-                            enabled = betaFeedbackInboxCount > 0,
+                            enabled = betaFeedbackInboxCount > 0 || betaFeedbackInboxHasErrors,
                             colors = ButtonDefaults.tonalPill(),
                             contentPadding = PillButtonContentPadding,
                             modifier =
@@ -1873,10 +1874,10 @@ fun SettingsScreen(
                                     .testTag("beta-feedback-inbox-settings"),
                         ) {
                             Text(
-                                if (betaFeedbackInboxCount > 0) {
-                                    "Review & export all ($betaFeedbackInboxCount)"
-                                } else {
-                                    "Feedback inbox is empty"
+                                when {
+                                    betaFeedbackInboxCount > 0 -> "Review & export all ($betaFeedbackInboxCount)"
+                                    betaFeedbackInboxHasErrors -> "Review feedback inbox errors"
+                                    else -> "Feedback inbox is empty"
                                 },
                             )
                         }

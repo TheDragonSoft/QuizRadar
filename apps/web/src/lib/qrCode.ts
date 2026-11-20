@@ -14,6 +14,40 @@ export interface QrMatrix {
   modules: boolean[][];
 }
 
+/** Compact row-major QR payload emitted by Rust `core::sync::qr::QrMatrix` (IPC / WASM). */
+export interface FlatQrMatrix {
+  version: number;
+  size: number;
+  modules: string;
+}
+
+export function unpackFlatQrMatrix(flat: FlatQrMatrix): QrMatrix {
+  const { version, size, modules: raw } = flat;
+  if (raw.length !== size * size) {
+    throw new Error(
+      `Malformed QR matrix payload: expected ${size * size} modules, got ${raw.length}.`,
+    );
+  }
+  const modules: boolean[][] = Array.from({ length: size }, (_, y) =>
+    Array.from({ length: size }, (_, x) => raw.charCodeAt(y * size + x) === 49),
+  );
+  return { version, size, modules };
+}
+
+export function qrMatrixToSvgPath(matrix: QrMatrix | null | undefined): string {
+  if (!matrix) return "";
+  const { size, modules } = matrix;
+  const parts: string[] = [];
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      if (modules[y][x]) {
+        parts.push(`M${x + 4},${y + 4}h1v1h-1z`);
+      }
+    }
+  }
+  return parts.join("");
+}
+
 // Total error-correction codewords per block for Versions 1..40 at ECC Level L (ISO/IEC 18004 Table 9)
 const ECC_CODEWORDS_PER_BLOCK_L: readonly number[] = [
   0, // 0-index placeholder

@@ -71,6 +71,9 @@
                 <data
                     android:scheme="quizradar"
                     android:host="pair" />
+                <data
+                    android:scheme="quizradar"
+                    android:host="lan" />
             </intent-filter>
 
             <meta-data

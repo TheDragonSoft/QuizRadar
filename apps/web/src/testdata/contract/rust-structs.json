@@ -18,7 +18,7 @@
     "core/src/plan/conflicts.rs": "10e08f36c34eb1fbb628ed5733109d372b6d96cf083854d51ac6fd7b995f2dc3",
     "apps/desktop/src-tauri/src/commands/state.rs": "3646be4dc9df1eed38bb73223a149ad51badd3055c46fda2cbe700f73b5e3e58",
     "core/src/store/repo.rs": "87687f018f09df153db71d36defb3574075139c94ad4750b05f19e332f0cede1",
-    "core/src/ffi.rs": "8e16cf7be2b29583e577fea84e42958f2baca9dddc2816ab657b4253a81073a6",
+    "core/src/ffi.rs": "90dc6e2abe77ec323ed3a09aea0abfb24286b7a08e6731a3e51d640431e25a98",
     "core/src/store/db.rs": "7bb13b760def20b915a1c214ddad9ea60b8c37702bcd69e9fee780cff4ecd4db"
   },
   "structs": {
@@ -2375,6 +2375,44 @@
         "kind: String"
       ],
       "returns": "i32"
+    },
+    "encode_pair_sync_link": {
+      "parameters": [
+        "payload_json: String"
+      ],
+      "returns": "String"
+    },
+    "decode_pair_sync_link": {
+      "parameters": [
+        "raw_input: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "compact_pair_sync_payload": {
+      "parameters": [
+        "payload_json: String",
+        "max_link_bytes: u32"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "encode_pair_sync_qr": {
+      "parameters": [
+        "payload_json: String",
+        "max_link_bytes: u32"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "encode_qr_matrix": {
+      "parameters": [
+        "text: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "parse_lan_pair_uri": {
+      "parameters": [
+        "raw_input: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
     },
     "open_native_store": {
       "parameters": [

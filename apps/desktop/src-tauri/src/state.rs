@@ -113,6 +113,7 @@ pub struct AppState {
     /// cancel can never be "used up" by a later scan.
     pub cancel_tx: watch::Sender<u64>,
     pub http_client: reqwest::Client,
+    pub lan_pair: crate::lan_pair::LanPairManager,
 }
 
 /// Normalizes a user-supplied OAuth client id. Client ids are public, but a
@@ -211,6 +212,7 @@ impl AppState {
                 tx
             },
             http_client,
+            lan_pair: crate::lan_pair::LanPairManager::new(),
         }
     }
 

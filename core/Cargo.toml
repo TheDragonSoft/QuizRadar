@@ -30,6 +30,9 @@ futures = { version = "0.3", default-features = false, features = ["std", "async
 sha2 = "0.10"
 base64 = "0.22"
 getrandom = "0.2"
+# Pure-Rust raw deflate/inflate for single-implementation quizradar://pair sync
+# across Desktop, Android (UniFFI), and Web/PWA (WASM); already present in Cargo.lock.
+miniz_oxide = "0.8"
 uniffi = { version = "0.28", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

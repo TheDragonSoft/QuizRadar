@@ -622,3 +622,27 @@ pub async fn merge_sync_payload(
         .await
         .map_err(|e| format!("Failed to merge peer sync payload: {e}"))
 }
+
+#[tauri::command]
+pub async fn start_lan_pair_session(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<crate::lan_pair::LanPairSessionInfo, String> {
+    state
+        .lan_pair
+        .start(state.store.clone(), move |event| match event {
+            crate::lan_pair::LanPairEvent::Completed { merge_report } => {
+                let _ = app.emit("lan-pair-completed", merge_report);
+            }
+            crate::lan_pair::LanPairEvent::Expired { reason } => {
+                let _ = app.emit("lan-pair-expired", reason);
+            }
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn stop_lan_pair_session(state: State<'_, AppState>) -> Result<(), String> {
+    state.lan_pair.stop().await;
+    Ok(())
+}

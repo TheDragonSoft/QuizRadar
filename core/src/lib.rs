@@ -22,6 +22,7 @@ pub mod plan;
 pub mod sources;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod store;
+pub mod sync;
 pub mod types;
 
 // The UniFFI surface is native-only: it exposes the SQLite store and the

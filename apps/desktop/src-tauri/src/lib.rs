@@ -6,6 +6,7 @@
 pub mod auth_loopback;
 pub mod commands;
 pub mod keyring;
+pub mod lan_pair;
 pub mod state;
 pub mod tray;
 
@@ -192,6 +193,8 @@ pub fn run() -> tauri::Result<()> {
             commands::pull_cloud_backup,
             commands::export_sync_payload,
             commands::merge_sync_payload,
+            commands::start_lan_pair_session,
+            commands::stop_lan_pair_session,
             commands::google_login_start,
             commands::google_logout,
             commands::microsoft_login_start,

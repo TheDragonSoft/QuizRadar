@@ -48,9 +48,33 @@ pub fn format_updater_error(err_str: &str) -> String {
     }
 }
 
+fn performance_sandbox_suppresses_updates(
+    performance: bool,
+    data_dir: bool,
+    ephemeral: bool,
+) -> bool {
+    performance && data_dir && ephemeral
+}
+
 #[tauri::command]
 pub async fn check_update(app: AppHandle) -> Result<UpdateCheckResult, String> {
     let current_version = app.package_info().version.to_string();
+    // Performance runners must not race an external GitHub request. Require
+    // every sandbox marker so this cannot disable updates for a normal launch.
+    if performance_sandbox_suppresses_updates(
+        std::env::var("QUIZRADAR_PERFORMANCE_SANDBOX").is_ok_and(|v| v == "1"),
+        std::env::var("QUIZRADAR_DATA_DIR").is_ok_and(|v| !v.trim().is_empty()),
+        std::env::var("QUIZRADAR_EPHEMERAL_KEYRING")
+            .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true")),
+    ) {
+        return Ok(UpdateCheckResult {
+            available: false,
+            current_version,
+            latest_version: None,
+            body: None,
+            error: None,
+        });
+    }
 
     match app.updater() {
         Ok(updater) => match updater.check().await {
@@ -155,5 +179,22 @@ mod tests {
             format_updater_error("unexpected json shape"),
             "Update check unavailable — unexpected json shape"
         );
+    }
+
+    #[test]
+    fn performance_update_bypass_requires_the_complete_sandbox() {
+        assert!(performance_sandbox_suppresses_updates(true, true, true));
+        for (performance, data_dir, ephemeral) in [
+            (false, true, true),
+            (true, false, true),
+            (true, true, false),
+            (false, false, false),
+        ] {
+            assert!(!performance_sandbox_suppresses_updates(
+                performance,
+                data_dir,
+                ephemeral
+            ));
+        }
     }
 }

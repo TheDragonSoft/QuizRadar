@@ -25,6 +25,12 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_call:
+    inputs:
+      ref:
+        description: "Ref to validate (used by the release pipeline)"
+        required: false
+        type: string
   workflow_dispatch:
 
 permissions:
@@ -38,9 +44,11 @@ jobs:
   version:
     name: version, contract & multi-agent hygiene gates
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.ref || github.ref }}
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
@@ -58,7 +66,9 @@ jobs:
       # inline expansion) keep an empty value from collapsing into
       # `--base --head`.
       - name: multi-agent hygiene & fragment check (push)
-        if: github.event_name != 'pull_request'
+        # Release pipeline's workflow_call reuse already validated the tagged
+        # commit's content; branch handoff fragments apply to PR/push branches.
+        if: github.event_name == 'push'
         env:
           EVENT_BEFORE: ${{ github.event.before }}
         run: node tooling/agent-gate.mjs --ci --base "$EVENT_BEFORE" --head "$GITHUB_SHA"
@@ -76,8 +86,11 @@ jobs:
     name: rust (fmt / clippy / test)
     needs: version
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -108,8 +121,11 @@ jobs:
     name: web (lint / format / typecheck / vitest / wasm)
     needs: version
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -180,8 +196,11 @@ jobs:
     name: browser (behavioral smoke, blocking)
     needs: version
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -204,14 +223,25 @@ jobs:
         run: pnpm --dir apps/web exec playwright install --with-deps chromium
       - name: playwright behavioral smoke (no pixel comparison)
         run: pnpm --dir apps/web exec playwright test --grep-invert @visual
+      - name: upload behavioral failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-behavioral-results
+          path: apps/web/e2e-results
+          if-no-files-found: ignore
+          retention-days: 14
 
   browser-visual:
     name: browser (visual baselines, non-blocking)
     needs: version
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -241,11 +271,14 @@ jobs:
           if-no-files-found: ignore
 
   android:
-    name: android (ktlint / assembleDebug / test)
+    name: android (ktlint / lint / assemble / test / native abi)
     needs: version
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -267,13 +300,18 @@ jobs:
       # `tooling/build-android-libs.mjs` locates it via ANDROID_NDK_HOME.
       - name: install NDK r27b
         run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.1.12297006" > /dev/null
+          # Bounded license responses avoid yes(1) exiting nonzero on a broken pipe.
+          printf 'y\n%.0s' {1..100} | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.1.12297006" > /dev/null
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.1.12297006" >> "$GITHUB_ENV"
       - name: build native core cdylib for tests
         run: cargo build -p quizradar-core --features uniffi
       - uses: gradle/actions/setup-gradle@v4
       - name: ktlint
         run: ./gradlew ktlintCheck
+        working-directory: apps/mobile-android
+      # Explicit release-variant lint catches R8/ProGuard-only findings.
+      - name: lint release
+        run: ./gradlew lintRelease
         working-directory: apps/mobile-android
       - name: assembleDebug
         run: ./gradlew assembleDebug
@@ -282,17 +320,7 @@ jobs:
         run: ./gradlew testDebugUnitTest
         working-directory: apps/mobile-android
       - name: the debug APK must ship the native core
-        run: |
-          unzip -l apps/mobile-android/app/build/outputs/apk/debug/app-debug.apk \
-            | grep -E "lib/(arm64-v8a|x86_64)/libquizradar_core\.so"
-          # Only the ABIs the core is cross-built for may be advertised: a
-          # 32-bit device would install this APK and then crash with an
-          # UnsatisfiedLinkError the moment the core is called.
-          if unzip -l apps/mobile-android/app/build/outputs/apk/debug/app-debug.apk \
-            | grep -E "lib/(armeabi|armeabi-v7a|mips|mips64|x86)/"; then
-            echo "::error::the APK advertises ABIs the Rust core is not built for"
-            exit 1
-          fi
+        run: node tooling/verify-android-artifacts.mjs --kind apk --path apps/mobile-android/app/build/outputs/apk/debug/app-debug.apk
       # The release build is the one that ships, and it has its own R8
       # configuration (shrinking + obfuscation). A broken release ProGuard
       # rule only shows up in a release build, so CI builds one too.
@@ -302,49 +330,32 @@ jobs:
       - name: the release APK must ship the native core
         run: |
           APK=$(ls apps/mobile-android/app/build/outputs/apk/release/app-release*.apk | head -1)
-          unzip -l "$APK" \
-            | grep -E "lib/(arm64-v8a|x86_64)/libquizradar_core\.so"
-          if unzip -l "$APK" \
-            | grep -E "lib/(armeabi|armeabi-v7a|mips|mips64|x86)/"; then
-            echo "::error::the release APK advertises ABIs the Rust core is not built for"
-            exit 1
-          fi
+          node tooling/verify-android-artifacts.mjs --kind apk --path "$APK"
+      - name: upload debug apk for emulator smoke
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-debug-apk
+          path: apps/mobile-android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
 
+  # This job no longer duplicates the Android build: it consumes the exact
+  # artifact validated above and proves the app really installs and starts
+  # with its native Rust core on the API 35 emulator.
   android-emulator:
-    name: android emulator (api 35 headless / test / assemble / screenshot)
-    needs: version
+    name: android emulator (api 35 install / launch / native smoke)
+    needs: [version, android]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     continue-on-error: false
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: "21"
-      # `tooling/build-android-libs.mjs` (run by the Gradle `buildAndroidRustLibs`
-      # task) is a Node script, so the Android job needs Node on PATH too.
-      - uses: actions/setup-node@v4
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/download-artifact@v4
         with:
-          node-version: 20
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          # The APK is a Kotlin shell around the Rust core (UniFFI): cross-build
-          # for x86_64 (emulator) and aarch64 (devices).
-          targets: x86_64-linux-android, aarch64-linux-android
-      - uses: Swatinem/rust-cache@v2
-      # Install NDK r27b via sdkmanager — `tooling/build-android-libs.mjs` locates it via ANDROID_NDK_HOME.
-      - name: install NDK r27b
-        run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.1.12297006" > /dev/null
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.1.12297006" >> "$GITHUB_ENV"
-      # UniFFI codegen uses the native-architecture build of the cdylib to
-      # extract its metadata — compile it once upfront so the Gradle build
-      # can run uniffi-bindgen against it.
-      - name: build native core cdylib for tests
-        run: cargo build -p quizradar-core --features uniffi
-      - uses: gradle/actions/setup-gradle@v4
-      # Hardware acceleration for headless emulator on Linux
+          name: android-debug-apk
+          path: apps/mobile-android/app/build/outputs/apk/debug
       - name: enable KVM hardware acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -369,7 +380,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: false
           script: echo "Generated AVD snapshot for caching."
-      - name: run headless android emulator tests & assemble
+      - name: install, launch and verify the built app
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -382,28 +393,37 @@ jobs:
             adb wait-for-device
             mkdir -p apps/mobile-android/build/outputs/emulator-screenshots
             adb exec-out screencap -p > apps/mobile-android/build/outputs/emulator-screenshots/emulator-booted.png
-            apps/mobile-android/gradlew -p apps/mobile-android testDebugUnitTest ktlintCheck assembleDebug
-            adb exec-out screencap -p > apps/mobile-android/build/outputs/emulator-screenshots/emulator-post-build.png
-      - name: upload emulator screenshots
+            # Cached AVDs may contain a build signed with a different key.
+            # A fresh emulator may have nothing to uninstall; both are fine.
+            adb uninstall com.quizradar.app || true
+            adb install -r apps/mobile-android/app/build/outputs/apk/debug/app-debug.apk
+            adb logcat -c
+            adb shell am start -W -n com.quizradar.app/.MainActivity
+            sleep 10
+            test -n "$(adb shell pidof com.quizradar.app)" || { echo "::error::QuizRadar did not stay running after launch"; adb logcat -d > apps/mobile-android/build/outputs/emulator-screenshots/emulator-post-launch.logcat.txt; exit 1; }
+            adb logcat -d > apps/mobile-android/build/outputs/emulator-screenshots/emulator-post-launch.logcat.txt
+            ! grep -E "FATAL EXCEPTION|ANR in com\.quizradar\.app|UnsatisfiedLinkError" apps/mobile-android/build/outputs/emulator-screenshots/emulator-post-launch.logcat.txt || { echo "::error::QuizRadar startup hit a fatal/native-link failure"; exit 1; }
+            adb exec-out screencap -p > apps/mobile-android/build/outputs/emulator-screenshots/emulator-post-launch.png
+      - name: upload emulator evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: android-emulator-screenshots
-          path: apps/mobile-android/build/outputs/emulator-screenshots/*.png
+          path: |
+            apps/mobile-android/build/outputs/emulator-screenshots/*.png
+            apps/mobile-android/build/outputs/emulator-screenshots/emulator-post-launch.logcat.txt
           if-no-files-found: warn
-      - name: upload debug apk
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-debug-apk
-          path: apps/mobile-android/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+          retention-days: 14
 
   coverage:
     name: coverage (rust + web ratchet)
     needs: version
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -458,3 +478,34 @@ jobs:
             target/rust-coverage.json
             target/coverage
           if-no-files-found: error
+
+  # One check name branch protection can require. browser-visual remains
+  # deliberately non-blocking until its Linux baselines are verified; every
+  # job listed here is a real gate.
+  ci-success:
+    name: ci-success (all blocking gates)
+    needs: [version, rust, web, browser, android, android-emulator, coverage]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: fail if any blocking job did not succeed
+        env:
+          VERSION_RESULT: ${{ needs.version.result }}
+          RUST_RESULT: ${{ needs.rust.result }}
+          WEB_RESULT: ${{ needs.web.result }}
+          BROWSER_RESULT: ${{ needs.browser.result }}
+          ANDROID_RESULT: ${{ needs.android.result }}
+          EMULATOR_RESULT: ${{ needs.android-emulator.result }}
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
+        run: |
+          set -e
+          failed=0
+          for check in "version:$VERSION_RESULT" "rust:$RUST_RESULT" "web:$WEB_RESULT" "browser:$BROWSER_RESULT" "android:$ANDROID_RESULT" "android-emulator:$EMULATOR_RESULT" "coverage:$COVERAGE_RESULT"; do
+            name="${check%%:*}"
+            result="${check##*:}"
+            if [ "$result" != "success" ]; then
+              echo "::error::required CI job $name finished as $result"
+              failed=1
+            fi
+          done
+          exit "$failed"

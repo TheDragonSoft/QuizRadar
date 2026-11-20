@@ -3696,6 +3696,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "quizradar-performance-core"
+version = "5.19.1"
+dependencies = [
+ "chrono",
+ "quizradar-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "quizradar-wasm"
 version = "5.19.1"
 dependencies = [

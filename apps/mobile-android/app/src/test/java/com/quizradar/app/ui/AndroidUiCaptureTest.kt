@@ -1,5 +1,6 @@
 package com.quizradar.app.ui
 
+import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -48,6 +49,7 @@ import java.time.LocalDate
  * evergreen — same honesty contract as the web workbench fixtures.
  */
 @OptIn(ExperimentalMaterial3Api::class)
+@SuppressLint("StateFlowValueCalledInComposition")
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(qualifiers = "w390dp-h844dp")

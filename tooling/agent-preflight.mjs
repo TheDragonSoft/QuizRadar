@@ -223,6 +223,9 @@ if (mySurfaces.includes("web") || mySurfaces.includes("tooling")) {
   requiredGates.push("pnpm typecheck");
   requiredGates.push("pnpm test");
 }
+if (mySurfaces.includes("tooling")) {
+  requiredGates.push("pnpm test:tooling");
+}
 if (mySurfaces.includes("desktop")) {
   // The Tauri shell is a workspace member; `cargo test --workspace` above
   // already covers it — this targeted pass gives faster feedback on
@@ -233,7 +236,9 @@ if (mySurfaces.includes("ci")) {
   requiredGates.push("pnpm test:tooling");
 }
 if (mySurfaces.includes("android")) {
-  requiredGates.push("cd apps/mobile-android; .\\gradlew.bat ktlintCheck testDebugUnitTest");
+  requiredGates.push(
+    "cd apps/mobile-android; .\\gradlew.bat ktlintCheck lintRelease testDebugUnitTest",
+  );
 }
 
 const warnings = [];

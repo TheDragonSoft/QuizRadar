@@ -2836,11 +2836,16 @@ class QuizRadarViewModel(
     }
 
     fun mergePeerSyncLink(linkOrPayload: String) {
+        val trimmed = linkOrPayload.trim()
+        if (trimmed.startsWith("quizradar://lan?")) {
+            syncWithLanPairUri(trimmed)
+            return
+        }
         viewModelScope.launch {
             try {
                 val payloadJson =
                     withContext(Dispatchers.Default) {
-                        com.quizradar.app.core.PairSyncCodec.decode(linkOrPayload)
+                        com.quizradar.app.core.PairSyncCodec.decode(trimmed)
                     }
                 val reportJson = callCore { core.mergeSyncPayload(payloadJson, clockDate()) }
                 val report = com.quizradar.app.model.QuizRadarJsonParser.parseMergeReportSummary(reportJson)
@@ -2848,6 +2853,26 @@ class QuizRadarViewModel(
                 showToast(report)
             } catch (e: Exception) {
                 showToast("Peer sync failed: ${e.message}")
+            }
+        }
+    }
+
+    fun syncWithLanPairUri(lanUri: String) {
+        viewModelScope.launch {
+            try {
+                showToast("Connecting to Desktop over encrypted local Wi-Fi…")
+                val localPayload = callCore { core.exportSyncPayload("quizradar-android") }
+                val exchange =
+                    withContext(Dispatchers.IO) {
+                        com.quizradar.app.core.LanPairClient.exchange(lanUri, localPayload)
+                    }
+                val reportJson =
+                    callCore { core.mergeSyncPayload(exchange.desktopPayloadJson, clockDate()) }
+                val report = com.quizradar.app.model.QuizRadarJsonParser.parseMergeReportSummary(reportJson)
+                refreshState()
+                showToast("Wi-Fi sync complete — $report")
+            } catch (e: Exception) {
+                showToast("Wi-Fi sync failed: ${e.message}")
             }
         }
     }

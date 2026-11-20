@@ -280,9 +280,15 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        // 3. Serverless Peer Sync Deep Link (quizradar://pair?d=...)
+        // 3. Serverless & Ephemeral LAN Peer Sync Deep Links (quizradar://pair?d=... | quizradar://lan?...)
         if (data != null && data.scheme == "quizradar" && data.host == "pair") {
             viewModel.mergePeerSyncLink(data.toString())
+            intent.data = null
+            intent.action = null
+            return
+        }
+        if (data != null && data.scheme == "quizradar" && data.host == "lan") {
+            viewModel.syncWithLanPairUri(data.toString())
             intent.data = null
             intent.action = null
             return

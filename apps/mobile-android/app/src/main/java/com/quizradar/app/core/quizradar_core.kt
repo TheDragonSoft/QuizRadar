@@ -901,6 +901,18 @@ internal open class UniffiVTableCallbackInterfaceFfiTokenProvider(
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1034,13 +1046,23 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_calculate_study_cushion(`scheduleJson`: RustBuffer.ByValue,`eventsJson`: RustBuffer.ByValue,`assessmentsJson`: RustBuffer.ByValue,`tasksJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,`wakingHours`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_quizradar_core_fn_func_compact_pair_sync_payload(`payloadJson`: RustBuffer.ByValue,`maxLinkBytes`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_core_version(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_quizradar_core_fn_func_decode_pair_sync_link(`rawInput`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_derive_dashboard_summary(`assessmentsJson`: RustBuffer.ByValue,`topicsJson`: RustBuffer.ByValue,`eventsJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_derive_study_tasks(`assessmentsJson`: RustBuffer.ByValue,`topicsJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,`academicTrack`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_detect_schedule_conflicts(`assessmentsJson`: RustBuffer.ByValue,`eventsJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_quizradar_core_fn_func_encode_pair_sync_link(`payloadJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_quizradar_core_fn_func_encode_pair_sync_qr(`payloadJson`: RustBuffer.ByValue,`maxLinkBytes`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_quizradar_core_fn_func_encode_qr_matrix(`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_exchange_oauth_code(`provider`: RustBuffer.ByValue,`clientId`: RustBuffer.ByValue,`code`: RustBuffer.ByValue,`redirectUri`: RustBuffer.ByValue,`codeVerifier`: RustBuffer.ByValue,`tokenEndpointOverride`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1063,6 +1085,8 @@ internal interface UniffiLib : Library {
     fun uniffi_quizradar_core_fn_func_parse_email(`emailJson`: RustBuffer.ByValue,`scheduleJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_parse_ics(`content`: RustBuffer.ByValue,`scheduleJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,`offsetSeconds`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_quizradar_core_fn_func_parse_lan_pair_uri(`rawInput`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_radar_order_list(`assessmentsJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1190,13 +1214,23 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_quizradar_core_checksum_func_calculate_study_cushion(
     ): Short
+    fun uniffi_quizradar_core_checksum_func_compact_pair_sync_payload(
+    ): Short
     fun uniffi_quizradar_core_checksum_func_core_version(
+    ): Short
+    fun uniffi_quizradar_core_checksum_func_decode_pair_sync_link(
     ): Short
     fun uniffi_quizradar_core_checksum_func_derive_dashboard_summary(
     ): Short
     fun uniffi_quizradar_core_checksum_func_derive_study_tasks(
     ): Short
     fun uniffi_quizradar_core_checksum_func_detect_schedule_conflicts(
+    ): Short
+    fun uniffi_quizradar_core_checksum_func_encode_pair_sync_link(
+    ): Short
+    fun uniffi_quizradar_core_checksum_func_encode_pair_sync_qr(
+    ): Short
+    fun uniffi_quizradar_core_checksum_func_encode_qr_matrix(
     ): Short
     fun uniffi_quizradar_core_checksum_func_exchange_oauth_code(
     ): Short
@@ -1219,6 +1253,8 @@ internal interface UniffiLib : Library {
     fun uniffi_quizradar_core_checksum_func_parse_email(
     ): Short
     fun uniffi_quizradar_core_checksum_func_parse_ics(
+    ): Short
+    fun uniffi_quizradar_core_checksum_func_parse_lan_pair_uri(
     ): Short
     fun uniffi_quizradar_core_checksum_func_radar_order_list(
     ): Short
@@ -1354,7 +1390,13 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_quizradar_core_checksum_func_calculate_study_cushion() != 36464.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_quizradar_core_checksum_func_compact_pair_sync_payload() != 43441.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_quizradar_core_checksum_func_core_version() != 41050.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_func_decode_pair_sync_link() != 14562.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_func_derive_dashboard_summary() != 48307.toShort()) {
@@ -1364,6 +1406,15 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_func_detect_schedule_conflicts() != 35150.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_func_encode_pair_sync_link() != 31563.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_func_encode_pair_sync_qr() != 26744.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_func_encode_qr_matrix() != 50212.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_func_exchange_oauth_code() != 16759.toShort()) {
@@ -1397,6 +1448,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_func_parse_ics() != 45175.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_func_parse_lan_pair_uri() != 32507.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_func_radar_order_list() != 15281.toShort()) {
@@ -4190,11 +4244,38 @@ public object FfiConverterOptionalTypeFfiTokenProvider: FfiConverterRustBuffer<F
     )
     }
     
+
+        /**
+         * Conditionally applies two-stage compaction to `payload_json` when its compressed
+         * link exceeds `max_link_bytes`. Returns JSON `{ "json": ..., "compacted": bool }`.
+         */
+    @Throws(QuizRadarFfiException::class) fun `compactPairSyncPayload`(`payloadJson`: kotlin.String, `maxLinkBytes`: kotlin.UInt): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(QuizRadarFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_compact_pair_sync_payload(
+        FfiConverterString.lower(`payloadJson`),FfiConverterUInt.lower(`maxLinkBytes`),_status)
+}
+    )
+    }
+    
  fun `coreVersion`(): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_core_version(
         _status)
+}
+    )
+    }
+    
+
+        /**
+         * Decodes and validates a `quizradar://pair?d=...` link into `BackupPayload` JSON.
+         */
+    @Throws(QuizRadarFfiException::class) fun `decodePairSyncLink`(`rawInput`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(QuizRadarFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_decode_pair_sync_link(
+        FfiConverterString.lower(`rawInput`),_status)
 }
     )
     }
@@ -4225,6 +4306,46 @@ public object FfiConverterOptionalTypeFfiTokenProvider: FfiConverterRustBuffer<F
     uniffiRustCallWithError(QuizRadarFfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_detect_schedule_conflicts(
         FfiConverterString.lower(`assessmentsJson`),FfiConverterString.lower(`eventsJson`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Encodes a data-only `BackupPayload` JSON into a compressed `quizradar://pair?d=...` link.
+         */ fun `encodePairSyncLink`(`payloadJson`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_encode_pair_sync_link(
+        FfiConverterString.lower(`payloadJson`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Encodes `payload_json` for QR pairing using two-stage compaction only when needed.
+         * Returns JSON `{ "link": ..., "compacted": bool, "fits_qr": bool, "byte_len": number }`.
+         */
+    @Throws(QuizRadarFfiException::class) fun `encodePairSyncQr`(`payloadJson`: kotlin.String, `maxLinkBytes`: kotlin.UInt): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(QuizRadarFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_encode_pair_sync_qr(
+        FfiConverterString.lower(`payloadJson`),FfiConverterUInt.lower(`maxLinkBytes`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Encodes arbitrary UTF-8 text into a Byte-mode ECC Level-L ISO/IEC 18004 QR matrix.
+         * Returns JSON `{ "version": u8, "size": u32, "modules": "0101..." }`.
+         */
+    @Throws(QuizRadarFfiException::class) fun `encodeQrMatrix`(`text`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(QuizRadarFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_encode_qr_matrix(
+        FfiConverterString.lower(`text`),_status)
 }
     )
     }
@@ -4334,6 +4455,20 @@ public object FfiConverterOptionalTypeFfiTokenProvider: FfiConverterRustBuffer<F
     uniffiRustCallWithError(QuizRadarFfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_parse_ics(
         FfiConverterString.lower(`content`),FfiConverterString.lower(`scheduleJson`),FfiConverterString.lower(`refDateIso`),FfiConverterInt.lower(`offsetSeconds`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Parses and SSRF-validates an ephemeral Desktop LAN HTTPS pairing URI (`quizradar://lan?...`).
+         * Rejects non-LAN/public IPv4 addresses, privileged ports, and malformed tokens/fingerprints.
+         */
+    @Throws(QuizRadarFfiException::class) fun `parseLanPairUri`(`rawInput`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(QuizRadarFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_parse_lan_pair_uri(
+        FfiConverterString.lower(`rawInput`),_status)
 }
     )
     }

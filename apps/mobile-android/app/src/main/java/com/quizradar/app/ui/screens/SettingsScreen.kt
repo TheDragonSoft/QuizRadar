@@ -1577,6 +1577,7 @@ fun SettingsScreen(
                     var peerSyncLinkInput by remember { mutableStateOf("") }
                     var peerQrMatrix by remember { mutableStateOf<QrCodeEncoder.QrMatrix?>(null) }
                     var peerQrCompacted by remember { mutableStateOf(false) }
+                    var showExpandedQrDialog by remember { mutableStateOf(false) }
 
                     Text(
                         text =
@@ -1701,6 +1702,7 @@ fun SettingsScreen(
                                             .size(224.dp)
                                             .clip(RoundedCornerShape(12.dp))
                                             .background(Color.White)
+                                            .clickable { showExpandedQrDialog = true }
                                             .padding(8.dp),
                                 ) {
                                     Canvas(modifier = Modifier.fillMaxSize()) {
@@ -1729,7 +1731,7 @@ fun SettingsScreen(
                                 Spacer(modifier = Modifier.height(10.dp))
                                 Text(
                                     text =
-                                        "Scan with another phone's camera or upload on Desktop/Web " +
+                                        "Tap QR to enlarge. Scan with another phone's camera or Desktop webcam " +
                                             "(QR v${activeQr.version}-L" +
                                             (if (peerQrCompacted) ", compact mode" else "") +
                                             ").",
@@ -1737,6 +1739,79 @@ fun SettingsScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
+                        }
+
+                        if (showExpandedQrDialog) {
+                            androidx.compose.runtime.DisposableEffect(Unit) {
+                                val window = (context as? android.app.Activity)?.window
+                                val prevBrightness = window?.attributes?.screenBrightness
+                                if (window != null) {
+                                    val lp = window.attributes
+                                    lp.screenBrightness = 1.0f
+                                    window.attributes = lp
+                                }
+                                onDispose {
+                                    if (window != null && prevBrightness != null) {
+                                        val lp = window.attributes
+                                        lp.screenBrightness = prevBrightness
+                                        window.attributes = lp
+                                    }
+                                }
+                            }
+                            AlertDialog(
+                                onDismissRequest = { showExpandedQrDialog = false },
+                                title = { Text("Enlarged Pairing QR Code") },
+                                text = {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Box(
+                                            contentAlignment = Alignment.Center,
+                                            modifier =
+                                                Modifier
+                                                    .size(296.dp)
+                                                    .clip(RoundedCornerShape(14.dp))
+                                                    .background(Color.White)
+                                                    .padding(10.dp),
+                                        ) {
+                                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                                val totalModules = activeQr.size + 8
+                                                val cellSize = floor(size.minDimension / totalModules).coerceAtLeast(1f)
+                                                val gridSize = cellSize * totalModules
+                                                val origin = floor((size.minDimension - gridSize) / 2f)
+                                                drawRect(color = Color.White, size = size)
+                                                for (y in 0 until activeQr.size) {
+                                                    for (x in 0 until activeQr.size) {
+                                                        if (activeQr.get(x, y)) {
+                                                            drawRect(
+                                                                color = Color.Black,
+                                                                topLeft =
+                                                                    Offset(
+                                                                        origin + (x + 4) * cellSize,
+                                                                        origin + (y + 4) * cellSize,
+                                                                    ),
+                                                                size = Size(cellSize, cellSize),
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Text(
+                                            text = "Screen brightness boosted for faster camera focus (QR v${activeQr.version}-L).",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                },
+                                confirmButton = {
+                                    TextButton(onClick = { showExpandedQrDialog = false }) {
+                                        Text("Close")
+                                    }
+                                },
+                            )
                         }
                     }
 
@@ -1748,15 +1823,15 @@ fun SettingsScreen(
                                 Column {
                                     Text(
                                         text =
-                                            "Paste the quizradar://pair?d=... link from your desktop " +
-                                                "or web companion to additively merge data.",
+                                            "Paste a quizradar://lan?... Wi-Fi sync URI or quizradar://pair?d=... " +
+                                                "offline link from Desktop/Web to additively merge data.",
                                         style = MaterialTheme.typography.bodySmall,
                                     )
                                     Spacer(modifier = Modifier.height(12.dp))
                                     OutlinedTextField(
                                         value = peerSyncLinkInput,
                                         onValueChange = { peerSyncLinkInput = it },
-                                        placeholder = { Text("quizradar://pair?d=...") },
+                                        placeholder = { Text("quizradar://lan?... or quizradar://pair?d=...") },
                                         singleLine = true,
                                         colors = OutlinedTextFieldDefaults.quietTextFieldColors(),
                                         modifier = Modifier.fillMaxWidth(),

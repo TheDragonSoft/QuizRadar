@@ -14,4 +14,5 @@ serde_json = { workspace = true }
 chrono = { workspace = true }
 # The browser tier binds the pure modules only — the UniFFI surface (SQLite
 # store + reqwest/tokio fetchers) is native-only and must not reach wasm32.
-quizradar-core = { path = "../..", default-features = false }
+# `sync` is a pure module (QR + pair codec) and is explicitly opted into here.
+quizradar-core = { path = "../..", default-features = false, features = ["sync"] }

@@ -8,6 +8,7 @@ import {
   extractPairPayloadParam,
   stripLosslessPairSyncFields,
 } from "./pairSync";
+import { getWasmEngine } from "../pwadapters/wasmBridge";
 
 describe("pairSync codec (quizradar://pair)", () => {
   it("round-trips a data-only BackupPayload JSON via deflate-raw + base64url", async () => {
@@ -152,6 +153,38 @@ describe("pairSync codec (quizradar://pair)", () => {
     const link = await encodePairSyncLink(largePayload);
     const decoded = await decodePairSyncLink(link);
     expect(JSON.parse(decoded)).toEqual(JSON.parse(largePayload));
+  });
+
+  it("interoperates wire-for-wire with Rust core WASM deflate-raw codec and LAN URI validator", async () => {
+    const wasm = await getWasmEngine();
+    const sample = JSON.stringify({
+      schema_version: 1,
+      client_device_id: "quizradar-android",
+      updated_at: "2026-11-20T12:00:00Z",
+      schedule: { courses: [{ id: "CSE241", name: "Algorithms", color: "#1a73e8" }], slots: [] },
+      assessments: [{ id: "a1", course_id: "CSE241", title: "Final Exam" }],
+      completed_topics: { "a1::h1": true },
+      grades: {},
+      custom_events: [],
+      feeds: [],
+    });
+
+    // Rust WASM encode -> Web CompressionStream decode
+    const rustLink = wasm.encode_pair_sync_link(sample);
+    const decodedByWeb = await decodePairSyncLink(rustLink);
+    expect(JSON.parse(decodedByWeb)).toEqual(JSON.parse(sample));
+
+    // Web CompressionStream encode -> Rust WASM decode
+    const webLink = await encodePairSyncLink(sample);
+    const decodedByRust = wasm.decode_pair_sync_link(webLink);
+    expect(JSON.parse(decodedByRust)).toEqual(JSON.parse(sample));
+
+    // SSRF guard in Rust WASM rejects public IPv4 LAN URIs
+    const validFp = `${"A".repeat(42)}A`;
+    const validLan = `quizradar://lan?h=192.168.1.42&p=51823&t=${"A".repeat(43)}&fp=${validFp}&v=1`;
+    expect(JSON.parse(wasm.parse_lan_pair_uri(validLan)).host).toBe("192.168.1.42");
+    const publicLan = `quizradar://lan?h=8.8.8.8&p=51823&t=${"A".repeat(43)}&fp=${validFp}&v=1`;
+    expect(() => wasm.parse_lan_pair_uri(publicLan)).toThrow(/non-local address/);
   });
 
   it("rejects malformed or missing payload links cleanly", async () => {

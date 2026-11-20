@@ -614,6 +614,41 @@ impl QuizRadarWasm {
         serde_json::to_string(&result)
             .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
     }
+
+    pub fn encode_pair_sync_link(&self, payload_json: &str) -> String {
+        quizradar_core::sync::pair::encode_pair_sync_link(payload_json)
+    }
+
+    pub fn decode_pair_sync_link(&self, raw_input: &str) -> Result<String, JsValue> {
+        quizradar_core::sync::pair::decode_pair_sync_link(raw_input)
+            .map_err(|e| JsValue::from_str(&e))
+    }
+
+    pub fn encode_pair_sync_qr(
+        &self,
+        payload_json: &str,
+        max_link_bytes: u32,
+    ) -> Result<String, JsValue> {
+        let res =
+            quizradar_core::sync::pair::encode_pair_sync_qr(payload_json, max_link_bytes as usize)
+                .map_err(|e| JsValue::from_str(&e))?;
+        serde_json::to_string(&res)
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+    }
+
+    pub fn encode_qr_matrix(&self, text: &str) -> Result<String, JsValue> {
+        let matrix =
+            quizradar_core::sync::qr::encode_qr_matrix(text).map_err(|e| JsValue::from_str(&e))?;
+        serde_json::to_string(&matrix)
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+    }
+
+    pub fn parse_lan_pair_uri(&self, raw_input: &str) -> Result<String, JsValue> {
+        let parsed = quizradar_core::sync::pair::parse_lan_pair_uri(raw_input)
+            .map_err(|e| JsValue::from_str(&e))?;
+        serde_json::to_string(&parsed)
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+    }
 }
 
 impl Default for QuizRadarWasm {

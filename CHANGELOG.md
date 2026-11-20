@@ -2,6 +2,31 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.20.0] — 2026-11-20
+
+### 🤝 Agent & Contributor Summaries
+
+- **[tooling, ci]** Astro 7 requires Node >=22.23.4; bump every setup-node pin (ci, pages, performance, pr-ui-screenshots, release, version-bump) from 20 to 22 and root engines to >=22.23.4 so the dependabot astro 5.18.2 -> 7.4.7 upgrade passes typecheck. Landing verified locally on astro 7: astro sync + tsc clean, 8/8 vitest, static build complete.
+
+- **[web, desktop, android, tooling, docs]** Harden performance CI harnesses: retry Android ADB device-offline transients and time desktop native IPC as an in-page median of five round trips to remove automation jitter; document both measurement details.
+
+- **[core, desktop, web, android, docs]** Add ephemeral on-demand Desktop LAN HTTPS device pairing (`quizradar://lan?...`) and consolidate peer sync & QR encoding into pure Rust `core/`:
+
+  - **Core (`core/src/sync/`)**: Implement ISO/IEC 18004 QR matrix encoding, typed two-stage `BackupPayload` compaction, raw-DEFLATE `quizradar://pair` codec (`miniz_oxide = "0.8"`, already in `Cargo.lock`), and SSRF-safe private-IPv4 `quizradar://lan` URI validation once in pure Rust, exported via both UniFFI (Android) and WASM (Web/PWA).
+  - **Desktop (`apps/desktop/src-tauri/src/lan_pair.rs`)**: Add on-demand ephemeral TLS pairing (`start_lan_pair_session` / `stop_lan_pair_session`) using per-session self-signed X.509 certificates (`rcgen = "0.13"` with `rustls`/`tokio-rustls` already in `Cargo.lock`) whose SHA-256 fingerprint is pinned in the QR code plus a single-use 256-bit bearer token; merges bidirectionally in one scan with no 2.9 KB cap and auto-closes after 1 sync or 5 minutes. Record the 2026-11-20 maintainer override in `AGENTS.md`.
+  - **Android (`apps/mobile-android/`)**: Add `LanPairClient.kt` (pinned SHA-256 `X509TrustManager` over `HttpsURLConnection`, preserving `usesCleartextTraffic="false"`), `quizradar://lan` deep-link intent filter and `MainActivity` routing, thin UniFFI facades for `QrCodeEncoder.kt` and `PairSyncCodec.kt` (removing ~700 LOC of duplicated Kotlin logic), and tap-to-enlarge full-width QR dialog with temporary screen brightness boost in `SettingsScreen.kt`.
+  - **Web / Desktop UI (`apps/web/`)**: Add Instant Local Wi-Fi Sync panel in `CloudSyncModal.tsx` with live countdown and Tauri event listeners, live webcam QR scanner (`getUserMedia`) + pure-JS `jsqr` (`1.4.0`) fallback decoder so Android-to-Desktop/Firefox scanning works without `BarcodeDetector`, tap-to-enlarge QR lightbox, and end-to-end `jsQR` + Rust WASM bit-for-bit decode verification tests.
+
+- **[core, web]** Gate the new sync module (QR matrix, pair codec, LAN URI parse) plus its miniz_oxide dependency behind a cargo feature: core gains default=[sync,uniffi] with sync=[dep:miniz_oxide], lib.rs and the six UniFFI exports are cfg(feature=sync)-gated, and the wasm bindings crate explicitly opts in. Rationale: the performance sampler builds quizradar-core with default-features=false, and with sync compiled in unconditionally the Linux release codegen for store/planner hot paths shifted +13-22% (reproduced on two CI runners with zero-overlap sample distributions; not reproducible on Windows). Gating returns the sampler's codegen to exact-main while every product shell keeps the feature.
+
+### 🚀 New Features
+
+- `01ba896` feat(sync): add ephemeral Desktop LAN HTTPS pairing and unify QR/pair sync in Rust core (#46)
+
+### 🔧 Maintenance, Docs & Tests
+
+- `7e07343` chore(deps): bump astro from 5.18.2 to 7.4.7 (#45)
+
 ## [5.19.2] — 2026-11-20
 
 ### 🤝 Agent & Contributor Summaries

@@ -75,4 +75,35 @@ class ShakeMotionEvaluatorTest {
         }
         assertTrue("200 Hz accelerometers should trigger consistently", triggered)
     }
+
+    @Test
+    fun `linear acceleration mode triggers on three peaks without gravity filtering`() {
+        val evaluator = ShakeMotionEvaluator(removeGravity = false)
+        assertFalse(evaluator.onSample(0f, 0f, 0f, 0L))
+        assertFalse(evaluator.onSample(14f, 0f, 0f, 200L))
+        assertFalse(evaluator.onSample(-14f, 0f, 0f, 450L))
+        assertTrue(evaluator.onSample(14f, 0f, 0f, 700L))
+        assertFalse("cooldown still applies in linear acceleration mode", evaluator.onSample(15f, 0f, 0f, 950L))
+    }
+
+    @Test
+    fun `linear acceleration mode ignores stationary sensor noise`() {
+        val evaluator = ShakeMotionEvaluator(removeGravity = false)
+        var t = 0L
+        repeat(30) {
+            t += 20L
+            assertFalse(evaluator.onSample(0.3f, -0.2f, 0.4f, t))
+        }
+    }
+
+    @Test
+    fun `non finite sensor samples are ignored without poisoning gravity state`() {
+        val evaluator = ShakeMotionEvaluator()
+        assertFalse(evaluator.onSample(0f, 0f, 9.81f, 0L))
+        assertFalse(evaluator.onSample(Float.NaN, 0f, 9.81f, 50L))
+        assertFalse(evaluator.onSample(Float.POSITIVE_INFINITY, 0f, 9.81f, 100L))
+        assertFalse(evaluator.onSample(30f, 0f, 9.81f, 200L))
+        assertFalse(evaluator.onSample(30f, 0f, 9.81f, 400L))
+        assertTrue(evaluator.onSample(30f, 0f, 9.81f, 600L))
+    }
 }

@@ -13,13 +13,14 @@ Shake detection defaults to on and runs only while QuizRadar is in the foregroun
 1. When something goes wrong, give the phone **three firm shakes** while QuizRadar is open.
    - Emulator/accessibility alternative: **Settings → Beta feedback → Create feedback report**.
    - Developer alternative: open `quizradar://action/feedback`.
-2. QuizRadar captures its own app content before opening the feedback sheet.
-3. Review the screenshot. Tap it to enlarge, or **Remove** it if it contains private information. A screenshot can contain anything visible in the app, so this review matters.
+2. QuizRadar captures its own app content before opening the feedback sheet (using `PixelCopy` on API 26+ hardware windows with software fallback, encoding the PNG off the main thread).
+3. Review the screenshot. Tap it to enlarge, tap **Redact** to permanently black out names, emails, or other private details directly on the image, or **Remove** the screenshot completely. A screenshot can contain anything visible in the app, so this review matters.
 4. Describe the problem: what you expected, what happened, and any reliable reproduction steps.
    - A written description is required unless a voice note is attached.
-   - For a voice note, tap **Record voice note**. Android asks for microphone access only at this point. Stop and play back the recording before sharing; delete and re-record it if needed.
-5. Tap **Save to feedback inbox**. Repeat the flow for every separate issue; each report receives a unique ID and keeps its own screenshot, note, and optional voice file. To send only the current report instead, use **Share this issue now**.
-6. Open **Settings → Beta feedback → Review & export all (N)**. The inbox shows each issue with its screenshot, full note, attachment status, and timestamp. Delete individual issues if needed, then tap **Export all N issue(s) as ZIP** and choose a destination in Android's share sheet.
+   - Tap **Dictate** to append speech-to-text from your device's configured speech service into the editable text box (honestly reports if no speech service is installed).
+   - For an audio attachment, tap **Record voice note** (capped at 3 minutes). Android asks for microphone access only at this point. Stop and play back the recording before sharing; delete and re-record it if needed.
+5. Tap **Save to feedback inbox**. Repeat the flow for every separate issue; each report receives a unique ID and keeps its own screenshot, note, build diagnostics, and optional voice file. To send only the current report instead, use **Share this issue now**.
+6. Open **Settings → Beta feedback → Review & export all (N)**. The inbox shows each issue with its subsampled screenshot thumbnail, full note, voice-note playback button, attachment status, and local timestamp. Delete individual issues if needed, then tap **Export all N issues as ZIP** and choose a destination in Android's share sheet.
 
 Opening the share sheet is **not** confirmation of delivery, and delivery is not confirmation of a fix. QuizRadar does not silently send anything to an AI provider or maintainer. Exporting does not delete the inbox; use the separate per-issue delete or **Clear feedback inbox** confirmation when you no longer need the saved reports.
 

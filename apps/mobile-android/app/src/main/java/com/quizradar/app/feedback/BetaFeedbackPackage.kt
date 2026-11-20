@@ -32,6 +32,7 @@ data class BetaFeedbackDraft(
     val createdAt: Instant,
     val screenshot: File?,
     val voiceNote: File?,
+    val screenshotRevision: Int = 0,
 )
 
 data class BetaFeedbackUiState(
@@ -39,6 +40,7 @@ data class BetaFeedbackUiState(
     val isRecording: Boolean = false,
     val recordingSeconds: Long = 0L,
     val isPlaying: Boolean = false,
+    val isRedactingScreenshot: Boolean = false,
     val pendingAction: BetaFeedbackPendingAction = BetaFeedbackPendingAction.NONE,
     val errorMessage: String? = null,
     val isInboxOpen: Boolean = false,

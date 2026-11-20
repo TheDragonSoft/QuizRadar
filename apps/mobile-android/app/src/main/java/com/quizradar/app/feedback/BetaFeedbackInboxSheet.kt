@@ -42,7 +42,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -103,7 +102,7 @@ internal fun BetaFeedbackInboxSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(modifier = Modifier.height(12.dp))
-            Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.primaryContainer) {
+            Surface(shape = MaterialTheme.shapes.extraSmall, color = MaterialTheme.colorScheme.primaryContainer) {
                 Text(
                     text =
                         "Export creates one ZIP with batch-manifest.json and a numbered directory per issue. " +
@@ -153,25 +152,27 @@ internal fun BetaFeedbackInboxSheet(
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Row(verticalAlignment = Alignment.Top) {
                                     val screenshot = item.screenshot
-                                    val thumbnail =
-                                        remember(screenshot?.absolutePath, screenshot?.lastModified()) {
-                                            screenshot?.takeIf { it.isFile }?.let { AppScreenshotCapture.decodeSampledBitmap(it, 320) }
-                                        }
-                                    if (screenshot?.isFile == true && thumbnail != null) {
+                                    val thumbnailState by
+                                        rememberSampledBitmap(
+                                            file = screenshot,
+                                            maxDimensionPx = 320,
+                                        )
+                                    val decodedThumbnail = (thumbnailState as? SampledBitmapState.Loaded)?.imageBitmap
+                                    if (screenshot != null && decodedThumbnail != null) {
                                         Image(
-                                            bitmap = thumbnail.asImageBitmap(),
+                                            bitmap = decodedThumbnail,
                                             contentDescription = "Screenshot for issue ${index + 1}. Tap to enlarge.",
                                             contentScale = ContentScale.Crop,
                                             modifier =
                                                 Modifier
                                                     .size(width = 88.dp, height = 116.dp)
-                                                    .clip(MaterialTheme.shapes.small)
+                                                    .clip(MaterialTheme.shapes.extraSmall)
                                                     .clickable { previewScreenshot = screenshot }
                                                     .testTag("inbox-screenshot-${item.id}"),
                                         )
                                     } else {
                                         Surface(
-                                            shape = MaterialTheme.shapes.small,
+                                            shape = MaterialTheme.shapes.extraSmall,
                                             color = MaterialTheme.colorScheme.surfaceVariant,
                                             modifier = Modifier.size(width = 88.dp, height = 116.dp),
                                         ) {
@@ -179,8 +180,14 @@ internal fun BetaFeedbackInboxSheet(
                                                 verticalArrangement = Arrangement.Center,
                                                 horizontalAlignment = Alignment.CenterHorizontally,
                                             ) {
+                                                val placeholder =
+                                                    when {
+                                                        screenshot == null -> "No\nscreenshot"
+                                                        thumbnailState is SampledBitmapState.Loading -> "Loading\npreview…"
+                                                        else -> "Preview\nunavailable"
+                                                    }
                                                 Text(
-                                                    text = if (screenshot?.isFile == true) "Preview\nunavailable" else "No\nscreenshot",
+                                                    text = placeholder,
                                                     style = MaterialTheme.typography.labelSmall,
                                                 )
                                             }
@@ -350,23 +357,26 @@ internal fun BetaFeedbackInboxSheet(
     }
 
     previewScreenshot?.let { screenshot ->
-        val bitmap =
-            remember(screenshot.absolutePath, screenshot.lastModified()) {
-                AppScreenshotCapture.decodeSampledBitmap(screenshot, 1_280)
-            }
+        val previewState by
+            rememberSampledBitmap(
+                file = screenshot,
+                maxDimensionPx = 1_280,
+            )
         AlertDialog(
             onDismissRequest = { previewScreenshot = null },
             title = { Text("Issue screenshot") },
             text = {
-                if (bitmap != null) {
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = "Enlarged issue screenshot",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp),
-                    )
-                } else {
-                    Text("The screenshot could not be decoded.")
+                when (val decoded = previewState) {
+                    is SampledBitmapState.Loaded -> {
+                        Image(
+                            bitmap = decoded.imageBitmap,
+                            contentDescription = "Enlarged issue screenshot",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp),
+                        )
+                    }
+                    SampledBitmapState.Loading -> Text("Loading screenshot preview…")
+                    SampledBitmapState.Failed -> Text("The screenshot could not be decoded.")
                 }
             },
             confirmButton = { TextButton(onClick = { previewScreenshot = null }) { Text("Close") } },

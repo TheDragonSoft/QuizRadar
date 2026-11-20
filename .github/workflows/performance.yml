@@ -78,7 +78,7 @@ jobs:
         if: always()
         with:
           name: performance-core
-          path: performance/results/core
+          path: performance/results/core/*
           if-no-files-found: error
           retention-days: 14
 
@@ -142,7 +142,7 @@ jobs:
         if: always()
         with:
           name: performance-web
-          path: performance/results/web
+          path: performance/results/web/*
           if-no-files-found: error
           retention-days: 14
 
@@ -246,7 +246,7 @@ jobs:
         if: always()
         with:
           name: performance-android
-          path: performance/results/android
+          path: performance/results/android/*
           if-no-files-found: error
           retention-days: 14
 
@@ -326,7 +326,7 @@ jobs:
         if: always()
         with:
           name: performance-desktop
-          path: performance/results/desktop
+          path: performance/results/desktop/*
           if-no-files-found: error
           retention-days: 14
 
@@ -343,7 +343,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: performance/results
-          pattern: performance-*
+          pattern: performance-{core,web,android,desktop}
           merge-multiple: false
       - name: flatten downloaded surface artifacts
         run: |

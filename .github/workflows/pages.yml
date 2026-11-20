@@ -40,7 +40,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
       # The web build compiles the WASM core (build-wasm.mjs): it needs the
       # wasm32 target and the version-pinned wasm-bindgen CLI, exactly like

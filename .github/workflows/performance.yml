@@ -288,6 +288,10 @@ jobs:
         with:
           ref: ${{ steps.base.outputs.sha }}
           path: perf-base
+      - name: instrument both benchmark builds with WebView2 CDP
+        run: |
+          node performance/desktop/prepare-build.mjs --project .
+          node performance/desktop/prepare-build.mjs --project perf-base
       - name: install head dependencies
         run: pnpm install --frozen-lockfile
       - name: install tauri-cli
@@ -329,6 +333,7 @@ jobs:
   performance-review:
     name: performance-review (all surfaces)
     needs: [perf-core, perf-web, perf-android, perf-desktop]
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

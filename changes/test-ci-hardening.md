@@ -28,6 +28,7 @@ Add tested four-surface performance regression gate (core/web/Android staging/Wi
 - gradlew ktlintCheck lintRelease testDebugUnitTest assembleDebug assembleRelease bundleRelease
 - verify-android-artifacts debug/release APK and AAB
 - performance same-build calibration core/web/android/desktop
+- node performance/desktop/prepare-build.mjs --project .; cargo tauri build --no-bundle; node performance/desktop/run.mjs --base-exe target/release/quizradar-desktop.exe --head-exe target/release/quizradar-desktop.exe --samples 5 (native CDP/IPC and repeated same-build comparison pass)
 
 ### Handoff / Follow-ups
 

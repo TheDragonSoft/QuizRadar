@@ -5,8 +5,8 @@ after merge). Use it during the later documentation overhaul to understand the
 new test/CI architecture, why the old timing harness was retired, and how to
 extend the suites without weakening gates._
 
-**Branch:** `test/performance-ci-hardening`  
-**Date:** 2026-11-18  
+**Branch:** `test/performance-ci-hardening`
+**Date:** 2026-11-18
 **Bend decision:** evaluated and **not adopted**. See “Bend” below.
 
 ## Why this rework exists
@@ -28,7 +28,8 @@ release/CI invariants that the audit found weak.
 | `performance/core/run.mjs` | Interleaves two sampler binaries and writes reports. |
 | `performance/web/sample.mjs`, `performance/web/run.mjs` | Production PWA Chromium sampler and base/head runner. |
 | `performance/android/sample.mjs`, `performance/android/run.mjs` | ADB staging process-cold startup sampler/runner. |
-| `performance/desktop/sample.mjs`, `performance/desktop/run.mjs` | Windows Tauri/WebView2 CDP native sampler/runner. |
+| `performance/desktop/prepare-build.mjs` | Applies identical benchmark-only CDP configuration to base/head Tauri builds. |
+| `performance/desktop/sample.mjs`, `performance/desktop/run.mjs` | Windows Tauri/WebView2 CDP native sampler/runner using `DevToolsActivePort`. |
 | `performance/compare.mjs` | CLI wrapper around tested comparator. |
 | `performance/review.mjs` | Aggregates all surfaces and produces review report. |
 | `tooling/lib/performance.mjs` | Pure statistics/comparison/report logic. |

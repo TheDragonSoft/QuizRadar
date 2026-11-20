@@ -2,9 +2,16 @@
 /* global window */
 /** One isolated release-Tauri startup/IPC performance sample on Windows. */
 import { execFileSync, spawn } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
-import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -28,17 +35,21 @@ const { chromium } = playwright.default ?? playwright;
 const now = () => Number(process.hrtime.bigint()) / 1_000_000;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function freePort() {
-  const server = createServer();
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const { port } = server.address();
-  await new Promise((resolve) => server.close(resolve));
-  return port;
+function readActivePort(activePortFile) {
+  if (!existsSync(activePortFile)) return undefined;
+  try {
+    const [line] = readFileSync(activePortFile, "utf8").split(/\r?\n/);
+    const port = Number(line);
+    return Number.isInteger(port) && port > 0 && port <= 65_535 ? port : undefined;
+  } catch {
+    // Chromium may still be writing the file.
+    return undefined;
+  }
 }
 
 const sandbox = mkdtempSync(path.join(os.tmpdir(), "quizradar-perf-"));
-const port = await freePort();
-const origin = `http://127.0.0.1:${port}`;
+const activePortFile = path.join(sandbox, "wv2", "EBWebView", "DevToolsActivePort");
+let origin;
 let child;
 let browser;
 let childExit = null;
@@ -62,7 +73,6 @@ try {
       QUIZRADAR_EPHEMERAL_KEYRING: "1",
       QUIZRADAR_PERFORMANCE_SANDBOX: "1",
       WEBVIEW2_USER_DATA_FOLDER: path.join(sandbox, "wv2"),
-      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
     },
     stdio: "ignore",
     windowsHide: true,
@@ -76,18 +86,26 @@ try {
   for (let attempt = 0; attempt < 900; attempt += 1) {
     if (childExit)
       throw new Error(`desktop exited before CDP was ready: ${JSON.stringify(childExit)}`);
-    try {
-      const response = await fetch(`${origin}/json/version`, { signal: AbortSignal.timeout(500) });
-      if (response.ok) {
-        connected = true;
-        break;
+    const activePort = readActivePort(activePortFile);
+    if (activePort) {
+      origin = `http://127.0.0.1:${activePort}`;
+      try {
+        const response = await fetch(`${origin}/json/version`, {
+          signal: AbortSignal.timeout(500),
+        });
+        if (response.ok) {
+          connected = true;
+          break;
+        }
+      } catch {
+        // WebView2 is still starting.
       }
-    } catch {
-      // WebView2 is still starting.
     }
     await sleep(200);
   }
-  if (!connected) throw new Error(`WebView2 CDP did not become ready at ${origin}`);
+  if (!connected) {
+    throw new Error(`WebView2 CDP did not become ready; active-port file: ${activePortFile}`);
+  }
   cdpReadyAt = now();
   browser = await chromium.connectOverCDP(origin);
   const pages = browser.contexts().flatMap((context) => context.pages());

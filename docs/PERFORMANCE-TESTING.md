@@ -130,12 +130,16 @@ physical-device startup.
 
 ### Desktop (`performance/desktop`)
 
-Windows `cargo tauri build --no-bundle` executable. Each sample gets a unique
-temp directory, ephemeral keyring, isolated WebView2 profile, and unique CDP
-port. The sampler measures process start → CDP ready → `app-shell` → successful
-native `version` IPC, then warm Calendar navigation. It asserts Tauri
-internals and the absence of `offline-banner`, so a web-only fallback cannot
-pass. The process tree is killed in `finally`.
+Windows `cargo tauri build --no-bundle` executable. Before either build,
+`performance/desktop/prepare-build.mjs` adds WebView2's
+`additionalBrowserArgs = "--remote-debugging-port=0"` to the checkout's startup
+window. This instruments base and head identically without changing committed
+production code. Each sample gets a unique temp directory, ephemeral keyring,
+and isolated WebView2 profile. The sampler discovers the OS-assigned port from
+the profile's `DevToolsActivePort` file, then measures process start → CDP ready
+→ `app-shell` → successful native `version` IPC, followed by warm Calendar
+navigation. It asserts Tauri internals and the absence of `offline-banner`, so
+a web-only fallback cannot pass. The process tree is killed in `finally`.
 
 `QUIZRADAR_PERFORMANCE_SANDBOX=1` suppresses the update check **only** when
 `QUIZRADAR_DATA_DIR` and `QUIZRADAR_EPHEMERAL_KEYRING` are also set. Normal
@@ -164,8 +168,13 @@ Build prerequisites:
 cargo build --release -p quizradar-performance-core
 pnpm --dir apps/web build
 # Android: apps/mobile-android/gradlew.bat assembleStaging, then test-sign.
+node performance/desktop/prepare-build.mjs --project .
 cargo tauri build --no-bundle
 ```
+
+The desktop preparation command intentionally edits the local benchmark config.
+After the build, restore it with `git restore apps/desktop/src-tauri/tauri.conf.json`;
+the already-built executable retains only its benchmark CDP instrumentation.
 
 For Android, sign both benchmark APKs with a throwaway keystore. Do **not**
 use release secrets for a PR benchmark:

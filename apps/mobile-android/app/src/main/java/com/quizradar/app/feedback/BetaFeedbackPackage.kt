@@ -34,6 +34,9 @@ data class BetaFeedbackUiState(
     val isPlaying: Boolean = false,
     val isExporting: Boolean = false,
     val errorMessage: String? = null,
+    val isInboxOpen: Boolean = false,
+    val isBatchExporting: Boolean = false,
+    val inboxErrorMessage: String? = null,
 )
 
 internal data class FeedbackBuildInfo(
@@ -55,6 +58,7 @@ internal data class FeedbackBuildInfo(
 
 internal class BetaFeedbackPackageBuilder(
     private val buildInfo: FeedbackBuildInfo = FeedbackBuildInfo.current(),
+    private val exportedAt: () -> Instant = { Instant.now() },
 ) {
     fun build(
         draft: BetaFeedbackDraft,
@@ -86,6 +90,157 @@ internal class BetaFeedbackPackageBuilder(
         }
         return output
     }
+
+    fun buildBatch(
+        items: List<BetaFeedbackInboxItem>,
+        packageDirectory: File,
+    ): File {
+        require(items.isNotEmpty()) { "Save at least one issue before exporting the feedback inbox" }
+        val orderedItems = items.sortedWith(compareBy({ it.createdAt }, { it.id }))
+        val exportTime = exportedAt()
+        val batchId = UUID.randomUUID().toString().take(8)
+        packageDirectory.mkdirs()
+        val output =
+            File(
+                packageDirectory,
+                "quizradar-feedback-batch-${FILE_TIMESTAMP.format(exportTime)}-$batchId.zip",
+            )
+        val entries =
+            orderedItems.mapIndexed { index, item ->
+                val issueDirectory = "issues/issue-${(index + 1).toString().padStart(3, '0')}-${item.id.take(8)}"
+                BatchEntry(
+                    item = item,
+                    directory = issueDirectory,
+                    screenshotPath =
+                        if (item.screenshot?.isFile == true) {
+                            "$issueDirectory/screenshot.png"
+                        } else {
+                            null
+                        },
+                    voiceNotePath =
+                        if (item.voiceNote?.isFile == true) {
+                            "$issueDirectory/voice-note.m4a"
+                        } else {
+                            null
+                        },
+                )
+            }
+
+        ZipOutputStream(FileOutputStream(output)).use { zip ->
+            zip.putText("batch-index.md", batchIndex(entries, exportTime))
+            zip.putText("batch-manifest.json", batchManifest(entries, exportTime))
+            entries.forEach { entry ->
+                val item = entry.item
+                zip.putText(
+                    name = "${entry.directory}/agent-brief.md",
+                    content =
+                        agentBrief(
+                            draft = item.toDraft(),
+                            note = item.note,
+                            hasScreenshot = entry.screenshotPath != null,
+                            hasVoiceNote = entry.voiceNotePath != null,
+                        ),
+                )
+                if (entry.screenshotPath != null) {
+                    zip.putFile(entry.screenshotPath, requireNotNull(item.screenshot), item.createdAt)
+                }
+                if (entry.voiceNotePath != null) {
+                    zip.putFile(entry.voiceNotePath, requireNotNull(item.voiceNote), item.createdAt)
+                }
+            }
+        }
+        check(output.isFile && output.length() > 0L) { "The feedback batch ZIP was not created" }
+        ZipFile(output).use { zip ->
+            check(zip.getEntry("batch-index.md") != null) { "The batch index is missing" }
+            check(zip.getEntry("batch-manifest.json") != null) { "The batch manifest is missing" }
+            entries.forEach { entry ->
+                check(zip.getEntry("${entry.directory}/agent-brief.md") != null) {
+                    "An issue brief is missing from the batch"
+                }
+            }
+        }
+        return output
+    }
+
+    private fun batchIndex(
+        entries: List<BatchEntry>,
+        exportTime: Instant,
+    ): String =
+        buildString {
+            appendLine("# QuizRadar feedback inbox export")
+            appendLine()
+            appendLine("- Exported (UTC): $exportTime")
+            appendLine("- Issues: ${entries.size}")
+            appendLine("- App version: ${buildInfo.appVersion}")
+            appendLine("- Build type: ${buildInfo.buildType}")
+            appendLine()
+            appendLine(
+                "Each numbered directory is a separate issue. `batch-manifest.json` is the authoritative " +
+                    "mapping between tester text and its screenshot/voice attachments.",
+            )
+            entries.forEachIndexed { index, entry ->
+                val item = entry.item
+                appendLine()
+                appendLine("## Issue ${index + 1}: ${item.screenName}")
+                appendLine()
+                appendLine("- ID: ${item.id}")
+                appendLine("- Directory: `${entry.directory}/`")
+                appendLine("- Created (UTC): ${item.createdAt}")
+                appendLine("- Screenshot: ${entry.screenshotPath?.let { "`$it`" } ?: "not attached"}")
+                appendLine("- Voice note: ${entry.voiceNotePath?.let { "`$it`" } ?: "not attached"}")
+                appendLine()
+                appendLine(item.note.ifBlank { "No written note. Review the attached voice note." })
+            }
+            appendLine()
+            appendLine("## Suggested ZCode workflow")
+            appendLine()
+            appendLine(
+                "Investigate each issue independently, using its directory and manifest entry. " +
+                    "Do not combine unrelated reproduction steps or claim an issue is fixed without focused tests.",
+            )
+            appendLine(
+                "Voice notes require an available transcription tool; otherwise request a transcript. " +
+                    "No delivery or fix is confirmed by this export.",
+            )
+        }
+
+    private fun batchManifest(
+        entries: List<BatchEntry>,
+        exportTime: Instant,
+    ): String =
+        buildString {
+            appendLine("{")
+            appendLine("  \"schema_version\": 1,")
+            appendLine("  \"exported_at\": ${jsonString(exportTime.toString())},")
+            appendLine("  \"app_version\": ${jsonString(buildInfo.appVersion)},")
+            appendLine("  \"build_type\": ${jsonString(buildInfo.buildType)},")
+            appendLine("  \"issue_count\": ${entries.size},")
+            appendLine("  \"issues\": [")
+            entries.forEachIndexed { index, entry ->
+                val item = entry.item
+                appendLine("    {")
+                appendLine("      \"id\": ${jsonString(item.id)},")
+                appendLine("      \"directory\": ${jsonString(entry.directory)},")
+                appendLine("      \"created_at\": ${jsonString(item.createdAt.toString())},")
+                appendLine("      \"screen_name\": ${jsonString(item.screenName)},")
+                appendLine("      \"note\": ${jsonString(item.note)},")
+                appendLine("      \"agent_brief\": ${jsonString("${entry.directory}/agent-brief.md")},")
+                appendLine("      \"screenshot\": ${entry.screenshotPath?.let { jsonString(it) } ?: "null"},")
+                appendLine("      \"voice_note\": ${entry.voiceNotePath?.let { jsonString(it) } ?: "null"}")
+                append("    }")
+                if (index < entries.lastIndex) append(",")
+                appendLine()
+            }
+            appendLine("  ]")
+            appendLine("}")
+        }
+
+    private data class BatchEntry(
+        val item: BetaFeedbackInboxItem,
+        val directory: String,
+        val screenshotPath: String?,
+        val voiceNotePath: String?,
+    )
 
     private fun agentBrief(
         draft: BetaFeedbackDraft,
@@ -165,6 +320,30 @@ internal class BetaFeedbackPackageBuilder(
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneOffset.UTC)
     }
 }
+
+private fun jsonString(value: String): String =
+    buildString {
+        append('"')
+        value.forEach { character ->
+            when (character) {
+                '"' -> append("\\\"")
+                '\\' -> append("\\\\")
+                '\b' -> append("\\b")
+                '\u000C' -> append("\\f")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                else -> {
+                    if (character.code < 0x20) {
+                        append(String.format("\\u%04x", character.code))
+                    } else {
+                        append(character)
+                    }
+                }
+            }
+        }
+        append('"')
+    }
 
 internal object BetaFeedbackSharer {
     fun share(

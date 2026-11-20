@@ -54,8 +54,9 @@ private val FAQS =
             answer =
                 "Give your phone three firm shakes while QuizRadar is open, or use Settings → Beta feedback → " +
                     "Create feedback report. Review or remove the screenshot, add a written or voice description, " +
-                    "then tap Reviewed — share ZIP. Nothing uploads until you choose a share destination. " +
-                    "The feature is included in debug, staging, and GitHub release APKs.",
+                    "then save each issue to the feedback inbox. Open Review & export all in Settings to export " +
+                    "multiple associated issues as one ZIP, or share a single issue immediately. Nothing uploads " +
+                    "until you choose a share destination. The feature is included in debug, staging, and GitHub release APKs.",
         ),
         FaqItem(
             question = "Where are my credentials and tokens stored?",

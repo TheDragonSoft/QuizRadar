@@ -73,6 +73,7 @@ class MainActivity : ComponentActivity() {
                     // now-emptied config and BOTH widgets are re-rendered
                     // from the emptied store.
                     onDataReset = {
+                        feedbackController.resetFeedbackData()
                         NotificationHelper.cancelAllOwnedNotifications(applicationContext)
                         oauthManager.clearPendingState()
                         lifecycleScope.launch(Dispatchers.IO) {
@@ -94,6 +95,7 @@ class MainActivity : ComponentActivity() {
                 activity = this,
                 scope = lifecycleScope,
                 currentScreenName = { viewModel.selectedTab.value },
+                showMessage = { message -> viewModel.showToast(message) },
             )
 
         // Initialize background tasks and notification channels
@@ -129,6 +131,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val betaFeedbackShakeEnabled by feedbackController.shakeEnabled.collectAsState()
+            val betaFeedbackInboxItems by feedbackController.inboxItems.collectAsState()
             // The persisted appearance mode and the preferred dark scheme are
             // two orthogonal preferences: the mode decides whether a dark
             // scheme renders at all, and only then does the dark preference
@@ -185,6 +188,8 @@ class MainActivity : ComponentActivity() {
                         betaFeedbackShakeEnabled = betaFeedbackShakeEnabled,
                         onBetaFeedbackShakeEnabledChange = feedbackController::setShakeEnabled,
                         onOpenBetaFeedback = { feedbackController.openFeedback("Settings") },
+                        betaFeedbackInboxCount = betaFeedbackInboxItems.size,
+                        onOpenBetaFeedbackInbox = feedbackController::openInbox,
                     )
                     BetaFeedbackHost(controller = feedbackController)
                 }

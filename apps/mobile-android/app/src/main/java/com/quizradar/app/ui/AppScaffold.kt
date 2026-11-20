@@ -138,6 +138,8 @@ fun AppScaffold(
     betaFeedbackShakeEnabled: Boolean = false,
     onBetaFeedbackShakeEnabledChange: (Boolean) -> Unit = {},
     onOpenBetaFeedback: () -> Unit = {},
+    betaFeedbackInboxCount: Int = 0,
+    onOpenBetaFeedbackInbox: () -> Unit = {},
 ) {
     val selectedTab by viewModel.selectedTab.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
@@ -293,6 +295,8 @@ fun AppScaffold(
                     betaFeedbackShakeEnabled = betaFeedbackShakeEnabled,
                     onBetaFeedbackShakeEnabledChange = onBetaFeedbackShakeEnabledChange,
                     onOpenBetaFeedback = onOpenBetaFeedback,
+                    betaFeedbackInboxCount = betaFeedbackInboxCount,
+                    onOpenBetaFeedbackInbox = onOpenBetaFeedbackInbox,
                     snackbarHostState = snackbarHostState,
                 )
                 return

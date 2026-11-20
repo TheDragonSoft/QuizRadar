@@ -72,6 +72,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -131,6 +132,8 @@ fun SettingsScreen(
     betaFeedbackShakeEnabled: Boolean = false,
     onBetaFeedbackShakeEnabledChange: (Boolean) -> Unit = {},
     onOpenBetaFeedback: () -> Unit = {},
+    betaFeedbackInboxCount: Int = 0,
+    onOpenBetaFeedbackInbox: () -> Unit = {},
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     modifier: Modifier = Modifier,
 ) {
@@ -1808,14 +1811,14 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = "Shake. Review. Share.",
+                            text = "Shake. Save. Export together.",
                             style = MaterialTheme.typography.titleMedium,
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text =
-                                "Capture this screen, explain the problem in writing or with a voice note, " +
-                                    "then share a ZIP with your QuizRadar maintainer for AI-assisted review.",
+                                "Capture multiple issues with their own screenshots and voice notes. Save each one " +
+                                    "to the feedback inbox, then export everything together as one associated ZIP.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1857,6 +1860,32 @@ fun SettingsScreen(
                         ) {
                             Text("Create feedback report")
                         }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = onOpenBetaFeedbackInbox,
+                            enabled = betaFeedbackInboxCount > 0,
+                            colors = ButtonDefaults.tonalPill(),
+                            contentPadding = PillButtonContentPadding,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .defaultMinSize(minHeight = PillButtonMinHeight)
+                                    .testTag("beta-feedback-inbox-settings"),
+                        ) {
+                            Text(
+                                if (betaFeedbackInboxCount > 0) {
+                                    "Review & export all ($betaFeedbackInboxCount)"
+                                } else {
+                                    "Feedback inbox is empty"
+                                },
+                            )
+                        }
+                        Text(
+                            text = "Saved issues stay on this device until you delete them. Exporting does not clear the inbox.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
                     }
                 }
                 Spacer(modifier = Modifier.height(24.dp))

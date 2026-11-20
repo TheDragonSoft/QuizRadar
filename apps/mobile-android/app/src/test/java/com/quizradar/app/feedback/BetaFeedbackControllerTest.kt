@@ -2,6 +2,7 @@ package com.quizradar.app.feedback
 
 import androidx.activity.ComponentActivity
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -11,6 +12,7 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import java.io.File
+import java.nio.file.Files
 import java.util.zip.ZipFile
 
 @RunWith(RobolectricTestRunner::class)
@@ -102,6 +104,63 @@ class BetaFeedbackControllerTest {
         assertTrue("GitHub release builds must include tester feedback", controller.isAvailable)
         controller.onDestroy()
     }
+
+    @Test
+    fun `inbox exports multiple associated issues without clearing them`() =
+        runBlocking {
+            val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
+            val store = BetaFeedbackInboxStore(Files.createTempDirectory("feedback-controller-inbox").toFile())
+            var sharedPackage: File? = null
+            var captureNumber = 0
+            val messages = mutableListOf<String>()
+            val controller =
+                BetaFeedbackController(
+                    activity = activity,
+                    scope = this@runBlocking,
+                    currentScreenName = { "Dashboard" },
+                    captureScreenshot = { destination ->
+                        captureNumber += 1
+                        destination.parentFile?.mkdirs()
+                        destination.writeBytes(byteArrayOf(captureNumber.toByte()))
+                        destination
+                    },
+                    sharePackage = { sharedPackage = it },
+                    packageBuilder = BetaFeedbackPackageBuilder(testBuildInfo),
+                    exportDispatcher = kotlinx.coroutines.Dispatchers.Unconfined,
+                    inboxStore = store,
+                    showMessage = { messages += it },
+                )
+
+            controller.openFeedback("Dashboard")
+            controller.saveFeedback("First saved issue")
+            kotlinx.coroutines.yield()
+            controller.openFeedback("Calendar")
+            controller.saveFeedback("Second saved issue")
+            kotlinx.coroutines.yield()
+
+            assertEquals(2, controller.inboxItems.value.size)
+            assertTrue(messages.any { it.contains("2 pending") })
+            controller.openInbox()
+            controller.shareInbox()
+            kotlinx.coroutines.yield()
+
+            val packageFile = sharedPackage
+            assertNotNull(controller.uiState.value.inboxErrorMessage, packageFile)
+            ZipFile(packageFile!!).use { zip ->
+                val manifest = zip.getInputStream(zip.getEntry("batch-manifest.json")).bufferedReader().use { it.readText() }
+                assertTrue(manifest.contains("\"issue_count\": 2"))
+                val items = controller.inboxItems.value
+                items.forEachIndexed { index, item ->
+                    val screenshotPath = "issues/issue-${(index + 1).toString().padStart(3, '0')}-${item.id.take(8)}/screenshot.png"
+                    val bytes = zip.getInputStream(zip.getEntry(screenshotPath)).use { it.readBytes() }
+                    assertEquals((index + 1).toByte(), bytes.single())
+                }
+            }
+            assertEquals("export must not delete saved issues", 2, controller.inboxItems.value.size)
+            assertFalse(controller.uiState.value.isInboxOpen)
+            assertTrue(messages.last().contains("Delivery is not confirmed"))
+            controller.onDestroy()
+        }
 
     private companion object {
         val testBuildInfo =

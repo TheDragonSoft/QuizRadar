@@ -28,11 +28,14 @@ class BetaFeedbackController internal constructor(
     private val sharePackage: (File) -> Unit,
     private val packageBuilder: BetaFeedbackPackageBuilder,
     private val exportDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val inboxStore: BetaFeedbackInboxStore = BetaFeedbackInboxStore(activity),
+    private val showMessage: (String) -> Unit = {},
 ) {
     constructor(
         activity: ComponentActivity,
         scope: CoroutineScope,
         currentScreenName: () -> String,
+        showMessage: (String) -> Unit = {},
     ) : this(
         activity = activity,
         scope = scope,
@@ -40,6 +43,7 @@ class BetaFeedbackController internal constructor(
         captureScreenshot = { destination -> AppScreenshotCapture.capture(activity, destination) },
         sharePackage = { packageFile -> BetaFeedbackSharer.share(activity, packageFile) },
         packageBuilder = BetaFeedbackPackageBuilder(),
+        showMessage = showMessage,
     )
 
     val isAvailable: Boolean = BuildConfig.BETA_FEEDBACK_ENABLED
@@ -53,6 +57,8 @@ class BetaFeedbackController internal constructor(
 
     private val _uiState = kotlinx.coroutines.flow.MutableStateFlow(BetaFeedbackUiState())
     val uiState: kotlinx.coroutines.flow.StateFlow<BetaFeedbackUiState> = _uiState
+    val inboxItems: kotlinx.coroutines.flow.StateFlow<List<BetaFeedbackInboxItem>> = inboxStore.items
+    val inboxLoadErrors: kotlinx.coroutines.flow.StateFlow<List<String>> = inboxStore.loadErrors
 
     private val shakeDetector =
         ShakeDetector(activity) {
@@ -95,7 +101,7 @@ class BetaFeedbackController internal constructor(
     }
 
     fun openFeedback(screenName: String) {
-        if (!isAvailable || destroyed || _uiState.value.draft != null) return
+        if (!isAvailable || destroyed || _uiState.value.draft != null || _uiState.value.isInboxOpen) return
         shakeDetector.stop()
         val initialDraft = newFeedbackDraft(activity.cacheDir, screenName)
         var captureFailed = false
@@ -335,8 +341,158 @@ class BetaFeedbackController internal constructor(
         }
     }
 
+    fun saveFeedback(note: String) {
+        if (_uiState.value.isRecording) stopRecording()
+        val draft = _uiState.value.draft ?: return
+        val cleanNote = note.trim().take(MAX_FEEDBACK_NOTE_LENGTH)
+        if (cleanNote.isEmpty() && draft.voiceNote?.isFile != true) {
+            _uiState.value =
+                _uiState.value.copy(
+                    errorMessage = "Describe the issue in writing or attach a voice note before saving.",
+                )
+            return
+        }
+        if (_uiState.value.isExporting) return
+        _uiState.value = _uiState.value.copy(isExporting = true, errorMessage = null)
+        scope.launch {
+            val result =
+                runCatching {
+                    withContext(exportDispatcher) {
+                        inboxStore.saveDraft(draft = draft, note = cleanNote)
+                    }
+                }
+            if (destroyed) return@launch
+            if (result.isSuccess) {
+                _uiState.value = BetaFeedbackUiState()
+                updateShakeRegistration()
+                showMessage("Issue saved to feedback inbox (${inboxItems.value.size} pending)")
+            } else {
+                _uiState.value =
+                    _uiState.value.copy(
+                        isExporting = false,
+                        errorMessage = "The issue could not be saved to the feedback inbox. Your draft is still open; please try again.",
+                    )
+            }
+        }
+    }
+
+    fun openInbox() {
+        if (!isAvailable || destroyed || _uiState.value.draft != null) return
+        _uiState.value = _uiState.value.copy(isInboxOpen = true, inboxErrorMessage = null)
+        updateShakeRegistration()
+    }
+
+    fun closeInbox() {
+        if (_uiState.value.isBatchExporting) return
+        _uiState.value = _uiState.value.copy(isInboxOpen = false, inboxErrorMessage = null)
+        updateShakeRegistration()
+    }
+
+    fun clearInboxError() {
+        _uiState.value = _uiState.value.copy(inboxErrorMessage = null)
+    }
+
+    fun deleteInboxItem(id: String) {
+        if (_uiState.value.isBatchExporting) return
+        scope.launch {
+            val result = runCatching { withContext(exportDispatcher) { inboxStore.deleteItem(id) } }
+            if (destroyed) return@launch
+            _uiState.value =
+                _uiState.value.copy(
+                    inboxErrorMessage =
+                        if (result.isFailure) {
+                            "The saved issue could not be deleted. It remains in the inbox."
+                        } else {
+                            null
+                        },
+                )
+        }
+    }
+
+    fun clearInbox() {
+        if (_uiState.value.isBatchExporting) return
+        _uiState.value = _uiState.value.copy(isBatchExporting = true, inboxErrorMessage = null)
+        scope.launch {
+            val result = runCatching { withContext(exportDispatcher) { inboxStore.clear() } }
+            if (destroyed) return@launch
+            _uiState.value =
+                _uiState.value.copy(
+                    isBatchExporting = false,
+                    inboxErrorMessage =
+                        if (result.isFailure) {
+                            "Some saved issues could not be deleted. The remaining inbox is still shown."
+                        } else {
+                            null
+                        },
+                )
+            if (result.isSuccess) showMessage("Feedback inbox cleared")
+        }
+    }
+
+    fun shareInbox() {
+        if (_uiState.value.isBatchExporting) return
+        val items = inboxItems.value
+        if (items.isEmpty()) {
+            _uiState.value = _uiState.value.copy(inboxErrorMessage = "Save at least one issue before exporting the feedback inbox.")
+            return
+        }
+        _uiState.value = _uiState.value.copy(isBatchExporting = true, inboxErrorMessage = null)
+        scope.launch {
+            val result =
+                runCatching {
+                    withContext(exportDispatcher) {
+                        packageBuilder.buildBatch(
+                            items = items,
+                            packageDirectory = File(activity.cacheDir, "beta-feedback/packages"),
+                        )
+                    }
+                }
+            if (destroyed) return@launch
+            val packageFile = result.getOrNull()
+            if (packageFile == null) {
+                _uiState.value =
+                    _uiState.value.copy(
+                        isBatchExporting = false,
+                        inboxErrorMessage = "The feedback batch could not be created. Nothing was shared; every issue remains saved.",
+                    )
+                return@launch
+            }
+            try {
+                sharePackage(packageFile)
+                _uiState.value =
+                    _uiState.value.copy(
+                        isInboxOpen = false,
+                        isBatchExporting = false,
+                        inboxErrorMessage = null,
+                    )
+                updateShakeRegistration()
+                showMessage("Share sheet opened for ${items.size} issues. Delivery is not confirmed; the inbox is still saved.")
+            } catch (_: Exception) {
+                _uiState.value =
+                    _uiState.value.copy(
+                        isBatchExporting = false,
+                        inboxErrorMessage = "No application could open the share sheet. Every issue remains saved; nothing was uploaded.",
+                    )
+            }
+        }
+    }
+
+    fun resetFeedbackData() {
+        scope.launch {
+            runCatching {
+                withContext(exportDispatcher) {
+                    inboxStore.clear()
+                    File(activity.cacheDir, "beta-feedback").deleteRecursively()
+                }
+            }
+            if (!destroyed) _uiState.value = BetaFeedbackUiState()
+        }
+    }
+
     private fun updateShakeRegistration() {
-        if (!isAvailable || destroyed || !resumed || !_shakeEnabled.value || _uiState.value.draft != null) {
+        if (!isAvailable || destroyed || !resumed || !_shakeEnabled.value ||
+            _uiState.value.draft != null || _uiState.value.isInboxOpen
+        ) {
             shakeDetector.stop()
         } else {
             shakeDetector.start()

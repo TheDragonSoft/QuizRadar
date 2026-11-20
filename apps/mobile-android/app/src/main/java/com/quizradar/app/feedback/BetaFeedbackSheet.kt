@@ -73,6 +73,8 @@ import com.quizradar.app.ui.theme.tonalPill
 fun BetaFeedbackHost(controller: BetaFeedbackController) {
     if (!controller.isAvailable) return
     val state by controller.uiState.collectAsState()
+    val inboxItems by controller.inboxItems.collectAsState()
+    val inboxLoadErrors by controller.inboxLoadErrors.collectAsState()
     val context = LocalContext.current
     val microphonePermission =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
@@ -80,6 +82,20 @@ fun BetaFeedbackHost(controller: BetaFeedbackController) {
             // message when Android did not grant access.
             controller.startRecording()
         }
+
+    if (state.isInboxOpen) {
+        BetaFeedbackInboxSheet(
+            items = inboxItems,
+            loadErrors = inboxLoadErrors,
+            isExporting = state.isBatchExporting,
+            errorMessage = state.inboxErrorMessage,
+            onDismiss = controller::closeInbox,
+            onDeleteItem = controller::deleteInboxItem,
+            onClear = controller::clearInbox,
+            onExport = controller::shareInbox,
+        )
+        return
+    }
 
     BetaFeedbackSheet(
         state = state,
@@ -100,6 +116,7 @@ fun BetaFeedbackHost(controller: BetaFeedbackController) {
         onDeleteVoiceNote = controller::deleteVoiceNote,
         onPlaybackClick = controller::startPlayback,
         onShare = controller::shareFeedback,
+        onSaveToInbox = controller::saveFeedback,
         onClearError = controller::clearError,
     )
 }
@@ -114,6 +131,7 @@ internal fun BetaFeedbackSheet(
     onDeleteVoiceNote: () -> Unit,
     onPlaybackClick: () -> Unit,
     onShare: (String) -> Unit,
+    onSaveToInbox: (String) -> Unit = {},
     onClearError: () -> Unit,
 ) {
     val draft = state.draft ?: return
@@ -333,20 +351,46 @@ internal fun BetaFeedbackSheet(
             }
 
             Spacer(modifier = Modifier.height(16.dp))
-            Text("3. Share for review", style = MaterialTheme.typography.titleMedium)
+            Text("3. Save or share for review", style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text =
-                    "The ZIP contains your report, the reviewed attachments, and minimal app/Android diagnostics. " +
-                        "Send it to your QuizRadar maintainer for AI-assisted investigation.",
+                    "Save multiple issues and export them together from Settings, or share only this issue now. " +
+                        "Every report keeps its own screenshot and voice-note association.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(modifier = Modifier.height(12.dp))
             Button(
-                onClick = { onShare(note) },
+                onClick = { onSaveToInbox(note) },
                 enabled = canShare,
                 colors = ButtonDefaults.filledPill(),
+                contentPadding = PillButtonContentPadding,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = PillButtonMinHeight)
+                        .testTag("beta-feedback-save-inbox"),
+            ) {
+                if (state.isExporting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Saving to inbox…")
+                } else {
+                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Save to feedback inbox")
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = { onShare(note) },
+                enabled = canShare,
+                colors = ButtonDefaults.tonalPill(),
                 contentPadding = PillButtonContentPadding,
                 modifier =
                     Modifier
@@ -365,7 +409,7 @@ internal fun BetaFeedbackSheet(
                 } else {
                     Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Reviewed — share ZIP")
+                    Text("Share this issue now")
                 }
             }
             if (state.isRecording) {

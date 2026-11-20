@@ -78,6 +78,34 @@ class BetaFeedbackSheetTest {
     }
 
     @Test
+    fun `save to inbox returns the current issue note`() {
+        var savedNote: String? = null
+        composeTestRule.setContent {
+            QuizRadarTheme {
+                BetaFeedbackSheet(
+                    state = BetaFeedbackUiState(draft = draft()),
+                    onDismiss = {},
+                    onRemoveScreenshot = {},
+                    onRecordClick = {},
+                    onDeleteVoiceNote = {},
+                    onPlaybackClick = {},
+                    onShare = {},
+                    onSaveToInbox = { savedNote = it },
+                    onClearError = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag("beta-feedback-note").performScrollTo().performTextInput("Save this issue for batch export")
+        composeTestRule
+            .onNodeWithTag("beta-feedback-save-inbox")
+            .performScrollTo()
+            .performSemanticsAction(SemanticsActions.OnClick)
+        composeTestRule.waitUntil(timeoutMillis = 2_000) { savedNote != null }
+        assertEquals("Save this issue for batch export", savedNote)
+    }
+
+    @Test
     fun `recording timer formatting is bounded and readable`() {
         assertEquals("0:00", formatRecordingTime(-1))
         assertEquals("1:05", formatRecordingTime(65))

@@ -71,6 +71,51 @@ class BetaFeedbackAndroidUiCaptureTest {
         capturePng("beta-feedback-share-dark")
     }
 
+    @Test
+    fun capture_beta_feedback_inbox_dark() {
+        val screenshot = createAttachmentScreenshot()
+        val directory = requireNotNull(screenshot.parentFile)
+        val voiceNote = File(directory, "voice-note.m4a").apply { writeBytes(byteArrayOf(1)) }
+        val items =
+            listOf(
+                BetaFeedbackInboxItem(
+                    id = "ui-capture-first",
+                    directory = directory,
+                    screenName = "Dashboard",
+                    createdAt = Instant.parse("2026-11-19T10:11:12Z"),
+                    note = "Dashboard countdown did not update",
+                    screenshot = screenshot,
+                    voiceNote = null,
+                ),
+                BetaFeedbackInboxItem(
+                    id = "ui-capture-second",
+                    directory = directory,
+                    screenName = "Calendar",
+                    createdAt = Instant.parse("2026-11-19T10:12:12Z"),
+                    note = "Calendar moved after rotation",
+                    screenshot = null,
+                    voiceNote = voiceNote,
+                ),
+            )
+        composeTestRule.setContent {
+            QuizRadarTheme {
+                BetaFeedbackInboxSheet(
+                    items = items,
+                    loadErrors = emptyList(),
+                    isExporting = false,
+                    errorMessage = null,
+                    onDismiss = {},
+                    onDeleteItem = {},
+                    onClear = {},
+                    onExport = {},
+                )
+            }
+        }
+
+        waitForText("Feedback inbox")
+        capturePng("beta-feedback-inbox-dark")
+    }
+
     private fun waitForText(text: String) {
         composeTestRule.waitUntil(timeoutMillis = 8_000) {
             composeTestRule.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isNotEmpty()

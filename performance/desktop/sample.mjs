@@ -33,6 +33,10 @@ const playwrightEntry = require.resolve("@playwright/test", { paths: [path.resol
 const playwright = await import(pathToFileURL(playwrightEntry).href);
 const { chromium } = playwright.default ?? playwright;
 const now = () => Number(process.hrtime.bigint()) / 1_000_000;
+const median = (values) => {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor((sorted.length - 1) / 2)];
+};
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function readActivePort(activePortFile) {
@@ -115,12 +119,20 @@ try {
   if (await page.getByTestId("offline-banner").count()) {
     throw new Error("desktop rendered the offline banner; native state loading failed");
   }
-  const ipcStarted = now();
-  const version = await page.evaluate(async () => {
+  const ipcResult = await page.evaluate(async () => {
     if (!window.__TAURI_INTERNALS__) throw new Error("Tauri internals are unavailable");
-    return window.__TAURI_INTERNALS__.invoke("version");
+    // Median of five real native IPC round trips excludes CDP/automation jitter.
+    const timings = [];
+    let version;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const started = performance.now();
+      version = await window.__TAURI_INTERNALS__.invoke("version");
+      timings.push(performance.now() - started);
+    }
+    return { timings, version };
   });
-  const ipcMs = now() - ipcStarted;
+  const ipcMs = median(ipcResult.timings);
+  const version = ipcResult.version;
   if (!version || typeof version.app !== "string" || typeof version.core !== "string") {
     throw new Error(`native version IPC returned an invalid result: ${JSON.stringify(version)}`);
   }

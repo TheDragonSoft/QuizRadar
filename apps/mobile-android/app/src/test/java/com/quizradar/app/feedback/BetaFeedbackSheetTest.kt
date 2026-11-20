@@ -1,5 +1,8 @@
 package com.quizradar.app.feedback
 
+import android.graphics.Bitmap
+import android.graphics.Color
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -10,12 +13,15 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import com.quizradar.app.ui.theme.QuizRadarTheme
+import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.File
+import java.io.FileOutputStream
 import java.time.Instant
 
 @RunWith(RobolectricTestRunner::class)
@@ -137,6 +143,78 @@ class BetaFeedbackSheetTest {
         composeTestRule.onNodeWithText("Saving to inbox…").performScrollTo().assertExists()
         composeTestRule.onNodeWithText("Share this issue now").performScrollTo().assertExists()
         composeTestRule.onNodeWithText("Preparing ZIP…").assertDoesNotExist()
+    }
+
+    @Test
+    fun `dictated text appends cleanly and respects max note length`() {
+        assertEquals("Button clipped on small screen", appendDictatedText("", "  Button clipped on small screen  "))
+        assertEquals("Line one Line two", appendDictatedText("Line one", "Line two"))
+        assertEquals("Line one\nLine two", appendDictatedText("Line one\n", "Line two"))
+        val oversized = appendDictatedText("a".repeat(MAX_FEEDBACK_NOTE_LENGTH - 3), "hello world")
+        assertEquals(MAX_FEEDBACK_NOTE_LENGTH, oversized.length)
+    }
+
+    @Test
+    fun `redact button opens the screenshot redaction dialog`() {
+        val screenshot = File.createTempFile("redact-sheet-test", ".png")
+        try {
+            val bitmap = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.DKGRAY) }
+            FileOutputStream(screenshot).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
+
+            composeTestRule.setContent {
+                CompositionLocalProvider(LocalFeedbackImageDecoderDispatcher provides Dispatchers.Unconfined) {
+                    QuizRadarTheme {
+                        BetaFeedbackSheet(
+                            state = BetaFeedbackUiState(draft = draft().copy(screenshot = screenshot)),
+                            onDismiss = {},
+                            onRemoveScreenshot = {},
+                            onRecordClick = {},
+                            onDeleteVoiceNote = {},
+                            onPlaybackClick = {},
+                            onShare = {},
+                            onClearError = {},
+                        )
+                    }
+                }
+            }
+
+            composeTestRule
+                .onNodeWithTag("beta-feedback-redact")
+                .performScrollTo()
+                .assertIsEnabled()
+                .performSemanticsAction(SemanticsActions.OnClick)
+            composeTestRule.onNodeWithText("Redact private info").assertExists()
+            composeTestRule.onNodeWithTag("beta-feedback-redact-canvas").assertExists()
+        } finally {
+            screenshot.delete()
+        }
+    }
+
+    @Test
+    fun `dictate reports an honest fallback message when no speech recognizer is installed`() {
+        var reportedError: String? = null
+        composeTestRule.setContent {
+            QuizRadarTheme {
+                BetaFeedbackSheet(
+                    state = BetaFeedbackUiState(draft = draft()),
+                    onDismiss = {},
+                    onRemoveScreenshot = {},
+                    onRecordClick = {},
+                    onDeleteVoiceNote = {},
+                    onPlaybackClick = {},
+                    onShare = {},
+                    onClearError = {},
+                    onReportError = { reportedError = it },
+                )
+            }
+        }
+
+        composeTestRule
+            .onNodeWithTag("beta-feedback-dictate")
+            .performScrollTo()
+            .performSemanticsAction(SemanticsActions.OnClick)
+        assertTrue(reportedError?.contains("Speech-to-text is not available") == true)
     }
 
     private fun draft(): BetaFeedbackDraft =

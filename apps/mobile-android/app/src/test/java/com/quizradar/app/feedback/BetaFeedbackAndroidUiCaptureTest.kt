@@ -4,12 +4,16 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import com.quizradar.app.ui.theme.QuizRadarTheme
+import kotlinx.coroutines.Dispatchers
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -45,17 +49,19 @@ class BetaFeedbackAndroidUiCaptureTest {
                 voiceNote = null,
             )
         composeTestRule.setContent {
-            QuizRadarTheme {
-                BetaFeedbackSheet(
-                    state = BetaFeedbackUiState(draft = draft),
-                    onDismiss = {},
-                    onRemoveScreenshot = {},
-                    onRecordClick = {},
-                    onDeleteVoiceNote = {},
-                    onPlaybackClick = {},
-                    onShare = {},
-                    onClearError = {},
-                )
+            CompositionLocalProvider(LocalFeedbackImageDecoderDispatcher provides Dispatchers.Unconfined) {
+                QuizRadarTheme {
+                    BetaFeedbackSheet(
+                        state = BetaFeedbackUiState(draft = draft),
+                        onDismiss = {},
+                        onRemoveScreenshot = {},
+                        onRecordClick = {},
+                        onDeleteVoiceNote = {},
+                        onPlaybackClick = {},
+                        onShare = {},
+                        onClearError = {},
+                    )
+                }
             }
         }
 
@@ -69,6 +75,13 @@ class BetaFeedbackAndroidUiCaptureTest {
 
         composeTestRule.onNodeWithTag("beta-feedback-share").performScrollTo()
         capturePng("beta-feedback-share-dark")
+
+        composeTestRule
+            .onNodeWithTag("beta-feedback-redact")
+            .performScrollTo()
+            .performSemanticsAction(SemanticsActions.OnClick)
+        waitForText("Redact private info")
+        capturePng("beta-feedback-redact-dark")
     }
 
     @Test
@@ -98,17 +111,19 @@ class BetaFeedbackAndroidUiCaptureTest {
                 ),
             )
         composeTestRule.setContent {
-            QuizRadarTheme {
-                BetaFeedbackInboxSheet(
-                    items = items,
-                    loadErrors = emptyList(),
-                    isExporting = false,
-                    errorMessage = null,
-                    onDismiss = {},
-                    onDeleteItem = {},
-                    onClear = {},
-                    onExport = {},
-                )
+            CompositionLocalProvider(LocalFeedbackImageDecoderDispatcher provides Dispatchers.Unconfined) {
+                QuizRadarTheme {
+                    BetaFeedbackInboxSheet(
+                        items = items,
+                        loadErrors = emptyList(),
+                        isExporting = false,
+                        errorMessage = null,
+                        onDismiss = {},
+                        onDeleteItem = {},
+                        onClear = {},
+                        onExport = {},
+                    )
+                }
             }
         }
 

@@ -6,6 +6,13 @@
     <!-- Requested at runtime only when the tester explicitly starts a voice note. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+    <queries>
+        <!-- Optional dictation in Beta Feedback via the device's configured speech-to-text service. -->
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
+    </queries>
+
     <application
         android:label="QuizRadar"
         android:icon="@mipmap/ic_launcher"

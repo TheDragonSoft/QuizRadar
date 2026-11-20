@@ -1836,7 +1836,7 @@ fun SettingsScreen(
                             onCheckedChange = onBetaFeedbackShakeEnabledChange,
                         )
                         Surface(
-                            shape = MaterialTheme.shapes.small,
+                            shape = MaterialTheme.shapes.extraSmall,
                             color = MaterialTheme.colorScheme.surfaceVariant,
                         ) {
                             Text(

@@ -125,9 +125,10 @@ contains synthetic test data only.
 Uses `staging`, not unrepresentative `debug`. The runner installs with a
 throwaway test signing key, uninstalls any stale signature, and measures
 `adb shell am start -W -n com.quizradar.app/.MainActivity` `TotalTime`.
-Install time is excluded. Every sample requires a live `pidof`, and logcat must
-not contain `FATAL EXCEPTION`, `ANR in com.quizradar.app`, or
-`UnsatisfiedLinkError`.
+Install time is excluded. ADB transport calls retry briefly only for
+`device offline`/`not found`/`closed` CI emulator transients. Every sample
+requires a live `pidof`, and logcat must not contain `FATAL EXCEPTION`,
+`ANR in com.quizradar.app`, or `UnsatisfiedLinkError`.
 
 This measures **process-cold emulator startup**, not first-install or
 physical-device startup.
@@ -142,8 +143,10 @@ production code. Each sample gets a unique temp directory, ephemeral keyring,
 and isolated WebView2 profile. The sampler discovers the OS-assigned port from
 the profile's `DevToolsActivePort` file, then measures process start → CDP ready
 → `app-shell` → successful native `version` IPC, followed by warm Calendar
-navigation. It asserts Tauri internals and the absence of `offline-banner`, so
-a web-only fallback cannot pass. The process tree is killed in `finally`.
+navigation. The `ipc.version` scenario is the median of five real native IPC
+round trips timed inside the page, excluding CDP/automation jitter. It asserts
+Tauri internals and the absence of `offline-banner`, so a web-only fallback
+cannot pass. The process tree is killed in `finally`.
 
 `QUIZRADAR_PERFORMANCE_SANDBOX=1` suppresses the update check **only** when
 `QUIZRADAR_DATA_DIR` and `QUIZRADAR_EPHEMERAL_KEYRING` are also set. Normal

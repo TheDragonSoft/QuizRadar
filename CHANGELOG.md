@@ -2,6 +2,16 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.19.2] — 2026-11-20
+
+### 🤝 Agent & Contributor Summaries
+
+- **[core, web, desktop, android, tooling, docs, ci]** Add tested four-surface performance regression gate (core/web/Android staging/Windows desktop), retire live Gemini timing test while preserving the 54-case eval, add academic property and CI validator tests, make Android emulator smoke real, enforce release signing/tag/ABI validation, and document the durable testing rework handoff. Bend was evaluated and not adopted.
+
+### 🔧 Maintenance, Docs & Tests
+
+- `ebedc3b` test(ci): add cross-platform performance regression gates (#42)
+
 ## [5.19.1] — 2026-11-20
 
 ### 🤝 Agent & Contributor Summaries

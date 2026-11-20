@@ -18,29 +18,62 @@ const apk = path.resolve(String(flags.apk));
 const output = path.resolve(String(flags.output));
 const logcatFile = `${output}.logcat.txt`;
 const screenshotFile = `${output}.png`;
-const run = (args, options = {}) =>
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const run = async (args, options = {}) =>
   execFileSync(adb, [...serial, ...args], { encoding: "utf8", ...options }).trim();
+// CI emulators can briefly report `device offline` after snapshot boot; retry
+// only that class of transient transport error so evidence is not lost.
+async function runWithDeviceRetry(args, options = {}) {
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await run(args, options);
+    } catch (error) {
+      lastError = error;
+      const message = String(error?.message ?? error);
+      if (
+        !/device offline|device ('|")?emulator-\d+('|")? not found|device unauthorized|closed/i.test(
+          message,
+        )
+      ) {
+        throw error;
+      }
+      if (attempt === 2) throw error;
+      await sleep(1000 * (attempt + 1));
+    }
+  }
+  throw lastError;
+}
 
 try {
   // Dedicated performance emulators must not inherit an app signed with a
   // different key; a fresh emulator may simply have nothing to uninstall.
   try {
-    run(["uninstall", "com.quizradar.app"]);
+    await runWithDeviceRetry(["uninstall", "com.quizradar.app"]);
   } catch {
     // Fresh device: proceed to install; signature mismatch is handled by a
     // successful uninstall when a previous package actually exists.
   }
-  run(["install", "-r", apk], { maxBuffer: 16 * 1024 * 1024 });
-  run(["shell", "am", "force-stop", "com.quizradar.app"]);
-  run(["logcat", "-c"]);
-  const started = run(["shell", "am", "start", "-W", "-n", "com.quizradar.app/.MainActivity"]);
+  await runWithDeviceRetry(["install", "-r", apk], { maxBuffer: 16 * 1024 * 1024 });
+  await runWithDeviceRetry(["shell", "am", "force-stop", "com.quizradar.app"]);
+  await runWithDeviceRetry(["logcat", "-c"]);
+  const started = await runWithDeviceRetry([
+    "shell",
+    "am",
+    "start",
+    "-W",
+    "-n",
+    "com.quizradar.app/.MainActivity",
+  ]);
   const totalTime = Number(/^TotalTime:\s*(\d+)$/m.exec(started)?.[1]);
   if (!Number.isFinite(totalTime) || totalTime < 0) {
     throw new Error(`am start did not report TotalTime:\n${started}`);
   }
-  const processId = run(["shell", "pidof", "com.quizradar.app"]);
+  const processId = await runWithDeviceRetry(["shell", "pidof", "com.quizradar.app"]);
   if (!processId) throw new Error("QuizRadar process is not alive after launch");
-  const logcat = run(["logcat", "-d", "-b", "all"], { maxBuffer: 32 * 1024 * 1024 });
+  const logcat = await runWithDeviceRetry(["logcat", "-d", "-b", "all"], {
+    maxBuffer: 32 * 1024 * 1024,
+  });
   writeFileSync(logcatFile, `${started}\n\n${logcat}`, "utf8");
   if (/FATAL EXCEPTION|ANR in com\.quizradar\.app|UnsatisfiedLinkError/.test(logcat)) {
     throw new Error(`crash, ANR, or native-link failure detected; see ${logcatFile}`);
@@ -61,7 +94,10 @@ try {
 } catch (error) {
   mkdirSync(path.dirname(output), { recursive: true });
   try {
-    writeFileSync(screenshotFile, run(["exec-out", "screencap", "-p"], { encoding: "buffer" }));
+    writeFileSync(
+      screenshotFile,
+      await run(["exec-out", "screencap", "-p"], { encoding: "buffer" }),
+    );
   } catch {
     // Preserve the original measurement failure if a screenshot is unavailable.
   }

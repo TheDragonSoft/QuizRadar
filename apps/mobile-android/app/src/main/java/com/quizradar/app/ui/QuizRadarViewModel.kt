@@ -2785,7 +2785,10 @@ class QuizRadarViewModel(
         viewModelScope.launch {
             try {
                 val payloadJson = callCore { core.exportSyncPayload("quizradar-android") }
-                val link = com.quizradar.app.core.PairSyncCodec.encode(payloadJson)
+                val link =
+                    withContext(Dispatchers.Default) {
+                        com.quizradar.app.core.PairSyncCodec.encode(payloadJson)
+                    }
                 onResult(link)
             } catch (e: Exception) {
                 showToast("Sync link export failed: ${e.message}")
@@ -2797,9 +2800,35 @@ class QuizRadarViewModel(
         viewModelScope.launch {
             try {
                 val payloadJson = callCore { core.exportSyncPayload("quizradar-android") }
-                val (qrJson, compacted) = com.quizradar.app.core.PairSyncCodec.compactPayloadIfNeeded(payloadJson)
-                val link = com.quizradar.app.core.PairSyncCodec.encode(qrJson)
-                onResult(link, compacted)
+                val encoded =
+                    withContext(Dispatchers.Default) {
+                        com.quizradar.app.core.PairSyncCodec.encodeForQr(payloadJson)
+                    }
+                onResult(encoded.link, encoded.compacted)
+            } catch (e: Exception) {
+                showToast("QR export failed: ${e.message}")
+            }
+        }
+    }
+
+    fun exportPeerSyncQrMatrix(onResult: (com.quizradar.app.core.QrCodeEncoder.QrMatrix, Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val payloadJson = callCore { core.exportSyncPayload("quizradar-android") }
+                val result =
+                    withContext(Dispatchers.Default) {
+                        val encoded = com.quizradar.app.core.PairSyncCodec.encodeForQr(payloadJson)
+                        if (!encoded.fitsQr) {
+                            null
+                        } else {
+                            Pair(com.quizradar.app.core.QrCodeEncoder.encode(encoded.link), encoded.compacted)
+                        }
+                    }
+                if (result == null) {
+                    showToast("Schedule exceeds QR capacity; use Copy Sync Link instead.")
+                } else {
+                    onResult(result.first, result.second)
+                }
             } catch (e: Exception) {
                 showToast("QR export failed: ${e.message}")
             }
@@ -2809,7 +2838,10 @@ class QuizRadarViewModel(
     fun mergePeerSyncLink(linkOrPayload: String) {
         viewModelScope.launch {
             try {
-                val payloadJson = com.quizradar.app.core.PairSyncCodec.decode(linkOrPayload)
+                val payloadJson =
+                    withContext(Dispatchers.Default) {
+                        com.quizradar.app.core.PairSyncCodec.decode(linkOrPayload)
+                    }
                 val reportJson = callCore { core.mergeSyncPayload(payloadJson, clockDate()) }
                 val report = com.quizradar.app.model.QuizRadarJsonParser.parseMergeReportSummary(reportJson)
                 refreshState()

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -118,6 +120,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
+import kotlin.math.floor
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -1457,8 +1460,10 @@ fun SettingsScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
+                    val compactRowPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
+
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Button(
@@ -1466,17 +1471,17 @@ fun SettingsScreen(
                                 exportBackupLauncher.launch("quizradar-backup-${LocalDate.now()}.json")
                             },
                             colors = ButtonDefaults.tonalPill(),
-                            contentPadding = PillButtonContentPadding,
+                            contentPadding = compactRowPadding,
                             modifier =
                                 Modifier
                                     .weight(1f)
                                     .defaultMinSize(minHeight = PillButtonMinHeight),
                         ) {
-                            Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "Export JSON",
-                                style = MaterialTheme.typography.labelLarge,
+                                style = MaterialTheme.typography.labelMedium,
                                 maxLines = 1,
                                 softWrap = false,
                             )
@@ -1487,17 +1492,17 @@ fun SettingsScreen(
                                 importBackupLauncher.launch("application/json")
                             },
                             colors = ButtonDefaults.tonalPill(),
-                            contentPadding = PillButtonContentPadding,
+                            contentPadding = compactRowPadding,
                             modifier =
                                 Modifier
                                     .weight(1f)
                                     .defaultMinSize(minHeight = PillButtonMinHeight),
                         ) {
-                            Icon(Icons.Outlined.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(Icons.Outlined.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "Import JSON",
-                                style = MaterialTheme.typography.labelLarge,
+                                style = MaterialTheme.typography.labelMedium,
                                 maxLines = 1,
                                 softWrap = false,
                             )
@@ -1584,7 +1589,7 @@ fun SettingsScreen(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Button(
@@ -1600,17 +1605,17 @@ fun SettingsScreen(
                                 }
                             },
                             colors = ButtonDefaults.tonalPill(),
-                            contentPadding = PillButtonContentPadding,
+                            contentPadding = compactRowPadding,
                             modifier =
                                 Modifier
                                     .weight(1f)
                                     .defaultMinSize(minHeight = PillButtonMinHeight),
                         ) {
-                            Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "Copy Sync Link",
-                                style = MaterialTheme.typography.labelLarge,
+                                style = MaterialTheme.typography.labelMedium,
                                 maxLines = 1,
                                 softWrap = false,
                             )
@@ -1622,17 +1627,17 @@ fun SettingsScreen(
                                 showPeerMergeDialog = true
                             },
                             colors = ButtonDefaults.tonalPill(),
-                            contentPadding = PillButtonContentPadding,
+                            contentPadding = compactRowPadding,
                             modifier =
                                 Modifier
                                     .weight(1f)
                                     .defaultMinSize(minHeight = PillButtonMinHeight),
                         ) {
-                            Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "Merge Sync Link",
-                                style = MaterialTheme.typography.labelLarge,
+                                style = MaterialTheme.typography.labelMedium,
                                 maxLines = 1,
                                 softWrap = false,
                             )
@@ -1642,12 +1647,12 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     Button(
                         onClick = {
-                            viewModel.exportPeerSyncQr { link, compacted ->
-                                try {
-                                    peerQrMatrix = QrCodeEncoder.encode(link)
+                            if (peerQrMatrix != null) {
+                                peerQrMatrix = null
+                            } else {
+                                viewModel.exportPeerSyncQrMatrix { matrix, compacted ->
+                                    peerQrMatrix = matrix
                                     peerQrCompacted = compacted
-                                } catch (e: Exception) {
-                                    viewModel.showToast("Schedule exceeds QR capacity; use Copy Sync Link instead.")
                                 }
                             }
                         },
@@ -1661,7 +1666,7 @@ fun SettingsScreen(
                         Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Show Pairing QR Code",
+                            text = if (peerQrMatrix != null) "Hide QR Code" else "Show Pairing QR Code",
                             style = MaterialTheme.typography.labelLarge,
                             maxLines = 1,
                             softWrap = false,
@@ -1670,61 +1675,69 @@ fun SettingsScreen(
 
                     val activeQr = peerQrMatrix
                     if (activeQr != null) {
-                        AlertDialog(
-                            onDismissRequest = { peerQrMatrix = null },
-                            title = { Text("Pairing QR Code (quizradar://pair)") },
-                            text = {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    modifier = Modifier.fillMaxWidth(),
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                            ) {
+                                Text(
+                                    text = "Pairing QR Code (quizradar://pair)",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier =
+                                        Modifier
+                                            .size(224.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(Color.White)
+                                            .padding(8.dp),
                                 ) {
-                                    Box(
-                                        contentAlignment = Alignment.Center,
-                                        modifier =
-                                            Modifier
-                                                .size(232.dp)
-                                                .background(Color.White)
-                                                .padding(8.dp),
-                                    ) {
-                                        Canvas(modifier = Modifier.fillMaxSize()) {
-                                            val totalModules = activeQr.size + 8
-                                            val cellSize = size.width / totalModules
-                                            drawRect(color = Color.White, size = size)
-                                            for (y in 0 until activeQr.size) {
-                                                for (x in 0 until activeQr.size) {
-                                                    if (activeQr.get(x, y)) {
-                                                        drawRect(
-                                                            color = Color.Black,
-                                                            topLeft =
-                                                                Offset(
-                                                                    (x + 4) * cellSize,
-                                                                    (y + 4) * cellSize,
-                                                                ),
-                                                            size = Size(cellSize, cellSize),
-                                                        )
-                                                    }
+                                    Canvas(modifier = Modifier.fillMaxSize()) {
+                                        val totalModules = activeQr.size + 8
+                                        val cellSize = floor(size.minDimension / totalModules).coerceAtLeast(1f)
+                                        val gridSize = cellSize * totalModules
+                                        val origin = floor((size.minDimension - gridSize) / 2f)
+                                        drawRect(color = Color.White, size = size)
+                                        for (y in 0 until activeQr.size) {
+                                            for (x in 0 until activeQr.size) {
+                                                if (activeQr.get(x, y)) {
+                                                    drawRect(
+                                                        color = Color.Black,
+                                                        topLeft =
+                                                            Offset(
+                                                                origin + (x + 4) * cellSize,
+                                                                origin + (y + 4) * cellSize,
+                                                            ),
+                                                        size = Size(cellSize, cellSize),
+                                                    )
                                                 }
                                             }
                                         }
                                     }
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    Text(
-                                        text =
-                                            "Scan with another phone's camera or upload on Desktop/Web " +
-                                                "(QR v${activeQr.version}-L" +
-                                                (if (peerQrCompacted) ", compact mode" else "") +
-                                                ").",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
                                 }
-                            },
-                            confirmButton = {
-                                TextButton(onClick = { peerQrMatrix = null }) {
-                                    Text("Close")
-                                }
-                            },
-                        )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    text =
+                                        "Scan with another phone's camera or upload on Desktop/Web " +
+                                            "(QR v${activeQr.version}-L" +
+                                            (if (peerQrCompacted) ", compact mode" else "") +
+                                            ").",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                     }
 
                     if (showPeerMergeDialog) {

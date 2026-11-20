@@ -30,28 +30,36 @@ function fromBase64Url(b64url: string): Uint8Array {
   return bytes;
 }
 
+async function runTransformStream(
+  stream: CompressionStream | DecompressionStream,
+  input: Uint8Array,
+): Promise<Uint8Array> {
+  const readPromise = new Response(stream.readable).arrayBuffer();
+  const writer = stream.writable.getWriter();
+  const writePromise = (async () => {
+    await writer.write(input as unknown as BufferSource);
+    await writer.close();
+  })();
+  // Attach no-op handlers so neither promise triggers an unhandled rejection
+  // if the peer rejects slightly before Promise.all observes it.
+  readPromise.catch(() => {});
+  writePromise.catch(() => {});
+  const [buf] = await Promise.all([readPromise, writePromise]);
+  return new Uint8Array(buf);
+}
+
 async function deflateRaw(input: Uint8Array): Promise<Uint8Array> {
   if (typeof CompressionStream === "undefined") {
     throw new Error("CompressionStream is not supported in this browser environment.");
   }
-  const cs = new CompressionStream("deflate-raw");
-  const writer = cs.writable.getWriter();
-  await writer.write(input as unknown as BufferSource);
-  await writer.close();
-  const buf = await new Response(cs.readable).arrayBuffer();
-  return new Uint8Array(buf);
+  return runTransformStream(new CompressionStream("deflate-raw"), input);
 }
 
 async function inflateRaw(input: Uint8Array): Promise<Uint8Array> {
   if (typeof DecompressionStream === "undefined") {
     throw new Error("DecompressionStream is not supported in this browser environment.");
   }
-  const ds = new DecompressionStream("deflate-raw");
-  const writer = ds.writable.getWriter();
-  await writer.write(input as unknown as BufferSource);
-  await writer.close();
-  const buf = await new Response(ds.readable).arrayBuffer();
-  return new Uint8Array(buf);
+  return runTransformStream(new DecompressionStream("deflate-raw"), input);
 }
 
 export async function encodePairSyncLink(payloadJson: string): Promise<string> {
@@ -60,28 +68,62 @@ export async function encodePairSyncLink(payloadJson: string): Promise<string> {
   return `${PAIR_SYNC_PREFIX}${toBase64Url(compressed)}`;
 }
 
+const LOSSLESS_STRIP_KEYS = new Set(["google_cal_url", "conflict_warning", "display_time"]);
+const VERBOSE_STRIP_KEYS = new Set([
+  "google_cal_url",
+  "conflict_warning",
+  "display_time",
+  "raw_text",
+  "ai_study_plan",
+]);
+const TRUNCATE_KEYS = new Set(["snippet", "notes", "ai_inference_note"]);
+
+function compactRecordObject(
+  value: unknown,
+  stripKeys: Set<string>,
+  truncateKeys: Set<string>,
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => compactRecordObject(item, stripKeys, truncateKeys));
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (v === null || stripKeys.has(k)) {
+      continue;
+    }
+    if (truncateKeys.has(k) && typeof v === "string" && v.length > 160) {
+      const cut = v.charCodeAt(156) >= 0xd800 && v.charCodeAt(156) <= 0xdbff ? 156 : 157;
+      out[k] = `${v.slice(0, cut)}...`;
+      continue;
+    }
+    out[k] = compactRecordObject(v, stripKeys, truncateKeys);
+  }
+  return out;
+}
+
 /**
- * Strips verbose source text (`raw_text`, long `snippet` / `notes` > 160 chars)
- * from assessments so large exam radars fit within QR Version 40-L (2,953 bytes)
- * while preserving all courses, slots, assessment dates, topics, and grades.
+ * Lossless compaction pass: strips `null`-valued optional properties and
+ * recomputable derived fields (`google_cal_url`, `conflict_warning`, `display_time`)
+ * without discarding user-authored notes or AI study plans.
+ */
+export function stripLosslessPairSyncFields(payloadJson: string): string {
+  const parsed = JSON.parse(payloadJson) as unknown;
+  return JSON.stringify(compactRecordObject(parsed, LOSSLESS_STRIP_KEYS, new Set()));
+}
+
+/**
+ * Strips `null` optional fields, recomputable derived fields (`google_cal_url`,
+ * `conflict_warning`, `display_time`), verbose text (`raw_text`, `ai_study_plan`),
+ * and truncates long `snippet` / `notes` / `ai_inference_note` strings (> 160 chars)
+ * across assessments and custom events so large exam radars fit within QR Version 40-L
+ * (2,953 bytes) while preserving courses, slots, dates, topics, and grades.
  */
 export function compactPairSyncPayload(payloadJson: string): string {
-  const parsed = JSON.parse(payloadJson) as Record<string, unknown>;
-  if (Array.isArray(parsed.assessments)) {
-    parsed.assessments = parsed.assessments.map((item) => {
-      if (!item || typeof item !== "object") return item;
-      const copy = { ...(item as Record<string, unknown>) };
-      delete copy.raw_text;
-      if (typeof copy.snippet === "string" && copy.snippet.length > 160) {
-        copy.snippet = `${copy.snippet.slice(0, 157)}...`;
-      }
-      if (typeof copy.notes === "string" && copy.notes.length > 160) {
-        copy.notes = `${copy.notes.slice(0, 157)}...`;
-      }
-      return copy;
-    });
-  }
-  return JSON.stringify(parsed);
+  const parsed = JSON.parse(payloadJson) as unknown;
+  return JSON.stringify(compactRecordObject(parsed, VERBOSE_STRIP_KEYS, TRUNCATE_KEYS));
 }
 
 export async function encodePairSyncQrPayload(payloadJson: string): Promise<{
@@ -93,7 +135,12 @@ export async function encodePairSyncQrPayload(payloadJson: string): Promise<{
   if (new TextEncoder().encode(fullLink).length <= MAX_QR_BYTE_CAPACITY) {
     return { link: fullLink, compacted: false, fitsQr: true };
   }
-  const compactJson = compactPairSyncPayload(payloadJson);
+  const losslessJson = stripLosslessPairSyncFields(payloadJson);
+  const losslessLink = await encodePairSyncLink(losslessJson);
+  if (new TextEncoder().encode(losslessLink).length <= MAX_QR_BYTE_CAPACITY) {
+    return { link: losslessLink, compacted: true, fitsQr: true };
+  }
+  const compactJson = compactPairSyncPayload(losslessJson);
   const compactLink = await encodePairSyncLink(compactJson);
   const fitsQr = new TextEncoder().encode(compactLink).length <= MAX_QR_BYTE_CAPACITY;
   return { link: compactLink, compacted: true, fitsQr };

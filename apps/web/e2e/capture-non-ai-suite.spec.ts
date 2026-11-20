@@ -343,6 +343,20 @@ test("capture desktop non-ai suite showcase", async ({ page }) => {
   await page.waitForTimeout(500);
   await saveScreen(page, "desktop-05-settings-lms-guides.png");
 
+  // 5b. Peer Sync QR Code modal
+  await page.evaluate(() =>
+    (window as any).__QUIZRADAR_STORE__.getState().openModal({ id: "cloud-sync" }),
+  );
+  await page.getByRole("button", { name: "Show Pairing QR Code" }).waitFor({ state: "visible" });
+  await page.getByRole("button", { name: "Show Pairing QR Code" }).click();
+  await page.waitForSelector('[data-testid="pair-qr-svg"]', { state: "visible" });
+  await page.locator('[data-testid="pair-qr-svg"]').scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
+  await saveScreen(page, "desktop-06-peer-sync-qr.png");
+  await page.evaluate(() =>
+    (window as any).__QUIZRADAR_STORE__.getState().closeModal("cloud-sync"),
+  );
+
   // Mobile Viewport Captures
   await page.setViewportSize({ width: 412, height: 915 });
   await page.waitForTimeout(400);

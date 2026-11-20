@@ -1,5 +1,6 @@
 package com.quizradar.app.ui
 
+import android.annotation.SuppressLint
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -22,6 +23,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.time.LocalDate
 
+@SuppressLint("StateFlowValueCalledInComposition")
 @RunWith(RobolectricTestRunner::class)
 class ComposeUiSmokeTest {
     @get:Rule

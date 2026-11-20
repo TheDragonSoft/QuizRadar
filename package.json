@@ -35,7 +35,12 @@
     "site:build": "node tooling/build-site.mjs",
     "tauri:dev": "pnpm --dir apps/desktop dev",
     "tauri:build": "pnpm --dir apps/desktop build",
-    "e2e:authed": "pnpm --dir apps/web e2e:authed"
+    "e2e:authed": "pnpm --dir apps/web e2e:authed",
+    "perf:core": "node performance/core/run.mjs",
+    "perf:web": "node performance/web/run.mjs",
+    "perf:android": "node performance/android/run.mjs",
+    "perf:desktop": "node performance/desktop/run.mjs",
+    "perf:review": "node performance/review.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.20.0",

@@ -1,11 +1,11 @@
 [workspace]
 resolver = "2"
-members = ["core", "apps/desktop/src-tauri", "core/bindings/wasm"]
+members = ["core", "apps/desktop/src-tauri", "core/bindings/wasm", "performance/core"]
 
 [workspace.package]
 edition = "2021"
 # STAMPED by tooling/generate-version.mjs from tooling/version.json — do not edit.
-version = "5.19.1"
+version = "5.19.2"
 license = "MIT"
 
 [workspace.dependencies]

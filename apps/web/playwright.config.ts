@@ -81,9 +81,9 @@ export default defineConfig({
     reducedMotion: "reduce",
     // Pinned so the rendered "today" is the same on every machine.
     timezoneId: "UTC",
-    trace: "off",
+    trace: "retain-on-failure",
     video: "off",
-    screenshot: "off",
+    screenshot: "only-on-failure",
   },
 
   projects: [

@@ -15,7 +15,10 @@ QuizRadar requires **zero** backend servers and uses platform-native signing plu
    - Computes the highest SemVer bump across `changes/*.md` fragments and Conventional Commits since the last `tooling/version.json` bump.
    - Updates `tooling/version.json`, stamps all 5 version sinks (`apps/web/package.json`, `apps/desktop/src-tauri/tauri.conf.json`, `Cargo.toml`, `apps/mobile-android/app/build.gradle.kts`, `apps/web/src/generated/version.ts`), updates workspace crate versions in `Cargo.lock`, updates `CHANGELOG.md`, archives full handoff logs into `docs/worklog/YYYY-MM.md`, deletes consumed `changes/*.md` files, and commits `chore(release): bump version to vX.Y.Z`.
 3. **Cutting a Published Binary Release (`.github/workflows/release.yml`):**
-   - Pushing an annotated tag matching `v*` (`git tag -a vX.Y.Z -m "Release vX.Y.Z"; git push origin vX.Y.Z`) builds signed Desktop installers (Windows NSIS + portable zip, macOS DMG, Linux deb/AppImage), signed Android APK/AAB, deploys the PWA to GitHub Pages, generates `SHA256SUMS.txt` + Tauri `latest.json`, and publishes the GitHub Release using tag-aware notes (`node tooling/generate-changelog.mjs --notes-only`, diffing strictly since the previous SemVer tag).
+   - Pushing an annotated tag matching `v*` (`git tag -a vX.Y.Z -m "Release vX.Y.Z"; git push origin vX.Y.Z`) first runs the full reusable CI workflow at the tagged commit, then builds updater-signed Desktop installers (Windows NSIS + portable zip, macOS DMG, Linux deb/AppImage), signed Android APK/AAB, deploys the PWA to GitHub Pages, generates `SHA256SUMS.txt` + Tauri `latest.json`, and publishes the GitHub Release using tag-aware notes (`node tooling/generate-changelog.mjs --notes-only`, diffing strictly since the previous SemVer tag).
+   - Tag/version/prerelease rules are validated by `node tooling/validate-release.mjs --tag vX.Y.Z`: the tag must equal `v` + `tooling/version.json`, and any SemVer prerelease component (`alpha`, `beta`, `rc`, …) publishes as a prerelease.
+   - **Desktop signing means Tauri updater signatures, not OS code signing.** Windows Authenticode and Apple notarization are separate processes and are not performed by the release workflow.
+   - **Android release signing is mandatory.** All four keystore secrets must exist; the workflow refuses to publish `app-release-unsigned.apk` and always runs `apksigner verify`.
 
 ---
 
@@ -64,6 +67,9 @@ pnpm version:dry-run
 
 # Check all 5 version sinks match tooling/version.json
 pnpm generate:version:check
+
+# Validate a release tag/version and prerelease classification
+node tooling/validate-release.mjs --tag v5.18.0
 
 # Preview GitHub Release notes since the previous SemVer tag
 node tooling/generate-changelog.mjs --notes-only

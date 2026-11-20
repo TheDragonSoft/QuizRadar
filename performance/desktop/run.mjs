@@ -1,0 +1,91 @@
+#!/usr/bin/env node
+/** Alternate two release desktop executables and compare native samples. */
+import { execFileSync } from "node:child_process";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { parseCliArgs } from "../../tooling/lib/agent-utils.mjs";
+import {
+  comparePerformanceResults,
+  renderPerformanceMarkdown,
+} from "../../tooling/lib/performance.mjs";
+
+const { flags } = parseCliArgs(process.argv.slice(2));
+if (!flags["base-exe"] || !flags["head-exe"]) {
+  console.error(
+    "usage: node performance/desktop/run.mjs --base-exe <exe> --head-exe <exe> [--samples 5] [--output-dir performance/results/desktop]",
+  );
+  process.exit(2);
+}
+const samples = Number(flags.samples ?? 5);
+if (!Number.isInteger(samples) || samples < 1)
+  throw new Error("--samples must be a positive integer");
+const outputDir = path.resolve(String(flags["output-dir"] ?? "performance/results/desktop"));
+mkdirSync(outputDir, { recursive: true });
+const executables = {
+  base: path.resolve(String(flags["base-exe"])),
+  head: path.resolve(String(flags["head-exe"])),
+};
+const revisions = {
+  base: String(flags["base-revision"] ?? "base"),
+  head: String(flags["head-revision"] ?? "head"),
+};
+const collected = { base: new Map(), head: new Map() };
+const sampleScript = fileURLToPath(new URL("./sample.mjs", import.meta.url));
+
+function sample(revision, index) {
+  const output = path.join(outputDir, `${revision}-${index}.json`);
+  execFileSync(
+    process.execPath,
+    [
+      sampleScript,
+      "--exe",
+      executables[revision],
+      "--revision",
+      revisions[revision],
+      "--output",
+      output,
+    ],
+    { stdio: ["ignore", "inherit", "inherit"], timeout: 300_000 },
+  );
+  const result = JSON.parse(readFileSync(output, "utf8"));
+  if (index === "warmup") return;
+  for (const scenario of result.scenarios) {
+    if (!collected[revision].has(scenario.id)) {
+      collected[revision].set(scenario.id, { ...scenario, samples: [] });
+    }
+    collected[revision].get(scenario.id).samples.push(...scenario.samples);
+  }
+}
+
+sample("base", "warmup");
+sample("head", "warmup");
+for (let index = 0; index < samples; index += 1) {
+  const order = index % 2 === 0 ? ["base", "head"] : ["head", "base"];
+  for (const revision of order) sample(revision, index);
+}
+
+const results = {};
+for (const revision of ["base", "head"]) {
+  results[revision] = {
+    schemaVersion: 1,
+    surface: "desktop",
+    revision: revisions[revision],
+    environment: { profile: "release-no-bundle", interleaved: true },
+    scenarios: [...collected[revision].values()],
+  };
+  writeFileSync(
+    path.join(outputDir, `${revision}.json`),
+    `${JSON.stringify(results[revision], null, 2)}\n`,
+  );
+}
+const comparison = comparePerformanceResults({
+  base: results.base,
+  head: results.head,
+  thresholds: JSON.parse(readFileSync(path.resolve("performance/thresholds.json"), "utf8")),
+  surface: "desktop",
+});
+writeFileSync(path.join(outputDir, "comparison.json"), `${JSON.stringify(comparison, null, 2)}\n`);
+writeFileSync(path.join(outputDir, "comparison.md"), renderPerformanceMarkdown(comparison));
+console.log(renderPerformanceMarkdown(comparison));
+process.exit(comparison.passed ? 0 : 1);

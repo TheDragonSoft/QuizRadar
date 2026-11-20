@@ -80,6 +80,12 @@ tooling/ui-click.ps1
 # the tag is the source of truth, the dump stays untracked)
 tooling/.v4ref/
 
+# Performance measurements are machine-local evidence; CI uploads them as artifacts.
+performance/results/
+performance/artifacts/
+performance/.worktrees/
+performance/.artifacts/
+
 # Playwright artifacts (baselines in apps/web/e2e-baselines/ ARE committed)
 apps/web/e2e-results/
 apps/web/test-results/

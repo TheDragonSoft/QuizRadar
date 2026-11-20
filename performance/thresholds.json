@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "defaults": {
+    "core": {
+      "samples": 15,
+      "maxRegressionPercent": 10,
+      "minAbsoluteDeltaMs": 0.25
+    },
+    "web": {
+      "samples": 15,
+      "maxRegressionPercent": 15,
+      "minAbsoluteDeltaMs": 50
+    },
+    "android": {
+      "samples": 7,
+      "maxRegressionPercent": 15,
+      "minAbsoluteDeltaMs": 150
+    },
+    "desktop": {
+      "samples": 5,
+      "maxRegressionPercent": 15,
+      "minAbsoluteDeltaMs": 100
+    }
+  },
+  "scenarios": {
+    "web.navigation.calendar": {
+      "minAbsoluteDeltaMs": 10
+    },
+    "web.navigation.tasks": {
+      "minAbsoluteDeltaMs": 10
+    },
+    "web.navigation.dashboard": {
+      "minAbsoluteDeltaMs": 10
+    },
+    "desktop.ipc.version": {
+      "minAbsoluteDeltaMs": 5
+    },
+    "desktop.navigation.calendar": {
+      "minAbsoluteDeltaMs": 10
+    }
+  }
+}

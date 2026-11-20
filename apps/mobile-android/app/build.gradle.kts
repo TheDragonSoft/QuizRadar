@@ -23,8 +23,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // STAMPED by tooling/generate-version.mjs from tooling/version.json — do not edit.
-        versionCode = 51901
-        versionName = "5.19.1"
+        versionCode = 51902
+        versionName = "5.19.2"
 
         // The Kotlin shell alone could run on 32-bit ABIs (JNA ships dispatchers
         // for armeabi-v7a, x86, ...), but the Rust core is only cross-built for
@@ -166,8 +166,16 @@ android {
     }
 
     lint {
+        // A release-only finding must fail `lintRelease`, not hide behind the
+        // debug variant. CI runs lintRelease explicitly; do not silently
+        // re-enable lint during every assembleRelease build.
         checkReleaseBuilds = false
-        abortOnError = false
+        checkTestSources = false
+        abortOnError = true
+        // Only pre-existing UniFFI-generated NewApi findings are snapshotted.
+        // New findings still fail this task; never refresh the baseline to
+        // make a failing PR pass.
+        baseline = file("lint-baseline.xml")
     }
 }
 

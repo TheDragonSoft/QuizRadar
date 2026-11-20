@@ -4,7 +4,7 @@ _Concise status index for AI agents and maintainers (enforced `<= 250` lines by 
 
 ## Snapshot
 
-- **Current Version:** `5.19.1` (source of truth: `tooling/version.json` -> 5 stamped sinks)
+- **Current Version:** `5.19.2` (source of truth: `tooling/version.json` -> 5 stamped sinks)
 - **Latest Published Release Tag:** `v5.16.0` (Windows NSIS/Portable, macOS ARM64, Linux deb/AppImage, signed Android APK/AAB, GitHub Pages PWA)
 - **Database Schema:** `SCHEMA_VERSION = 6` (SQLite `core/src/store/db.rs` + PWA IndexedDB `apps/web/src/pwadapters/idbStore.ts`; content-addressed topic keys `h<fnv1a64>`, Non-AI suite tables, and `courses.aliases` JSON column)
 - **Post-`v5.0.0` Landed on `main` (through `v5.16.0`):** Content-addressed topic completion keys (`v2 -> v3`), Non-AI Academic Productivity Suite (`v4`: GPA engine, study cushion/deficit, Week A/B parity, Leitner flashcards, mistake bank, attendance tracker, `TodayScheduleWidget` 4x2, persistent T-3h exam notification, printable PDF schedule), multiple course codes/aliases & one-click course reassignment (`v6`: `Course.aliases`, `reassign_assessment_course`), serverless two-way peer sync (`quizradar://pair?d=...`), `gemini-3.8-flash` primary AI model ladder, and Student Observatory 3-theme UI/UX suite (`obsidian`, `solar`, `amoled-nebula`).
@@ -29,6 +29,8 @@ _Concise status index for AI agents and maintainers (enforced `<= 250` lines by 
 pnpm agent:preflight                             # branch, worktree collision radar, pending notes, required gates
 pnpm generate:version:check                      # verify all 5 version sinks match tooling/version.json
 node apps/web/src/contract/regenerate.mjs --check # verify Rust <-> TS wire contract map is fresh
+pnpm test:tooling                                # version pipeline, coordination, perf gate & CI validator meta-tests
+node tooling/validate-release.mjs --tag vX.Y.Z   # release tag/version/prerelease dry check
 pnpm agent:note --validate                       # validate all changes/*.md handoff fragments
 ```
 
@@ -57,8 +59,21 @@ pnpm --dir apps/web exec playwright test         # Visual regression vs apps/web
 ```powershell
 $env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot"
 cd apps/mobile-android
-.\gradlew.bat ktlintCheck testDebugUnitTest assembleDebug
+.\gradlew.bat ktlintCheck lintRelease testDebugUnitTest assembleDebug
 ```
+
+### Performance Regression Gate (`performance/`, separate from correctness)
+
+```powershell
+pnpm perf:core -- --base-bin <core-sampler> --head-bin <core-sampler> --samples 15
+pnpm perf:web -- --base-dist <web-dist> --head-dist <web-dist> --samples 7
+pnpm perf:android -- --base-apk <test-signed.apk> --head-apk <test-signed.apk> --serial emulator-5554
+pnpm perf:desktop -- --base-exe <quizradar-desktop.exe> --head-exe <quizradar-desktop.exe> --samples 5
+pnpm perf:review                                  # aggregate all surface comparison reports
+```
+
+See `docs/PERFORMANCE-TESTING.md`. CI required checks: `ci-success` and
+`performance-review`.
 
 ## Round 16: Non-AI Academic Productivity Suite & Live Dogfooding (Desktop & Android)
 

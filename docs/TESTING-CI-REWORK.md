@@ -56,6 +56,10 @@ untouched; they are historical observations, not live gates.
 
 - Compare PR base merge-base SHA and head SHA on one runner.
 - Build both production artifacts, then alternate base/head samples.
+- Web warm navigation is timed in-page around the DOM click so Playwright
+  protocol/actionability overhead cannot mimic an app regression.
+- Windows desktop CDP is benchmark-only Tauri config instrumentation on both
+  revisions; committed production code remains unchanged.
 - Gate on median; raw samples, p95, min/max and metadata are retained.
 - Threshold must cross both relative and absolute floors.
 - Missing/incompatible scenarios fail; the gate never self-updates.

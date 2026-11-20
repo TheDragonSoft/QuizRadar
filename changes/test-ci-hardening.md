@@ -29,6 +29,7 @@ Add tested four-surface performance regression gate (core/web/Android staging/Wi
 - verify-android-artifacts debug/release APK and AAB
 - performance same-build calibration core/web/android/desktop
 - node performance/desktop/prepare-build.mjs --project .; cargo tauri build --no-bundle; node performance/desktop/run.mjs --base-exe target/release/quizradar-desktop.exe --head-exe target/release/quizradar-desktop.exe --samples 5 (native CDP/IPC and repeated same-build comparison pass)
+- pnpm --dir apps/web build; node performance/web/run.mjs --base-dist apps/web/dist --head-dist apps/web/dist --samples 15 (browser-local warm-navigation timing passes the required 15-sample same-build gate)
 
 ### Handoff / Follow-ups
 

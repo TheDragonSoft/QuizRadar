@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* global window, localStorage, requestAnimationFrame */
+/* global window, document, localStorage, requestAnimationFrame, MutationObserver */
 /** One isolated production-web performance sample. */
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
@@ -128,14 +128,53 @@ try {
   await backupModal.waitFor({ state: "detached" });
 
   async function navigate(id, expectedText) {
-    const started = now();
-    await page.getByTestId(`topbar-nav-${id}`).click();
-    await page.getByTestId(`view-${id}`).waitFor({ state: "visible" });
-    if (expectedText) await page.getByText(expectedText, { exact: false }).first().waitFor();
-    await page.evaluate(
-      () => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined))),
+    // Time inside the browser around the real DOM click. This keeps Playwright
+    // actionability/protocol overhead out of the app's navigation measurement.
+    return page.evaluate(
+      async ({ id, expectedText }) => {
+        const nav = document.querySelector(`[data-testid="topbar-nav-${id}"]`);
+        if (!nav) throw new Error(`navigation target missing: ${id}`);
+        const started = performance.now();
+        nav.click();
+        await new Promise((resolve, reject) => {
+          const isReady = () => {
+            const view = document.querySelector(`[data-testid="view-${id}"]`);
+            if (!view) return false;
+            const style = window.getComputedStyle(view);
+            const visible =
+              style.display !== "none" &&
+              style.visibility !== "hidden" &&
+              view.getClientRects().length > 0;
+            if (!visible) return false;
+            return !expectedText || Boolean(view.textContent?.includes(expectedText));
+          };
+          const observer = new MutationObserver(() => {
+            if (!isReady()) return;
+            observer.disconnect();
+            window.clearTimeout(timeout);
+            resolve(undefined);
+          });
+          const timeout = window.setTimeout(() => {
+            observer.disconnect();
+            reject(new Error(`navigation did not become ready: ${id}`));
+          }, 30_000);
+          observer.observe(document.documentElement, {
+            subtree: true,
+            childList: true,
+            attributes: true,
+            characterData: true,
+          });
+          if (isReady()) {
+            observer.disconnect();
+            window.clearTimeout(timeout);
+            resolve(undefined);
+          }
+        });
+        await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+        return performance.now() - started;
+      },
+      { id, expectedText },
     );
-    return now() - started;
   }
 
   const calendarMs = await navigate("calendar");

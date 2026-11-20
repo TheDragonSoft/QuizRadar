@@ -109,9 +109,13 @@ real modal) happens outside timing.
 |---|---|
 | `startup.app_shell` | Navigation start → `[data-testid="app-shell"]` visible. |
 | `startup.first_contentful_paint` | Chromium paint entry; missing metric fails the sample. |
-| `navigation.calendar` | Click Calendar → view visible + animation frame. |
-| `navigation.tasks` | Click Tasks → view visible + animation frame. |
-| `navigation.dashboard` | Click Dashboard → populated dashboard item visible. |
+| `navigation.calendar` | In-page DOM click Calendar → view visible + animation frame. |
+| `navigation.tasks` | In-page DOM click Tasks → view visible + animation frame. |
+| `navigation.dashboard` | In-page DOM click Dashboard → view visible with populated item + animation frame. |
+
+Warm navigation starts with `performance.now()` inside the page, so Playwright
+actionability/protocol overhead is excluded; the Dashboard scenario still
+asserts that populated dashboard content rendered.
 
 The populated scenario imports `core/tests/fixtures/v4_backup.json`, which
 contains synthetic test data only.

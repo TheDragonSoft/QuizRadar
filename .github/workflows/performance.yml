@@ -348,9 +348,10 @@ jobs:
       - name: flatten downloaded surface artifacts
         run: |
           for dir in performance/results/performance-*; do
-            surface="${dir##performance-}"
+            name="$(basename "$dir")"
+            surface="${name#performance-}"
             mkdir -p "performance/results/$surface"
-            cp -a "$dir"/* "performance/results/$surface/"
+            cp -a "$dir"/. "performance/results/$surface/"
           done
       - id: verdict
         run: node performance/review.mjs --results performance/results

@@ -2,6 +2,46 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.19.0] — 2026-11-20
+
+### 🤝 Agent & Contributor Summaries
+
+- **[android, docs]** Improve Android shake-to-feedback capture, privacy redaction, sensor fusion, and dictation: capture screenshots via API 26+ PixelCopy (with software fallback) and off-main-thread PNG encoding; decode preview and inbox thumbnails asynchronously off the main thread; add an interactive finger-drag screenshot redaction dialog that permanently burns opaque black marks into screenshot.png before sharing; prefer hardware-fused TYPE_LINEAR_ACCELERATION with TYPE_ACCELEROMETER fallback; add opt-in speech-to-text dictation into the report text box with honest unavailable fallback; and fix rounded-rectangle clipping (extraSmall 12dp) on screenshot previews, inbox thumbnails, and banners.
+
+### 🚀 New Features
+
+- `7935f96` feat(android): add PixelCopy capture, screenshot redaction, linear-accel shake, and dictation (#44)
+
+## [5.18.0] — 2026-11-20
+
+### 🤝 Agent & Contributor Summaries
+
+- **[android, docs, ci]** Add native shake-to-feedback for debug, staging, and GitHub release APKs with a persistent multi-issue inbox. Each report keeps its own ID, screenshot, written note, and optional voice recording; save multiple issues, review/play/delete them in Settings, then export all as one ZIP with batch-index.md, batch-manifest.json, and isolated issue directories. Preserve single-issue sharing, privacy review, no automatic upload, release inclusion, Help/FAQ, short PR Authoring Model field, and dialog-aware Robolectric UI captures. Hardened in PR review: ViewModel-backed rotation survival, ModalBottomSheet discard-cancel recovery, separate save/share progress states, cold-start deep link layout deferral, accurate screen reporting, sliding-window/rate-independent shake detection, synchronized inbox store that clears damaged entries and preserves per-issue build info, subsampled thumbnails, inbox voice playback, 3-minute recording cap, stale cache pruning, and tightened FileProvider package-only path.
+
+### 🚀 New Features
+
+- `a4bcc77` feat(android): add shake-to-feedback reports (#43)
+
+## [5.17.1] — 2026-11-18
+
+### 🤝 Agent & Contributor Summaries
+
+- **[core, web, android]** Correct rescheduled announcement dates, require timely timed study blocks before suppressing conflicts, retain explicit ICS venues, and emit exclusive all-day Google Calendar end dates; align conflict fixtures with the corrected semantics and make Android QR compaction linear instead of regex-backtracking.
+
+### 🐛 Fixes & Performance
+
+- `0f3517d` fix(core): harden assessment scheduling correctness (#41)
+
+## [5.17.0] — 2026-11-18
+
+### 🚀 New Features
+
+- `5fd904c` feat(web,android): add ISO/IEC 18004 QR code device pairing for quizradar://pair [skip-note]
+
+### 🔧 Maintenance, Docs & Tests
+
+- `c335b44` docs(repo): refresh README, architecture docs, landing copy, and ktlint for v5.16.0 [skip-note]
+
 ## [5.16.0] — 2026-11-18
 
 ### 🤝 Agent & Contributor Summaries

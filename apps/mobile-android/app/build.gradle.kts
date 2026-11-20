@@ -23,8 +23,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // STAMPED by tooling/generate-version.mjs from tooling/version.json — do not edit.
-        versionCode = 51600
-        versionName = "5.16.0"
+        versionCode = 51900
+        versionName = "5.19.0"
 
         // The Kotlin shell alone could run on 32-bit ABIs (JNA ships dispatchers
         // for armeabi-v7a, x86, ...), but the Rust core is only cross-built for
@@ -71,6 +71,9 @@ android {
 
     buildTypes {
         debug {
+            // Tester feedback ships in every GitHub-distributed build. The
+            // microphone is still requested only for an explicit voice note.
+            buildConfigField("boolean", "BETA_FEEDBACK_ENABLED", "true")
             // The debug build used to ship the *unshrunk* icon dex (62 MB):
             // ART dexoptimised it for ~30 s on the first run, the app took
             // 14 s to show its first frame, and the system could raise an ANR
@@ -99,6 +102,7 @@ android {
             )
         }
         release {
+            buildConfigField("boolean", "BETA_FEEDBACK_ENABLED", "true")
             val releaseSigning = signingConfigs.getByName("release")
             if (releaseSigning.storeFile != null && releaseSigning.storeFile!!.exists()) {
                 signingConfig = releaseSigning
@@ -130,6 +134,7 @@ android {
         // they do in production.
         create("staging") {
             initWith(getByName("release"))
+            buildConfigField("boolean", "BETA_FEEDBACK_ENABLED", "true")
             matchingFallbacks += listOf("release")
             isDebuggable = false
             // The visible suffix makes it obvious which build is installed

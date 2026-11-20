@@ -234,6 +234,7 @@ class AndroidUiCaptureTest {
         capturePng("settings-dark")
     }
 
+    @OptIn(ExperimentalMaterial3Api::class)
     @Test
     @Config(qualifiers = "w390dp-h844dp-night")
     fun capture_course_aliases_dark() {
@@ -263,6 +264,7 @@ class AndroidUiCaptureTest {
         capturePng("course-aliases-dark")
     }
 
+    @OptIn(ExperimentalMaterial3Api::class)
     @Test
     @Config(qualifiers = "w390dp-h844dp-night")
     fun capture_assessment_reassign_dark() {

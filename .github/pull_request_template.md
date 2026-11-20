@@ -2,6 +2,12 @@
 
 <!-- Concise explanation of what changed and why -->
 
+## PR Authoring Model
+
+<!-- Short model slug that prepared this PR (for example, `kimi k3.1 pro`), or `Human` when no AI agent was used -->
+
+- Model: `<model slug or Human>`
+
 ## Agent Handoff & Versioning Fragment
 
 - [ ] Committed `changes/<slug>.md` via `pnpm agent:note` (`bump: patch | minor | major | none`)

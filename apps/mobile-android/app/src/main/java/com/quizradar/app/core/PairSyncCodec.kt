@@ -15,6 +15,17 @@ import java.util.zip.Inflater
 object PairSyncCodec {
     const val PREFIX = "quizradar://pair?d="
 
+    private val LOSSLESS_STRIP_KEYS = setOf("google_cal_url", "conflict_warning", "display_time")
+    private val VERBOSE_STRIP_KEYS =
+        setOf("google_cal_url", "conflict_warning", "display_time", "raw_text", "ai_study_plan")
+    private val TRUNCATE_KEYS = setOf("snippet", "notes", "ai_inference_note")
+
+    data class QrEncodeResult(
+        val link: String,
+        val compacted: Boolean,
+        val fitsQr: Boolean,
+    )
+
     fun encode(payloadJson: String): String {
         val raw = payloadJson.toByteArray(StandardCharsets.UTF_8)
         val deflater = Deflater(Deflater.BEST_COMPRESSION, true)
@@ -33,8 +44,48 @@ object PairSyncCodec {
     }
 
     /**
-     * Strips verbose `raw_text` fields and truncates long `snippet` / `notes` values
-     * in `payloadJson` when the full compressed `quizradar://pair?d=...` link exceeds
+     * Encodes `payloadJson` into a `quizradar://pair?d=...` link suitable for QR pairing,
+     * applying two-stage compaction only when the full link exceeds `maxLinkBytes`
+     * (ISO/IEC 18004 QR Version 40-L capacity = 2,953 bytes):
+     *
+     * 1. Lossless pass: strips `null`-valued optional fields and recomputable derived fields
+     *    (`google_cal_url`, `conflict_warning`, `display_time`).
+     * 2. Verbose trim pass (if still oversize): strips `raw_text` / `ai_study_plan` and
+     *    truncates long `snippet` / `notes` / `ai_inference_note` strings (> 160 chars).
+     */
+    fun encodeForQr(
+        payloadJson: String,
+        maxLinkBytes: Int = QrCodeEncoder.MAX_QR_BYTE_CAPACITY,
+    ): QrEncodeResult {
+        val fullLink = encode(payloadJson)
+        if (fullLink.toByteArray(StandardCharsets.UTF_8).size <= maxLinkBytes) {
+            return QrEncodeResult(link = fullLink, compacted = false, fitsQr = true)
+        }
+        val losslessJson =
+            compactJsonPayload(
+                json = payloadJson,
+                stripKeys = LOSSLESS_STRIP_KEYS,
+                truncateKeys = emptySet(),
+                stripNullFields = true,
+            )
+        val losslessLink = encode(losslessJson)
+        if (losslessLink.toByteArray(StandardCharsets.UTF_8).size <= maxLinkBytes) {
+            return QrEncodeResult(link = losslessLink, compacted = true, fitsQr = true)
+        }
+        val compactJson =
+            compactJsonPayload(
+                json = losslessJson,
+                stripKeys = VERBOSE_STRIP_KEYS,
+                truncateKeys = TRUNCATE_KEYS,
+                stripNullFields = true,
+            )
+        val compactLink = encode(compactJson)
+        val fits = compactLink.toByteArray(StandardCharsets.UTF_8).size <= maxLinkBytes
+        return QrEncodeResult(link = compactLink, compacted = true, fitsQr = fits)
+    }
+
+    /**
+     * Compacts `payloadJson` when the full compressed `quizradar://pair?d=...` link exceeds
      * `maxLinkBytes` (ISO/IEC 18004 QR Version 40-L capacity = 2,953 bytes).
      *
      * Returns `(compactedOrOriginalJson, wasCompacted)`.
@@ -47,10 +98,32 @@ object PairSyncCodec {
         if (fullLink.toByteArray(StandardCharsets.UTF_8).size <= maxLinkBytes) {
             return Pair(payloadJson, false)
         }
-        return Pair(compactJsonPayload(payloadJson), true)
+        val losslessJson =
+            compactJsonPayload(
+                json = payloadJson,
+                stripKeys = LOSSLESS_STRIP_KEYS,
+                truncateKeys = emptySet(),
+                stripNullFields = true,
+            )
+        if (encode(losslessJson).toByteArray(StandardCharsets.UTF_8).size <= maxLinkBytes) {
+            return Pair(losslessJson, true)
+        }
+        val compactJson =
+            compactJsonPayload(
+                json = losslessJson,
+                stripKeys = VERBOSE_STRIP_KEYS,
+                truncateKeys = TRUNCATE_KEYS,
+                stripNullFields = true,
+            )
+        return Pair(compactJson, true)
     }
 
-    private fun compactJsonPayload(json: String): String {
+    private fun compactJsonPayload(
+        json: String,
+        stripKeys: Set<String>,
+        truncateKeys: Set<String>,
+        stripNullFields: Boolean,
+    ): String {
         val out = StringBuilder(json.length)
         var i = 0
         while (i < json.length) {
@@ -77,7 +150,11 @@ object PairSyncCodec {
             val key = json.substring(i + 1, closeQuote)
             val afterColon = skipWhitespace(json, afterQuote + 1)
 
-            if (key == "raw_text" && afterColon < json.length) {
+            val shouldStrip =
+                afterColon < json.length &&
+                    (key in stripKeys || (stripNullFields && isNullLiteral(json, afterColon)))
+
+            if (shouldStrip) {
                 val valEnd = skipJsonValue(json, afterColon)
                 val afterVal = skipWhitespace(json, valEnd)
                 if (afterVal < json.length && json[afterVal] == ',') {
@@ -94,7 +171,7 @@ object PairSyncCodec {
                 continue
             }
 
-            if ((key == "snippet" || key == "notes") && afterColon < json.length && json[afterColon] == '"') {
+            if (key in truncateKeys && afterColon < json.length && json[afterColon] == '"') {
                 val valClose = findJsonStringEnd(json, afterColon)
                 if (valClose != -1) {
                     val contentLen = valClose - (afterColon + 1)
@@ -113,6 +190,15 @@ object PairSyncCodec {
             i = afterQuote + 1
         }
         return out.toString()
+    }
+
+    private fun isNullLiteral(
+        s: String,
+        start: Int,
+    ): Boolean {
+        if (!s.startsWith("null", start)) return false
+        val end = start + 4
+        return end >= s.length || s[end] == ',' || s[end] == '}' || s[end] == ']' || s[end].isWhitespace()
     }
 
     private fun findJsonStringEnd(
@@ -184,6 +270,16 @@ object PairSyncCodec {
         }
     }
 
+    private fun isHighSurrogateEscape(
+        s: String,
+        idx: Int,
+        contentEnd: Int,
+    ): Boolean {
+        if (idx + 6 > contentEnd || s[idx] != '\\' || s[idx + 1] != 'u') return false
+        val codeUnit = s.substring(idx + 2, idx + 6).toIntOrNull(16) ?: return false
+        return codeUnit in 0xD800..0xDBFF
+    }
+
     private fun truncateJsonStringContent(
         s: String,
         contentStart: Int,
@@ -196,7 +292,17 @@ object PairSyncCodec {
             val c = s[i]
             val step =
                 if (c == '\\') {
-                    if (i + 1 < contentEnd && s[i + 1] == 'u') 6 else 2
+                    if (i + 1 < contentEnd && s[i + 1] == 'u') {
+                        if (isHighSurrogateEscape(s, i, contentEnd) && i + 12 <= contentEnd &&
+                            s[i + 6] == '\\' && s[i + 7] == 'u'
+                        ) {
+                            12
+                        } else {
+                            6
+                        }
+                    } else {
+                        2
+                    }
                 } else if (Character.isHighSurrogate(c)) {
                     2
                 } else {

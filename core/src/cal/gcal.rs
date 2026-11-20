@@ -527,7 +527,11 @@ pub fn template_url(assessment: &Assessment) -> Option<String> {
             ),
             event_summary(assessment),
         ),
-        (None, _) => (format!("{compact}/{compact}"), event_summary(assessment)),
+        (None, _) => {
+            // Google Calendar's all-day end date is exclusive.
+            let next = date.succ_opt()?.format("%Y%m%d");
+            (format!("{compact}/{next}"), event_summary(assessment))
+        }
     };
 
     let mut params: Vec<(String, String)> = vec![

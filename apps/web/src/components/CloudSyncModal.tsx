@@ -150,7 +150,12 @@ export function CloudSyncModal({
     try {
       const detector = new DetectorCtor({ formats: ["qr_code"] });
       const bitmap = await createImageBitmap(file);
-      const codes = await detector.detect(bitmap);
+      let codes: Array<{ rawValue?: string }>;
+      try {
+        codes = await detector.detect(bitmap);
+      } finally {
+        bitmap.close();
+      }
       const rawValue = codes.find((c) => c.rawValue?.trim())?.rawValue?.trim();
       if (!rawValue) {
         addToast({

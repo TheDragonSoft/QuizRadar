@@ -469,11 +469,18 @@ fn assessment_id(event: &IcsEvent, origin: &IcsOrigin) -> String {
     )
 }
 
+/// Internal event envelope: LOCATION belongs to the assessment pipeline, but
+/// lives outside the public structural `IcsEvent` shape for compatibility.
+struct LocatedIcsEvent {
+    event: IcsEvent,
+    location: Option<String>,
+}
+
 /// Builds one VEVENT from a block interior. First property occurrence wins
 /// (v4 regex parity); malformed lines are ignored.
-#[must_use]
-pub fn event_from_block(block: &str) -> IcsEvent {
+fn located_event_from_block(block: &str) -> LocatedIcsEvent {
     let mut event = IcsEvent::default();
+    let mut location = None;
     for line in block.split('\n') {
         let Some((name_part, raw_value)) = split_property(line) else {
             continue;
@@ -495,6 +502,7 @@ pub fn event_from_block(block: &str) -> IcsEvent {
                     event.dtend = Some(parsed);
                 }
             }
+            "LOCATION" if location.is_none() => location = Some(value),
             "URL"
                 if event.url.is_none()
                     && (value.starts_with("https://") || value.starts_with("http://")) =>
@@ -504,15 +512,32 @@ pub fn event_from_block(block: &str) -> IcsEvent {
             _ => {}
         }
     }
-    event
+    let location = location.and_then(|value| {
+        let trimmed = value.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    });
+    LocatedIcsEvent { event, location }
+}
+
+/// Builds the public structural event without changing its established shape.
+#[must_use]
+pub fn event_from_block(block: &str) -> IcsEvent {
+    located_event_from_block(block).event
+}
+
+fn parse_located_ics_events(text: &str) -> Vec<LocatedIcsEvent> {
+    collect_vevent_blocks(&unfold_ics_lines(text))
+        .into_iter()
+        .map(|block| located_event_from_block(&block))
+        .collect()
 }
 
 /// Structural parse of a whole calendar into raw events.
 #[must_use]
 pub fn parse_ics_events(text: &str) -> Vec<IcsEvent> {
-    collect_vevent_blocks(&unfold_ics_lines(text))
+    parse_located_ics_events(text)
         .into_iter()
-        .map(|block| event_from_block(&block))
+        .map(|parsed| parsed.event)
         .collect()
 }
 
@@ -613,19 +638,25 @@ pub fn parse_ics_assessments(
     local: FixedOffset,
 ) -> (Vec<Assessment>, ScanStats) {
     let mut stats = ScanStats::default();
-    let events = parse_ics_events(ics_text);
+    let events = parse_located_ics_events(ics_text);
     stats.scanned = events.len();
 
     let mut assessments: Vec<Assessment> = Vec::new();
     let mut seen_keys = std::collections::HashSet::new();
-    for event in events {
-        if !is_ics_candidate(&event) {
+    for parsed in events {
+        if !is_ics_candidate(&parsed.event) {
             continue;
         }
         stats.candidates += 1;
 
-        let Some(candidate) = assessment_from_event(&event, schedule, origin, ref_date, local)
-        else {
+        let Some(candidate) = assessment_from_event_with_location(
+            &parsed.event,
+            parsed.location.as_deref(),
+            schedule,
+            origin,
+            ref_date,
+            local,
+        ) else {
             continue;
         };
 
@@ -644,8 +675,20 @@ pub fn parse_ics_assessments(
 /// parseable DTSTART — a missing date is never invented). The single builder
 /// shared by the ICS text pipeline *and* the `sources/` fetchers that map
 /// structured items (Moodle REST events) onto this same honesty surface.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn assessment_from_event(
     event: &IcsEvent,
+    schedule: &ScheduleData,
+    origin: &IcsOrigin,
+    ref_date: NaiveDate,
+    local: FixedOffset,
+) -> Option<Assessment> {
+    assessment_from_event_with_location(event, None, schedule, origin, ref_date, local)
+}
+
+fn assessment_from_event_with_location(
+    event: &IcsEvent,
+    explicit_location: Option<&str>,
     schedule: &ScheduleData,
     origin: &IcsOrigin,
     ref_date: NaiveDate,
@@ -697,9 +740,18 @@ pub(crate) fn assessment_from_event(
                 elapsed
             }
         });
-    let room = course_id
-        .as_deref()
-        .and_then(|id| room_for_course(schedule, id, date));
+    // An explicit venue in the event outranks weekly-timetable inference:
+    // the timetable describes the usual class room, not necessarily this
+    // assessment's actual location.
+    let room = explicit_location
+        .map(str::trim)
+        .filter(|location| !location.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            course_id
+                .as_deref()
+                .and_then(|id| room_for_course(schedule, id, date))
+        });
 
     // The type word often lives in the body only ("… final exam …"), so the
     // description goes through the same classifier the email path uses —

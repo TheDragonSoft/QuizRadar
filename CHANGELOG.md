@@ -2,6 +2,16 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.19.1] — 2026-11-20
+
+### 🤝 Agent & Contributor Summaries
+
+- **[web, android]** Harden serverless `quizradar://pair` QR code pairing across Web/Desktop and Android: resolve the `PairSyncCodec.kt` conflict with `main` (fixing a JSON-corruption bug in `main`'s truncation helper), upgrade compaction on both Web and Android to a two-stage strategy targeting real `BackupPayload` fields (lossless removal of `null` and derived `google_cal_url`/`conflict_warning`/`display_time` fields first, then verbose `ai_study_plan`/`raw_text` stripping and UTF-16/escape-safe truncation of `ai_inference_note`/`snippet`/`notes` across assessments and custom events), drain Web `CompressionStream`/`DecompressionStream` concurrently to prevent Chromium >64KB backpressure deadlocks, close scanned `ImageBitmap` handles in `CloudSyncModal`, move Android deflate/QR matrix encoding off the main thread without double-encoding, render the Android pairing QR card inline with integer-snapped Canvas modules and non-clipping compact row buttons, and expand unit/UI-capture regression coverage.
+
+### 🐛 Fixes & Performance
+
+- `45d67dc` fix(web,android): harden QR code pairing compaction, stream drain, and inline Android UI (#40)
+
 ## [5.19.0] — 2026-11-20
 
 ### 🤝 Agent & Contributor Summaries

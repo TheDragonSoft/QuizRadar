@@ -11,6 +11,7 @@ dist-ssr/
 
 # Android / Kotlin (any gradle project)
 .gradle/
+.kotlin/
 build/
 **/build/
 local.properties

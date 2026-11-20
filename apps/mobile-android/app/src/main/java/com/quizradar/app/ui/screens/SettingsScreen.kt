@@ -72,6 +72,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -127,6 +128,13 @@ fun SettingsScreen(
     onStartGoogleLogin: () -> Unit = {},
     onStartMicrosoftLogin: () -> Unit = {},
     onReRunOnboarding: () -> Unit = {},
+    betaFeedbackAvailable: Boolean = false,
+    betaFeedbackShakeEnabled: Boolean = false,
+    onBetaFeedbackShakeEnabledChange: (Boolean) -> Unit = {},
+    onOpenBetaFeedback: () -> Unit = {},
+    betaFeedbackInboxCount: Int = 0,
+    betaFeedbackInboxHasErrors: Boolean = false,
+    onOpenBetaFeedbackInbox: () -> Unit = {},
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     modifier: Modifier = Modifier,
 ) {
@@ -1788,7 +1796,104 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             // =========================================================================
-            // 9. ABOUT
+            // 9. BETA FEEDBACK (INCLUDING GITHUB RELEASE APKS)
+            // =========================================================================
+            if (betaFeedbackAvailable) {
+                SettingsSectionHeader(
+                    icon = Icons.Outlined.Quiz,
+                    title = "Beta feedback",
+                )
+                Card(
+                    shape = MaterialTheme.shapes.medium,
+                    colors = CardDefaults.quietCardColors().copy(containerColor = MaterialTheme.colorScheme.surface),
+                    border = CardDefaults.quietCardBorder(),
+                    elevation = CardDefaults.quietCardElevation(),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "Shake. Save. Export together.",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text =
+                                "Capture multiple issues with their own screenshots and voice notes. Save each one " +
+                                    "to the feedback inbox, then export everything together as one associated ZIP.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        SettingsSwitchRow(
+                            name = "Shake to send feedback",
+                            desc =
+                                if (betaFeedbackShakeEnabled) {
+                                    "On while QuizRadar is open. Use three firm shakes; the button below also works."
+                                } else {
+                                    "Shake detection is off. The feedback button below still works."
+                                },
+                            checked = betaFeedbackShakeEnabled,
+                            onCheckedChange = onBetaFeedbackShakeEnabledChange,
+                        )
+                        Surface(
+                            shape = MaterialTheme.shapes.small,
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                        ) {
+                            Text(
+                                text =
+                                    "Nothing uploads automatically. Review the screenshot and remove it if it shows " +
+                                        "private information. Packages never include tokens, API keys, logcat, or your database. " +
+                                        "Sharing does not confirm delivery or a fix.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(12.dp),
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = onOpenBetaFeedback,
+                            colors = ButtonDefaults.filledPill(),
+                            contentPadding = PillButtonContentPadding,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .defaultMinSize(minHeight = PillButtonMinHeight),
+                        ) {
+                            Text("Create feedback report")
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = onOpenBetaFeedbackInbox,
+                            enabled = betaFeedbackInboxCount > 0 || betaFeedbackInboxHasErrors,
+                            colors = ButtonDefaults.tonalPill(),
+                            contentPadding = PillButtonContentPadding,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .defaultMinSize(minHeight = PillButtonMinHeight)
+                                    .testTag("beta-feedback-inbox-settings"),
+                        ) {
+                            Text(
+                                when {
+                                    betaFeedbackInboxCount > 0 -> "Review & export all ($betaFeedbackInboxCount)"
+                                    betaFeedbackInboxHasErrors -> "Review feedback inbox errors"
+                                    else -> "Feedback inbox is empty"
+                                },
+                            )
+                        }
+                        Text(
+                            text = "Saved issues stay on this device until you delete them. Exporting does not clear the inbox.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+
+            // =========================================================================
+            // 10. ABOUT
             // =========================================================================
             SettingsSectionHeader(
                 icon = Icons.Outlined.Info,
@@ -1833,7 +1938,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             // =========================================================================
-            // 10. ADVANCED (FOLDED ACCORDION)
+            // 11. ADVANCED (FOLDED ACCORDION)
             // =========================================================================
             SettingsSectionHeader(
                 icon = Icons.Outlined.Settings,

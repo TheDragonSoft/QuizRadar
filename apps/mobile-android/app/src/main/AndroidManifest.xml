@@ -3,6 +3,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Requested at runtime only when the tester explicitly starts a voice note. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
         android:label="QuizRadar"
@@ -92,6 +94,18 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/today_schedule_widget_info" />
         </receiver>
+
+        <!-- Read-only, temporary beta-feedback ZIP sharing. The authority exposes
+             only cache/beta-feedback/packages via feedback_paths.xml, never drafts or app data. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.feedback"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/feedback_paths" />
+        </provider>
 
     </application>
 

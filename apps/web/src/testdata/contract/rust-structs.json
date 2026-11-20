@@ -18,7 +18,7 @@
     "core/src/plan/conflicts.rs": "10e08f36c34eb1fbb628ed5733109d372b6d96cf083854d51ac6fd7b995f2dc3",
     "apps/desktop/src-tauri/src/commands/state.rs": "3646be4dc9df1eed38bb73223a149ad51badd3055c46fda2cbe700f73b5e3e58",
     "core/src/store/repo.rs": "87687f018f09df153db71d36defb3574075139c94ad4750b05f19e332f0cede1",
-    "core/src/ffi.rs": "90dc6e2abe77ec323ed3a09aea0abfb24286b7a08e6731a3e51d640431e25a98",
+    "core/src/ffi.rs": "7dbe49985584933d26d1fc664257d65aef5a9927de1a484b1c4940c4bfc050b9",
     "core/src/store/db.rs": "7bb13b760def20b915a1c214ddad9ea60b8c37702bcd69e9fee780cff4ecd4db"
   },
   "structs": {

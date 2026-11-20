@@ -557,12 +557,14 @@ pub fn notification_id_for(assessment_id: String, kind: String) -> i32 {
 }
 
 /// Encodes a data-only `BackupPayload` JSON into a compressed `quizradar://pair?d=...` link.
+#[cfg(feature = "sync")]
 #[uniffi::export]
 pub fn encode_pair_sync_link(payload_json: String) -> String {
     crate::sync::pair::encode_pair_sync_link(&payload_json)
 }
 
 /// Decodes and validates a `quizradar://pair?d=...` link into `BackupPayload` JSON.
+#[cfg(feature = "sync")]
 #[uniffi::export]
 pub fn decode_pair_sync_link(raw_input: String) -> Result<String, QuizRadarFfiError> {
     crate::sync::pair::decode_pair_sync_link(&raw_input)
@@ -571,6 +573,7 @@ pub fn decode_pair_sync_link(raw_input: String) -> Result<String, QuizRadarFfiEr
 
 /// Conditionally applies two-stage compaction to `payload_json` when its compressed
 /// link exceeds `max_link_bytes`. Returns JSON `{ "json": ..., "compacted": bool }`.
+#[cfg(feature = "sync")]
 #[uniffi::export]
 pub fn compact_pair_sync_payload(
     payload_json: String,
@@ -583,6 +586,7 @@ pub fn compact_pair_sync_payload(
 
 /// Encodes `payload_json` for QR pairing using two-stage compaction only when needed.
 /// Returns JSON `{ "link": ..., "compacted": bool, "fits_qr": bool, "byte_len": number }`.
+#[cfg(feature = "sync")]
 #[uniffi::export]
 pub fn encode_pair_sync_qr(
     payload_json: String,
@@ -595,6 +599,7 @@ pub fn encode_pair_sync_qr(
 
 /// Encodes arbitrary UTF-8 text into a Byte-mode ECC Level-L ISO/IEC 18004 QR matrix.
 /// Returns JSON `{ "version": u8, "size": u32, "modules": "0101..." }`.
+#[cfg(feature = "sync")]
 #[uniffi::export]
 pub fn encode_qr_matrix(text: String) -> Result<String, QuizRadarFfiError> {
     let matrix = crate::sync::qr::encode_qr_matrix(&text)
@@ -604,6 +609,7 @@ pub fn encode_qr_matrix(text: String) -> Result<String, QuizRadarFfiError> {
 
 /// Parses and SSRF-validates an ephemeral Desktop LAN HTTPS pairing URI (`quizradar://lan?...`).
 /// Rejects non-LAN/public IPv4 addresses, privileged ports, and malformed tokens/fingerprints.
+#[cfg(feature = "sync")]
 #[uniffi::export]
 pub fn parse_lan_pair_uri(raw_input: String) -> Result<String, QuizRadarFfiError> {
     let parsed = crate::sync::pair::parse_lan_pair_uri(&raw_input)

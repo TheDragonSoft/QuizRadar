@@ -22,6 +22,7 @@ pub mod plan;
 pub mod sources;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod store;
+#[cfg(feature = "sync")]
 pub mod sync;
 pub mod types;
 

@@ -14,7 +14,13 @@ path = "src/bin/uniffi-bindgen.rs"
 required-features = ["cli"]
 
 [features]
-default = ["uniffi"]
+# `sync` ships by default so every product shell (desktop, Android cdylib,
+# wasm bindings) gets QR/pair encoding. The performance sampler builds core
+# with `default-features = false` and must stay free of it: pulling the sync
+# module into that no-default build measurably perturbs Linux release codegen
+# for the store/planner hot paths (see changes/lan-sync-feature-gate.md).
+default = ["sync", "uniffi"]
+sync = ["dep:miniz_oxide"]
 uniffi = ["dep:uniffi", "uniffi/tokio"]
 cli = ["uniffi", "uniffi/cli"]
 
@@ -32,7 +38,8 @@ base64 = "0.22"
 getrandom = "0.2"
 # Pure-Rust raw deflate/inflate for single-implementation quizradar://pair sync
 # across Desktop, Android (UniFFI), and Web/PWA (WASM); already present in Cargo.lock.
-miniz_oxide = "0.8"
+# Optional: only the `sync` feature pulls it in.
+miniz_oxide = { version = "0.8", optional = true }
 uniffi = { version = "0.28", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

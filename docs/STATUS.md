@@ -4,7 +4,7 @@ _Concise status index for AI agents and maintainers (enforced `<= 250` lines by 
 
 ## Snapshot
 
-- **Current Version:** `5.17.1` (source of truth: `tooling/version.json` -> 5 stamped sinks)
+- **Current Version:** `5.18.0` (source of truth: `tooling/version.json` -> 5 stamped sinks)
 - **Latest Published Release Tag:** `v5.16.0` (Windows NSIS/Portable, macOS ARM64, Linux deb/AppImage, signed Android APK/AAB, GitHub Pages PWA)
 - **Database Schema:** `SCHEMA_VERSION = 6` (SQLite `core/src/store/db.rs` + PWA IndexedDB `apps/web/src/pwadapters/idbStore.ts`; content-addressed topic keys `h<fnv1a64>`, Non-AI suite tables, and `courses.aliases` JSON column)
 - **Post-`v5.0.0` Landed on `main` (through `v5.16.0`):** Content-addressed topic completion keys (`v2 -> v3`), Non-AI Academic Productivity Suite (`v4`: GPA engine, study cushion/deficit, Week A/B parity, Leitner flashcards, mistake bank, attendance tracker, `TodayScheduleWidget` 4x2, persistent T-3h exam notification, printable PDF schedule), multiple course codes/aliases & one-click course reassignment (`v6`: `Course.aliases`, `reassign_assessment_course`), serverless two-way peer sync (`quizradar://pair?d=...`), `gemini-3.8-flash` primary AI model ladder, and Student Observatory 3-theme UI/UX suite (`obsidian`, `solar`, `amoled-nebula`).

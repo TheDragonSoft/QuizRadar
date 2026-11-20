@@ -2,6 +2,16 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.18.0] — 2026-11-20
+
+### 🤝 Agent & Contributor Summaries
+
+- **[android, docs, ci]** Add native shake-to-feedback for debug, staging, and GitHub release APKs with a persistent multi-issue inbox. Each report keeps its own ID, screenshot, written note, and optional voice recording; save multiple issues, review/play/delete them in Settings, then export all as one ZIP with batch-index.md, batch-manifest.json, and isolated issue directories. Preserve single-issue sharing, privacy review, no automatic upload, release inclusion, Help/FAQ, short PR Authoring Model field, and dialog-aware Robolectric UI captures. Hardened in PR review: ViewModel-backed rotation survival, ModalBottomSheet discard-cancel recovery, separate save/share progress states, cold-start deep link layout deferral, accurate screen reporting, sliding-window/rate-independent shake detection, synchronized inbox store that clears damaged entries and preserves per-issue build info, subsampled thumbnails, inbox voice playback, 3-minute recording cap, stale cache pruning, and tightened FileProvider package-only path.
+
+### 🚀 New Features
+
+- `a4bcc77` feat(android): add shake-to-feedback reports (#43)
+
 ## [5.17.1] — 2026-11-18
 
 ### 🤝 Agent & Contributor Summaries

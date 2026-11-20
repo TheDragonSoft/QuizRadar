@@ -57,7 +57,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -170,15 +169,23 @@ internal fun BetaFeedbackSheet(
         )
     val dictationLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (result.resultCode == Activity.RESULT_OK) {
-                val spoken =
-                    result.data
-                        ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-                        ?.firstOrNull()
-                        .orEmpty()
-                if (spoken.isNotBlank()) {
-                    note = appendDictatedText(note, spoken)
-                    onClearError()
+            when (result.resultCode) {
+                Activity.RESULT_OK -> {
+                    val spoken =
+                        result.data
+                            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                            ?.firstOrNull()
+                            .orEmpty()
+                    if (spoken.isNotBlank()) {
+                        note = appendDictatedText(note, spoken)
+                        onClearError()
+                    } else {
+                        onReportError("No speech was recognized. Try again, type your report, or record a voice note.")
+                    }
+                }
+                Activity.RESULT_CANCELED -> Unit
+                else -> {
+                    onReportError("Speech-to-text failed. Try again, type your report, or record a voice note.")
                 }
             }
         }
@@ -191,7 +198,7 @@ internal fun BetaFeedbackSheet(
             maxDimensionPx = 1_024,
             revision = draft.screenshotRevision,
         )
-    val screenshotBitmap = (screenshotState as? SampledBitmapState.Loaded)?.bitmap
+    val screenshotImageBitmap = (screenshotState as? SampledBitmapState.Loaded)?.imageBitmap
 
     ModalBottomSheet(
         onDismissRequest = {
@@ -260,7 +267,7 @@ internal fun BetaFeedbackSheet(
                         when (val decoded = screenshotState) {
                             is SampledBitmapState.Loaded -> {
                                 Image(
-                                    bitmap = decoded.bitmap.asImageBitmap(),
+                                    bitmap = decoded.imageBitmap,
                                     contentDescription = "Screenshot attached to this feedback. Tap to enlarge.",
                                     contentScale = ContentScale.Fit,
                                     modifier =
@@ -289,14 +296,19 @@ internal fun BetaFeedbackSheet(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = "Tap image to enlarge",
+                                text =
+                                    when (screenshotState) {
+                                        is SampledBitmapState.Loaded -> "Tap image to enlarge"
+                                        SampledBitmapState.Loading -> "Loading preview…"
+                                        SampledBitmapState.Failed -> "Screenshot unavailable"
+                                    },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 TextButton(
                                     onClick = { showRedactionDialog = true },
-                                    enabled = !isBusy && screenshotBitmap != null,
+                                    enabled = !isBusy && screenshotImageBitmap != null,
                                     modifier = Modifier.testTag("beta-feedback-redact"),
                                 ) {
                                     Text("Redact")
@@ -348,10 +360,14 @@ internal fun BetaFeedbackSheet(
                                 onReportError(
                                     "Speech-to-text is not available on this device. Type your report or record a voice note instead.",
                                 )
+                            } catch (_: SecurityException) {
+                                onReportError(
+                                    "Speech-to-text is blocked on this device. Type your report or record a voice note instead.",
+                                )
                             }
                         }
                     },
-                    enabled = !isBusy && !state.isRecording,
+                    enabled = !isBusy && !state.isRecording && note.length < MAX_FEEDBACK_NOTE_LENGTH,
                     modifier = Modifier.testTag("beta-feedback-dictate"),
                 ) {
                     Text("Dictate")
@@ -432,7 +448,7 @@ internal fun BetaFeedbackSheet(
                             onClick = onRecordClick,
                             colors = ButtonDefaults.tonalPill(),
                             contentPadding = PillButtonContentPadding,
-                            enabled = !state.isExporting,
+                            enabled = !isBusy,
                             modifier =
                                 Modifier
                                     .fillMaxWidth()
@@ -532,8 +548,8 @@ internal fun BetaFeedbackSheet(
                 modifier = Modifier.padding(top = 8.dp),
             )
             TextButton(
-                onClick = { if (!state.isExporting) showDiscardConfirmation = true },
-                enabled = !state.isExporting,
+                onClick = { if (!isBusy) showDiscardConfirmation = true },
+                enabled = !isBusy,
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             ) {
                 Text("Discard feedback", color = MaterialTheme.colorScheme.error)
@@ -574,10 +590,10 @@ internal fun BetaFeedbackSheet(
             onDismissRequest = { showScreenshotPreview = false },
             title = { Text("Screenshot review") },
             text = {
-                val previewBitmap = screenshotBitmap
+                val previewBitmap = screenshotImageBitmap
                 if (previewBitmap != null) {
                     Image(
-                        bitmap = previewBitmap.asImageBitmap(),
+                        bitmap = previewBitmap,
                         contentDescription = "Full screenshot attached to this feedback",
                         contentScale = ContentScale.Fit,
                         modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp),
@@ -590,7 +606,7 @@ internal fun BetaFeedbackSheet(
                 TextButton(onClick = { showScreenshotPreview = false }) { Text("Close") }
             },
             dismissButton = {
-                if (screenshotBitmap != null && !isBusy) {
+                if (screenshotImageBitmap != null && !isBusy) {
                     TextButton(
                         onClick = {
                             showScreenshotPreview = false
@@ -606,8 +622,9 @@ internal fun BetaFeedbackSheet(
 
     if (showRedactionDialog && screenshot?.isFile == true) {
         ScreenshotRedactionDialog(
-            bitmap = screenshotBitmap,
+            imageBitmap = screenshotImageBitmap,
             isApplying = state.isRedactingScreenshot,
+            errorMessage = state.errorMessage,
             onApply = { strokes ->
                 onApplyRedactions(strokes) {
                     showRedactionDialog = false

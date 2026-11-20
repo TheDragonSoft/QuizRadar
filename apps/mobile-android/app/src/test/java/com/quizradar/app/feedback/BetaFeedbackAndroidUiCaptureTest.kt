@@ -7,6 +7,7 @@ import android.graphics.Paint
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollTo
@@ -66,6 +67,7 @@ class BetaFeedbackAndroidUiCaptureTest {
         }
 
         waitForText("Beta feedback")
+        waitForTag("beta-feedback-screenshot")
         composeTestRule
             .onNodeWithTag("beta-feedback-note")
             .performScrollTo()
@@ -81,6 +83,7 @@ class BetaFeedbackAndroidUiCaptureTest {
             .performScrollTo()
             .performSemanticsAction(SemanticsActions.OnClick)
         waitForText("Redact private info")
+        waitForTag("beta-feedback-redact-canvas")
         capturePng("beta-feedback-redact-dark")
     }
 
@@ -128,12 +131,19 @@ class BetaFeedbackAndroidUiCaptureTest {
         }
 
         waitForText("Feedback inbox")
+        waitForTag("inbox-screenshot-ui-capture-first")
         capturePng("beta-feedback-inbox-dark")
     }
 
     private fun waitForText(text: String) {
         composeTestRule.waitUntil(timeoutMillis = 8_000) {
             composeTestRule.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    private fun waitForTag(tag: String) {
+        composeTestRule.waitUntil(timeoutMillis = 8_000) {
+            composeTestRule.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
         }
     }
 

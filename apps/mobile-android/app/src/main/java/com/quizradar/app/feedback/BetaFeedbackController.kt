@@ -14,6 +14,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.quizradar.app.BuildConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -114,6 +115,10 @@ class BetaFeedbackController internal constructor(
     private var destroyed = false
     private var captureJob: Job? = null
     private var pendingCaptureDirectory: File? = null
+
+    @Volatile
+    private var pendingCaptureId: String? = null
+
     private var recorder: MediaRecorder? = null
     private var player: MediaPlayer? = null
     private var recordingJob: Job? = null
@@ -127,7 +132,7 @@ class BetaFeedbackController internal constructor(
                         inboxStore.reload()
                         pruneStaleCache(
                             cacheDir = appContext.cacheDir,
-                            activeDraftId = _uiState.value.draft?.id,
+                            protectedDraftIds = setOfNotNull(_uiState.value.draft?.id, pendingCaptureId),
                         )
                     }
                 }
@@ -176,6 +181,7 @@ class BetaFeedbackController internal constructor(
         captureJob = null
         pendingCaptureDirectory?.deleteRecursively()
         pendingCaptureDirectory = null
+        pendingCaptureId = null
         shakeDetector.stop()
         recordingJob?.cancel()
         releaseRecorder()
@@ -197,33 +203,51 @@ class BetaFeedbackController internal constructor(
         shakeDetector.stop()
         val initialDraft = newFeedbackDraft(appContext.cacheDir, screenName)
         pendingCaptureDirectory = initialDraft.directory
-        captureJob =
+        pendingCaptureId = initialDraft.id
+        var jobRef: Job? = null
+        val launchedJob =
             scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 var captureFailed = false
-                val screenshot =
-                    try {
-                        captureScreenshot(attachedActivity, File(initialDraft.directory, "screenshot.png"))
-                    } catch (_: Exception) {
-                        captureFailed = true
-                        null
+                try {
+                    val screenshot =
+                        try {
+                            captureScreenshot(attachedActivity, File(initialDraft.directory, "screenshot.png"))
+                        } catch (cancelled: CancellationException) {
+                            initialDraft.directory.deleteRecursively()
+                            throw cancelled
+                        } catch (_: Exception) {
+                            captureFailed = true
+                            null
+                        }
+                    if (destroyed) {
+                        initialDraft.directory.deleteRecursively()
+                        return@launch
                     }
-                pendingCaptureDirectory = null
-                if (destroyed) {
-                    initialDraft.directory.deleteRecursively()
-                    return@launch
+                    captureFailed = captureFailed || screenshot == null
+                    _uiState.value =
+                        BetaFeedbackUiState(
+                            draft = initialDraft.copy(screenshot = screenshot),
+                            errorMessage =
+                                if (captureFailed) {
+                                    "The screenshot could not be captured. You can still send a written or voice report."
+                                } else {
+                                    null
+                                },
+                        )
+                } finally {
+                    if (pendingCaptureId == initialDraft.id) {
+                        pendingCaptureDirectory = null
+                        pendingCaptureId = null
+                    }
+                    if (captureJob === jobRef) {
+                        captureJob = null
+                    }
                 }
-                captureFailed = captureFailed || screenshot == null
-                _uiState.value =
-                    BetaFeedbackUiState(
-                        draft = initialDraft.copy(screenshot = screenshot),
-                        errorMessage =
-                            if (captureFailed) {
-                                "The screenshot could not be captured. You can still send a written or voice report."
-                            } else {
-                                null
-                            },
-                    )
             }
+        jobRef = launchedJob
+        if (launchedJob.isActive) {
+            captureJob = launchedJob
+        }
     }
 
     fun dismiss() {
@@ -232,6 +256,7 @@ class BetaFeedbackController internal constructor(
         captureJob = null
         pendingCaptureDirectory?.deleteRecursively()
         pendingCaptureDirectory = null
+        pendingCaptureId = null
         if (_uiState.value.isRecording) stopRecording()
         stopPlayback()
         _uiState.value.draft?.directory?.deleteRecursively()
@@ -275,7 +300,11 @@ class BetaFeedbackController internal constructor(
                 }
             if (destroyed) return@launch
             val currentDraft = _uiState.value.draft
-            if (result.isSuccess && currentDraft?.id == draft.id) {
+            if (currentDraft?.id != draft.id) {
+                _uiState.value = _uiState.value.copy(isRedactingScreenshot = false)
+                return@launch
+            }
+            if (result.isSuccess) {
                 _uiState.value =
                     _uiState.value.copy(
                         draft = currentDraft.copy(screenshotRevision = currentDraft.screenshotRevision + 1),
@@ -566,7 +595,7 @@ class BetaFeedbackController internal constructor(
     }
 
     fun openInbox() {
-        if (!isAvailable || destroyed || _uiState.value.draft != null) return
+        if (!isAvailable || destroyed || _uiState.value.draft != null || captureJob?.isActive == true) return
         _uiState.value = _uiState.value.copy(isInboxOpen = true, inboxErrorMessage = null)
         updateShakeRegistration()
     }
@@ -676,6 +705,12 @@ class BetaFeedbackController internal constructor(
     }
 
     fun resetFeedbackData() {
+        captureJob?.cancel()
+        captureJob = null
+        pendingCaptureDirectory?.deleteRecursively()
+        pendingCaptureDirectory = null
+        pendingCaptureId = null
+        if (_uiState.value.isRecording) stopRecording()
         stopPlayback()
         scope.launch {
             runCatching {
@@ -684,13 +719,16 @@ class BetaFeedbackController internal constructor(
                     File(appContext.cacheDir, "beta-feedback").deleteRecursively()
                 }
             }
-            if (!destroyed) _uiState.value = BetaFeedbackUiState()
+            if (!destroyed) {
+                _uiState.value = BetaFeedbackUiState()
+                updateShakeRegistration()
+            }
         }
     }
 
     private fun updateShakeRegistration() {
         if (!isAvailable || destroyed || !resumed || !_shakeEnabled.value ||
-            _uiState.value.draft != null || _uiState.value.isInboxOpen
+            _uiState.value.draft != null || _uiState.value.isInboxOpen || captureJob?.isActive == true
         ) {
             shakeDetector.stop()
         } else {
@@ -719,9 +757,21 @@ class BetaFeedbackController internal constructor(
             activeDraftId: String?,
             nowMs: Long = System.currentTimeMillis(),
         ) {
+            pruneStaleCache(
+                cacheDir = cacheDir,
+                protectedDraftIds = setOfNotNull(activeDraftId),
+                nowMs = nowMs,
+            )
+        }
+
+        internal fun pruneStaleCache(
+            cacheDir: File,
+            protectedDraftIds: Set<String>,
+            nowMs: Long = System.currentTimeMillis(),
+        ) {
             val draftsDir = File(cacheDir, "beta-feedback/drafts")
             draftsDir.listFiles().orEmpty().forEach { entry ->
-                if (entry.name != activeDraftId) {
+                if (entry.name !in protectedDraftIds) {
                     entry.deleteRecursively()
                 }
             }

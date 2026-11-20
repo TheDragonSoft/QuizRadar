@@ -38,18 +38,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import kotlin.math.min
 
 data class NormalizedPoint(
@@ -86,7 +86,9 @@ internal object ScreenshotRedactor {
             if (decoded.isMutable && decoded.config == Bitmap.Config.ARGB_8888) {
                 decoded
             } else {
-                decoded.copy(Bitmap.Config.ARGB_8888, true).also { decoded.recycle() }
+                val copied = decoded.copy(Bitmap.Config.ARGB_8888, true)
+                decoded.recycle()
+                checkNotNull(copied) { "Could not allocate mutable bitmap for redaction" }
             }
 
         val tempFile = File(sourceFile.parentFile, "${sourceFile.name}.redacting")
@@ -98,7 +100,9 @@ internal object ScreenshotRedactor {
                 }
             }
             check(tempFile.isFile && tempFile.length() > 0L) { "Redacted screenshot was not written" }
-            if (!tempFile.renameTo(sourceFile)) {
+            try {
+                Files.move(tempFile.toPath(), sourceFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            } catch (_: Exception) {
                 tempFile.inputStream().use { input ->
                     FileOutputStream(sourceFile, false).use { output ->
                         input.copyTo(output)
@@ -163,14 +167,14 @@ internal object ScreenshotRedactor {
 
 @Composable
 internal fun ScreenshotRedactionDialog(
-    bitmap: Bitmap?,
+    imageBitmap: ImageBitmap?,
     isApplying: Boolean,
+    errorMessage: String? = null,
     onApply: (List<RedactionStroke>) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val completedStrokes = remember { mutableStateListOf<RedactionStroke>() }
     var activePoints by remember { mutableStateOf<List<NormalizedPoint>>(emptyList()) }
-    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
 
     AlertDialog(
         onDismissRequest = { if (!isApplying) onDismiss() },
@@ -184,53 +188,67 @@ internal fun ScreenshotRedactionDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                errorMessage?.let { message ->
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag("beta-feedback-redact-error"),
+                    )
+                }
                 Spacer(modifier = Modifier.height(10.dp))
-                if (bitmap != null && bitmap.width > 0 && bitmap.height > 0) {
-                    val ratio = bitmap.width.toFloat() / bitmap.height.toFloat()
+                if (imageBitmap != null && imageBitmap.width > 0 && imageBitmap.height > 0) {
+                    val ratio = imageBitmap.width.toFloat() / imageBitmap.height.toFloat()
+                    // Do not apply fillMaxWidth() before aspectRatio: portrait screenshots must shrink
+                    // horizontally to keep an exact 1:1 coordinate and brush-width mapping with the PNG.
                     Box(
                         modifier =
                             Modifier
-                                .fillMaxWidth()
+                                .weight(1f, fill = false)
                                 .heightIn(max = 440.dp)
                                 .aspectRatio(ratio, matchHeightConstraintsFirst = ratio < 1f)
                                 .clip(MaterialTheme.shapes.extraSmall)
                                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.extraSmall)
-                                .onSizeChanged { canvasSize = it }
-                                .pointerInput(isApplying, canvasSize) {
+                                .pointerInput(isApplying) {
                                     if (isApplying) return@pointerInput
                                     awaitEachGesture {
                                         val down = awaitFirstDown(requireUnconsumed = false)
-                                        if (canvasSize.width <= 0 || canvasSize.height <= 0) return@awaitEachGesture
+                                        if (size.width <= 0 || size.height <= 0) return@awaitEachGesture
 
                                         fun toNormalized(pos: Offset): NormalizedPoint =
                                             NormalizedPoint(
-                                                x = (pos.x / canvasSize.width.toFloat()).coerceIn(0f, 1f),
-                                                y = (pos.y / canvasSize.height.toFloat()).coerceIn(0f, 1f),
+                                                x = (pos.x / size.width.toFloat()).coerceIn(0f, 1f),
+                                                y = (pos.y / size.height.toFloat()).coerceIn(0f, 1f),
                                             )
-                                        var current = listOf(toNormalized(down.position))
-                                        activePoints = current
+
+                                        val current = mutableListOf(toNormalized(down.position))
+                                        activePoints = current.toList()
                                         down.consume()
-                                        while (true) {
-                                            val event = awaitPointerEvent()
-                                            val change = event.changes.firstOrNull() ?: break
-                                            if (!change.pressed) {
+                                        try {
+                                            while (true) {
+                                                val event = awaitPointerEvent()
+                                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                                if (!change.pressed) {
+                                                    change.consume()
+                                                    break
+                                                }
+                                                current += toNormalized(change.position)
+                                                activePoints = current.toList()
                                                 change.consume()
-                                                break
                                             }
-                                            current = current + toNormalized(change.position)
-                                            activePoints = current
-                                            change.consume()
+                                            if (current.isNotEmpty()) {
+                                                completedStrokes += RedactionStroke(current.toList())
+                                            }
+                                        } finally {
+                                            activePoints = emptyList()
                                         }
-                                        if (current.isNotEmpty()) {
-                                            completedStrokes += RedactionStroke(current)
-                                        }
-                                        activePoints = emptyList()
                                     }
                                 }
                                 .testTag("beta-feedback-redact-canvas"),
                     ) {
                         Image(
-                            bitmap = bitmap.asImageBitmap(),
+                            bitmap = imageBitmap,
                             contentDescription = "Screenshot redaction canvas. Drag to black out private areas.",
                             contentScale = ContentScale.FillBounds,
                             modifier = Modifier.fillMaxSize(),

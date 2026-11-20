@@ -4,6 +4,12 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import com.quizradar.app.ui.theme.QuizRadarTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -15,15 +21,20 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.math.abs
 
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ScreenshotRedactionTest {
     @get:Rule
     val temporaryFolder = TemporaryFolder()
+
+    @get:Rule
+    val composeTestRule = createComposeRule()
 
     @Test
     fun `drag redaction permanently burns opaque black pixels into png and preserves unredacted corners`() {
@@ -106,6 +117,39 @@ class ScreenshotRedactionTest {
             decoded.recycle()
             controller.onDestroy()
         }
+
+    @Test
+    @Config(qualifiers = "w390dp-h844dp")
+    fun `portrait redaction canvas preserves exact aspect ratio and displays redaction errors`() {
+        val portraitBitmap = Bitmap.createBitmap(390, 844, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.DKGRAY) }
+        try {
+            composeTestRule.setContent {
+                QuizRadarTheme {
+                    ScreenshotRedactionDialog(
+                        imageBitmap = portraitBitmap.asImageBitmap(),
+                        isApplying = false,
+                        errorMessage = "Could not apply screenshot redaction.",
+                        onApply = {},
+                        onDismiss = {},
+                    )
+                }
+            }
+
+            composeTestRule.onNodeWithTag("beta-feedback-redact-error").assertExists()
+            composeTestRule.onNodeWithText("Could not apply screenshot redaction.").assertExists()
+            val bounds = composeTestRule.onNodeWithTag("beta-feedback-redact-canvas").getUnclippedBoundsInRoot()
+            val renderedWidth = (bounds.right - bounds.left).value
+            val renderedHeight = (bounds.bottom - bounds.top).value
+            val expectedRatio = 390f / 844f
+            val actualRatio = renderedWidth / renderedHeight
+            assertTrue(
+                "Expected portrait ratio ~$expectedRatio, got $actualRatio ($renderedWidth x $renderedHeight)",
+                abs(actualRatio - expectedRatio) < 0.03f,
+            )
+        } finally {
+            portraitBitmap.recycle()
+        }
+    }
 
     private fun createWhitePng(name: String): File = writeWhitePng(File(temporaryFolder.root, name))
 

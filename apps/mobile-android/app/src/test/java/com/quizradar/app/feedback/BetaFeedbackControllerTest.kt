@@ -1,6 +1,7 @@
 package com.quizradar.app.feedback
 
 import androidx.activity.ComponentActivity
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -220,6 +221,41 @@ class BetaFeedbackControllerTest {
         assertFalse(oldZip.exists())
         recentZips.forEach { assertTrue(it.exists()) }
     }
+
+    @Test
+    fun `dismissing during async screenshot capture cancels cleanly without reopening draft`() =
+        runBlocking {
+            val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
+            val gate = CompletableDeferred<File?>()
+            var capturedDirectory: File? = null
+            val controller =
+                BetaFeedbackController(
+                    context = activity.applicationContext,
+                    scope = this@runBlocking,
+                    currentScreenName = { "Dashboard" },
+                    captureScreenshot = { _, destination ->
+                        capturedDirectory = destination.parentFile
+                        gate.await()
+                    },
+                    sharePackage = { _, _ -> error("not expected") },
+                    packageBuilder = BetaFeedbackPackageBuilder(testBuildInfo),
+                    exportDispatcher = kotlinx.coroutines.Dispatchers.Unconfined,
+                    initialActivity = activity,
+                )
+
+            controller.openFeedback("Dashboard")
+            // Inbox cannot clobber an in-flight screenshot capture.
+            controller.openInbox()
+            assertFalse(controller.uiState.value.isInboxOpen)
+
+            controller.dismiss()
+            kotlinx.coroutines.yield()
+
+            assertNull("cancelled capture must never reopen the dismissed draft", controller.uiState.value.draft)
+            assertNull(controller.uiState.value.errorMessage)
+            assertFalse(capturedDirectory?.exists() == true)
+            controller.onDestroy()
+        }
 
     private companion object {
         val testBuildInfo =

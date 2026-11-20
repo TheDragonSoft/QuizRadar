@@ -42,7 +42,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -158,10 +157,10 @@ internal fun BetaFeedbackInboxSheet(
                                             file = screenshot,
                                             maxDimensionPx = 320,
                                         )
-                                    val decodedThumbnail = (thumbnailState as? SampledBitmapState.Loaded)?.bitmap
-                                    if (screenshot?.isFile == true && decodedThumbnail != null) {
+                                    val decodedThumbnail = (thumbnailState as? SampledBitmapState.Loaded)?.imageBitmap
+                                    if (screenshot != null && decodedThumbnail != null) {
                                         Image(
-                                            bitmap = decodedThumbnail.asImageBitmap(),
+                                            bitmap = decodedThumbnail,
                                             contentDescription = "Screenshot for issue ${index + 1}. Tap to enlarge.",
                                             contentScale = ContentScale.Crop,
                                             modifier =
@@ -183,7 +182,7 @@ internal fun BetaFeedbackInboxSheet(
                                             ) {
                                                 val placeholder =
                                                     when {
-                                                        screenshot?.isFile != true -> "No\nscreenshot"
+                                                        screenshot == null -> "No\nscreenshot"
                                                         thumbnailState is SampledBitmapState.Loading -> "Loading\npreview…"
                                                         else -> "Preview\nunavailable"
                                                     }
@@ -370,7 +369,7 @@ internal fun BetaFeedbackInboxSheet(
                 when (val decoded = previewState) {
                     is SampledBitmapState.Loaded -> {
                         Image(
-                            bitmap = decoded.bitmap.asImageBitmap(),
+                            bitmap = decoded.imageBitmap,
                             contentDescription = "Enlarged issue screenshot",
                             contentScale = ContentScale.Fit,
                             modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp),

@@ -13,7 +13,7 @@ Improve Android shake-to-feedback capture, privacy redaction, sensor fusion, and
 ### Verification
 
 - gradlew ktlintCheck lintRelease testDebugUnitTest
-- gradlew testDebugUnitTest --tests com.quizradar.app.feedback.* (42 tests)
+- gradlew testDebugUnitTest --tests com.quizradar.app.feedback.* (45 tests)
 - gradlew testReleaseUnitTest --tests com.quizradar.app.feedback.BetaFeedbackBuildGateTest
 - node tooling/generate-version.mjs --check
 - node apps/web/src/contract/regenerate.mjs --check

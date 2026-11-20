@@ -40,6 +40,7 @@ internal class ShakeMotionEvaluator(
         z: Float,
         timestampMs: Long,
     ): Boolean {
+        if (!x.isFinite() || !y.isFinite() || !z.isFinite()) return false
         if (timestampMs < 0L || (lastSampleAtMs != Long.MIN_VALUE && timestampMs < lastSampleAtMs)) {
             reset()
             return false

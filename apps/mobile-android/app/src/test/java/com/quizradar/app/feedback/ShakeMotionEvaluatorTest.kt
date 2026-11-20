@@ -95,4 +95,15 @@ class ShakeMotionEvaluatorTest {
             assertFalse(evaluator.onSample(0.3f, -0.2f, 0.4f, t))
         }
     }
+
+    @Test
+    fun `non finite sensor samples are ignored without poisoning gravity state`() {
+        val evaluator = ShakeMotionEvaluator()
+        assertFalse(evaluator.onSample(0f, 0f, 9.81f, 0L))
+        assertFalse(evaluator.onSample(Float.NaN, 0f, 9.81f, 50L))
+        assertFalse(evaluator.onSample(Float.POSITIVE_INFINITY, 0f, 9.81f, 100L))
+        assertFalse(evaluator.onSample(30f, 0f, 9.81f, 200L))
+        assertFalse(evaluator.onSample(30f, 0f, 9.81f, 400L))
+        assertTrue(evaluator.onSample(30f, 0f, 9.81f, 600L))
+    }
 }

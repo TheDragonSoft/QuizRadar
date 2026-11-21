@@ -114,6 +114,8 @@ jobs:
         run: cargo install tauri-cli --version "^2.0.0" --locked
 
       - name: Build Web Bundle
+        env:
+          VITE_MICROSOFT_CLIENT_ID: ${{ vars.QUIZRADAR_MICROSOFT_CLIENT_ID }}
         run: pnpm --filter @quizradar/web build
 
       - name: require updater signing credentials
@@ -129,6 +131,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          QUIZRADAR_BUILD_MICROSOFT_CLIENT_ID: ${{ vars.QUIZRADAR_MICROSOFT_CLIENT_ID }}
         run: |
           cargo tauri build --target ${{ matrix.platform.target }} --bundles ${{ matrix.platform.bundles }}
 
@@ -244,6 +247,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          QUIZRADAR_MICROSOFT_CLIENT_ID: ${{ vars.QUIZRADAR_MICROSOFT_CLIENT_ID }}
         working-directory: apps/mobile-android
         run: |
           ./gradlew assembleRelease bundleRelease
@@ -318,6 +322,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build Web Bundle
+        env:
+          VITE_MICROSOFT_CLIENT_ID: ${{ vars.QUIZRADAR_MICROSOFT_CLIENT_ID }}
         run: pnpm --filter @quizradar/web build
       - name: Build Landing Site & Mount Web Companion at /app/
         env:

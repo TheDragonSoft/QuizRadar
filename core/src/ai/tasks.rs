@@ -2940,4 +2940,115 @@ mod tests {
         assert_eq!(extracted.assessments.len(), 1);
         assert_eq!(extracted.assessments[0].title, "Lab Practical 1");
     }
+
+    #[test]
+    fn syllabus_helpers_and_domain_conversion_cover_edge_cases() {
+        assert_eq!(
+            normalize_week_parity(Some("Week A")).as_deref(),
+            Some("week_a")
+        );
+        assert_eq!(normalize_week_parity(Some("b")).as_deref(), Some("week_b"));
+        assert_eq!(normalize_week_parity(Some("biweekly")), None);
+        assert_eq!(normalize_week_parity(None), None);
+
+        assert_eq!(normalize_syllabus_assessment_type("  "), None);
+        assert_eq!(
+            normalize_syllabus_assessment_type("Homework 3"),
+            Some(AssessmentType::Assignment)
+        );
+        assert_eq!(
+            normalize_syllabus_assessment_type("Final Project Report"),
+            Some(AssessmentType::Assignment)
+        );
+        assert_eq!(
+            normalize_syllabus_assessment_type("Mid-Term Evaluation"),
+            Some(AssessmentType::MidtermExam)
+        );
+        assert_eq!(
+            normalize_syllabus_assessment_type("Unit Test 1"),
+            Some(AssessmentType::ClassQuiz)
+        );
+        assert_eq!(normalize_syllabus_assessment_type("Mystery Widget"), None);
+
+        assert_eq!(positive_credits(Some(0.0)), None);
+        assert_eq!(positive_credits(Some(35.0)), None);
+        assert_eq!(positive_credits(Some(3.0)), Some(3.0));
+        assert_eq!(valid_weightage(Some(-1.0)), None);
+        assert_eq!(valid_weightage(Some(101.0)), None);
+        assert_eq!(valid_weightage(Some(25.0)), Some(25.0));
+
+        // Exercise merge filling missing room/instructor/note/warnings and domain conversion
+        // for both dated and TBA syllabus items.
+        let first = parse_syllabus_extraction(
+            serde_json::json!({
+                "semester": null,
+                "courses": [{ "id": "PHY201", "name": "Physics II", "credits": 4.0 }],
+                "slots": [],
+                "assessments": [
+                    {
+                        "course_id": "PHY201",
+                        "title": "Midterm",
+                        "assessment_type": "Midterm Exam",
+                        "date_iso": "2026-11-12"
+                    },
+                    {
+                        "course_id": "PHY201",
+                        "title": "Term Paper",
+                        "assessment_type": "Essay",
+                        "date_iso": null,
+                        "weightage_percent": 20.0
+                    }
+                ]
+            }),
+            "gemini-3.8-flash",
+        )
+        .unwrap();
+
+        let second = parse_syllabus_extraction(
+            serde_json::json!({
+                "semester": null,
+                "courses": [{ "id": "PHY201", "name": "Physics II" }],
+                "slots": [],
+                "assessments": [
+                    {
+                        "course_id": "PHY201",
+                        "title": "Midterm",
+                        "assessment_type": "Midterm Exam",
+                        "date_iso": "2026-11-12",
+                        "start_time": "10:00",
+                        "end_time": "12:00",
+                        "room": "Sci 110",
+                        "instructor": "Dr. Lee",
+                        "weightage_percent": 35.0,
+                        "warnings": ["Bring calculator"],
+                        "ai_inference_note": "Confirmed on page 2"
+                    }
+                ]
+            }),
+            "gemini-3.5-flash",
+        )
+        .unwrap();
+
+        let merged = merge_extracted_syllabi(vec![first, second]);
+        assert_eq!(merged.model, "gemini-3.8-flash, gemini-3.5-flash");
+        assert_eq!(merged.assessments[0].room.as_deref(), Some("Sci 110"));
+        assert_eq!(merged.assessments[0].instructor.as_deref(), Some("Dr. Lee"));
+        assert_eq!(merged.assessments[0].warnings, vec!["Bring calculator"]);
+
+        let ref_day = NaiveDate::from_ymd_opt(2026, 11, 1).unwrap();
+        let domain = syllabus_assessments_to_domain(&merged, ref_day);
+        assert_eq!(domain.len(), 2);
+        assert!(domain[0].id.starts_with("syllabus-"));
+        assert_eq!(domain[0].course_name.as_deref(), Some("Physics II"));
+        assert_eq!(domain[0].semester.as_deref(), Some("Fall 2026"));
+        assert_eq!(
+            domain[0].ai_inference_note.as_deref(),
+            Some("Confirmed on page 2")
+        );
+        assert_eq!(
+            domain[1].ai_inference_note.as_deref(),
+            Some("Extracted from course syllabus — date not yet announced")
+        );
+        assert_eq!(domain[1].date, None);
+    }
 }

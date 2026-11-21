@@ -438,6 +438,18 @@ export const copy = {
       "Enable Gemini AI features (Timetable Vision, Task Optimization, Practice Quizzes)",
     sharedKeyHint:
       "Shared key for a private install: set QUIZRADAR_GEMINI_API_KEY, or place a gemini.key file next to the app. A key pasted here always wins.",
+    trialHeading: "Free Starter AI (Zero-Key Trial Relay)",
+    trialSub:
+      "Try syllabus PDF/photo import and AI tools immediately with no API key setup — paste your own free Gemini key anytime for unlimited free-tier use.",
+    trialDisclosure:
+      "Free Starter AI routes prompts statelessly through QuizRadar's Cloudflare relay using zero cookies, zero OAuth tokens, and zero data storage; requests count only via an anonymous device ID hash.",
+    trialEnableCta: "Enable Free Starter AI (No Key Needed)",
+    trialActiveBadge: "Starter AI Active",
+    trialToggleLabel: "Use Free Starter AI when no personal Gemini API key is configured",
+    trialRemainingText: (remaining: number, limit: number) =>
+      `Starter relay allowance today: ${remaining} of ${limit} free AI calls remaining`,
+    trialModeNote: "Active mode: Free Starter AI Relay",
+    byokModeNote: "Active mode: Personal Gemini Key (BYOK)",
   },
 
   settings: {

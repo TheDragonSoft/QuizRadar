@@ -7,7 +7,9 @@ use std::sync::Arc;
 
 use quizradar_core::ai::gemini::GeminiProvider;
 use quizradar_core::ai::practice_fallback::generate_practice_locally;
-use quizradar_core::ai::provider::{AiModel, AiProvider, QuotaLedger, StructuredPrompt};
+use quizradar_core::ai::provider::{
+    AiModel, AiProvider, QuotaLedger, StructuredPrompt, TrialQuotaStatus,
+};
 use quizradar_core::ai::tasks::{
     extract_syllabus, extract_timetable, generate_practice, merge_extracted_syllabi, optimize_plan,
     ExtractedSyllabusAssessment, ExtractedTimetable, PracticeQuizPayload,
@@ -27,10 +29,8 @@ pub struct KeyValidationResult {
     pub error: Option<String>,
 }
 
-/// The device's real AI usage for today (the Pacific quota day).
-///
-/// The counters come from the store-backed ledger, so the Settings line
-/// reports what this device actually spent — never a hardcoded zero.
+/// The device's real AI usage for today (the Pacific quota day) plus active mode
+/// and Starter Trial allowance when using Zero-Key Trial AI Relay.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiQuotaUsage {
@@ -38,6 +38,14 @@ pub struct AiQuotaUsage {
     pub calls_today: u32,
     /// Per-model breakdown (`gemini-3.5-flash-lite` → 2, …).
     pub per_model: std::collections::BTreeMap<String, u32>,
+    /// Active AI mode: `"byok"`, `"trial"`, or `"off"`.
+    pub mode: String,
+    /// Remaining daily starter relay calls, if observed from relay headers.
+    pub trial_remaining: Option<u32>,
+    /// Daily starter relay limit, if observed from relay headers.
+    pub trial_limit: Option<u32>,
+    /// UTC ISO reset timestamp reported by the starter relay.
+    pub trial_reset_iso: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -122,19 +130,51 @@ pub async fn validate_gemini_key(
     }
 }
 
-/// The device's AI usage for today, read from the store-backed ledger.
-/// The Settings panel shows this instead of a hardcoded counter.
-#[tauri::command]
-pub async fn ai_quota_usage(state: State<'_, AppState>) -> Result<AiQuotaUsage, String> {
+/// Reads today's AI usage ledger, active AI mode, and any persisted starter relay quota.
+pub async fn ai_quota_usage_inner(state: &AppState) -> Result<AiQuotaUsage, String> {
     let ledger = QuotaLedger::new(Arc::new(state.store.quota_kv()), None);
     let snapshot = ledger
         .usage(chrono::Utc::now())
         .await
         .map_err(|e| format!("Failed to read the AI usage ledger: {e}"))?;
+
+    let consent = gemini_consent(state).await.unwrap_or(false);
+    let has_byok = state.get_gemini_api_key().ok().flatten().is_some();
+    let trial_enabled = state.ai_trial_enabled().await;
+    let mode = if !consent {
+        "off"
+    } else if has_byok {
+        "byok"
+    } else if trial_enabled {
+        "trial"
+    } else {
+        "off"
+    }
+    .to_string();
+
+    let trial_quota = state
+        .store
+        .get_config_string("ai_trial_quota_json".to_string())
+        .await
+        .ok()
+        .flatten()
+        .and_then(|raw| serde_json::from_str::<TrialQuotaStatus>(&raw).ok());
+
     Ok(AiQuotaUsage {
         calls_today: snapshot.total(),
         per_model: snapshot.counts,
+        mode,
+        trial_remaining: trial_quota.as_ref().map(|q| q.remaining),
+        trial_limit: trial_quota.as_ref().map(|q| q.limit),
+        trial_reset_iso: trial_quota.and_then(|q| q.reset_iso),
     })
+}
+
+/// The device's AI usage for today, read from the store-backed ledger.
+/// The Settings panel shows this instead of a hardcoded counter.
+#[tauri::command]
+pub async fn ai_quota_usage(state: State<'_, AppState>) -> Result<AiQuotaUsage, String> {
+    ai_quota_usage_inner(&state).await
 }
 
 /// The device's AI consent flag (`05` §5.1). The Settings toggle promises
@@ -151,6 +191,98 @@ pub(crate) async fn gemini_consent(state: &AppState) -> Result<bool, String> {
         .map_err(|e| format!("Failed to read the AI consent toggle: {e}"))
 }
 
+pub(crate) async fn persist_trial_quota_if_any(state: &AppState, provider: &GeminiProvider) {
+    if let Some(quota) = provider.last_trial_quota() {
+        if let Ok(raw) = serde_json::to_string(&quota) {
+            let _ = state
+                .store
+                .set_config_string("ai_trial_quota_json".to_string(), Some(raw))
+                .await;
+        }
+    }
+}
+
+pub(crate) async fn build_consented_provider(
+    state: &AppState,
+    base_url_override: Option<&str>,
+    api_key_override: Option<String>,
+) -> Result<GeminiProvider, String> {
+    let clock = Arc::new(chrono::Utc::now);
+    let ledger = Arc::new(QuotaLedger::new(Arc::new(state.store.quota_kv()), None));
+
+    let explicit_key = api_key_override
+        .map(|k| k.trim().to_string())
+        .filter(|k| !k.is_empty());
+    let trial_enabled = state.ai_trial_enabled().await;
+    let stored_key = if explicit_key.is_some() {
+        explicit_key
+    } else {
+        match state.get_gemini_api_key() {
+            Ok(key) => key,
+            // Zero-Key Trial AI requires no stored secret; an unavailable OS
+            // keyring (e.g. headless Linux without Secret Service) must not
+            // block an explicitly opted-in starter relay call.
+            Err(_) if trial_enabled => None,
+            Err(err) => return Err(err),
+        }
+    };
+
+    if let Some(key) = stored_key {
+        return match base_url_override {
+            Some(url) => {
+                let client = reqwest::Client::builder()
+                    .connect_timeout(std::time::Duration::from_secs(
+                        quizradar_core::ai::gemini::CONNECT_TIMEOUT_SECS,
+                    ))
+                    .timeout(std::time::Duration::from_secs(
+                        quizradar_core::ai::gemini::TOTAL_TIMEOUT_SECS,
+                    ))
+                    .build()
+                    .map_err(|e| format!("Failed to initialize Gemini HTTP client: {e}"))?;
+                Ok(GeminiProvider::new(
+                    client,
+                    Some(key),
+                    url,
+                    clock,
+                    Some(ledger),
+                ))
+            }
+            None => GeminiProvider::production(Some(key), clock, Some(ledger))
+                .map_err(|e| format!("Failed to initialize Gemini: {e}")),
+        };
+    }
+
+    if trial_enabled {
+        let install_id = state.get_or_create_trial_install_id().await;
+        let stored_url = state.effective_trial_relay_url().await;
+        let relay_url = base_url_override
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .or(stored_url);
+        return GeminiProvider::production_trial_relay(
+            relay_url.as_deref(),
+            install_id,
+            "desktop",
+            clock,
+            Some(ledger),
+        )
+        .map_err(|e| format!("Failed to initialize Free Starter AI: {e}"));
+    }
+
+    Err(
+        "No Gemini API key found. Add one in Settings, enable Free Starter AI, or set \
+         QUIZRADAR_GEMINI_API_KEY / place a gemini.key file next to the app."
+            .to_string(),
+    )
+}
+
+pub(crate) async fn build_optional_ai_provider(state: &AppState) -> Option<GeminiProvider> {
+    if !gemini_consent(state).await.unwrap_or(false) {
+        return None;
+    }
+    build_consented_provider(state, None, None).await.ok()
+}
+
 #[tauri::command]
 pub async fn extract_schedule(
     app: AppHandle,
@@ -164,16 +296,7 @@ pub async fn extract_schedule(
                 .to_string(),
         );
     }
-    let key = state.get_gemini_api_key()?.ok_or_else(|| {
-        "No Gemini API key found. Add one in Settings, or set QUIZRADAR_GEMINI_API_KEY / place a \
-         gemini.key file next to the app."
-            .to_string()
-    })?;
-
-    let clock = Arc::new(chrono::Utc::now);
-    let ledger = Arc::new(QuotaLedger::new(Arc::new(state.store.quota_kv()), None));
-    let provider = GeminiProvider::production(Some(key), clock, Some(ledger))
-        .map_err(|e| format!("Failed to initialize Gemini: {e}"))?;
+    let provider = build_consented_provider(&state, None, None).await?;
 
     let _ = app.emit(
         "ai-progress",
@@ -190,9 +313,9 @@ pub async fn extract_schedule(
         "image/png"
     };
 
-    let extracted = extract_timetable(&provider, &image, mime)
-        .await
-        .map_err(|e| e.to_string())?;
+    let extracted_res = extract_timetable(&provider, &image, mime).await;
+    persist_trial_quota_if_any(&state, &provider).await;
+    let extracted = extracted_res.map_err(|e| e.to_string())?;
 
     let _ = app.emit("ai-progress", "Timetable parsed successfully.");
 
@@ -252,14 +375,6 @@ pub async fn extract_syllabi_with_base_url(
                 .to_string(),
         );
     }
-    let key = match api_key_override {
-        Some(k) if !k.trim().is_empty() => k.trim().to_string(),
-        _ => state.get_gemini_api_key()?.ok_or_else(|| {
-            "No Gemini API key found. Add one in Settings, or set QUIZRADAR_GEMINI_API_KEY / place a \
-             gemini.key file next to the app."
-                .to_string()
-        })?,
-    };
 
     if documents.is_empty() {
         return Err("Pick at least one syllabus PDF or image first.".to_string());
@@ -271,24 +386,7 @@ pub async fn extract_syllabi_with_base_url(
         ));
     }
 
-    let clock = Arc::new(chrono::Utc::now);
-    let ledger = Arc::new(QuotaLedger::new(Arc::new(state.store.quota_kv()), None));
-    let provider = match base_url {
-        Some(url) => {
-            let client = reqwest::Client::builder()
-                .connect_timeout(std::time::Duration::from_secs(
-                    quizradar_core::ai::gemini::CONNECT_TIMEOUT_SECS,
-                ))
-                .timeout(std::time::Duration::from_secs(
-                    quizradar_core::ai::gemini::TOTAL_TIMEOUT_SECS,
-                ))
-                .build()
-                .map_err(|e| format!("Failed to initialize Gemini HTTP client: {e}"))?;
-            GeminiProvider::new(client, Some(key), url, clock, Some(ledger))
-        }
-        None => GeminiProvider::production(Some(key), clock, Some(ledger))
-            .map_err(|e| format!("Failed to initialize Gemini: {e}"))?,
-    };
+    let provider = build_consented_provider(state, base_url, api_key_override).await?;
 
     let total = documents.len();
     let mut extracted_items = Vec::new();
@@ -320,6 +418,7 @@ pub async fn extract_syllabi_with_base_url(
             Ok(item) => extracted_items.push(item),
             Err(err) => file_errors.push(format!("{label}: {err}")),
         }
+        persist_trial_quota_if_any(state, &provider).await;
     }
 
     if extracted_items.is_empty() {
@@ -368,11 +467,7 @@ pub async fn optimize_tasks(state: State<'_, AppState>) -> Result<StudyTasksPayl
                 .to_string(),
         );
     }
-    let key = state.get_gemini_api_key()?.ok_or_else(|| {
-        "No Gemini API key found. Add one in Settings, or set QUIZRADAR_GEMINI_API_KEY / place a \
-         gemini.key file next to the app."
-            .to_string()
-    })?;
+    let provider = build_consented_provider(&state, None, None).await?;
 
     let today = state.today();
     let snapshot = state
@@ -381,20 +476,16 @@ pub async fn optimize_tasks(state: State<'_, AppState>) -> Result<StudyTasksPayl
         .await
         .map_err(|e| format!("Failed to read store state: {e}"))?;
 
-    let clock = Arc::new(chrono::Utc::now);
-    let ledger = Arc::new(QuotaLedger::new(Arc::new(state.store.quota_kv()), None));
-    let provider = GeminiProvider::production(Some(key), clock, Some(Arc::clone(&ledger)))
-        .map_err(|e| format!("Failed to initialize Gemini: {e}"))?;
-
-    let optimized = optimize_plan(
+    let opt_res = optimize_plan(
         &provider,
         &snapshot.assessments,
         &snapshot.schedule,
         &snapshot.completed_topics,
         today,
     )
-    .await
-    .map_err(|e| e.to_string())?;
+    .await;
+    persist_trial_quota_if_any(&state, &provider).await;
+    let optimized = opt_res.map_err(|e| e.to_string())?;
 
     Ok(optimized)
 }
@@ -426,19 +517,14 @@ pub async fn practice_generate_inner(
         .cloned()
         .ok_or_else(|| format!("Assessment with ID {assessment_id} not found"))?;
 
-    // Try AI generation only when the user's consent toggle allows it; with
-    // consent off (or no key) the honest on-device fallback below runs — the
-    // quiz is still generated, just labeled `authored_locally`.
+    // Try AI generation only when the user's consent toggle allows it (BYOK
+    // first, then opt-in starter trial); anything else falls back cleanly.
     if gemini_consent(state).await.unwrap_or(false) {
-        if let Ok(Some(key)) = state.get_gemini_api_key() {
-            let clock = Arc::new(chrono::Utc::now);
-            let ledger = Arc::new(QuotaLedger::new(Arc::new(state.store.quota_kv()), None));
-            if let Ok(provider) =
-                GeminiProvider::production(Some(key), clock, Some(Arc::clone(&ledger)))
-            {
-                if let Ok(quiz) = generate_practice(&provider, &assessment).await {
-                    return Ok(quiz);
-                }
+        if let Ok(provider) = build_consented_provider(state, None, None).await {
+            let gen_res = generate_practice(&provider, &assessment).await;
+            persist_trial_quota_if_any(state, &provider).await;
+            if let Ok(quiz) = gen_res {
+                return Ok(quiz);
             }
         }
     }

@@ -5,6 +5,7 @@ import type { AxeResults } from "axe-core";
 import { SyllabusPreviewModal } from "./SyllabusPreviewModal";
 import { CoursePackShareModal } from "./CoursePackShareModal";
 import { CoursePackImportModal } from "./CoursePackImportModal";
+import { OnboardingWizardModal } from "./OnboardingWizardModal";
 import { encodeCoursePackBrowser } from "../lib/coursePack";
 import { initialFullState, useAppStore } from "../state/store";
 import { setupMockIndexedDb } from "../test/mockIndexedDb";
@@ -209,5 +210,43 @@ describe("Stage 1 Growth Modals (Syllabus Preview, Course Pack Share & Import)",
     });
     expect(useAppStore.getState().data.schedule.courses.map((c) => c.id)).toContain("ECE210");
     expect(useAppStore.getState().data.config.onboardingCompleted).toBe(true);
+  });
+
+  it("enables Free Starter AI in Onboarding Step 2 without a BYOK key and passes accessibility audit", async () => {
+    const updateConfig = vi.fn().mockImplementation(async (patch) => {
+      const prev = useAppStore.getState().data;
+      useAppStore.setState({
+        data: {
+          ...prev,
+          config: { ...prev.config, ...patch },
+        },
+      });
+    });
+    const refreshAiQuota = vi.fn().mockResolvedValue(undefined);
+    useAppStore.setState({ updateConfig, refreshAiQuota });
+
+    const { container } = render(
+      <OnboardingWizardModal modalId="onboarding-wizard" onClose={vi.fn()} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Next Step/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Enable Free Starter AI \(No Key Needed\)/i }),
+      ).toBeInTheDocument();
+    });
+
+    expect(await audit(container)).toHaveNoViolations();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Enable Free Starter AI \(No Key Needed\)/i }),
+    );
+
+    await waitFor(() => {
+      expect(updateConfig).toHaveBeenCalledWith({ geminiEnabled: true, aiTrialEnabled: true });
+    });
+    expect(refreshAiQuota).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /Starter AI Active/i })).toBeInTheDocument();
   });
 });

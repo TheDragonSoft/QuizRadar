@@ -690,6 +690,10 @@ class QuizRadarEngine(
         }
     }
 
+    override suspend fun getTrialAiQuotaJson(): String {
+        return onCore { store.getTrialAiQuotaJson() }
+    }
+
     private fun todayIso(): String = LocalDate.now().toString()
 
     private fun localStamp(): String =

@@ -367,6 +367,12 @@ class QuizRadarViewModel(
     private val _geminiEnabled = MutableStateFlow(false)
     val geminiEnabled: StateFlow<Boolean> = _geminiEnabled.asStateFlow()
 
+    private val _aiTrialEnabled = MutableStateFlow(false)
+    val aiTrialEnabled: StateFlow<Boolean> = _aiTrialEnabled.asStateFlow()
+
+    private val _trialAiQuotaJson = MutableStateFlow("{}")
+    val trialAiQuotaJson: StateFlow<String> = _trialAiQuotaJson.asStateFlow()
+
     private val _gmailEnabled = MutableStateFlow(true)
     val gmailEnabled: StateFlow<Boolean> = _gmailEnabled.asStateFlow()
 
@@ -774,6 +780,13 @@ class QuizRadarViewModel(
                     _userName.value = core.getConfigString("user_name") ?: ""
                     _userEmail.value = core.getConfigString("user_email") ?: ""
                     _geminiEnabled.value = core.getConfigBool("gemini_enabled", false)
+                    _aiTrialEnabled.value = core.getConfigBool("ai_trial_enabled", false)
+                    _trialAiQuotaJson.value =
+                        if (_aiTrialEnabled.value) {
+                            runCatching { core.getTrialAiQuotaJson() }.getOrDefault("{}")
+                        } else {
+                            "{}"
+                        }
                     _gmailEnabled.value = core.getConfigBool("gmail_enabled", true)
                     _classroomEnabled.value = core.getConfigBool("classroom_enabled", true)
                     _teamsEnabled.value = core.getConfigBool("teams_enabled", true)
@@ -2541,17 +2554,24 @@ class QuizRadarViewModel(
         persistConfig("gemini_enabled", enabled)
     }
 
+    fun setAiTrialEnabled(enabled: Boolean) {
+        if (_aiTrialEnabled.value == enabled) return
+        _aiTrialEnabled.value = enabled
+        persistConfig("ai_trial_enabled", enabled)
+    }
+
+    fun enableStarterTrialAi() {
+        setGeminiEnabled(true)
+        setAiTrialEnabled(true)
+        showToast("Free Starter AI enabled (no key needed)")
+    }
+
     /**
      * Reads a timetable image with Gemini and previews what it found.
      *
-     * The image and the user's own BYOK key go straight into the Rust core,
-     * which owns the prompt, the validation and the drop rules — the same
-     * code the desktop shell and the browser tier run. The key is read from
-     * the Keystore-backed token store OFF the main thread, and it never
-     * reaches a log line or an error string.
-     *
-     * Nothing is written to the timetable here: the user sees the preview
-     * first and applies it deliberately.
+     * The image and the user's own BYOK key (or opt-in starter relay) go
+     * straight into the Rust core, which owns the prompt, the validation and
+     * the drop rules — the same code the desktop shell and the browser tier run.
      */
     fun importTimetableFromImage(
         imageBytes: ByteArray,
@@ -2565,7 +2585,7 @@ class QuizRadarViewModel(
         _timetableImportState.value = TimetableImportState.Working
         viewModelScope.launch {
             try {
-                // A07 consent gate: a RETAINED key must not permit a send
+                // A07 consent gate: a RETAINED key or trial opt-in must not permit a send
                 // while AI is disabled. The preference is checked FIRST, so
                 // with the toggle off nothing — not even the Keystore read —
                 // starts and zero bytes ever leave the device.
@@ -2581,26 +2601,22 @@ class QuizRadarViewModel(
                     withContext(coreDispatcher) {
                         core.geminiApiKey().orEmpty()
                     }
-                if (key.isBlank()) {
+                if (key.isBlank() && !_aiTrialEnabled.value) {
                     _timetableImportState.value =
                         TimetableImportState.Failed(
-                            "AI course import needs a Gemini API key. Add your own key in " +
-                                "Settings -> AI (Gemini BYOK) and try again.",
+                            "AI course import needs a Gemini API key. Add your own key or enable " +
+                                "Free Starter AI in Settings and try again.",
                         )
                     return@launch
                 }
                 val encoded =
                     withContext(coreDispatcher) {
-                        // Base64 of a photo-sized buffer is megabytes of
-                        // garbage: encoding it on the main thread is a
-                        // frame-dropping stall (and an ANR on a big image).
-                        // It runs on the CORE dispatcher - off the main thread
-                        // in the app, and on the test scheduler in the tests
-                        // (a hard-coded Dispatchers.Default would race the
-                        // test clock and leave the import stuck on "working").
                         android.util.Base64.encodeToString(imageBytes, android.util.Base64.NO_WRAP)
                     }
                 val json = core.extractTimetableFromImage(encoded, mime, key)
+                if (_aiTrialEnabled.value) {
+                    _trialAiQuotaJson.value = runCatching { core.getTrialAiQuotaJson() }.getOrDefault("{}")
+                }
                 val extracted = QuizRadarJsonParser.parseExtractedTimetable(json)
                 if (extracted.schedule.courses.isEmpty()) {
                     _timetableImportState.value =
@@ -2723,11 +2739,11 @@ class QuizRadarViewModel(
                     withContext(coreDispatcher) {
                         core.geminiApiKey().orEmpty()
                     }
-                if (key.isBlank()) {
+                if (key.isBlank() && !_aiTrialEnabled.value) {
                     _syllabusImportState.value =
                         SyllabusImportState.Failed(
-                            "Syllabus import needs a Gemini API key. Add your own key in " +
-                                "Settings -> AI (Gemini BYOK) and try again.",
+                            "Syllabus import needs a Gemini API key. Add your own key or enable " +
+                                "Free Starter AI in Settings and try again.",
                         )
                     return@launch
                 }
@@ -2749,6 +2765,9 @@ class QuizRadarViewModel(
                     } catch (e: Exception) {
                         fileErrors.add("$name: ${e.message?.takeIf { it.isNotBlank() } ?: "could not extract"}")
                     }
+                }
+                if (_aiTrialEnabled.value) {
+                    _trialAiQuotaJson.value = runCatching { core.getTrialAiQuotaJson() }.getOrDefault("{}")
                 }
 
                 if (extractedJsons.length() == 0) {

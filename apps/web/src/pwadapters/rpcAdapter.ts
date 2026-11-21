@@ -84,7 +84,46 @@ import {
   extractTimetableBrowser,
   getBrowserAiSessionCalls,
   getBrowserAiSessionPerModel,
+  getBrowserTrialQuota,
+  type BrowserAiAuth,
 } from "./browserAi";
+
+function generateBrowserTrialInstallId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+    return `qr_${hex}`;
+  }
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `qr_${crypto.randomUUID().replace(/-/g, "")}`;
+  }
+  return `qr_${Date.now().toString(16)}${Math.random().toString(16).slice(2).padEnd(16, "0")}`;
+}
+
+async function getOrCreateBrowserTrialInstallId(): Promise<string> {
+  const existing = await getConfigValue<string | null>("ai_trial_install_id", null);
+  if (existing && existing.trim().length >= 16) {
+    return existing.trim();
+  }
+  const generated = generateBrowserTrialInstallId();
+  await setConfigValue("ai_trial_install_id", generated);
+  return generated;
+}
+
+async function resolveBrowserAiAuth(): Promise<string | null | BrowserAiAuth> {
+  const memKey = getMemoryGeminiKey();
+  if (memKey && memKey.trim()) {
+    return memKey;
+  }
+  const trialEnabled = Boolean(await getConfigValue<boolean>("ai_trial_enabled", false));
+  if (trialEnabled) {
+    const installId = await getOrCreateBrowserTrialInstallId();
+    const relayUrl = await getConfigValue<string | null>("ai_trial_relay_url", null);
+    return { mode: "trial", installId, relayUrl: relayUrl ?? undefined };
+  }
+  return null;
+}
 
 /**
  * The desktop IPC contract speaks camelCase, but the browser tier persists
@@ -97,6 +136,7 @@ const CONFIG_KEY_MAP: Record<string, string> = {
   autoSyncGcal: "auto_sync_gcal",
   syncWeeklyClassesToGcal: "sync_weekly_classes_to_gcal",
   geminiEnabled: "gemini_enabled",
+  aiTrialEnabled: "ai_trial_enabled",
   onboardingCompleted: "onboarding_completed",
   academicTrack: "academic_track",
   teamsEnabled: "teams_enabled",
@@ -448,6 +488,7 @@ export async function buildFullState(refDate?: string): Promise<GetStatePayload>
     autoSyncGcal: false, // Honesty: GCal background sync unavailable in browser PWA
     syncWeeklyClassesToGcal: false,
     geminiEnabled: Boolean(allConfig.gemini_enabled),
+    aiTrialEnabled: Boolean(allConfig.ai_trial_enabled),
     onboardingCompleted: Boolean(allConfig.onboarding_completed),
     academicTrack: (allConfig.academic_track as string) || null,
     teamsEnabled: Boolean(allConfig.teams_enabled),
@@ -1477,8 +1518,9 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
         }
       }
       // The backup carries no Gemini key, so AI must be off after a restore
-      // until the user enters one again (the core importer does the same).
+      // until the user enters one again or opts into starter AI on this device.
       await setConfigValue("gemini_enabled", false);
+      await setConfigValue("ai_trial_enabled", false);
 
       return {
         assessmentsImported: normalizedAssessments.length,
@@ -1568,23 +1610,63 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
     }
 
     case "extract_schedule": {
-      // Timetable vision import (Gemini Flash). The desktop shell runs the
-      // same task through the Rust core; the browser tier calls Gemini
-      // directly with the same prompt, model ladder and drop rules.
+      const explicitConsent = await getConfigValue<boolean | null>("gemini_enabled", null);
+      if (explicitConsent === false) {
+        throw new Error(
+          "AI features are turned off in Settings, so this request cannot leave the device. Turn Gemini back on to import a timetable image.",
+        );
+      }
       const image = (args?.image as string) || "";
-      return (await extractTimetableBrowser(image, getMemoryGeminiKey())) as T;
+      const auth = await resolveBrowserAiAuth();
+      try {
+        return (await extractTimetableBrowser(image, auth)) as T;
+      } finally {
+        const trialQuota = getBrowserTrialQuota();
+        if (trialQuota) {
+          await setConfigValue("ai_trial_quota_json", JSON.stringify(trialQuota));
+        }
+      }
     }
 
     case "ai_quota_usage": {
-      // The browser companion keeps no daily ledger: it counts COMPLETED
-      // calls in memory for this session (the counter resets on reload), so
-      // the UI labels it "this session" instead of pretending it is a daily
-      // quota.
+      const consent = await getConfigValue<boolean | null>("gemini_enabled", null);
+      const trialEnabled = Boolean(await getConfigValue<boolean>("ai_trial_enabled", false));
+      const keyInMem = hasMemoryGeminiKey();
+      const mode: "off" | "trial" | "byok" =
+        consent === false ? "off" : keyInMem ? "byok" : trialEnabled ? "trial" : "off";
+
+      let trialQuota = getBrowserTrialQuota();
+      if (!trialQuota) {
+        const storedRaw = await getConfigValue<string | null>("ai_trial_quota_json", null);
+        if (storedRaw) {
+          try {
+            const parsed = JSON.parse(storedRaw) as {
+              limit?: number;
+              remaining?: number;
+              resetIso?: string | null;
+            };
+            if (typeof parsed.limit === "number" && typeof parsed.remaining === "number") {
+              trialQuota = {
+                limit: parsed.limit,
+                remaining: parsed.remaining,
+                resetIso: parsed.resetIso ?? null,
+              };
+            }
+          } catch {
+            trialQuota = null;
+          }
+        }
+      }
+
       return {
         callsToday: getBrowserAiSessionCalls(),
         perModel: getBrowserAiSessionPerModel(),
         sessionScope: true,
-        keyInMemory: hasMemoryGeminiKey(),
+        keyInMemory: keyInMem,
+        mode,
+        trialRemaining: trialQuota?.remaining ?? null,
+        trialLimit: trialQuota?.limit ?? null,
+        trialResetIso: trialQuota?.resetIso ?? null,
       } as T;
     }
 
@@ -1887,7 +1969,15 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
         );
       }
       const documents = (args?.documents as SyllabusDocumentInput[]) || [];
-      return aliasDeep(await extractSyllabiBrowser(documents, getMemoryGeminiKey())) as T;
+      const auth = await resolveBrowserAiAuth();
+      try {
+        return aliasDeep(await extractSyllabiBrowser(documents, auth)) as T;
+      } finally {
+        const trialQuota = getBrowserTrialQuota();
+        if (trialQuota) {
+          await setConfigValue("ai_trial_quota_json", JSON.stringify(trialQuota));
+        }
+      }
     }
 
     case "apply_course_bundle": {

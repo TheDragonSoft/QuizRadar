@@ -25,6 +25,7 @@ pub struct DesktopConfig {
     pub auto_sync_gcal: bool,
     pub sync_weekly_classes_to_gcal: bool,
     pub gemini_enabled: bool,
+    pub ai_trial_enabled: bool,
     pub onboarding_completed: bool,
     /// The onboarding "academic rhythm" preset (`01` §4.1: the
     /// track/rhythm chips are **persisted**). `None` means the user never
@@ -88,6 +89,7 @@ pub struct ConfigUpdate {
     pub auto_sync_gcal: Option<bool>,
     pub sync_weekly_classes_to_gcal: Option<bool>,
     pub gemini_enabled: Option<bool>,
+    pub ai_trial_enabled: Option<bool>,
     pub onboarding_completed: Option<bool>,
     pub academic_track: Option<String>,
     pub teams_enabled: Option<bool>,
@@ -189,14 +191,15 @@ pub async fn build_full_state(state: &AppState) -> Result<GetStatePayload, Strin
             .unwrap_or(false),
         // `get_gemini_api_key` accepts the keyring value AND the documented
         // private-install seeds (`QUIZRADAR_GEMINI_API_KEY`, `gemini.key`) —
-        // keyring-only presence reported AI as permanently off for seeded
-        // installs while the AI commands actually worked.
-        gemini_enabled: state.get_gemini_api_key().ok().flatten().is_some()
+        // plus opt-in Zero-Key Trial AI Relay (`ai_trial_enabled`).
+        gemini_enabled: (state.get_gemini_api_key().ok().flatten().is_some()
+            || state.ai_trial_enabled().await)
             && state
                 .store
                 .get_config_bool("gemini_enabled".to_string(), true)
                 .await
                 .unwrap_or(true),
+        ai_trial_enabled: state.ai_trial_enabled().await,
         onboarding_completed: state
             .store
             .get_config_bool("onboarding_completed".to_string(), false)
@@ -368,6 +371,13 @@ pub async fn update_config(
         state
             .store
             .set_config_bool("gemini_enabled".to_string(), v)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = update.ai_trial_enabled {
+        state
+            .store
+            .set_config_bool("ai_trial_enabled".to_string(), v)
             .await
             .map_err(|e| e.to_string())?;
     }

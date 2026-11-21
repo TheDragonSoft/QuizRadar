@@ -115,7 +115,8 @@ export function SettingsCoursesSection() {
             <p className="mt-0.5 text-xs leading-relaxed text-[var(--text-muted)]">
               {copy.settings.timetableImportSub}
             </p>
-            {(!config.geminiEnabled || aiQuota?.keyInMemory === false) && (
+            {(!config.geminiEnabled ||
+              (!config.aiTrialEnabled && aiQuota?.keyInMemory === false)) && (
               <p className="mt-1.5 text-xs leading-relaxed text-amber-700 dark:text-amber-300">
                 {copy.settings.timetableImportNoKey}
               </p>

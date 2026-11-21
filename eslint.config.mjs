@@ -68,5 +68,14 @@ export default tseslint.config(
       globals: { ...globals.node },
     },
   },
+  {
+    files: ["workers/**/*.ts"],
+    languageOptions: {
+      globals: { ...globals.serviceworker, ...globals.es2022 },
+    },
+    rules: {
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+    },
+  },
   prettier,
 );

@@ -927,6 +927,8 @@ internal open class UniffiVTableCallbackInterfaceFfiTokenProvider(
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -987,6 +989,8 @@ internal interface UniffiLib : Library {
     fun uniffi_quizradar_core_fn_method_nativestore_get_state(`ptr`: Pointer,`refDateIso`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_get_study_analytics(`ptr`: Pointer,`refDateIso`: RustBuffer.ByValue,
+    ): Long
+    fun uniffi_quizradar_core_fn_method_nativestore_get_trial_ai_quota_json(`ptr`: Pointer,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_import_backup(`ptr`: Pointer,`backupJson`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
@@ -1334,6 +1338,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_get_study_analytics(
     ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_get_trial_ai_quota_json(
+    ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_import_backup(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_list_attendance(
@@ -1555,7 +1561,7 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_extract_timetable_from_image() != 30659.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_quizradar_core_checksum_method_nativestore_generate_practice_quiz() != 47295.toShort()) {
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_generate_practice_quiz() != 11437.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_get_config_bool() != 11697.toShort()) {
@@ -1568,6 +1574,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_get_study_analytics() != 55821.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_get_trial_ai_quota_json() != 19262.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_import_backup() != 57877.toShort()) {
@@ -1594,7 +1603,7 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_merge_sync_payload() != 17632.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_quizradar_core_checksum_method_nativestore_optimize_study_plan() != 20624.toShort()) {
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_optimize_study_plan() != 12232.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_pull_native_drive_backup() != 57802.toShort()) {
@@ -2183,18 +2192,9 @@ public interface NativeStoreInterface {
     
     /**
      * Consent-gated practice-quiz generation (audit A07): with the store's
-     * `gemini_enabled` consent flag on AND a BYOK key supplied, the quiz is
-     * authored by Gemini Flash-Lite through the real provider + quota
-     * ledger; anything else (consent off, no key, a provider that cannot be
-     * constructed, provider error, quota, transport) falls back to the
-     * deterministic on-device authoring — the same
-     * [`crate::ai::practice_fallback`] path the free function uses.
-     *
-     * The provenance labels travel in the payload itself
-     * (`generated_by_ai` / `authored_locally` / `credit`), and when the AI
-     * attempt was made but did NOT author the quiz, the extra
-     * `fallback_reason` field names why — a labeled fallback, never a
-     * silent one.
+     * `gemini_enabled` consent flag on AND a BYOK key (or opt-in starter trial),
+     * the quiz is authored by Gemini Flash-Lite through the real provider +
+     * quota ledger; anything else falls back to deterministic on-device authoring.
      */
     suspend fun `generatePracticeQuiz`(`assessmentJson`: kotlin.String, `geminiApiKey`: kotlin.String?): kotlin.String
     
@@ -2205,6 +2205,12 @@ public interface NativeStoreInterface {
     suspend fun `getState`(`refDateIso`: kotlin.String): kotlin.String
     
     suspend fun `getStudyAnalytics`(`refDateIso`: kotlin.String): kotlin.String
+    
+    /**
+     * Returns the most recently observed Trial AI Relay quota snapshot as
+     * JSON (`{limit, remaining, resetIso}` or `{}`).
+     */
+    suspend fun `getTrialAiQuotaJson`(): kotlin.String
     
     suspend fun `importBackup`(`backupJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
     
@@ -2236,13 +2242,11 @@ public interface NativeStoreInterface {
     
     /**
      * Consent-gated "Optimize with AI" study plan (audit A07). With consent
-     * on AND a BYOK key, [`crate::ai::tasks::optimize_plan`] proposes the
-     * roadmap and every readiness/urgency number is re-validated against
-     * the real store state; consent off, a missing key or any provider
+     * on AND a BYOK key (or opt-in starter trial), [`crate::ai::tasks::optimize_plan`]
+     * proposes the roadmap and every readiness/urgency number is re-validated
+     * against the real store state; consent off, a missing key or any provider
      * error returns the deterministic planner's payload with `source:
-     * "deterministic"` and a note that names what happened. The payload is
-     * `{"source": "ai"|"deterministic", "note": <string|null>, "tasks":
-     * <StudyTasksPayload>}` — the UI can always tell which planner ran.
+     * "deterministic"` and a note that names what happened.
      */
     suspend fun `optimizeStudyPlan`(`refDateIso`: kotlin.String, `geminiApiKey`: kotlin.String?): kotlin.String
     
@@ -2804,18 +2808,9 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
     
     /**
      * Consent-gated practice-quiz generation (audit A07): with the store's
-     * `gemini_enabled` consent flag on AND a BYOK key supplied, the quiz is
-     * authored by Gemini Flash-Lite through the real provider + quota
-     * ledger; anything else (consent off, no key, a provider that cannot be
-     * constructed, provider error, quota, transport) falls back to the
-     * deterministic on-device authoring — the same
-     * [`crate::ai::practice_fallback`] path the free function uses.
-     *
-     * The provenance labels travel in the payload itself
-     * (`generated_by_ai` / `authored_locally` / `credit`), and when the AI
-     * attempt was made but did NOT author the quiz, the extra
-     * `fallback_reason` field names why — a labeled fallback, never a
-     * silent one.
+     * `gemini_enabled` consent flag on AND a BYOK key (or opt-in starter trial),
+     * the quiz is authored by Gemini Flash-Lite through the real provider +
+     * quota ledger; anything else falls back to deterministic on-device authoring.
      */
     @Throws(QuizRadarFfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
@@ -2909,6 +2904,31 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
             UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_get_study_analytics(
                 thisPtr,
                 FfiConverterString.lower(`refDateIso`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * Returns the most recently observed Trial AI Relay quota snapshot as
+     * JSON (`{limit, remaining, resetIso}` or `{}`).
+     */
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `getTrialAiQuotaJson`() : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_get_trial_ai_quota_json(
+                thisPtr,
+                
             )
         },
         { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
@@ -3104,13 +3124,11 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
     
     /**
      * Consent-gated "Optimize with AI" study plan (audit A07). With consent
-     * on AND a BYOK key, [`crate::ai::tasks::optimize_plan`] proposes the
-     * roadmap and every readiness/urgency number is re-validated against
-     * the real store state; consent off, a missing key or any provider
+     * on AND a BYOK key (or opt-in starter trial), [`crate::ai::tasks::optimize_plan`]
+     * proposes the roadmap and every readiness/urgency number is re-validated
+     * against the real store state; consent off, a missing key or any provider
      * error returns the deterministic planner's payload with `source:
-     * "deterministic"` and a note that names what happened. The payload is
-     * `{"source": "ai"|"deterministic", "note": <string|null>, "tasks":
-     * <StudyTasksPayload>}` — the UI can always tell which planner ran.
+     * "deterministic"` and a note that names what happened.
      */
     @Throws(QuizRadarFfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")

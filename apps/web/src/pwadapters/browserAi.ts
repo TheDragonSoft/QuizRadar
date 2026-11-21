@@ -31,6 +31,24 @@ import { courseMatchesCode } from "../lib/coursePack";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
+const envTrialRelayUrl =
+  typeof import.meta !== "undefined"
+    ? (import.meta as unknown as { env?: Record<string, string | undefined> }).env
+        ?.VITE_TRIAL_AI_RELAY_URL
+    : undefined;
+
+export const DEFAULT_TRIAL_RELAY_URL =
+  (envTrialRelayUrl ?? "").trim() || "https://trial-ai.quizradar.workers.dev/v1beta";
+
+export interface TrialQuotaSnapshot {
+  limit: number;
+  remaining: number;
+  resetIso: string | null;
+}
+
+export type BrowserAiAuth =
+  { mode: "byok"; apiKey: string } | { mode: "trial"; relayUrl?: string; installId: string };
+
 /**
  * The Flash tier model ids, in preference order — the same ladder the core
  * provider walks (`core/src/ai/provider.rs`). A retired id (404) or a
@@ -153,6 +171,7 @@ Return ONLY a valid JSON object matching this exact structure:
 
 let sessionCalls = 0;
 const sessionPerModel: Record<string, number> = {};
+let lastTrialQuota: TrialQuotaSnapshot | null = null;
 
 export function getBrowserAiSessionCalls(): number {
   return sessionCalls;
@@ -162,10 +181,19 @@ export function getBrowserAiSessionPerModel(): Record<string, number> {
   return { ...sessionPerModel };
 }
 
-/** Test seam: resets the in-memory counter. */
+export function getBrowserTrialQuota(): TrialQuotaSnapshot | null {
+  return lastTrialQuota ? { ...lastTrialQuota } : null;
+}
+
+/** Test seam: resets the in-memory counter and starter relay quota cache. */
 export function resetBrowserAiSessionCounters(): void {
   sessionCalls = 0;
+  lastTrialQuota = null;
   for (const key of Object.keys(sessionPerModel)) delete sessionPerModel[key];
+}
+
+export function resetBrowserTrialQuota(): void {
+  lastTrialQuota = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -444,27 +472,185 @@ export function parseTimetableExtraction(raw: unknown): DesktopExtractedTimetabl
 }
 
 // ---------------------------------------------------------------------------
-// The network call
+// The network call (shared BYOK + opt-in Zero-Key Trial AI Relay)
 // ---------------------------------------------------------------------------
 
-/**
- * Runs one timetable vision import.
- *
- * `key` is the caller's Gemini key (the browser tier holds it in memory for
- * the session only). Throws an honest error when there is no key, when
- * Gemini rejects the key, when the quota is exhausted, or when the reply is
- * not JSON — never a fabricated schedule.
- */
-export async function extractTimetableBrowser(
-  image: string,
-  key: string | null,
-): Promise<DesktopExtractedTimetable> {
-  const apiKey = (key ?? "").trim();
+type ResolvedBrowserAuth =
+  | { mode: "byok"; baseUrl: string; apiKey: string; secretToRedact: string }
+  | { mode: "trial"; baseUrl: string; installId: string; secretToRedact: string };
+
+function normalizeRelayBaseUrl(raw?: string): string {
+  const candidate = (raw ?? "").trim().replace(/\/+$/, "") || DEFAULT_TRIAL_RELAY_URL;
+  const trimmed = candidate.replace(/\/+$/, "");
+  const lower = trimmed.toLowerCase();
+  const isLoopback = lower.startsWith("http://127.0.0.1") || lower.startsWith("http://localhost");
+  if (!lower.startsWith("https://") && !isLoopback) {
+    throw new Error("Trial AI relay URL must use HTTPS.");
+  }
+  return lower.endsWith("/v1beta") ? trimmed : `${trimmed}/v1beta`;
+}
+
+function resolveBrowserAuth(keyOrAuth: string | null | BrowserAiAuth): ResolvedBrowserAuth {
+  if (keyOrAuth && typeof keyOrAuth === "object") {
+    if (keyOrAuth.mode === "trial") {
+      const installId = keyOrAuth.installId.trim();
+      if (installId.length < 16) {
+        throw new Error("Starter AI device ID is missing or invalid.");
+      }
+      return {
+        mode: "trial",
+        baseUrl: normalizeRelayBaseUrl(keyOrAuth.relayUrl),
+        installId,
+        secretToRedact: "",
+      };
+    }
+    const apiKey = keyOrAuth.apiKey.trim();
+    if (!apiKey) {
+      throw new Error(
+        "No Gemini API key in memory — validate your key in Settings → Account (Google Gemini AI) first. The browser tier keeps the key in memory for this session only, so it is gone after a reload.",
+      );
+    }
+    return { mode: "byok", baseUrl: GEMINI_API_BASE, apiKey, secretToRedact: apiKey };
+  }
+
+  const apiKey = (keyOrAuth ?? "").trim();
   if (!apiKey) {
     throw new Error(
       "No Gemini API key in memory — validate your key in Settings → Account (Google Gemini AI) first. The browser tier keeps the key in memory for this session only, so it is gone after a reload.",
     );
   }
+  return { mode: "byok", baseUrl: GEMINI_API_BASE, apiKey, secretToRedact: apiKey };
+}
+
+function captureTrialQuotaHeaders(headers: Headers): void {
+  const rawLimit = headers.get("x-quizradar-trial-limit");
+  const rawRemaining = headers.get("x-quizradar-trial-remaining");
+  if (rawLimit === null || rawRemaining === null) return;
+  const limit = Number.parseInt(rawLimit, 10);
+  const remaining = Number.parseInt(rawRemaining, 10);
+  if (!Number.isFinite(limit) || !Number.isFinite(remaining)) return;
+  const resetIso = headers.get("x-quizradar-trial-reset")?.trim() || null;
+  lastTrialQuota = { limit, remaining, resetIso };
+}
+
+function mapTrialExhaustedError(detail: string): Error {
+  let limit = lastTrialQuota?.limit ?? 10;
+  let resetIso = lastTrialQuota?.resetIso ?? null;
+  try {
+    const parsed = JSON.parse(detail) as {
+      error?: { trial?: { limit?: number; resetIso?: string | null } };
+    };
+    const trial = parsed.error?.trial;
+    if (trial && typeof trial.limit === "number") {
+      limit = trial.limit;
+      resetIso = trial.resetIso ?? resetIso;
+      lastTrialQuota = { limit, remaining: 0, resetIso };
+    } else if (lastTrialQuota) {
+      lastTrialQuota = { ...lastTrialQuota, remaining: 0 };
+    }
+  } catch {
+    if (lastTrialQuota) {
+      lastTrialQuota = { ...lastTrialQuota, remaining: 0 };
+    }
+  }
+  const resetSuffix = resetIso ? `; resets at ${resetIso}` : "";
+  return new Error(
+    `Free starter AI limit reached (${limit}/${limit} calls used today${resetSuffix}). Add your own free Gemini API key in Settings → Account for unlimited free-tier usage.`,
+  );
+}
+
+async function postGeminiJsonLadder(
+  auth: ResolvedBrowserAuth,
+  payload: unknown,
+  emptyCandidateSuffix: string,
+): Promise<{ json: unknown; modelId: string }> {
+  const headers: Record<string, string> =
+    auth.mode === "byok"
+      ? { "Content-Type": "application/json", "x-goog-api-key": auth.apiKey }
+      : {
+          "Content-Type": "application/json",
+          "x-quizradar-install-id": auth.installId,
+          "x-quizradar-client": "web",
+        };
+
+  let lastError: Error | null = null;
+  let lastStatus: number | null = null;
+  for (const modelId of FLASH_MODEL_IDS) {
+    let response: Response;
+    try {
+      response = await fetch(`${auth.baseUrl}/models/${modelId}:generateContent`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`Network error reaching Gemini: ${redactKey(message, auth.secretToRedact)}`);
+    }
+
+    if (auth.mode === "trial") {
+      captureTrialQuotaHeaders(response.headers);
+    }
+
+    if (!response.ok) {
+      let detail = "";
+      try {
+        detail = await response.text();
+      } catch {
+        detail = "";
+      }
+      detail = redactKey(detail, auth.secretToRedact);
+      if (auth.mode === "trial" && response.status === 429) {
+        throw mapTrialExhaustedError(detail);
+      }
+      const error = mapGeminiStatus(response.status, detail);
+      // 404 = the model id is retired for this project, 503 = the model
+      // is congested: both are model-level, so the next id is tried. Keep an
+      // earlier 503 rather than letting a trailing retired-model 404 hide it.
+      if (response.status === 404 || response.status === 503) {
+        if (!(lastStatus === 503 && response.status === 404)) {
+          lastError = error;
+          lastStatus = response.status;
+        }
+        continue;
+      }
+      throw error;
+    }
+
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Unreadable Gemini response body: ${redactKey(message, auth.secretToRedact)}`,
+      );
+    }
+
+    const text = candidateText(body);
+    if (!text) {
+      throw new Error(
+        `Gemini returned no candidate text (finishReason: ${finishReason(body)}).${emptyCandidateSuffix}`,
+      );
+    }
+
+    sessionCalls += 1;
+    sessionPerModel[modelId] = (sessionPerModel[modelId] ?? 0) + 1;
+    return { json: parseModelJson(text), modelId };
+  }
+
+  throw lastError ?? new Error("No Gemini model answered the request — nothing was changed.");
+}
+
+/**
+ * Runs one timetable vision import using BYOK key (in memory) or opt-in
+ * Zero-Key Trial AI Relay.
+ */
+export async function extractTimetableBrowser(
+  image: string,
+  keyOrAuth: string | null | BrowserAiAuth,
+): Promise<DesktopExtractedTimetable> {
+  const auth = resolveBrowserAuth(keyOrAuth);
   const trimmed = image.trim();
   if (!trimmed) {
     throw new Error("The timetable image is empty — pick a file first.");
@@ -483,67 +669,12 @@ export async function extractTimetableBrowser(
     generationConfig: { temperature: 0.1, responseMimeType: "application/json" },
   };
 
-  let lastError: Error | null = null;
-  let lastStatus: number | null = null;
-  for (const modelId of FLASH_MODEL_IDS) {
-    let response: Response;
-    try {
-      response = await fetch(`${GEMINI_API_BASE}/models/${modelId}:generateContent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-        body: JSON.stringify(payload),
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      throw new Error(`Network error reaching Gemini: ${redactKey(message, apiKey)}`);
-    }
-
-    if (!response.ok) {
-      let detail = "";
-      try {
-        detail = await response.text();
-      } catch {
-        detail = "";
-      }
-      detail = redactKey(detail, apiKey);
-      const error = mapGeminiStatus(response.status, detail);
-      // 404 = the model id is retired for this key's project, 503 = the model
-      // is congested: both are model-level, so the next id is tried. Keep an
-      // earlier 503 rather than letting a trailing retired-model 404 hide it.
-      if (response.status === 404 || response.status === 503) {
-        if (!(lastStatus === 503 && response.status === 404)) {
-          lastError = error;
-          lastStatus = response.status;
-        }
-        continue;
-      }
-      throw error;
-    }
-
-    let body: unknown;
-    try {
-      body = await response.json();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      throw new Error(`Unreadable Gemini response body: ${redactKey(message, apiKey)}`);
-    }
-
-    const text = candidateText(body);
-    if (!text) {
-      throw new Error(
-        `Gemini returned no candidate text (finishReason: ${finishReason(body)}). The timetable was not read — nothing was changed.`,
-      );
-    }
-
-    const extraction = parseTimetableExtraction(parseModelJson(text));
-    sessionCalls += 1;
-    sessionPerModel[modelId] = (sessionPerModel[modelId] ?? 0) + 1;
-    return extraction;
-  }
-
-  throw (
-    lastError ?? new Error("No Gemini model answered the timetable request — nothing was changed.")
+  const { json } = await postGeminiJsonLadder(
+    auth,
+    payload,
+    " The timetable was not read — nothing was changed.",
   );
+  return parseTimetableExtraction(json);
 }
 
 // ---------------------------------------------------------------------------
@@ -941,18 +1072,13 @@ export function mergeExtractedSyllabi(items: DesktopExtractedSyllabi[]): Desktop
 
 /**
  * Extracts courses, slots, and syllabus assessments from 1–6 PDF/photo
- * syllabi in the browser PWA tier.
+ * syllabi in the browser PWA tier (supports BYOK key or opt-in Trial AI Relay).
  */
 export async function extractSyllabiBrowser(
   documents: SyllabusDocumentInput[],
-  key: string | null,
+  keyOrAuth: string | null | BrowserAiAuth,
 ): Promise<DesktopExtractedSyllabi> {
-  const apiKey = (key ?? "").trim();
-  if (!apiKey) {
-    throw new Error(
-      "No Gemini API key in memory — validate your key in Settings → Account (Google Gemini AI) first. The browser tier keeps the key in memory for this session only, so it is gone after a reload.",
-    );
-  }
+  const auth = resolveBrowserAuth(keyOrAuth);
   if (!documents || documents.length === 0) {
     throw new Error("Pick at least one syllabus PDF or image first.");
   }
@@ -989,71 +1115,12 @@ export async function extractSyllabiBrowser(
       generationConfig: { temperature: 0.1, responseMimeType: "application/json" },
     };
 
-    let docExtracted: DesktopExtractedSyllabi | null = null;
-    let docError: Error | null = null;
-    let lastStatus: number | null = null;
-
-    for (const modelId of FLASH_MODEL_IDS) {
-      let response: Response;
-      try {
-        response = await fetch(`${GEMINI_API_BASE}/models/${modelId}:generateContent`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-          body: JSON.stringify(payload),
-        });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        docError = new Error(`Network error reaching Gemini: ${redactKey(message, apiKey)}`);
-        break;
-      }
-
-      if (!response.ok) {
-        let detail = "";
-        try {
-          detail = await response.text();
-        } catch {
-          detail = "";
-        }
-        detail = redactKey(detail, apiKey);
-        const mapped = mapGeminiStatus(response.status, detail);
-        if (response.status === 404 || response.status === 503) {
-          if (!(lastStatus === 503 && response.status === 404)) {
-            docError = mapped;
-            lastStatus = response.status;
-          }
-          continue;
-        }
-        docError = mapped;
-        break;
-      }
-
-      let body: unknown;
-      try {
-        body = await response.json();
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        docError = new Error(`Unreadable Gemini response body: ${redactKey(message, apiKey)}`);
-        break;
-      }
-
-      const text = candidateText(body);
-      if (!text) {
-        docError = new Error(
-          `Gemini returned no candidate text (finishReason: ${finishReason(body)}).`,
-        );
-        break;
-      }
-
-      docExtracted = parseSyllabusExtraction(parseModelJson(text), modelId);
-      sessionCalls += 1;
-      sessionPerModel[modelId] = (sessionPerModel[modelId] ?? 0) + 1;
-      break;
-    }
-
-    if (docExtracted) {
-      succeeded.push(docExtracted);
-    } else if (docError) {
-      fileErrors.push(`${label}: ${docError.message}`);
+    try {
+      const { json, modelId } = await postGeminiJsonLadder(auth, payload, "");
+      succeeded.push(parseSyllabusExtraction(json, modelId));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      fileErrors.push(`${label}: ${message}`);
     }
   }
 

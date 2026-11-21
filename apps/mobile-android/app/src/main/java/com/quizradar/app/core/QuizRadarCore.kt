@@ -452,4 +452,6 @@ interface QuizRadarCore {
         packJson: String,
         refDate: LocalDate = LocalDate.now(),
     ): String = throw UnsupportedOperationException("coursePackToDomain is not supported by this fake")
+
+    suspend fun getTrialAiQuotaJson(): String = "{}"
 }

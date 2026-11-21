@@ -39,6 +39,9 @@ pub const ENV_MICROSOFT_CLIENT_ID: &str = "QUIZRADAR_MICROSOFT_CLIENT_ID";
 /// executable.
 pub const ENV_GEMINI_API_KEY: &str = "QUIZRADAR_GEMINI_API_KEY";
 
+/// Environment-variable override for the Zero-Key Trial AI Relay base URL.
+pub const ENV_TRIAL_AI_RELAY_URL: &str = "QUIZRADAR_TRIAL_AI_RELAY_URL";
+
 /// Optional seed file carrying the Gemini API key, looked up next to the
 /// executable. A shipped private install can therefore carry a shared key
 /// that never touches the repository or the git history.
@@ -505,6 +508,47 @@ impl AppState {
             // with no seed either, the store's error is the honest answer.
             Err(error) => fallback.map_or(Err(error), |key| Ok(Some(key))),
         }
+    }
+
+    /// Whether the user explicitly opted into the stateless Zero-Key Trial AI Relay.
+    pub async fn ai_trial_enabled(&self) -> bool {
+        self.store
+            .get_config_bool("ai_trial_enabled".to_string(), false)
+            .await
+            .unwrap_or(false)
+    }
+
+    /// Effective Trial AI Relay URL (`config_kv` override → env var → `None` = default worker URL).
+    pub async fn effective_trial_relay_url(&self) -> Option<String> {
+        let stored = self
+            .store
+            .get_config_string("ai_trial_relay_url".to_string())
+            .await
+            .ok()
+            .flatten()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty());
+        stored.or_else(|| env_value(ENV_TRIAL_AI_RELAY_URL))
+    }
+
+    /// Returns a persistent, device-local anonymous install id for Trial AI rate limiting.
+    pub async fn get_or_create_trial_install_id(&self) -> String {
+        if let Ok(Some(existing)) = self
+            .store
+            .get_config_string("ai_trial_install_id".to_string())
+            .await
+        {
+            let trimmed = existing.trim().to_string();
+            if trimmed.len() >= 16 {
+                return trimmed;
+            }
+        }
+        let generated = quizradar_core::ai::gemini::generate_trial_install_id();
+        let _ = self
+            .store
+            .set_config_string("ai_trial_install_id".to_string(), Some(generated.clone()))
+            .await;
+        generated
     }
 }
 

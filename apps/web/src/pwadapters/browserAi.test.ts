@@ -4,6 +4,7 @@ import {
   extractTimetableBrowser,
   getBrowserAiSessionCalls,
   getBrowserAiSessionPerModel,
+  getBrowserTrialQuota,
   mapGeminiStatus,
   mergeExtractedSyllabi,
   parseModelJson,
@@ -11,8 +12,13 @@ import {
   parseTimetableExtraction,
   presetCourseColors,
   resetBrowserAiSessionCounters,
+  resetBrowserTrialQuota,
   stripCodeFences,
 } from "./browserAi";
+import { pwaRpcHandler } from "./rpcAdapter";
+import { setConfigValue } from "./idbStore";
+import { setMemoryGeminiKey } from "./browserSources";
+import { setupMockIndexedDb } from "../test/mockIndexedDb";
 
 /**
  * The browser tier's timetable vision import.
@@ -382,5 +388,185 @@ describe("browser multi-syllabus extraction (PDF & multi-doc merge)", () => {
     expect(merged.fileErrors).toHaveLength(1);
     expect(merged.fileErrors?.[0]).toContain("blurry.png");
     expect(getBrowserAiSessionCalls()).toBe(1);
+  });
+
+  it("supports Zero-Key Trial AI Relay mode, captures quota headers, and maps 429 limits", async () => {
+    globalThis.fetch = vi.fn(async (url, init) => {
+      expect(String(url)).toBe(
+        "https://trial.example.workers.dev/v1beta/models/gemini-3.8-flash:generateContent",
+      );
+      const headers = new Headers(init?.headers);
+      expect(headers.get("x-quizradar-install-id")).toBe("qr_1234567890abcdef");
+      expect(headers.get("x-quizradar-client")).toBe("web");
+      expect(headers.has("x-goog-api-key")).toBe(false);
+      expect(headers.has("authorization")).toBe(false);
+
+      return new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    text: JSON.stringify({
+                      semester: "Fall 2026",
+                      courses: [{ id: "BIO105", name: "Cell Biology", credits: 3 }],
+                      slots: [],
+                      assessments: [],
+                    }),
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "X-QuizRadar-Trial-Limit": "10",
+            "X-QuizRadar-Trial-Remaining": "9",
+            "X-QuizRadar-Trial-Reset": "2026-11-22T00:00:00.000Z",
+          },
+        },
+      );
+    }) as unknown as typeof fetch;
+
+    const extracted = await extractSyllabiBrowser(
+      [{ name: "bio.pdf", dataUrl: "data:application/pdf;base64,JVBERi0xLjQ=" }],
+      {
+        mode: "trial",
+        relayUrl: "https://trial.example.workers.dev",
+        installId: "qr_1234567890abcdef",
+      },
+    );
+    expect(extracted.schedule.courses[0]?.id).toBe("BIO105");
+    expect(getBrowserTrialQuota()).toEqual({
+      limit: 10,
+      remaining: 9,
+      resetIso: "2026-11-22T00:00:00.000Z",
+    });
+
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: 429,
+            status: "TRIAL_EXHAUSTED",
+            trial: { limit: 10, remaining: 0, resetIso: "2026-11-22T00:00:00.000Z" },
+          },
+        }),
+        {
+          status: 429,
+          headers: {
+            "X-QuizRadar-Trial-Limit": "10",
+            "X-QuizRadar-Trial-Remaining": "0",
+            "X-QuizRadar-Trial-Reset": "2026-11-22T00:00:00.000Z",
+          },
+        },
+      );
+    }) as unknown as typeof fetch;
+
+    await expect(
+      extractTimetableBrowser("data:image/png;base64,QUJD", {
+        mode: "trial",
+        relayUrl: "https://trial.example.workers.dev",
+        installId: "qr_1234567890abcdef",
+      }),
+    ).rejects.toThrow("Free starter AI limit reached");
+    expect(getBrowserTrialQuota()?.remaining).toBe(0);
+  });
+
+  it("routes pwaRpcHandler via Trial AI Relay when opted in, persists quota, and blocks when consent is off", async () => {
+    const teardownIdb = setupMockIndexedDb();
+    try {
+      setMemoryGeminiKey(null);
+      resetBrowserTrialQuota();
+
+      await setConfigValue("gemini_enabled", true);
+      await setConfigValue("ai_trial_enabled", false);
+      await expect(
+        pwaRpcHandler("extract_syllabi", {
+          documents: [{ name: "s.pdf", dataUrl: "data:application/pdf;base64,JVBERi0xLjQ=" }],
+        }),
+      ).rejects.toThrow("No Gemini API key in memory");
+      expect(await pwaRpcHandler<{ mode: string }>("ai_quota_usage")).toMatchObject({
+        mode: "off",
+      });
+
+      await setConfigValue("ai_trial_enabled", true);
+      await setConfigValue("ai_trial_relay_url", "https://trial.example.workers.dev");
+
+      let capturedInstallId = "";
+      globalThis.fetch = vi.fn(async (_url, init) => {
+        const headers = new Headers(init?.headers);
+        capturedInstallId = headers.get("x-quizradar-install-id") ?? "";
+        expect(headers.get("x-quizradar-client")).toBe("web");
+        expect(headers.has("x-goog-api-key")).toBe(false);
+        return new Response(
+          JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    {
+                      text: JSON.stringify({
+                        semester: "Fall 2026",
+                        courses: [{ id: "MATH202", name: "Linear Algebra", credits: 3 }],
+                        slots: [],
+                        assessments: [],
+                      }),
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              "X-QuizRadar-Trial-Limit": "10",
+              "X-QuizRadar-Trial-Remaining": "9",
+              "X-QuizRadar-Trial-Reset": "2026-11-22T00:00:00.000Z",
+            },
+          },
+        );
+      }) as unknown as typeof fetch;
+
+      const extracted = await pwaRpcHandler<{ schedule: { courses: Array<{ id: string }> } }>(
+        "extract_syllabi",
+        {
+          documents: [{ name: "math.pdf", dataUrl: "data:application/pdf;base64,JVBERi0xLjQ=" }],
+        },
+      );
+      expect(extracted.schedule.courses[0]?.id).toBe("MATH202");
+      expect(capturedInstallId).toMatch(/^qr_[0-9a-f]{32}$/);
+
+      expect(
+        await pwaRpcHandler<{ mode: string; trialRemaining: number; trialLimit: number }>(
+          "ai_quota_usage",
+        ),
+      ).toMatchObject({
+        mode: "trial",
+        trialRemaining: 9,
+        trialLimit: 10,
+      });
+
+      // Turning consent off blocks requests without touching fetch.
+      await setConfigValue("gemini_enabled", false);
+      const fetchSpy = vi.fn();
+      globalThis.fetch = fetchSpy as unknown as typeof fetch;
+      await expect(
+        pwaRpcHandler("extract_syllabi", {
+          documents: [{ name: "math.pdf", dataUrl: "data:application/pdf;base64,JVBERi0xLjQ=" }],
+        }),
+      ).rejects.toThrow(/turned off/i);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      setMemoryGeminiKey(null);
+      resetBrowserTrialQuota();
+      teardownIdb();
+    }
   });
 });

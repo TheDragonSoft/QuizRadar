@@ -6,6 +6,7 @@ export const initialFullState: GetStatePayload = {
     autoSyncGcal: false,
     syncWeeklyClassesToGcal: false,
     geminiEnabled: false,
+    aiTrialEnabled: false,
     onboardingCompleted: false,
     teamsEnabled: false,
     teamsClientId: null,

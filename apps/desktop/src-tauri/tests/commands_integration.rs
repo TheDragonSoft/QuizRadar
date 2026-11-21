@@ -20,7 +20,8 @@ use quizradar_core::types::{
     Assessment, AssessmentSource, AssessmentType, Course, ScheduleData, ScheduleSlot, UrgencyLevel,
 };
 use quizradar_desktop_lib::commands::ai::{
-    extract_syllabi_with_base_url, practice_generate_inner, SyllabusDocumentInput,
+    ai_quota_usage_inner, extract_syllabi_with_base_url, practice_generate_inner,
+    SyllabusDocumentInput,
 };
 use quizradar_desktop_lib::commands::state::{apply_course_bundle_inner, build_full_state};
 use quizradar_desktop_lib::commands::sync::{
@@ -28,7 +29,7 @@ use quizradar_desktop_lib::commands::sync::{
 };
 use quizradar_desktop_lib::keyring::KeyringStore;
 use quizradar_desktop_lib::state::AppState;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{header, header_exists, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Creates a test AppState with an in-memory SQLite store and unique test keyring service.
@@ -793,4 +794,116 @@ async fn test_export_and_import_course_pack_round_trip() {
     assert_eq!(imported.state.assessments.len(), 1);
     assert_eq!(imported.state.assessments[0].achieved_score, None);
     assert_eq!(imported.state.assessments[0].weightage_percent, Some(30.0));
+}
+
+#[tokio::test]
+async fn test_zero_key_trial_syllabus_extraction_consent_and_429() {
+    let state = test_app_state("trial_relay").await;
+    let docs = vec![SyllabusDocumentInput {
+        name: "bio105.pdf".to_string(),
+        data_url: "data:application/pdf;base64,JVBERi0xLjQ=".to_string(),
+        mime: Some("application/pdf".to_string()),
+    }];
+
+    // 1. Consent off refuses even when ai_trial_enabled is true.
+    state
+        .store
+        .set_config_bool("gemini_enabled".to_string(), false)
+        .await
+        .unwrap();
+    state
+        .store
+        .set_config_bool("ai_trial_enabled".to_string(), true)
+        .await
+        .unwrap();
+    let denied = extract_syllabi_with_base_url(&state, docs.clone(), None, None, None)
+        .await
+        .unwrap_err();
+    assert!(denied.contains("turned off in Settings"));
+
+    let off_usage = ai_quota_usage_inner(&state).await.unwrap();
+    assert_eq!(off_usage.mode, "off");
+
+    // 2. Consent on + ai_trial_enabled routes to relay with custom headers (no BYOK key).
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1beta/models/gemini-3.8-flash:generateContent"))
+        .and(header_exists("x-quizradar-install-id"))
+        .and(header("x-quizradar-client", "desktop"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("X-QuizRadar-Trial-Limit", "10")
+                .insert_header("X-QuizRadar-Trial-Remaining", "9")
+                .insert_header("X-QuizRadar-Trial-Reset", "2026-11-22T00:00:00.000Z")
+                .set_body_json(serde_json::json!({
+                    "candidates": [{
+                        "content": {
+                            "parts": [{
+                                "text": r##"{
+  "semester": "Fall 2026",
+  "courses": [{ "id": "BIO105", "name": "Cell Biology", "credits": 3.0, "aliases": [], "color": "#0f9d58" }],
+  "slots": [],
+  "assessments": [{ "course_id": "BIO105", "title": "Quiz 1", "assessment_type": "Class Quiz", "date_iso": "2026-11-18" }]
+}"##
+                            }]
+                        },
+                        "finishReason": "STOP"
+                    }]
+                })),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    state
+        .store
+        .set_config_bool("gemini_enabled".to_string(), true)
+        .await
+        .unwrap();
+    state
+        .store
+        .set_config_string("ai_trial_relay_url".to_string(), Some(server.uri()))
+        .await
+        .unwrap();
+
+    let extracted =
+        extract_syllabi_with_base_url(&state, docs.clone(), Some(&server.uri()), None, None)
+            .await
+            .expect("zero-key starter trial extraction must succeed");
+    assert_eq!(extracted.schedule.courses[0].id, "BIO105");
+    server.verify().await;
+
+    let usage = ai_quota_usage_inner(&state).await.unwrap();
+    assert_eq!(usage.mode, "trial");
+    assert_eq!(usage.trial_limit, Some(10));
+    assert_eq!(usage.trial_remaining, Some(9));
+
+    // 3. HTTP 429 from relay surfaces starter limit copy and persists remaining = 0.
+    let exhausted_server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1beta/models/gemini-3.8-flash:generateContent"))
+        .respond_with(
+            ResponseTemplate::new(429)
+                .insert_header("X-QuizRadar-Trial-Limit", "10")
+                .insert_header("X-QuizRadar-Trial-Remaining", "0")
+                .insert_header("X-QuizRadar-Trial-Reset", "2026-11-22T00:00:00.000Z")
+                .set_body_json(serde_json::json!({
+                    "error": {
+                        "code": 429,
+                        "status": "TRIAL_EXHAUSTED",
+                        "trial": { "limit": 10, "remaining": 0, "resetIso": "2026-11-22T00:00:00.000Z" }
+                    }
+                })),
+        )
+        .mount(&exhausted_server)
+        .await;
+
+    let err =
+        extract_syllabi_with_base_url(&state, docs, Some(&exhausted_server.uri()), None, None)
+            .await
+            .unwrap_err();
+    assert!(err.contains("Free starter AI limit reached"));
+
+    let updated = ai_quota_usage_inner(&state).await.unwrap();
+    assert_eq!(updated.trial_remaining, Some(0));
 }

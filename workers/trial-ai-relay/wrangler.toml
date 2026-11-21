@@ -1,4 +1,4 @@
-name = "quizradar-trial-ai-relay"
+name = "trial-ai"
 main = "src/index.ts"
 compatibility_date = "2026-01-01"
 
@@ -8,8 +8,18 @@ TRIAL_IP_DAILY_LIMIT = "30"
 MAX_PAYLOAD_BYTES = "16777216"
 GEMINI_UPSTREAM_BASE = "https://generativelanguage.googleapis.com/v1beta"
 
-# Bind a KV namespace for persistent edge rate limiting across Worker isolates:
-#   npx wrangler kv namespace create TRIAL_QUOTA_KV
-# [[kv_namespaces]]
-# binding = "TRIAL_QUOTA_KV"
-# id = "REPLACE_WITH_KV_NAMESPACE_ID"
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+persist = true
+
+[observability.traces]
+enabled = true
+persist = true
+
+[[kv_namespaces]]
+binding = "TRIAL_QUOTA_KV"
+id = "71215afede144a3d8c47ae8f2f36c00e"

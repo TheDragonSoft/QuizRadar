@@ -29,7 +29,7 @@ From `workers/trial-ai-relay`:
 Verify health:
 
 ```bash
-curl https://quizradar-trial-ai-relay.<your-subdomain>.workers.dev/health
+curl https://trial-ai.quizradar.workers.dev/health
 ```
 
 Clients can override the relay base URL via:

@@ -64,7 +64,7 @@ prompts/               # Historical v5.0 phase prompts (immutable)
 ## 5. Environment
 
 - OS/Shell: Windows (PowerShell 5.1) locally; Ubuntu/macOS/Windows in GitHub Actions.
-- Toolchain: Rust stable (`rustfmt`, `clippy`, `wasm32-unknown-unknown`), Node 20+, `pnpm` ≥ 9, Temurin JDK **21**, Android SDK 35 + NDK r27b.
+- Toolchain: Rust stable (`rustfmt`, `clippy`, `wasm32-unknown-unknown`), Node **22+** (≥ 22.23.4 — Astro 7's floor, enforced by root `engines` and all CI pins), `pnpm` ≥ 9, Temurin JDK **21**, Android SDK 35 + NDK r27b.
 - Canonical commands live in `docs/STATUS.md` §Canonical Verification Commands.
 
 ## 6. Multi-agent workflow & versioning protocol

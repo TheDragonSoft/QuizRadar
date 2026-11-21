@@ -643,4 +643,118 @@ mod tests {
         assert!(decode_course_pack("not-valid-base64!!").is_err());
         assert!(encode_course_pack_links(&pack, Some("http://insecure.example.com/")).is_err());
     }
+
+    #[test]
+    fn course_pack_validation_and_edge_branches() {
+        let mut schedule = sample_schedule();
+        assert!(build_course_pack("   ", &schedule, &[]).is_err());
+        assert!(build_course_pack("NOPE999", &schedule, &[]).is_err());
+
+        // Exercise empty slot course_name backfill, multiple slots sorting, and TBA/dated sorting.
+        schedule.slots[0].course_name = "   ".to_string();
+        schedule.slots.push(ScheduleSlot {
+            id: "slot-0".to_string(),
+            day: "Monday".to_string(),
+            day_index: 1,
+            course_id: "ECE 210".to_string(),
+            course_name: "".to_string(),
+            slot_type: "Lab".to_string(),
+            group: None,
+            room: None,
+            start_time: NaiveTime::from_hms_opt(8, 0, 0).unwrap(),
+            end_time: NaiveTime::from_hms_opt(9, 30, 0).unwrap(),
+            display_time: "   ".to_string(),
+            has_quiz: false,
+            quiz_title: None,
+            week_parity: None,
+        });
+
+        let mut tba = assessment_on("tba-1", Some("ECE210"), "Final Project", None, vec![]);
+        tba.weightage_percent = Some(150.0); // invalid weight filtered out
+        let dated = assessment_on(
+            "d-1",
+            Some("ECE210"),
+            "Quiz 1",
+            NaiveDate::from_ymd_opt(2026, 11, 2),
+            vec![],
+        );
+
+        let pack = build_course_pack("ECE210", &schedule, &[tba, dated]).unwrap();
+        assert_eq!(pack.slots.len(), 2);
+        assert_eq!(pack.slots[0].course_name, "Digital Systems");
+        assert_eq!(
+            pack.slots[0].start_time,
+            NaiveTime::from_hms_opt(8, 0, 0).unwrap()
+        );
+        assert_eq!(pack.assessments[0].title, "Quiz 1");
+        assert_eq!(pack.assessments[1].title, "Final Project");
+        assert_eq!(pack.assessments[1].weightage_percent, None);
+
+        // Localhost web base URL strips query + fragment cleanly.
+        let local_links =
+            encode_course_pack_links(&pack, Some("http://localhost:5173/app/?x=1#old")).unwrap();
+        assert!(local_links
+            .web_url
+            .starts_with("http://localhost:5173/app/#course="));
+
+        // Empty course id/name rejected on encode.
+        let mut empty_course = pack.clone();
+        empty_course.course.id = " ".to_string();
+        assert!(encode_course_pack_token(&empty_course).is_err());
+
+        // Corrupted base64url / deflate / UTF-8 / JSON rejected on decode.
+        assert!(decode_course_pack("a").is_err());
+        assert!(decode_course_pack(&URL_SAFE_NO_PAD.encode(b"not-deflate")).is_err());
+        let bad_utf8 = miniz_oxide::deflate::compress_to_vec(&[0xff, 0xfe, 0xfd], 6);
+        assert!(decode_course_pack(&URL_SAFE_NO_PAD.encode(&bad_utf8)).is_err());
+        let bad_json = miniz_oxide::deflate::compress_to_vec(b"{not-json", 6);
+        assert!(decode_course_pack(&URL_SAFE_NO_PAD.encode(&bad_json)).is_err());
+
+        // Helper to encode an arbitrary modified pack bypassing encode_course_pack_token guard.
+        let raw_encode = |p: &CoursePackPayload| {
+            let j = serde_json::to_string(p).unwrap();
+            URL_SAFE_NO_PAD.encode(miniz_oxide::deflate::compress_to_vec(j.as_bytes(), 6))
+        };
+
+        let mut v0 = pack.clone();
+        v0.v = 0;
+        assert!(decode_course_pack(&raw_encode(&v0)).is_err());
+
+        let mut no_course = pack.clone();
+        no_course.course.name = "".to_string();
+        assert!(decode_course_pack(&raw_encode(&no_course)).is_err());
+
+        let mut bad_day = pack.clone();
+        bad_day.slots[0].day = "Funday".to_string();
+        bad_day.slots[0].day_index = 9;
+        assert!(decode_course_pack(&raw_encode(&bad_day)).is_err());
+
+        let mut bad_time = pack.clone();
+        bad_time.slots[0].end_time = bad_time.slots[0].start_time;
+        assert!(decode_course_pack(&raw_encode(&bad_time)).is_err());
+
+        let mut empty_title = pack.clone();
+        empty_title.assessments[0].title = "   ".to_string();
+        assert!(decode_course_pack(&raw_encode(&empty_title)).is_err());
+
+        let mut bad_weight = pack.clone();
+        bad_weight.assessments[0].weightage_percent = Some(-5.0);
+        assert!(decode_course_pack(&raw_encode(&bad_weight)).is_err());
+
+        // Assessment end_time <= start_time is normalized to None, and empty display_time is filled.
+        let mut reversed_exam = pack.clone();
+        reversed_exam.semester = None;
+        reversed_exam.slots[0].course_name = "".to_string();
+        reversed_exam.slots[0].display_time = "".to_string();
+        reversed_exam.assessments[0].start_time = NaiveTime::from_hms_opt(11, 0, 0);
+        reversed_exam.assessments[0].end_time = NaiveTime::from_hms_opt(10, 0, 0);
+        let decoded = decode_course_pack(&raw_encode(&reversed_exam)).unwrap();
+        assert_eq!(decoded.assessments[0].end_time, None);
+
+        let (sched, domain_items) = course_pack_to_domain(&decoded, ref_date());
+        assert_eq!(sched.slots[0].course_name, "Digital Systems");
+        assert_eq!(sched.slots[0].display_time, "08:00–09:30");
+        assert!(domain_items[0].semester.is_some());
+        assert_eq!(domain_items[1].date, None);
+    }
 }

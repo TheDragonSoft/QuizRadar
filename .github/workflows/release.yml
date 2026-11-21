@@ -52,6 +52,13 @@ jobs:
     name: Desktop (${{ matrix.platform.name }})
     needs: validate
     runs-on: ${{ matrix.platform.os }}
+    # Every `run:` step here is written in bash; without this default the
+    # Windows leg runs them under pwsh and `if [ -z ...` is a ParserError
+    # (observed on the v5.20.0 tag build: the updater-credential guard never
+    # executed). Steps that genuinely need pwsh declare `shell: pwsh`.
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:

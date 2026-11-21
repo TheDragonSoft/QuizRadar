@@ -70,6 +70,8 @@ jobs:
       - name: Commit, tag & push release rollup to main
         id: commit
         if: steps.plan.outputs.has_work == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -85,8 +87,21 @@ jobs:
             git commit -m "${MSG}"
             git pull --rebase origin main
             if ! git push origin HEAD:main; then
-              echo "::warning::Direct push to main was rejected (likely branch protection). Allow github-actions[bot] bypass or run 'pnpm version:rollup' via a release PR."
-              exit 1
+              # Branch protection rejects github-actions[bot] direct pushes
+              # (GH006, observed on every post-merge rollup since the required
+              # checks landed). Deliver the rollup through the reviewed
+              # release-PR path instead of failing: the maintainer merges it,
+              # and the next push to main tags the version. No tag here - the
+              # rollup commit is not on main yet.
+              echo "::warning::Direct push to main was rejected by branch protection; opening a release PR instead."
+              BRANCH="chore/release-rollup-v${{ steps.plan.outputs.next_version }}"
+              git switch -C "$BRANCH"
+              git push --force origin "$BRANCH"
+              gh pr create --head "$BRANCH" --base main --title "$MSG" \
+                --body "Automated release rollup: the direct push to main was rejected by branch protection, so the rollup ships via the reviewed release-PR path. Merge to stamp the release; the following push to main tags the version." \
+                || echo "Release PR for $BRANCH already exists."
+              echo "should_release=false" >> "$GITHUB_OUTPUT"
+              exit 0
             fi
           fi
 

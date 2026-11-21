@@ -213,10 +213,18 @@ pub(crate) async fn build_consented_provider(
     let explicit_key = api_key_override
         .map(|k| k.trim().to_string())
         .filter(|k| !k.is_empty());
+    let trial_enabled = state.ai_trial_enabled().await;
     let stored_key = if explicit_key.is_some() {
         explicit_key
     } else {
-        state.get_gemini_api_key()?
+        match state.get_gemini_api_key() {
+            Ok(key) => key,
+            // Zero-Key Trial AI requires no stored secret; an unavailable OS
+            // keyring (e.g. headless Linux without Secret Service) must not
+            // block an explicitly opted-in starter relay call.
+            Err(_) if trial_enabled => None,
+            Err(err) => return Err(err),
+        }
     };
 
     if let Some(key) = stored_key {
@@ -244,7 +252,7 @@ pub(crate) async fn build_consented_provider(
         };
     }
 
-    if state.ai_trial_enabled().await {
+    if trial_enabled {
         let install_id = state.get_or_create_trial_install_id().await;
         let stored_url = state.effective_trial_relay_url().await;
         let relay_url = base_url_override

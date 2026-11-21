@@ -1007,15 +1007,68 @@ mod tests {
 
     #[test]
     fn trial_relay_requires_https_except_loopback() {
+        assert!(normalize_relay_v1beta_url("   ").is_err());
         assert!(normalize_relay_v1beta_url("http://insecure.example").is_err());
         assert_eq!(
             normalize_relay_v1beta_url("https://trial-ai.quizradar.workers.dev/").unwrap(),
             "https://trial-ai.quizradar.workers.dev/v1beta"
         );
         assert_eq!(
+            normalize_relay_v1beta_url("https://trial-ai.quizradar.workers.dev/v1beta/").unwrap(),
+            "https://trial-ai.quizradar.workers.dev/v1beta"
+        );
+        assert_eq!(
             normalize_relay_v1beta_url("http://127.0.0.1:8787").unwrap(),
             "http://127.0.0.1:8787/v1beta"
         );
+
+        let install_id = generate_trial_install_id();
+        assert!(install_id.starts_with("qr_"));
+        assert_eq!(install_id.len(), 35);
+
+        let client = reqwest::Client::new();
+        assert!(GeminiProvider::trial_relay(
+            client.clone(),
+            "https://trial-ai.quizradar.workers.dev",
+            "short".to_string(),
+            "desktop",
+            clock(),
+            None
+        )
+        .is_err());
+        let default_tag = GeminiProvider::trial_relay(
+            client,
+            "https://trial-ai.quizradar.workers.dev",
+            install_id.clone(),
+            "  ",
+            clock(),
+            None,
+        )
+        .unwrap();
+        assert!(default_tag.is_trial_relay());
+        assert_eq!(default_tag.last_trial_quota(), None);
+
+        let prod = GeminiProvider::production_trial_relay(
+            Some("https://trial-ai.quizradar.workers.dev"),
+            install_id,
+            "desktop",
+            clock(),
+            None,
+        )
+        .unwrap();
+        assert!(prod.is_trial_relay());
+
+        let parsed_body = parse_trial_quota_body(
+            r#"{"error":{"trial":{"limit":10,"remaining":2,"resetIso":"2026-11-22T00:00:00Z"}}}"#,
+        )
+        .unwrap();
+        assert_eq!(parsed_body.limit, 10);
+        assert_eq!(parsed_body.remaining, 2);
+        assert_eq!(
+            parsed_body.reset_iso.as_deref(),
+            Some("2026-11-22T00:00:00Z")
+        );
+        assert!(parse_trial_quota_body("not-json").is_none());
     }
 
     #[tokio::test]

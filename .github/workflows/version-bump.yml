@@ -114,6 +114,11 @@ jobs:
         id: tag_untagged
         if: steps.plan.outputs.has_work != 'true' && steps.plan.outputs.current_tag_exists != 'true'
         run: |
+          # Annotated tags need a committer identity; this step runs on
+          # tag-only rollups (has_work=false), where the commit step — the
+          # only step that previously configured one — never executed.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           TAG="v${{ steps.plan.outputs.current_version }}"
           if ! git rev-parse "${TAG}" >/dev/null 2>&1; then
             git tag -a "${TAG}" -m "Release ${TAG}"

@@ -92,6 +92,16 @@ export function SettingsAccountSection() {
 
   const handleToggleGemini = async () => {
     await updateConfig({ geminiEnabled: !config.geminiEnabled });
+    await refreshAiQuota();
+  };
+
+  const handleToggleTrialAi = async () => {
+    const next = !config.aiTrialEnabled;
+    await updateConfig({
+      aiTrialEnabled: next,
+      ...(next && !config.geminiEnabled ? { geminiEnabled: true } : {}),
+    });
+    await refreshAiQuota();
   };
 
   return (
@@ -463,6 +473,40 @@ export function SettingsAccountSection() {
         <div className="space-y-1 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-hover)] p-3 text-xs text-[var(--text)]">
           <p>{copy.ai.disclosure}</p>
           <p className="font-semibold">{copy.ai.turnOff}</p>
+        </div>
+
+        {/* Opt-in Zero-Key Trial AI Relay (Starter AI) */}
+        <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-bold text-[var(--text)]">{copy.ai.trialHeading}</span>
+            {config.geminiEnabled && aiQuota?.mode && aiQuota.mode !== "off" && (
+              <span className="rounded-full bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] px-2 py-0.5 text-[11px] font-semibold text-[var(--accent-ink)]">
+                {aiQuota.mode === "byok" ? copy.ai.byokModeNote : copy.ai.trialModeNote}
+              </span>
+            )}
+          </div>
+          <label className="flex cursor-pointer items-start gap-2">
+            <input
+              type="checkbox"
+              checked={Boolean(config.aiTrialEnabled)}
+              onChange={handleToggleTrialAi}
+              className="mt-0.5 h-4 w-4 rounded border-[var(--border)] accent-[var(--accent-fill)]"
+            />
+            <span className="text-xs font-medium text-[var(--text)]">
+              {copy.ai.trialToggleLabel}
+            </span>
+          </label>
+          <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
+            {copy.ai.trialDisclosure}
+          </p>
+          {aiQuota?.trialLimit != null && (
+            <p className="text-[11px] font-semibold tabular-nums text-[var(--accent-ink)]">
+              {copy.ai.trialRemainingText(
+                aiQuota.trialRemaining ?? aiQuota.trialLimit,
+                aiQuota.trialLimit,
+              )}
+            </p>
+          )}
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2 sm:flex-nowrap">

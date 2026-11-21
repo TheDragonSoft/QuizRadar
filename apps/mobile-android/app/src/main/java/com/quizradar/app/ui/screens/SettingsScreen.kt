@@ -154,6 +154,8 @@ fun SettingsScreen(
     val userEmail by viewModel.userEmail.collectAsState()
     val geminiApiKey by viewModel.geminiApiKey.collectAsState()
     val geminiEnabled by viewModel.geminiEnabled.collectAsState()
+    val aiTrialEnabled by viewModel.aiTrialEnabled.collectAsState()
+    val trialAiQuotaJson by viewModel.trialAiQuotaJson.collectAsState()
     // The core version is a native call: it is read once off the main
     // thread and published here, so this screen never makes one while it
     // composes.
@@ -725,9 +727,9 @@ fun SettingsScreen(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     // A07: the image-extraction path must check the AI-enabled
-                    // preference AND key presence, not just key presence - the
-                    // blocker is stated inline, not in a toast after the tap.
-                    val aiImportReady = geminiEnabled && geminiApiKey.isNotBlank()
+                    // preference AND key (or starter trial) presence, not just key
+                    // presence - the blocker is stated inline, not in a toast after the tap.
+                    val aiImportReady = geminiEnabled && (geminiApiKey.isNotBlank() || aiTrialEnabled)
                     Button(
                         onClick = {
                             timetableImageLauncher.launch(
@@ -787,7 +789,7 @@ fun SettingsScreen(
                                     if (!geminiEnabled) {
                                         "AI features are turned off. Enable them in the AI section below."
                                     } else {
-                                        "No Gemini API key is saved. Add and save one in the AI section below."
+                                        "No Gemini API key or Free Starter AI is enabled. Configure one in the AI section below."
                                     },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
@@ -1065,15 +1067,73 @@ fun SettingsScreen(
                         )
                     }
 
-                    // The key field and the enable toggle are deliberately
-                    // separate: turning the toggle on without a saved key is
-                    // not an error, but the screen must say so honestly.
-                    if (geminiEnabled && geminiApiKey.isBlank()) {
+                    if (geminiEnabled && geminiApiKey.isBlank() && !aiTrialEnabled) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "AI features are on, but no Gemini API key is saved - paste and save one below to use them.",
+                            text =
+                                "AI features are on, but no Gemini API key is saved - paste one below " +
+                                    "or enable Free Starter AI.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Free Starter AI (No Key Needed)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                text =
+                                    "Stateless Cloudflare relay used when no personal key is saved " +
+                                        "(zero data stored, zero OAuth tokens; anonymous device hash only)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = aiTrialEnabled,
+                            onCheckedChange = { enabled ->
+                                viewModel.setAiTrialEnabled(enabled)
+                                if (enabled && !geminiEnabled) {
+                                    viewModel.setGeminiEnabled(true)
+                                }
+                            },
+                        )
+                    }
+
+                    val trialQuotaText =
+                        remember(trialAiQuotaJson) {
+                            runCatching {
+                                val obj = org.json.JSONObject(trialAiQuotaJson)
+                                if (obj.has("limit") && obj.has("remaining")) {
+                                    "Starter relay allowance today: ${obj.optInt("remaining")} of ${obj.optInt("limit")} remaining"
+                                } else {
+                                    null
+                                }
+                            }.getOrNull()
+                        }
+                    if (geminiEnabled && geminiApiKey.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Active mode: Personal Gemini Key (BYOK)",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    } else if (geminiEnabled && aiTrialEnabled) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = trialQuotaText ?: "Active mode: Free Starter AI Relay",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
                         )
                     }
 

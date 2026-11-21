@@ -16,9 +16,9 @@
     "core/src/plan/dashboard.rs": "c390e10665cfb17a11a81fa3361317695eefaf4dfe9350e80729f5056d90acfc",
     "core/src/plan/tasks.rs": "393b8f8badc358a850fe51df90c9b907be10749c1dd4f886bfd4e78d3a5dabba",
     "core/src/plan/conflicts.rs": "10e08f36c34eb1fbb628ed5733109d372b6d96cf083854d51ac6fd7b995f2dc3",
-    "apps/desktop/src-tauri/src/commands/state.rs": "add04b81035e799789e127aa45a1bed3457683b56efcd736b1ae6c971ae8cc9b",
+    "apps/desktop/src-tauri/src/commands/state.rs": "1e77eaa44969b5861c4bd1f96b95a82adad2968cfd8d49f4106593720de53570",
     "core/src/store/repo.rs": "95fd75f4baf901a6258b8bf0ff7001e4a3c1a1323c36aeed90df8052204c9e09",
-    "core/src/ffi.rs": "f7eeecf77450d75b8b7051a46c0d0b5077050e65dd4bc70cc2a4c7088a4bb47a",
+    "core/src/ffi.rs": "4ec6d1dc8f575e8abd87da8926118bf9eae879ded961bbdea249734206f9b8ad",
     "core/src/store/db.rs": "7bb13b760def20b915a1c214ddad9ea60b8c37702bcd69e9fee780cff4ecd4db"
   },
   "structs": {
@@ -1686,6 +1686,12 @@
           "optional": false
         },
         {
+          "rustName": "ai_trial_enabled",
+          "wireName": "aiTrialEnabled",
+          "rustType": "bool",
+          "optional": false
+        },
+        {
           "rustName": "onboarding_completed",
           "wireName": "onboardingCompleted",
           "rustType": "bool",
@@ -1936,6 +1942,12 @@
         {
           "rustName": "gemini_enabled",
           "wireName": "geminiEnabled",
+          "rustType": "Option<bool>",
+          "optional": true
+        },
+        {
+          "rustName": "ai_trial_enabled",
+          "wireName": "aiTrialEnabled",
           "rustType": "Option<bool>",
           "optional": true
         },
@@ -2837,6 +2849,12 @@
         "document_b64: String",
         "mime: String",
         "api_key: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.get_trial_ai_quota_json": {
+      "parameters": [
+        "&self"
       ],
       "returns": "Result<String, QuizRadarFfiError>"
     },

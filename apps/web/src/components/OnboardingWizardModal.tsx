@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Check,
   ExternalLink,
+  Sparkles,
   Upload,
   LogOut,
   X,
@@ -44,6 +45,7 @@ export function OnboardingWizardModal({
   const microsoftLogin = useAppStore((s) => s.microsoftLogin);
   const microsoftLogout = useAppStore((s) => s.microsoftLogout);
   const validateGeminiKey = useAppStore((s) => s.validateGeminiKey);
+  const refreshAiQuota = useAppStore((s) => s.refreshAiQuota);
   const extractSchedule = useAppStore((s) => s.extractSchedule);
   const extractSyllabi = useAppStore((s) => s.extractSyllabi);
   const openSyllabusPreview = useAppStore((s) => s.openSyllabusPreview);
@@ -100,6 +102,20 @@ export function OnboardingWizardModal({
       });
     } finally {
       setGeminiValidating(false);
+    }
+  };
+
+  const handleEnableStarterTrialAi = async () => {
+    try {
+      await updateConfig({ geminiEnabled: true, aiTrialEnabled: true });
+      setGeminiValid(true);
+      await refreshAiQuota();
+      addToast({ type: "success", message: copy.ai.trialActiveBadge });
+    } catch (err) {
+      addToast({
+        type: "error",
+        message: err instanceof Error ? err.message : String(err),
+      });
     }
   };
 
@@ -575,12 +591,16 @@ export function OnboardingWizardModal({
             </div>
 
             {/* Gemini AI Card */}
-            <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-3.5 space-y-2">
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-3.5 space-y-2.5">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-[var(--text)]">
                   {copy.onboarding.geminiConnect}
                 </span>
-                {geminiValid ? (
+                {Boolean(config.aiTrialEnabled) && config.geminiEnabled ? (
+                  <span className="text-[11px] text-emerald-700 dark:text-emerald-300 font-bold">
+                    {copy.ai.trialActiveBadge}
+                  </span>
+                ) : geminiValid ? (
                   <span className="text-[11px] text-emerald-700 dark:text-emerald-300 font-bold">
                     Verified
                   </span>
@@ -595,6 +615,29 @@ export function OnboardingWizardModal({
               <div className="rounded-lg border border-[var(--surface-border)] bg-[var(--surface-hover)] p-2.5 text-[11px] text-[var(--text)] space-y-0.5">
                 <p>{copy.ai.disclosure}</p>
                 <p className="font-semibold">{copy.ai.turnOff}</p>
+              </div>
+
+              {/* 1-Tap Zero-Key Trial AI Opt-in */}
+              <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2.5 space-y-1.5">
+                <div className="text-xs font-bold text-[var(--text)]">{copy.ai.trialHeading}</div>
+                <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
+                  {copy.ai.trialSub}
+                </p>
+                <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
+                  {copy.ai.trialDisclosure}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleEnableStarterTrialAi}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent-fill)] px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[var(--accent-fill-hover)]"
+                >
+                  <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>
+                    {Boolean(config.aiTrialEnabled) && config.geminiEnabled
+                      ? copy.ai.trialActiveBadge
+                      : copy.ai.trialEnableCta}
+                  </span>
+                </button>
               </div>
 
               <div className="flex gap-2">

@@ -16,28 +16,85 @@
 use serde_json::{json, Value};
 
 use crate::ai::provider::{
-    AiError, AiFuture, AiModel, AiProvider, QuotaLedger, RawJson, StructuredPrompt, UtcClock,
-    VisionRequest,
+    AiError, AiFuture, AiModel, AiProvider, QuotaLedger, RawJson, StructuredPrompt,
+    TrialQuotaStatus, UtcClock, VisionRequest,
 };
 
 /// Production Generative Language API root (tests point at the fixture
 /// server).
 pub const GEMINI_API_BASE: &str = "https://generativelanguage.googleapis.com/v1beta";
 
+/// Default Cloudflare Worker endpoint for the opt-in Zero-Key Trial AI Relay
+/// (authorized per `AGENTS.md` §1 & §3.4 maintainer override 2026-11-21).
+pub const DEFAULT_TRIAL_RELAY_URL: &str = "https://trial-ai.quizradar.workers.dev/v1beta";
+
+/// Environment-variable override for the Trial AI Relay base URL (handy for
+/// self-hosted previews, staging workers, and tests).
+pub const ENV_TRIAL_AI_RELAY_URL: &str = "QUIZRADAR_TRIAL_AI_RELAY_URL";
+
+/// Custom device-scoped headers sent to the Trial AI Relay (never an OAuth token).
+pub const TRIAL_INSTALL_ID_HEADER: &str = "x-quizradar-install-id";
+pub const TRIAL_CLIENT_HEADER: &str = "x-quizradar-client";
+
 /// v4's shared-client timeouts (10 s connect / 60 s total) so a stalled
 /// request can never hang a scan or a button forever.
 pub const CONNECT_TIMEOUT_SECS: u64 = 10;
 pub const TOTAL_TIMEOUT_SECS: u64 = 60;
 
-/// The BYOK Gemini provider. Constructed per session by the shell with the
-/// user's key (platform-side storage), an injected clock (core owns no wall
-/// clock) and the optional quota ledger (store-backed, phase-06 default).
+#[derive(Clone)]
+enum GeminiAuthMode {
+    Byok { api_key: Option<String> },
+    TrialRelay { install_id: String, client: String },
+}
+
+/// Generates an anonymous 128-bit random install identifier for Trial AI
+/// rate limiting (persisted strictly locally in `config_kv`; never synced).
+#[must_use]
+pub fn generate_trial_install_id() -> String {
+    let mut bytes = [0_u8; 16];
+    if getrandom::getrandom(&mut bytes).is_err() {
+        let nanos = chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0) as u128;
+        bytes = nanos.to_le_bytes();
+    }
+    let mut hex = String::with_capacity(35);
+    hex.push_str("qr_");
+    for byte in bytes {
+        use std::fmt::Write as _;
+        let _ = write!(hex, "{byte:02x}");
+    }
+    hex
+}
+
+/// Validates and normalizes a Trial AI Relay URL (`https://` required except
+/// loopback `http://127.0.0.1` / `http://localhost` for tests) and ensures it
+/// carries the `/v1beta` suffix expected by `GeminiProvider`.
+pub fn normalize_relay_v1beta_url(raw: &str) -> Result<String, String> {
+    let trimmed = raw.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return Err("Trial AI relay URL cannot be empty.".to_string());
+    }
+    let lowered = trimmed.to_ascii_lowercase();
+    let is_loopback =
+        lowered.starts_with("http://127.0.0.1") || lowered.starts_with("http://localhost");
+    if !lowered.starts_with("https://") && !is_loopback {
+        return Err("Trial AI relay URL must use HTTPS.".to_string());
+    }
+    if lowered.ends_with("/v1beta") {
+        Ok(trimmed.to_string())
+    } else {
+        Ok(format!("{trimmed}/v1beta"))
+    }
+}
+
+/// The Gemini provider, supporting both BYOK keys (`x-goog-api-key`) and the
+/// opt-in stateless Zero-Key Trial AI Relay.
 pub struct GeminiProvider {
     client: reqwest::Client,
-    api_key: Option<String>,
+    auth: GeminiAuthMode,
     base_url: String,
     clock: UtcClock,
     ledger: Option<std::sync::Arc<QuotaLedger>>,
+    last_trial_quota: std::sync::Arc<std::sync::Mutex<Option<TrialQuotaStatus>>>,
 }
 
 impl GeminiProvider {
@@ -51,16 +108,51 @@ impl GeminiProvider {
     ) -> Self {
         Self {
             client,
-            api_key: api_key
-                .map(|key| key.trim().to_string())
-                .filter(|key| !key.is_empty()),
-            base_url: base_url.into(),
+            auth: GeminiAuthMode::Byok {
+                api_key: api_key
+                    .map(|key| key.trim().to_string())
+                    .filter(|key| !key.is_empty()),
+            },
+            base_url: base_url.into().trim_end_matches('/').to_string(),
             clock,
             ledger,
+            last_trial_quota: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
-    /// The production-configured provider (shared timeouts, real endpoint).
+    /// Constructs a provider pointed at the stateless Zero-Key Trial AI Relay.
+    pub fn trial_relay(
+        client: reqwest::Client,
+        relay_base_url: &str,
+        install_id: String,
+        client_tag: impl Into<String>,
+        clock: UtcClock,
+        ledger: Option<std::sync::Arc<QuotaLedger>>,
+    ) -> Result<Self, String> {
+        let base_url = normalize_relay_v1beta_url(relay_base_url)?;
+        let clean_install = install_id.trim().to_string();
+        if clean_install.len() < 16 {
+            return Err("Trial AI install id is malformed.".to_string());
+        }
+        let clean_client = client_tag.into().trim().to_string();
+        Ok(Self {
+            client,
+            auth: GeminiAuthMode::TrialRelay {
+                install_id: clean_install,
+                client: if clean_client.is_empty() {
+                    "core".to_string()
+                } else {
+                    clean_client
+                },
+            },
+            base_url,
+            clock,
+            ledger,
+            last_trial_quota: std::sync::Arc::new(std::sync::Mutex::new(None)),
+        })
+    }
+
+    /// The production-configured BYOK provider (shared timeouts, real endpoint).
     pub fn production(
         api_key: Option<String>,
         clock: UtcClock,
@@ -74,6 +166,59 @@ impl GeminiProvider {
         Ok(Self::new(client, api_key, GEMINI_API_BASE, clock, ledger))
     }
 
+    /// The production-configured Trial AI Relay provider (shared timeouts).
+    pub fn production_trial_relay(
+        relay_base_url: Option<&str>,
+        install_id: String,
+        client_tag: impl Into<String>,
+        clock: UtcClock,
+        ledger: Option<std::sync::Arc<QuotaLedger>>,
+    ) -> Result<Self, String> {
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(CONNECT_TIMEOUT_SECS))
+            .timeout(std::time::Duration::from_secs(TOTAL_TIMEOUT_SECS))
+            .build()
+            .map_err(|e| format!("failed to build the Trial AI HTTP client: {e}"))?;
+        let env_url = std::env::var(ENV_TRIAL_AI_RELAY_URL)
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty());
+        let resolved_url = relay_base_url
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .or(env_url)
+            .unwrap_or_else(|| DEFAULT_TRIAL_RELAY_URL.to_string());
+        Self::trial_relay(client, &resolved_url, install_id, client_tag, clock, ledger)
+    }
+
+    #[must_use]
+    pub fn is_trial_relay(&self) -> bool {
+        matches!(self.auth, GeminiAuthMode::TrialRelay { .. })
+    }
+
+    #[must_use]
+    pub fn last_trial_quota(&self) -> Option<TrialQuotaStatus> {
+        self.last_trial_quota
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone())
+    }
+
+    fn record_trial_quota(&self, quota: Option<TrialQuotaStatus>) {
+        if let Some(q) = quota {
+            if let Ok(mut guard) = self.last_trial_quota.lock() {
+                *guard = Some(q);
+            }
+        }
+    }
+
+    fn secret_to_redact(&self) -> &str {
+        match &self.auth {
+            GeminiAuthMode::Byok { api_key: Some(key) } => key.as_str(),
+            _ => "",
+        }
+    }
+
     fn generate_url(&self, model_id: &str) -> String {
         format!("{}/models/{}:generateContent", self.base_url, model_id)
     }
@@ -84,7 +229,15 @@ impl GeminiProvider {
         temperature: f32,
         text_parts: Vec<Value>,
     ) -> Result<RawJson, AiError> {
-        let key = self.api_key.as_ref().ok_or(AiError::NoKey)?;
+        match &self.auth {
+            GeminiAuthMode::Byok { api_key: None } => return Err(AiError::NoKey),
+            GeminiAuthMode::TrialRelay { install_id, .. } if install_id.trim().len() < 16 => {
+                return Err(AiError::BadResponse(
+                    "Trial AI install id is malformed.".to_string(),
+                ));
+            }
+            _ => {}
+        }
 
         if let Some(ledger) = &self.ledger {
             // Client-side pre-check (Pacific-day ledger): a known-exhausted
@@ -104,19 +257,28 @@ impl GeminiProvider {
             }
         });
 
+        let secret = self.secret_to_redact();
+
         // Walk the tier's candidate ids: a model that is retired for this
         // key's project (404) or congested (503) is a model-level problem,
         // so the next candidate is tried. Every other failure (invalid key,
         // quota, transport) is the caller's problem and is returned as is.
         let mut last_error: Option<AiError> = None;
         for model_id in model.model_ids() {
-            let response = self
-                .client
-                .post(self.generate_url(model_id))
-                .header("x-goog-api-key", key.as_str())
-                .json(&payload)
-                .send()
-                .await;
+            let mut req = self.client.post(self.generate_url(model_id));
+            match &self.auth {
+                GeminiAuthMode::Byok { api_key: Some(key) } => {
+                    req = req.header("x-goog-api-key", key.as_str());
+                }
+                GeminiAuthMode::Byok { api_key: None } => return Err(AiError::NoKey),
+                GeminiAuthMode::TrialRelay { install_id, client } => {
+                    req = req
+                        .header(TRIAL_INSTALL_ID_HEADER, install_id.as_str())
+                        .header(TRIAL_CLIENT_HEADER, client.as_str());
+                }
+            }
+
+            let response = req.json(&payload).send().await;
 
             let response = match response {
                 Ok(response) => response,
@@ -125,15 +287,31 @@ impl GeminiProvider {
                     // another id would only repeat it.
                     return Err(AiError::Retryable(redact_key(
                         &format!("network error: {}", error.without_url()),
-                        key,
+                        secret,
                     )));
                 }
             };
 
             let status = response.status();
+            let header_quota = parse_trial_quota_headers(response.headers());
+            self.record_trial_quota(header_quota.clone());
+
             if !status.is_success() {
                 let detail = response.text().await.unwrap_or_default();
-                let detail = redact_key(&detail, key);
+                let detail = redact_key(&detail, secret);
+
+                if self.is_trial_relay() && status.as_u16() == 429 {
+                    let parsed_quota = header_quota.or_else(|| parse_trial_quota_body(&detail));
+                    let limit = parsed_quota.as_ref().map(|q| q.limit).unwrap_or(10);
+                    let reset_iso = parsed_quota.as_ref().and_then(|q| q.reset_iso.clone());
+                    self.record_trial_quota(Some(TrialQuotaStatus {
+                        limit,
+                        remaining: 0,
+                        reset_iso: reset_iso.clone(),
+                    }));
+                    return Err(AiError::TrialExhausted { limit, reset_iso });
+                }
+
                 let error = map_status(status.as_u16(), &detail);
                 if is_model_level_failure(status.as_u16()) {
                     let keep_existing =
@@ -308,6 +486,51 @@ pub fn redact_key(message: &str, key: &str) -> String {
         return message.to_string();
     }
     message.replace(key, "[redacted]")
+}
+
+fn parse_trial_quota_headers(headers: &reqwest::header::HeaderMap) -> Option<TrialQuotaStatus> {
+    let limit = headers
+        .get("x-quizradar-trial-limit")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.trim().parse::<u32>().ok())?;
+    let remaining = headers
+        .get("x-quizradar-trial-remaining")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.trim().parse::<u32>().ok())?;
+    let reset_iso = headers
+        .get("x-quizradar-trial-reset")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    Some(TrialQuotaStatus {
+        limit,
+        remaining,
+        reset_iso,
+    })
+}
+
+fn parse_trial_quota_body(detail: &str) -> Option<TrialQuotaStatus> {
+    let value: Value = serde_json::from_str(detail).ok()?;
+    let trial = value.pointer("/error/trial")?;
+    let limit = trial
+        .get("limit")
+        .and_then(Value::as_u64)
+        .and_then(|v| u32::try_from(v).ok())?;
+    let remaining = trial
+        .get("remaining")
+        .and_then(Value::as_u64)
+        .and_then(|v| u32::try_from(v).ok())
+        .unwrap_or(0);
+    let reset_iso = trial
+        .get("resetIso")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .filter(|s| !s.is_empty());
+    Some(TrialQuotaStatus {
+        limit,
+        remaining,
+        reset_iso,
+    })
 }
 
 #[cfg(test)]
@@ -780,5 +1003,108 @@ mod tests {
         let scrubbed = redact_key("network error near ?key=k-test-123&x=1", "k-test-123");
         assert_eq!(scrubbed, "network error near ?key=[redacted]&x=1");
         assert!(!scrubbed.contains("k-test-123"));
+    }
+
+    #[test]
+    fn trial_relay_requires_https_except_loopback() {
+        assert!(normalize_relay_v1beta_url("http://insecure.example").is_err());
+        assert_eq!(
+            normalize_relay_v1beta_url("https://trial-ai.quizradar.workers.dev/").unwrap(),
+            "https://trial-ai.quizradar.workers.dev/v1beta"
+        );
+        assert_eq!(
+            normalize_relay_v1beta_url("http://127.0.0.1:8787").unwrap(),
+            "http://127.0.0.1:8787/v1beta"
+        );
+    }
+
+    #[tokio::test]
+    async fn trial_relay_sends_custom_install_headers_tracks_quota_and_maps_429() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1beta/models/gemini-3.5-flash-lite:generateContent"))
+            .and(header("x-quizradar-install-id", "qr_1234567890abcdef"))
+            .and(header("x-quizradar-client", "desktop"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("X-QuizRadar-Trial-Limit", "10")
+                    .insert_header("X-QuizRadar-Trial-Remaining", "9")
+                    .insert_header("X-QuizRadar-Trial-Reset", "2026-10-25T00:00:00.000Z")
+                    .set_body_json(gemini_response("{\"ok\":true}")),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_millis(50))
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .unwrap();
+        let relay = GeminiProvider::trial_relay(
+            client.clone(),
+            &server.uri(),
+            "qr_1234567890abcdef".to_string(),
+            "desktop",
+            clock(),
+            None,
+        )
+        .unwrap();
+
+        let res = relay
+            .chat_json(StructuredPrompt::new(AiModel::FlashLite, 0.1, "ping"))
+            .await
+            .unwrap();
+        assert_eq!(res.value(), &json!({"ok": true}));
+        assert_eq!(
+            relay.last_trial_quota(),
+            Some(TrialQuotaStatus {
+                limit: 10,
+                remaining: 9,
+                reset_iso: Some("2026-10-25T00:00:00.000Z".to_string()),
+            })
+        );
+        server.verify().await;
+
+        let server_429 = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1beta/models/gemini-3.5-flash-lite:generateContent"))
+            .respond_with(
+                ResponseTemplate::new(429)
+                    .insert_header("X-QuizRadar-Trial-Limit", "10")
+                    .insert_header("X-QuizRadar-Trial-Remaining", "0")
+                    .insert_header("X-QuizRadar-Trial-Reset", "2026-10-25T00:00:00.000Z")
+                    .set_body_json(json!({
+                        "error": {
+                            "code": 429,
+                            "status": "TRIAL_EXHAUSTED",
+                            "trial": { "limit": 10, "remaining": 0, "resetIso": "2026-10-25T00:00:00.000Z" }
+                        }
+                    })),
+            )
+            .mount(&server_429)
+            .await;
+
+        let relay_429 = GeminiProvider::trial_relay(
+            client,
+            &server_429.uri(),
+            "qr_1234567890abcdef".to_string(),
+            "desktop",
+            clock(),
+            None,
+        )
+        .unwrap();
+        let err = relay_429
+            .chat_json(StructuredPrompt::new(AiModel::FlashLite, 0.1, "ping"))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err,
+            AiError::TrialExhausted {
+                limit: 10,
+                reset_iso: Some("2026-10-25T00:00:00.000Z".to_string()),
+            }
+        );
+        assert_eq!(relay_429.last_trial_quota().unwrap().remaining, 0);
     }
 }

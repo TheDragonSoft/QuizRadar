@@ -20,9 +20,9 @@ _Strategic plan for evolving QuizRadar from a local-first, open-source v5 engine
 2. **1-Tap "Share Course Pack" Viral Links (PR 1 — Shipped):**
    - Data-only compressed course bundle links (`https://thedragonsoft.github.io/QuizRadar/app/#course=...` and `quizradar://course?d=...` + QR codes) sharing course slots, deadlines, weights, and topics with zero personal grades, notes, or tokens.
    - Classmates opening a shared link land directly on a 1-tap import preview bypassing blank-canvas setup.
-3. **Zero-Key Trial AI Relay (PR 2 — Queued Next):**
-   - Thin stateless relay (e.g., Cloudflare Worker, maintainer override 2026-11-21) providing free starter AI extractions on first run with zero API-key setup.
-   - BYOK Gemini remains available in Settings for power users who want unlimited free-tier usage.
+3. **Zero-Key Trial AI Relay (PR 2 — Shipped):**
+   - Thin stateless Cloudflare Worker (`workers/trial-ai-relay/`) providing free starter AI extractions on first run with zero API-key setup, opt-in per-device rate limiting, and explicit stateless disclosure.
+   - BYOK Gemini remains available in Settings and always takes priority when configured.
 4. **OAuth Verification & First-Party Clients:**
    - Complete Google OAuth restricted-scope verification (CASA audit) to eliminate the "Unverified App" warning screen.
    - Ship a first-party multi-tenant Microsoft Entra client ID so Teams works in one tap on Android and Desktop.

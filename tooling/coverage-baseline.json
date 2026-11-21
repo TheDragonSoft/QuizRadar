@@ -1,12 +1,12 @@
 {
   "core": {
-    "lines": 88,
+    "lines": 91.24,
     "branches": 0,
-    "functions": 84
+    "functions": 86.9
   },
   "web": {
-    "lines": 68,
-    "branches": 66,
-    "functions": 49
+    "lines": 69.36,
+    "branches": 60.3,
+    "functions": 67.06
   }
 }

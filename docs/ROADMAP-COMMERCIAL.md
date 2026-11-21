@@ -23,9 +23,10 @@ _Strategic plan for evolving QuizRadar from a local-first, open-source v5 engine
 3. **Zero-Key Trial AI Relay (PR 2 — Shipped):**
    - Thin stateless Cloudflare Worker (`workers/trial-ai-relay/`) providing free starter AI extractions on first run with zero API-key setup, opt-in per-device rate limiting, and explicit stateless disclosure.
    - BYOK Gemini remains available in Settings and always takes priority when configured.
-4. **OAuth Verification & First-Party Clients:**
-   - Complete Google OAuth restricted-scope verification (CASA audit) to eliminate the "Unverified App" warning screen.
-   - Ship a first-party multi-tenant Microsoft Entra client ID so Teams works in one tap on Android and Desktop.
+4. **OAuth Verification & First-Party Clients (PR 3 — Prepared, awaiting external console submission):**
+   - Shipped same-domain hosted `/privacy/` (with verbatim Google API Services User Data Policy Limited Use disclosure & scope table) and `/terms/` pages on `apps/landing/`, plus full CASA Tier 2 & Microsoft Entra submission runbook ([OAUTH-VERIFICATION.md](OAUTH-VERIFICATION.md)).
+   - Shipped unified first-party multi-tenant Microsoft Entra GUID plumbing & validation across Desktop (`QUIZRADAR_BUILD_MICROSOFT_CLIENT_ID`), Android (`BuildConfig.MICROSOFT_CLIENT_ID` + `OAuthManager.resolveMicrosoftClientId` + `EngineFfiTokens` + `BackgroundScanWorker`), and Web/PWA (`VITE_MICROSOFT_CLIENT_ID` + subpath-safe `resolveBrowserMicrosoftRedirectUri`).
+   - Remaining external maintainer steps: submit Google OAuth consent screen & CASA Tier 2 review with demo video, register the multi-tenant Microsoft Entra app, and set the resulting public GUID in release CI variables.
 
 ---
 

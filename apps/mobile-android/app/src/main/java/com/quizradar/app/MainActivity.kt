@@ -131,7 +131,9 @@ class MainActivity : ComponentActivity() {
             }
         }
         lifecycleScope.launch {
-            viewModel.teamsClientId.collect { oauthManager.microsoftClientId = it }
+            viewModel.teamsClientId.collect {
+                oauthManager.microsoftClientId = OAuthManager.resolveMicrosoftClientId(it)
+            }
         }
 
         handleIncomingIntent(intent)

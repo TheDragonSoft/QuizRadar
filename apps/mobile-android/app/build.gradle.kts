@@ -34,6 +34,16 @@ android {
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
+
+        // Optional build-time first-party multi-tenant Microsoft Entra ID
+        // Application (client) GUID (public identifier, never a secret).
+        val bundledMicrosoftClientId =
+            (
+                (project.findProperty("quizradarMicrosoftClientId") as? String)
+                    ?: System.getenv("QUIZRADAR_MICROSOFT_CLIENT_ID")
+                    ?: ""
+            ).trim().replace("\\", "").replace("\"", "")
+        buildConfigField("String", "MICROSOFT_CLIENT_ID", "\"$bundledMicrosoftClientId\"")
     }
 
     packaging {

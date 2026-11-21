@@ -10,6 +10,8 @@ const base = import.meta.env.BASE_URL;
 const homeHref = withBase(base, "/");
 const downloadHref = withBase(base, "/download/");
 const webAppHref = withBase(base, "/app/");
+const privacyHref = withBase(base, "/privacy/");
+const termsHref = withBase(base, "/terms/");
 ---
 
 <footer class="footer">
@@ -21,20 +23,17 @@ const webAppHref = withBase(base, "/app/");
       </a>
       <p class="footer-tagline">
         Local-first university exam radar. One pure-Rust core across Tauri 2 Desktop, Android
-        Jetpack Compose, and Browser WebAssembly — zero servers, zero telemetry, MIT licensed.
+        Jetpack Compose, and Browser WebAssembly — zero user accounts, zero telemetry, MIT licensed.
       </p>
     </div>
 
     <nav class="footer-links" aria-label="Footer">
       <a href={downloadHref}>Downloads</a>
       <a href={webAppHref}>Web Companion</a>
+      <a href={privacyHref}>Privacy Policy</a>
+      <a href={termsHref}>Terms of Service</a>
       <a href={GITHUB_RELEASES_LATEST} target="_blank" rel="noopener noreferrer">GitHub Releases</a>
       <a href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer">Source Code</a>
-      <a
-        href={`${GITHUB_REPO_URL}/blob/main/PRIVACY.md`}
-        target="_blank"
-        rel="noopener noreferrer">Privacy Policy</a
-      >
       <a
         href={`${GITHUB_REPO_URL}/blob/main/SECURITY.md`}
         target="_blank"

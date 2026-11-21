@@ -3,7 +3,7 @@ import BrandIcon from "./BrandIcon.astro";
 import { GITHUB_REPO_URL, withBase } from "../lib/releaseData";
 
 interface Props {
-  currentPage?: "home" | "download";
+  currentPage?: "home" | "download" | "privacy" | "terms";
 }
 
 const { currentPage = "home" } = Astro.props;

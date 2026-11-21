@@ -68,11 +68,12 @@ import { getWasmEngine } from "./wasmBridge";
 import { aliasDeep, toRustEvent } from "../state/ipcShape";
 import { sanitizeFlashcards, sanitizeQuizAttempts, sanitizeMistakes } from "../state/storage";
 import {
-  DEFAULT_BROWSER_GOOGLE_CLIENT_ID,
   getMemoryGeminiKey,
   getMemoryGoogleToken,
   getMemoryMsToken,
   hasMemoryGeminiKey,
+  resolveBrowserGoogleClientId,
+  resolveBrowserMicrosoftClientId,
   scanBrowserFeeds,
   setMemoryGeminiKey,
   setMemoryGoogleToken,
@@ -492,10 +493,10 @@ export async function buildFullState(refDate?: string): Promise<GetStatePayload>
     onboardingCompleted: Boolean(allConfig.onboarding_completed),
     academicTrack: (allConfig.academic_track as string) || null,
     teamsEnabled: Boolean(allConfig.teams_enabled),
-    teamsClientId: (allConfig.teams_client_id as string) || null,
+    teamsClientId: resolveBrowserMicrosoftClientId(allConfig.teams_client_id as string | undefined),
     teamsAccountName: (allConfig.teams_account_name as string) || null,
     teamsAccountEmail: (allConfig.teams_account_email as string) || null,
-    googleClientId: (allConfig.google_client_id as string) || DEFAULT_BROWSER_GOOGLE_CLIENT_ID,
+    googleClientId: resolveBrowserGoogleClientId(allConfig.google_client_id as string | undefined),
     moodleEnabled: Boolean(allConfig.moodle_enabled),
     moodleUrl: (allConfig.moodle_url as string) || null,
     moodleIcalUrl: (allConfig.moodle_ical_url as string) || null,

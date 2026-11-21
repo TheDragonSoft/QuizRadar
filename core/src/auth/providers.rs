@@ -335,6 +335,28 @@ pub fn percent_encode(value: &str) -> String {
     out
 }
 
+/// True when `raw` is a well-formed Microsoft Entra / Azure AD Application
+/// (client) ID GUID (`8-4-4-4-12` hex digits, no spaces or placeholders).
+#[must_use]
+pub fn is_valid_microsoft_client_id(raw: &str) -> bool {
+    let trimmed = raw.trim();
+    if trimmed.len() != 36 {
+        return false;
+    }
+    let bytes = trimmed.as_bytes();
+    for (idx, &b) in bytes.iter().enumerate() {
+        if matches!(idx, 8 | 13 | 18 | 23) {
+            if b != b'-' {
+                return false;
+            }
+        } else if !b.is_ascii_hexdigit() {
+            return false;
+        }
+    }
+    // Reject the all-zero placeholder GUID shown in documentation examples.
+    !trimmed.eq_ignore_ascii_case("00000000-0000-0000-0000-000000000000")
+}
+
 /// The OAuth provider whose error body is being explained.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OAuthProvider {
@@ -362,6 +384,12 @@ pub fn explain_oauth_error(provider: OAuthProvider, body: &str) -> String {
         }
         if lower.contains("invalid_grant") {
             return "Google rejected the authorization code. It is single-use and short-lived — start the sign-in again and finish it in the same browser session.".to_string();
+        }
+        if lower.contains("org_internal") || lower.contains("admin_policy_enforced") {
+            return "Your university Google Workspace administrator restricts third-party app access for this account. You can still import course syllabi PDFs directly or subscribe to Moodle/LMS .ics calendar feeds without Google sign-in.".to_string();
+        }
+        if lower.contains("access_denied") {
+            return "Google sign-in was cancelled or access was not granted. If Google showed a verification warning while app review is in progress, choose Advanced → Go to QuizRadar, or use Syllabus Import / .ics feeds instead.".to_string();
         }
     }
 
@@ -652,5 +680,33 @@ mod tests {
         assert_eq!(percent_encode("a&b=c"), "a%26b%3Dc");
         assert_eq!(percent_encode("héllo"), "h%C3%A9llo");
         assert_eq!(percent_encode(""), "");
+    }
+
+    #[test]
+    fn microsoft_guid_validator_accepts_real_guids_and_rejects_placeholders() {
+        assert!(is_valid_microsoft_client_id(
+            "14d82eec-204b-4c2f-b7e8-296a70dab67e"
+        ));
+        assert!(is_valid_microsoft_client_id(
+            "  A1B2C3D4-E5F6-4789-ABCD-0123456789EF  "
+        ));
+        assert!(!is_valid_microsoft_client_id(""));
+        assert!(!is_valid_microsoft_client_id("quizradar-android-public-ms"));
+        assert!(!is_valid_microsoft_client_id(
+            "00000000-0000-0000-0000-000000000000"
+        ));
+        assert!(!is_valid_microsoft_client_id(
+            "14d82eec-204b-4c2f-b7e8-296a70dab67z"
+        ));
+    }
+
+    #[test]
+    fn google_org_and_access_denied_errors_explain_offline_fallback() {
+        let org = explain_oauth_error(OAuthProvider::Google, "Error 400: admin_policy_enforced");
+        assert!(org.contains("administrator"));
+        assert!(org.contains(".ics"));
+
+        let denied = explain_oauth_error(OAuthProvider::Google, "access_denied");
+        assert!(denied.contains("Syllabus Import"));
     }
 }

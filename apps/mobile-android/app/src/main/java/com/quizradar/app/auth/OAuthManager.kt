@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.browser.customtabs.CustomTabsIntent
+import com.quizradar.app.BuildConfig
 import com.quizradar.app.core.QuizRadarEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -30,7 +31,7 @@ sealed class OAuthRedirectResult {
  */
 class OAuthManager(
     var googleClientId: String = DEFAULT_GOOGLE_CLIENT_ID,
-    var microsoftClientId: String = DEFAULT_MICROSOFT_CLIENT_ID,
+    var microsoftClientId: String = resolveMicrosoftClientId(null),
     /**
      * When wired, the pending PKCE transaction (provider/state/verifier/
      * redirect) is persisted encrypted and consumed once, so a callback
@@ -94,7 +95,7 @@ class OAuthManager(
      */
     fun isGoogleClientConfigured(): Boolean = googleClientId.isNotBlank() && googleClientId !in LEGACY_PLACEHOLDER_GOOGLE_CLIENT_IDS
 
-    fun isMicrosoftClientConfigured(): Boolean = microsoftClientId.isNotBlank() && microsoftClientId != DEFAULT_MICROSOFT_CLIENT_ID
+    fun isMicrosoftClientConfigured(): Boolean = isUsableMicrosoftClientId(microsoftClientId)
 
     fun startGoogleLogin(
         context: Context,
@@ -429,6 +430,46 @@ class OAuthManager(
             } ?: DEFAULT_GOOGLE_CLIENT_ID
 
         /**
+         * True when [candidate] is a usable user-configured Microsoft client ID
+         * (non-blank, no whitespace, not a legacy or all-zero placeholder).
+         */
+        fun isUsableMicrosoftClientId(candidate: String?): Boolean {
+            val trimmed = candidate?.trim().orEmpty()
+            if (trimmed.isEmpty() || trimmed.any { it.isWhitespace() }) return false
+            if (trimmed in LEGACY_PLACEHOLDER_MICROSOFT_CLIENT_IDS) return false
+            if (trimmed.equals("00000000-0000-0000-0000-000000000000", ignoreCase = true)) {
+                return false
+            }
+            return true
+        }
+
+        /**
+         * True when [candidate] is a well-formed Microsoft Entra Application
+         * (client) GUID and not an all-zero or legacy placeholder string.
+         */
+        fun isValidMicrosoftClientId(candidate: String?): Boolean {
+            val trimmed = candidate?.trim().orEmpty()
+            return isUsableMicrosoftClientId(trimmed) && MICROSOFT_GUID_REGEX.matches(trimmed)
+        }
+
+        /**
+         * The effective Microsoft Entra Application (client) ID:
+         *  1. a usable user-supplied override (Settings -> Sources),
+         *  2. the build-time multi-tenant first-party GUID ([BuildConfig.MICROSOFT_CLIENT_ID]),
+         *  3. [DEFAULT_MICROSOFT_CLIENT_ID] (unconfigured placeholder when no GUID is bundled).
+         */
+        fun resolveMicrosoftClientId(
+            stored: String?,
+            bundledOverride: String = BuildConfig.MICROSOFT_CLIENT_ID,
+        ): String {
+            val userOverride = stored?.trim().orEmpty()
+            if (isUsableMicrosoftClientId(userOverride)) return userOverride
+            val bundled = bundledOverride.trim()
+            if (isValidMicrosoftClientId(bundled)) return bundled
+            return DEFAULT_MICROSOFT_CLIENT_ID
+        }
+
+        /**
          * Google OAuth 2.0 policy requires native Android custom schemes to be
          * formatted as `package_name:/path` without an authority/host (single slash `:/`).
          * Double slash (`://`) is rejected by Google with `Error 400: invalid_request`.
@@ -448,11 +489,20 @@ class OAuthManager(
         const val DEFAULT_GOOGLE_CLIENT_ID =
             "438181858687-gubqi1nr6epph2gic9osjvbctg4e0mo4.apps.googleusercontent.com"
 
-        /** Microsoft sign-in still needs the user's own Azure app id. */
+        /**
+         * Sentinel used when neither a build-time first-party Entra GUID
+         * (`QUIZRADAR_MICROSOFT_CLIENT_ID`) nor a user override in Settings is set.
+         */
         const val DEFAULT_MICROSOFT_CLIENT_ID = "quizradar-android-public-ms"
 
         /** Ids older placeholder builds may have saved; still refused. */
         val LEGACY_PLACEHOLDER_GOOGLE_CLIENT_IDS =
             setOf("quizradar-android-public.apps.googleusercontent.com")
+
+        val LEGACY_PLACEHOLDER_MICROSOFT_CLIENT_IDS =
+            setOf(DEFAULT_MICROSOFT_CLIENT_ID)
+
+        private val MICROSOFT_GUID_REGEX =
+            Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
     }
 }

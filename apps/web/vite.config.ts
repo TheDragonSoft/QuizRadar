@@ -43,13 +43,10 @@ export default defineConfig({
      * tests) and left RTL's `screen` bound to a stale document, which made
      * the suite both flaky and much slower to settle (~67 s vs ~20 s).
      */
-    pool: "threads",
-    poolOptions: {
-      threads: {
-        singleThread: false,
-        isolate: true,
-      },
-    },
+    // Vitest 4 removed `pool`/`poolOptions` outright. Its defaults are the
+    // equivalent of the Vitest 3 block that stood here: worker-thread
+    // runners, each test file isolated in its own environment, files run in
+    // parallel.
     /**
      * The visual-regression suite in `e2e/` is a *Playwright* suite (it runs
      * against a real browser via `apps/web/playwright.config.ts`), not a
@@ -72,11 +69,12 @@ export default defineConfig({
      */
     coverage: {
       provider: "v8",
-      // Vitest 3 names this option `reporter` (singular); `reporters` is
+      // Vitest 3 named this option `reporter` (singular); `reporters` is
       // silently ignored and falls back to the default reporter set.
       reporter: ["text", "json-summary", "lcov"],
       reportsDirectory: "../../target/coverage/web",
-      all: true,
+      // Vitest 4 removed `coverage.all` and now always includes untested
+      // files, which is exactly what `all: true` asked for here.
       include: ["src/**/*.{ts,tsx}"],
       exclude: [
         "**/node_modules/**",

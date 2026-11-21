@@ -334,6 +334,26 @@ pub fn merge_sync_assessments(
     Ok(serde_json::to_string(&payload)?)
 }
 
+/// Deduplicates and merges an array of `ExtractedSyllabus` JSON objects.
+#[uniffi::export]
+pub fn merge_extracted_syllabi_json(syllabi_json: String) -> Result<String, QuizRadarFfiError> {
+    let items: Vec<crate::ai::tasks::ExtractedSyllabus> = serde_json::from_str(&syllabi_json)?;
+    let merged = crate::ai::tasks::merge_extracted_syllabi(items);
+    Ok(serde_json::to_string(&merged)?)
+}
+
+/// Converts an `ExtractedSyllabus` JSON object into domain `Assessment[]` JSON anchored at `ref_date_iso`.
+#[uniffi::export]
+pub fn syllabus_to_domain_assessments(
+    extracted_json: String,
+    ref_date_iso: String,
+) -> Result<String, QuizRadarFfiError> {
+    let extracted: crate::ai::tasks::ExtractedSyllabus = serde_json::from_str(&extracted_json)?;
+    let ref_date = parse_ref_date(&ref_date_iso)?;
+    let assessments = crate::ai::tasks::syllabus_assessments_to_domain(&extracted, ref_date);
+    Ok(serde_json::to_string(&assessments)?)
+}
+
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct OAuthUrlPayload {
     pub url: String,
@@ -615,6 +635,63 @@ pub fn parse_lan_pair_uri(raw_input: String) -> Result<String, QuizRadarFfiError
     let parsed = crate::sync::pair::parse_lan_pair_uri(&raw_input)
         .map_err(|msg| QuizRadarFfiError::Validation { msg })?;
     Ok(serde_json::to_string(&parsed)?)
+}
+
+/// Encodes one course's schedule slots and public assessments into a privacy-scrubbed
+/// 1-Tap Shareable Course Pack (`{ pack, links, qr }`).
+#[cfg(feature = "sync")]
+#[uniffi::export]
+pub fn encode_course_pack(
+    course_id: String,
+    schedule_json: String,
+    assessments_json: String,
+    web_base_url: Option<String>,
+) -> Result<String, QuizRadarFfiError> {
+    let schedule: ScheduleData = serde_json::from_str(&schedule_json)?;
+    let assessments: Vec<Assessment> = serde_json::from_str(&assessments_json)?;
+    let pack = crate::sync::course_pack::build_course_pack(&course_id, &schedule, &assessments)
+        .map_err(|msg| QuizRadarFfiError::Validation { msg })?;
+    let links = crate::sync::course_pack::encode_course_pack_links(&pack, web_base_url.as_deref())
+        .map_err(|msg| QuizRadarFfiError::Validation { msg })?;
+    let qr = if links.fits_qr {
+        crate::sync::qr::encode_qr_matrix(&links.web_url).ok()
+    } else {
+        None
+    };
+    let out = serde_json::json!({
+        "pack": pack,
+        "links": links,
+        "qr": qr,
+    });
+    Ok(serde_json::to_string(&out)?)
+}
+
+/// Decodes and validates a shared Course Pack link (`https://.../#course=...`,
+/// `quizradar://course?d=...`, or raw token) into `CoursePackPayload` JSON.
+#[cfg(feature = "sync")]
+#[uniffi::export]
+pub fn decode_course_pack_link(raw_input: String) -> Result<String, QuizRadarFfiError> {
+    let pack = crate::sync::course_pack::decode_course_pack(&raw_input)
+        .map_err(|msg| QuizRadarFfiError::Validation { msg })?;
+    Ok(serde_json::to_string(&pack)?)
+}
+
+/// Converts a decoded `CoursePackPayload` JSON into `{ schedule, assessments }`
+/// anchored at `ref_date_iso`.
+#[cfg(feature = "sync")]
+#[uniffi::export]
+pub fn course_pack_to_domain_json(
+    pack_json: String,
+    ref_date_iso: String,
+) -> Result<String, QuizRadarFfiError> {
+    let pack: crate::sync::course_pack::CoursePackPayload = serde_json::from_str(&pack_json)?;
+    let ref_date = parse_ref_date(&ref_date_iso)?;
+    let (schedule, assessments) = crate::sync::course_pack::course_pack_to_domain(&pack, ref_date);
+    let out = serde_json::json!({
+        "schedule": schedule,
+        "assessments": assessments,
+    });
+    Ok(serde_json::to_string(&out)?)
 }
 
 /// Thread-safe NativeStore handle wrapping core `Store`.
@@ -1025,6 +1102,30 @@ impl NativeStore {
         Ok(serde_json::to_string(&report)?)
     }
 
+    /// Additively imports courses, weekly slots, and assessments (used by
+    /// Multi-Syllabus Import and 1-Tap Course Pack Import). Returns JSON
+    /// `{ "state": AppSnapshot, "report": CourseImportReport }`.
+    pub async fn apply_course_bundle(
+        &self,
+        schedule_json: String,
+        assessments_json: String,
+        updated_at: String,
+        ref_date_iso: String,
+    ) -> Result<String, QuizRadarFfiError> {
+        let schedule: ScheduleData = serde_json::from_str(&schedule_json)?;
+        let assessments: Vec<Assessment> = serde_json::from_str(&assessments_json)?;
+        let ref_date = parse_ref_date(&ref_date_iso)?;
+        let (state, report) = self
+            .inner
+            .apply_course_bundle(schedule, assessments, updated_at, ref_date)
+            .await?;
+        let out = serde_json::json!({
+            "state": state,
+            "report": report,
+        });
+        Ok(serde_json::to_string(&out)?)
+    }
+
     /// The transactional whole-store reset (`store::Store::reset_all`): one
     /// SQLite transaction wipes every owned table — feeds, config, tokens
     /// metadata, attendance, flashcards, quiz attempts, mistake bank, study
@@ -1360,6 +1461,49 @@ impl NativeStore {
             "dropped_slots": extracted.dropped_slots,
         });
         Ok(serde_json::to_string(&payload)?)
+    }
+
+    /// Extracts courses, weekly slots, and syllabus assessments/weights from
+    /// one syllabus PDF or image (`01` §4.1, consent-gated at the core boundary).
+    #[uniffi::method(async_runtime = "tokio")]
+    pub async fn extract_syllabus_from_document(
+        &self,
+        document_b64: String,
+        mime: String,
+        api_key: String,
+    ) -> Result<String, QuizRadarFfiError> {
+        let consent = self
+            .inner
+            .get_config_bool("gemini_enabled".to_string(), false)
+            .await
+            .unwrap_or(false);
+        if !consent {
+            return Err(QuizRadarFfiError::Validation {
+                msg: "AI features are turned off in Settings, so this request cannot leave \
+                      the device. Turn Gemini back on to import a syllabus."
+                    .to_string(),
+            });
+        }
+        let key = api_key.trim();
+        if key.is_empty() {
+            return Err(QuizRadarFfiError::Validation {
+                msg: crate::ai::provider::AiError::NoKey.to_string(),
+            });
+        }
+        let kv: std::sync::Arc<dyn crate::ai::provider::QuotaKv> =
+            std::sync::Arc::new(self.inner.quota_kv());
+        let ledger = std::sync::Arc::new(crate::ai::provider::QuotaLedger::new(kv, None));
+        let provider = crate::ai::gemini::GeminiProvider::production(
+            Some(key.to_string()),
+            std::sync::Arc::new(chrono::Utc::now),
+            Some(ledger),
+        )
+        .map_err(|e| QuizRadarFfiError::Validation { msg: e })?;
+
+        let extracted = crate::ai::tasks::extract_syllabus(&provider, &document_b64, &mime)
+            .await
+            .map_err(|e| QuizRadarFfiError::Validation { msg: e.reason() })?;
+        Ok(serde_json::to_string(&extracted)?)
     }
 
     /// Requests cancellation of the in-flight native scan. The abort is
@@ -3403,5 +3547,87 @@ mod ffi_sync_tests {
             .await
             .unwrap();
         assert_eq!(miss, None);
+    }
+
+    #[cfg(feature = "sync")]
+    #[tokio::test]
+    async fn ffi_course_pack_round_trip_and_syllabus_consent_gate() {
+        let store = fresh_store();
+        // Consent gate refuses syllabus extraction when gemini_enabled is false
+        let err = store
+            .extract_syllabus_from_document(
+                "JVBERi0xLjQ=".to_string(),
+                "application/pdf".to_string(),
+                "fake-key".to_string(),
+            )
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("turned off in Settings"));
+
+        let schedule_json = serde_json::json!({
+            "semester": "Fall 2026",
+            "courses": [{
+                "id": "ECE210",
+                "name": "Digital Systems",
+                "color": "#1a73e8",
+                "credits": 3.0,
+                "aliases": ["ECE 210"]
+            }],
+            "slots": [{
+                "id": "slot-1",
+                "day": "Mon",
+                "day_index": 1,
+                "course_id": "ECE210",
+                "course_name": "Digital Systems",
+                "type": "Lecture",
+                "start_time": "10:00",
+                "end_time": "11:30",
+                "display_time": "10:00–11:30"
+            }]
+        })
+        .to_string();
+
+        let assessments_json = serde_json::json!([
+            {
+                "id": "syllabus-1",
+                "course_id": "ECE210",
+                "title": "Midterm Exam",
+                "assessment_type": "Midterm Exam",
+                "date_iso": "2026-11-05",
+                "weightage_percent": 30.0,
+                "achieved_score": 95.0,
+                "max_score": 100.0,
+                "topics": ["Boolean Algebra"],
+                "warnings": [],
+                "source": "Syllabus"
+            }
+        ])
+        .to_string();
+
+        let exported_json =
+            encode_course_pack("ECE210".to_string(), schedule_json, assessments_json, None)
+                .unwrap();
+        let exported: serde_json::Value = serde_json::from_str(&exported_json).unwrap();
+        let web_url = exported["links"]["web_url"].as_str().unwrap().to_string();
+        assert!(web_url.contains("#course="));
+        assert!(!exported_json.contains("95.0"));
+
+        let decoded_json = decode_course_pack_link(web_url).unwrap();
+        let domain_json = course_pack_to_domain_json(decoded_json, TODAY_ISO.to_string()).unwrap();
+        let domain: serde_json::Value = serde_json::from_str(&domain_json).unwrap();
+
+        let applied_json = store
+            .apply_course_bundle(
+                domain["schedule"].to_string(),
+                domain["assessments"].to_string(),
+                NOW_ISO.to_string(),
+                TODAY_ISO.to_string(),
+            )
+            .await
+            .unwrap();
+        let applied: serde_json::Value = serde_json::from_str(&applied_json).unwrap();
+        assert_eq!(applied["report"]["coursesAdded"], 1);
+        assert_eq!(applied["report"]["slotsAdded"], 1);
+        assert_eq!(applied["report"]["assessmentsAdded"], 1);
     }
 }

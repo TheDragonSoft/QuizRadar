@@ -32,7 +32,8 @@ use crate::ai::provider::{
     AiCreditNote, AiError, AiModel, AiProvider, AiUnavailable, StructuredPrompt, VisionRequest,
 };
 use crate::parse::util::{
-    build_display_time, compute_priority_score, day_name_for, urgency_for, weekday_index,
+    build_display_time, compute_priority_score, day_name_for, fnv1a64, infer_semester_from_date,
+    urgency_for, weekday_index,
 };
 use crate::plan::dashboard::{readiness_percent, topic_key_for_text};
 use crate::plan::tasks::{
@@ -41,7 +42,8 @@ use crate::plan::tasks::{
 };
 use crate::sources::preset_course_colors;
 use crate::types::{
-    Assessment, AssessmentType, CachedEmail, CompletedTopics, Course, ScheduleData, ScheduleSlot,
+    Assessment, AssessmentSource, AssessmentType, CachedEmail, CompletedTopics, Course,
+    ScheduleData, ScheduleSlot,
 };
 
 // ---------------------------------------------------------------------------
@@ -743,6 +745,664 @@ struct RawSlot {
     #[serde(rename = "type")]
     slot_type: Option<String>,
     group: Option<String>,
+    week_parity: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Task b2 — syllabus PDF / photo extraction (flash)
+// ---------------------------------------------------------------------------
+
+/// One graded assessment extracted from a course syllabus before domain IDs
+/// and countdown fields are derived.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExtractedSyllabusAssessment {
+    pub course_id: String,
+    pub title: String,
+    pub assessment_type: AssessmentType,
+    #[serde(rename = "date_iso", with = "crate::types::iso_date", default)]
+    pub date: Option<NaiveDate>,
+    #[serde(with = "crate::types::hm_time", default)]
+    pub start_time: Option<NaiveTime>,
+    #[serde(with = "crate::types::hm_time", default)]
+    pub end_time: Option<NaiveTime>,
+    pub room: Option<String>,
+    pub instructor: Option<String>,
+    pub weightage_percent: Option<f64>,
+    pub topics: Vec<String>,
+    pub warnings: Vec<String>,
+    pub ai_inference_note: Option<String>,
+}
+
+/// Validated extraction from one or more course syllabus PDFs or photos.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExtractedSyllabus {
+    pub schedule: ScheduleData,
+    pub assessments: Vec<ExtractedSyllabusAssessment>,
+    pub dropped_courses: usize,
+    pub dropped_slots: usize,
+    pub dropped_assessments: usize,
+    pub model: String,
+}
+
+/// Syllabus extraction prompt shared byte-for-byte with the browser PWA tier
+/// (`apps/web/src/pwadapters/browserAi.ts`). Uses neutral example codes only.
+pub const SYLLABUS_INSTRUCTION: &str = r##"You are an intelligent university syllabus extraction assistant inside QuizRadar.
+Analyze the provided course syllabus document or image.
+Extract the course details, any recurring weekly class timeslots printed on the syllabus, and every graded assessment, quiz, lab, project, assignment, midterm, or final exam.
+
+HONESTY RULES (strict — never invent anything):
+- "semester": ONLY the semester title actually printed on the syllabus (e.g. "Fall 2026"); null when it is not shown. Never write a default like "Current Semester".
+- "courses": every distinct course described by the syllabus:
+  - "id": the primary course code exactly as printed (e.g. "ECE210")
+  - "name": the full course title exactly as printed (e.g. "Digital Systems")
+  - "credits": numeric credit hours if printed, otherwise null
+  - "aliases": any cross-listed or alternate course codes printed (e.g. ["ECE 210"]), or []
+  - "color": one hex color from this list: "#1a73e8", "#0f9d58", "#ea8600", "#d93025", "#8e24aa", "#00acc1", "#e67c73", "#3949ab"
+- "slots": every weekly recurring lecture/lab/tutorial session with printed weekday and start/end times; omit any session missing exact times.
+- "assessments": every graded exam, quiz, lab assessment, or assignment in the syllabus schedule or grading rubric:
+  - "course_id": the matching course code from "courses"
+  - "title": clean assessment title (no decorative emojis or Markdown markers)
+  - "assessment_type": MUST be one of: "Class Quiz", "Online Quiz", "Midterm Exam", "Final Exam", "Lab Assessment", "Assignment"
+  - "date_iso": exact "YYYY-MM-DD" ONLY if a calendar date is explicitly printed; otherwise null (KEEP weighted rubric items even when date_iso is null)
+  - "start_time" / "end_time": 24-hour "HH:MM" if explicitly printed, otherwise null
+  - "room": room/hall if printed, otherwise null
+  - "instructor": instructor name if printed, otherwise null
+  - "weightage_percent": numeric percentage weight (e.g. 25 for 25%) if printed, otherwise null
+  - "topics": concrete syllabus topics/chapters covered by this assessment, or []
+  - "warnings": rules/notes explicitly stated for this assessment, or []
+  - "ai_inference_note": concise note explaining provenance (e.g. "Explicit in syllabus schedule" or "Syllabus rubric item — date not yet announced")
+- Skip anything unreadable instead of guessing. NEVER fabricate dates, times, rooms, weights, or topics.
+
+Return ONLY a valid JSON object matching this exact structure:
+{
+  "semester": "Fall 2026",
+  "courses": [
+    { "id": "ECE210", "name": "Digital Systems", "credits": 3.0, "aliases": [], "color": "#1a73e8" }
+  ],
+  "slots": [
+    { "id": "slot-1", "course_id": "ECE210", "day": "Monday", "start_time": "10:00", "end_time": "11:30", "display_time": "10:00 AM - 11:30 AM", "room": null, "type": "Lecture", "group": null, "week_parity": null }
+  ],
+  "assessments": [
+    {
+      "course_id": "ECE210",
+      "title": "Midterm Exam",
+      "assessment_type": "Midterm Exam",
+      "date_iso": "2026-10-28",
+      "start_time": null,
+      "end_time": null,
+      "room": null,
+      "instructor": "Dr. Ada",
+      "weightage_percent": 30,
+      "topics": ["Boolean Algebra", "Sequential Logic"],
+      "warnings": [],
+      "ai_inference_note": "Explicit in syllabus schedule"
+    }
+  ]
+}"##;
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default)]
+struct RawSyllabus {
+    semester: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    courses: Vec<Value>,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    slots: Vec<Value>,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    assessments: Vec<Value>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default)]
+struct RawSyllabusCourse {
+    id: Option<String>,
+    name: Option<String>,
+    color: Option<String>,
+    credits: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    aliases: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default)]
+struct RawSyllabusAssessment {
+    course_id: Option<String>,
+    title: Option<String>,
+    assessment_type: Option<String>,
+    date_iso: Option<String>,
+    start_time: Option<String>,
+    end_time: Option<String>,
+    room: Option<String>,
+    instructor: Option<String>,
+    weightage_percent: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    topics: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    warnings: Vec<String>,
+    ai_inference_note: Option<String>,
+}
+
+fn normalize_syllabus_aliases(primary_id: &str, raw: Vec<String>) -> Vec<String> {
+    let mut out = Vec::new();
+    for item in raw {
+        let trimmed = item.trim();
+        if trimmed.is_empty() || trimmed.eq_ignore_ascii_case(primary_id) {
+            continue;
+        }
+        if !out
+            .iter()
+            .any(|existing: &String| existing.eq_ignore_ascii_case(trimmed))
+        {
+            out.push(trimmed.to_string());
+        }
+    }
+    out
+}
+
+fn normalize_week_parity(raw: Option<&str>) -> Option<String> {
+    let text = de_optional(raw)?;
+    match text.to_ascii_lowercase().as_str() {
+        "week_a" | "week a" | "a" => Some("week_a".to_string()),
+        "week_b" | "week b" | "b" => Some("week_b".to_string()),
+        _ => None,
+    }
+}
+
+fn normalize_syllabus_assessment_type(label: &str) -> Option<AssessmentType> {
+    let trimmed = label.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let (exact_kind, fuzzy) = AssessmentType::from_import_label(trimmed);
+    if !fuzzy {
+        return Some(exact_kind);
+    }
+    let lowered = trimmed.to_ascii_lowercase();
+    if lowered.contains("project")
+        || lowered.contains("homework")
+        || lowered == "hw"
+        || lowered.starts_with("hw ")
+        || lowered.contains("essay")
+        || lowered.contains("paper")
+        || lowered.contains("report")
+        || lowered.contains("presentation")
+        || lowered.contains("deliverable")
+    {
+        return Some(AssessmentType::Assignment);
+    }
+    if let Some(kind) = normalize_ai_type(trimmed) {
+        return Some(kind);
+    }
+    if lowered.contains("mid-term") || lowered.contains("mid term") {
+        return Some(AssessmentType::MidtermExam);
+    }
+    if lowered.contains("test") || lowered.contains("exam") {
+        return Some(AssessmentType::ClassQuiz);
+    }
+    None
+}
+
+fn positive_credits(raw: Option<f64>) -> Option<f64> {
+    raw.filter(|credits| credits.is_finite() && *credits > 0.0 && *credits <= 30.0)
+}
+
+fn valid_weightage(raw: Option<f64>) -> Option<f64> {
+    raw.filter(|weight| weight.is_finite() && *weight > 0.0 && *weight <= 100.0)
+}
+
+/// Validates raw model JSON from a syllabus document/image into an
+/// [`ExtractedSyllabus`], dropping unreadable rows honestly without
+/// fabricating missing dates, rooms, weights, or topics.
+pub fn parse_syllabus_extraction(value: Value, model: &str) -> Result<ExtractedSyllabus, AiError> {
+    let raw: RawSyllabus = serde_json::from_value(unwrap_array(value)).map_err(|error| {
+        AiError::BadResponse(format!("syllabus JSON did not match the schema: {error}"))
+    })?;
+
+    let mut courses: Vec<Course> = Vec::new();
+    let mut dropped_courses = 0usize;
+    for item in raw.courses {
+        match serde_json::from_value::<RawSyllabusCourse>(item) {
+            Ok(course) => {
+                let (Some(id), Some(name)) = (
+                    de_optional(course.id.as_deref()),
+                    de_optional(course.name.as_deref()),
+                ) else {
+                    dropped_courses += 1;
+                    continue;
+                };
+                if let Some(existing) = courses
+                    .iter_mut()
+                    .find(|kept| kept.id.eq_ignore_ascii_case(&id))
+                {
+                    if existing.credits.is_none() {
+                        existing.credits = positive_credits(course.credits);
+                    }
+                    for alias in normalize_syllabus_aliases(&existing.id, course.aliases) {
+                        if !existing
+                            .aliases
+                            .iter()
+                            .any(|a| a.eq_ignore_ascii_case(&alias))
+                        {
+                            existing.aliases.push(alias);
+                        }
+                    }
+                    continue;
+                }
+                let (color, bg, border) = match valid_hex_color(course.color.as_deref()) {
+                    Some(hex) => (
+                        hex.clone(),
+                        Some(format!("{hex}18")),
+                        Some(format!("{hex}55")),
+                    ),
+                    None => preset_course_colors(&id),
+                };
+                let aliases = normalize_syllabus_aliases(&id, course.aliases);
+                courses.push(Course {
+                    id,
+                    name,
+                    color,
+                    bg,
+                    border,
+                    credits: positive_credits(course.credits),
+                    max_absences: None,
+                    aliases,
+                });
+            }
+            Err(_) => dropped_courses += 1,
+        }
+    }
+
+    let mut slots: Vec<ScheduleSlot> = Vec::new();
+    let mut dropped_slots = 0usize;
+    for item in raw.slots {
+        match serde_json::from_value::<RawSlot>(item) {
+            Ok(slot) => {
+                let Some(course_id) = de_optional(slot.course_id.as_deref()) else {
+                    dropped_slots += 1;
+                    continue;
+                };
+                let Some(course) = courses
+                    .iter()
+                    .find(|kept| kept.matches_code(&course_id))
+                    .cloned()
+                else {
+                    dropped_slots += 1;
+                    continue;
+                };
+                let Some(day) = de_optional(slot.day.as_deref()) else {
+                    dropped_slots += 1;
+                    continue;
+                };
+                let Some(day_index) = weekday_index(&day) else {
+                    dropped_slots += 1;
+                    continue;
+                };
+                let (Some(start), Some(end)) = (
+                    slot.start_time.as_deref().and_then(parse_hm),
+                    slot.end_time.as_deref().and_then(parse_hm),
+                ) else {
+                    dropped_slots += 1;
+                    continue;
+                };
+                if end <= start {
+                    dropped_slots += 1;
+                    continue;
+                }
+                slots.push(ScheduleSlot {
+                    id: de_optional(slot.id.as_deref())
+                        .unwrap_or_else(|| format!("slot-{}", slots.len() + 1)),
+                    day,
+                    day_index,
+                    course_id: course.id,
+                    course_name: de_optional(slot.course_name.as_deref()).unwrap_or(course.name),
+                    slot_type: de_optional(slot.slot_type.as_deref())
+                        .unwrap_or_else(|| "Lecture".to_string()),
+                    group: de_optional(slot.group.as_deref()),
+                    room: de_optional(slot.room.as_deref()),
+                    start_time: start,
+                    end_time: end,
+                    display_time: de_optional(slot.display_time.as_deref()).unwrap_or_else(|| {
+                        format!("{}–{}", start.format("%H:%M"), end.format("%H:%M"))
+                    }),
+                    has_quiz: false,
+                    quiz_title: None,
+                    week_parity: normalize_week_parity(slot.week_parity.as_deref()),
+                });
+            }
+            Err(_) => dropped_slots += 1,
+        }
+    }
+
+    let mut assessments: Vec<ExtractedSyllabusAssessment> = Vec::new();
+    let mut dropped_assessments = 0usize;
+    for item in raw.assessments {
+        match serde_json::from_value::<RawSyllabusAssessment>(item) {
+            Ok(raw_item) => {
+                let Some(title) = de_optional(raw_item.title.as_deref())
+                    .map(|t| crate::parse::email::clean_inline_decorations(&t))
+                    .filter(|t| !t.is_empty())
+                else {
+                    dropped_assessments += 1;
+                    continue;
+                };
+
+                let matched_course = match de_optional(raw_item.course_id.as_deref()) {
+                    Some(cid) => courses.iter().find(|c| c.matches_code(&cid)),
+                    None if courses.len() == 1 => courses.first(),
+                    None => None,
+                };
+                let Some(course) = matched_course else {
+                    dropped_assessments += 1;
+                    continue;
+                };
+
+                let assessment_type = raw_item
+                    .assessment_type
+                    .as_deref()
+                    .and_then(normalize_syllabus_assessment_type)
+                    .unwrap_or_else(|| {
+                        let (kind, _) = AssessmentType::from_import_label(&title);
+                        kind
+                    });
+
+                let date = raw_item.date_iso.as_deref().and_then(parse_iso_date);
+                let start_time = raw_item.start_time.as_deref().and_then(parse_hm);
+                let mut end_time = raw_item.end_time.as_deref().and_then(parse_hm);
+                if let (Some(start), Some(end)) = (start_time, end_time) {
+                    if end <= start {
+                        end_time = None;
+                    }
+                }
+
+                let warnings: Vec<String> = raw_item
+                    .warnings
+                    .into_iter()
+                    .map(|w| w.trim().to_string())
+                    .filter(|w| !w.is_empty())
+                    .collect();
+
+                assessments.push(ExtractedSyllabusAssessment {
+                    course_id: course.id.clone(),
+                    title,
+                    assessment_type,
+                    date,
+                    start_time,
+                    end_time,
+                    room: de_optional(raw_item.room.as_deref())
+                        .map(|r| crate::parse::email::clean_inline_decorations(&r))
+                        .filter(|r| !r.is_empty()),
+                    instructor: de_optional(raw_item.instructor.as_deref()),
+                    weightage_percent: valid_weightage(raw_item.weightage_percent),
+                    topics: clean_ai_topics(raw_item.topics),
+                    warnings,
+                    ai_inference_note: de_optional(raw_item.ai_inference_note.as_deref()),
+                });
+            }
+            Err(_) => dropped_assessments += 1,
+        }
+    }
+
+    Ok(ExtractedSyllabus {
+        schedule: ScheduleData {
+            semester: de_optional(raw.semester.as_deref()),
+            academic_week_start: None,
+            courses,
+            slots,
+        },
+        assessments,
+        dropped_courses,
+        dropped_slots,
+        dropped_assessments,
+        model: model.trim().to_string(),
+    })
+}
+
+/// Extracts courses, weekly slots, and syllabus assessments/weights from one
+/// syllabus PDF or photo (Flash, temperature 0.1).
+pub async fn extract_syllabus(
+    provider: &dyn AiProvider,
+    document_b64: &str,
+    mime: &str,
+) -> Result<ExtractedSyllabus, AiUnavailable> {
+    let request = VisionRequest {
+        image_b64: document_b64.to_string(),
+        mime: mime.to_string(),
+        prompt: StructuredPrompt::new(AiModel::Flash, 0.1, SYLLABUS_INSTRUCTION),
+    };
+    let raw_json = provider.vision_json(request).await?;
+    let served_by = raw_json.model().to_string();
+    let value = raw_json.into_value();
+    Ok(parse_syllabus_extraction(value, &served_by)?)
+}
+
+/// Deduplicates and merges 1..=N extracted syllabi into a single unified review
+/// payload without discarding credits, aliases, weights, or drop counts.
+#[must_use]
+pub fn merge_extracted_syllabi(items: Vec<ExtractedSyllabus>) -> ExtractedSyllabus {
+    let mut semester: Option<String> = None;
+    let mut courses: Vec<Course> = Vec::new();
+    let mut slots: Vec<ScheduleSlot> = Vec::new();
+    let mut assessments: Vec<ExtractedSyllabusAssessment> = Vec::new();
+    let mut dropped_courses = 0usize;
+    let mut dropped_slots = 0usize;
+    let mut dropped_assessments = 0usize;
+    let mut models: Vec<String> = Vec::new();
+
+    for item in items {
+        dropped_courses += item.dropped_courses;
+        dropped_slots += item.dropped_slots;
+        dropped_assessments += item.dropped_assessments;
+
+        let trimmed_model = item.model.trim();
+        if !trimmed_model.is_empty()
+            && !models.iter().any(|m| m.eq_ignore_ascii_case(trimmed_model))
+        {
+            models.push(trimmed_model.to_string());
+        }
+
+        if semester.is_none() {
+            semester = item.schedule.semester.filter(|s| !s.trim().is_empty());
+        }
+
+        for incoming_course in item.schedule.courses {
+            if let Some(existing) = courses
+                .iter_mut()
+                .find(|c| c.id.eq_ignore_ascii_case(&incoming_course.id))
+            {
+                if existing.credits.is_none() {
+                    existing.credits = incoming_course.credits;
+                }
+                for alias in incoming_course.aliases {
+                    let trimmed = alias.trim();
+                    if !trimmed.is_empty()
+                        && !trimmed.eq_ignore_ascii_case(&existing.id)
+                        && !existing
+                            .aliases
+                            .iter()
+                            .any(|a| a.eq_ignore_ascii_case(trimmed))
+                    {
+                        existing.aliases.push(trimmed.to_string());
+                    }
+                }
+            } else {
+                courses.push(incoming_course);
+            }
+        }
+
+        for mut slot in item.schedule.slots {
+            if let Some(canonical_course) = courses.iter().find(|c| c.matches_code(&slot.course_id))
+            {
+                slot.course_id = canonical_course.id.clone();
+                if slot.course_name.trim().is_empty() {
+                    slot.course_name = canonical_course.name.clone();
+                }
+            }
+            let duplicate = slots.iter().any(|existing| {
+                existing.course_id.eq_ignore_ascii_case(&slot.course_id)
+                    && existing.day_index == slot.day_index
+                    && existing.start_time == slot.start_time
+                    && existing.end_time == slot.end_time
+            });
+            if !duplicate {
+                slot.id = format!("slot-{}", slots.len() + 1);
+                slots.push(slot);
+            }
+        }
+
+        for incoming_a in item.assessments {
+            let canonical_course_id = courses
+                .iter()
+                .find(|c| c.matches_code(&incoming_a.course_id))
+                .map(|c| c.id.clone())
+                .unwrap_or_else(|| incoming_a.course_id.clone());
+
+            if let Some(existing) = assessments.iter_mut().find(|a| {
+                a.course_id.eq_ignore_ascii_case(&canonical_course_id)
+                    && a.title.trim().eq_ignore_ascii_case(incoming_a.title.trim())
+                    && a.date == incoming_a.date
+            }) {
+                existing.start_time = existing.start_time.or(incoming_a.start_time);
+                existing.end_time = existing.end_time.or(incoming_a.end_time);
+                if existing.room.is_none() {
+                    existing.room = incoming_a.room;
+                }
+                if existing.instructor.is_none() {
+                    existing.instructor = incoming_a.instructor;
+                }
+                if existing.weightage_percent.is_none() {
+                    existing.weightage_percent = incoming_a.weightage_percent;
+                }
+                if existing.ai_inference_note.is_none() {
+                    existing.ai_inference_note = incoming_a.ai_inference_note;
+                }
+                for topic in incoming_a.topics {
+                    if !existing
+                        .topics
+                        .iter()
+                        .any(|t| t.eq_ignore_ascii_case(&topic))
+                    {
+                        existing.topics.push(topic);
+                    }
+                }
+                for warning in incoming_a.warnings {
+                    if !existing
+                        .warnings
+                        .iter()
+                        .any(|w| w.eq_ignore_ascii_case(&warning))
+                    {
+                        existing.warnings.push(warning);
+                    }
+                }
+            } else {
+                let mut next = incoming_a;
+                next.course_id = canonical_course_id;
+                assessments.push(next);
+            }
+        }
+    }
+
+    ExtractedSyllabus {
+        schedule: ScheduleData {
+            semester,
+            academic_week_start: None,
+            courses,
+            slots,
+        },
+        assessments,
+        dropped_courses,
+        dropped_slots,
+        dropped_assessments,
+        model: models.join(", "),
+    }
+}
+
+/// Converts extracted syllabus assessments into deterministic domain
+/// [`Assessment`] records anchored at `reference_date`.
+#[must_use]
+pub fn syllabus_assessments_to_domain(
+    extracted: &ExtractedSyllabus,
+    reference_date: NaiveDate,
+) -> Vec<Assessment> {
+    let source = AssessmentSource::Feed("Syllabus".to_string());
+    let source_icon = Some(source.as_icon().to_string());
+
+    extracted
+        .assessments
+        .iter()
+        .map(|item| {
+            let course = extracted.schedule.find_course(&item.course_id);
+            let course_id = course
+                .map(|c| c.id.clone())
+                .unwrap_or_else(|| item.course_id.clone());
+            let date_part = item
+                .date
+                .map(|d| d.format("%Y-%m-%d").to_string())
+                .unwrap_or_else(|| "tba".to_string());
+            let identity_key = format!(
+                "{}|{}|{}",
+                course_id.trim().to_ascii_lowercase(),
+                item.title.trim().to_ascii_lowercase(),
+                date_part
+            );
+            let id = format!("syllabus-{:016x}", fnv1a64(identity_key.as_bytes()));
+            let note = item.ai_inference_note.clone().unwrap_or_else(|| {
+                if item.date.is_some() {
+                    "Extracted from course syllabus".to_string()
+                } else {
+                    "Extracted from course syllabus — date not yet announced".to_string()
+                }
+            });
+
+            let mut assessment = Assessment {
+                id,
+                course_id: Some(course_id),
+                course_name: course.map(|c| c.name.clone()),
+                title: item.title.clone(),
+                assessment_type: item.assessment_type,
+                date: item.date,
+                day_name: None,
+                start_time: item.start_time,
+                end_time: item.end_time,
+                display_time: None,
+                room: item.room.clone(),
+                group: None,
+                instructor: item.instructor.clone(),
+                is_upcoming: true,
+                days_until: None,
+                urgency_level: crate::types::UrgencyLevel::Upcoming,
+                priority_score: 0,
+                topics: item.topics.clone(),
+                warnings: item.warnings.clone(),
+                ai_inference_note: Some(note),
+                ai_study_plan: None,
+                estimated_study_hours: None,
+                elearning_url: None,
+                google_cal_url: None,
+                gcal_synced: false,
+                gcal_event_id: None,
+                color: course.map(|c| c.color.clone()),
+                bg: course.and_then(|c| c.bg.clone()),
+                border: course.and_then(|c| c.border.clone()),
+                semester: extracted
+                    .schedule
+                    .semester
+                    .clone()
+                    .or_else(|| item.date.map(infer_semester_from_date)),
+                email_subject: None,
+                email_sent_date: None,
+                source: source.clone(),
+                source_icon: source_icon.clone(),
+                weightage_percent: item.weightage_percent,
+                achieved_score: None,
+                max_score: None,
+                conflict_warning: None,
+                last_seen_source_run: None,
+                retired_source_run: None,
+            };
+            recompute_derived_fields(&mut assessment, reference_date);
+            assessment
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -2038,5 +2698,246 @@ mod tests {
                 "{label}: live Gemini misclassified is_assessment: {extracted:?}"
             );
         }
+    }
+
+    #[test]
+    fn syllabus_instruction_uses_neutral_examples_only() {
+        assert!(!SYLLABUS_INSTRUCTION.contains("CS101"));
+        assert!(!SYLLABUS_INSTRUCTION.contains("MATH101"));
+        assert!(!SYLLABUS_INSTRUCTION.contains("Hall B-204"));
+        assert!(!SYLLABUS_INSTRUCTION.contains("Home-Su25"));
+    }
+
+    #[test]
+    fn parse_syllabus_extraction_handles_dates_tba_weights_and_dropped_rows() {
+        let raw = serde_json::json!({
+            "semester": "Fall 2026",
+            "courses": [
+                {
+                    "id": "ECE210",
+                    "name": "Digital Systems",
+                    "credits": 4.0,
+                    "aliases": ["ECE 210", "ECE210", "EE-210"],
+                    "color": "#1a73e8"
+                },
+                { "id": "", "name": "Missing Id" }
+            ],
+            "slots": [
+                {
+                    "id": "slot-1",
+                    "course_id": "ECE 210",
+                    "day": "Monday",
+                    "start_time": "10:00",
+                    "end_time": "11:30",
+                    "room": "Eng 204",
+                    "type": "Lecture",
+                    "week_parity": "week_a"
+                },
+                {
+                    "course_id": "UNKNOWN",
+                    "day": "Monday",
+                    "start_time": "10:00",
+                    "end_time": "11:30"
+                }
+            ],
+            "assessments": [
+                {
+                    "course_id": "ECE210",
+                    "title": "✨ **Midterm Exam 1**",
+                    "assessment_type": "Midterm Exam",
+                    "date_iso": "2026-11-05",
+                    "start_time": "10:00",
+                    "end_time": "11:30",
+                    "room": "Eng 204",
+                    "instructor": "Dr. Ada",
+                    "weightage_percent": 30.0,
+                    "topics": ["Boolean Algebra", "TIME: 10:00 AM", "Combinational Logic"],
+                    "warnings": ["Closed book"],
+                    "ai_inference_note": "Explicit in syllabus schedule"
+                },
+                {
+                    "course_id": "ECE210",
+                    "title": "Final Project",
+                    "assessment_type": "Final Project",
+                    "date_iso": null,
+                    "weightage_percent": 25.0,
+                    "topics": ["Verilog CPU"],
+                    "ai_inference_note": "Syllabus rubric item — date not yet announced"
+                },
+                {
+                    "course_id": "OTHER",
+                    "title": "Orphan Quiz"
+                }
+            ]
+        });
+
+        let parsed = parse_syllabus_extraction(raw, "gemini-3.8-flash").unwrap();
+        assert_eq!(parsed.dropped_courses, 1);
+        assert_eq!(parsed.dropped_slots, 1);
+        assert_eq!(parsed.dropped_assessments, 1);
+        assert_eq!(parsed.model, "gemini-3.8-flash");
+        assert_eq!(parsed.schedule.semester.as_deref(), Some("Fall 2026"));
+        assert_eq!(parsed.schedule.courses.len(), 1);
+        assert_eq!(parsed.schedule.courses[0].credits, Some(4.0));
+        assert_eq!(
+            parsed.schedule.courses[0].aliases,
+            vec!["ECE 210".to_string(), "EE-210".to_string()]
+        );
+        assert_eq!(parsed.schedule.slots.len(), 1);
+        assert_eq!(parsed.schedule.slots[0].course_id, "ECE210");
+        assert_eq!(
+            parsed.schedule.slots[0].week_parity.as_deref(),
+            Some("week_a")
+        );
+
+        assert_eq!(parsed.assessments.len(), 2);
+        assert_eq!(parsed.assessments[0].title, "Midterm Exam 1");
+        assert_eq!(parsed.assessments[0].weightage_percent, Some(30.0));
+        assert_eq!(
+            parsed.assessments[0].topics,
+            vec![
+                "Boolean Algebra".to_string(),
+                "Combinational Logic".to_string()
+            ]
+        );
+        assert_eq!(parsed.assessments[1].date, None);
+        assert_eq!(
+            parsed.assessments[1].assessment_type,
+            AssessmentType::Assignment
+        );
+        assert_eq!(parsed.assessments[1].weightage_percent, Some(25.0));
+
+        let domain = syllabus_assessments_to_domain(&parsed, ref_date());
+        let domain_again = syllabus_assessments_to_domain(&parsed, ref_date());
+        assert_eq!(domain[0].id, domain_again[0].id);
+        assert!(domain[0].id.starts_with("syllabus-"));
+        assert_eq!(
+            domain[0].source,
+            AssessmentSource::Feed("Syllabus".to_string())
+        );
+        assert_eq!(domain[0].weightage_percent, Some(30.0));
+        assert_eq!(domain[1].date, None);
+        assert!(domain[1].is_upcoming);
+    }
+
+    #[test]
+    fn merge_extracted_syllabi_deduplicates_courses_slots_and_assessments() {
+        let first = parse_syllabus_extraction(
+            serde_json::json!({
+                "semester": "Fall 2026",
+                "courses": [{ "id": "ECE210", "name": "Digital Systems", "aliases": ["EE 210"] }],
+                "slots": [{
+                    "id": "slot-1",
+                    "course_id": "ECE210",
+                    "day": "Monday",
+                    "start_time": "10:00",
+                    "end_time": "11:30"
+                }],
+                "assessments": [{
+                    "course_id": "ECE210",
+                    "title": "Midterm Exam",
+                    "assessment_type": "Midterm Exam",
+                    "date_iso": "2026-11-05",
+                    "topics": ["K-Maps"]
+                }]
+            }),
+            "gemini-3.8-flash",
+        )
+        .unwrap();
+
+        let second = parse_syllabus_extraction(
+            serde_json::json!({
+                "semester": null,
+                "courses": [
+                    { "id": "ECE210", "name": "Digital Systems", "credits": 3.0, "aliases": ["COMP 210"] },
+                    { "id": "MATH204", "name": "Linear Algebra", "credits": 3.0 }
+                ],
+                "slots": [
+                    {
+                        "id": "slot-1",
+                        "course_id": "ECE210",
+                        "day": "Monday",
+                        "start_time": "10:00",
+                        "end_time": "11:30"
+                    },
+                    {
+                        "id": "slot-1",
+                        "course_id": "MATH204",
+                        "day": "Tuesday",
+                        "start_time": "13:00",
+                        "end_time": "14:30"
+                    }
+                ],
+                "assessments": [{
+                    "course_id": "ECE210",
+                    "title": "Midterm Exam",
+                    "assessment_type": "Midterm Exam",
+                    "date_iso": "2026-11-05",
+                    "weightage_percent": 30.0,
+                    "topics": ["K-Maps", "State Machines"]
+                }]
+            }),
+            "gemini-3.8-flash",
+        )
+        .unwrap();
+
+        let merged = merge_extracted_syllabi(vec![first, second]);
+        assert_eq!(merged.schedule.courses.len(), 2);
+        assert_eq!(merged.schedule.courses[0].credits, Some(3.0));
+        assert_eq!(
+            merged.schedule.courses[0].aliases,
+            vec!["EE 210".to_string(), "COMP 210".to_string()]
+        );
+        assert_eq!(merged.schedule.slots.len(), 2);
+        assert_eq!(merged.schedule.slots[0].id, "slot-1");
+        assert_eq!(merged.schedule.slots[1].id, "slot-2");
+        assert_eq!(merged.assessments.len(), 1);
+        assert_eq!(merged.assessments[0].weightage_percent, Some(30.0));
+        assert_eq!(
+            merged.assessments[0].topics,
+            vec!["K-Maps".to_string(), "State Machines".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn extract_syllabus_sends_pdf_mime_and_parses_response() {
+        let server = MockServer::start().await;
+        mount_model(
+            &server,
+            "/models/gemini-3.8-flash:generateContent",
+            r##"{
+  "semester": "Spring 2027",
+  "courses": [
+    { "id": "BIO220", "name": "Cell Biology", "credits": 4.0, "aliases": [], "color": "#0f9d58" }
+  ],
+  "slots": [],
+  "assessments": [
+    {
+      "course_id": "BIO220",
+      "title": "Lab Practical 1",
+      "assessment_type": "Lab Assessment",
+      "date_iso": "2027-02-18",
+      "weightage_percent": 15,
+      "topics": ["Microscopy"],
+      "warnings": [],
+      "ai_inference_note": "Explicit in syllabus"
+    }
+  ]
+}"##,
+        )
+        .await;
+
+        let extracted = extract_syllabus(
+            &fixture_provider(&server.uri()),
+            "data:application/pdf;base64,JVBERi0xLjQ=",
+            "application/pdf",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(extracted.schedule.semester.as_deref(), Some("Spring 2027"));
+        assert_eq!(extracted.schedule.courses.len(), 1);
+        assert_eq!(extracted.assessments.len(), 1);
+        assert_eq!(extracted.assessments[0].title, "Lab Practical 1");
     }
 }

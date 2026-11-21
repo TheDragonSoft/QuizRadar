@@ -6,18 +6,31 @@
 
 import { APP_VERSION } from "../generated/version";
 import { STUDY_STATS_STORAGE_KEY, writeStoredStudyStats } from "../lib/studyStats";
+import {
+  COURSE_PACK_WEB_BASE_URL,
+  courseMatchesCode,
+  decodeCoursePackBrowser,
+  encodeCoursePackBrowser,
+} from "../lib/coursePack";
 import { getLocalDateString } from "../state/watchdog";
 import type {
+  ApplyCourseBundleResult,
   Assessment,
   Course,
+  CourseImportReport,
+  CoursePackExportResult,
+  CoursePackPayload,
   CustomCalendarEvent,
   DesktopAuthProfile,
   DesktopConfig,
+  ExtractedSyllabusAssessment,
   FeedConfig,
   GetStatePayload,
+  ImportCoursePackResult,
   ScheduleData,
   ScheduleSlot,
   StudyTasksPayload,
+  SyllabusDocumentInput,
 } from "../state/types";
 import {
   deleteAssessment,
@@ -52,7 +65,7 @@ import {
   type IdbGradeRecord,
 } from "./idbStore";
 import { getWasmEngine } from "./wasmBridge";
-import { toRustEvent } from "../state/ipcShape";
+import { aliasDeep, toRustEvent } from "../state/ipcShape";
 import { sanitizeFlashcards, sanitizeQuizAttempts, sanitizeMistakes } from "../state/storage";
 import {
   DEFAULT_BROWSER_GOOGLE_CLIENT_ID,
@@ -67,6 +80,7 @@ import {
   validateGeminiKeyBrowser,
 } from "./browserSources";
 import {
+  extractSyllabiBrowser,
   extractTimetableBrowser,
   getBrowserAiSessionCalls,
   getBrowserAiSessionPerModel,
@@ -491,6 +505,299 @@ function lastSyncedStamp(): string {
   const now = new Date();
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}
+
+const WEEKDAY_INDEX_MAP: Record<string, number> = {
+  sun: 0,
+  sunday: 0,
+  mon: 1,
+  monday: 1,
+  tue: 2,
+  tues: 2,
+  tuesday: 2,
+  wed: 3,
+  wednesday: 3,
+  thu: 4,
+  thur: 4,
+  thurs: 4,
+  thursday: 4,
+  fri: 5,
+  friday: 5,
+  sat: 6,
+  saturday: 6,
+};
+
+function fnv1aHex(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+function slotDayIndex(slot: ScheduleSlot): number {
+  const raw = slot as unknown as Record<string, unknown>;
+  const day = String(slot.day ?? "")
+    .trim()
+    .toLowerCase();
+  if (day in WEEKDAY_INDEX_MAP) return WEEKDAY_INDEX_MAP[day];
+  const idx = Number(raw.day_index ?? slot.dayIndex ?? 0);
+  return Number.isInteger(idx) && idx >= 0 && idx <= 6 ? idx : 0;
+}
+
+/**
+ * Shared additive course + slot + assessment + grade-weightage merger used by
+ * both `apply_course_bundle` (Multi-Syllabus Importer) and `import_course_pack`.
+ */
+async function applyCourseBundleIdb(
+  incomingSchedule: ScheduleData,
+  domainAssessments: Assessment[],
+): Promise<{ state: GetStatePayload; report: CourseImportReport }> {
+  const schedule = await loadScheduleData();
+  const existingCourses: Course[] = [...(schedule.courses || [])];
+  const existingSlots: ScheduleSlot[] = [...(schedule.slots || [])];
+  const existingAssessments: Assessment[] = [...(await loadAssessments())];
+  const existingGrades = await loadGrades();
+
+  let coursesAdded = 0;
+  let coursesUpdated = 0;
+  let slotsAdded = 0;
+  let assessmentsAdded = 0;
+  let assessmentsUpdated = 0;
+
+  let nextSlotNum = 1;
+  for (const s of [...existingSlots, ...(incomingSchedule.slots || [])]) {
+    const m = /^slot-(\d+)$/.exec(String(s.id ?? ""));
+    if (m) {
+      nextSlotNum = Math.max(nextSlotNum, Number(m[1]) + 1);
+    }
+  }
+
+  for (const rawCourse of incomingSchedule.courses || []) {
+    const id = String(rawCourse.id ?? "").trim();
+    const name = String(rawCourse.name ?? "").trim();
+    if (!id || !name) {
+      throw new Error("Each imported course requires a non-empty code and name.");
+    }
+    const rawC = rawCourse as unknown as Record<string, unknown>;
+    const incomingCredits =
+      typeof rawCourse.credits === "number" && Number.isFinite(rawCourse.credits)
+        ? rawCourse.credits
+        : null;
+    const incomingMaxAbsences =
+      typeof (rawCourse.maxAbsences ?? rawC.max_absences) === "number"
+        ? Number(rawCourse.maxAbsences ?? rawC.max_absences)
+        : null;
+    const incomingAliases = Array.isArray(rawCourse.aliases)
+      ? rawCourse.aliases.map((a) => String(a).trim()).filter(Boolean)
+      : [];
+
+    const pos = existingCourses.findIndex((c) => c.id.toLowerCase() === id.toLowerCase());
+    if (pos >= 0) {
+      const current = { ...existingCourses[pos] };
+      let changed = false;
+      if ((current.credits === null || current.credits === undefined) && incomingCredits !== null) {
+        current.credits = incomingCredits;
+        changed = true;
+      }
+      const nextAliases = [...(current.aliases ?? [])];
+      for (const a of incomingAliases) {
+        if (
+          a.toLowerCase() !== current.id.toLowerCase() &&
+          !courseMatchesCode({ ...current, aliases: nextAliases }, a)
+        ) {
+          nextAliases.push(a);
+          changed = true;
+        }
+      }
+      if (changed) {
+        current.aliases = nextAliases;
+        existingCourses[pos] = current;
+        coursesUpdated += 1;
+      }
+    } else {
+      existingCourses.push({
+        id,
+        name,
+        color: rawCourse.color || "#1a73e8",
+        bg: rawCourse.bg ?? `${rawCourse.color || "#1a73e8"}18`,
+        border: rawCourse.border ?? `${rawCourse.color || "#1a73e8"}55`,
+        credits: incomingCredits,
+        maxAbsences: incomingMaxAbsences,
+        aliases: incomingAliases.filter((a) => a.toLowerCase() !== id.toLowerCase()),
+      });
+      coursesAdded += 1;
+    }
+  }
+
+  let nextSemester = schedule.semester?.trim() ? schedule.semester : null;
+  if (!nextSemester && incomingSchedule.semester?.trim()) {
+    nextSemester = incomingSchedule.semester.trim();
+  }
+
+  for (const rawSlot of incomingSchedule.slots || []) {
+    const r = rawSlot as unknown as Record<string, unknown>;
+    const rawCid = String(r.course_id ?? rawSlot.courseId ?? "").trim();
+    const course = existingCourses.find((c) => courseMatchesCode(c, rawCid));
+    if (!course) continue;
+    const startTime = parseSlotTime(r.start_time ?? rawSlot.startTime);
+    const endTime = parseSlotTime(r.end_time ?? rawSlot.endTime);
+    if (!startTime || !endTime || endTime <= startTime) continue;
+    const dayIndex = slotDayIndex(rawSlot);
+    const duplicate = existingSlots.some((existing) => {
+      const er = existing as unknown as Record<string, unknown>;
+      return (
+        String(er.course_id ?? existing.courseId ?? "").toLowerCase() === course.id.toLowerCase() &&
+        slotDayIndex(existing) === dayIndex &&
+        parseSlotTime(er.start_time ?? existing.startTime) === startTime &&
+        parseSlotTime(er.end_time ?? existing.endTime) === endTime
+      );
+    });
+    if (duplicate) continue;
+
+    let slotId = String(rawSlot.id ?? "").trim();
+    if (!slotId || existingSlots.some((s) => s.id === slotId)) {
+      slotId = `slot-${nextSlotNum}`;
+      nextSlotNum += 1;
+    }
+    const displayTime =
+      String(r.display_time ?? rawSlot.displayTime ?? "").trim() || `${startTime}\u2013${endTime}`;
+    const normalizedSlot = aliasDeep({
+      id: slotId,
+      day: rawSlot.day,
+      day_index: dayIndex,
+      course_id: course.id,
+      course_name: String(r.course_name ?? rawSlot.courseName ?? "").trim() || course.name,
+      type: String(r.type ?? r.slotType ?? "Lecture").trim() || "Lecture",
+      group: (rawSlot.group ?? null) as string | null,
+      room: (rawSlot.room ?? null) as string | null,
+      start_time: startTime,
+      end_time: endTime,
+      display_time: displayTime,
+      has_quiz: false,
+      quiz_title: null,
+      week_parity: (r.week_parity ?? rawSlot.weekParity ?? null) as string | null,
+    }) as unknown as ScheduleSlot;
+    existingSlots.push(normalizedSlot);
+    slotsAdded += 1;
+  }
+
+  for (const incoming of domainAssessments) {
+    const title = String(incoming.title ?? "").trim();
+    if (!title) continue;
+    const next = toJsAssessment(toRustAssessment(incoming));
+    if (next.courseId) {
+      const course = existingCourses.find((c) => courseMatchesCode(c, next.courseId!));
+      if (course) {
+        next.courseId = course.id;
+        next.courseName = next.courseName ?? course.name;
+        next.color = next.color ?? course.color;
+        next.bg = next.bg ?? course.bg ?? null;
+        next.border = next.border ?? course.border ?? null;
+      }
+    }
+
+    const idx = existingAssessments.findIndex((old) => {
+      const oldCid = (old.courseId ?? old.course_id ?? "").toLowerCase();
+      const newCid = (next.courseId ?? "").toLowerCase();
+      const oldDate = old.dateIso ?? old.date_iso ?? null;
+      const newDate = next.dateIso ?? null;
+      return (
+        old.id === next.id ||
+        (oldCid.length > 0 &&
+          oldCid === newCid &&
+          old.title.trim().toLowerCase() === title.toLowerCase() &&
+          oldDate === newDate)
+      );
+    });
+
+    let persistedId = next.id;
+    let persistedWeight = next.weightagePercent ?? null;
+
+    if (idx >= 0) {
+      const old = existingAssessments[idx];
+      persistedId = old.id;
+      const oldWeight = old.weightagePercent ?? old.weightage_percent ?? null;
+      persistedWeight = oldWeight ?? persistedWeight;
+      const mergedTopics = [...(next.topics ?? [])];
+      for (const topic of old.topics ?? []) {
+        if (!mergedTopics.some((t) => t.toLowerCase() === topic.toLowerCase())) {
+          mergedTopics.push(topic);
+        }
+      }
+      const mergedWarnings = [...(next.warnings ?? [])];
+      for (const warning of old.warnings ?? []) {
+        if (!mergedWarnings.some((w) => w.toLowerCase() === warning.toLowerCase())) {
+          mergedWarnings.push(warning);
+        }
+      }
+      const oldRec = old as unknown as Record<string, unknown>;
+      existingAssessments[idx] = toJsAssessment({
+        ...toRustAssessment(next),
+        id: old.id,
+        weightage_percent: oldWeight ?? persistedWeight,
+        achieved_score: old.achievedScore ?? old.achieved_score ?? next.achievedScore ?? null,
+        max_score: old.maxScore ?? old.max_score ?? next.maxScore ?? null,
+        gcal_synced: Boolean(old.gcalSynced ?? oldRec.gcal_synced),
+        gcal_event_id: old.gcalEventId ?? (oldRec.gcal_event_id as string | null) ?? null,
+        google_cal_url:
+          old.googleCalUrl ?? (oldRec.google_cal_url as string | null) ?? next.googleCalUrl ?? null,
+        topics: mergedTopics,
+        warnings: mergedWarnings,
+      });
+      assessmentsUpdated += 1;
+    } else {
+      if (!persistedId || !persistedId.trim()) {
+        persistedId = `bundle-${fnv1aHex(`${next.courseId ?? ""}|${title}|${next.dateIso ?? "tba"}`)}`;
+      }
+      existingAssessments.push(
+        toJsAssessment({
+          ...toRustAssessment(next),
+          id: persistedId,
+        }),
+      );
+      assessmentsAdded += 1;
+    }
+
+    if (
+      typeof persistedWeight === "number" &&
+      Number.isFinite(persistedWeight) &&
+      persistedWeight >= 0
+    ) {
+      const localGrade = existingGrades[persistedId];
+      if (localGrade?.weightage_percent === null || localGrade?.weightage_percent === undefined) {
+        const updatedRecord: IdbGradeRecord = {
+          assessment_id: persistedId,
+          achieved_score: localGrade?.achieved_score ?? null,
+          max_score: localGrade?.max_score ?? null,
+          weightage_percent: persistedWeight,
+        };
+        await saveGrade(updatedRecord);
+        existingGrades[persistedId] = updatedRecord;
+      }
+    }
+  }
+
+  await saveScheduleData({
+    semester: nextSemester,
+    courses: existingCourses,
+    slots: existingSlots,
+  });
+  await saveAssessments(existingAssessments);
+
+  const report = aliasDeep({
+    coursesAdded,
+    coursesUpdated,
+    slotsAdded,
+    assessmentsAdded,
+    assessmentsUpdated,
+  }) as CourseImportReport;
+
+  return {
+    state: await buildFullState(),
+    report,
+  };
 }
 
 /**
@@ -1570,6 +1877,162 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
         feeds_upserted: feedsUpserted,
         schedule_replaced: scheduleReplaced,
       } as T;
+    }
+
+    case "extract_syllabi": {
+      const explicitConsent = await getConfigValue<boolean | null>("gemini_enabled", null);
+      if (explicitConsent === false) {
+        throw new Error(
+          "Gemini AI assistance is turned off in Settings → AI & Privacy. Turn it back on to import syllabi.",
+        );
+      }
+      const documents = (args?.documents as SyllabusDocumentInput[]) || [];
+      return aliasDeep(await extractSyllabiBrowser(documents, getMemoryGeminiKey())) as T;
+    }
+
+    case "apply_course_bundle": {
+      const wasm = await getWasmEngine();
+      const rawSchedule = (args?.schedule as ScheduleData | undefined) ?? {
+        semester: (args?.semester as string | null | undefined) ?? null,
+        courses: (args?.courses as Course[] | undefined) ?? [],
+        slots: (args?.slots as ScheduleSlot[] | undefined) ?? [],
+      };
+      const rawAssessments = (args?.assessments as ExtractedSyllabusAssessment[] | undefined) ?? [];
+      const rustSchedule = toRustSchedulePayload(rawSchedule).schedule;
+      const rustExtracted = {
+        schedule: rustSchedule,
+        assessments: rawAssessments.map((a) => ({
+          course_id: a.course_id ?? a.courseId ?? null,
+          title: a.title,
+          assessment_type: a.assessment_type ?? a.assessmentType ?? "Class Quiz",
+          date_iso: a.date_iso ?? a.dateIso ?? null,
+          start_time: a.start_time ?? a.startTime ?? null,
+          end_time: a.end_time ?? a.endTime ?? null,
+          room: a.room ?? null,
+          instructor: a.instructor ?? null,
+          weightage_percent: a.weightage_percent ?? a.weightagePercent ?? null,
+          topics: a.topics ?? [],
+          warnings: a.warnings ?? [],
+          ai_inference_note: a.ai_inference_note ?? a.aiInferenceNote ?? null,
+        })),
+        dropped_courses: 0,
+        dropped_slots: 0,
+        dropped_assessments: 0,
+        model: "gemini-3-flash-preview",
+      };
+      const domainRaw = JSON.parse(
+        wasm.syllabus_to_domain(JSON.stringify(rustExtracted), getLocalDateString()),
+      ) as Array<Record<string, unknown>>;
+      const domainAssessments = domainRaw.map(toJsAssessment);
+      const res: ApplyCourseBundleResult = await applyCourseBundleIdb(
+        rawSchedule,
+        domainAssessments,
+      );
+      return res as T;
+    }
+
+    case "export_course_pack": {
+      const courseId = String(args?.courseId ?? args?.course_id ?? "");
+      const webBaseUrl = (args?.webBaseUrl ?? args?.web_base_url ?? COURSE_PACK_WEB_BASE_URL) as
+        string | null;
+      const schedule = await loadScheduleData();
+      const rawAssessments = await loadAssessments();
+      const grades = await loadGrades();
+      const mergedAssessments = rawAssessments.map((a) => {
+        const g = grades[a.id];
+        const weight = g
+          ? g.weightage_percent
+          : (a.weightagePercent ?? a.weightage_percent ?? null);
+        return toJsAssessment({
+          ...toRustAssessment(a),
+          weightage_percent: weight,
+        });
+      });
+      const wasm = await getWasmEngine();
+      let res: CoursePackExportResult;
+      if (typeof wasm.encode_course_pack === "function") {
+        const rustSchedule = toRustSchedulePayload(schedule).schedule;
+        const rustAssessments = mergedAssessments.map(toRustAssessment);
+        res = JSON.parse(
+          wasm.encode_course_pack(
+            courseId,
+            JSON.stringify(rustSchedule),
+            JSON.stringify(rustAssessments),
+            webBaseUrl ?? undefined,
+          ),
+        ) as CoursePackExportResult;
+      } else {
+        res = await encodeCoursePackBrowser(courseId, schedule, mergedAssessments, webBaseUrl);
+      }
+      return aliasDeep(res) as T;
+    }
+
+    case "decode_course_pack": {
+      const rawInput = String(args?.rawInput ?? args?.raw_input ?? "");
+      const wasm = await getWasmEngine();
+      let pack: CoursePackPayload;
+      if (typeof wasm.decode_course_pack === "function") {
+        pack = JSON.parse(wasm.decode_course_pack(rawInput)) as CoursePackPayload;
+      } else {
+        pack = await decodeCoursePackBrowser(rawInput);
+      }
+      return aliasDeep(pack) as T;
+    }
+
+    case "import_course_pack": {
+      const rawInput = String(args?.rawInput ?? args?.raw_input ?? "");
+      const wasm = await getWasmEngine();
+      const pack: CoursePackPayload =
+        typeof wasm.decode_course_pack === "function"
+          ? (JSON.parse(wasm.decode_course_pack(rawInput)) as CoursePackPayload)
+          : await decodeCoursePackBrowser(rawInput);
+      const todayIso = getLocalDateString();
+      let incomingSchedule: ScheduleData;
+      let domainAssessments: Assessment[];
+      if (typeof wasm.course_pack_to_domain === "function") {
+        const domain = JSON.parse(wasm.course_pack_to_domain(JSON.stringify(pack), todayIso)) as {
+          schedule: ScheduleData;
+          assessments: Array<Record<string, unknown>>;
+        };
+        incomingSchedule = {
+          ...domain.schedule,
+          slots: aliasDeep(domain.schedule.slots || []),
+        };
+        domainAssessments = (domain.assessments || []).map(toJsAssessment);
+      } else {
+        incomingSchedule = {
+          semester: pack.semester ?? null,
+          courses: [pack.course],
+          slots: aliasDeep(pack.slots || []),
+        };
+        domainAssessments = (pack.assessments || []).map((item) =>
+          toJsAssessment({
+            id: `pack-${fnv1aHex(`${pack.course.id}|${item.title}|${item.date_iso ?? item.dateIso ?? "tba"}`)}`,
+            course_id: pack.course.id,
+            course_name: pack.course.name,
+            title: item.title,
+            assessment_type: item.assessment_type ?? item.assessmentType ?? "Class Quiz",
+            date_iso: item.date_iso ?? item.dateIso ?? null,
+            start_time: item.start_time ?? item.startTime ?? null,
+            end_time: item.end_time ?? item.endTime ?? null,
+            room: item.room ?? null,
+            group: item.group ?? null,
+            instructor: item.instructor ?? null,
+            weightage_percent: item.weightage_percent ?? item.weightagePercent ?? null,
+            topics: item.topics ?? [],
+            warnings: item.warnings ?? [],
+            source: "feed",
+          }),
+        );
+      }
+      const { state, report } = await applyCourseBundleIdb(incomingSchedule, domainAssessments);
+      const res: ImportCoursePackResult = {
+        state,
+        report,
+        courseId: pack.course.id,
+        courseName: pack.course.name,
+      };
+      return res as T;
     }
 
     default:

@@ -76,6 +76,9 @@
                     android:host="pair" />
                 <data
                     android:scheme="quizradar"
+                    android:host="course" />
+                <data
+                    android:scheme="quizradar"
                     android:host="lan" />
             </intent-filter>
 

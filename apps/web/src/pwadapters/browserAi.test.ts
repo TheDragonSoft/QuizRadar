@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  extractSyllabiBrowser,
   extractTimetableBrowser,
   getBrowserAiSessionCalls,
   getBrowserAiSessionPerModel,
   mapGeminiStatus,
+  mergeExtractedSyllabi,
   parseModelJson,
+  parseSyllabusExtraction,
   parseTimetableExtraction,
   presetCourseColors,
   resetBrowserAiSessionCounters,
@@ -239,5 +242,145 @@ describe("browser timetable extraction (network contract)", () => {
     expect(mapGeminiStatus(429, "quota").message).toMatch(/quota/i);
     expect(mapGeminiStatus(503, "busy").message).toMatch(/HTTP 503/);
     expect(mapGeminiStatus(403, "API key not valid").message).toMatch(/rejected the API key/i);
+  });
+});
+
+describe("browser multi-syllabus extraction (PDF & multi-doc merge)", () => {
+  const realFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    resetBrowserAiSessionCounters();
+  });
+
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    vi.restoreAllMocks();
+  });
+
+  it("maps Final Project to Assignment, preserves null dates, and merges duplicates", () => {
+    const first = parseSyllabusExtraction(
+      {
+        semester: "Fall 2026",
+        courses: [{ id: "ECE210", name: "Digital Systems", credits: 3, aliases: ["ECE 210"] }],
+        slots: [
+          {
+            course_id: "ECE210",
+            day: "Monday",
+            start_time: "09:00",
+            end_time: "10:30",
+            room: "EE-301",
+          },
+        ],
+        assessments: [
+          {
+            course_id: "ECE210",
+            title: "Final Project",
+            assessment_type: "Final Project",
+            date_iso: null,
+            weightage_percent: 25,
+            topics: ["Verilog FSM"],
+          },
+          { title: "", course_id: "ECE210" },
+        ],
+      },
+      "gemini-3-flash-preview",
+    );
+
+    expect(first.assessments).toHaveLength(1);
+    expect(first.assessments[0].assessmentType).toBe("Assignment");
+    expect(first.assessments[0].dateIso).toBeNull();
+    expect(first.assessments[0].weightagePercent).toBe(25);
+    expect(first.droppedAssessments).toBe(1);
+
+    const second = parseSyllabusExtraction(
+      {
+        courses: [{ id: "ECE210", name: "Digital Systems", aliases: ["DIG-210"] }],
+        slots: [
+          { course_id: "ECE210", day: "Monday", start_time: "09:00", end_time: "10:30" },
+          { course_id: "ECE210", day: "Wednesday", start_time: "10:00", end_time: "11:00" },
+        ],
+        assessments: [
+          {
+            course_id: "ECE210",
+            title: "Final Project",
+            date_iso: null,
+            topics: ["Testbench"],
+          },
+        ],
+      },
+      "gemini-3-flash-preview",
+    );
+
+    const merged = mergeExtractedSyllabi([first, second]);
+    expect(merged.schedule.courses).toHaveLength(1);
+    expect(merged.schedule.courses[0].aliases).toEqual(
+      expect.arrayContaining(["ECE 210", "DIG-210"]),
+    );
+    expect(merged.schedule.slots).toHaveLength(2);
+    expect(merged.assessments).toHaveLength(1);
+    expect(merged.assessments[0].dateIso).toBeNull();
+    expect(merged.assessments[0].weightagePercent).toBe(25);
+    expect(merged.assessments[0].topics).toEqual(["Verilog FSM", "Testbench"]);
+  });
+
+  it("sends PDF inline_data, merges successful docs, and records honest per-file errors", async () => {
+    let callIdx = 0;
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      callIdx += 1;
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      const inline = body.contents?.[0]?.parts?.[1]?.inline_data;
+      if (callIdx === 1) {
+        expect(inline?.mime_type).toBe("application/pdf");
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    {
+                      text: JSON.stringify({
+                        semester: "Fall 2026",
+                        courses: [{ id: "ECE210", name: "Digital Systems", credits: 3 }],
+                        slots: [],
+                        assessments: [
+                          {
+                            course_id: "ECE210",
+                            title: "Midterm Exam",
+                            assessment_type: "Midterm Exam",
+                            date_iso: "2026-11-12",
+                            weightage_percent: 30,
+                          },
+                        ],
+                      }),
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+        };
+      }
+      return {
+        ok: false,
+        status: 400,
+        text: async () => "Could not parse corrupted image",
+      };
+    }) as unknown as typeof fetch;
+
+    const merged = await extractSyllabiBrowser(
+      [
+        { name: "ece210.pdf", dataUrl: "data:application/pdf;base64,JVBERi0xLjQ=" },
+        { name: "blurry.png", dataUrl: "data:image/png;base64,QUJD" },
+      ],
+      "test-key",
+    );
+
+    expect(merged.schedule.courses.map((c) => c.id)).toEqual(["ECE210"]);
+    expect(merged.assessments[0].title).toBe("Midterm Exam");
+    expect(merged.fileErrors).toHaveLength(1);
+    expect(merged.fileErrors?.[0]).toContain("blurry.png");
+    expect(getBrowserAiSessionCalls()).toBe(1);
   });
 });

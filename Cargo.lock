@@ -3704,7 +3704,7 @@ dependencies = [
 
 [[package]]
 name = "quizradar-performance-core"
-version = "5.19.2"
+version = "5.20.0"
 dependencies = [
  "chrono",
  "quizradar-core",

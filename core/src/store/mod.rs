@@ -256,6 +256,22 @@ impl Store {
         .await
     }
 
+    /// Additively imports courses, weekly slots, and assessments (used by
+    /// Multi-Syllabus Import and 1-Tap Course Pack Import) without wiping
+    /// unrelated courses or overwriting user grades / completed topics.
+    pub async fn apply_course_bundle(
+        &self,
+        schedule: crate::types::ScheduleData,
+        assessments: Vec<crate::types::Assessment>,
+        updated_at: String,
+        reference_date: NaiveDate,
+    ) -> Result<(repo::AppSnapshot, repo::CourseImportReport), StoreError> {
+        self.run(move |db| {
+            repo::ops::apply_course_bundle(db, &schedule, &assessments, &updated_at, reference_date)
+        })
+        .await
+    }
+
     /// Assessment delete.
     pub async fn delete_assessment(
         &self,

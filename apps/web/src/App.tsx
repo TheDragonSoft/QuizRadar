@@ -32,6 +32,10 @@ import { CloudSyncModal } from "./components/CloudSyncModal";
 import { ScanProgressModal } from "./components/ScanProgressModal";
 import { AccountProfileModal } from "./components/AccountProfileModal";
 import { SearchPaletteModal } from "./components/SearchPaletteModal";
+import { SyllabusPreviewModal } from "./components/SyllabusPreviewModal";
+import { CoursePackShareModal } from "./components/CoursePackShareModal";
+import { CoursePackImportModal } from "./components/CoursePackImportModal";
+import { clearCoursePackFromLocation, extractCoursePackFromLocation } from "./lib/coursePack";
 
 // Register the spec modal components with canonical single-shell sizing & flush
 // metadata. (Settings is NOT one of them anymore: it is a full-screen view —
@@ -73,6 +77,15 @@ registerModal("app-confirm", AppConfirmModal as unknown as ModalComponent, { siz
 registerModal("cloud-sync", CloudSyncModal as unknown as ModalComponent, { size: "md" });
 registerModal("scan-progress", ScanProgressModal as unknown as ModalComponent, { size: "sm" });
 registerModal("account-profile", AccountProfileModal as unknown as ModalComponent, { size: "sm" });
+registerModal("syllabus-preview", SyllabusPreviewModal as unknown as ModalComponent, {
+  size: "xl",
+});
+registerModal("course-pack-share", CoursePackShareModal as unknown as ModalComponent, {
+  size: "lg",
+});
+registerModal("course-pack-import", CoursePackImportModal as unknown as ModalComponent, {
+  size: "lg",
+});
 
 const VIEWS: Record<View, React.ComponentType> = {
   dashboard: DashboardView,
@@ -249,6 +262,21 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  const pendingCoursePackRef = useRef<string | null>(
+    typeof window !== "undefined" ? extractCoursePackFromLocation(window.location.href) : null,
+  );
+
+  // Shared `#course=<token>` Course Pack launch: opens preview directly even on
+  // first run before auto-onboarding steals focus.
+  useEffect(() => {
+    if (!hasLoaded) return;
+    const token = pendingCoursePackRef.current;
+    if (!token) return;
+    pendingCoursePackRef.current = null;
+    clearCoursePackFromLocation();
+    useAppStore.getState().openImportCoursePack({ rawInput: token });
+  }, [hasLoaded]);
+
   // First-run onboarding check — waits for the first real state load so a
   // returning user is never shown the wizard. It never stacks on top of
   // another modal (e.g. the scan overlay opened from the top bar first).
@@ -263,8 +291,9 @@ export default function App() {
     wasOnboardingOpen.current = has;
 
     if (!hasLoaded) return;
+    if (pendingCoursePackRef.current) return;
     if (config.onboardingCompleted) return;
-    if (openModals.length > 0) return;
+    if (openModals.length > 0 || useAppStore.getState().openModals.length > 0) return;
     if (typeof window !== "undefined") {
       const dismissed = sessionStorage.getItem("quizradar_onboarding_dismissed");
       if (dismissed) return;
@@ -272,29 +301,35 @@ export default function App() {
     openModal({ id: "onboarding", flush: true, size: "xl" });
   }, [hasLoaded, config.onboardingCompleted, openModal, openModals]);
 
-  // Desktop auth bridge: the OAuth round trip finishes in the browser, so the
-  // shell emits "auth-changed" when the token lands. Without this listener the
-  // app kept showing "Sign in" even though the account was connected.
+  // Desktop auth & deep-link bridge: the OAuth round trip finishes in the
+  // browser, and `quizradar://course?d=...` launches emit "deep-link" events.
   useEffect(() => {
     let disposed = false;
-    let unlisten: (() => void) | undefined;
+    const unlisteners: Array<() => void> = [];
 
     const subscribe = async () => {
       if (!isTauriEnvironment()) return;
       try {
         const { listen } = await import("@tauri-apps/api/event");
-        const stop = await listen<string>("auth-changed", () => {
+        const stopAuth = await listen<string>("auth-changed", () => {
           void useAppStore.getState().refreshState();
           useAppStore.getState().addToast({
             type: "success",
             message: "Account connected — signed in.",
           });
         });
+        const stopDeepLink = await listen<string>("deep-link", (event) => {
+          const url = String(event.payload || "").trim();
+          if (url.toLowerCase().startsWith("quizradar://course")) {
+            useAppStore.getState().openImportCoursePack({ rawInput: url });
+          }
+        });
         if (disposed) {
-          stop();
+          stopAuth();
+          stopDeepLink();
           return;
         }
-        unlisten = stop;
+        unlisteners.push(stopAuth, stopDeepLink);
       } catch {
         // The event bridge is a nicety: a failure here must never break the app.
       }
@@ -303,7 +338,9 @@ export default function App() {
     void subscribe();
     return () => {
       disposed = true;
-      unlisten?.();
+      for (const stop of unlisteners) {
+        stop();
+      }
     };
   }, []);
 

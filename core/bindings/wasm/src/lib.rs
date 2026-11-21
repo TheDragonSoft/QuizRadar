@@ -649,6 +649,101 @@ impl QuizRadarWasm {
         serde_json::to_string(&parsed)
             .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
     }
+
+    pub fn parse_syllabus_json(&self, raw_json: &str, model_id: &str) -> Result<String, JsValue> {
+        let value: serde_json::Value = serde_json::from_str(raw_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid syllabus JSON: {e}")))?;
+        let parsed = quizradar_core::ai::tasks::parse_syllabus_extraction(value, model_id)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        serde_json::to_string(&parsed)
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+    }
+
+    pub fn merge_extracted_syllabi(&self, syllabi_json: &str) -> Result<String, JsValue> {
+        let items: Vec<quizradar_core::ai::tasks::ExtractedSyllabus> =
+            serde_json::from_str(syllabi_json)
+                .map_err(|e| JsValue::from_str(&format!("Invalid syllabi JSON: {e}")))?;
+        let merged = quizradar_core::ai::tasks::merge_extracted_syllabi(items);
+        serde_json::to_string(&merged)
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+    }
+
+    pub fn syllabus_to_domain(
+        &self,
+        extracted_json: &str,
+        ref_date_iso: &str,
+    ) -> Result<String, JsValue> {
+        let extracted: quizradar_core::ai::tasks::ExtractedSyllabus =
+            serde_json::from_str(extracted_json)
+                .map_err(|e| JsValue::from_str(&format!("Invalid extracted syllabus JSON: {e}")))?;
+        let date = NaiveDate::parse_from_str(ref_date_iso, "%Y-%m-%d")
+            .map_err(|e| JsValue::from_str(&format!("Invalid ref_date: {e}")))?;
+        let assessments =
+            quizradar_core::ai::tasks::syllabus_assessments_to_domain(&extracted, date);
+        serde_json::to_string(&assessments)
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+    }
+
+    pub fn encode_course_pack(
+        &self,
+        course_id: &str,
+        schedule_json: &str,
+        assessments_json: &str,
+        web_base_url: Option<String>,
+    ) -> Result<String, JsValue> {
+        let schedule: ScheduleData = serde_json::from_str(schedule_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid schedule JSON: {e}")))?;
+        let assessments: Vec<Assessment> = serde_json::from_str(assessments_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid assessments JSON: {e}")))?;
+        let pack = quizradar_core::sync::course_pack::build_course_pack(
+            course_id,
+            &schedule,
+            &assessments,
+        )
+        .map_err(|e| JsValue::from_str(&e))?;
+        let links = quizradar_core::sync::course_pack::encode_course_pack_links(
+            &pack,
+            web_base_url.as_deref(),
+        )
+        .map_err(|e| JsValue::from_str(&e))?;
+        let qr = if links.fits_qr {
+            quizradar_core::sync::qr::encode_qr_matrix(&links.web_url).ok()
+        } else {
+            None
+        };
+        serde_json::to_string(&serde_json::json!({
+            "pack": pack,
+            "links": links,
+            "qr": qr,
+        }))
+        .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+    }
+
+    pub fn decode_course_pack(&self, raw_input: &str) -> Result<String, JsValue> {
+        let pack = quizradar_core::sync::course_pack::decode_course_pack(raw_input)
+            .map_err(|e| JsValue::from_str(&e))?;
+        serde_json::to_string(&pack)
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+    }
+
+    pub fn course_pack_to_domain(
+        &self,
+        pack_json: &str,
+        ref_date_iso: &str,
+    ) -> Result<String, JsValue> {
+        let pack: quizradar_core::sync::course_pack::CoursePackPayload =
+            serde_json::from_str(pack_json)
+                .map_err(|e| JsValue::from_str(&format!("Invalid Course Pack JSON: {e}")))?;
+        let date = NaiveDate::parse_from_str(ref_date_iso, "%Y-%m-%d")
+            .map_err(|e| JsValue::from_str(&format!("Invalid ref_date: {e}")))?;
+        let (schedule, assessments) =
+            quizradar_core::sync::course_pack::course_pack_to_domain(&pack, date);
+        serde_json::to_string(&serde_json::json!({
+            "schedule": schedule,
+            "assessments": assessments,
+        }))
+        .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+    }
 }
 
 impl Default for QuizRadarWasm {

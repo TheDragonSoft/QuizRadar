@@ -4,5 +4,6 @@
 //!
 //! Zero platform dependencies, zero secrets/tokens.
 
+pub mod course_pack;
 pub mod pair;
 pub mod qr;

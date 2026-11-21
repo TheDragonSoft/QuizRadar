@@ -681,4 +681,208 @@ object QuizRadarJsonParser {
             "Peer sync merged."
         }
     }
+
+    fun parseExtractedSyllabus(jsonStr: String): ExtractedSyllabusModel {
+        val root = JSONObject(jsonStr)
+        val schedule = parseSchedule(root.optJSONObject("schedule"))
+        val arr = root.optJSONArray("assessments")
+        val assessments = ArrayList<ExtractedSyllabusAssessmentModel>(arr?.length() ?: 0)
+        if (arr != null) {
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                assessments.add(
+                    ExtractedSyllabusAssessmentModel(
+                        courseId = optString(obj, "course_id") ?: optString(obj, "courseId"),
+                        title = obj.optString("title", ""),
+                        assessmentType =
+                            optString(obj, "assessment_type")
+                                ?: optString(obj, "assessmentType")
+                                ?: "Class Quiz",
+                        dateIso = optDate(obj, "date_iso") ?: optDate(obj, "dateIso"),
+                        startTime = optString(obj, "start_time") ?: optString(obj, "startTime"),
+                        endTime = optString(obj, "end_time") ?: optString(obj, "endTime"),
+                        room = optString(obj, "room"),
+                        instructor = optString(obj, "instructor"),
+                        weightagePercent = optDouble(obj, "weightage_percent") ?: optDouble(obj, "weightagePercent"),
+                        topics = toStringList(obj.optJSONArray("topics")).filter { it.isNotBlank() },
+                        warnings = toStringList(obj.optJSONArray("warnings")).filter { it.isNotBlank() },
+                        aiInferenceNote =
+                            optString(obj, "ai_inference_note")
+                                ?: optString(obj, "aiInferenceNote"),
+                    ),
+                )
+            }
+        }
+        return ExtractedSyllabusModel(
+            schedule = schedule,
+            assessments = assessments,
+            droppedCourses = root.optInt("dropped_courses", root.optInt("droppedCourses", 0)),
+            droppedSlots = root.optInt("dropped_slots", root.optInt("droppedSlots", 0)),
+            droppedAssessments =
+                root.optInt("dropped_assessments", root.optInt("droppedAssessments", 0)),
+            model = root.optString("model", ""),
+        )
+    }
+
+    fun parseCourseImportReport(jsonStr: String): CourseImportReportModel {
+        val root = JSONObject(jsonStr)
+        val target = root.optJSONObject("report") ?: root
+        return CourseImportReportModel(
+            coursesAdded = target.optInt("courses_added", target.optInt("coursesAdded", 0)),
+            coursesUpdated = target.optInt("courses_updated", target.optInt("coursesUpdated", 0)),
+            slotsAdded = target.optInt("slots_added", target.optInt("slotsAdded", 0)),
+            assessmentsAdded =
+                target.optInt("assessments_added", target.optInt("assessmentsAdded", 0)),
+            assessmentsUpdated =
+                target.optInt("assessments_updated", target.optInt("assessmentsUpdated", 0)),
+        )
+    }
+
+    fun parseCoursePackPayload(jsonStr: String): CoursePackPayloadModel {
+        val root = JSONObject(jsonStr)
+        val course = parseCourse(root.getJSONObject("course"))
+        val slotsArr = root.optJSONArray("slots")
+        val slots = ArrayList<ScheduleSlotModel>(slotsArr?.length() ?: 0)
+        if (slotsArr != null) {
+            for (i in 0 until slotsArr.length()) {
+                slots.add(parseSlot(slotsArr.getJSONObject(i)))
+            }
+        }
+        val arr = root.optJSONArray("assessments")
+        val assessments = ArrayList<CoursePackAssessmentModel>(arr?.length() ?: 0)
+        if (arr != null) {
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                assessments.add(
+                    CoursePackAssessmentModel(
+                        title = obj.optString("title", ""),
+                        assessmentType =
+                            optString(obj, "assessment_type")
+                                ?: optString(obj, "assessmentType")
+                                ?: "Class Quiz",
+                        dateIso = optDate(obj, "date_iso") ?: optDate(obj, "dateIso"),
+                        startTime = optString(obj, "start_time") ?: optString(obj, "startTime"),
+                        endTime = optString(obj, "end_time") ?: optString(obj, "endTime"),
+                        room = optString(obj, "room"),
+                        group = optString(obj, "group"),
+                        instructor = optString(obj, "instructor"),
+                        weightagePercent = optDouble(obj, "weightage_percent") ?: optDouble(obj, "weightagePercent"),
+                        topics = toStringList(obj.optJSONArray("topics")).filter { it.isNotBlank() },
+                        warnings = toStringList(obj.optJSONArray("warnings")).filter { it.isNotBlank() },
+                    ),
+                )
+            }
+        }
+        return CoursePackPayloadModel(
+            v = root.optInt("v", 1),
+            semester = optString(root, "semester"),
+            course = course,
+            slots = slots,
+            assessments = assessments,
+        )
+    }
+
+    fun parseCoursePackExport(jsonStr: String): CoursePackExportModel {
+        val root = JSONObject(jsonStr)
+        val pack = parseCoursePackPayload(root.getJSONObject("pack").toString())
+        val linksObj = root.getJSONObject("links")
+        val links =
+            CoursePackShareLinksModel(
+                token = linksObj.optString("token", ""),
+                webUrl = linksObj.optString("web_url", linksObj.optString("webUrl", "")),
+                deepLink = linksObj.optString("deep_link", linksObj.optString("deepLink", "")),
+                byteLen = linksObj.optInt("byte_len", linksObj.optInt("byteLen", 0)),
+                fitsQr = linksObj.optBoolean("fits_qr", linksObj.optBoolean("fitsQr", false)),
+            )
+        val qr =
+            root.optJSONObject("qr")?.takeIf { !root.isNull("qr") }?.let { qrObj ->
+                val size = qrObj.optInt("size", 0)
+                val flat = qrObj.optString("modules", "")
+                if (size > 0 && flat.length == size * size) {
+                    com.quizradar.app.core.QrCodeEncoder.QrMatrix(
+                        version = qrObj.optInt("version", 1),
+                        size = size,
+                        modules = Array(size) { y -> BooleanArray(size) { x -> flat[y * size + x] == '1' } },
+                    )
+                } else {
+                    null
+                }
+            }
+        return CoursePackExportModel(pack = pack, links = links, qr = qr)
+    }
+
+    fun toCourseScheduleJson(schedule: ScheduleDataModel): String {
+        val obj = JSONObject()
+        if (!schedule.semester.isNullOrBlank()) {
+            obj.put("semester", schedule.semester)
+        }
+        val coursesArr = JSONArray()
+        for (c in schedule.courses) {
+            val co =
+                JSONObject().apply {
+                    put("id", c.id)
+                    put("name", c.name)
+                    put("color", c.color ?: "#1a73e8")
+                    if (c.credits != null) put("credits", c.credits)
+                    if (c.maxAbsences != null) put("max_absences", c.maxAbsences)
+                    if (c.aliases.isNotEmpty()) put("aliases", JSONArray(c.aliases))
+                }
+            coursesArr.put(co)
+        }
+        obj.put("courses", coursesArr)
+        val slotsArr = JSONArray()
+        for (s in schedule.slots) {
+            val so =
+                JSONObject().apply {
+                    put("id", s.id)
+                    put("day", s.day)
+                    put("course_id", s.courseId)
+                    put("course_name", s.courseName)
+                    put("type", s.type.ifBlank { "Lecture" })
+                    put("start_time", s.startTime)
+                    put("end_time", s.endTime)
+                    put("display_time", s.displayTime ?: "${s.startTime}\u2013${s.endTime}")
+                    if (!s.room.isNullOrBlank()) put("room", s.room)
+                    if (!s.group.isNullOrBlank()) put("group", s.group)
+                    if (!s.weekParity.isNullOrBlank()) put("week_parity", s.weekParity)
+                }
+            slotsArr.put(so)
+        }
+        obj.put("slots", slotsArr)
+        return obj.toString()
+    }
+
+    fun toExtractedSyllabusJson(
+        schedule: ScheduleDataModel,
+        assessments: List<ExtractedSyllabusAssessmentModel>,
+        model: String = "gemini-3-flash-preview",
+    ): String {
+        val arr = JSONArray()
+        for (a in assessments) {
+            val ao =
+                JSONObject().apply {
+                    put("course_id", a.courseId.orEmpty())
+                    put("title", a.title)
+                    put("assessment_type", a.assessmentType)
+                    if (a.dateIso != null) put("date_iso", a.dateIso.toString())
+                    if (!a.startTime.isNullOrBlank()) put("start_time", a.startTime)
+                    if (!a.endTime.isNullOrBlank()) put("end_time", a.endTime)
+                    if (!a.room.isNullOrBlank()) put("room", a.room)
+                    if (!a.instructor.isNullOrBlank()) put("instructor", a.instructor)
+                    if (a.weightagePercent != null) put("weightage_percent", a.weightagePercent)
+                    put("topics", JSONArray(a.topics))
+                    put("warnings", JSONArray(a.warnings))
+                    if (!a.aiInferenceNote.isNullOrBlank()) put("ai_inference_note", a.aiInferenceNote)
+                }
+            arr.put(ao)
+        }
+        return JSONObject().apply {
+            put("schedule", JSONObject(toCourseScheduleJson(schedule)))
+            put("assessments", arr)
+            put("dropped_courses", 0)
+            put("dropped_slots", 0)
+            put("dropped_assessments", 0)
+            put("model", model)
+        }.toString()
+    }
 }

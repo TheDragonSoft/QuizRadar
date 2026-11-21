@@ -913,6 +913,20 @@ internal open class UniffiVTableCallbackInterfaceFfiTokenProvider(
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -938,6 +952,8 @@ internal interface UniffiLib : Library {
     ): Pointer
     fun uniffi_quizradar_core_fn_free_nativestore(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_quizradar_core_fn_method_nativestore_apply_course_bundle(`ptr`: Pointer,`scheduleJson`: RustBuffer.ByValue,`assessmentsJson`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
+    ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_attendance_summaries(`ptr`: Pointer,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_cancel_native_sync(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -957,6 +973,8 @@ internal interface UniffiLib : Library {
     fun uniffi_quizradar_core_fn_method_nativestore_export_backup(`ptr`: Pointer,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_export_sync_payload(`ptr`: Pointer,`deviceId`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,
+    ): Long
+    fun uniffi_quizradar_core_fn_method_nativestore_extract_syllabus_from_document(`ptr`: Pointer,`documentB64`: RustBuffer.ByValue,`mime`: RustBuffer.ByValue,`apiKey`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_extract_timetable_from_image(`ptr`: Pointer,`imageB64`: RustBuffer.ByValue,`mime`: RustBuffer.ByValue,`apiKey`: RustBuffer.ByValue,
     ): Long
@@ -1050,6 +1068,10 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_core_version(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_quizradar_core_fn_func_course_pack_to_domain_json(`packJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_quizradar_core_fn_func_decode_course_pack_link(`rawInput`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_decode_pair_sync_link(`rawInput`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_derive_dashboard_summary(`assessmentsJson`: RustBuffer.ByValue,`topicsJson`: RustBuffer.ByValue,`eventsJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1057,6 +1079,8 @@ internal interface UniffiLib : Library {
     fun uniffi_quizradar_core_fn_func_derive_study_tasks(`assessmentsJson`: RustBuffer.ByValue,`topicsJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,`academicTrack`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_detect_schedule_conflicts(`assessmentsJson`: RustBuffer.ByValue,`eventsJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_quizradar_core_fn_func_encode_course_pack(`courseId`: RustBuffer.ByValue,`scheduleJson`: RustBuffer.ByValue,`assessmentsJson`: RustBuffer.ByValue,`webBaseUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_encode_pair_sync_link(`payloadJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1074,6 +1098,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_get_week_parity(`dateIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_quizradar_core_fn_func_merge_extracted_syllabi_json(`syllabiJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_merge_sync_assessments(`existingJson`: RustBuffer.ByValue,`incomingJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_notification_id_for(`assessmentId`: RustBuffer.ByValue,`kind`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1089,6 +1115,8 @@ internal interface UniffiLib : Library {
     fun uniffi_quizradar_core_fn_func_parse_lan_pair_uri(`rawInput`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_radar_order_list(`assessmentsJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_quizradar_core_fn_func_syllabus_to_domain_assessments(`extractedJson`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_quizradar_core_fn_func_topic_key(`assessmentId`: RustBuffer.ByValue,`topicText`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1218,6 +1246,10 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_quizradar_core_checksum_func_core_version(
     ): Short
+    fun uniffi_quizradar_core_checksum_func_course_pack_to_domain_json(
+    ): Short
+    fun uniffi_quizradar_core_checksum_func_decode_course_pack_link(
+    ): Short
     fun uniffi_quizradar_core_checksum_func_decode_pair_sync_link(
     ): Short
     fun uniffi_quizradar_core_checksum_func_derive_dashboard_summary(
@@ -1225,6 +1257,8 @@ internal interface UniffiLib : Library {
     fun uniffi_quizradar_core_checksum_func_derive_study_tasks(
     ): Short
     fun uniffi_quizradar_core_checksum_func_detect_schedule_conflicts(
+    ): Short
+    fun uniffi_quizradar_core_checksum_func_encode_course_pack(
     ): Short
     fun uniffi_quizradar_core_checksum_func_encode_pair_sync_link(
     ): Short
@@ -1242,6 +1276,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_quizradar_core_checksum_func_get_week_parity(
     ): Short
+    fun uniffi_quizradar_core_checksum_func_merge_extracted_syllabi_json(
+    ): Short
     fun uniffi_quizradar_core_checksum_func_merge_sync_assessments(
     ): Short
     fun uniffi_quizradar_core_checksum_func_notification_id_for(
@@ -1258,7 +1294,11 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_quizradar_core_checksum_func_radar_order_list(
     ): Short
+    fun uniffi_quizradar_core_checksum_func_syllabus_to_domain_assessments(
+    ): Short
     fun uniffi_quizradar_core_checksum_func_topic_key(
+    ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_apply_course_bundle(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_attendance_summaries(
     ): Short
@@ -1279,6 +1319,8 @@ internal interface UniffiLib : Library {
     fun uniffi_quizradar_core_checksum_method_nativestore_export_backup(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_export_sync_payload(
+    ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_extract_syllabus_from_document(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_extract_timetable_from_image(
     ): Short
@@ -1396,6 +1438,12 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_quizradar_core_checksum_func_core_version() != 41050.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_quizradar_core_checksum_func_course_pack_to_domain_json() != 40559.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_func_decode_course_pack_link() != 34377.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_quizradar_core_checksum_func_decode_pair_sync_link() != 14562.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1406,6 +1454,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_func_detect_schedule_conflicts() != 35150.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_func_encode_course_pack() != 36711.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_func_encode_pair_sync_link() != 31563.toShort()) {
@@ -1432,6 +1483,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_quizradar_core_checksum_func_get_week_parity() != 41030.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_quizradar_core_checksum_func_merge_extracted_syllabi_json() != 61393.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_quizradar_core_checksum_func_merge_sync_assessments() != 16001.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1456,7 +1510,13 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_quizradar_core_checksum_func_radar_order_list() != 15281.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_quizradar_core_checksum_func_syllabus_to_domain_assessments() != 48679.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_quizradar_core_checksum_func_topic_key() != 27437.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_apply_course_bundle() != 42372.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_attendance_summaries() != 8129.toShort()) {
@@ -1487,6 +1547,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_export_sync_payload() != 17642.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_extract_syllabus_from_document() != 50438.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_extract_timetable_from_image() != 30659.toShort()) {
@@ -2033,6 +2096,13 @@ private class JavaLangRefCleanable(
 public interface NativeStoreInterface {
     
     /**
+     * Additively imports courses, weekly slots, and assessments (used by
+     * Multi-Syllabus Import and 1-Tap Course Pack Import). Returns JSON
+     * `{ "state": AppSnapshot, "report": CourseImportReport }`.
+     */
+    suspend fun `applyCourseBundle`(`scheduleJson`: kotlin.String, `assessmentsJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String
+    
+    /**
      * Per-course attendance summaries derived from the persisted records.
      */
     suspend fun `attendanceSummaries`(): kotlin.String
@@ -2078,6 +2148,12 @@ public interface NativeStoreInterface {
      * for serverless peer-to-peer sync (`quizradar://pair`).
      */
     suspend fun `exportSyncPayload`(`deviceId`: kotlin.String, `updatedAt`: kotlin.String): kotlin.String
+    
+    /**
+     * Extracts courses, weekly slots, and syllabus assessments/weights from
+     * one syllabus PDF or image (`01` §4.1, consent-gated at the core boundary).
+     */
+    suspend fun `extractSyllabusFromDocument`(`documentB64`: kotlin.String, `mime`: kotlin.String, `apiKey`: kotlin.String): kotlin.String
     
     /**
      * The timetable vision import (`01` §4.1, `05` §4 task b).
@@ -2404,6 +2480,32 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
 
     
     /**
+     * Additively imports courses, weekly slots, and assessments (used by
+     * Multi-Syllabus Import and 1-Tap Course Pack Import). Returns JSON
+     * `{ "state": AppSnapshot, "report": CourseImportReport }`.
+     */
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `applyCourseBundle`(`scheduleJson`: kotlin.String, `assessmentsJson`: kotlin.String, `updatedAt`: kotlin.String, `refDateIso`: kotlin.String) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_apply_course_bundle(
+                thisPtr,
+                FfiConverterString.lower(`scheduleJson`),FfiConverterString.lower(`assessmentsJson`),FfiConverterString.lower(`updatedAt`),FfiConverterString.lower(`refDateIso`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
+    /**
      * Per-course attendance summaries derived from the persisted records.
      */
     @Throws(QuizRadarFfiException::class)
@@ -2617,6 +2719,31 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
             UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_export_sync_payload(
                 thisPtr,
                 FfiConverterString.lower(`deviceId`),FfiConverterString.lower(`updatedAt`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * Extracts courses, weekly slots, and syllabus assessments/weights from
+     * one syllabus PDF or image (`01` §4.1, consent-gated at the core boundary).
+     */
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `extractSyllabusFromDocument`(`documentB64`: kotlin.String, `mime`: kotlin.String, `apiKey`: kotlin.String) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_extract_syllabus_from_document(
+                thisPtr,
+                FfiConverterString.lower(`documentB64`),FfiConverterString.lower(`mime`),FfiConverterString.lower(`apiKey`),
             )
         },
         { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
@@ -4269,6 +4396,34 @@ public object FfiConverterOptionalTypeFfiTokenProvider: FfiConverterRustBuffer<F
     
 
         /**
+         * Converts a decoded `CoursePackPayload` JSON into `{ schedule, assessments }`
+         * anchored at `ref_date_iso`.
+         */
+    @Throws(QuizRadarFfiException::class) fun `coursePackToDomainJson`(`packJson`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(QuizRadarFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_course_pack_to_domain_json(
+        FfiConverterString.lower(`packJson`),FfiConverterString.lower(`refDateIso`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Decodes and validates a shared Course Pack link (`https://.../#course=...`,
+         * `quizradar://course?d=...`, or raw token) into `CoursePackPayload` JSON.
+         */
+    @Throws(QuizRadarFfiException::class) fun `decodeCoursePackLink`(`rawInput`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(QuizRadarFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_decode_course_pack_link(
+        FfiConverterString.lower(`rawInput`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Decodes and validates a `quizradar://pair?d=...` link into `BackupPayload` JSON.
          */
     @Throws(QuizRadarFfiException::class) fun `decodePairSyncLink`(`rawInput`: kotlin.String): kotlin.String {
@@ -4306,6 +4461,20 @@ public object FfiConverterOptionalTypeFfiTokenProvider: FfiConverterRustBuffer<F
     uniffiRustCallWithError(QuizRadarFfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_detect_schedule_conflicts(
         FfiConverterString.lower(`assessmentsJson`),FfiConverterString.lower(`eventsJson`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Encodes one course's schedule slots and public assessments into a privacy-scrubbed
+         * 1-Tap Shareable Course Pack (`{ pack, links, qr }`).
+         */
+    @Throws(QuizRadarFfiException::class) fun `encodeCoursePack`(`courseId`: kotlin.String, `scheduleJson`: kotlin.String, `assessmentsJson`: kotlin.String, `webBaseUrl`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(QuizRadarFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_encode_course_pack(
+        FfiConverterString.lower(`courseId`),FfiConverterString.lower(`scheduleJson`),FfiConverterString.lower(`assessmentsJson`),FfiConverterOptionalString.lower(`webBaseUrl`),_status)
 }
     )
     }
@@ -4401,6 +4570,19 @@ public object FfiConverterOptionalTypeFfiTokenProvider: FfiConverterRustBuffer<F
     }
     
 
+        /**
+         * Deduplicates and merges an array of `ExtractedSyllabus` JSON objects.
+         */
+    @Throws(QuizRadarFfiException::class) fun `mergeExtractedSyllabiJson`(`syllabiJson`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(QuizRadarFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_merge_extracted_syllabi_json(
+        FfiConverterString.lower(`syllabiJson`),_status)
+}
+    )
+    }
+    
+
     @Throws(QuizRadarFfiException::class) fun `mergeSyncAssessments`(`existingJson`: kotlin.String, `incomingJson`: kotlin.String): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCallWithError(QuizRadarFfiException) { _status ->
@@ -4479,6 +4661,19 @@ public object FfiConverterOptionalTypeFfiTokenProvider: FfiConverterRustBuffer<F
     uniffiRustCallWithError(QuizRadarFfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_radar_order_list(
         FfiConverterString.lower(`assessmentsJson`),FfiConverterString.lower(`refDateIso`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Converts an `ExtractedSyllabus` JSON object into domain `Assessment[]` JSON anchored at `ref_date_iso`.
+         */
+    @Throws(QuizRadarFfiException::class) fun `syllabusToDomainAssessments`(`extractedJson`: kotlin.String, `refDateIso`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(QuizRadarFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_quizradar_core_fn_func_syllabus_to_domain_assessments(
+        FfiConverterString.lower(`extractedJson`),FfiConverterString.lower(`refDateIso`),_status)
 }
     )
     }

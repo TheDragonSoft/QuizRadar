@@ -669,6 +669,44 @@ export const copy = {
     scopesNote:
       "QuizRadar requests read-only Gmail and read/write access to its own Google Calendar events. Nothing else.",
   },
+
+  syllabusImport: {
+    uploadTitle: "Drop Course Syllabi (PDF or Photo, up to 6)",
+    uploadSubtitle:
+      "Extract courses, credits, weekly slots, exam dates, weights, and syllabus topics in seconds.",
+    uploadButton: "Select Syllabi or Timetable",
+    extracting: "Reading syllabi with Gemini…",
+    previewTitle: "Syllabus Extraction Review",
+    previewSubtitle:
+      "Review extracted courses, class times, and deadlines before adding them to your radar.",
+    droppedWarning: (courses: number, slots: number, assessments: number) =>
+      `Honest notice: ${courses} course row(s), ${slots} slot(s), and ${assessments} assessment(s) could not be verified and were left out.`,
+    applyAction: "Add Selected to Radar",
+    appliedTitle: "Syllabi Added to Your Radar",
+    appliedSharePrompt: "Share a Course Pack link with your classmates in one tap:",
+    dateTba: "Date TBA",
+  },
+
+  coursePack: {
+    shareTitle: "Share Course Pack with Classmates",
+    shareSubtitle:
+      "Send a one-tap link or QR code containing this course's schedule, deadlines, weights, and topics.",
+    privacyBadge:
+      "Data-only share — your grades, completed checkboxes, private notes, and tokens are never included.",
+    copyWebLink: "Copy Classmate Link",
+    copiedWebLink: "Classmate link copied",
+    shareNative: "Share Link",
+    deepLinkSummary: "Native app deep link (Desktop & Android)",
+    importTitle: "Import Shared Course Pack",
+    importSubtitle:
+      "Review the course schedule, graded weights, and upcoming deadlines before adding them.",
+    pastePlaceholder: "Paste a classmate's QuizRadar course link or quizradar://course?d=…",
+    previewLinkAction: "Preview Link",
+    addCourseAction: "Add Course to My Radar",
+    haveLinkButton: "Have a classmate's course link?",
+    alreadyEnrolledNote:
+      "You already have this course — new slots and deadlines merge additively without touching your recorded grades.",
+  },
 } as const;
 
 export type Copy = typeof copy;

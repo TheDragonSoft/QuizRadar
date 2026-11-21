@@ -233,6 +233,51 @@ class QuizRadarEngine(
         }
     }
 
+    override suspend fun extractSyllabusFromDocument(
+        documentB64: String,
+        mime: String,
+        apiKey: String,
+    ): String {
+        return withContext(networkDispatcher) {
+            store.extractSyllabusFromDocument(documentB64, mime, apiKey)
+        }
+    }
+
+    override fun mergeExtractedSyllabi(syllabiJson: String): String = mergeExtractedSyllabiJson(syllabiJson)
+
+    override fun syllabusToDomainAssessments(
+        extractedJson: String,
+        refDate: LocalDate,
+    ): String = syllabusToDomainAssessments(extractedJson, refDate.toString())
+
+    override suspend fun applyCourseBundle(
+        scheduleJson: String,
+        assessmentsJson: String,
+        refDate: LocalDate,
+    ): String {
+        return onCore {
+            store.applyCourseBundle(scheduleJson, assessmentsJson, nowIso(), refDate.toString())
+        }
+    }
+
+    override suspend fun exportCoursePack(
+        courseId: String,
+        scheduleJson: String,
+        assessmentsJson: String,
+        webBaseUrl: String?,
+    ): String {
+        return onCore {
+            CoursePackCodec.encode(courseId, scheduleJson, assessmentsJson, webBaseUrl)
+        }
+    }
+
+    override fun decodeCoursePack(rawInput: String): String = CoursePackCodec.decode(rawInput)
+
+    override fun coursePackToDomain(
+        packJson: String,
+        refDate: LocalDate,
+    ): String = CoursePackCodec.toDomain(packJson, refDate.toString())
+
     override fun parseEmail(
         emailJson: String,
         scheduleJson: String,

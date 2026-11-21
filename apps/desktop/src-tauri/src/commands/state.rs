@@ -75,6 +75,13 @@ pub struct GetStatePayload {
     pub study_tasks_payload: StudyTasksPayload,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyCourseBundleResult {
+    pub state: GetStatePayload,
+    pub report: quizradar_core::store::repo::CourseImportReport,
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigUpdate {
@@ -807,4 +814,42 @@ pub async fn schedule_study_blocks(
     }
 
     build_full_state(&state).await
+}
+
+pub async fn apply_course_bundle_inner(
+    state: &AppState,
+    schedule: ScheduleData,
+    assessments: Vec<quizradar_core::ai::tasks::ExtractedSyllabusAssessment>,
+) -> Result<ApplyCourseBundleResult, String> {
+    let today = state.today();
+    let now = state.now_iso();
+    let extracted = quizradar_core::ai::tasks::ExtractedSyllabus {
+        schedule: schedule.clone(),
+        assessments,
+        dropped_courses: 0,
+        dropped_slots: 0,
+        dropped_assessments: 0,
+        model: String::new(),
+    };
+    let domain_assessments =
+        quizradar_core::ai::tasks::syllabus_assessments_to_domain(&extracted, today);
+    let (_snapshot, report) = state
+        .store
+        .apply_course_bundle(schedule, domain_assessments, now, today)
+        .await
+        .map_err(|e| format!("Failed to apply course bundle: {e}"))?;
+    let full_state = build_full_state(state).await?;
+    Ok(ApplyCourseBundleResult {
+        state: full_state,
+        report,
+    })
+}
+
+#[tauri::command]
+pub async fn apply_course_bundle(
+    state: State<'_, AppState>,
+    schedule: ScheduleData,
+    assessments: Vec<quizradar_core::ai::tasks::ExtractedSyllabusAssessment>,
+) -> Result<ApplyCourseBundleResult, String> {
+    apply_course_bundle_inner(&state, schedule, assessments).await
 }

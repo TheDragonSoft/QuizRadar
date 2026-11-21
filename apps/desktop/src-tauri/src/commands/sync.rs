@@ -646,3 +646,94 @@ pub async fn stop_lan_pair_session(state: State<'_, AppState>) -> Result<(), Str
     state.lan_pair.stop().await;
     Ok(())
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoursePackExportResult {
+    pub pack: quizradar_core::sync::course_pack::CoursePackPayload,
+    pub links: quizradar_core::sync::course_pack::CoursePackShareLinks,
+    pub qr: Option<quizradar_core::sync::qr::QrMatrix>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportCoursePackResult {
+    pub state: crate::commands::state::GetStatePayload,
+    pub report: quizradar_core::store::repo::CourseImportReport,
+    pub course_id: String,
+    pub course_name: String,
+}
+
+pub async fn export_course_pack_inner(
+    state: &AppState,
+    course_id: &str,
+    web_base_url: Option<&str>,
+) -> Result<CoursePackExportResult, String> {
+    let today = state.today();
+    let snapshot = state
+        .store
+        .load_state(today)
+        .await
+        .map_err(|e| format!("Failed to read store state: {e}"))?;
+    let pack = quizradar_core::sync::course_pack::build_course_pack(
+        course_id,
+        &snapshot.schedule,
+        &snapshot.assessments,
+    )?;
+    let links = quizradar_core::sync::course_pack::encode_course_pack_links(&pack, web_base_url)?;
+    let qr = if links.fits_qr {
+        quizradar_core::sync::qr::encode_qr_matrix(&links.web_url).ok()
+    } else {
+        None
+    };
+    Ok(CoursePackExportResult { pack, links, qr })
+}
+
+pub async fn import_course_pack_inner(
+    state: &AppState,
+    raw_input: &str,
+) -> Result<ImportCoursePackResult, String> {
+    let pack = quizradar_core::sync::course_pack::decode_course_pack(raw_input)?;
+    let course_id = pack.course.id.clone();
+    let course_name = pack.course.name.clone();
+    let today = state.today();
+    let now = state.now_iso();
+    let (schedule, assessments) =
+        quizradar_core::sync::course_pack::course_pack_to_domain(&pack, today);
+    let (_snapshot, report) = state
+        .store
+        .apply_course_bundle(schedule, assessments, now, today)
+        .await
+        .map_err(|e| format!("Failed to import Course Pack: {e}"))?;
+    let full_state = crate::commands::state::build_full_state(state).await?;
+    Ok(ImportCoursePackResult {
+        state: full_state,
+        report,
+        course_id,
+        course_name,
+    })
+}
+
+#[tauri::command]
+pub async fn export_course_pack(
+    state: State<'_, AppState>,
+    course_id: String,
+    web_base_url: Option<String>,
+) -> Result<CoursePackExportResult, String> {
+    export_course_pack_inner(&state, &course_id, web_base_url.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn decode_course_pack(
+    raw_input: String,
+) -> Result<quizradar_core::sync::course_pack::CoursePackPayload, String> {
+    quizradar_core::sync::course_pack::decode_course_pack(&raw_input)
+}
+
+#[tauri::command]
+pub async fn import_course_pack(
+    state: State<'_, AppState>,
+    raw_input: String,
+) -> Result<ImportCoursePackResult, String> {
+    import_course_pack_inner(&state, &raw_input).await
+}

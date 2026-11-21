@@ -16,10 +16,16 @@ use quizradar_core::plan::dashboard::topic_key_for_text;
 use quizradar_core::sources::SourceProgress;
 use quizradar_core::store::repo::{FieldUpdate, GradeChange};
 use quizradar_core::store::Store;
-use quizradar_core::types::{Assessment, AssessmentSource, AssessmentType, UrgencyLevel};
-use quizradar_desktop_lib::commands::ai::practice_generate_inner;
-use quizradar_desktop_lib::commands::state::build_full_state;
-use quizradar_desktop_lib::commands::sync::{run_sync_inner, SCAN_CANCELED_MESSAGE};
+use quizradar_core::types::{
+    Assessment, AssessmentSource, AssessmentType, Course, ScheduleData, ScheduleSlot, UrgencyLevel,
+};
+use quizradar_desktop_lib::commands::ai::{
+    extract_syllabi_with_base_url, practice_generate_inner, SyllabusDocumentInput,
+};
+use quizradar_desktop_lib::commands::state::{apply_course_bundle_inner, build_full_state};
+use quizradar_desktop_lib::commands::sync::{
+    export_course_pack_inner, import_course_pack_inner, run_sync_inner, SCAN_CANCELED_MESSAGE,
+};
 use quizradar_desktop_lib::keyring::KeyringStore;
 use quizradar_desktop_lib::state::AppState;
 use wiremock::matchers::{method, path};
@@ -607,4 +613,184 @@ fn test_keyring_round_trip_feature_guarded() {
             eprintln!("Keyring DPAPI test skipped on this environment ({err})");
         }
     }
+}
+
+#[tokio::test]
+async fn test_extract_syllabi_consent_gate_and_mock_batch() {
+    let state = test_app_state("extract_syllabi").await;
+    state
+        .store
+        .set_config_bool("gemini_enabled".to_string(), false)
+        .await
+        .unwrap();
+
+    let docs = vec![SyllabusDocumentInput {
+        name: "ece210.pdf".to_string(),
+        data_url: "data:application/pdf;base64,JVBERi0xLjQ=".to_string(),
+        mime: Some("application/pdf".to_string()),
+    }];
+
+    let err = extract_syllabi_with_base_url(
+        &state,
+        docs.clone(),
+        None,
+        Some("test-key".to_string()),
+        None,
+    )
+    .await
+    .unwrap_err();
+    assert!(err.contains("turned off in Settings"), "{err}");
+
+    state
+        .store
+        .set_config_bool("gemini_enabled".to_string(), true)
+        .await
+        .unwrap();
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/models/gemini-3.8-flash:generateContent"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "candidates": [{
+                "content": {
+                    "parts": [{
+                        "text": r##"{
+  "semester": "Fall 2026",
+  "courses": [
+    { "id": "ECE210", "name": "Digital Systems", "credits": 4.0, "aliases": ["ECE 210"], "color": "#1a73e8" }
+  ],
+  "slots": [
+    { "id": "slot-1", "course_id": "ECE210", "day": "Monday", "start_time": "10:00", "end_time": "11:30" }
+  ],
+  "assessments": [
+    {
+      "course_id": "ECE210",
+      "title": "Midterm Exam",
+      "assessment_type": "Midterm Exam",
+      "date_iso": "2026-11-05",
+      "weightage_percent": 30,
+      "topics": ["Boolean Algebra"]
+    }
+  ]
+}"##
+                    }]
+                },
+                "finishReason": "STOP"
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let mut batch = docs;
+    batch.push(SyllabusDocumentInput {
+        name: "empty.pdf".to_string(),
+        data_url: "   ".to_string(),
+        mime: Some("application/pdf".to_string()),
+    });
+
+    let extracted = extract_syllabi_with_base_url(
+        &state,
+        batch,
+        Some(&server.uri()),
+        Some("test-key".to_string()),
+        None,
+    )
+    .await
+    .expect("valid syllabus file should succeed even with an empty sibling file");
+
+    assert_eq!(extracted.schedule.courses.len(), 1);
+    assert_eq!(extracted.assessments.len(), 1);
+    assert_eq!(extracted.file_errors.len(), 1);
+    assert!(extracted.file_errors[0].contains("empty.pdf"));
+
+    let applied = apply_course_bundle_inner(&state, extracted.schedule, extracted.assessments)
+        .await
+        .expect("apply_course_bundle must succeed");
+    assert_eq!(applied.report.courses_added, 1);
+    assert_eq!(applied.report.slots_added, 1);
+    assert_eq!(applied.report.assessments_added, 1);
+}
+
+#[tokio::test]
+async fn test_export_and_import_course_pack_round_trip() {
+    let source_state = test_app_state("course_pack_src").await;
+    let today = source_state.today();
+    let now = source_state.now_iso();
+
+    let course = Course {
+        id: "ECE210".to_string(),
+        name: "Digital Systems".to_string(),
+        color: "#1a73e8".to_string(),
+        bg: None,
+        border: None,
+        credits: Some(4.0),
+        max_absences: None,
+        aliases: vec!["ECE 210".to_string()],
+    };
+    let slot = ScheduleSlot {
+        id: "slot-1".to_string(),
+        day: "Mon".to_string(),
+        day_index: 1,
+        course_id: "ECE210".to_string(),
+        course_name: "Digital Systems".to_string(),
+        slot_type: "Lecture".to_string(),
+        group: None,
+        room: Some("Eng 204".to_string()),
+        start_time: chrono::NaiveTime::from_hms_opt(10, 0, 0).unwrap(),
+        end_time: chrono::NaiveTime::from_hms_opt(11, 30, 0).unwrap(),
+        display_time: "10:00–11:30".to_string(),
+        has_quiz: false,
+        quiz_title: None,
+        week_parity: None,
+    };
+    source_state
+        .store
+        .save_schedule(
+            ScheduleData {
+                semester: Some("Fall 2026".to_string()),
+                academic_week_start: None,
+                courses: vec![course],
+                slots: vec![slot],
+            },
+            now.clone(),
+            today,
+        )
+        .await
+        .unwrap();
+
+    let mut exam = sample_test_assessment(
+        "ece-mid",
+        "Midterm Exam",
+        Some("ECE210"),
+        AssessmentType::MidtermExam,
+        Some(today + chrono::Duration::days(10)),
+        vec!["K-Maps".to_string()],
+    );
+    exam.weightage_percent = Some(30.0);
+    exam.achieved_score = Some(88.0);
+    exam.max_score = Some(100.0);
+    source_state
+        .store
+        .upsert_assessment(exam, now, today)
+        .await
+        .unwrap();
+
+    let exported = export_course_pack_inner(&source_state, "ECE210", None)
+        .await
+        .expect("export_course_pack must succeed");
+    assert!(exported.links.web_url.contains("#course="));
+    assert!(exported.qr.is_some());
+
+    let peer_state = test_app_state("course_pack_dst").await;
+    let imported = import_course_pack_inner(&peer_state, &exported.links.web_url)
+        .await
+        .expect("import_course_pack must succeed");
+
+    assert_eq!(imported.course_id, "ECE210");
+    assert_eq!(imported.report.courses_added, 1);
+    assert_eq!(imported.report.slots_added, 1);
+    assert_eq!(imported.report.assessments_added, 1);
+    assert_eq!(imported.state.assessments.len(), 1);
+    assert_eq!(imported.state.assessments[0].achieved_score, None);
+    assert_eq!(imported.state.assessments[0].weightage_percent, Some(30.0));
 }

@@ -85,10 +85,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.quizradar.app.ui.components.AccountSheet
 import com.quizradar.app.ui.components.AddActionMenuSheet
+import com.quizradar.app.ui.components.CoursePackImportDialog
+import com.quizradar.app.ui.components.CoursePackShareDialog
 import com.quizradar.app.ui.components.HelpSheet
 import com.quizradar.app.ui.components.ManualAssessmentSheet
 import com.quizradar.app.ui.components.QuizRadarLogo
 import com.quizradar.app.ui.components.SearchSheet
+import com.quizradar.app.ui.components.SyllabusImportAppliedDialog
+import com.quizradar.app.ui.components.SyllabusImportErrorDialog
+import com.quizradar.app.ui.components.SyllabusImportPreviewDialog
+import com.quizradar.app.ui.components.SyllabusImportWorkingDialog
 import com.quizradar.app.ui.detail.AssessmentDetailSheet
 import com.quizradar.app.ui.detail.CourseEditorSheet
 import com.quizradar.app.ui.detail.CreateEventSheet
@@ -257,6 +263,12 @@ fun AppScaffold(
     }
 
     val isOnboardingCompleted by viewModel.onboardingCompleted.collectAsState()
+
+    val currentCourses = (uiState as? UiState.Ready)?.snapshot?.schedule?.courses.orEmpty()
+    Stage1OverlayDialogs(
+        viewModel = viewModel,
+        existingCourses = currentCourses,
+    )
 
     LaunchedEffect(isOnboardingCompleted, isSettingsOpen, normalizedTab) {
         onActiveScreenChanged(
@@ -1048,5 +1060,120 @@ fun AppScaffold(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun Stage1OverlayDialogs(
+    viewModel: QuizRadarViewModel,
+    existingCourses: List<com.quizradar.app.model.CourseModel>,
+) {
+    val syllabusImportState by viewModel.syllabusImportState.collectAsState()
+    val coursePackShareState by viewModel.coursePackShareState.collectAsState()
+    val coursePackImportState by viewModel.coursePackImportState.collectAsState()
+
+    when (val state = syllabusImportState) {
+        is SyllabusImportState.Working -> SyllabusImportWorkingDialog(fileCount = state.fileCount)
+        is SyllabusImportState.Preview ->
+            SyllabusImportPreviewDialog(
+                extracted = state.extracted,
+                fileErrors = state.fileErrors,
+                onApply = { semester, courses, slots, assessments ->
+                    viewModel.applyImportedSyllabi(semester, courses, slots, assessments)
+                },
+                onDismiss = { viewModel.dismissSyllabusImport() },
+            )
+        is SyllabusImportState.Applied ->
+            SyllabusImportAppliedDialog(
+                report = state.report,
+                courseIds = state.courseIds,
+                onShareCourse = { cid ->
+                    viewModel.dismissSyllabusImport()
+                    viewModel.openShareCoursePack(cid)
+                },
+                onDismiss = { viewModel.dismissSyllabusImport() },
+            )
+        is SyllabusImportState.Failed ->
+            SyllabusImportErrorDialog(
+                message = state.message,
+                onDismiss = { viewModel.dismissSyllabusImport() },
+            )
+        is SyllabusImportState.Idle -> {}
+    }
+
+    when (val state = coursePackShareState) {
+        is CoursePackShareState.Loading ->
+            CoursePackShareDialog(
+                export = null,
+                isLoading = true,
+                errorMessage = null,
+                onCopied = { msg -> viewModel.showToast(msg) },
+                onDismiss = { viewModel.dismissCoursePackDialogs() },
+            )
+        is CoursePackShareState.Ready ->
+            CoursePackShareDialog(
+                export = state.export,
+                isLoading = false,
+                errorMessage = null,
+                onCopied = { msg -> viewModel.showToast(msg) },
+                onDismiss = { viewModel.dismissCoursePackDialogs() },
+            )
+        is CoursePackShareState.Failed ->
+            CoursePackShareDialog(
+                export = null,
+                isLoading = false,
+                errorMessage = state.message,
+                onCopied = { msg -> viewModel.showToast(msg) },
+                onDismiss = { viewModel.dismissCoursePackDialogs() },
+            )
+        is CoursePackShareState.Idle -> {}
+    }
+
+    when (val state = coursePackImportState) {
+        is CoursePackImportState.PasteInput ->
+            CoursePackImportDialog(
+                rawInput = state.initialText,
+                pack = null,
+                existingCourses = existingCourses,
+                isBusy = false,
+                errorMessage = state.error,
+                onPreviewLink = { text -> viewModel.previewCoursePackLink(text) },
+                onApplyImport = {},
+                onDismiss = { viewModel.dismissCoursePackDialogs() },
+            )
+        is CoursePackImportState.Decoding, is CoursePackImportState.Importing ->
+            CoursePackImportDialog(
+                rawInput = null,
+                pack = null,
+                existingCourses = existingCourses,
+                isBusy = true,
+                errorMessage = null,
+                onPreviewLink = {},
+                onApplyImport = {},
+                onDismiss = { viewModel.dismissCoursePackDialogs() },
+            )
+        is CoursePackImportState.Preview ->
+            CoursePackImportDialog(
+                rawInput = state.rawInput,
+                pack = state.pack,
+                existingCourses = existingCourses,
+                isBusy = false,
+                errorMessage = null,
+                onPreviewLink = { text -> viewModel.previewCoursePackLink(text) },
+                onApplyImport = { text -> viewModel.applyCoursePackImport(text) },
+                onDismiss = { viewModel.dismissCoursePackDialogs() },
+            )
+        is CoursePackImportState.Failed ->
+            CoursePackImportDialog(
+                rawInput = state.rawInput,
+                pack = null,
+                existingCourses = existingCourses,
+                isBusy = false,
+                errorMessage = state.message,
+                onPreviewLink = { text -> viewModel.previewCoursePackLink(text) },
+                onApplyImport = {},
+                onDismiss = { viewModel.dismissCoursePackDialogs() },
+            )
+        is CoursePackImportState.Idle -> {}
     }
 }

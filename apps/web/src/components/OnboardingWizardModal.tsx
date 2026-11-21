@@ -16,6 +16,7 @@ import { copy } from "../copy";
 import { useAppStore } from "../state/store";
 import { isDarkTheme } from "../state/storage";
 import { COURSE_PALETTE_PRESETS, courseAccessibleChip } from "../lib/coursePalette";
+import { readSyllabusDocuments } from "../lib/syllabusDocuments";
 import { GoogleMark, MicrosoftMark, RadarMark } from "./BrandMarks";
 import type { Course } from "../state/types";
 
@@ -44,6 +45,9 @@ export function OnboardingWizardModal({
   const microsoftLogout = useAppStore((s) => s.microsoftLogout);
   const validateGeminiKey = useAppStore((s) => s.validateGeminiKey);
   const extractSchedule = useAppStore((s) => s.extractSchedule);
+  const extractSyllabi = useAppStore((s) => s.extractSyllabi);
+  const openSyllabusPreview = useAppStore((s) => s.openSyllabusPreview);
+  const openImportCoursePack = useAppStore((s) => s.openImportCoursePack);
   const openModal = useAppStore((s) => s.openModal);
   const addToast = useAppStore((s) => s.addToast);
 
@@ -99,33 +103,37 @@ export function OnboardingWizardModal({
     }
   };
 
-  // Handle Timetable Image Upload
+  // Handle Timetable or Multi-Syllabus PDF/Image Upload (1-6 files)
   const handleTimetableFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    const files = Array.from(fileList);
+    e.target.value = "";
 
     setExtractingTimetable(true);
     try {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        try {
-          const base64 = reader.result as string;
-          const extracted = await extractSchedule(base64);
-          openModal({
-            id: "schedule-preview",
-            props: { extracted },
-          });
-        } catch (err) {
-          addToast({
-            type: "error",
-            message: `Timetable vision extraction failed: ${err instanceof Error ? err.message : String(err)}`,
-          });
-        } finally {
-          setExtractingTimetable(false);
-        }
-      };
-      reader.readAsDataURL(file);
-    } catch {
+      const docs = await readSyllabusDocuments(files);
+      if (docs.length === 0) return;
+      const singleImage =
+        docs.length === 1 &&
+        !files[0].name.toLowerCase().endsWith(".pdf") &&
+        (files[0].type || "").toLowerCase() !== "application/pdf";
+      if (singleImage) {
+        const extracted = await extractSchedule(docs[0].dataUrl);
+        openModal({
+          id: "schedule-preview",
+          props: { extracted },
+        });
+      } else {
+        const extracted = await extractSyllabi(docs);
+        openSyllabusPreview(extracted);
+      }
+    } catch (err) {
+      addToast({
+        type: "error",
+        message: `Document extraction failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    } finally {
       setExtractingTimetable(false);
     }
   };
@@ -644,13 +652,24 @@ export function OnboardingWizardModal({
                 </span>
                 <input
                   type="file"
-                  accept="image/png,image/jpeg,image/webp"
+                  accept="application/pdf,image/png,image/jpeg,image/webp"
+                  multiple
                   aria-label={copy.onboarding.timetableUploadButton}
                   disabled={extractingTimetable}
                   onChange={handleTimetableFile}
                   className="hidden"
                 />
               </label>
+              <p className="mt-2 text-[11px] text-[var(--text-muted)]">
+                {copy.syllabusImport.uploadTitle}
+              </p>
+              <button
+                type="button"
+                onClick={() => openImportCoursePack()}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] transition hover:bg-[var(--surface-2)]"
+              >
+                {copy.coursePack.haveLinkButton}
+              </button>
             </div>
             {/* Consents-First Auto GCal */}
             <label className="flex items-center gap-2 text-xs text-[var(--text)] cursor-pointer pt-2">

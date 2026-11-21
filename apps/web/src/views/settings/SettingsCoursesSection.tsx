@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { BookOpen, Plus, Trash2, Edit2, Upload } from "lucide-react";
+import { BookOpen, Link2, Plus, Share2, Trash2, Edit2, Upload } from "lucide-react";
 import { copy } from "../../copy";
 import { courseAccessibleChip } from "../../lib/coursePalette";
+import { readSyllabusDocuments } from "../../lib/syllabusDocuments";
 import { useAppStore } from "../../state/store";
 import { isDarkTheme } from "../../state/storage";
 import type { Course } from "../../state/types";
@@ -14,12 +15,38 @@ export function SettingsCoursesSection() {
   const slots = useAppStore((s) => s.data.schedule.slots);
   const deleteCourse = useAppStore((s) => s.deleteCourse);
   const extractSchedule = useAppStore((s) => s.extractSchedule);
+  const extractSyllabi = useAppStore((s) => s.extractSyllabi);
+  const openSyllabusPreview = useAppStore((s) => s.openSyllabusPreview);
+  const openShareCoursePack = useAppStore((s) => s.openShareCoursePack);
+  const openImportCoursePack = useAppStore((s) => s.openImportCoursePack);
   const aiQuota = useAppStore((s) => s.aiQuota);
   const openModal = useAppStore((s) => s.openModal);
   const addToast = useAppStore((s) => s.addToast);
 
-  // Timetable vision import state
+  // Timetable & multi-syllabus vision import state
   const [extractingTimetable, setExtractingTimetable] = useState(false);
+  const [extractingSyllabi, setExtractingSyllabi] = useState(false);
+
+  const handleSyllabiFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    const files = Array.from(fileList);
+    e.target.value = "";
+    setExtractingSyllabi(true);
+    try {
+      const docs = await readSyllabusDocuments(files);
+      if (docs.length === 0) return;
+      const extracted = await extractSyllabi(docs);
+      openSyllabusPreview(extracted);
+    } catch (err) {
+      addToast({
+        type: "error",
+        message: `Syllabus extraction failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    } finally {
+      setExtractingSyllabi(false);
+    }
+  };
 
   // Timetable vision import (`01` §4.1): pick an image → Gemini Vision reads
   // the courses and slots → the preview modal shows exactly what was read
@@ -104,11 +131,35 @@ export function SettingsCoursesSection() {
                   type="file"
                   accept="image/png,image/jpeg,image/webp"
                   aria-label={copy.settings.timetableImportButton}
-                  disabled={extractingTimetable}
+                  disabled={extractingTimetable || extractingSyllabi}
                   onChange={handleTimetableImage}
                   className="hidden"
                 />
               </label>
+              <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] transition hover:bg-[color-mix(in_srgb,var(--border)_30%,transparent)]">
+                <span>
+                  {extractingSyllabi
+                    ? copy.syllabusImport.extracting
+                    : copy.syllabusImport.uploadButton}
+                </span>
+                <input
+                  type="file"
+                  accept="application/pdf,image/png,image/jpeg,image/webp"
+                  multiple
+                  aria-label={copy.syllabusImport.uploadButton}
+                  disabled={extractingTimetable || extractingSyllabi}
+                  onChange={handleSyllabiFiles}
+                  className="hidden"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => openImportCoursePack()}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] transition hover:bg-[color-mix(in_srgb,var(--border)_30%,transparent)]"
+              >
+                <Link2 className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Import Course Link</span>
+              </button>
               <button
                 type="button"
                 onClick={() => openModal({ id: "add-course" })}
@@ -193,6 +244,14 @@ export function SettingsCoursesSection() {
                 </div>
 
                 <div className="ml-2 flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => openShareCoursePack(c.id)}
+                    aria-label={`Share ${c.id} Course Pack`}
+                    className="rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-[color-mix(in_srgb,var(--border)_30%,transparent)] hover:text-[var(--accent-ink)]"
+                  >
+                    <Share2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
                   <button
                     type="button"
                     onClick={() => openModal({ id: "add-course", props: { course: c } })}

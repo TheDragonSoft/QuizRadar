@@ -282,6 +282,25 @@ fun SettingsScreen(
             }
         }
 
+    val syllabusDocsLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenMultipleDocuments(),
+        ) { uris ->
+            if (uris.isEmpty()) return@rememberLauncherForActivityResult
+            imageImportScope.launch {
+                val readResult =
+                    withContext(Dispatchers.IO) {
+                        com.quizradar.app.ui.SyllabusDocumentReader.readFromUris(context, uris)
+                    }
+                if (readResult.errors.isNotEmpty()) {
+                    viewModel.showToast(readResult.errors.first())
+                }
+                if (readResult.documents.isNotEmpty()) {
+                    viewModel.importSyllabiFromDocuments(readResult.documents)
+                }
+            }
+        }
+
     val hasNotificationPermission =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ContextCompat.checkSelfPermission(
@@ -644,6 +663,15 @@ fun SettingsScreen(
                                         }
                                     }
                                     Spacer(modifier = Modifier.width(8.dp))
+                                    IconButton(
+                                        onClick = { viewModel.openShareCoursePack(course.id) },
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Share,
+                                            contentDescription = "Share ${course.id} Course Pack",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
                                     TextButton(
                                         onClick = {
                                             editingCourse = course
@@ -689,8 +717,8 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text =
-                            "Pick a timetable screenshot. Gemini reads it on your phone and you " +
-                                "review the courses and class slots before anything is saved. " +
+                            "Pick a timetable screenshot or up to 6 course syllabi (PDFs or photos). " +
+                                "Gemini reads them on your phone and you review everything before anything is saved. " +
                                 "Needs AI turned on and a saved Gemini API key (AI section below).",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -719,6 +747,37 @@ fun SettingsScreen(
                         Icon(Icons.Outlined.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Import Timetable from Image (AI)", style = MaterialTheme.typography.labelLarge)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            syllabusDocsLauncher.launch(arrayOf("application/pdf", "image/*"))
+                        },
+                        enabled = aiImportReady,
+                        colors = ButtonDefaults.tonalPill(),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .defaultMinSize(minHeight = PillButtonMinHeight),
+                        contentPadding = PillButtonContentPadding,
+                    ) {
+                        Icon(Icons.Outlined.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Import Syllabi (PDF / Photos, up to 6)", style = MaterialTheme.typography.labelLarge)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = { viewModel.openPasteCoursePackDialog() },
+                        colors = ButtonDefaults.tonalPill(),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .defaultMinSize(minHeight = PillButtonMinHeight),
+                        contentPadding = PillButtonContentPadding,
+                    ) {
+                        Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Import Shared Course Link", style = MaterialTheme.typography.labelLarge)
                     }
                     if (!aiImportReady) {
                         Spacer(modifier = Modifier.height(8.dp))

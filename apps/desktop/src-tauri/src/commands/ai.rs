@@ -9,7 +9,8 @@ use quizradar_core::ai::gemini::GeminiProvider;
 use quizradar_core::ai::practice_fallback::generate_practice_locally;
 use quizradar_core::ai::provider::{AiModel, AiProvider, QuotaLedger, StructuredPrompt};
 use quizradar_core::ai::tasks::{
-    extract_timetable, generate_practice, optimize_plan, ExtractedTimetable, PracticeQuizPayload,
+    extract_syllabus, extract_timetable, generate_practice, merge_extracted_syllabi, optimize_plan,
+    ExtractedSyllabusAssessment, ExtractedTimetable, PracticeQuizPayload,
 };
 use quizradar_core::plan::tasks::StudyTasksPayload;
 use quizradar_core::types::ScheduleData;
@@ -45,6 +46,27 @@ pub struct DesktopExtractedTimetable {
     pub schedule: ScheduleData,
     pub dropped_courses: usize,
     pub dropped_slots: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyllabusDocumentInput {
+    pub name: String,
+    pub data_url: String,
+    #[serde(default)]
+    pub mime: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopExtractedSyllabi {
+    pub schedule: ScheduleData,
+    pub assessments: Vec<ExtractedSyllabusAssessment>,
+    pub dropped_courses: usize,
+    pub dropped_slots: usize,
+    pub dropped_assessments: usize,
+    pub model: String,
+    pub file_errors: Vec<String>,
 }
 
 impl From<ExtractedTimetable> for DesktopExtractedTimetable {
@@ -158,7 +180,9 @@ pub async fn extract_schedule(
         "Analyzing timetable image with Gemini vision...",
     );
 
-    let mime = if image.starts_with("data:image/jpeg") {
+    let mime = if image.starts_with("data:application/pdf") {
+        "application/pdf"
+    } else if image.starts_with("data:image/jpeg") {
         "image/jpeg"
     } else if image.starts_with("data:image/webp") {
         "image/webp"
@@ -173,6 +197,166 @@ pub async fn extract_schedule(
     let _ = app.emit("ai-progress", "Timetable parsed successfully.");
 
     Ok(DesktopExtractedTimetable::from(extracted))
+}
+
+const MAX_SYLLABI_BATCH: usize = 6;
+const MAX_SYLLABUS_BASE64_LEN: usize = 21_000_000;
+
+fn detect_document_mime(doc: &SyllabusDocumentInput) -> &'static str {
+    if let Some(ref explicit) = doc.mime {
+        let lower = explicit.trim().to_ascii_lowercase();
+        if lower == "application/pdf" {
+            return "application/pdf";
+        }
+        if lower == "image/jpeg" || lower == "image/jpg" {
+            return "image/jpeg";
+        }
+        if lower == "image/webp" {
+            return "image/webp";
+        }
+        if lower == "image/png" {
+            return "image/png";
+        }
+    }
+    let lower_data = doc.data_url.trim().to_ascii_lowercase();
+    if lower_data.starts_with("data:application/pdf") {
+        return "application/pdf";
+    }
+    if lower_data.starts_with("data:image/jpeg") || lower_data.starts_with("data:image/jpg") {
+        return "image/jpeg";
+    }
+    if lower_data.starts_with("data:image/webp") {
+        return "image/webp";
+    }
+    if lower_data.starts_with("data:image/png") {
+        return "image/png";
+    }
+    if doc.name.trim().to_ascii_lowercase().ends_with(".pdf") {
+        "application/pdf"
+    } else {
+        "image/png"
+    }
+}
+
+pub async fn extract_syllabi_with_base_url(
+    state: &AppState,
+    documents: Vec<SyllabusDocumentInput>,
+    base_url: Option<&str>,
+    api_key_override: Option<String>,
+    progress_emit: Option<Arc<dyn Fn(String) + Send + Sync>>,
+) -> Result<DesktopExtractedSyllabi, String> {
+    if !gemini_consent(state).await? {
+        return Err(
+            "AI features are turned off in Settings, so this request cannot leave the device. \
+             Turn Gemini back on to import course syllabi."
+                .to_string(),
+        );
+    }
+    let key = match api_key_override {
+        Some(k) if !k.trim().is_empty() => k.trim().to_string(),
+        _ => state.get_gemini_api_key()?.ok_or_else(|| {
+            "No Gemini API key found. Add one in Settings, or set QUIZRADAR_GEMINI_API_KEY / place a \
+             gemini.key file next to the app."
+                .to_string()
+        })?,
+    };
+
+    if documents.is_empty() {
+        return Err("Pick at least one syllabus PDF or image first.".to_string());
+    }
+    if documents.len() > MAX_SYLLABI_BATCH {
+        return Err(format!(
+            "Import up to {MAX_SYLLABI_BATCH} syllabi at once (got {}).",
+            documents.len()
+        ));
+    }
+
+    let clock = Arc::new(chrono::Utc::now);
+    let ledger = Arc::new(QuotaLedger::new(Arc::new(state.store.quota_kv()), None));
+    let provider = match base_url {
+        Some(url) => {
+            let client = reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(
+                    quizradar_core::ai::gemini::CONNECT_TIMEOUT_SECS,
+                ))
+                .timeout(std::time::Duration::from_secs(
+                    quizradar_core::ai::gemini::TOTAL_TIMEOUT_SECS,
+                ))
+                .build()
+                .map_err(|e| format!("Failed to initialize Gemini HTTP client: {e}"))?;
+            GeminiProvider::new(client, Some(key), url, clock, Some(ledger))
+        }
+        None => GeminiProvider::production(Some(key), clock, Some(ledger))
+            .map_err(|e| format!("Failed to initialize Gemini: {e}"))?,
+    };
+
+    let total = documents.len();
+    let mut extracted_items = Vec::new();
+    let mut file_errors = Vec::new();
+
+    for (idx, doc) in documents.into_iter().enumerate() {
+        let label = if doc.name.trim().is_empty() {
+            format!("Syllabus {}", idx + 1)
+        } else {
+            doc.name.trim().to_string()
+        };
+        if doc.data_url.trim().is_empty() {
+            file_errors.push(format!("{label}: file was empty."));
+            continue;
+        }
+        if doc.data_url.len() > MAX_SYLLABUS_BASE64_LEN {
+            file_errors.push(format!("{label}: exceeds 15 MB per-file limit."));
+            continue;
+        }
+        if let Some(ref emit) = progress_emit {
+            emit(format!(
+                "Reading syllabus {} of {total} ({label})...",
+                idx + 1
+            ));
+        }
+
+        let mime = detect_document_mime(&doc);
+        match extract_syllabus(&provider, &doc.data_url, mime).await {
+            Ok(item) => extracted_items.push(item),
+            Err(err) => file_errors.push(format!("{label}: {err}")),
+        }
+    }
+
+    if extracted_items.is_empty() {
+        return Err(if file_errors.is_empty() {
+            "Could not read any course syllabus from the selected files.".to_string()
+        } else {
+            file_errors.join(" | ")
+        });
+    }
+
+    let merged = merge_extracted_syllabi(extracted_items);
+    if let Some(ref emit) = progress_emit {
+        emit("Syllabi parsed successfully.".to_string());
+    }
+
+    Ok(DesktopExtractedSyllabi {
+        schedule: merged.schedule,
+        assessments: merged.assessments,
+        dropped_courses: merged.dropped_courses,
+        dropped_slots: merged.dropped_slots,
+        dropped_assessments: merged.dropped_assessments,
+        model: merged.model,
+        file_errors,
+    })
+}
+
+#[tauri::command]
+pub async fn extract_syllabi(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    documents: Vec<SyllabusDocumentInput>,
+) -> Result<DesktopExtractedSyllabi, String> {
+    let app_handle = app.clone();
+    let emit: Arc<dyn Fn(String) + Send + Sync> = Arc::new(move |msg| {
+        let _ = app_handle.emit("ai-progress", msg);
+    });
+    extract_syllabi_with_base_url(&state, documents, None, None, Some(emit)).await
 }
 
 #[tauri::command]

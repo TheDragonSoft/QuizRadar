@@ -733,3 +733,106 @@ export interface DailyStudyCushion {
   deficit_hours?: number | null;
   warning_note?: string | null;
 }
+
+export interface SyllabusDocumentInput {
+  name: string;
+  dataUrl: string;
+  mime?: string | null;
+}
+
+export interface ExtractedSyllabusAssessment {
+  courseId?: string;
+  course_id?: string;
+  title: string;
+  assessmentType?: string;
+  assessment_type?: string;
+  dateIso?: string | null;
+  date_iso?: string | null;
+  startTime?: string | null;
+  start_time?: string | null;
+  endTime?: string | null;
+  end_time?: string | null;
+  room?: string | null;
+  instructor?: string | null;
+  weightagePercent?: number | null;
+  weightage_percent?: number | null;
+  topics: string[];
+  warnings: string[];
+  aiInferenceNote?: string | null;
+  ai_inference_note?: string | null;
+}
+
+export interface DesktopExtractedSyllabi {
+  schedule: ScheduleData;
+  assessments: ExtractedSyllabusAssessment[];
+  droppedCourses?: number;
+  dropped_courses?: number;
+  droppedSlots?: number;
+  dropped_slots?: number;
+  droppedAssessments?: number;
+  dropped_assessments?: number;
+  model: string;
+  fileErrors?: string[];
+  file_errors?: string[];
+}
+
+export interface CourseImportReport {
+  coursesAdded: number;
+  coursesUpdated: number;
+  slotsAdded: number;
+  assessmentsAdded: number;
+  assessmentsUpdated: number;
+}
+
+export interface ApplyCourseBundleResult {
+  state: GetStatePayload;
+  report: CourseImportReport;
+}
+
+export interface CoursePackAssessment {
+  title: string;
+  assessment_type?: string;
+  assessmentType?: string;
+  date_iso?: string | null;
+  dateIso?: string | null;
+  start_time?: string | null;
+  startTime?: string | null;
+  end_time?: string | null;
+  endTime?: string | null;
+  room?: string | null;
+  group?: string | null;
+  instructor?: string | null;
+  weightage_percent?: number | null;
+  weightagePercent?: number | null;
+  topics?: string[];
+  warnings?: string[];
+}
+
+export interface CoursePackPayload {
+  v: number;
+  semester?: string | null;
+  course: Course;
+  slots: ScheduleSlot[];
+  assessments: CoursePackAssessment[];
+}
+
+export interface CoursePackShareLinks {
+  token: string;
+  web_url: string;
+  deep_link: string;
+  byte_len: number;
+  fits_qr: boolean;
+}
+
+export interface CoursePackExportResult {
+  pack: CoursePackPayload;
+  links: CoursePackShareLinks;
+  qr?: { version: number; size: number; modules: string } | null;
+}
+
+export interface ImportCoursePackResult {
+  state: GetStatePayload;
+  report: CourseImportReport;
+  courseId: string;
+  courseName: string;
+}

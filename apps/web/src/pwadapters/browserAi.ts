@@ -17,8 +17,17 @@
  * and `core/src/ai/provider.rs` (model ladder).
  */
 
-import type { Course, DesktopExtractedTimetable, ScheduleData, ScheduleSlot } from "../state/types";
+import type {
+  Course,
+  DesktopExtractedSyllabi,
+  DesktopExtractedTimetable,
+  ExtractedSyllabusAssessment,
+  ScheduleData,
+  ScheduleSlot,
+  SyllabusDocumentInput,
+} from "../state/types";
 import { coursePalette } from "../lib/coursePalette";
+import { courseMatchesCode } from "../lib/coursePack";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -72,6 +81,64 @@ Return ONLY a valid JSON object matching this exact structure:
   ],
   "slots": [
     { "id": "slot-1", "course_id": "ECE210", "day": "Sunday", "start_time": "09:00", "end_time": "10:30", "display_time": "9:00 AM - 10:30 AM", "room": null, "type": "Lecture", "group": null }
+  ]
+}`;
+
+/**
+ * Syllabus extraction prompt — byte-identical to `SYLLABUS_INSTRUCTION`
+ * in `core/src/ai/tasks.rs` (pinned by `browserAiCoreParity.test.ts`).
+ */
+export const SYLLABUS_INSTRUCTION = `You are an intelligent university syllabus extraction assistant inside QuizRadar.
+Analyze the provided course syllabus document or image.
+Extract the course details, any recurring weekly class timeslots printed on the syllabus, and every graded assessment, quiz, lab, project, assignment, midterm, or final exam.
+
+HONESTY RULES (strict — never invent anything):
+- "semester": ONLY the semester title actually printed on the syllabus (e.g. "Fall 2026"); null when it is not shown. Never write a default like "Current Semester".
+- "courses": every distinct course described by the syllabus:
+  - "id": the primary course code exactly as printed (e.g. "ECE210")
+  - "name": the full course title exactly as printed (e.g. "Digital Systems")
+  - "credits": numeric credit hours if printed, otherwise null
+  - "aliases": any cross-listed or alternate course codes printed (e.g. ["ECE 210"]), or []
+  - "color": one hex color from this list: "#1a73e8", "#0f9d58", "#ea8600", "#d93025", "#8e24aa", "#00acc1", "#e67c73", "#3949ab"
+- "slots": every weekly recurring lecture/lab/tutorial session with printed weekday and start/end times; omit any session missing exact times.
+- "assessments": every graded exam, quiz, lab assessment, or assignment in the syllabus schedule or grading rubric:
+  - "course_id": the matching course code from "courses"
+  - "title": clean assessment title (no decorative emojis or Markdown markers)
+  - "assessment_type": MUST be one of: "Class Quiz", "Online Quiz", "Midterm Exam", "Final Exam", "Lab Assessment", "Assignment"
+  - "date_iso": exact "YYYY-MM-DD" ONLY if a calendar date is explicitly printed; otherwise null (KEEP weighted rubric items even when date_iso is null)
+  - "start_time" / "end_time": 24-hour "HH:MM" if explicitly printed, otherwise null
+  - "room": room/hall if printed, otherwise null
+  - "instructor": instructor name if printed, otherwise null
+  - "weightage_percent": numeric percentage weight (e.g. 25 for 25%) if printed, otherwise null
+  - "topics": concrete syllabus topics/chapters covered by this assessment, or []
+  - "warnings": rules/notes explicitly stated for this assessment, or []
+  - "ai_inference_note": concise note explaining provenance (e.g. "Explicit in syllabus schedule" or "Syllabus rubric item — date not yet announced")
+- Skip anything unreadable instead of guessing. NEVER fabricate dates, times, rooms, weights, or topics.
+
+Return ONLY a valid JSON object matching this exact structure:
+{
+  "semester": "Fall 2026",
+  "courses": [
+    { "id": "ECE210", "name": "Digital Systems", "credits": 3.0, "aliases": [], "color": "#1a73e8" }
+  ],
+  "slots": [
+    { "id": "slot-1", "course_id": "ECE210", "day": "Monday", "start_time": "10:00", "end_time": "11:30", "display_time": "10:00 AM - 11:30 AM", "room": null, "type": "Lecture", "group": null, "week_parity": null }
+  ],
+  "assessments": [
+    {
+      "course_id": "ECE210",
+      "title": "Midterm Exam",
+      "assessment_type": "Midterm Exam",
+      "date_iso": "2026-10-28",
+      "start_time": null,
+      "end_time": null,
+      "room": null,
+      "instructor": "Dr. Ada",
+      "weightage_percent": 30,
+      "topics": ["Boolean Algebra", "Sequential Logic"],
+      "warnings": [],
+      "ai_inference_note": "Explicit in syllabus schedule"
+    }
   ]
 }`;
 
@@ -180,9 +247,35 @@ export function stripDataUrlPrefix(image: string): string {
 /** The mime type the shell should send for a given data URL. */
 export function mimeForImage(image: string): string {
   const lowered = image.trim().toLowerCase();
+  if (lowered.startsWith("data:application/pdf")) return "application/pdf";
   if (lowered.startsWith("data:image/jpeg")) return "image/jpeg";
   if (lowered.startsWith("data:image/webp")) return "image/webp";
   if (lowered.startsWith("data:image/png")) return "image/png";
+  return "image/png";
+}
+
+/** Resolves the MIME type for a syllabus PDF or image upload. */
+export function mimeForDocument(
+  dataUrl: string,
+  fileName?: string,
+  explicitMime?: string | null,
+): string {
+  const explicit = (explicitMime ?? "").trim().toLowerCase();
+  if (
+    explicit === "application/pdf" ||
+    explicit === "image/png" ||
+    explicit === "image/jpeg" ||
+    explicit === "image/webp"
+  ) {
+    return explicit;
+  }
+  const lowered = dataUrl.trim().toLowerCase();
+  if (lowered.startsWith("data:application/pdf")) return "application/pdf";
+  if (lowered.startsWith("data:image/jpeg") || lowered.startsWith("data:image/jpg"))
+    return "image/jpeg";
+  if (lowered.startsWith("data:image/webp")) return "image/webp";
+  if (lowered.startsWith("data:image/png")) return "image/png";
+  if ((fileName ?? "").trim().toLowerCase().endsWith(".pdf")) return "application/pdf";
   return "image/png";
 }
 
@@ -451,4 +544,531 @@ export async function extractTimetableBrowser(
   throw (
     lastError ?? new Error("No Gemini model answered the timetable request — nothing was changed.")
   );
+}
+
+// ---------------------------------------------------------------------------
+// Multi-Syllabus PDF / Photo extraction (browser tier)
+// ---------------------------------------------------------------------------
+
+const MAX_SYLLABI_BATCH = 6;
+const MAX_SYLLABUS_BASE64_LEN = 21_000_000;
+
+function parseIsoDate(value: unknown): string | null {
+  const text = optionalString(value);
+  if (!text || !/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+  const parsed = new Date(`${text}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10) === text ? text : null;
+}
+
+function normalizeSyllabusType(label: unknown, titleFallback: string): string {
+  const text = optionalString(label) ?? "";
+  const exactMap: Record<string, string> = {
+    "class quiz": "Class Quiz",
+    "online quiz": "Online Quiz",
+    "midterm exam": "Midterm Exam",
+    "final exam": "Final Exam",
+    "lab assessment": "Lab Assessment",
+    assignment: "Assignment",
+  };
+  const exact = exactMap[text.toLowerCase()];
+  if (exact) return exact;
+  const lowered = (text || titleFallback).toLowerCase();
+  if (
+    lowered.includes("project") ||
+    lowered.includes("homework") ||
+    lowered === "hw" ||
+    lowered.startsWith("hw ") ||
+    lowered.includes("essay") ||
+    lowered.includes("paper") ||
+    lowered.includes("report") ||
+    lowered.includes("presentation") ||
+    lowered.includes("deliverable") ||
+    lowered.includes("assignment")
+  ) {
+    return "Assignment";
+  }
+  if (lowered.includes("midterm") || lowered.includes("mid-term") || lowered.includes("mid term")) {
+    return "Midterm Exam";
+  }
+  if (lowered.includes("final")) return "Final Exam";
+  if (lowered.includes("online")) return "Online Quiz";
+  if (lowered.includes("lab")) return "Lab Assessment";
+  return "Class Quiz";
+}
+
+function normalizeWeekParity(value: unknown): "week_a" | "week_b" | null {
+  const text = optionalString(value)?.toLowerCase();
+  if (text === "week_a" || text === "week a" || text === "a") return "week_a";
+  if (text === "week_b" || text === "week b" || text === "b") return "week_b";
+  return null;
+}
+
+function normalizeAliases(primaryId: string, rawAliases: unknown): string[] {
+  if (!Array.isArray(rawAliases)) return [];
+  const out: string[] = [];
+  for (const item of rawAliases) {
+    const trimmed = optionalString(item);
+    if (!trimmed || trimmed.toLowerCase() === primaryId.toLowerCase()) continue;
+    if (!out.some((a) => a.toLowerCase() === trimmed.toLowerCase())) {
+      out.push(trimmed);
+    }
+  }
+  return out;
+}
+
+/**
+ * Validates raw Gemini JSON from one syllabus PDF or image into a
+ * `DesktopExtractedSyllabi` matching `core/src/ai/tasks.rs::parse_syllabus_extraction`.
+ */
+export function parseSyllabusExtraction(raw: unknown, modelId: string): DesktopExtractedSyllabi {
+  const root = asRecord(raw) ?? {};
+  const semester = optionalString(root.semester);
+
+  const courses: Course[] = [];
+  let droppedCourses = 0;
+  const rawCourses = Array.isArray(root.courses) ? root.courses : [];
+  for (const item of rawCourses) {
+    const record = asRecord(item);
+    const id = optionalString(record?.id);
+    const name = optionalString(record?.name);
+    if (!id || !name) {
+      droppedCourses += 1;
+      continue;
+    }
+    const existing = courses.find((kept) => kept.id.toLowerCase() === id.toLowerCase());
+    const creditsRaw = record?.credits;
+    const credits =
+      typeof creditsRaw === "number" &&
+      Number.isFinite(creditsRaw) &&
+      creditsRaw > 0 &&
+      creditsRaw <= 30
+        ? creditsRaw
+        : null;
+    if (existing) {
+      if (existing.credits == null && credits !== null) existing.credits = credits;
+      for (const alias of normalizeAliases(existing.id, record?.aliases)) {
+        if (!(existing.aliases ?? []).some((a) => a.toLowerCase() === alias.toLowerCase())) {
+          existing.aliases = [...(existing.aliases ?? []), alias];
+        }
+      }
+      continue;
+    }
+    const hex = validHexColor(record?.color);
+    const preset = presetCourseColors(id);
+    courses.push({
+      id,
+      name,
+      color: hex ?? preset.color,
+      bg: `${hex ?? preset.color}18`,
+      border: `${hex ?? preset.color}55`,
+      credits,
+      maxAbsences: null,
+      aliases: normalizeAliases(id, record?.aliases),
+    });
+  }
+
+  const slots: ScheduleSlot[] = [];
+  let droppedSlots = 0;
+  const rawSlots = Array.isArray(root.slots) ? root.slots : [];
+  for (const item of rawSlots) {
+    const record = asRecord(item);
+    const courseId = optionalString(record?.course_id ?? record?.courseId);
+    const course = courseId ? courses.find((kept) => courseMatchesCode(kept, courseId)) : undefined;
+    if (!course) {
+      droppedSlots += 1;
+      continue;
+    }
+    const day = optionalString(record?.day);
+    const dayIndex = day ? weekdayIndex(day) : null;
+    if (!day || dayIndex === null) {
+      droppedSlots += 1;
+      continue;
+    }
+    const start = parseHm(record?.start_time ?? record?.startTime);
+    const end = parseHm(record?.end_time ?? record?.endTime);
+    if (!start || !end || end <= start) {
+      droppedSlots += 1;
+      continue;
+    }
+    const weekParity = normalizeWeekParity(record?.week_parity ?? record?.weekParity);
+    slots.push({
+      id: optionalString(record?.id) ?? `slot-${slots.length + 1}`,
+      day,
+      dayIndex,
+      courseId: course.id,
+      courseName: optionalString(record?.course_name ?? record?.courseName) ?? course.name,
+      type: optionalString(record?.type ?? record?.slot_type ?? record?.slotType) ?? "Lecture",
+      group: optionalString(record?.group) ?? null,
+      room: optionalString(record?.room) ?? null,
+      startTime: start,
+      endTime: end,
+      displayTime: optionalString(record?.display_time ?? record?.displayTime) ?? `${start}–${end}`,
+      hasQuiz: false,
+      quizTitle: null,
+      weekParity,
+      week_parity: weekParity,
+    });
+  }
+
+  const assessments: ExtractedSyllabusAssessment[] = [];
+  let droppedAssessments = 0;
+  const rawAssessments = Array.isArray(root.assessments) ? root.assessments : [];
+  for (const item of rawAssessments) {
+    const record = asRecord(item);
+    const title = optionalString(record?.title);
+    if (!title) {
+      droppedAssessments += 1;
+      continue;
+    }
+    const rawCid = optionalString(record?.course_id ?? record?.courseId);
+    const course = rawCid
+      ? courses.find((kept) => courseMatchesCode(kept, rawCid))
+      : courses.length === 1
+        ? courses[0]
+        : undefined;
+    if (!course) {
+      droppedAssessments += 1;
+      continue;
+    }
+    const dateIso = parseIsoDate(record?.date_iso ?? record?.dateIso);
+    const startTime = parseHm(record?.start_time ?? record?.startTime);
+    let endTime = parseHm(record?.end_time ?? record?.endTime);
+    if (startTime && endTime && endTime <= startTime) {
+      endTime = null;
+    }
+    const weightRaw = record?.weightage_percent ?? record?.weightagePercent;
+    const weight =
+      typeof weightRaw === "number" &&
+      Number.isFinite(weightRaw) &&
+      weightRaw > 0 &&
+      weightRaw <= 100
+        ? weightRaw
+        : null;
+    const topics = Array.isArray(record?.topics)
+      ? record.topics.map((t) => optionalString(t)).filter((t): t is string => t !== null)
+      : [];
+    const warnings = Array.isArray(record?.warnings)
+      ? record.warnings.map((w) => optionalString(w)).filter((w): w is string => w !== null)
+      : [];
+    const note = optionalString(record?.ai_inference_note ?? record?.aiInferenceNote);
+
+    assessments.push({
+      courseId: course.id,
+      course_id: course.id,
+      title,
+      assessmentType: normalizeSyllabusType(
+        record?.assessment_type ?? record?.assessmentType,
+        title,
+      ),
+      assessment_type: normalizeSyllabusType(
+        record?.assessment_type ?? record?.assessmentType,
+        title,
+      ),
+      dateIso,
+      date_iso: dateIso,
+      startTime,
+      start_time: startTime,
+      endTime,
+      end_time: endTime,
+      room: optionalString(record?.room),
+      instructor: optionalString(record?.instructor),
+      weightagePercent: weight,
+      weightage_percent: weight,
+      topics,
+      warnings,
+      aiInferenceNote: note,
+      ai_inference_note: note,
+    });
+  }
+
+  return {
+    schedule: { semester, courses, slots },
+    assessments,
+    droppedCourses,
+    dropped_courses: droppedCourses,
+    droppedSlots,
+    dropped_slots: droppedSlots,
+    droppedAssessments,
+    dropped_assessments: droppedAssessments,
+    model: modelId,
+    fileErrors: [],
+    file_errors: [],
+  };
+}
+
+/**
+ * Deduplicates and merges 1..=N extracted syllabus payloads (browser parity
+ * with `core/src/ai/tasks.rs::merge_extracted_syllabi`).
+ */
+export function mergeExtractedSyllabi(items: DesktopExtractedSyllabi[]): DesktopExtractedSyllabi {
+  let semester: string | null = null;
+  const courses: Course[] = [];
+  const slots: ScheduleSlot[] = [];
+  const assessments: ExtractedSyllabusAssessment[] = [];
+  let droppedCourses = 0;
+  let droppedSlots = 0;
+  let droppedAssessments = 0;
+  const models: string[] = [];
+  const fileErrors: string[] = [];
+
+  for (const item of items) {
+    droppedCourses += item.droppedCourses ?? item.dropped_courses ?? 0;
+    droppedSlots += item.droppedSlots ?? item.dropped_slots ?? 0;
+    droppedAssessments += item.droppedAssessments ?? item.dropped_assessments ?? 0;
+    const m = (item.model ?? "").trim();
+    if (m && !models.some((kept) => kept.toLowerCase() === m.toLowerCase())) {
+      models.push(m);
+    }
+    for (const err of item.fileErrors ?? item.file_errors ?? []) {
+      fileErrors.push(err);
+    }
+    if (!semester && item.schedule.semester?.trim()) {
+      semester = item.schedule.semester.trim();
+    }
+
+    for (const incomingCourse of item.schedule.courses) {
+      const existing = courses.find((c) => c.id.toLowerCase() === incomingCourse.id.toLowerCase());
+      if (existing) {
+        if (existing.credits == null && incomingCourse.credits != null) {
+          existing.credits = incomingCourse.credits;
+        }
+        for (const alias of incomingCourse.aliases ?? []) {
+          const a = alias.trim();
+          if (
+            a &&
+            a.toLowerCase() !== existing.id.toLowerCase() &&
+            !(existing.aliases ?? []).some((e) => e.toLowerCase() === a.toLowerCase())
+          ) {
+            existing.aliases = [...(existing.aliases ?? []), a];
+          }
+        }
+      } else {
+        courses.push({ ...incomingCourse, aliases: [...(incomingCourse.aliases ?? [])] });
+      }
+    }
+
+    for (const rawSlot of item.schedule.slots) {
+      const course = courses.find((c) => courseMatchesCode(c, rawSlot.courseId));
+      const canonicalCourseId = course?.id ?? rawSlot.courseId;
+      const duplicate = slots.some(
+        (s) =>
+          s.courseId.toLowerCase() === canonicalCourseId.toLowerCase() &&
+          s.dayIndex === rawSlot.dayIndex &&
+          s.startTime === rawSlot.startTime &&
+          s.endTime === rawSlot.endTime,
+      );
+      if (!duplicate) {
+        slots.push({
+          ...rawSlot,
+          id: `slot-${slots.length + 1}`,
+          courseId: canonicalCourseId,
+          courseName: rawSlot.courseName?.trim() || course?.name || canonicalCourseId,
+        });
+      }
+    }
+
+    for (const incomingA of item.assessments) {
+      const rawCid = incomingA.courseId ?? incomingA.course_id ?? "";
+      const course = courses.find((c) => courseMatchesCode(c, rawCid));
+      const canonicalCid = course?.id ?? rawCid;
+      const dateIso = incomingA.dateIso ?? incomingA.date_iso ?? null;
+      const existing = assessments.find(
+        (a) =>
+          (a.courseId ?? a.course_id ?? "").toLowerCase() === canonicalCid.toLowerCase() &&
+          a.title.trim().toLowerCase() === incomingA.title.trim().toLowerCase() &&
+          (a.dateIso ?? a.date_iso ?? null) === dateIso,
+      );
+      if (existing) {
+        existing.startTime =
+          existing.startTime ?? existing.start_time ?? incomingA.startTime ?? incomingA.start_time;
+        existing.start_time = existing.startTime;
+        existing.endTime =
+          existing.endTime ?? existing.end_time ?? incomingA.endTime ?? incomingA.end_time;
+        existing.end_time = existing.endTime;
+        existing.room = existing.room ?? incomingA.room ?? null;
+        existing.instructor = existing.instructor ?? incomingA.instructor ?? null;
+        existing.weightagePercent =
+          existing.weightagePercent ??
+          existing.weightage_percent ??
+          incomingA.weightagePercent ??
+          incomingA.weightage_percent ??
+          null;
+        existing.weightage_percent = existing.weightagePercent;
+        existing.aiInferenceNote =
+          existing.aiInferenceNote ??
+          existing.ai_inference_note ??
+          incomingA.aiInferenceNote ??
+          incomingA.ai_inference_note ??
+          null;
+        existing.ai_inference_note = existing.aiInferenceNote;
+        for (const t of incomingA.topics ?? []) {
+          if (!existing.topics.some((k) => k.toLowerCase() === t.toLowerCase())) {
+            existing.topics.push(t);
+          }
+        }
+        for (const w of incomingA.warnings ?? []) {
+          if (!existing.warnings.some((k) => k.toLowerCase() === w.toLowerCase())) {
+            existing.warnings.push(w);
+          }
+        }
+      } else {
+        assessments.push({
+          ...incomingA,
+          courseId: canonicalCid,
+          course_id: canonicalCid,
+          topics: [...(incomingA.topics ?? [])],
+          warnings: [...(incomingA.warnings ?? [])],
+        });
+      }
+    }
+  }
+
+  return {
+    schedule: { semester, courses, slots },
+    assessments,
+    droppedCourses,
+    dropped_courses: droppedCourses,
+    droppedSlots,
+    dropped_slots: droppedSlots,
+    droppedAssessments,
+    dropped_assessments: droppedAssessments,
+    model: models.join(", "),
+    fileErrors,
+    file_errors: fileErrors,
+  };
+}
+
+/**
+ * Extracts courses, slots, and syllabus assessments from 1–6 PDF/photo
+ * syllabi in the browser PWA tier.
+ */
+export async function extractSyllabiBrowser(
+  documents: SyllabusDocumentInput[],
+  key: string | null,
+): Promise<DesktopExtractedSyllabi> {
+  const apiKey = (key ?? "").trim();
+  if (!apiKey) {
+    throw new Error(
+      "No Gemini API key in memory — validate your key in Settings → Account (Google Gemini AI) first. The browser tier keeps the key in memory for this session only, so it is gone after a reload.",
+    );
+  }
+  if (!documents || documents.length === 0) {
+    throw new Error("Pick at least one syllabus PDF or image first.");
+  }
+  if (documents.length > MAX_SYLLABI_BATCH) {
+    throw new Error(`Import up to ${MAX_SYLLABI_BATCH} syllabi at once (got ${documents.length}).`);
+  }
+
+  const succeeded: DesktopExtractedSyllabi[] = [];
+  const fileErrors: string[] = [];
+
+  for (let idx = 0; idx < documents.length; idx += 1) {
+    const doc = documents[idx];
+    const label = doc.name?.trim() || `Syllabus ${idx + 1}`;
+    const trimmedData = (doc.dataUrl ?? "").trim();
+    if (!trimmedData) {
+      fileErrors.push(`${label}: file was empty.`);
+      continue;
+    }
+    if (trimmedData.length > MAX_SYLLABUS_BASE64_LEN) {
+      fileErrors.push(`${label}: exceeds 15 MB per-file limit.`);
+      continue;
+    }
+
+    const mime = mimeForDocument(trimmedData, doc.name, doc.mime);
+    const payload = {
+      contents: [
+        {
+          parts: [
+            { text: SYLLABUS_INSTRUCTION },
+            { inline_data: { mime_type: mime, data: stripDataUrlPrefix(trimmedData) } },
+          ],
+        },
+      ],
+      generationConfig: { temperature: 0.1, responseMimeType: "application/json" },
+    };
+
+    let docExtracted: DesktopExtractedSyllabi | null = null;
+    let docError: Error | null = null;
+    let lastStatus: number | null = null;
+
+    for (const modelId of FLASH_MODEL_IDS) {
+      let response: Response;
+      try {
+        response = await fetch(`${GEMINI_API_BASE}/models/${modelId}:generateContent`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+          body: JSON.stringify(payload),
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        docError = new Error(`Network error reaching Gemini: ${redactKey(message, apiKey)}`);
+        break;
+      }
+
+      if (!response.ok) {
+        let detail = "";
+        try {
+          detail = await response.text();
+        } catch {
+          detail = "";
+        }
+        detail = redactKey(detail, apiKey);
+        const mapped = mapGeminiStatus(response.status, detail);
+        if (response.status === 404 || response.status === 503) {
+          if (!(lastStatus === 503 && response.status === 404)) {
+            docError = mapped;
+            lastStatus = response.status;
+          }
+          continue;
+        }
+        docError = mapped;
+        break;
+      }
+
+      let body: unknown;
+      try {
+        body = await response.json();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        docError = new Error(`Unreadable Gemini response body: ${redactKey(message, apiKey)}`);
+        break;
+      }
+
+      const text = candidateText(body);
+      if (!text) {
+        docError = new Error(
+          `Gemini returned no candidate text (finishReason: ${finishReason(body)}).`,
+        );
+        break;
+      }
+
+      docExtracted = parseSyllabusExtraction(parseModelJson(text), modelId);
+      sessionCalls += 1;
+      sessionPerModel[modelId] = (sessionPerModel[modelId] ?? 0) + 1;
+      break;
+    }
+
+    if (docExtracted) {
+      succeeded.push(docExtracted);
+    } else if (docError) {
+      fileErrors.push(`${label}: ${docError.message}`);
+    }
+  }
+
+  if (succeeded.length === 0) {
+    throw new Error(
+      fileErrors.length > 0
+        ? fileErrors.join(" | ")
+        : "Could not read any course syllabus from the selected files.",
+    );
+  }
+
+  const merged = mergeExtractedSyllabi(succeeded);
+  return {
+    ...merged,
+    fileErrors,
+    file_errors: fileErrors,
+  };
 }

@@ -120,6 +120,7 @@ const FUNCTION_SAMPLES: ReadonlyArray<{ path: string; args: unknown[] }> = [
   { path: "dashboard.countdownShort", args: [4] },
   { path: "dashboard.roomLabel", args: ["N4-102"] },
   { path: "dashboard.dueAt", args: ["09:00"] },
+  { path: "syllabusImport.droppedWarning", args: [1, 2, 3] },
 ];
 
 /** Resolve a dotted path inside the copy tree. */

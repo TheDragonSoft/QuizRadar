@@ -418,4 +418,38 @@ interface QuizRadarCore {
         scale: String,
         targetLetter: String,
     ): String = throw UnsupportedOperationException("calculateGradeTarget is not supported by this fake")
+
+    suspend fun extractSyllabusFromDocument(
+        documentB64: String,
+        mime: String,
+        apiKey: String,
+    ): String = throw UnsupportedOperationException("extractSyllabusFromDocument is not supported by this fake")
+
+    fun mergeExtractedSyllabi(syllabiJson: String): String =
+        throw UnsupportedOperationException("mergeExtractedSyllabi is not supported by this fake")
+
+    fun syllabusToDomainAssessments(
+        extractedJson: String,
+        refDate: LocalDate = LocalDate.now(),
+    ): String = throw UnsupportedOperationException("syllabusToDomainAssessments is not supported by this fake")
+
+    suspend fun applyCourseBundle(
+        scheduleJson: String,
+        assessmentsJson: String,
+        refDate: LocalDate = LocalDate.now(),
+    ): String = throw UnsupportedOperationException("applyCourseBundle is not supported by this fake")
+
+    suspend fun exportCoursePack(
+        courseId: String,
+        scheduleJson: String,
+        assessmentsJson: String,
+        webBaseUrl: String? = CoursePackCodec.WEB_BASE_URL,
+    ): String = throw UnsupportedOperationException("exportCoursePack is not supported by this fake")
+
+    fun decodeCoursePack(rawInput: String): String = throw UnsupportedOperationException("decodeCoursePack is not supported by this fake")
+
+    fun coursePackToDomain(
+        packJson: String,
+        refDate: LocalDate = LocalDate.now(),
+    ): String = throw UnsupportedOperationException("coursePackToDomain is not supported by this fake")
 }

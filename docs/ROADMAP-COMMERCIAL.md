@@ -4,23 +4,26 @@ _Strategic plan for evolving QuizRadar from a local-first, open-source v5 engine
 
 ---
 
-## Current Baseline (v5.15.3+)
+## Current Baseline (v5.20.0+)
 
 - **Core & Cross-Platform Parity:** Pure Rust `core/` powering Desktop (Tauri 2), Web Companion (WASM PWA), and Android (Jetpack Compose M3 + Glance widgets).
-- **Independent Scanning & Serverless Peer Sync:** Both Desktop and Android scan sources independently and merge additively via `quizradar://pair?d=...` links, JSON backup, or Google Drive AppData.
+- **Independent Scanning & Serverless Peer Sync:** Both Desktop and Android scan sources independently and merge additively via `quizradar://pair?d=...` links, ephemeral Desktop LAN HTTPS QR sync (`quizradar://lan?...`), JSON backup, or Google Drive AppData.
 
 ---
 
-## Phase 1 — "15-Second Magic" Activation (Highest Leverage)
+## Phase 1 — "15-Second Magic" Activation & Campus Virality (Highest Leverage)
 
-1. **Multi-Syllabus PDF Importer:**
-   - Drag-and-drop 4–6 course syllabi during onboarding or Settings.
-   - Extract courses, exam/quiz dates, grade weights, and topic lists into a unified Review & Apply preview modal.
+1. **Multi-Syllabus PDF & Photo Importer (PR 1 — Shipped):**
+   - Drag-and-drop 1–6 course syllabi (PDF, PNG, JPEG, WebP) during onboarding or Settings.
+   - Extract courses (with credits and aliases), weekly slots, exam/quiz dates (or honest TBA when unscheduled), grade weights, and topic lists into a unified Review & Apply preview modal with additive, grade-safe merge.
    - Gives immediate Day-1 value to every student regardless of whether their university uses Gmail, Outlook, Canvas, Blackboard, or Moodle.
-2. **Zero-Key Trial AI Relay:**
-   - Thin stateless relay (e.g., Cloudflare Worker) providing ~15–20 free AI extractions on first run with zero API-key setup.
-   - BYOK Gemini remains available for power users who want unlimited free-tier usage.
-3. **OAuth Verification & First-Party Clients:**
+2. **1-Tap "Share Course Pack" Viral Links (PR 1 — Shipped):**
+   - Data-only compressed course bundle links (`https://thedragonsoft.github.io/QuizRadar/app/#course=...` and `quizradar://course?d=...` + QR codes) sharing course slots, deadlines, weights, and topics with zero personal grades, notes, or tokens.
+   - Classmates opening a shared link land directly on a 1-tap import preview bypassing blank-canvas setup.
+3. **Zero-Key Trial AI Relay (PR 2 — Queued Next):**
+   - Thin stateless relay (e.g., Cloudflare Worker, maintainer override 2026-11-21) providing free starter AI extractions on first run with zero API-key setup.
+   - BYOK Gemini remains available in Settings for power users who want unlimited free-tier usage.
+4. **OAuth Verification & First-Party Clients:**
    - Complete Google OAuth restricted-scope verification (CASA audit) to eliminate the "Unverified App" warning screen.
    - Ship a first-party multi-tenant Microsoft Entra client ID so Teams works in one tap on Android and Desktop.
 

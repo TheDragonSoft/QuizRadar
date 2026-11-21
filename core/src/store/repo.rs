@@ -408,6 +408,20 @@ impl<'a> CourseRepo<'a> {
         Ok(())
     }
 
+    pub fn update_credits_and_aliases(
+        &self,
+        code: &str,
+        credits: Option<f64>,
+        aliases: &[String],
+    ) -> Result<(), StoreError> {
+        let aliases_json = serde_json::to_string(aliases)?;
+        self.conn.execute(
+            "UPDATE courses SET credits = ?1, aliases_json = ?2 WHERE id = ?3 COLLATE NOCASE",
+            params![credits, aliases_json, code.trim()],
+        )?;
+        Ok(())
+    }
+
     pub fn all_slots(&self) -> Result<Vec<ScheduleSlot>, StoreError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, day, day_index, course_id, course_name, slot_type, group_name, room, \
@@ -2568,6 +2582,17 @@ pub struct StudyCollectionsReport {
     pub study_stats_restored: bool,
 }
 
+/// Summary of what an additive syllabus or course-pack bundle import changed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CourseImportReport {
+    pub courses_added: usize,
+    pub courses_updated: usize,
+    pub slots_added: usize,
+    pub assessments_added: usize,
+    pub assessments_updated: usize,
+}
+
 pub mod ops {
     use super::*;
 
@@ -2766,6 +2791,273 @@ pub mod ops {
             tx.commit()?;
         }
         read_snapshot(db.conn(), reference_date)
+    }
+
+    /// Additively imports courses, weekly slots, and assessments (used by
+    /// Multi-Syllabus Import and 1-Tap Course Pack Import) without deleting
+    /// unrelated courses or overwriting user grades / completed topics.
+    pub fn apply_course_bundle(
+        db: &Db,
+        schedule: &ScheduleData,
+        assessments: &[Assessment],
+        updated_at: &str,
+        reference_date: NaiveDate,
+    ) -> Result<(AppSnapshot, CourseImportReport), StoreError> {
+        let mut report = CourseImportReport::default();
+        {
+            let tx = db.transaction()?;
+            let c_repo = CourseRepo::new(&tx);
+            let mut existing_courses = c_repo.list()?;
+            let mut existing_slots = c_repo.all_slots()?;
+            let mut next_slot_num = c_repo
+                .next_slot_number()?
+                .max(CourseRepo::next_slot_number_seed(&schedule.slots));
+
+            let mut schedule_touched = false;
+
+            for incoming in &schedule.courses {
+                let trimmed_id = incoming.id.trim();
+                let trimmed_name = incoming.name.trim();
+                if trimmed_id.is_empty() || trimmed_name.is_empty() {
+                    return Err(StoreError::Validation(
+                        "Each imported course requires a non-empty code and name.".to_string(),
+                    ));
+                }
+
+                if let Some(pos) = existing_courses
+                    .iter()
+                    .position(|c| c.id.eq_ignore_ascii_case(trimmed_id))
+                {
+                    let mut updated = existing_courses[pos].clone();
+                    let mut changed = false;
+                    if updated.credits.is_none() && incoming.credits.is_some() {
+                        updated.credits = incoming.credits;
+                        changed = true;
+                    }
+                    for alias in &incoming.aliases {
+                        let a = alias.trim();
+                        if !a.is_empty()
+                            && !a.eq_ignore_ascii_case(&updated.id)
+                            && !updated.matches_code(a)
+                        {
+                            updated.aliases.push(a.to_string());
+                            changed = true;
+                        }
+                    }
+                    if changed {
+                        c_repo.update_credits_and_aliases(
+                            &updated.id,
+                            updated.credits,
+                            &updated.aliases,
+                        )?;
+                        existing_courses[pos] = updated;
+                        report.courses_updated += 1;
+                        schedule_touched = true;
+                    }
+                } else {
+                    let mut clean = incoming.clone();
+                    clean.id = trimmed_id.to_string();
+                    clean.name = trimmed_name.to_string();
+                    clean.aliases = clean
+                        .aliases
+                        .into_iter()
+                        .map(|a| a.trim().to_string())
+                        .filter(|a| !a.is_empty() && !a.eq_ignore_ascii_case(&clean.id))
+                        .collect();
+                    c_repo.upsert(&clean)?;
+                    existing_courses.push(clean);
+                    report.courses_added += 1;
+                    schedule_touched = true;
+                }
+            }
+
+            let meta = MetaRepo::new(&tx);
+            if let Some(incoming_sem) = schedule
+                .semester
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                let has_sem = meta
+                    .get("schedule_semester")?
+                    .is_some_and(|s| !s.trim().is_empty());
+                if !has_sem {
+                    meta.set("schedule_semester", Some(incoming_sem))?;
+                    schedule_touched = true;
+                }
+            }
+            if let Some(incoming_week_start) = schedule
+                .academic_week_start
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                let has_ws = meta
+                    .get("schedule_academic_week_start")?
+                    .is_some_and(|s| !s.trim().is_empty());
+                if !has_ws {
+                    meta.set("schedule_academic_week_start", Some(incoming_week_start))?;
+                    schedule_touched = true;
+                }
+            }
+
+            for incoming_slot in &schedule.slots {
+                let mut slot = incoming_slot.clone();
+                let Some(course) = existing_courses
+                    .iter()
+                    .find(|c| c.matches_code(&slot.course_id))
+                else {
+                    continue;
+                };
+                slot.course_id = course.id.clone();
+                if slot.course_name.trim().is_empty() {
+                    slot.course_name = course.name.clone();
+                }
+                let mut normalized = normalize_slot(slot, &existing_courses)?;
+                let duplicate = existing_slots.iter().any(|existing| {
+                    existing
+                        .course_id
+                        .eq_ignore_ascii_case(&normalized.course_id)
+                        && existing.day_index == normalized.day_index
+                        && existing.start_time == normalized.start_time
+                        && existing.end_time == normalized.end_time
+                });
+                if duplicate {
+                    continue;
+                }
+                if normalized.id.trim().is_empty()
+                    || existing_slots.iter().any(|s| s.id == normalized.id)
+                {
+                    normalized.id = format!("slot-{next_slot_num}");
+                    next_slot_num += 1;
+                }
+                c_repo.insert_slot(&normalized, updated_at)?;
+                existing_slots.push(normalized);
+                report.slots_added += 1;
+                schedule_touched = true;
+            }
+
+            if schedule_touched {
+                meta.set_schedule_updated_at(updated_at)?;
+            }
+
+            let a_repo = AssessmentRepo::new(&tx);
+            let g_repo = GradeRepo::new(&tx);
+            let mut existing_assessments = a_repo.list()?;
+
+            for incoming in assessments {
+                if incoming.title.trim().is_empty() {
+                    continue;
+                }
+                let mut next = incoming.clone();
+                if let Some(ref raw_cid) = next.course_id {
+                    if let Some(course) = existing_courses.iter().find(|c| c.matches_code(raw_cid))
+                    {
+                        next.course_id = Some(course.id.clone());
+                        if next.course_name.is_none() {
+                            next.course_name = Some(course.name.clone());
+                        }
+                        if next.color.is_none() {
+                            next.color = Some(course.color.clone());
+                        }
+                        if next.bg.is_none() {
+                            next.bg = course.bg.clone();
+                        }
+                        if next.border.is_none() {
+                            next.border = course.border.clone();
+                        }
+                    }
+                }
+
+                let existing_idx = existing_assessments.iter().position(|old| {
+                    old.id == next.id
+                        || (old
+                            .course_id
+                            .as_deref()
+                            .zip(next.course_id.as_deref())
+                            .is_some_and(|(a, b)| a.eq_ignore_ascii_case(b))
+                            && old.title.trim().eq_ignore_ascii_case(next.title.trim())
+                            && old.date == next.date)
+                });
+
+                if let Some(idx) = existing_idx {
+                    let old = &existing_assessments[idx];
+                    next.id = old.id.clone();
+                    // Preserve user-owned grade/gcal edits on existing rows first.
+                    next.weightage_percent = old.weightage_percent.or(next.weightage_percent);
+                    next.achieved_score = old.achieved_score.or(next.achieved_score);
+                    next.max_score = old.max_score.or(next.max_score);
+                    if old.gcal_synced {
+                        next.gcal_synced = true;
+                        next.gcal_event_id = old.gcal_event_id.clone();
+                        if next.google_cal_url.is_none() {
+                            next.google_cal_url = old.google_cal_url.clone();
+                        }
+                    }
+                    // Union topics & warnings without losing local entries.
+                    for topic in &old.topics {
+                        if !next.topics.iter().any(|t| t.eq_ignore_ascii_case(topic)) {
+                            next.topics.push(topic.clone());
+                        }
+                    }
+                    for warning in &old.warnings {
+                        if !next
+                            .warnings
+                            .iter()
+                            .any(|w| w.eq_ignore_ascii_case(warning))
+                        {
+                            next.warnings.push(warning.clone());
+                        }
+                    }
+                    a_repo.upsert(&next, updated_at)?;
+                    existing_assessments[idx] = next.clone();
+                    report.assessments_updated += 1;
+                } else {
+                    if next.id.trim().is_empty() {
+                        let key = format!(
+                            "{}|{}|{}",
+                            next.course_id.as_deref().unwrap_or(""),
+                            next.title.trim(),
+                            next.date
+                                .map(|d| d.format("%Y-%m-%d").to_string())
+                                .unwrap_or_else(|| "tba".to_string())
+                        );
+                        next.id = format!(
+                            "bundle-{:016x}",
+                            crate::parse::util::fnv1a64(key.as_bytes())
+                        );
+                    }
+                    a_repo.upsert(&next, updated_at)?;
+                    existing_assessments.push(next.clone());
+                    report.assessments_added += 1;
+                }
+
+                if let Some(weight) = next
+                    .weightage_percent
+                    .filter(|w| w.is_finite() && *w >= 0.0)
+                {
+                    let has_local_weight = g_repo
+                        .get(&next.id)?
+                        .and_then(|g| g.weightage_percent)
+                        .is_some();
+                    if !has_local_weight {
+                        g_repo.merge_upsert(
+                            &next.id,
+                            &GradeRecord {
+                                achieved_score: None,
+                                max_score: None,
+                                weightage_percent: Some(weight),
+                            },
+                            updated_at,
+                        )?;
+                    }
+                }
+            }
+
+            tx.commit()?;
+        }
+        let snapshot = read_snapshot(db.conn(), reference_date)?;
+        Ok((snapshot, report))
     }
 
     pub fn delete_assessment(
@@ -4707,5 +4999,118 @@ mod tests {
             updated_course.aliases,
             vec!["COMP 241".to_string(), "CS241".to_string()]
         );
+    }
+
+    #[test]
+    fn apply_course_bundle_merges_additively_preserves_grades_and_fills_weights() {
+        let db = mem_db();
+        let existing_course = course("MATH204", "Linear Algebra");
+        let existing_slot = slot("slot-1", "Sun", &existing_course, (8, 0), (9, 30));
+        ops::upsert_course(
+            &db,
+            &existing_course,
+            &[existing_slot],
+            "2026-10-20T00:00:00Z",
+            ref_date(),
+        )
+        .unwrap();
+
+        let mut graded_quiz = assessment("syllabus-q1", Some("MATH204"), "Quiz 1", "2026-10-28");
+        graded_quiz.topics = vec!["Matrices".to_string()];
+        ops::upsert_assessment(&db, &graded_quiz, "2026-10-20T00:00:00Z", ref_date()).unwrap();
+        ops::update_grade(
+            &db,
+            "syllabus-q1",
+            &GradeChange {
+                achieved_score: FieldUpdate::Set(18.0),
+                max_score: FieldUpdate::Set(20.0),
+                weightage_percent: FieldUpdate::Set(10.0),
+            },
+            "2026-10-21T00:00:00Z",
+            ref_date(),
+        )
+        .unwrap();
+        let topic_key = crate::plan::dashboard::topic_key_for_text("syllabus-q1", "Matrices");
+        ops::set_topic_done(&db, &topic_key, true, "2026-10-21T00:00:00Z", ref_date()).unwrap();
+
+        let mut incoming_existing = course("MATH204", "Should Not Overwrite");
+        incoming_existing.credits = Some(3.0);
+        incoming_existing.aliases = vec!["MTH 204".to_string()];
+
+        let mut new_course = course("ECE210", "Digital Systems");
+        new_course.credits = Some(4.0);
+        new_course.aliases = vec!["ECE 210".to_string()];
+
+        let incoming_schedule = ScheduleData {
+            semester: Some("Fall 2026".to_string()),
+            academic_week_start: None,
+            courses: vec![incoming_existing, new_course.clone()],
+            slots: vec![
+                // Duplicate of existing MATH204 slot should not be re-added
+                slot("slot-1", "Sun", &existing_course, (8, 0), (9, 30)),
+                slot("slot-1", "Mon", &new_course, (10, 0), (11, 30)),
+            ],
+        };
+
+        let mut incoming_reannounced_quiz =
+            assessment("new-id-same-quiz", Some("MATH204"), "Quiz 1", "2026-10-28");
+        incoming_reannounced_quiz.weightage_percent = Some(15.0);
+        incoming_reannounced_quiz.topics = vec!["Matrices".to_string(), "Determinants".to_string()];
+
+        let mut new_midterm = assessment("ece-mid", Some("ECE210"), "Midterm Exam", "2026-11-05");
+        new_midterm.weightage_percent = Some(30.0);
+
+        let (snap, report) = ops::apply_course_bundle(
+            &db,
+            &incoming_schedule,
+            &[incoming_reannounced_quiz, new_midterm],
+            "2026-10-24T00:00:00Z",
+            ref_date(),
+        )
+        .unwrap();
+
+        assert_eq!(report.courses_added, 1);
+        assert_eq!(report.courses_updated, 1);
+        assert_eq!(report.slots_added, 1);
+        assert_eq!(report.assessments_added, 1);
+        assert_eq!(report.assessments_updated, 1);
+
+        assert_eq!(snap.schedule.semester.as_deref(), Some("Fall 2026"));
+        assert_eq!(snap.schedule.courses.len(), 2);
+        let math = snap.schedule.find_course("MATH204").unwrap();
+        assert_eq!(math.name, "Linear Algebra");
+        assert_eq!(math.credits, Some(3.0));
+        assert_eq!(math.aliases, vec!["MTH 204".to_string()]);
+        assert_eq!(snap.schedule.slots.len(), 2);
+
+        // Existing grade and completed topic preserved
+        let q1_grade = snap.grades.get("syllabus-q1").unwrap();
+        assert_eq!(q1_grade.achieved_score, Some(18.0));
+        assert_eq!(q1_grade.max_score, Some(20.0));
+        assert_eq!(q1_grade.weightage_percent, Some(10.0));
+        assert_eq!(snap.completed_topics.get(&topic_key), Some(&true));
+
+        // New assessment weight filled into grades map
+        let ece_grade = snap.grades.get("ece-mid").unwrap();
+        assert_eq!(ece_grade.weightage_percent, Some(30.0));
+        assert_eq!(ece_grade.achieved_score, None);
+
+        // Idempotent second apply adds nothing new
+        let (_, second_report) = ops::apply_course_bundle(
+            &db,
+            &incoming_schedule,
+            &[assessment(
+                "ece-mid",
+                Some("ECE210"),
+                "Midterm Exam",
+                "2026-11-05",
+            )],
+            "2026-10-24T01:00:00Z",
+            ref_date(),
+        )
+        .unwrap();
+        assert_eq!(second_report.courses_added, 0);
+        assert_eq!(second_report.slots_added, 0);
+        assert_eq!(second_report.assessments_added, 0);
     }
 }

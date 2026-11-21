@@ -1,5 +1,6 @@
 package com.quizradar.app.model
 
+import com.quizradar.app.core.QrCodeEncoder
 import java.time.LocalDate
 
 data class CourseModel(
@@ -382,4 +383,72 @@ data class DriveBackupMergeReportModel(
 data class DriveBackupResultModel(
     val found: Boolean = false,
     val mergeReport: DriveBackupMergeReportModel? = null,
+)
+
+data class ExtractedSyllabusAssessmentModel(
+    val courseId: String? = null,
+    val title: String,
+    val assessmentType: String = "Class Quiz",
+    val dateIso: LocalDate? = null,
+    val startTime: String? = null,
+    val endTime: String? = null,
+    val room: String? = null,
+    val instructor: String? = null,
+    val weightagePercent: Double? = null,
+    val topics: List<String> = emptyList(),
+    val warnings: List<String> = emptyList(),
+    val aiInferenceNote: String? = null,
+)
+
+data class ExtractedSyllabusModel(
+    val schedule: ScheduleDataModel = ScheduleDataModel(),
+    val assessments: List<ExtractedSyllabusAssessmentModel> = emptyList(),
+    val droppedCourses: Int = 0,
+    val droppedSlots: Int = 0,
+    val droppedAssessments: Int = 0,
+    val model: String = "",
+)
+
+data class CourseImportReportModel(
+    val coursesAdded: Int = 0,
+    val coursesUpdated: Int = 0,
+    val slotsAdded: Int = 0,
+    val assessmentsAdded: Int = 0,
+    val assessmentsUpdated: Int = 0,
+)
+
+data class CoursePackAssessmentModel(
+    val title: String,
+    val assessmentType: String = "Class Quiz",
+    val dateIso: LocalDate? = null,
+    val startTime: String? = null,
+    val endTime: String? = null,
+    val room: String? = null,
+    val group: String? = null,
+    val instructor: String? = null,
+    val weightagePercent: Double? = null,
+    val topics: List<String> = emptyList(),
+    val warnings: List<String> = emptyList(),
+)
+
+data class CoursePackPayloadModel(
+    val v: Int = 1,
+    val semester: String? = null,
+    val course: CourseModel,
+    val slots: List<ScheduleSlotModel> = emptyList(),
+    val assessments: List<CoursePackAssessmentModel> = emptyList(),
+)
+
+data class CoursePackShareLinksModel(
+    val token: String,
+    val webUrl: String,
+    val deepLink: String,
+    val byteLen: Int,
+    val fitsQr: Boolean,
+)
+
+data class CoursePackExportModel(
+    val pack: CoursePackPayloadModel,
+    val links: CoursePackShareLinksModel,
+    val qr: QrCodeEncoder.QrMatrix? = null,
 )

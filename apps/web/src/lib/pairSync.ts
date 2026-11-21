@@ -10,7 +10,7 @@ import { MAX_QR_BYTE_CAPACITY } from "./qrCode";
 
 export const PAIR_SYNC_PREFIX = "quizradar://pair?d=";
 
-function toBase64Url(bytes: Uint8Array): string {
+export function toBase64Url(bytes: Uint8Array): string {
   let binary = "";
   const chunkSize = 0x8000;
   for (let i = 0; i < bytes.length; i += chunkSize) {
@@ -19,7 +19,7 @@ function toBase64Url(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-function fromBase64Url(b64url: string): Uint8Array {
+export function fromBase64Url(b64url: string): Uint8Array {
   const padded =
     b64url.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (b64url.length % 4)) % 4);
   const binary = atob(padded);
@@ -48,14 +48,14 @@ async function runTransformStream(
   return new Uint8Array(buf);
 }
 
-async function deflateRaw(input: Uint8Array): Promise<Uint8Array> {
+export async function deflateRaw(input: Uint8Array): Promise<Uint8Array> {
   if (typeof CompressionStream === "undefined") {
     throw new Error("CompressionStream is not supported in this browser environment.");
   }
   return runTransformStream(new CompressionStream("deflate-raw"), input);
 }
 
-async function inflateRaw(input: Uint8Array): Promise<Uint8Array> {
+export async function inflateRaw(input: Uint8Array): Promise<Uint8Array> {
   if (typeof DecompressionStream === "undefined") {
     throw new Error("DecompressionStream is not supported in this browser environment.");
   }

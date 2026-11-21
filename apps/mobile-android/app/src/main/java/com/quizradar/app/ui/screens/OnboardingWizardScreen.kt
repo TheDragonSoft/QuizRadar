@@ -214,6 +214,25 @@ fun OnboardingWizardScreen(
             }
         }
 
+    val syllabusDocsLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenMultipleDocuments(),
+        ) { uris ->
+            if (uris.isEmpty()) return@rememberLauncherForActivityResult
+            imageImportScope.launch {
+                val readResult =
+                    withContext(Dispatchers.IO) {
+                        com.quizradar.app.ui.SyllabusDocumentReader.readFromUris(context, uris)
+                    }
+                if (readResult.errors.isNotEmpty()) {
+                    viewModel.showToast(readResult.errors.first())
+                }
+                if (readResult.documents.isNotEmpty()) {
+                    viewModel.importSyllabiFromDocuments(readResult.documents)
+                }
+            }
+        }
+
     val notificationPermissionLauncher =
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestPermission(),
@@ -384,6 +403,10 @@ fun OnboardingWizardScreen(
                                     )
                                 },
                                 onImportTimetablePdf = { timetablePdfLauncher.launch("application/pdf") },
+                                onImportSyllabiDocs = {
+                                    syllabusDocsLauncher.launch(arrayOf("application/pdf", "image/*"))
+                                },
+                                onImportCoursePackLink = { viewModel.openPasteCoursePackDialog() },
                                 onAddCourse = { isAddCourseOpen = true },
                                 onGoToSources = { viewModel.setOnboardingStep(4) },
                                 onNext = { viewModel.setOnboardingStep(4) },
@@ -754,6 +777,8 @@ private fun Step3Timetable(
     onEnableAi: () -> Unit,
     onImportTimetablePhoto: () -> Unit,
     onImportTimetablePdf: () -> Unit,
+    onImportSyllabiDocs: () -> Unit,
+    onImportCoursePackLink: () -> Unit,
     onAddCourse: () -> Unit,
     onGoToSources: () -> Unit,
     onNext: () -> Unit,
@@ -867,9 +892,22 @@ private fun Step3Timetable(
                     }
                 }
 
+                Spacer(modifier = Modifier.height(8.dp))
+                FilledTonalButton(
+                    onClick = onImportSyllabiDocs,
+                    enabled = aiEnabled,
+                    colors = ButtonDefaults.tonalPill(),
+                    contentPadding = PillButtonContentPadding,
+                    modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = PillButtonMinHeight),
+                ) {
+                    Icon(Icons.Outlined.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Import Multiple Syllabi (PDF / Photos)", style = MaterialTheme.typography.labelLarge)
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Start,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     TextButton(
                         onClick = onAddCourse,
@@ -878,6 +916,14 @@ private fun Step3Timetable(
                         Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Add Course", style = MaterialTheme.typography.labelLarge)
+                    }
+                    TextButton(
+                        onClick = onImportCoursePackLink,
+                        modifier = Modifier.defaultMinSize(minHeight = PillButtonMinHeight),
+                    ) {
+                        Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Classmate link?", style = MaterialTheme.typography.labelLarge)
                     }
                 }
 

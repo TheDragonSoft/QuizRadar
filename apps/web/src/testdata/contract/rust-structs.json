@@ -16,9 +16,9 @@
     "core/src/plan/dashboard.rs": "c390e10665cfb17a11a81fa3361317695eefaf4dfe9350e80729f5056d90acfc",
     "core/src/plan/tasks.rs": "393b8f8badc358a850fe51df90c9b907be10749c1dd4f886bfd4e78d3a5dabba",
     "core/src/plan/conflicts.rs": "10e08f36c34eb1fbb628ed5733109d372b6d96cf083854d51ac6fd7b995f2dc3",
-    "apps/desktop/src-tauri/src/commands/state.rs": "3646be4dc9df1eed38bb73223a149ad51badd3055c46fda2cbe700f73b5e3e58",
-    "core/src/store/repo.rs": "87687f018f09df153db71d36defb3574075139c94ad4750b05f19e332f0cede1",
-    "core/src/ffi.rs": "7dbe49985584933d26d1fc664257d65aef5a9927de1a484b1c4940c4bfc050b9",
+    "apps/desktop/src-tauri/src/commands/state.rs": "add04b81035e799789e127aa45a1bed3457683b56efcd736b1ae6c971ae8cc9b",
+    "core/src/store/repo.rs": "95fd75f4baf901a6258b8bf0ff7001e4a3c1a1323c36aeed90df8052204c9e09",
+    "core/src/ffi.rs": "f7eeecf77450d75b8b7051a46c0d0b5077050e65dd4bc70cc2a4c7088a4bb47a",
     "core/src/store/db.rs": "7bb13b760def20b915a1c214ddad9ea60b8c37702bcd69e9fee780cff4ecd4db"
   },
   "structs": {
@@ -1901,6 +1901,23 @@
         }
       ]
     },
+    "ApplyCourseBundleResult": {
+      "source": "apps/desktop/src-tauri/src/commands/state.rs",
+      "fields": [
+        {
+          "rustName": "state",
+          "wireName": "state",
+          "rustType": "GetStatePayload",
+          "optional": false
+        },
+        {
+          "rustName": "report",
+          "wireName": "report",
+          "rustType": "quizradar_core::store::repo::CourseImportReport",
+          "optional": false
+        }
+      ]
+    },
     "ConfigUpdate": {
       "source": "apps/desktop/src-tauri/src/commands/state.rs",
       "fields": [
@@ -2344,6 +2361,19 @@
       ],
       "returns": "Result<String, QuizRadarFfiError>"
     },
+    "merge_extracted_syllabi_json": {
+      "parameters": [
+        "syllabi_json: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "syllabus_to_domain_assessments": {
+      "parameters": [
+        "extracted_json: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
     "build_google_auth_url": {
       "parameters": [
         "client_id: String",
@@ -2411,6 +2441,28 @@
     "parse_lan_pair_uri": {
       "parameters": [
         "raw_input: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "encode_course_pack": {
+      "parameters": [
+        "course_id: String",
+        "schedule_json: String",
+        "assessments_json: String",
+        "web_base_url: Option<String>"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "decode_course_pack_link": {
+      "parameters": [
+        "raw_input: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "course_pack_to_domain_json": {
+      "parameters": [
+        "pack_json: String",
+        "ref_date_iso: String"
       ],
       "returns": "Result<String, QuizRadarFfiError>"
     },
@@ -2594,6 +2646,16 @@
       ],
       "returns": "Result<String, QuizRadarFfiError>"
     },
+    "NativeStore.apply_course_bundle": {
+      "parameters": [
+        "&self",
+        "schedule_json: String",
+        "assessments_json: String",
+        "updated_at: String",
+        "ref_date_iso: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
     "NativeStore.reset_all": {
       "parameters": [
         "&self"
@@ -2764,6 +2826,15 @@
       "parameters": [
         "&self",
         "image_b64: String",
+        "mime: String",
+        "api_key: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.extract_syllabus_from_document": {
+      "parameters": [
+        "&self",
+        "document_b64: String",
         "mime: String",
         "api_key: String"
       ],

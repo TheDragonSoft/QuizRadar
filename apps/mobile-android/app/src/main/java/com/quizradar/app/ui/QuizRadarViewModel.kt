@@ -10,10 +10,16 @@ import com.quizradar.app.core.QuizRadarCore
 import com.quizradar.app.core.QuizRadarEngine
 import com.quizradar.app.model.AppSnapshotModel
 import com.quizradar.app.model.AttendanceEntryModel
+import com.quizradar.app.model.CourseImportReportModel
 import com.quizradar.app.model.CourseModel
+import com.quizradar.app.model.CoursePackExportModel
+import com.quizradar.app.model.CoursePackPayloadModel
 import com.quizradar.app.model.CustomEventModel
+import com.quizradar.app.model.ExtractedSyllabusAssessmentModel
+import com.quizradar.app.model.ExtractedSyllabusModel
 import com.quizradar.app.model.PracticeQuizModel
 import com.quizradar.app.model.QuizRadarJsonParser
+import com.quizradar.app.model.ScheduleDataModel
 import com.quizradar.app.model.ScheduleSlotModel
 import com.quizradar.app.notifications.NotificationHelper
 import kotlinx.coroutines.CoroutineDispatcher
@@ -77,6 +83,57 @@ sealed interface TimetableImportState {
     data class Preview(val extracted: com.quizradar.app.model.ExtractedTimetableModel) : TimetableImportState
 
     data class Failed(val message: String) : TimetableImportState
+}
+
+sealed interface SyllabusImportState {
+    object Idle : SyllabusImportState
+
+    data class Working(val fileCount: Int) : SyllabusImportState
+
+    data class Preview(
+        val extracted: ExtractedSyllabusModel,
+        val fileErrors: List<String> = emptyList(),
+    ) : SyllabusImportState
+
+    data class Applied(
+        val report: CourseImportReportModel,
+        val courseIds: List<String>,
+    ) : SyllabusImportState
+
+    data class Failed(val message: String) : SyllabusImportState
+}
+
+sealed interface CoursePackShareState {
+    object Idle : CoursePackShareState
+
+    data class Loading(val courseId: String) : CoursePackShareState
+
+    data class Ready(val export: CoursePackExportModel) : CoursePackShareState
+
+    data class Failed(val message: String) : CoursePackShareState
+}
+
+sealed interface CoursePackImportState {
+    object Idle : CoursePackImportState
+
+    data class PasteInput(
+        val initialText: String = "",
+        val error: String? = null,
+    ) : CoursePackImportState
+
+    object Decoding : CoursePackImportState
+
+    data class Preview(
+        val rawInput: String,
+        val pack: CoursePackPayloadModel,
+    ) : CoursePackImportState
+
+    object Importing : CoursePackImportState
+
+    data class Failed(
+        val message: String,
+        val rawInput: String = "",
+    ) : CoursePackImportState
 }
 
 enum class PomodoroInterval(val minutes: Int, val label: String) {
@@ -245,6 +302,15 @@ class QuizRadarViewModel(
      */
     private val _timetableImportState = MutableStateFlow<TimetableImportState>(TimetableImportState.Idle)
     val timetableImportState: StateFlow<TimetableImportState> = _timetableImportState.asStateFlow()
+
+    private val _syllabusImportState = MutableStateFlow<SyllabusImportState>(SyllabusImportState.Idle)
+    val syllabusImportState: StateFlow<SyllabusImportState> = _syllabusImportState.asStateFlow()
+
+    private val _coursePackShareState = MutableStateFlow<CoursePackShareState>(CoursePackShareState.Idle)
+    val coursePackShareState: StateFlow<CoursePackShareState> = _coursePackShareState.asStateFlow()
+
+    private val _coursePackImportState = MutableStateFlow<CoursePackImportState>(CoursePackImportState.Idle)
+    val coursePackImportState: StateFlow<CoursePackImportState> = _coursePackImportState.asStateFlow()
 
     /**
      * Which accounts are connected.
@@ -2629,6 +2695,260 @@ class QuizRadarViewModel(
     /** Closes the import preview (or clears the error) without saving anything. */
     fun dismissTimetableImport() {
         _timetableImportState.value = TimetableImportState.Idle
+    }
+
+    fun importSyllabiFromDocuments(documents: List<Triple<String, ByteArray, String>>) {
+        if (documents.isEmpty()) {
+            _syllabusImportState.value =
+                SyllabusImportState.Failed("Select at least one syllabus PDF or image.")
+            return
+        }
+        if (documents.size > 6) {
+            _syllabusImportState.value =
+                SyllabusImportState.Failed("Import up to 6 syllabi at once (got ${documents.size}).")
+            return
+        }
+        _syllabusImportState.value = SyllabusImportState.Working(documents.size)
+        viewModelScope.launch {
+            try {
+                if (!_geminiEnabled.value) {
+                    _syllabusImportState.value =
+                        SyllabusImportState.Failed(
+                            "AI features are turned off in Settings, so these files never " +
+                                "leave your device. Turn Gemini back on to import syllabi.",
+                        )
+                    return@launch
+                }
+                val key =
+                    withContext(coreDispatcher) {
+                        core.geminiApiKey().orEmpty()
+                    }
+                if (key.isBlank()) {
+                    _syllabusImportState.value =
+                        SyllabusImportState.Failed(
+                            "Syllabus import needs a Gemini API key. Add your own key in " +
+                                "Settings -> AI (Gemini BYOK) and try again.",
+                        )
+                    return@launch
+                }
+
+                val extractedJsons = JSONArray()
+                val fileErrors = ArrayList<String>()
+                for ((name, bytes, mime) in documents) {
+                    if (bytes.isEmpty()) {
+                        fileErrors.add("$name: file was empty.")
+                        continue
+                    }
+                    try {
+                        val b64 =
+                            withContext(coreDispatcher) {
+                                android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                            }
+                        val rawJson = core.extractSyllabusFromDocument(b64, mime, key)
+                        extractedJsons.put(JSONObject(rawJson))
+                    } catch (e: Exception) {
+                        fileErrors.add("$name: ${e.message?.takeIf { it.isNotBlank() } ?: "could not extract"}")
+                    }
+                }
+
+                if (extractedJsons.length() == 0) {
+                    _syllabusImportState.value =
+                        SyllabusImportState.Failed(
+                            if (fileErrors.isNotEmpty()) {
+                                fileErrors.joinToString("\n")
+                            } else {
+                                "Could not read any course syllabus from the selected files."
+                            },
+                        )
+                    return@launch
+                }
+
+                val mergedJson = core.mergeExtractedSyllabi(extractedJsons.toString())
+                val merged = QuizRadarJsonParser.parseExtractedSyllabus(mergedJson)
+                _syllabusImportState.value =
+                    SyllabusImportState.Preview(extracted = merged, fileErrors = fileErrors)
+            } catch (e: Exception) {
+                _syllabusImportState.value =
+                    SyllabusImportState.Failed(
+                        "Syllabus import failed: " +
+                            (e.message?.takeIf { it.isNotBlank() } ?: "unknown error"),
+                    )
+            }
+        }
+    }
+
+    fun applyImportedSyllabi(
+        semester: String?,
+        courses: List<CourseModel>,
+        slots: List<ScheduleSlotModel>,
+        assessments: List<ExtractedSyllabusAssessmentModel>,
+    ) {
+        viewModelScope.launch {
+            try {
+                val refDate = clockDate()
+                val schedule =
+                    ScheduleDataModel(
+                        semester = semester,
+                        courses = courses,
+                        slots = slots,
+                    )
+                val scheduleJson = QuizRadarJsonParser.toCourseScheduleJson(schedule)
+                val extractedJson = QuizRadarJsonParser.toExtractedSyllabusJson(schedule, assessments)
+                val domainAssessmentsJson =
+                    callCore { core.syllabusToDomainAssessments(extractedJson, refDate) }
+                val rawResult =
+                    callCore { core.applyCourseBundle(scheduleJson, domainAssessmentsJson, refDate) }
+
+                val root = JSONObject(rawResult)
+                val snapshot = QuizRadarJsonParser.parseAppSnapshot(root.getJSONObject("state").toString())
+                val report = QuizRadarJsonParser.parseCourseImportReport(rawResult)
+                _uiState.value = UiState.Ready(snapshot)
+                lastLoadedDate = refDate
+                onStateMutated?.invoke()
+                _syllabusImportState.value =
+                    SyllabusImportState.Applied(report = report, courseIds = courses.map { it.id })
+                showToast(
+                    "Added ${report.coursesAdded} course(s), ${report.slotsAdded} slot(s), " +
+                        "${report.assessmentsAdded} assessment(s).",
+                )
+            } catch (e: Exception) {
+                _syllabusImportState.value =
+                    SyllabusImportState.Failed(
+                        "Could not save imported syllabi: " +
+                            (e.message?.takeIf { it.isNotBlank() } ?: "unknown error"),
+                    )
+            }
+        }
+    }
+
+    fun dismissSyllabusImport() {
+        _syllabusImportState.value = SyllabusImportState.Idle
+    }
+
+    fun openShareCoursePack(courseId: String) {
+        val currentState = _uiState.value as? UiState.Ready
+        if (currentState == null) {
+            showToast("Wait for your schedule to finish loading before sharing.")
+            return
+        }
+        val snapshot = currentState.snapshot
+        _coursePackShareState.value = CoursePackShareState.Loading(courseId)
+        viewModelScope.launch {
+            try {
+                val scheduleJson = QuizRadarJsonParser.toCourseScheduleJson(snapshot.schedule)
+                val assessmentsJson =
+                    JSONArray().apply {
+                        snapshot.assessments.forEach { a ->
+                            put(
+                                JSONObject().apply {
+                                    put("id", a.id)
+                                    a.courseId?.let { put("course_id", it) }
+                                    a.courseName?.let { put("course_name", it) }
+                                    put("title", a.title)
+                                    put("assessment_type", a.assessmentType)
+                                    a.dateIso?.let { put("date_iso", it.toString()) }
+                                    a.startTime?.let { put("start_time", it) }
+                                    a.endTime?.let { put("end_time", it) }
+                                    a.room?.let { put("room", it) }
+                                    a.group?.let { put("group", it) }
+                                    a.instructor?.let { put("instructor", it) }
+                                    val weight = snapshot.grades[a.id]?.weightagePercent ?: a.weightagePercent
+                                    weight?.let { put("weightage_percent", it) }
+                                    put("topics", JSONArray(a.topics))
+                                    put("warnings", JSONArray(a.warnings))
+                                    put("source", a.source)
+                                },
+                            )
+                        }
+                    }.toString()
+                val rawExport =
+                    callCore {
+                        core.exportCoursePack(
+                            courseId = courseId,
+                            scheduleJson = scheduleJson,
+                            assessmentsJson = assessmentsJson,
+                            webBaseUrl = com.quizradar.app.core.CoursePackCodec.WEB_BASE_URL,
+                        )
+                    }
+                val parsed = QuizRadarJsonParser.parseCoursePackExport(rawExport)
+                _coursePackShareState.value = CoursePackShareState.Ready(parsed)
+            } catch (e: Exception) {
+                _coursePackShareState.value =
+                    CoursePackShareState.Failed(
+                        e.message?.takeIf { it.isNotBlank() } ?: "Could not generate Course Pack.",
+                    )
+            }
+        }
+    }
+
+    fun openPasteCoursePackDialog() {
+        _coursePackImportState.value = CoursePackImportState.PasteInput()
+    }
+
+    fun previewCoursePackLink(rawInput: String) {
+        val trimmed = rawInput.trim()
+        if (trimmed.isBlank()) {
+            _coursePackImportState.value =
+                CoursePackImportState.PasteInput(error = "Paste a shared Course Pack link first.")
+            return
+        }
+        _coursePackImportState.value = CoursePackImportState.Decoding
+        viewModelScope.launch {
+            try {
+                val packJson = callCore { core.decodeCoursePack(trimmed) }
+                val pack = QuizRadarJsonParser.parseCoursePackPayload(packJson)
+                _coursePackImportState.value = CoursePackImportState.Preview(trimmed, pack)
+            } catch (e: Exception) {
+                _coursePackImportState.value =
+                    CoursePackImportState.Failed(
+                        message = e.message?.takeIf { it.isNotBlank() } ?: "Invalid Course Pack link.",
+                        rawInput = trimmed,
+                    )
+            }
+        }
+    }
+
+    fun applyCoursePackImport(rawInput: String) {
+        val trimmed = rawInput.trim()
+        if (trimmed.isBlank()) return
+        _coursePackImportState.value = CoursePackImportState.Importing
+        viewModelScope.launch {
+            try {
+                val refDate = clockDate()
+                val packJson = callCore { core.decodeCoursePack(trimmed) }
+                val pack = QuizRadarJsonParser.parseCoursePackPayload(packJson)
+                val domainJson = callCore { core.coursePackToDomain(packJson, refDate) }
+                val domainObj = JSONObject(domainJson)
+                val scheduleJson = domainObj.getJSONObject("schedule").toString()
+                val assessmentsJson = domainObj.getJSONArray("assessments").toString()
+                val rawResult =
+                    callCore { core.applyCourseBundle(scheduleJson, assessmentsJson, refDate) }
+                val root = JSONObject(rawResult)
+                val snapshot = QuizRadarJsonParser.parseAppSnapshot(root.getJSONObject("state").toString())
+                val report = QuizRadarJsonParser.parseCourseImportReport(rawResult)
+                _uiState.value = UiState.Ready(snapshot)
+                lastLoadedDate = refDate
+                onStateMutated?.invoke()
+                if (!_onboardingCompleted.value) {
+                    completeOnboarding()
+                }
+                _coursePackImportState.value = CoursePackImportState.Idle
+                showToast(
+                    "${pack.course.id} added (+${report.slotsAdded} slots, +${report.assessmentsAdded} deadlines).",
+                )
+            } catch (e: Exception) {
+                _coursePackImportState.value =
+                    CoursePackImportState.Failed(
+                        message = e.message?.takeIf { it.isNotBlank() } ?: "Could not import Course Pack.",
+                        rawInput = trimmed,
+                    )
+            }
+        }
+    }
+
+    fun dismissCoursePackDialogs() {
+        _coursePackShareState.value = CoursePackShareState.Idle
+        _coursePackImportState.value = CoursePackImportState.Idle
     }
 
     /**

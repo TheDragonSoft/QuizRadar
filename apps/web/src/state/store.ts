@@ -6,15 +6,21 @@ import { clearCachedState, loadCachedState, saveCachedState } from "./swr";
 import { applyOptimistic } from "./optimistic";
 import type {
   AiQuotaUsage,
+  ApplyCourseBundleResult,
   Assessment,
   ConfigUpdate,
   Course,
+  CoursePackExportResult,
+  CoursePackPayload,
   CustomCalendarEvent,
+  DesktopExtractedSyllabi,
   DesktopExtractedTimetable,
   ExportBackupResult,
+  ExtractedSyllabusAssessment,
   FeedConfig,
   Flashcard,
   GetStatePayload,
+  ImportCoursePackResult,
   ImportReport,
   LayerToggles,
   MistakeItem,
@@ -24,6 +30,7 @@ import type {
   ScheduleData,
   ScheduleSlot,
   SettingsSection,
+  SyllabusDocumentInput,
   SyncOutcome,
   SyncStatus,
   ThemeMode,
@@ -32,7 +39,14 @@ import type {
   View,
 } from "./types";
 import { getLocalDateString, startDayRolloverWatchdog } from "./watchdog";
-import { toRustAssessment, toRustEvent, toRustSchedule, toRustSlots } from "./ipcShape";
+import {
+  aliasDeep,
+  normalizeStatePayload,
+  toRustAssessment,
+  toRustEvent,
+  toRustSchedule,
+  toRustSlots,
+} from "./ipcShape";
 
 export * from "./dateUtils";
 export * from "./storage";
@@ -417,6 +431,19 @@ export interface AppStoreState {
   microsoftLogout: () => Promise<void>;
   validateGeminiKey: (key: string) => Promise<{ valid: boolean; error?: string }>;
   extractSchedule: (image: string) => Promise<DesktopExtractedTimetable>;
+  extractSyllabi: (documents: SyllabusDocumentInput[]) => Promise<DesktopExtractedSyllabi>;
+  applyCourseBundle: (args: {
+    semester?: string | null;
+    courses: Course[];
+    slots: ScheduleSlot[];
+    assessments: ExtractedSyllabusAssessment[];
+  }) => Promise<ApplyCourseBundleResult>;
+  exportCoursePack: (
+    courseId: string,
+    webBaseUrl?: string | null,
+  ) => Promise<CoursePackExportResult>;
+  decodeCoursePack: (rawInput: string) => Promise<CoursePackPayload>;
+  importCoursePack: (rawInput: string) => Promise<ImportCoursePackResult>;
   practiceGenerate: (assessmentId: string) => Promise<PracticeQuizPayload>;
   checkUpdate: () => Promise<UpdateCheckResult>;
   /** Downloads and installs the pending update (desktop only). */
@@ -438,6 +465,9 @@ export interface AppStoreState {
   openCourseModal: (course?: Course) => void;
   openEventModal: (event?: CustomCalendarEvent) => void;
   openSchedulePreview: (extracted: DesktopExtractedTimetable) => void;
+  openSyllabusPreview: (extracted: DesktopExtractedSyllabi) => void;
+  openShareCoursePack: (courseId: string) => void;
+  openImportCoursePack: (opts?: { rawInput?: string; pack?: CoursePackPayload }) => void;
 
   // Pomodoro
   pomodoroIsRunning: boolean;
@@ -2067,6 +2097,55 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     return extracted;
   },
 
+  extractSyllabi: async (documents) => {
+    const raw = await rpc<DesktopExtractedSyllabi>("extract_syllabi", { documents });
+    void get().refreshAiQuota();
+    return aliasDeep(raw);
+  },
+
+  applyCourseBundle: async ({ semester, courses, slots, assessments }) => {
+    const raw = await rpc<ApplyCourseBundleResult>("apply_course_bundle", {
+      schedule: toRustSchedule({
+        semester: semester ?? null,
+        courses,
+        slots,
+      }),
+      assessments: aliasDeep(assessments),
+    });
+    const normalizedState = normalizeStatePayload(raw.state);
+    const report = aliasDeep(raw.report);
+    saveCachedState(normalizedState);
+    set({ data: normalizedState });
+    return { state: normalizedState, report };
+  },
+
+  exportCoursePack: async (courseId, webBaseUrl) => {
+    const raw = await rpc<CoursePackExportResult>("export_course_pack", {
+      courseId,
+      webBaseUrl: webBaseUrl ?? null,
+    });
+    return aliasDeep(raw);
+  },
+
+  decodeCoursePack: async (rawInput) => {
+    const raw = await rpc<CoursePackPayload>("decode_course_pack", { rawInput });
+    return aliasDeep(raw);
+  },
+
+  importCoursePack: async (rawInput) => {
+    const raw = await rpc<ImportCoursePackResult>("import_course_pack", { rawInput });
+    const normalizedState = normalizeStatePayload(raw.state);
+    const report = aliasDeep(raw.report);
+    const result = aliasDeep({
+      ...raw,
+      state: normalizedState,
+      report,
+    });
+    saveCachedState(normalizedState);
+    set({ data: normalizedState });
+    return result;
+  },
+
   practiceGenerate: async (assessmentId) => {
     return await rpc<PracticeQuizPayload>("practice_generate", { assessmentId });
   },
@@ -2243,6 +2322,27 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     get().openModal({
       id: "schedule-preview",
       props: { extracted },
+    });
+  },
+
+  openSyllabusPreview: (extracted) => {
+    get().openModal({
+      id: "syllabus-preview",
+      props: { extracted },
+    });
+  },
+
+  openShareCoursePack: (courseId) => {
+    get().openModal({
+      id: "course-pack-share",
+      props: { courseId },
+    });
+  },
+
+  openImportCoursePack: (opts) => {
+    get().openModal({
+      id: "course-pack-import",
+      props: opts || {},
     });
   },
 }));

@@ -145,6 +145,23 @@ const KEY_ALIASES: ReadonlyArray<readonly [string, string]> = [
   ["scaleMax", "scale_max"],
   ["totalCredits", "total_credits"],
   ["semesterGpa", "semester_gpa"],
+  // Stage 1: Multi-Syllabus Importer & Shareable Course Packs
+  ["droppedCourses", "dropped_courses"],
+  ["droppedSlots", "dropped_slots"],
+  ["droppedAssessments", "dropped_assessments"],
+  ["fileErrors", "file_errors"],
+  ["modelUsed", "model_used"],
+  ["rawText", "raw_text"],
+  ["webUrl", "web_url"],
+  ["deepLink", "deep_link"],
+  ["byteLen", "byte_len"],
+  ["fitsQr", "fits_qr"],
+  ["coursesAdded", "courses_added"],
+  ["coursesUpdated", "courses_updated"],
+  ["slotsAdded", "slots_added"],
+  ["assessmentsAdded", "assessments_added"],
+  ["assessmentsUpdated", "assessments_updated"],
+  ["gradesSeeded", "grades_seeded"],
 ];
 
 function isRecord(value: unknown): value is Rec {

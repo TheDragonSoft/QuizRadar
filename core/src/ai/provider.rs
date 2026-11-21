@@ -186,10 +186,34 @@ pub enum AiError {
     InvalidKey,
     #[error("Free Gemini limit reached for your key — QuizRadar uses its offline heuristics until the quota resets at midnight Pacific.")]
     QuotaExhausted,
+    #[error("{}", format_trial_exhausted(*.limit, reset_iso.as_deref()))]
+    TrialExhausted {
+        limit: u32,
+        reset_iso: Option<String>,
+    },
     #[error("Gemini is temporarily unreachable ({0}) — try again in a moment, or continue with the offline heuristics.")]
     Retryable(String),
     #[error("Gemini returned an unreadable response: {0}")]
     BadResponse(String),
+}
+
+fn format_trial_exhausted(limit: u32, reset_iso: Option<&str>) -> String {
+    match reset_iso.filter(|s| !s.trim().is_empty()) {
+        Some(reset) if limit > 0 => format!(
+            "Free starter AI limit reached ({limit}/{limit} calls used today; resets at {reset}). Add your own free Gemini API key in Settings for unlimited free-tier usage."
+        ),
+        _ => "Free starter AI limit reached for today. Add your own free Gemini API key in Settings for unlimited free-tier usage.".to_string(),
+    }
+}
+
+/// Snapshot of remaining Zero-Key Starter AI Relay allowance reported by the
+/// worker's response headers (`X-QuizRadar-Trial-*`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrialQuotaStatus {
+    pub limit: u32,
+    pub remaining: u32,
+    pub reset_iso: Option<String>,
 }
 
 /// Why an AI task fell back to its deterministic path. Rendered verbatim in

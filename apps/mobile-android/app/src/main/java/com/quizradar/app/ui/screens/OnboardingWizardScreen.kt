@@ -614,6 +614,7 @@ private fun Step2AiConsent(
 ) {
     val storedKey by viewModel.geminiApiKey.collectAsState()
     val storedAiEnabled by viewModel.geminiEnabled.collectAsState()
+    val aiTrialEnabled by viewModel.aiTrialEnabled.collectAsState()
     var keyInput by rememberSaveable(storedKey) { mutableStateOf(storedKey) }
     var consentChecked by rememberSaveable(storedAiEnabled) { mutableStateOf(storedAiEnabled) }
     var isKeyVisible by rememberSaveable { mutableStateOf(false) }
@@ -621,7 +622,7 @@ private fun Step2AiConsent(
     // The AI-enabled preference is the CONSENT, not key presence: typing a
     // key alone used to flip the preference on (A07 failure).
     val enableAi = { checked: Boolean, key: String ->
-        viewModel.setGeminiEnabled(checked && key.isNotBlank())
+        viewModel.setGeminiEnabled(checked && (key.isNotBlank() || aiTrialEnabled))
     }
 
     Column(modifier = modifier.fillMaxWidth()) {
@@ -639,6 +640,50 @@ private fun Step2AiConsent(
         )
 
         Spacer(modifier = Modifier.height(16.dp))
+
+        Card(
+            shape = MaterialTheme.shapes.medium,
+            colors = CardDefaults.quietCardColors(),
+            border = CardDefaults.quietCardBorder(),
+            elevation = CardDefaults.quietCardElevation(),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "Free Starter AI (Zero-Key Trial Relay)",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text =
+                        "Try multi-syllabus PDF/photo import right away with no API key setup. " +
+                            "Free Starter AI routes prompts statelessly through QuizRadar's Cloudflare " +
+                            "relay using zero OAuth tokens and zero stored data (rate-limited by an " +
+                            "anonymous device ID hash).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                Button(
+                    onClick = { viewModel.enableStarterTrialAi() },
+                    colors = if (storedAiEnabled && aiTrialEnabled) ButtonDefaults.tonalPill() else ButtonDefaults.filledPill(),
+                    contentPadding = PillButtonContentPadding,
+                    modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = PillButtonMinHeight),
+                ) {
+                    Text(
+                        text =
+                            if (storedAiEnabled && aiTrialEnabled) {
+                                "Starter AI Active (No Key Needed)"
+                            } else {
+                                "Enable Free Starter AI (No Key Needed)"
+                            },
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         Card(
             shape = MaterialTheme.shapes.medium,
@@ -734,9 +779,9 @@ private fun Step2AiConsent(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                if (consentChecked && keyInput.isBlank()) {
+                if (consentChecked && keyInput.isBlank() && !aiTrialEnabled) {
                     Text(
-                        "Paste your API key above to finish enabling AI.",
+                        "Paste your API key above or enable Free Starter AI to finish enabling AI.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

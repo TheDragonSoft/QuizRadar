@@ -746,14 +746,54 @@ impl NativeStore {
         self.scan_cancel_notify.notify_waiters();
     }
 
-    /// Builds the consent-gated BYOK Gemini provider, or `None` with an
-    /// honest reason (audit A07: the consent toggle is enforced HERE, at the
-    /// core boundary — a shell that keeps a saved key must not be able to
-    /// send a request while AI is disabled).
+    async fn get_or_create_trial_install_id(&self) -> String {
+        if let Ok(Some(existing)) = self
+            .inner
+            .get_config_string("ai_trial_install_id".to_string())
+            .await
+        {
+            let trimmed = existing.trim().to_string();
+            if trimmed.len() >= 16 {
+                return trimmed;
+            }
+        }
+        let generated = crate::ai::gemini::generate_trial_install_id();
+        let _ = self
+            .inner
+            .set_config_string("ai_trial_install_id".to_string(), Some(generated.clone()))
+            .await;
+        generated
+    }
+
+    async fn effective_trial_relay_url(&self) -> Option<String> {
+        self.inner
+            .get_config_string("ai_trial_relay_url".to_string())
+            .await
+            .ok()
+            .flatten()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    }
+
+    async fn persist_trial_quota_if_any(&self, provider: &crate::ai::gemini::GeminiProvider) {
+        if let Some(quota) = provider.last_trial_quota() {
+            if let Ok(serialized) = serde_json::to_string(&quota) {
+                let _ = self
+                    .inner
+                    .set_config_string("ai_trial_quota_json".to_string(), Some(serialized))
+                    .await;
+            }
+        }
+    }
+
+    /// Builds the consent-gated Gemini provider (BYOK first, then opt-in
+    /// Zero-Key Trial AI Relay when `ai_trial_enabled` is true), or `None` with
+    /// an honest reason (audit A07: the consent toggle is enforced HERE, at the
+    /// core boundary — a shell that keeps a saved key or trial opt-in must not
+    /// be able to send a request while AI is disabled).
     ///
-    /// The key travels into the provider memory only; it never reaches the
-    /// store, a log line or an error string, and it rides the
-    /// `x-goog-api-key` header exclusively (never an OAuth bearer).
+    /// Keys travel into provider memory only; they never reach the store, a log
+    /// line, or an error string, and BYOK keys ride `x-goog-api-key` exclusively.
     async fn consented_gemini_provider(
         &self,
         api_key: Option<String>,
@@ -763,39 +803,117 @@ impl NativeStore {
             .get_config_bool("gemini_enabled".to_string(), false)
             .await
             .unwrap_or(false);
-        let key = api_key
-            .map(|k| k.trim().to_string())
-            .filter(|k| !k.is_empty());
         if !consent {
             // Zero AI requests: no provider is even constructed, so a
-            // retained key cannot send anything (A07).
+            // retained key or trial toggle cannot send anything (A07).
             return (None, None);
         }
-        let Some(key) = key else {
-            return (
-                None,
-                Some(
-                    "AI is enabled but no Gemini key is saved — the local heuristic was used instead of Gemini."
-                        .to_string(),
-                ),
-            );
-        };
+
         let kv: std::sync::Arc<dyn crate::ai::provider::QuotaKv> =
             std::sync::Arc::new(self.inner.quota_kv());
         let ledger = std::sync::Arc::new(crate::ai::provider::QuotaLedger::new(kv, None));
-        match crate::ai::gemini::GeminiProvider::production(
-            Some(key),
-            std::sync::Arc::new(chrono::Utc::now),
-            Some(ledger),
-        ) {
-            Ok(provider) => (Some(provider), None),
-            Err(e) => (
-                None,
-                Some(format!(
-                    "Gemini could not be initialized ({e}) — the local heuristic was used instead."
-                )),
-            ),
+
+        if let Some(key) = api_key
+            .map(|k| k.trim().to_string())
+            .filter(|k| !k.is_empty())
+        {
+            return match crate::ai::gemini::GeminiProvider::production(
+                Some(key.clone()),
+                std::sync::Arc::new(chrono::Utc::now),
+                Some(ledger),
+            ) {
+                Ok(provider) => (Some(provider), None),
+                Err(e) => (
+                    None,
+                    Some(format!(
+                        "Gemini could not be initialized ({}) — the local heuristic was used instead.",
+                        crate::ai::gemini::redact_key(&e, &key)
+                    )),
+                ),
+            };
         }
+
+        let trial_enabled = self
+            .inner
+            .get_config_bool("ai_trial_enabled".to_string(), false)
+            .await
+            .unwrap_or(false);
+        if trial_enabled {
+            let install_id = self.get_or_create_trial_install_id().await;
+            let relay_url = self.effective_trial_relay_url().await;
+            return match crate::ai::gemini::GeminiProvider::production_trial_relay(
+                relay_url.as_deref(),
+                install_id,
+                "android",
+                std::sync::Arc::new(chrono::Utc::now),
+                Some(ledger),
+            ) {
+                Ok(provider) => (Some(provider), None),
+                Err(e) => (
+                    None,
+                    Some(format!(
+                        "Free Starter AI could not be initialized ({e}) — the local heuristic was used instead."
+                    )),
+                ),
+            };
+        }
+
+        (
+            None,
+            Some(
+                "AI is enabled but no Gemini key is saved — add a free Gemini key or enable Free Starter AI in Settings."
+                    .to_string(),
+            ),
+        )
+    }
+
+    async fn require_consented_vision_provider(
+        &self,
+        api_key: String,
+        consent_off_msg: &str,
+    ) -> Result<crate::ai::gemini::GeminiProvider, QuizRadarFfiError> {
+        let consent = self
+            .inner
+            .get_config_bool("gemini_enabled".to_string(), false)
+            .await
+            .unwrap_or(false);
+        if !consent {
+            return Err(QuizRadarFfiError::Validation {
+                msg: consent_off_msg.to_string(),
+            });
+        }
+        let kv: std::sync::Arc<dyn crate::ai::provider::QuotaKv> =
+            std::sync::Arc::new(self.inner.quota_kv());
+        let ledger = std::sync::Arc::new(crate::ai::provider::QuotaLedger::new(kv, None));
+        let trimmed = api_key.trim().to_string();
+        if !trimmed.is_empty() {
+            return crate::ai::gemini::GeminiProvider::production(
+                Some(trimmed),
+                std::sync::Arc::new(chrono::Utc::now),
+                Some(ledger),
+            )
+            .map_err(|e| QuizRadarFfiError::Validation { msg: e });
+        }
+        let trial_enabled = self
+            .inner
+            .get_config_bool("ai_trial_enabled".to_string(), false)
+            .await
+            .unwrap_or(false);
+        if trial_enabled {
+            let install_id = self.get_or_create_trial_install_id().await;
+            let relay_url = self.effective_trial_relay_url().await;
+            return crate::ai::gemini::GeminiProvider::production_trial_relay(
+                relay_url.as_deref(),
+                install_id,
+                "android",
+                std::sync::Arc::new(chrono::Utc::now),
+                Some(ledger),
+            )
+            .map_err(|e| QuizRadarFfiError::Validation { msg: e });
+        }
+        Err(QuizRadarFfiError::Validation {
+            msg: crate::ai::provider::AiError::NoKey.to_string(),
+        })
     }
 }
 
@@ -1419,41 +1537,18 @@ impl NativeStore {
         mime: String,
         api_key: String,
     ) -> Result<String, QuizRadarFfiError> {
-        // A07 consent boundary (desktop `commands/ai.rs::extract_schedule`
-        // parity): a RETAINED key must not permit a send while AI is
-        // disabled — the preference is enforced here, at the core, not only
-        // in whichever shell happens to check it.
-        let consent = self
-            .inner
-            .get_config_bool("gemini_enabled".to_string(), false)
-            .await
-            .unwrap_or(false);
-        if !consent {
-            return Err(QuizRadarFfiError::Validation {
-                msg: "AI features are turned off in Settings, so this request cannot leave \
-                      the device. Turn Gemini back on to import a timetable image."
-                    .to_string(),
-            });
-        }
-        let key = api_key.trim();
-        if key.is_empty() {
-            return Err(QuizRadarFfiError::Validation {
-                msg: crate::ai::provider::AiError::NoKey.to_string(),
-            });
-        }
-        let kv: std::sync::Arc<dyn crate::ai::provider::QuotaKv> =
-            std::sync::Arc::new(self.inner.quota_kv());
-        let ledger = std::sync::Arc::new(crate::ai::provider::QuotaLedger::new(kv, None));
-        let provider = crate::ai::gemini::GeminiProvider::production(
-            Some(key.to_string()),
-            std::sync::Arc::new(chrono::Utc::now),
-            Some(ledger),
-        )
-        .map_err(|e| QuizRadarFfiError::Validation { msg: e })?;
+        let provider = self
+            .require_consented_vision_provider(
+                api_key,
+                "AI features are turned off in Settings, so this request cannot leave \
+                 the device. Turn Gemini back on to import a timetable image.",
+            )
+            .await?;
 
-        let extracted = crate::ai::tasks::extract_timetable(&provider, &image_b64, &mime)
-            .await
-            .map_err(|e| QuizRadarFfiError::Validation { msg: e.reason() })?;
+        let extracted_res = crate::ai::tasks::extract_timetable(&provider, &image_b64, &mime).await;
+        self.persist_trial_quota_if_any(&provider).await;
+        let extracted =
+            extracted_res.map_err(|e| QuizRadarFfiError::Validation { msg: e.reason() })?;
 
         let payload = serde_json::json!({
             "schedule": extracted.schedule,
@@ -1472,38 +1567,32 @@ impl NativeStore {
         mime: String,
         api_key: String,
     ) -> Result<String, QuizRadarFfiError> {
-        let consent = self
-            .inner
-            .get_config_bool("gemini_enabled".to_string(), false)
-            .await
-            .unwrap_or(false);
-        if !consent {
-            return Err(QuizRadarFfiError::Validation {
-                msg: "AI features are turned off in Settings, so this request cannot leave \
-                      the device. Turn Gemini back on to import a syllabus."
-                    .to_string(),
-            });
-        }
-        let key = api_key.trim();
-        if key.is_empty() {
-            return Err(QuizRadarFfiError::Validation {
-                msg: crate::ai::provider::AiError::NoKey.to_string(),
-            });
-        }
-        let kv: std::sync::Arc<dyn crate::ai::provider::QuotaKv> =
-            std::sync::Arc::new(self.inner.quota_kv());
-        let ledger = std::sync::Arc::new(crate::ai::provider::QuotaLedger::new(kv, None));
-        let provider = crate::ai::gemini::GeminiProvider::production(
-            Some(key.to_string()),
-            std::sync::Arc::new(chrono::Utc::now),
-            Some(ledger),
-        )
-        .map_err(|e| QuizRadarFfiError::Validation { msg: e })?;
+        let provider = self
+            .require_consented_vision_provider(
+                api_key,
+                "AI features are turned off in Settings, so this request cannot leave \
+                 the device. Turn Gemini back on to import a syllabus.",
+            )
+            .await?;
 
-        let extracted = crate::ai::tasks::extract_syllabus(&provider, &document_b64, &mime)
-            .await
-            .map_err(|e| QuizRadarFfiError::Validation { msg: e.reason() })?;
+        let extracted_res =
+            crate::ai::tasks::extract_syllabus(&provider, &document_b64, &mime).await;
+        self.persist_trial_quota_if_any(&provider).await;
+        let extracted =
+            extracted_res.map_err(|e| QuizRadarFfiError::Validation { msg: e.reason() })?;
         Ok(serde_json::to_string(&extracted)?)
+    }
+
+    /// Returns the most recently observed Trial AI Relay quota snapshot as
+    /// JSON (`{limit, remaining, resetIso}` or `{}`).
+    #[uniffi::method(async_runtime = "tokio")]
+    pub async fn get_trial_ai_quota_json(&self) -> Result<String, QuizRadarFfiError> {
+        Ok(self
+            .inner
+            .get_config_string("ai_trial_quota_json".to_string())
+            .await?
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "{}".to_string()))
     }
 
     /// Requests cancellation of the in-flight native scan. The abort is
@@ -1518,18 +1607,9 @@ impl NativeStore {
     }
 
     /// Consent-gated practice-quiz generation (audit A07): with the store's
-    /// `gemini_enabled` consent flag on AND a BYOK key supplied, the quiz is
-    /// authored by Gemini Flash-Lite through the real provider + quota
-    /// ledger; anything else (consent off, no key, a provider that cannot be
-    /// constructed, provider error, quota, transport) falls back to the
-    /// deterministic on-device authoring — the same
-    /// [`crate::ai::practice_fallback`] path the free function uses.
-    ///
-    /// The provenance labels travel in the payload itself
-    /// (`generated_by_ai` / `authored_locally` / `credit`), and when the AI
-    /// attempt was made but did NOT author the quiz, the extra
-    /// `fallback_reason` field names why — a labeled fallback, never a
-    /// silent one.
+    /// `gemini_enabled` consent flag on AND a BYOK key (or opt-in starter trial),
+    /// the quiz is authored by Gemini Flash-Lite through the real provider +
+    /// quota ledger; anything else falls back to deterministic on-device authoring.
     #[uniffi::method(async_runtime = "tokio")]
     pub async fn generate_practice_quiz(
         &self,
@@ -1542,60 +1622,34 @@ impl NativeStore {
             .get_config_bool("gemini_enabled".to_string(), false)
             .await
             .unwrap_or(false);
-        let mut fallback_reason = if consent {
-            None
-        } else {
+        let (provider_opt, provider_note) = self.consented_gemini_provider(gemini_api_key).await;
+        let mut fallback_reason = if !consent {
             Some(
                 "AI features are turned off in Settings - the quiz was generated on-device."
                     .to_string(),
             )
+        } else {
+            provider_note
         };
 
-        let quiz = if consent {
-            let key = gemini_api_key
-                .map(|k| k.trim().to_string())
-                .filter(|k| !k.is_empty());
-            if let Some(key) = key {
-                let kv: std::sync::Arc<dyn crate::ai::provider::QuotaKv> =
-                    std::sync::Arc::new(self.inner.quota_kv());
-                let ledger = std::sync::Arc::new(crate::ai::provider::QuotaLedger::new(kv, None));
-                match crate::ai::gemini::GeminiProvider::production(
-                    Some(key.clone()),
-                    std::sync::Arc::new(chrono::Utc::now),
-                    Some(ledger),
-                ) {
-                    Ok(provider) => {
-                        match crate::ai::tasks::generate_practice(&provider, &assessment).await {
-                            Ok(quiz) => quiz,
-                            Err(e) => {
-                                fallback_reason = Some(format!(
-                                    "Gemini was unavailable ({}) - the quiz was generated on-device.",
-                                    e.reason()
-                                ));
-                                crate::ai::practice_fallback::generate_practice_locally(&assessment)
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        // A provider that cannot even be CONSTRUCTED is the
-                        // same kind of failure as a failed request: a labeled
-                        // on-device fallback, never a raw error to the shell
-                        // and never the key in the reason.
-                        fallback_reason = Some(format!(
-                            "Gemini could not be initialized ({}) - the quiz was generated on-device.",
-                            crate::ai::gemini::redact_key(&e, &key)
-                        ));
-                        crate::ai::practice_fallback::generate_practice_locally(&assessment)
-                    }
+        let quiz = if let Some(provider) = provider_opt.as_ref() {
+            let gen_res = crate::ai::tasks::generate_practice(provider, &assessment).await;
+            self.persist_trial_quota_if_any(provider).await;
+            match gen_res {
+                Ok(quiz) => quiz,
+                Err(e) => {
+                    fallback_reason = Some(format!(
+                        "Gemini was unavailable ({}) - the quiz was generated on-device.",
+                        e.reason()
+                    ));
+                    crate::ai::practice_fallback::generate_practice_locally(&assessment)
                 }
-            } else {
-                fallback_reason =
-                    Some("No Gemini key is saved - the quiz was generated on-device.".to_string());
-                crate::ai::practice_fallback::generate_practice_locally(&assessment)
             }
         } else {
-            // Consent off: no provider is constructed, nothing leaves the
-            // device. The fallback is still honestly labeled on-device.
+            if consent && fallback_reason.is_none() {
+                fallback_reason =
+                    Some("No Gemini key is saved - the quiz was generated on-device.".to_string());
+            }
             crate::ai::practice_fallback::generate_practice_locally(&assessment)
         };
 
@@ -1607,13 +1661,11 @@ impl NativeStore {
     }
 
     /// Consent-gated "Optimize with AI" study plan (audit A07). With consent
-    /// on AND a BYOK key, [`crate::ai::tasks::optimize_plan`] proposes the
-    /// roadmap and every readiness/urgency number is re-validated against
-    /// the real store state; consent off, a missing key or any provider
+    /// on AND a BYOK key (or opt-in starter trial), [`crate::ai::tasks::optimize_plan`]
+    /// proposes the roadmap and every readiness/urgency number is re-validated
+    /// against the real store state; consent off, a missing key or any provider
     /// error returns the deterministic planner's payload with `source:
-    /// "deterministic"` and a note that names what happened. The payload is
-    /// `{"source": "ai"|"deterministic", "note": <string|null>, "tasks":
-    /// <StudyTasksPayload>}` — the UI can always tell which planner ran.
+    /// "deterministic"` and a note that names what happened.
     #[uniffi::method(async_runtime = "tokio")]
     pub async fn optimize_study_plan(
         &self,
@@ -1625,15 +1677,16 @@ impl NativeStore {
         let (email_ai, mut ai_note) = self.consented_gemini_provider(gemini_api_key).await;
 
         if let Some(provider) = email_ai.as_ref() {
-            match crate::ai::tasks::optimize_plan(
+            let opt_res = crate::ai::tasks::optimize_plan(
                 provider,
                 &snapshot.assessments,
                 &snapshot.schedule,
                 &snapshot.completed_topics,
                 ref_date,
             )
-            .await
-            {
+            .await;
+            self.persist_trial_quota_if_any(provider).await;
+            match opt_res {
                 Ok(payload) => {
                     let note = serde_json::json!({
                         "source": "ai",
@@ -2012,6 +2065,9 @@ impl NativeStore {
             }
             result = fetch => result.map_err(|e| QuizRadarFfiError::Store { msg: e })?,
         };
+        if let Some(provider) = email_ai.as_ref() {
+            self.persist_trial_quota_if_any(provider).await;
+        }
 
         if cancelled() {
             return Ok(serde_json::json!({
@@ -3629,5 +3685,116 @@ mod ffi_sync_tests {
         assert_eq!(applied["report"]["coursesAdded"], 1);
         assert_eq!(applied["report"]["slotsAdded"], 1);
         assert_eq!(applied["report"]["assessmentsAdded"], 1);
+    }
+
+    #[tokio::test]
+    async fn ffi_trial_ai_relay_opt_in_and_consent_gate() {
+        use wiremock::matchers::{header, header_exists, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let store = fresh_store();
+        let server = MockServer::start().await;
+
+        let extracted_json = serde_json::json!({
+            "semester": "Fall 2026",
+            "courses": [{ "id": "PHY101", "name": "Mechanics", "credits": 4.0, "aliases": [], "color": "#1a73e8" }],
+            "slots": [],
+            "assessments": [{
+                "course_id": "PHY101",
+                "title": "Midterm 1",
+                "assessment_type": "Midterm Exam",
+                "date_iso": "2026-11-12",
+                "start_time": null,
+                "end_time": null,
+                "room": null,
+                "instructor": null,
+                "weightage_percent": 25.0,
+                "topics": ["Kinematics"],
+                "warnings": [],
+                "ai_inference_note": "Syllabus"
+            }]
+        })
+        .to_string();
+
+        Mock::given(method("POST"))
+            .and(path("/v1beta/models/gemini-3.8-flash:generateContent"))
+            .and(header_exists("x-quizradar-install-id"))
+            .and(header("x-quizradar-client", "android"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("X-QuizRadar-Trial-Limit", "10")
+                    .insert_header("X-QuizRadar-Trial-Remaining", "9")
+                    .insert_header("X-QuizRadar-Trial-Reset", "2026-11-22T00:00:00.000Z")
+                    .set_body_json(serde_json::json!({
+                        "candidates": [{
+                            "content": { "parts": [{ "text": extracted_json }] },
+                            "finishReason": "STOP"
+                        }]
+                    })),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        store
+            .set_config_string("ai_trial_relay_url".to_string(), Some(server.uri()))
+            .await
+            .unwrap();
+
+        // 1. Consent OFF refuses even if ai_trial_enabled is true (0 HTTP hits).
+        store
+            .set_config_bool("ai_trial_enabled".to_string(), true)
+            .await
+            .unwrap();
+        let blocked = store
+            .extract_syllabus_from_document(
+                "JVBERi0xLjQ=".to_string(),
+                "application/pdf".to_string(),
+                "".to_string(),
+            )
+            .await
+            .unwrap_err();
+        assert!(blocked.to_string().contains("turned off in Settings"));
+
+        // 2. Consent ON + ai_trial_enabled false keeps missing-key refusal.
+        store
+            .set_config_bool("gemini_enabled".to_string(), true)
+            .await
+            .unwrap();
+        store
+            .set_config_bool("ai_trial_enabled".to_string(), false)
+            .await
+            .unwrap();
+        let no_key = store
+            .extract_syllabus_from_document(
+                "JVBERi0xLjQ=".to_string(),
+                "application/pdf".to_string(),
+                "".to_string(),
+            )
+            .await
+            .unwrap_err();
+        assert!(no_key.to_string().to_lowercase().contains("key"));
+
+        // 3. Opt-in ON routes through Trial Relay with zero key and persists quota.
+        store
+            .set_config_bool("ai_trial_enabled".to_string(), true)
+            .await
+            .unwrap();
+        let ok_raw = store
+            .extract_syllabus_from_document(
+                "JVBERi0xLjQ=".to_string(),
+                "application/pdf".to_string(),
+                "".to_string(),
+            )
+            .await
+            .unwrap();
+        let ok: serde_json::Value = serde_json::from_str(&ok_raw).unwrap();
+        assert_eq!(ok["schedule"]["courses"][0]["id"], "PHY101");
+
+        let quota_raw = store.get_trial_ai_quota_json().await.unwrap();
+        let quota: serde_json::Value = serde_json::from_str(&quota_raw).unwrap();
+        assert_eq!(quota["limit"], 10);
+        assert_eq!(quota["remaining"], 9);
+        server.verify().await;
     }
 }

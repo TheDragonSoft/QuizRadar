@@ -98,6 +98,7 @@ const FUNCTION_SAMPLES: ReadonlyArray<{ path: string; args: unknown[] }> = [
   { path: "ai.quotaText", args: [7] },
   { path: "ai.quotaText", args: [null] },
   { path: "ai.quotaTextSession", args: [2] },
+  { path: "ai.trialRemainingText", args: [9, 10] },
   { path: "settings.connectedAs", args: ["student@example.edu"] },
   { path: "settings.redirectUriLabel", args: ["http://127.0.0.1"] },
   { path: "search.noResults", args: ["quiz"] },

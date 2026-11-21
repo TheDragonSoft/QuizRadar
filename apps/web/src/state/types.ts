@@ -286,6 +286,7 @@ export interface DesktopConfig {
   autoSyncGcal: boolean;
   syncWeeklyClassesToGcal: boolean;
   geminiEnabled: boolean;
+  aiTrialEnabled: boolean;
   onboardingCompleted: boolean;
   /** The onboarding "academic rhythm" preset (`01` §4.1 — the track/rhythm
    *  chips are persisted). `null` means the user never picked one. */
@@ -343,6 +344,10 @@ export interface AiQuotaUsage {
    * failed call to explain it.
    */
   keyInMemory?: boolean;
+  mode?: "off" | "trial" | "byok";
+  trialRemaining?: number | null;
+  trialLimit?: number | null;
+  trialResetIso?: string | null;
 }
 
 /**
@@ -478,6 +483,7 @@ export interface ConfigUpdate {
   autoSyncGcal?: boolean;
   syncWeeklyClassesToGcal?: boolean;
   geminiEnabled?: boolean;
+  aiTrialEnabled?: boolean;
   onboardingCompleted?: boolean;
   /** The onboarding academic-rhythm preset ("med" | "eng" | "biz"). */
   academicTrack?: string;

@@ -7,8 +7,7 @@ use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use quizradar_core::ai::gemini::GeminiProvider;
-use quizradar_core::ai::provider::{AiModel, QuotaLedger};
+use quizradar_core::ai::provider::AiModel;
 use quizradar_core::cal::gcal::{
     push_assessments_to_google_calendar, GCalSyncReport, GCAL_API_BASE,
 };
@@ -260,18 +259,7 @@ pub async fn run_sync_inner(
         }
     };
 
-    let consent = crate::commands::ai::gemini_consent(state)
-        .await
-        .unwrap_or(false);
-    let gemini_key = if consent {
-        state.get_gemini_api_key().ok().flatten()
-    } else {
-        None
-    };
-    let clock = Arc::new(chrono::Utc::now);
-    let ledger = Arc::new(QuotaLedger::new(Arc::new(state.store.quota_kv()), None));
-    let email_ai = gemini_key
-        .and_then(|k| GeminiProvider::production(Some(k), clock, Some(Arc::clone(&ledger))).ok());
+    let email_ai = crate::commands::ai::build_optional_ai_provider(state).await;
 
     // The user may abort the scan from the overlay's Cancel button. The abort
     // is honoured during the fetch phase only — the merge into the store
@@ -289,7 +277,12 @@ pub async fn run_sync_inner(
             None,
             email_ai.as_ref().map(|p| p as &dyn quizradar_core::ai::provider::AiProvider),
             &progress_cb,
-        ) => result?,
+        ) => {
+            if let Some(ref provider) = email_ai {
+                crate::commands::ai::persist_trial_quota_if_any(state, provider).await;
+            }
+            result?
+        },
     };
 
     // "Last synced" reflects real fetches only: a scan in which every source

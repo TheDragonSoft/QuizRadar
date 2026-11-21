@@ -2,6 +2,7 @@
   "autoSyncGcal": false,
   "syncWeeklyClassesToGcal": false,
   "geminiEnabled": false,
+  "aiTrialEnabled": false,
   "onboardingCompleted": true,
   "teamsEnabled": true,
   "teamsClientId": null,

@@ -132,6 +132,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           QUIZRADAR_BUILD_MICROSOFT_CLIENT_ID: ${{ vars.QUIZRADAR_MICROSOFT_CLIENT_ID }}
+          QUIZRADAR_BUILD_GOOGLE_CLIENT_SECRET: ${{ secrets.QUIZRADAR_GOOGLE_CLIENT_SECRET }}
         run: |
           cargo tauri build --target ${{ matrix.platform.target }} --bundles ${{ matrix.platform.bundles }}
 

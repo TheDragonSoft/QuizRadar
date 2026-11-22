@@ -481,13 +481,13 @@ class OAuthManager(
 
         /**
          * The maintainer's Google OAuth client id (project
-         * `quizradar-513903`). A client id is a public identifier — it appears
+         * `quizradar-511922`). A client id is a public identifier — it appears
          * in every authorize URL — so it ships; a user-supplied id
          * (Settings → Sources) wins over it. No client secret ships: the Android
          * flow is a PKCE public client.
          */
         const val DEFAULT_GOOGLE_CLIENT_ID =
-            "438181858687-gubqi1nr6epph2gic9osjvbctg4e0mo4.apps.googleusercontent.com"
+            "620389124802-0t528qfv61n0q0l87088flfmabvh842j.apps.googleusercontent.com"
 
         /**
          * Sentinel used when neither a build-time first-party Entra GUID

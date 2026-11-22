@@ -73,7 +73,7 @@ export const GOOGLE_BROWSER_SCOPES =
  * JavaScript origins contain that exact origin.
  */
 export const DEFAULT_BROWSER_GOOGLE_CLIENT_ID =
-  "438181858687-9etakn8k6fd1en8ra968russdpkjh9jr.apps.googleusercontent.com";
+  "620389124802-rnk8us1sc3q3tv52s94nl4ituiu8qa8j.apps.googleusercontent.com";
 
 const MICROSOFT_GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ALL_ZERO_GUID = "00000000-0000-0000-0000-000000000000";

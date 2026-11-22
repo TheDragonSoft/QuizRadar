@@ -1,0 +1,11 @@
+name = "diagnostics"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+persist = true

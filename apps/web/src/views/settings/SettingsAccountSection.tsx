@@ -6,6 +6,7 @@ import { isTauriEnvironment } from "../../state/rpc";
 import { getPreferredDarkTheme, getPreferredLightTheme, isDarkTheme } from "../../state/storage";
 import type { ThemeMode } from "../../state/types";
 import { GoogleMark, MicrosoftMark } from "../../components/BrandMarks";
+import { isDiagnosticsEnabled, setDiagnosticsEnabled } from "../../lib/diagnostics";
 import { SECTION_ID } from "./constants";
 
 export function SettingsAccountSection() {
@@ -23,6 +24,7 @@ export function SettingsAccountSection() {
   const aiQuota = useAppStore((s) => s.aiQuota);
   const refreshAiQuota = useAppStore((s) => s.refreshAiQuota);
   const openModal = useAppStore((s) => s.openModal);
+  const [diagnosticsOn, setDiagnosticsOn] = useState<boolean>(() => isDiagnosticsEnabled());
   const addToast = useAppStore((s) => s.addToast);
 
   const isBrowserTier = !isTauriEnvironment();
@@ -569,6 +571,37 @@ export function SettingsAccountSection() {
               <span>{copy.ai.getKeyCta}</span>
             </a>
           </div>
+        </div>
+      </div>
+
+      {/* Privacy-First Zero-PII Diagnostics Toggle */}
+      <div className="mt-5 rounded-xl border border-[var(--border)] bg-[var(--page)] p-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold text-[var(--text)]">
+              Privacy-First Anonymous Diagnostics
+            </h3>
+            <p className="text-xs leading-relaxed text-[var(--text-muted)]">
+              Sends only aggregate daily counts for 6 anonymous activation events (app open,
+              syllabus import, onboarding, course link share/import, Day-7 return) and sanitized
+              crash codes to QuizRadar&apos;s first-party Worker. Zero course names, zero grades,
+              zero emails, zero IP addresses, and zero third-party trackers.
+            </p>
+          </div>
+          <label className="inline-flex shrink-0 cursor-pointer items-center gap-2 text-xs font-semibold text-[var(--text)]">
+            <input
+              type="checkbox"
+              aria-label="Enable privacy-first anonymous diagnostics"
+              checked={diagnosticsOn}
+              onChange={(e) => {
+                const next = e.target.checked;
+                setDiagnosticsOn(next);
+                setDiagnosticsEnabled(next);
+              }}
+              className="h-4 w-4 rounded border-[var(--border)] accent-[var(--accent-fill)]"
+            />
+            <span>{diagnosticsOn ? "On" : "Off"}</span>
+          </label>
         </div>
       </div>
     </section>

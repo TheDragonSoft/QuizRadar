@@ -106,4 +106,4 @@ prompts/               # Historical v5.0 phase prompts (immutable)
 
 ## 9. Non-negotiable non-goals
 
-No backend server/user accounts/telemetry/analytics/cloud relay, no shared-secret OAuth, no timeline fabrication, no keyword-renaming of user courses, no generic `.ics` writing into a user's calendar as storage.
+No backend server/user accounts/ad-tech/behavioral profiling/cloud relay, no shared-secret OAuth, no timeline fabrication, no keyword-renaming of user courses, no generic `.ics` writing into a user's calendar as storage. **Maintainer override (2026-11-22):** Strictly opt-out, zero-PII first-party diagnostics (`workers/diagnostics-relay/` + `apps/web/src/lib/diagnostics.ts`) are authorized for 6 allowlisted anonymous activation funnel counters (`app_opened`, `syllabus_imported`, `onboarding_finished`, `course_link_shared`, `course_link_imported`, `day_7_return`) and sanitized crash codes only — zero PII, zero academic content, zero IP storage, zero cookies, and zero third-party analytics SDKs.

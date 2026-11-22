@@ -11,11 +11,13 @@ use quizradar_core::ai::provider::{
     AiModel, AiProvider, QuotaLedger, StructuredPrompt, TrialQuotaStatus,
 };
 use quizradar_core::ai::tasks::{
-    extract_syllabus, extract_timetable, generate_practice, merge_extracted_syllabi, optimize_plan,
-    ExtractedSyllabusAssessment, ExtractedTimetable, PracticeQuizPayload,
+    extract_announcement_from_document, extract_syllabus, extract_timetable, generate_practice,
+    merge_extracted_syllabi, optimize_plan, ExtractedSyllabusAssessment, ExtractedTimetable,
+    PracticeQuizPayload,
 };
+use quizradar_core::parse::email::parse_shared_announcement as parse_shared_announcement_core;
 use quizradar_core::plan::tasks::StudyTasksPayload;
-use quizradar_core::types::ScheduleData;
+use quizradar_core::types::{Assessment, ScheduleData};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
@@ -532,4 +534,85 @@ pub async fn practice_generate_inner(
     // Honest on-device deterministic fallback
     let fallback = generate_practice_locally(&assessment);
     Ok(fallback)
+}
+
+/// Deterministic offline parser for pasted/shared WhatsApp, Telegram, Discord,
+/// or portal announcement text anchored against the student's timetable.
+#[tauri::command]
+pub async fn parse_shared_announcement(
+    state: State<'_, AppState>,
+    subject: Option<String>,
+    text: String,
+) -> Result<Assessment, String> {
+    parse_shared_announcement_inner(&state, subject.as_deref(), &text).await
+}
+
+pub async fn parse_shared_announcement_inner(
+    state: &AppState,
+    subject: Option<&str>,
+    text: &str,
+) -> Result<Assessment, String> {
+    let today = state.today();
+    let schedule = state
+        .store
+        .load_state(today)
+        .await
+        .map_err(|e| format!("Failed to read schedule: {e}"))?
+        .schedule;
+    parse_shared_announcement_core(subject, text, &schedule, today)
+}
+
+/// Extracts a single announcement from a shared screenshot (`image/*`) or PDF
+/// notice using BYOK Gemini or the opt-in Zero-Key Trial AI Relay.
+#[tauri::command]
+pub async fn extract_announcement_media(
+    state: State<'_, AppState>,
+    document: SyllabusDocumentInput,
+) -> Result<Assessment, String> {
+    extract_announcement_media_with_base_url(&state, document, None, None).await
+}
+
+pub async fn extract_announcement_media_with_base_url(
+    state: &AppState,
+    document: SyllabusDocumentInput,
+    base_url_override: Option<&str>,
+    api_key_override: Option<String>,
+) -> Result<Assessment, String> {
+    if !gemini_consent(state).await? {
+        return Err(
+            "AI features are turned off in Settings, so this screenshot cannot leave the device. \
+             Turn Gemini back on in Settings (or paste the announcement text) to capture it."
+                .to_string(),
+        );
+    }
+
+    let mime = document
+        .mime
+        .as_deref()
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .or_else(|| {
+            document
+                .data_url
+                .strip_prefix("data:")
+                .and_then(|rest| rest.split(';').next())
+                .map(str::trim)
+                .filter(|m| !m.is_empty())
+        })
+        .unwrap_or("image/png");
+
+    let provider = build_consented_provider(state, base_url_override, api_key_override).await?;
+    let today = state.today();
+    let schedule = state
+        .store
+        .load_state(today)
+        .await
+        .map_err(|e| format!("Failed to read schedule: {e}"))?
+        .schedule;
+
+    let res =
+        extract_announcement_from_document(&provider, &document.data_url, mime, &schedule, today)
+            .await;
+    persist_trial_quota_if_any(state, &provider).await;
+    res.map_err(|e| e.to_string())
 }

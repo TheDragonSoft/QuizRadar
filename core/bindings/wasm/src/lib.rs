@@ -744,6 +744,29 @@ impl QuizRadarWasm {
         }))
         .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
     }
+
+    pub fn parse_shared_announcement(
+        &self,
+        subject: &str,
+        text: &str,
+        schedule_json: &str,
+        ref_date_iso: &str,
+    ) -> Result<String, JsValue> {
+        let schedule: ScheduleData = serde_json::from_str(schedule_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid ScheduleData JSON: {e}")))?;
+        let date = NaiveDate::parse_from_str(ref_date_iso, "%Y-%m-%d")
+            .map_err(|e| JsValue::from_str(&format!("Invalid ref_date: {e}")))?;
+        let subject_opt = (!subject.trim().is_empty()).then_some(subject);
+        let assessment = quizradar_core::parse::email::parse_shared_announcement(
+            subject_opt,
+            text,
+            &schedule,
+            date,
+        )
+        .map_err(|e| JsValue::from_str(&e))?;
+        serde_json::to_string(&assessment)
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+    }
 }
 
 impl Default for QuizRadarWasm {

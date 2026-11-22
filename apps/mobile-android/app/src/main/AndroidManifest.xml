@@ -56,11 +56,13 @@
                     android:pathPrefix="/oauth" />
             </intent-filter>
 
-            <!-- Share-sheet ingest for announcement text / emails -->
+            <!-- Share-sheet ingest for announcement text, screenshots, and PDFs -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="application/pdf" />
             </intent-filter>
 
             <!-- App Shortcuts & Serverless Peer Sync Deep Links -->

@@ -81,6 +81,7 @@ import {
   validateGeminiKeyBrowser,
 } from "./browserSources";
 import {
+  extractAnnouncementFromDocumentBrowser,
   extractSyllabiBrowser,
   extractTimetableBrowser,
   getBrowserAiSessionCalls,
@@ -1973,6 +1974,109 @@ export async function pwaRpcHandler<T>(fn: string, args?: Record<string, unknown
       const auth = await resolveBrowserAiAuth();
       try {
         return aliasDeep(await extractSyllabiBrowser(documents, auth)) as T;
+      } finally {
+        const trialQuota = getBrowserTrialQuota();
+        if (trialQuota) {
+          await setConfigValue("ai_trial_quota_json", JSON.stringify(trialQuota));
+        }
+      }
+    }
+
+    case "parse_shared_announcement": {
+      const wasm = await getWasmEngine();
+      const subject = typeof args?.subject === "string" ? args.subject : "";
+      const text = typeof args?.text === "string" ? args.text : "";
+      const schedule = await loadScheduleFromIdb();
+      const rustSchedule = toRustSchedulePayload(schedule).schedule;
+      const raw = wasm.parse_shared_announcement(
+        subject,
+        text,
+        JSON.stringify(rustSchedule),
+        todayIso(),
+      );
+      return aliasDeep(JSON.parse(raw)) as T;
+    }
+
+    case "extract_announcement_media": {
+      const explicitConsent = await getConfigValue<boolean | null>("gemini_enabled", null);
+      if (explicitConsent === false) {
+        throw new Error(
+          "AI features are turned off in Settings → AI & Privacy, so this screenshot cannot leave the device. Turn Gemini back on (or paste the announcement text) to capture it.",
+        );
+      }
+      const document = args?.document as SyllabusDocumentInput | undefined;
+      if (!document) {
+        throw new Error("Select or paste a screenshot or PDF first.");
+      }
+      const schedule = await loadScheduleFromIdb();
+      const refDate = todayIso();
+      const auth = await resolveBrowserAiAuth();
+      try {
+        const extracted = await extractAnnouncementFromDocumentBrowser(
+          document,
+          schedule,
+          refDate,
+          auth,
+        );
+        // Merge deterministic timetable anchoring over rawText if date/room/time was omitted.
+        let fallback: Record<string, unknown> | null = null;
+        if (extracted.rawText) {
+          try {
+            const wasm = await getWasmEngine();
+            const rustSchedule = toRustSchedulePayload(schedule).schedule;
+            const rawFb = wasm.parse_shared_announcement(
+              "",
+              extracted.rawText,
+              JSON.stringify(rustSchedule),
+              refDate,
+            );
+            fallback = JSON.parse(rawFb) as Record<string, unknown>;
+          } catch {
+            fallback = null;
+          }
+        }
+        const matchedCourse = (schedule.courses ?? []).find(
+          (c) =>
+            extracted.courseId &&
+            (c.id.toLowerCase() === extracted.courseId.toLowerCase() ||
+              (c.aliases ?? []).some((a) => a.toLowerCase() === extracted.courseId!.toLowerCase())),
+        );
+        const finalCourseId =
+          matchedCourse?.id ??
+          extracted.courseId ??
+          (typeof fallback?.course_id === "string" ? fallback.course_id : null);
+        const finalDate =
+          extracted.dateIso ??
+          (typeof fallback?.date_iso === "string"
+            ? fallback.date_iso
+            : typeof fallback?.date === "string"
+              ? fallback.date
+              : null);
+        const finalStart =
+          extracted.startTime ??
+          (typeof fallback?.start_time === "string" ? fallback.start_time : null);
+        const finalEnd =
+          extracted.endTime ?? (typeof fallback?.end_time === "string" ? fallback.end_time : null);
+        const finalRoom =
+          extracted.room ?? (typeof fallback?.room === "string" ? fallback.room : null);
+        return aliasDeep({
+          id: `share-${Date.now().toString(36)}`,
+          course_id: finalCourseId,
+          course_name: matchedCourse?.name ?? null,
+          title: extracted.title,
+          assessment_type: extracted.assessmentType,
+          date_iso: finalDate,
+          start_time: finalStart,
+          end_time: finalEnd,
+          room: finalRoom,
+          instructor: extracted.instructor ?? null,
+          weightage_percent: extracted.weightagePercent ?? null,
+          topics: extracted.topics,
+          warnings: extracted.warnings,
+          ai_inference_note: extracted.aiInferenceNote,
+          source: { Feed: extracted.sourceLabel },
+          is_upcoming: true,
+        }) as T;
       } finally {
         const trialQuota = getBrowserTrialQuota();
         if (trialQuota) {

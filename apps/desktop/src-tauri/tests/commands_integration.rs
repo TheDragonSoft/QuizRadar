@@ -20,8 +20,8 @@ use quizradar_core::types::{
     Assessment, AssessmentSource, AssessmentType, Course, ScheduleData, ScheduleSlot, UrgencyLevel,
 };
 use quizradar_desktop_lib::commands::ai::{
-    ai_quota_usage_inner, extract_syllabi_with_base_url, practice_generate_inner,
-    SyllabusDocumentInput,
+    ai_quota_usage_inner, extract_announcement_media_with_base_url, extract_syllabi_with_base_url,
+    parse_shared_announcement_inner, practice_generate_inner, SyllabusDocumentInput,
 };
 use quizradar_desktop_lib::commands::state::{apply_course_bundle_inner, build_full_state};
 use quizradar_desktop_lib::commands::sync::{
@@ -906,4 +906,71 @@ async fn test_zero_key_trial_syllabus_extraction_consent_and_429() {
 
     let updated = ai_quota_usage_inner(&state).await.unwrap();
     assert_eq!(updated.trial_remaining, Some(0));
+}
+
+#[tokio::test]
+async fn test_quick_capture_text_offline_and_screenshot_consent_gate() {
+    let state = test_app_state("quick_capture").await;
+
+    // Seed a course + tutorial slot so relative text anchors deterministically.
+    let sched = ScheduleData {
+        semester: Some("Fall 2026".to_string()),
+        academic_week_start: None,
+        courses: vec![Course {
+            id: "ECE210".to_string(),
+            name: "Digital Systems".to_string(),
+            color: "#1a73e8".to_string(),
+            bg: None,
+            border: None,
+            credits: Some(3.0),
+            max_absences: None,
+            aliases: vec!["ECE 210".to_string()],
+        }],
+        slots: vec![ScheduleSlot {
+            id: "slot-tut".to_string(),
+            day: "Tuesday".to_string(),
+            day_index: 2,
+            course_id: "ECE210".to_string(),
+            course_name: "Digital Systems".to_string(),
+            slot_type: "Tutorial".to_string(),
+            group: None,
+            room: Some("Eng 305".to_string()),
+            start_time: NaiveTime::from_hms_opt(14, 0, 0).unwrap(),
+            end_time: NaiveTime::from_hms_opt(15, 30, 0).unwrap(),
+            display_time: "14:00–15:30".to_string(),
+            has_quiz: false,
+            quiz_title: None,
+            week_parity: None,
+        }],
+    };
+    state
+        .store
+        .save_schedule(sched, "2026-11-01T00:00:00Z".to_string(), state.today())
+        .await
+        .unwrap();
+
+    // 1. Offline text capture works even with AI consent off.
+    state
+        .store
+        .set_config_bool("gemini_enabled".to_string(), false)
+        .await
+        .unwrap();
+    let parsed =
+        parse_shared_announcement_inner(&state, None, "ECE 210 Quiz 2 next week during tutorial")
+            .await
+            .unwrap();
+    assert_eq!(parsed.course_id.as_deref(), Some("ECE210"));
+    assert_eq!(parsed.room.as_deref(), Some("Eng 305"));
+    assert!(parsed.id.starts_with("share-"));
+
+    // 2. Screenshot capture refuses when gemini_enabled is false.
+    let doc = SyllabusDocumentInput {
+        name: "wa-shot.png".to_string(),
+        data_url: "data:image/png;base64,iVBORw0KGgo=".to_string(),
+        mime: Some("image/png".to_string()),
+    };
+    let denied = extract_announcement_media_with_base_url(&state, doc, None, None)
+        .await
+        .unwrap_err();
+    assert!(denied.contains("turned off in Settings"));
 }

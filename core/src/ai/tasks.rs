@@ -1406,6 +1406,263 @@ pub fn syllabus_assessments_to_domain(
 }
 
 // ---------------------------------------------------------------------------
+// Task b3 — shared screenshot / PDF announcement capture (flash)
+// ---------------------------------------------------------------------------
+
+/// Prompt sent to Gemini Flash to extract a single academic announcement from
+/// a shared screenshot (WhatsApp, Telegram, Discord, LMS portal) or PDF notice.
+/// Pinned in `apps/web/src/pwadapters/browserAiCoreParity.test.ts`.
+pub const ANNOUNCEMENT_VISION_INSTRUCTION: &str = r##"You are an academic announcement extractor for QuizRadar.
+Read the attached screenshot or PDF notice (such as a WhatsApp, Telegram, Discord, Teams, or university portal announcement) and extract the single exam, quiz, lab, or assignment announcement shown.
+
+RULES (strict honesty — never fabricate):
+1. Use the provided "reference_date" and the student's "courses" and "slots" context ONLY to resolve relative phrases explicitly stated in the announcement (for example "next Tuesday's tutorial" or "this Thursday's lecture").
+2. If no date is stated or resolvable, set "date_iso" to null. Never invent a date, room, time, instructor, weight, or topic.
+3. Match "course_id" to one of the student's known course IDs when the message clearly refers to that course (including aliases); otherwise copy the course code shown or set null.
+4. Set "assessment_type" to one of: "Class Quiz", "Lab Assessment", "Midterm Exam", "Final Exam", "Assignment".
+5. Include a short plain-text "raw_text" transcription of the announcement message so deterministic local checks can verify dates and rooms.
+6. Set "ai_inference_note" to a brief honest note explaining how the date/room was determined (e.g. "Explicit date in screenshot" or "Resolved 'next Tuesday tutorial' from timetable" or "Date not stated in screenshot").
+
+Return ONLY a single raw JSON object:
+{
+  "course_id": "ECE210" | null,
+  "title": "Quiz 2",
+  "assessment_type": "Class Quiz",
+  "date_iso": "YYYY-MM-DD" | null,
+  "start_time": "HH:MM" | null,
+  "end_time": "HH:MM" | null,
+  "room": "Eng 305" | null,
+  "instructor": "Dr. Patel" | null,
+  "weightage_percent": 10 | null,
+  "topics": ["Topic 1"],
+  "warnings": [],
+  "ai_inference_note": "Explicit date in screenshot",
+  "raw_text": "ECE210 Quiz 2 is on Nov 10 during the tutorial."
+}"##;
+
+#[derive(Deserialize)]
+struct RawAnnouncementCapture {
+    #[serde(default)]
+    course_id: Option<String>,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    assessment_type: Option<String>,
+    #[serde(default)]
+    date_iso: Option<String>,
+    #[serde(default)]
+    start_time: Option<String>,
+    #[serde(default)]
+    end_time: Option<String>,
+    #[serde(default)]
+    room: Option<String>,
+    #[serde(default)]
+    instructor: Option<String>,
+    #[serde(default)]
+    weightage_percent: Option<f64>,
+    #[serde(default)]
+    topics: Vec<String>,
+    #[serde(default)]
+    warnings: Vec<String>,
+    #[serde(default)]
+    ai_inference_note: Option<String>,
+    #[serde(default)]
+    raw_text: Option<String>,
+}
+
+/// Validates raw model JSON from a shared announcement screenshot or PDF into
+/// a deterministic domain [`Assessment`] anchored at `reference_date`.
+pub fn parse_announcement_extraction(
+    value: Value,
+    schedule: &ScheduleData,
+    reference_date: NaiveDate,
+    source_label: &str,
+) -> Result<Assessment, AiError> {
+    let raw: RawAnnouncementCapture =
+        serde_json::from_value(unwrap_array(value)).map_err(|error| {
+            AiError::BadResponse(format!(
+                "announcement JSON did not match the schema: {error}"
+            ))
+        })?;
+
+    let raw_text = de_optional(raw.raw_text.as_deref());
+    let fallback = raw_text.as_deref().and_then(|text| {
+        crate::parse::email::parse_shared_announcement(None, text, schedule, reference_date).ok()
+    });
+
+    let title = de_optional(raw.title.as_deref())
+        .or_else(|| fallback.as_ref().map(|a| a.title.clone()))
+        .ok_or_else(|| {
+            AiError::BadResponse("announcement extraction did not include a title".to_string())
+        })?;
+
+    let raw_course_id = de_optional(raw.course_id.as_deref())
+        .or_else(|| fallback.as_ref().and_then(|a| a.course_id.clone()));
+    let matched_course = raw_course_id
+        .as_deref()
+        .and_then(|cid| schedule.find_course(cid));
+    let course_id = matched_course.map(|c| c.id.clone()).or(raw_course_id);
+
+    let assessment_type = raw
+        .assessment_type
+        .as_deref()
+        .and_then(normalize_syllabus_assessment_type)
+        .or_else(|| fallback.as_ref().map(|a| a.assessment_type))
+        .unwrap_or(AssessmentType::ClassQuiz);
+
+    let date = raw
+        .date_iso
+        .as_deref()
+        .and_then(parse_iso_date)
+        .or_else(|| fallback.as_ref().and_then(|a| a.date));
+
+    let start_time = raw
+        .start_time
+        .as_deref()
+        .and_then(parse_hm)
+        .or_else(|| fallback.as_ref().and_then(|a| a.start_time));
+    let end_time = raw
+        .end_time
+        .as_deref()
+        .and_then(parse_hm)
+        .or_else(|| fallback.as_ref().and_then(|a| a.end_time))
+        .filter(|end| start_time.is_none_or(|start| *end > start));
+
+    let room =
+        de_optional(raw.room.as_deref()).or_else(|| fallback.as_ref().and_then(|a| a.room.clone()));
+    let instructor = de_optional(raw.instructor.as_deref())
+        .or_else(|| fallback.as_ref().and_then(|a| a.instructor.clone()));
+    let weightage_percent = valid_weightage(raw.weightage_percent);
+
+    let mut topics = clean_ai_strings(raw.topics);
+    if topics.is_empty() {
+        if let Some(fb) = &fallback {
+            topics = fb.topics.clone();
+        }
+    }
+    let warnings = clean_ai_strings(raw.warnings);
+
+    let note = de_optional(raw.ai_inference_note.as_deref())
+        .or_else(|| fallback.as_ref().and_then(|a| a.ai_inference_note.clone()))
+        .unwrap_or_else(|| {
+            if date.is_some() {
+                format!("Extracted from {source_label}")
+            } else {
+                format!("Extracted from {source_label} — date not stated")
+            }
+        });
+
+    let date_part = date
+        .map(|d| d.format("%Y-%m-%d").to_string())
+        .unwrap_or_else(|| "tba".to_string());
+    let identity_key = format!(
+        "{}|{}|{}",
+        course_id.as_deref().unwrap_or("none").to_ascii_lowercase(),
+        title.to_ascii_lowercase(),
+        date_part
+    );
+    let id = format!("share-{:016x}", fnv1a64(identity_key.as_bytes()));
+    let source = AssessmentSource::Feed(source_label.to_string());
+    let source_icon = Some(source.as_icon().to_string());
+
+    let mut assessment = Assessment {
+        id,
+        course_id,
+        course_name: matched_course.map(|c| c.name.clone()),
+        title,
+        assessment_type,
+        date,
+        day_name: None,
+        start_time,
+        end_time,
+        display_time: None,
+        room,
+        group: None,
+        instructor,
+        is_upcoming: true,
+        days_until: None,
+        urgency_level: crate::types::UrgencyLevel::Upcoming,
+        priority_score: 0,
+        topics,
+        warnings,
+        ai_inference_note: Some(note),
+        ai_study_plan: None,
+        estimated_study_hours: None,
+        elearning_url: None,
+        google_cal_url: None,
+        gcal_synced: false,
+        gcal_event_id: None,
+        color: matched_course.map(|c| c.color.clone()),
+        bg: matched_course.and_then(|c| c.bg.clone()),
+        border: matched_course.and_then(|c| c.border.clone()),
+        semester: schedule
+            .semester
+            .clone()
+            .or_else(|| date.map(infer_semester_from_date)),
+        email_subject: None,
+        email_sent_date: None,
+        source,
+        source_icon,
+        weightage_percent,
+        achieved_score: None,
+        max_score: None,
+        conflict_warning: None,
+        last_seen_source_run: None,
+        retired_source_run: None,
+    };
+    recompute_derived_fields(&mut assessment, reference_date);
+    Ok(assessment)
+}
+
+/// Extracts a single announcement from a shared screenshot or PDF notice
+/// (Flash, temperature 0.1) using the student's local schedule as context.
+pub async fn extract_announcement_from_document(
+    provider: &dyn AiProvider,
+    document_b64: &str,
+    mime: &str,
+    schedule: &ScheduleData,
+    reference_date: NaiveDate,
+) -> Result<Assessment, AiUnavailable> {
+    let context_json = serde_json::json!({
+        "reference_date": reference_date.format("%Y-%m-%d").to_string(),
+        "semester": schedule.semester,
+        "courses": schedule.courses.iter().map(|c| serde_json::json!({
+            "id": c.id,
+            "name": c.name,
+            "aliases": c.aliases,
+        })).collect::<Vec<_>>(),
+        "slots": schedule.slots.iter().map(|s| serde_json::json!({
+            "course_id": s.course_id,
+            "day": s.day,
+            "slot_type": s.slot_type,
+            "start_time": s.start_time.format("%H:%M").to_string(),
+            "end_time": s.end_time.format("%H:%M").to_string(),
+            "room": s.room,
+        })).collect::<Vec<_>>(),
+    })
+    .to_string();
+
+    let request = VisionRequest {
+        image_b64: document_b64.to_string(),
+        mime: mime.to_string(),
+        prompt: StructuredPrompt::new(AiModel::Flash, 0.1, ANNOUNCEMENT_VISION_INSTRUCTION)
+            .with_context(context_json),
+    };
+    let raw_json = provider.vision_json(request).await?;
+    let source_label = if mime.trim().eq_ignore_ascii_case("application/pdf") {
+        "Shared PDF"
+    } else {
+        "Shared Screenshot"
+    };
+    Ok(parse_announcement_extraction(
+        raw_json.into_value(),
+        schedule,
+        reference_date,
+        source_label,
+    )?)
+}
+
+// ---------------------------------------------------------------------------
 // Task c — study-plan optimize (flash)
 // ---------------------------------------------------------------------------
 
@@ -3050,5 +3307,113 @@ mod tests {
             Some("Extracted from course syllabus — date not yet announced")
         );
         assert_eq!(domain[1].date, None);
+    }
+
+    #[tokio::test]
+    async fn extract_announcement_from_document_anchors_screenshot_and_pdf() {
+        let schedule = ScheduleData {
+            semester: Some("Fall 2026".to_string()),
+            academic_week_start: None,
+            courses: vec![Course {
+                id: "ECE210".to_string(),
+                name: "Digital Systems".to_string(),
+                color: "#1a73e8".to_string(),
+                bg: None,
+                border: None,
+                credits: Some(3.0),
+                max_absences: None,
+                aliases: vec!["ECE 210".to_string()],
+            }],
+            slots: vec![ScheduleSlot {
+                id: "slot-1".to_string(),
+                day: "Tuesday".to_string(),
+                day_index: 2,
+                course_id: "ECE210".to_string(),
+                course_name: "Digital Systems".to_string(),
+                slot_type: "Tutorial".to_string(),
+                group: None,
+                room: Some("Eng 305".to_string()),
+                start_time: NaiveTime::from_hms_opt(14, 0, 0).unwrap(),
+                end_time: NaiveTime::from_hms_opt(15, 30, 0).unwrap(),
+                display_time: "14:00–15:30".to_string(),
+                has_quiz: false,
+                quiz_title: None,
+                week_parity: None,
+            }],
+        };
+
+        let server = MockServer::start().await;
+        mount_model(
+            &server,
+            "/models/gemini-3.8-flash:generateContent",
+            r##"{
+  "course_id": "ECE 210",
+  "title": "Quiz 2",
+  "assessment_type": "Class Quiz",
+  "date_iso": null,
+  "start_time": null,
+  "end_time": null,
+  "room": null,
+  "instructor": "Dr. Patel",
+  "weightage_percent": 10,
+  "topics": ["Flip-Flops"],
+  "warnings": [],
+  "ai_inference_note": null,
+  "raw_text": "ECE 210 Quiz 2 is next week during the tutorial."
+}"##,
+        )
+        .await;
+
+        let ref_day = NaiveDate::from_ymd_opt(2026, 11, 1).unwrap();
+        let captured = extract_announcement_from_document(
+            &fixture_provider(&server.uri()),
+            "data:image/png;base64,iVBORw0KGgo=",
+            "image/png",
+            &schedule,
+            ref_day,
+        )
+        .await
+        .unwrap();
+
+        assert!(captured.id.starts_with("share-"));
+        assert_eq!(captured.course_id.as_deref(), Some("ECE210"));
+        assert_eq!(captured.course_name.as_deref(), Some("Digital Systems"));
+        assert_eq!(captured.date, NaiveDate::from_ymd_opt(2026, 11, 10));
+        assert_eq!(captured.room.as_deref(), Some("Eng 305"));
+        assert_eq!(captured.weightage_percent, Some(10.0));
+        assert_eq!(
+            captured.source,
+            AssessmentSource::Feed("Shared Screenshot".to_string())
+        );
+
+        // Undated notice stays honestly undated; empty title fails.
+        let undated = parse_announcement_extraction(
+            serde_json::json!({
+                "title": "Lab Practical",
+                "assessment_type": "Lab Assessment"
+            }),
+            &schedule,
+            ref_day,
+            "Shared PDF",
+        )
+        .unwrap();
+        assert_eq!(undated.date, None);
+        assert_eq!(
+            undated.source,
+            AssessmentSource::Feed("Shared PDF".to_string())
+        );
+        assert!(undated
+            .ai_inference_note
+            .as_deref()
+            .unwrap()
+            .contains("date not stated"));
+
+        assert!(parse_announcement_extraction(
+            serde_json::json!({ "title": "   " }),
+            &schedule,
+            ref_day,
+            "Shared Screenshot",
+        )
+        .is_err());
     }
 }

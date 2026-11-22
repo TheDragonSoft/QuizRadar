@@ -1139,3 +1139,150 @@ export async function extractSyllabiBrowser(
     file_errors: fileErrors,
   };
 }
+
+/**
+ * Shared screenshot / PDF announcement extraction prompt — byte-identical to
+ * `ANNOUNCEMENT_VISION_INSTRUCTION` in `core/src/ai/tasks.rs` (pinned in
+ * `browserAiCoreParity.test.ts`).
+ */
+export const ANNOUNCEMENT_VISION_INSTRUCTION = `You are an academic announcement extractor for QuizRadar.
+Read the attached screenshot or PDF notice (such as a WhatsApp, Telegram, Discord, Teams, or university portal announcement) and extract the single exam, quiz, lab, or assignment announcement shown.
+
+RULES (strict honesty — never fabricate):
+1. Use the provided "reference_date" and the student's "courses" and "slots" context ONLY to resolve relative phrases explicitly stated in the announcement (for example "next Tuesday's tutorial" or "this Thursday's lecture").
+2. If no date is stated or resolvable, set "date_iso" to null. Never invent a date, room, time, instructor, weight, or topic.
+3. Match "course_id" to one of the student's known course IDs when the message clearly refers to that course (including aliases); otherwise copy the course code shown or set null.
+4. Set "assessment_type" to one of: "Class Quiz", "Lab Assessment", "Midterm Exam", "Final Exam", "Assignment".
+5. Include a short plain-text "raw_text" transcription of the announcement message so deterministic local checks can verify dates and rooms.
+6. Set "ai_inference_note" to a brief honest note explaining how the date/room was determined (e.g. "Explicit date in screenshot" or "Resolved 'next Tuesday tutorial' from timetable" or "Date not stated in screenshot").
+
+Return ONLY a single raw JSON object:
+{
+  "course_id": "ECE210" | null,
+  "title": "Quiz 2",
+  "assessment_type": "Class Quiz",
+  "date_iso": "YYYY-MM-DD" | null,
+  "start_time": "HH:MM" | null,
+  "end_time": "HH:MM" | null,
+  "room": "Eng 305" | null,
+  "instructor": "Dr. Patel" | null,
+  "weightage_percent": 10 | null,
+  "topics": ["Topic 1"],
+  "warnings": [],
+  "ai_inference_note": "Explicit date in screenshot",
+  "raw_text": "ECE210 Quiz 2 is on Nov 10 during the tutorial."
+}`;
+
+export interface ExtractedAnnouncementJson {
+  courseId?: string | null;
+  title: string;
+  assessmentType: string;
+  dateIso?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  room?: string | null;
+  instructor?: string | null;
+  weightagePercent?: number | null;
+  topics: string[];
+  warnings: string[];
+  aiInferenceNote: string;
+  rawText?: string | null;
+  sourceLabel: string;
+}
+
+/**
+ * Extracts a single announcement from a shared screenshot or PDF notice in the
+ * browser PWA tier (supports BYOK key or opt-in Trial AI Relay).
+ */
+export async function extractAnnouncementFromDocumentBrowser(
+  doc: SyllabusDocumentInput,
+  schedule: ScheduleData,
+  refDateIso: string,
+  auth: BrowserAiAuth | string,
+): Promise<ExtractedAnnouncementJson> {
+  const trimmedData = (doc.dataUrl ?? "").trim();
+  if (!trimmedData) {
+    throw new Error("Select or paste a screenshot or PDF first.");
+  }
+  if (trimmedData.length > MAX_SYLLABUS_BASE64_LEN) {
+    throw new Error("File exceeds the 15 MB per-file limit.");
+  }
+
+  const mime = mimeForDocument(trimmedData, doc.name, doc.mime);
+  const contextJson = JSON.stringify({
+    reference_date: refDateIso,
+    semester: schedule.semester ?? null,
+    courses: (schedule.courses ?? []).map((c) => ({
+      id: c.id,
+      name: c.name,
+      aliases: c.aliases ?? [],
+    })),
+    slots: (schedule.slots ?? []).map((s) => ({
+      course_id: s.courseId,
+      day: s.day,
+      slot_type: s.type,
+      start_time: s.startTime,
+      end_time: s.endTime,
+      room: s.room ?? null,
+    })),
+  });
+
+  const payload = {
+    contents: [
+      {
+        parts: [
+          { text: ANNOUNCEMENT_VISION_INSTRUCTION },
+          { text: contextJson },
+          { inline_data: { mime_type: mime, data: stripDataUrlPrefix(trimmedData) } },
+        ],
+      },
+    ],
+    generationConfig: { temperature: 0.1, responseMimeType: "application/json" },
+  };
+
+  const { json } = await postGeminiJsonLadder(auth, payload, "");
+  const obj = (Array.isArray(json) ? json[0] : json) as Record<string, unknown> | null;
+  if (!obj || typeof obj !== "object") {
+    throw new Error("Could not read an announcement from that file.");
+  }
+
+  const cleanStr = (v: unknown): string | null =>
+    typeof v === "string" && v.trim().length > 0 ? v.trim() : null;
+  const cleanList = (v: unknown): string[] =>
+    Array.isArray(v) ? v.map((x) => (typeof x === "string" ? x.trim() : "")).filter(Boolean) : [];
+
+  const title = cleanStr(obj.title);
+  if (!title) {
+    throw new Error("The extracted announcement did not include a title.");
+  }
+
+  const rawWeight = typeof obj.weightage_percent === "number" ? obj.weightage_percent : null;
+  const weightagePercent =
+    rawWeight !== null && Number.isFinite(rawWeight) && rawWeight > 0 && rawWeight <= 100
+      ? rawWeight
+      : null;
+
+  const sourceLabel = mime.toLowerCase() === "application/pdf" ? "Shared PDF" : "Shared Screenshot";
+  const dateIso = cleanStr(obj.date_iso);
+
+  return {
+    courseId: cleanStr(obj.course_id),
+    title,
+    assessmentType: cleanStr(obj.assessment_type) ?? "Class Quiz",
+    dateIso,
+    startTime: cleanStr(obj.start_time),
+    endTime: cleanStr(obj.end_time),
+    room: cleanStr(obj.room),
+    instructor: cleanStr(obj.instructor),
+    weightagePercent,
+    topics: cleanList(obj.topics),
+    warnings: cleanList(obj.warnings),
+    aiInferenceNote:
+      cleanStr(obj.ai_inference_note) ??
+      (dateIso
+        ? `Extracted from ${sourceLabel}`
+        : `Extracted from ${sourceLabel} — date not stated`),
+    rawText: cleanStr(obj.raw_text),
+    sourceLabel,
+  };
+}

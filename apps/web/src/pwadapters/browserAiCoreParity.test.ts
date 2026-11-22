@@ -17,7 +17,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { FLASH_MODEL_IDS, SYLLABUS_INSTRUCTION, TIMETABLE_INSTRUCTION } from "./browserAi";
+import {
+  ANNOUNCEMENT_VISION_INSTRUCTION,
+  FLASH_MODEL_IDS,
+  SYLLABUS_INSTRUCTION,
+  TIMETABLE_INSTRUCTION,
+} from "./browserAi";
 import { COURSE_PALETTE_PRESETS } from "../lib/coursePalette";
 
 // Walk up from the vitest working directory (apps/web) to the repo root —
@@ -66,6 +71,18 @@ describe("browser AI tier is pinned to the Rust core", () => {
       "core SYLLABUS_INSTRUCTION not found — did tasks.rs change shape?",
     ).not.toBeNull();
     expect(SYLLABUS_INSTRUCTION).toBe(coreMatch![1]);
+  });
+
+  it("ANNOUNCEMENT_VISION_INSTRUCTION matches core/src/ai/tasks.rs byte-for-byte", () => {
+    const rust = readCore("core/src/ai/tasks.rs");
+    const coreMatch = /pub const ANNOUNCEMENT_VISION_INSTRUCTION: &str = r##"([\s\S]*?)"##;/.exec(
+      rust,
+    );
+    expect(
+      coreMatch,
+      "core ANNOUNCEMENT_VISION_INSTRUCTION not found — did tasks.rs change shape?",
+    ).not.toBeNull();
+    expect(ANNOUNCEMENT_VISION_INSTRUCTION).toBe(coreMatch![1]);
   });
 
   it("FLASH_MODEL_IDS matches AiModel::Flash::model_ids() in core/src/ai/provider.rs", () => {

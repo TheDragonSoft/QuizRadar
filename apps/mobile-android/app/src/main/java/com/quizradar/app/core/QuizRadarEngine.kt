@@ -243,6 +243,25 @@ class QuizRadarEngine(
         }
     }
 
+    override suspend fun parseSharedAnnouncementJson(
+        subject: String,
+        text: String,
+    ): String {
+        return withContext(ioDispatcher) {
+            store.parseSharedAnnouncementJson(subject, text)
+        }
+    }
+
+    override suspend fun extractAnnouncementFromDocumentJson(
+        documentB64: String,
+        mime: String,
+        apiKey: String,
+    ): String {
+        return withContext(networkDispatcher) {
+            store.extractAnnouncementFromDocumentJson(documentB64, mime, apiKey)
+        }
+    }
+
     override fun mergeExtractedSyllabi(syllabiJson: String): String = mergeExtractedSyllabiJson(syllabiJson)
 
     override fun syllabusToDomainAssessments(

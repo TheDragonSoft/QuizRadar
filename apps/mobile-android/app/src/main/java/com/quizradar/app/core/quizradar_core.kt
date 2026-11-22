@@ -929,6 +929,10 @@ internal open class UniffiVTableCallbackInterfaceFfiTokenProvider(
 
 
 
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -976,6 +980,8 @@ internal interface UniffiLib : Library {
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_export_sync_payload(`ptr`: Pointer,`deviceId`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,
     ): Long
+    fun uniffi_quizradar_core_fn_method_nativestore_extract_announcement_from_document_json(`ptr`: Pointer,`documentB64`: RustBuffer.ByValue,`mime`: RustBuffer.ByValue,`apiKey`: RustBuffer.ByValue,
+    ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_extract_syllabus_from_document(`ptr`: Pointer,`documentB64`: RustBuffer.ByValue,`mime`: RustBuffer.ByValue,`apiKey`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_extract_timetable_from_image(`ptr`: Pointer,`imageB64`: RustBuffer.ByValue,`mime`: RustBuffer.ByValue,`apiKey`: RustBuffer.ByValue,
@@ -1009,6 +1015,8 @@ internal interface UniffiLib : Library {
     fun uniffi_quizradar_core_fn_method_nativestore_merge_sync_payload(`ptr`: Pointer,`payloadJson`: RustBuffer.ByValue,`updatedAt`: RustBuffer.ByValue,`refDateIso`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_optimize_study_plan(`ptr`: Pointer,`refDateIso`: RustBuffer.ByValue,`geminiApiKey`: RustBuffer.ByValue,
+    ): Long
+    fun uniffi_quizradar_core_fn_method_nativestore_parse_shared_announcement_json(`ptr`: Pointer,`subject`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,
     ): Long
     fun uniffi_quizradar_core_fn_method_nativestore_pull_native_drive_backup(`ptr`: Pointer,`todayIso`: RustBuffer.ByValue,`nowIso`: RustBuffer.ByValue,`tokens`: Long,
     ): Long
@@ -1324,6 +1332,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_export_sync_payload(
     ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_extract_announcement_from_document_json(
+    ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_extract_syllabus_from_document(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_extract_timetable_from_image(
@@ -1357,6 +1367,8 @@ internal interface UniffiLib : Library {
     fun uniffi_quizradar_core_checksum_method_nativestore_merge_sync_payload(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_optimize_study_plan(
+    ): Short
+    fun uniffi_quizradar_core_checksum_method_nativestore_parse_shared_announcement_json(
     ): Short
     fun uniffi_quizradar_core_checksum_method_nativestore_pull_native_drive_backup(
     ): Short
@@ -1555,6 +1567,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_export_sync_payload() != 17642.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_extract_announcement_from_document_json() != 49120.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_extract_syllabus_from_document() != 50438.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1604,6 +1619,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_optimize_study_plan() != 12232.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_quizradar_core_checksum_method_nativestore_parse_shared_announcement_json() != 1458.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_quizradar_core_checksum_method_nativestore_pull_native_drive_backup() != 57802.toShort()) {
@@ -2159,6 +2177,13 @@ public interface NativeStoreInterface {
     suspend fun `exportSyncPayload`(`deviceId`: kotlin.String, `updatedAt`: kotlin.String): kotlin.String
     
     /**
+     * Consent-gated extraction of a single academic announcement from a shared
+     * screenshot (`image/*`) or PDF notice (`application/pdf`), anchored
+     * against the student's saved timetable.
+     */
+    suspend fun `extractAnnouncementFromDocumentJson`(`documentB64`: kotlin.String, `mime`: kotlin.String, `apiKey`: kotlin.String): kotlin.String
+    
+    /**
      * Extracts courses, weekly slots, and syllabus assessments/weights from
      * one syllabus PDF or image (`01` §4.1, consent-gated at the core boundary).
      */
@@ -2249,6 +2274,13 @@ public interface NativeStoreInterface {
      * "deterministic"` and a note that names what happened.
      */
     suspend fun `optimizeStudyPlan`(`refDateIso`: kotlin.String, `geminiApiKey`: kotlin.String?): kotlin.String
+    
+    /**
+     * Deterministically parses a shared or pasted announcement message
+     * (WhatsApp, Telegram, Discord, SMS, or copied portal notice) against the
+     * student's saved weekly timetable without requiring AI or network access.
+     */
+    suspend fun `parseSharedAnnouncementJson`(`subject`: kotlin.String, `text`: kotlin.String): kotlin.String
     
     /**
      * Pulls the Drive-appDataFolder backup and merges it additively
@@ -2737,6 +2769,32 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
 
     
     /**
+     * Consent-gated extraction of a single academic announcement from a shared
+     * screenshot (`image/*`) or PDF notice (`application/pdf`), anchored
+     * against the student's saved timetable.
+     */
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `extractAnnouncementFromDocumentJson`(`documentB64`: kotlin.String, `mime`: kotlin.String, `apiKey`: kotlin.String) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_extract_announcement_from_document_json(
+                thisPtr,
+                FfiConverterString.lower(`documentB64`),FfiConverterString.lower(`mime`),FfiConverterString.lower(`apiKey`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
+    /**
      * Extracts courses, weekly slots, and syllabus assessments/weights from
      * one syllabus PDF or image (`01` §4.1, consent-gated at the core boundary).
      */
@@ -3138,6 +3196,32 @@ open class NativeStore: Disposable, AutoCloseable, NativeStoreInterface {
             UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_optimize_study_plan(
                 thisPtr,
                 FfiConverterString.lower(`refDateIso`),FfiConverterOptionalString.lower(`geminiApiKey`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterString.lift(it) },
+        // Error FFI converter
+        QuizRadarFfiException.ErrorHandler,
+    )
+    }
+
+    
+    /**
+     * Deterministically parses a shared or pasted announcement message
+     * (WhatsApp, Telegram, Discord, SMS, or copied portal notice) against the
+     * student's saved weekly timetable without requiring AI or network access.
+     */
+    @Throws(QuizRadarFfiException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `parseSharedAnnouncementJson`(`subject`: kotlin.String, `text`: kotlin.String) : kotlin.String {
+        return uniffiRustCallAsync(
+        callWithPointer { thisPtr ->
+            UniffiLib.INSTANCE.uniffi_quizradar_core_fn_method_nativestore_parse_shared_announcement_json(
+                thisPtr,
+                FfiConverterString.lower(`subject`),FfiConverterString.lower(`text`),
             )
         },
         { future, callback, continuation -> UniffiLib.INSTANCE.ffi_quizradar_core_rust_future_poll_rust_buffer(future, callback, continuation) },

@@ -425,6 +425,17 @@ interface QuizRadarCore {
         apiKey: String,
     ): String = throw UnsupportedOperationException("extractSyllabusFromDocument is not supported by this fake")
 
+    suspend fun parseSharedAnnouncementJson(
+        subject: String,
+        text: String,
+    ): String = throw UnsupportedOperationException("parseSharedAnnouncementJson is not supported by this fake")
+
+    suspend fun extractAnnouncementFromDocumentJson(
+        documentB64: String,
+        mime: String,
+        apiKey: String,
+    ): String = throw UnsupportedOperationException("extractAnnouncementFromDocumentJson is not supported by this fake")
+
     fun mergeExtractedSyllabi(syllabiJson: String): String =
         throw UnsupportedOperationException("mergeExtractedSyllabi is not supported by this fake")
 

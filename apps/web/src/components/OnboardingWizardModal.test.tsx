@@ -45,4 +45,44 @@ describe("OnboardingWizardModal Appearance Theme Picker", () => {
     render(<OnboardingWizardModal modalId="onboarding" onClose={vi.fn()} />);
     expect(screen.getByText(/Get Started:/i)).toBeInTheDocument();
   });
+
+  it("tucks Moodle URLs under progressive disclosure in step 2 and offers 1-tap Course Pack sharing in step 3", () => {
+    const openShareCoursePack = vi.fn();
+    const onClose = vi.fn();
+    useAppStore.setState({
+      data: {
+        ...initialFullState,
+        schedule: {
+          ...initialFullState.schedule,
+          courses: [
+            {
+              id: "ECE210",
+              name: "Digital Systems",
+              color: "#1a73e8",
+              credits: 3,
+              aliases: [],
+            },
+          ],
+        },
+      },
+      openShareCoursePack,
+    });
+
+    render(<OnboardingWizardModal modalId="onboarding" onClose={onClose} />);
+
+    // Step 1 -> Step 2: Moodle URLs sit inside a collapsed <details> disclosure.
+    fireEvent.click(screen.getByRole("button", { name: /Next/i }));
+    const advancedSummary = screen.getByText(/Advanced:.*Moodle/i);
+    expect(advancedSummary.closest("details")).not.toHaveAttribute("open");
+
+    // Step 2 -> Step 3: Viral 1-tap Course Pack share card appears for enrolled courses.
+    fireEvent.click(screen.getByRole("button", { name: /Next/i }));
+    expect(
+      screen.getByText(/Your semester is mapped! Share a course with your classmates in 1 tap\?/i),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Share ECE210/i }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(openShareCoursePack).toHaveBeenCalledWith("ECE210");
+  });
 });

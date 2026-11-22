@@ -12,6 +12,7 @@ import {
   Trash2,
   Sun,
   Moon,
+  Share2,
 } from "lucide-react";
 import { copy } from "../copy";
 import { useAppStore } from "../state/store";
@@ -37,6 +38,7 @@ export function OnboardingWizardModal({
   const setTheme = useAppStore((s) => s.setTheme);
 
   const updateConfig = useAppStore((s) => s.updateConfig);
+  const openShareCoursePack = useAppStore((s) => s.openShareCoursePack);
   const upsertCourse = useAppStore((s) => s.upsertCourse);
   const deleteCourse = useAppStore((s) => s.deleteCourse);
   const triggerSync = useAppStore((s) => s.triggerSync);
@@ -567,28 +569,31 @@ export function OnboardingWizardModal({
               </div>
             </div>
 
-            {/* Moodle LMS Card */}
-            <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-3.5 space-y-2.5">
-              <div className="text-xs font-bold text-[var(--text)]">
-                {copy.onboarding.moodleConnect}
+            {/* Progressive disclosure: tuck manual Moodle LMS URLs under a collapsible
+                section so Day-1 onboarding stays calm and focused on 30-second setup. */}
+            <details className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-3.5">
+              <summary className="cursor-pointer select-none text-xs font-bold text-[var(--text)]">
+                Advanced: {copy.onboarding.moodleConnect} (Portal &amp; iCal URLs)
+              </summary>
+              <div className="mt-2.5 space-y-2.5">
+                <input
+                  type="url"
+                  aria-label={copy.onboarding.moodleUrlLabel}
+                  value={moodleUrl}
+                  onChange={(e) => setMoodleUrl(e.target.value)}
+                  placeholder={copy.onboarding.moodleUrlLabel}
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs text-[var(--text)] outline-none"
+                />
+                <input
+                  type="url"
+                  aria-label={copy.onboarding.moodleIcalLabel}
+                  value={moodleIcalUrl}
+                  onChange={(e) => setMoodleIcalUrl(e.target.value)}
+                  placeholder={copy.onboarding.moodleIcalLabel}
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs text-[var(--text)] outline-none"
+                />
               </div>
-              <input
-                type="url"
-                aria-label={copy.onboarding.moodleUrlLabel}
-                value={moodleUrl}
-                onChange={(e) => setMoodleUrl(e.target.value)}
-                placeholder={copy.onboarding.moodleUrlLabel}
-                className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs text-[var(--text)] outline-none"
-              />
-              <input
-                type="url"
-                aria-label={copy.onboarding.moodleIcalLabel}
-                value={moodleIcalUrl}
-                onChange={(e) => setMoodleIcalUrl(e.target.value)}
-                placeholder={copy.onboarding.moodleIcalLabel}
-                className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs text-[var(--text)] outline-none"
-              />
-            </div>
+            </details>
 
             {/* Gemini AI Card */}
             <div className="rounded-xl border border-[var(--border)] bg-[var(--page)] p-3.5 space-y-2.5">
@@ -829,6 +834,34 @@ export function OnboardingWizardModal({
                 </div>
               )}
             </div>
+
+            {courses.length > 0 && (
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3.5 space-y-2">
+                <div className="text-xs font-bold text-[var(--text)]">
+                  Your semester is mapped! Share a course with your classmates in 1 tap?
+                </div>
+                <p className="text-[11px] text-[var(--text-muted)]">
+                  Course Pack links include only class times and exam dates — never your personal
+                  grades or accounts.
+                </p>
+                <div className="flex flex-wrap gap-2 pt-0.5">
+                  {courses.slice(0, 6).map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        openShareCoursePack(c.id);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs font-semibold text-[var(--text)] transition hover:border-[var(--accent)] hover:text-[var(--accent-ink)]"
+                    >
+                      <Share2 className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>Share {c.id}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

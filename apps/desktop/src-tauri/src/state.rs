@@ -70,25 +70,26 @@ pub fn bundled_microsoft_client_id() -> &'static str {
 }
 
 /// Google OAuth client id of the maintainer-provided registration (project
-/// `quizradar-513903`, an **Installed**-type client). A client id is a public
+/// `quizradar-511922`, an **Installed**-type client). A client id is a public
 /// identifier, so it may ship.
 pub const DEFAULT_GOOGLE_CLIENT_ID: &str =
-    "438181858687-l9400b0lu7de8ggdj4vsg7ced9v1vsg6.apps.googleusercontent.com";
+    "620389124802-240hg7bfb77n9p9ssdp33164q7q22siq.apps.googleusercontent.com";
 
-/// Client secret of the Google registration above.
+/// Optional build-time Google OAuth Desktop client secret baked by release CI
+/// (`QUIZRADAR_BUILD_GOOGLE_CLIENT_SECRET`, sourced from the GitHub Actions
+/// secret `QUIZRADAR_GOOGLE_CLIENT_SECRET`).
 ///
-/// The registration is an installed-app client, for which Google itself
-/// states the secret "is not treated as a secret" — but its token endpoint
-/// still refuses a secretless exchange with `invalid_request: client_secret
-/// is missing` (verified against `oauth2.googleapis.com/token`), so the
-/// desktop shell ships the secret that belongs to the client id it ships.
-///
-/// Scope of use: the desktop token exchange and the Google refresh grant
-/// only. It never reaches the web/PWA bundle, the SQLite database, the UI,
-/// the logs or any error string. Runtime overrides (OS keyring entry
-/// `google_client_secret`, or `QUIZRADAR_GOOGLE_CLIENT_SECRET`) win, so the
-/// secret can be rotated without touching the source.
-pub const DEFAULT_GOOGLE_CLIENT_SECRET: &str = "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";
+/// No secret literal is committed to the repository. Scope of use: the desktop
+/// token exchange and Google refresh grant only. It never reaches the web/PWA
+/// bundle, the SQLite database, the UI, the logs or any error string. Runtime
+/// overrides (OS keyring entry `google_client_secret`, or
+/// `QUIZRADAR_GOOGLE_CLIENT_SECRET`) win, so the secret can be rotated or
+/// supplied in local dev without rebuilding.
+pub fn bundled_google_client_secret() -> Option<&'static str> {
+    option_env!("QUIZRADAR_BUILD_GOOGLE_CLIENT_SECRET")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
 
 pub const GOOGLE_CLIENT_ID_INVALID: &str = "The Google OAuth client ID in Settings is not usable. Copy it again from Google Cloud Console → APIs & Services → Credentials (it looks like 1234567890-abc.apps.googleusercontent.com and contains no spaces).";
 
@@ -282,14 +283,8 @@ impl AppState {
                 return Some(trimmed);
             }
         }
-        env_client_id(ENV_GOOGLE_CLIENT_SECRET).or_else(|| {
-            let bundled = DEFAULT_GOOGLE_CLIENT_SECRET.trim();
-            if bundled.is_empty() {
-                None
-            } else {
-                Some(bundled.to_string())
-            }
-        })
+        env_client_id(ENV_GOOGLE_CLIENT_SECRET)
+            .or_else(|| bundled_google_client_secret().map(str::to_string))
     }
 
     /// Effective Microsoft application (client) id (Settings → env → bundled
@@ -675,7 +670,10 @@ mod tests {
 
     #[test]
     fn the_bundled_google_secret_is_never_blank() {
-        assert!(!DEFAULT_GOOGLE_CLIENT_SECRET.trim().is_empty());
+        if let Some(secret) = bundled_google_client_secret() {
+            assert!(!secret.is_empty());
+            assert_eq!(secret, secret.trim());
+        }
     }
 
     #[test]
@@ -702,7 +700,10 @@ mod tests {
         assert!(url.contains("code_challenge_method=S256"));
         // The secret belongs in the token exchange only — never in a URL that
         // ends up in the browser history or in a proxy log.
-        assert!(!url.contains(DEFAULT_GOOGLE_CLIENT_SECRET));
+        assert!(!url.contains("client_secret"));
+        if let Some(secret) = bundled_google_client_secret() {
+            assert!(!url.contains(secret));
+        }
     }
 
     #[test]

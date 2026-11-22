@@ -6,7 +6,7 @@ _Maintainer submission package for Google OAuth Restricted-Scope Verification (C
 
 ## 1. Google OAuth Consent Screen & Brand Verification
 
-Open **Google Cloud Console → APIs & Services → OAuth consent screen** for project `quizradar-513903` (or your production domain project once moved to a custom domain):
+Open **Google Cloud Console → APIs & Services → OAuth consent screen** for project `quizradar-511922` (or your production domain project once moved to a custom domain):
 
 ### 1.1 Exact App Information Fields
 
@@ -41,7 +41,7 @@ Every scope below is defined once in `core/src/auth/providers.rs`:
 Google reviewers require a continuous screen recording (English, ≤ 3 minutes) showing:
 
 1. **Homepage & Privacy Policy:** Open `https://thedragonsoft.github.io/QuizRadar/`, click **Privacy Policy** in the footer (`/privacy/`), highlighting the Limited Use disclosure.
-2. **OAuth Consent Screen with visible `client_id`:** Launch QuizRadar Desktop (or Web Companion), click **Connect Google**, and pause 3 seconds on the browser address bar so the reviewer can read `client_id=438181858687-...` and the exact requested scopes on Google's consent screen.
+2. **OAuth Consent Screen with visible `client_id`:** Launch QuizRadar Desktop (or Web Companion), click **Connect Google**, and pause 3 seconds on the browser address bar so the reviewer can read `client_id=620389124802-...` and the exact requested scopes on Google's consent screen.
 3. **Gmail Read-Only Scan:** Click **Scan Now** in QuizRadar, show course announcements resolving into dated exam cards on the Radar Dashboard, and confirm no emails are modified.
 4. **Google Classroom & Google Calendar Push:** Show a Classroom assignment appearing on the radar, then click **Push to Google Calendar** and show the created exam event in `calendar.google.com`.
 5. **Drive AppData Backup & Disconnect:** Click **Backup to Google Drive**, then click **Disconnect Google** to demonstrate token wipe.

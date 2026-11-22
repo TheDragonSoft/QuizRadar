@@ -4,14 +4,18 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   ANCHOR_STEPS,
+  ANDROID_SCREENS,
   APP_VERSION,
   detectClientPlatform,
   FAQ_ITEMS,
   INGESTION_SOURCES,
+  isIosClient,
   PLATFORM_DOWNLOADS,
   PRODUCT_VIEWS,
+  RESOLVER_SCENARIOS,
   withBase,
 } from "./lib/releaseData";
+import { buildQrSvgData, encodeQrMatrix } from "./lib/qrSvg";
 
 const landingRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(landingRoot, "../..");
@@ -54,6 +58,13 @@ describe("QuizRadar Landing Site — Identity, Real Screenshots, Design Rules & 
     expect(detectClientPlatform("Mozilla/5.0 (Linux; Android 15; Pixel 9)", "Linux armv81")).toBe(
       "android",
     );
+    expect(isIosClient("Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X)", "iPhone", 5)).toBe(
+      true,
+    );
+    expect(isIosClient("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", "MacIntel", 5)).toBe(
+      true,
+    );
+    expect(isIosClient("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4)", "MacIntel", 0)).toBe(false);
   });
 
   it("ships real 2x Retina dark & light WebP screenshots and removes fake HTML mockups", () => {
@@ -63,10 +74,21 @@ describe("QuizRadar Landing Site — Identity, Real Screenshots, Design Rules & 
     for (const view of PRODUCT_VIEWS) {
       const darkPath = path.join(landingRoot, "public", view.darkSrc);
       const lightPath = path.join(landingRoot, "public", view.lightSrc);
+      const amoledPath = path.join(landingRoot, "public", view.amoledSrc);
       expect(existsSync(darkPath), `Missing dark screenshot: ${view.darkSrc}`).toBe(true);
       expect(existsSync(lightPath), `Missing light screenshot: ${view.lightSrc}`).toBe(true);
+      expect(existsSync(amoledPath), `Missing amoled screenshot: ${view.amoledSrc}`).toBe(true);
       expect(readFileSync(darkPath).subarray(0, 4).toString("ascii")).toBe("RIFF");
       expect(readFileSync(lightPath).subarray(0, 4).toString("ascii")).toBe("RIFF");
+      expect(readFileSync(amoledPath).subarray(0, 4).toString("ascii")).toBe("RIFF");
+    }
+
+    for (const scr of ANDROID_SCREENS) {
+      for (const rel of [scr.darkSrc, scr.lightSrc, scr.amoledSrc]) {
+        const p = path.join(landingRoot, "public", rel);
+        expect(existsSync(p), `Missing android screenshot: ${rel}`).toBe(true);
+        expect(readFileSync(p).subarray(0, 4).toString("ascii")).toBe("RIFF");
+      }
     }
 
     for (const mobileShot of [
@@ -80,19 +102,36 @@ describe("QuizRadar Landing Site — Identity, Real Screenshots, Design Rules & 
     }
   });
 
-  it("upholds the Honesty Doctrine across Timetable Anchor steps and copy", () => {
+  it("upholds the Honesty Doctrine across Resolver scenarios, Timetable Anchor steps, and copy", () => {
     const unannounced = ANCHOR_STEPS.find((s) => s.id === "honest-radar");
     expect(unannounced).toBeDefined();
     expect(unannounced?.resolvedRoom).toBe("—");
 
+    const tbaScenario = RESOLVER_SCENARIOS.find((s) => s.id === "room-tba");
+    expect(tbaScenario?.resolvedRoom).toBe("—");
+
     const serialized = JSON.stringify({
       ANCHOR_STEPS,
+      RESOLVER_SCENARIOS,
       PRODUCT_VIEWS,
       INGESTION_SOURCES,
       FAQ_ITEMS,
     });
     expect(serialized).not.toContain("Hall B-204");
     expect(serialized).not.toContain("Home-Su25");
+  });
+
+  it("generates a deterministic, valid ISO/IEC 18004 QR SVG for the Android APK download URL", () => {
+    const apkUrl = PLATFORM_DOWNLOADS.android.primaryUrl;
+    const matrix = encodeQrMatrix(apkUrl);
+    expect(matrix.version).toBeGreaterThanOrEqual(4);
+    expect(matrix.size).toBe(matrix.version * 4 + 17);
+    expect(matrix.modules.length).toBe(matrix.size * matrix.size);
+
+    const svgA = buildQrSvgData(apkUrl);
+    const svgB = buildQrSvgData(apkUrl);
+    expect(svgA).toEqual(svgB);
+    expect(svgA.pathD.startsWith("M")).toBe(true);
   });
 
   it("enforces better-ui CSS rules (zero `transition: all`, exact 0.96 press scale)", () => {

@@ -1,91 +1,82 @@
 ---
 /**
- * CelestialSky — QuizRadar's signature iconic sky backdrop (`DashboardView.tsx` NextUpHeroStars).
- *
- * - Light mode ("Day Sky"): royal blue `#1e3a8a -> #1e40af -> #1d4ed8` with sparse faint
- *   stars and a warm golden Sun halo breathing in the upper-right corner.
- * - Dark mode ("Starry Night Sky"): deep slate-indigo `#0f172a -> #172554 -> #1e1b4b`
- *   with two dense counter-pulsing starfields (`heroTwinkleA` & `heroTwinkleB`),
- *   concentric radar range arcs, and the diagonal `heroSheen` sweep.
+ * CelestialSky — QuizRadar's Observatory sky canopy across all 3 real app themes:
+ *   - Solar Dawn (light): royal cerulean sky with warm breathing solar halo.
+ *   - Obsidian Cosmic (dark): deep midnight-indigo canopy with dual counter-pulsing
+ *     starfields, precision radar azimuth rings, and subtle diagonal sheen.
+ *   - AMOLED Cosmic Stardust: pitch-black OLED celestial sky with crisp starlight.
  */
 interface Props {
   showRadarArcs?: boolean;
+  fadeBottom?: boolean;
+  compact?: boolean;
 }
 
-const { showRadarArcs = true } = Astro.props;
+const { showRadarArcs = true, fadeBottom = false, compact = false } = Astro.props;
 
 type StarTuple = readonly [x: number, y: number, size: number, opacity: number];
 
 const DAY_STARS: ReadonlyArray<StarTuple> = [
-  [7, 24, 1.1, 0.28],
-  [15, 64, 1.2, 0.2],
-  [24, 32, 1.0, 0.34],
-  [33, 74, 1.1, 0.22],
-  [42, 18, 1.2, 0.3],
-  [52, 52, 1.0, 0.25],
-  [61, 30, 1.1, 0.3],
-  [69, 70, 1.0, 0.2],
-  [76, 40, 1.1, 0.28],
-  [84, 58, 1.0, 0.22],
-  [92, 34, 1.1, 0.3],
-  [20, 86, 1.0, 0.24],
-  [4, 48, 1.0, 0.22],
-  [38, 88, 1.0, 0.2],
-  [58, 82, 1.1, 0.2],
+  [7, 24, 1.1, 0.24],
+  [18, 62, 1.2, 0.2],
+  [27, 30, 1.0, 0.28],
+  [39, 72, 1.1, 0.2],
+  [48, 18, 1.2, 0.28],
+  [58, 48, 1.0, 0.22],
+  [68, 28, 1.1, 0.26],
+  [79, 64, 1.0, 0.2],
+  [88, 36, 1.1, 0.25],
+  [14, 84, 1.0, 0.22],
 ];
 
 const NIGHT_STARS_A: ReadonlyArray<StarTuple> = [
-  [4, 16, 1.5, 0.95],
-  [9, 48, 1.3, 0.88],
-  [12, 82, 1.4, 0.85],
-  [15, 34, 1.2, 1.0],
-  [19, 12, 1.1, 0.82],
-  [24, 68, 1.2, 0.84],
-  [28, 24, 1.6, 0.94],
-  [33, 46, 1.3, 0.9],
-  [37, 9, 1.7, 0.88],
-  [42, 28, 1.1, 0.78],
-  [46, 66, 1.2, 0.9],
-  [50, 19, 1.6, 0.96],
-  [54, 84, 1.3, 0.85],
-  [58, 36, 1.3, 1.0],
-  [64, 54, 1.2, 0.82],
-  [67, 14, 1.5, 0.92],
-  [73, 42, 1.5, 0.95],
-  [79, 56, 1.8, 0.96],
-  [83, 72, 1.3, 0.86],
-  [87, 11, 1.4, 0.88],
-  [92, 80, 1.3, 0.9],
-  [96, 26, 1.5, 0.92],
+  [4, 16, 1.5, 0.92],
+  [9, 48, 1.3, 0.85],
+  [13, 82, 1.4, 0.8],
+  [17, 32, 1.2, 0.95],
+  [21, 12, 1.1, 0.78],
+  [26, 68, 1.2, 0.82],
+  [30, 22, 1.6, 0.92],
+  [36, 46, 1.3, 0.88],
+  [40, 10, 1.8, 0.86],
+  [45, 28, 1.1, 0.75],
+  [49, 64, 1.2, 0.88],
+  [54, 19, 1.6, 0.94],
+  [58, 82, 1.3, 0.82],
+  [62, 36, 1.3, 0.96],
+  [68, 54, 1.2, 0.8],
+  [72, 14, 1.5, 0.9],
+  [77, 42, 1.5, 0.92],
+  [83, 56, 1.8, 0.94],
+  [87, 72, 1.3, 0.84],
+  [91, 11, 1.4, 0.86],
+  [95, 78, 1.3, 0.88],
 ];
 
 const NIGHT_STARS_B: ReadonlyArray<StarTuple> = [
-  [6, 36, 1.4, 0.86],
-  [10, 70, 1.7, 0.92],
-  [17, 90, 1.2, 0.78],
-  [22, 56, 1.4, 0.86],
-  [30, 82, 1.3, 0.82],
-  [34, 14, 1.2, 0.74],
-  [39, 60, 1.4, 0.88],
-  [44, 74, 1.8, 0.92],
-  [48, 11, 1.2, 0.72],
-  [52, 90, 1.2, 0.78],
-  [59, 8, 1.3, 0.78],
-  [61, 28, 1.5, 0.9],
-  [63, 62, 1.6, 0.9],
-  [70, 78, 1.3, 0.82],
-  [76, 90, 1.2, 0.8],
-  [80, 20, 1.4, 0.88],
-  [88, 34, 1.5, 0.92],
-  [93, 66, 1.4, 0.86],
-  [95, 48, 1.6, 0.88],
+  [6, 36, 1.4, 0.84],
+  [11, 70, 1.7, 0.9],
+  [19, 88, 1.2, 0.74],
+  [24, 54, 1.4, 0.82],
+  [32, 80, 1.3, 0.8],
+  [35, 14, 1.2, 0.72],
+  [42, 60, 1.4, 0.86],
+  [47, 74, 1.8, 0.9],
+  [51, 11, 1.2, 0.7],
+  [56, 88, 1.2, 0.76],
+  [63, 28, 1.5, 0.88],
+  [66, 62, 1.6, 0.88],
+  [74, 78, 1.3, 0.8],
+  [81, 20, 1.4, 0.86],
+  [89, 34, 1.5, 0.9],
+  [94, 66, 1.4, 0.84],
 ];
 
 const toStarGradients = (stars: ReadonlyArray<StarTuple>) =>
   stars
     .map(
       ([x, y, size, opacity]) =>
-        `radial-gradient(${size}px ${size}px at ${x}% ${y}%, rgba(255,255,255,${opacity}) 45%, transparent 58%)`,
+        `radial-gradient(${size}px ${size}px at ${x}% ${y}%, rgba(255,255,255,${opacity}) 45%, transparent 60%)`,
     )
     .join(", ");
 
@@ -94,36 +85,36 @@ const nightStarsAStyle = `background-image: ${toStarGradients(NIGHT_STARS_A)};`;
 const nightStarsBStyle = `background-image: ${toStarGradients(NIGHT_STARS_B)};`;
 ---
 
-<div class="celestial-backdrop" aria-hidden="true">
-  <!-- Day Sky layers -->
+<div
+  class:list={["celestial-backdrop", { "has-bottom-fade": fadeBottom, "is-compact": compact }]}
+  aria-hidden="true"
+>
   <div class="sky-layer sky-day-stars" style={dayStarsStyle}></div>
-  <div class="sky-layer sky-day-sun"></div>
+  {!compact && <div class="sky-layer sky-day-sun"></div>}
 
-  <!-- Starry Night Sky layers -->
   <div class="sky-layer sky-night-nebula"></div>
   <div class="sky-layer sky-night-stars-a" style={nightStarsAStyle}></div>
   <div class="sky-layer sky-night-stars-b" style={nightStarsBStyle}></div>
 
   {
     showRadarArcs && (
-      <svg class="sky-radar-arcs" viewBox="0 0 1200 620" fill="none" preserveAspectRatio="xMidYMid slice">
-        <circle cx="600" cy="340" r="190" stroke="#ffffff" stroke-opacity="0.06" stroke-width="1" />
-        <circle
-          cx="600"
-          cy="340"
-          r="330"
-          stroke="#ffffff"
-          stroke-opacity="0.07"
-          stroke-width="1"
-          stroke-dasharray="10 10"
-        />
-        <circle cx="600" cy="340" r="490" stroke="#ffffff" stroke-opacity="0.05" stroke-width="1" />
+      <svg class="sky-radar-arcs" viewBox="0 0 1440 760" fill="none" preserveAspectRatio="xMidYMid slice">
+        <g stroke="#ffffff" stroke-opacity="0.075">
+          <circle cx="960" cy="370" r="180" stroke-width="1" />
+          <circle cx="960" cy="370" r="320" stroke-width="1" stroke-dasharray="8 9" />
+          <circle cx="960" cy="370" r="470" stroke-width="1" />
+          <circle cx="960" cy="370" r="640" stroke-width="1" stroke-opacity="0.045" />
+          <line x1="960" y1="30" x2="960" y2="710" stroke-width="1" stroke-opacity="0.045" />
+          <line x1="280" y1="370" x2="1440" y2="370" stroke-width="1" stroke-opacity="0.045" />
+        </g>
+        <circle cx="1186" cy="144" r="3.5" fill="#fbbf24" fill-opacity="0.68" />
+        <circle cx="722" cy="574" r="2.5" fill="#60a5fa" fill-opacity="0.65" />
       </svg>
     )
   }
 
-  <!-- Diagonal hero sheen (`apps/web/src/index.css`) -->
   <div class="sky-layer sky-sheen"></div>
+  {fadeBottom && <div class="sky-bottom-fade"></div>}
 </div>
 
 <style>
@@ -133,11 +124,21 @@ const nightStarsBStyle = `background-image: ${toStarGradients(NIGHT_STARS_B)};`;
     z-index: 0;
     overflow: hidden;
     pointer-events: none;
-    background: linear-gradient(115deg, #1e3a8a 0%, #1e40af 52%, #1d4ed8 100%);
+    background: linear-gradient(122deg, #132864 0%, #19378a 52%, #1d46b8 100%);
+  }
+
+  .celestial-backdrop.has-bottom-fade {
+    border-block-end: 1px solid rgba(12, 20, 36, 0.14);
   }
 
   :global(html.dark) .celestial-backdrop {
-    background: linear-gradient(120deg, #0f172a 0%, #172554 50%, #1e1b4b 100%);
+    background: linear-gradient(124deg, #070a12 0%, #0e1936 52%, #191a44 100%);
+    border-block-end-color: transparent;
+  }
+
+  :global(html[data-theme="amoled-nebula"]) .celestial-backdrop {
+    background: linear-gradient(132deg, #000000 0%, #050811 56%, #0b1122 100%);
+    border-block-end-color: transparent;
   }
 
   .sky-layer {
@@ -145,7 +146,7 @@ const nightStarsBStyle = `background-image: ${toStarGradients(NIGHT_STARS_B)};`;
     inset: 0;
   }
 
-  /* Light-mode Day Sky */
+  /* Solar Dawn (light) */
   .sky-day-stars {
     display: block;
   }
@@ -153,15 +154,16 @@ const nightStarsBStyle = `background-image: ${toStarGradients(NIGHT_STARS_B)};`;
   .sky-day-sun {
     display: block;
     position: absolute;
-    top: 8%;
-    right: 12%;
-    width: 48px;
-    height: 48px;
+    inset: auto;
+    top: 12%;
+    right: 2.2%;
+    width: 34px;
+    height: 34px;
     border-radius: 50%;
-    background-color: #fde047;
+    background-color: rgba(253, 224, 71, 0.85);
     box-shadow:
-      0 0 0 8px rgba(253, 224, 71, 0.22),
-      0 0 0 18px rgba(253, 224, 71, 0.08);
+      0 0 0 8px rgba(253, 224, 71, 0.16),
+      0 0 0 20px rgba(253, 224, 71, 0.06);
   }
 
   :global(html.dark) .sky-day-stars,
@@ -169,7 +171,7 @@ const nightStarsBStyle = `background-image: ${toStarGradients(NIGHT_STARS_B)};`;
     display: none;
   }
 
-  /* Dark-mode Starry Night Sky */
+  /* Obsidian & AMOLED Night Sky */
   .sky-night-nebula,
   .sky-night-stars-a,
   .sky-night-stars-b {
@@ -179,8 +181,14 @@ const nightStarsBStyle = `background-image: ${toStarGradients(NIGHT_STARS_B)};`;
   :global(html.dark) .sky-night-nebula {
     display: block;
     background-image:
-      radial-gradient(520px 320px at 22% 18%, rgba(59, 130, 246, 0.2), transparent 72%),
-      radial-gradient(480px 300px at 82% 76%, rgba(99, 102, 241, 0.22), transparent 72%);
+      radial-gradient(620px 380px at 78% 28%, rgba(59, 130, 246, 0.18), transparent 72%),
+      radial-gradient(500px 320px at 18% 72%, rgba(99, 102, 241, 0.16), transparent 72%);
+  }
+
+  :global(html[data-theme="amoled-nebula"]) .sky-night-nebula {
+    background-image:
+      radial-gradient(540px 320px at 78% 28%, rgba(59, 130, 246, 0.11), transparent 72%),
+      radial-gradient(420px 260px at 18% 72%, rgba(251, 191, 36, 0.05), transparent 72%);
   }
 
   :global(html.dark) .sky-night-stars-a,
@@ -196,33 +204,52 @@ const nightStarsBStyle = `background-image: ${toStarGradients(NIGHT_STARS_B)};`;
   }
 
   .sky-sheen {
+    inset: 0 -45%;
     background-image: linear-gradient(
       115deg,
-      transparent 42%,
-      rgba(255, 255, 255, 0.04) 47%,
-      rgba(255, 255, 255, 0.12) 50%,
-      rgba(255, 255, 255, 0.04) 53%,
-      transparent 58%
+      transparent 43%,
+      rgba(255, 255, 255, 0.03) 47%,
+      rgba(255, 255, 255, 0.08) 50%,
+      rgba(255, 255, 255, 0.03) 53%,
+      transparent 57%
     );
-    background-size: 250% 100%;
-    background-repeat: no-repeat;
+    will-change: transform;
+  }
+
+  .sky-bottom-fade {
+    display: none;
+  }
+
+  :global(html.dark) .sky-bottom-fade {
+    display: block;
+    position: absolute;
+    inset-inline: 0;
+    inset-block-end: 0;
+    height: 68px;
+    background: linear-gradient(to bottom, transparent 0%, var(--page) 100%);
+  }
+
+  @media (max-width: 1040px) {
+    .sky-day-sun {
+      display: none;
+    }
   }
 
   @media (prefers-reduced-motion: no-preference) {
     .sky-day-sun {
-      animation: heroSunGlow 5s ease-in-out infinite;
+      animation: heroSunGlow 5.5s ease-in-out infinite;
     }
 
     :global(html.dark) .sky-night-stars-a {
-      animation: heroTwinkleA 4.5s ease-in-out infinite;
+      animation: heroTwinkleA 4.8s ease-in-out infinite;
     }
 
     :global(html.dark) .sky-night-stars-b {
-      animation: heroTwinkleB 5.6s ease-in-out 0.9s infinite;
+      animation: heroTwinkleB 5.8s ease-in-out 0.9s infinite;
     }
 
     .sky-sheen {
-      animation: heroSheen 7s ease-in-out infinite;
+      animation: heroSheen 8s ease-in-out infinite;
     }
   }
 </style>

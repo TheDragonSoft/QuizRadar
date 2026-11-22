@@ -3,12 +3,15 @@ import Layout from "../layouts/Layout.astro";
 import BrandIcon from "../components/BrandIcon.astro";
 import CelestialSky from "../components/CelestialSky.astro";
 import {
-  ANCHOR_STEPS,
+  ANDROID_SCREENS,
+  APP_VERSION,
   FAQ_ITEMS,
   GITHUB_REPO_URL,
   INGESTION_SOURCES,
   PLATFORM_DOWNLOADS,
   PRODUCT_VIEWS,
+  RESOLVER_SCENARIOS,
+  SUITE_FEATURES,
   withBase,
 } from "../lib/releaseData";
 
@@ -16,11 +19,12 @@ const base = import.meta.env.BASE_URL;
 const downloadHref = withBase(base, "/download/");
 const webAppHref = withBase(base, "/app/");
 
-function splitHighlight(text: string, highlight?: string) {
-  if (!highlight || !text.includes(highlight)) {
-    return { before: text, match: "", after: "" };
-  }
+const inputSources = INGESTION_SOURCES.filter((s) => s.direction === "input");
+const outputSources = INGESTION_SOURCES.filter((s) => s.direction === "output");
+
+function splitHighlight(text: string, highlight: string) {
   const idx = text.indexOf(highlight);
+  if (idx === -1) return { before: text, match: "", after: "" };
   return {
     before: text.slice(0, idx),
     match: highlight,
@@ -31,372 +35,591 @@ function splitHighlight(text: string, highlight?: string) {
 
 <Layout currentPage="home" canonicalPath="/">
   <!-- =====================================================================
-       1. CELESTIAL SKY HERO + REAL APPLICATION VIEWS STAGE
+       1. FULL-BLEED CELESTIAL HORIZON HERO + LIVE TIMETABLE RESOLVER
        ===================================================================== -->
-  <section class="hero-section">
-    <div class="container">
-      <div class="hero-sky-card">
-        <CelestialSky showRadarArcs={true} />
+  <section class="hero-horizon">
+    <CelestialSky showRadarArcs={true} fadeBottom={true} />
 
-        <div class="hero-sky-content">
-          <h1 class="hero-title">Turn chaotic class announcements into a calm semester schedule.</h1>
+    <div class="container hero-grid">
+      <div class="hero-copy">
+        <h1 class="hero-title">Turn messy class announcements into a calm semester radar.</h1>
 
-          <p class="hero-sub">
-            QuizRadar reviews course updates from Gmail, Microsoft Teams, Moodle, and Google Classroom
-            directly on your device, matching fuzzy dates against your enrolled class timetable. Every
-            quiz, conflict warning, and study session appears on one clear calendar — completely private,
-            free, and zero-server.
-          </p>
+        <p class="hero-sub">
+          QuizRadar checks Gmail, Microsoft Teams, Moodle, Google Classroom, and Canvas directly on
+          your device — anchoring fuzzy professor dates to your enrolled timetable with zero servers
+          and zero accounts.
+        </p>
 
-          <div class="hero-actions">
-            <a
-              href={downloadHref}
-              class="btn btn-sky-primary btn-lg"
-              data-dl-cta
-              data-default-href={downloadHref}
-            >
-              <BrandIcon name="download" size={18} />
-              <span data-dl-label>Download QuizRadar</span>
-            </a>
+        <div class="hero-actions">
+          <a
+            href={downloadHref}
+            class="btn btn-sky-primary btn-lg"
+            data-dl-cta
+            data-download-base={downloadHref}
+            data-web-href={webAppHref}
+          >
+            <BrandIcon name="download" size={18} />
+            <span data-dl-label>Download QuizRadar</span>
+          </a>
 
-            <a href={webAppHref} class="btn btn-sky-secondary btn-lg">
-              <BrandIcon name="globe" size={18} />
-              <span>Try Web App in Browser</span>
-            </a>
-          </div>
-
-          <div class="hero-foot-strip">
-            <a href={downloadHref} class="sky-foot-link">
-              Available for Windows, macOS, Linux, and Android &rarr;
-            </a>
-          </div>
+          <a
+            href={webAppHref}
+            class="btn btn-sky-secondary btn-lg"
+            data-secondary-cta
+            data-download-base={downloadHref}
+            data-web-href={webAppHref}
+          >
+            <BrandIcon name="globe" size={18} />
+            <span data-secondary-label>Try Web App in Browser</span>
+          </a>
         </div>
+
+        <ul class="hero-proof-strip" aria-label="Core guarantees">
+          <li>
+            <BrandIcon name="check" size={14} />
+            <span>Free &amp; MIT Open Source</span>
+          </li>
+          <li>
+            <BrandIcon name="check" size={14} />
+            <span>100% Local &amp; Offline</span>
+          </li>
+          <li>
+            <BrandIcon name="check" size={14} />
+            <a href={downloadHref} class="hero-platforms-link tabular">
+              v{APP_VERSION} · Windows, macOS, Linux, Android &amp; Web
+            </a>
+          </li>
+        </ul>
       </div>
 
-      <!-- Real 2x Retina Product Stage (`#views`) -->
-      <div id="views" class="stage-wrap">
-        <div class="gradient-stage app-stage">
-          <div class="stage-toolbar">
-            <div class="stage-tablist" role="tablist" aria-orientation="horizontal" aria-label="QuizRadar application views">
-              {
-                PRODUCT_VIEWS.map((view, idx) => (
-                  <button
-                    type="button"
-                    role="tab"
-                    id={`tab-${view.id}`}
-                    aria-selected={idx === 0 ? "true" : "false"}
-                    aria-controls={`panel-${view.id}`}
-                    tabindex={idx === 0 ? 0 : -1}
-                    class:list={["stage-tab", { "is-active": idx === 0 }]}
-                    data-view-tab={view.id}
-                  >
-                    {view.tabLabel}
-                  </button>
-                ))
-              }
-            </div>
-
-            <button
-              type="button"
-              class="stage-sky-switch"
-              data-theme-toggle
-              aria-label="Preview screenshots in Day or Starry Night theme"
-            >
-              <span class="switch-sun">
-                <BrandIcon name="sun" size={14} />
-                <span>Switch to Day Sky</span>
-              </span>
-              <span class="switch-moon">
-                <BrandIcon name="moon" size={14} />
-                <span>Switch to Starry Sky</span>
-              </span>
-            </button>
-          </div>
-
-          <div class="stage-panels">
+      <!-- Interactive Live Timetable Resolver Specimen (Persuade focal proof) -->
+      <div class="resolver-bench" aria-label="Interactive timetable resolver demo">
+        <div class="resolver-head">
+          <span class="resolver-heading">Try a real campus message</span>
+          <div class="resolver-tabs" role="tablist" aria-label="Campus announcement scenarios">
             {
-              PRODUCT_VIEWS.map((view, idx) => (
-                <div
-                  role="tabpanel"
-                  id={`panel-${view.id}`}
-                  aria-labelledby={`tab-${view.id}`}
-                  hidden={idx !== 0}
-                  class="stage-panel"
-                  data-view-panel={view.id}
+              RESOLVER_SCENARIOS.map((sc, idx) => (
+                <button
+                  type="button"
+                  role="tab"
+                  id={`resolver-tab-${sc.id}`}
+                  aria-selected={idx === 0 ? "true" : "false"}
+                  aria-controls={`resolver-panel-${sc.id}`}
+                  tabindex={idx === 0 ? 0 : -1}
+                  class:list={["resolver-tab", { "is-active": idx === 0 }]}
+                  data-resolver-tab={sc.id}
                 >
-                  <div class="stage-frame">
-                    <img
-                      class="theme-shot-dark screenshot-outline stage-img"
-                      src={withBase(base, view.darkSrc)}
-                      alt={view.alt}
-                      width="2160"
-                      height="1350"
-                      loading={idx === 0 ? "eager" : "lazy"}
-                      fetchpriority={idx === 0 ? "high" : undefined}
-                      decoding="async"
-                    />
-                    <img
-                      class="theme-shot-light screenshot-outline stage-img"
-                      src={withBase(base, view.lightSrc)}
-                      alt={view.alt}
-                      width="2160"
-                      height="1350"
-                      loading={idx === 0 ? "eager" : "lazy"}
-                      decoding="async"
-                    />
-                  </div>
-                </div>
+                  {sc.tabLabel}
+                </button>
               ))
             }
           </div>
         </div>
-      </div>
-    </div>
-  </section>
 
-  <!-- =====================================================================
-       2. TIMETABLE ANCHOR SCROLL STORY (`scroll-progress-timeline`)
-       ===================================================================== -->
-  <section id="how-it-works" class="page-section">
-    <div class="container">
-      <div class="section-head animate-on-scroll">
-        <h2 class="section-title">How fuzzy class messages become an exact study schedule.</h2>
-        <p class="section-lead">
-          Professors rarely send clean calendar invites. QuizRadar reads announcements the way
-          students do &mdash; matching casual phrases against your weekly lectures, tutorials, and
-          lab times.
-        </p>
-      </div>
-
-      <div class="timeline-shell" data-scroll-timeline>
-        <div class="timeline-rail" aria-hidden="true">
-          <div class="timeline-fill" data-timeline-fill></div>
-        </div>
-
-        <ol class="timeline-list">
-          {
-            ANCHOR_STEPS.map((step, idx) => {
-              const parts = splitHighlight(step.snippetText, step.highlight);
-              return (
-                <li
-                  class:list={["timeline-step", { "is-active": idx === 0 }]}
-                  data-timeline-step
-                >
-                  <div class="step-marker tabular" aria-hidden="true">
-                    {step.number}
-                  </div>
-
-                  <div class="step-grid">
-                    <div class="step-copy">
-                      <h3 class="step-title">{step.title}</h3>
-                      <p class="step-body">{step.body}</p>
-                    </div>
-
-                    <div class="anchor-card">
-                      <div class="anchor-card-top">
-                        <span
-                          class="course-chip"
-                          style={`--chip-color: ${step.courseColor};`}
-                        >
-                          <span class="course-dot" aria-hidden="true" />
-                          <span>{step.courseCode}</span>
-                          <span class="course-chip-sep">·</span>
-                          <span class="course-chip-name">{step.courseName}</span>
-                        </span>
-                        <span class="snippet-source">{step.snippetLabel}</span>
-                      </div>
-
-                      <blockquote class="snippet-quote">
-                        {
-                          parts.match ? (
-                            <>
-                              <span>{`“${parts.before}`}</span><mark class="phrase-mark">{parts.match}</mark><span>{`${parts.after}”`}</span>
-                            </>
-                          ) : (
-                            <span>{`“${parts.before}”`}</span>
-                          )
-                        }
-                      </blockquote>
-
-                      <div class="resolved-grid">
-                        <div class="resolved-cell">
-                          <span class="resolved-label">Anchored Slot</span>
-                          <span class="resolved-val tabular">{step.resolvedDate}</span>
-                        </div>
-                        <div class="resolved-cell">
-                          <span class="resolved-label">Room</span>
-                          <span
-                            class:list={[
-                              "resolved-val",
-                              "tabular",
-                              { "is-unassigned": step.resolvedRoom === "—" },
-                            ]}
-                          >
-                            {step.resolvedRoom}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div class="honesty-strip">
-                        <BrandIcon name="check" size={14} />
-                        <span>{step.honestyNote}</span>
-                      </div>
-                    </div>
-                  </div>
-                </li>
-              );
-            })
-          }
-        </ol>
-      </div>
-    </div>
-  </section>
-
-  <!-- =====================================================================
-       3. DIRECT CAMPUS SOURCES (`#sources`)
-       ===================================================================== -->
-  <section id="sources" class="page-section">
-    <div class="container">
-      <div class="section-head animate-on-scroll">
-        <h2 class="section-title">Connects directly to your university tools &mdash; never through our servers.</h2>
-        <p class="section-lead">
-          Your device connects straight to Google, Microsoft, or your campus Moodle portal.
-          Your passwords and access tokens stay locked in your device's secure vault and never
-          pass through an outside relay.
-        </p>
-      </div>
-
-      <div class="sources-ledger animate-on-scroll">
         {
-          INGESTION_SOURCES.map((source) => (
-            <article class="source-cell">
-              <div class="source-cell-head">
-                <div class="source-icon-wrap">
-                  <BrandIcon name={source.id} size={22} />
+          RESOLVER_SCENARIOS.map((sc, idx) => {
+            const parts = splitHighlight(sc.announcement, sc.highlight);
+            return (
+              <div
+                role="tabpanel"
+                id={`resolver-panel-${sc.id}`}
+                aria-labelledby={`resolver-tab-${sc.id}`}
+                hidden={idx !== 0}
+                class="resolver-panel"
+                data-resolver-panel={sc.id}
+              >
+                <div class="resolver-meta-row">
+                  <span class="resolver-course" style={`--course-dot: ${sc.courseColor};`}>
+                    <span class="resolver-dot" aria-hidden="true" />
+                    <span class="resolver-code tabular">{sc.courseCode}</span>
+                    <span class="resolver-course-name">{sc.courseName}</span>
+                  </span>
+                  <span class="resolver-source">{sc.sourceLabel}</span>
                 </div>
-                <div class="source-meta">
-                  <h3>{source.name}</h3>
-                  <span class="protocol-tag">{source.protocol}</span>
+
+                <blockquote class="resolver-quote">{`“${parts.before}`}<mark class="resolver-mark">{parts.match}</mark>{`${parts.after}”`}</blockquote>
+
+                <div class="resolver-bridge">
+                  <span class="resolver-bridge-line" aria-hidden="true" />
+                  <span class="resolver-bridge-pill">
+                    <BrandIcon name="calendar" size={13} />
+                    <span>{sc.timetableMatch}</span>
+                  </span>
+                  <span class="resolver-bridge-line" aria-hidden="true" />
                 </div>
+
+                <div class:list={["resolver-slot", `signal-${sc.signalKind}`]}>
+                  <div class="resolver-slot-top">
+                    <span class="resolver-signal-pill">{sc.signalLabel}</span>
+                    <span class="resolver-room-readout tabular">
+                      Room{" "}
+                      <strong class:list={{ "is-tba": sc.resolvedRoom === "—" }}>
+                        {sc.resolvedRoom}
+                      </strong>
+                    </span>
+                  </div>
+                  <div class="resolver-slot-title">{sc.resolvedTitle}</div>
+                  <div class="resolver-slot-time tabular">
+                    {sc.resolvedDate} &middot; {sc.resolvedTime}
+                  </div>
+                </div>
+
+                <p class="resolver-honesty">
+                  <BrandIcon name="check" size={14} />
+                  <span>{sc.honestyNote}</span>
+                </p>
               </div>
-              <p class="source-summary">{source.summary}</p>
-            </article>
-          ))
+            );
+          })
         }
       </div>
     </div>
   </section>
 
   <!-- =====================================================================
-       4. BUILT FOR REAL EXAM WEEKS (CALENDAR, FOCUS & HONEST GRADES)
+       2. REAL 2x RETINA PRODUCT STAGE (`#views`) — 6 VIEWS × 3 THEMES
        ===================================================================== -->
-  <section class="page-section">
+  <section id="views" class="band views-band">
     <div class="container">
-      <div class="section-head animate-on-scroll">
-        <h2 class="section-title">Everything you need for exam week, built into one calm workspace.</h2>
+      <div class="editorial-head">
+        <h2 class="section-title">One calm workspace for your entire semester.</h2>
         <p class="section-lead">
-          Once an exam is scheduled, QuizRadar flags tight deadlines, sets aside focused study blocks in
-          your free hours, and tracks topic progress without clutter.
+          Every screen below is captured directly from QuizRadar v{APP_VERSION}. Preview{" "}
+          <strong>Obsidian</strong>, <strong>Solar</strong>, and <strong>AMOLED</strong> live across
+          all six views.
         </p>
       </div>
 
-      <div class="workflow-split">
-        <article class="workflow-card workflow-card-wide animate-on-scroll">
-          <div class="workflow-copy">
-            <h3>Classes, confirmed exams, and dedicated study time on one clear weekly grid</h3>
-            <p>
-              Anchored quizzes appear inside the exact lecture or lab slot where they take place. When
-              two exams or major deadlines land close together, one click schedules quiet study sessions
-              in your free time &mdash; ready to export to Google Calendar or save as an <code>.ics</code>
-              file.
-            </p>
+      <div class="stage-shell">
+        <div class="stage-bar">
+          <div
+            class="stage-tablist"
+            role="tablist"
+            aria-orientation="horizontal"
+            aria-label="QuizRadar desktop application views"
+          >
+            {
+              PRODUCT_VIEWS.map((view, idx) => (
+                <button
+                  type="button"
+                  role="tab"
+                  id={`view-tab-${view.id}`}
+                  aria-selected={idx === 0 ? "true" : "false"}
+                  aria-controls={`view-panel-${view.id}`}
+                  tabindex={idx === 0 ? 0 : -1}
+                  class:list={["stage-tab", { "is-active": idx === 0 }]}
+                  data-view-tab={view.id}
+                >
+                  {view.tabLabel}
+                </button>
+              ))
+            }
           </div>
-          <div class="workflow-shot-wrap">
-            <img
-              class="theme-shot-dark screenshot-outline workflow-shot"
-              src={withBase(base, "/screenshots/app-calendar-dark.webp")}
-              alt="QuizRadar Week Calendar with glowing red Class Quiz 2 slot and scheduled study sessions."
-              width="2160"
-              height="1350"
-              loading="lazy"
-              decoding="async"
-            />
-            <img
-              class="theme-shot-light screenshot-outline workflow-shot"
-              src={withBase(base, "/screenshots/app-calendar-light.webp")}
-              alt="QuizRadar Week Calendar in Day mode with glowing Class Quiz 2 slot and study sessions."
-              width="2160"
-              height="1350"
-              loading="lazy"
-              decoding="async"
-            />
-          </div>
-        </article>
 
-        <article
-          class="workflow-card animate-on-scroll"
-          style="--reveal-delay: 80ms;"
-        >
-          <div class="workflow-copy">
-            <h3>Checkable syllabus topics, Pomodoro focus, and Grade What-If</h3>
-            <p>
-              Break each exam into concrete topics, launch a built-in 25-minute focus session, drill
-              sample questions offline (or connect an optional AI key), and calculate the exact
-              exam score needed for your target grade.
-            </p>
+          <!-- Inline 3-Theme Observatory Preview Switcher right on the stage -->
+          <div class="stage-theme-bar" role="group" aria-label="Preview screenshot theme">
+            <button
+              type="button"
+              class="stage-theme-btn is-active"
+              data-set-theme="obsidian"
+              aria-pressed="true"
+              aria-label="Preview Obsidian dark theme"
+            >
+              <BrandIcon name="moon" size={13} />
+              <span>Obsidian</span>
+            </button>
+            <button
+              type="button"
+              class="stage-theme-btn"
+              data-set-theme="solar"
+              aria-pressed="false"
+              aria-label="Preview Solar light theme"
+            >
+              <BrandIcon name="sun" size={13} />
+              <span>Solar</span>
+            </button>
+            <button
+              type="button"
+              class="stage-theme-btn"
+              data-set-theme="amoled-nebula"
+              aria-pressed="false"
+              aria-label="Preview AMOLED black theme"
+            >
+              <BrandIcon name="eclipse" size={13} />
+              <span>AMOLED</span>
+            </button>
           </div>
-          <div class="workflow-shot-wrap">
-            <img
-              class="theme-shot-dark screenshot-outline workflow-shot"
-              src={withBase(base, "/screenshots/app-detail-dark.webp")}
-              alt="QuizRadar Assessment Detail modal showing study topics, Pomodoro timer button, and Grade What-If calculator."
-              width="2160"
-              height="1350"
-              loading="lazy"
-              decoding="async"
-            />
-            <img
-              class="theme-shot-light screenshot-outline workflow-shot"
-              src={withBase(base, "/screenshots/app-detail-light.webp")}
-              alt="QuizRadar Assessment Detail modal in Day mode showing study topics and Grade What-If calculator."
-              width="2160"
-              height="1350"
-              loading="lazy"
-              decoding="async"
-            />
-          </div>
-        </article>
+        </div>
+
+        <div class="stage-panels">
+          {
+            PRODUCT_VIEWS.map((view, idx) => (
+              <div
+                role="tabpanel"
+                id={`view-panel-${view.id}`}
+                aria-labelledby={`view-tab-${view.id}`}
+                hidden={idx !== 0}
+                class="stage-panel"
+                data-view-panel={view.id}
+              >
+                <div class="stage-caption-row">
+                  <div class="stage-caption-main">
+                    <span class="stage-badge tabular">{view.badge}</span>
+                    <p class="stage-caption-text">{view.caption}</p>
+                  </div>
+                  <ul class="stage-highlights">
+                    {view.highlights.map((hl) => (
+                      <li>
+                        <BrandIcon name="check" size={14} />
+                        <span>{hl}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div class="stage-frame">
+                  <img
+                    class="screenshot-outline stage-img"
+                    data-theme-img
+                    src={withBase(base, view.darkSrc)}
+                    data-src-dark={withBase(base, view.darkSrc)}
+                    data-src-light={withBase(base, view.lightSrc)}
+                    data-src-amoled={withBase(base, view.amoledSrc)}
+                    alt={view.alt}
+                    width="2640"
+                    height="1650"
+                    loading={idx === 0 ? "eager" : "lazy"}
+                    fetchpriority={idx === 0 ? "high" : undefined}
+                    decoding="async"
+                  />
+                </div>
+              </div>
+            ))
+          }
+        </div>
       </div>
     </div>
   </section>
 
   <!-- =====================================================================
-       5. NATIVE ANDROID + 2x1 STARRY GLANCE WIDGET (`#android`)
+       3. EXAM-WEEK ACADEMIC SUITE (`#suite`, TINTED BAND — UN-CROPPED)
        ===================================================================== -->
-  <section id="android" class="page-section">
-    <div class="container android-grid">
-      <div class="android-copy animate-on-scroll">
-        <h2 class="section-title">Your exam countdown right on your Android home screen.</h2>
+  <section id="suite" class="band band-tinted">
+    <div class="container">
+      <div class="editorial-head">
+        <h2 class="section-title">Built for real exam weeks, not toy to-do lists.</h2>
         <p class="section-lead">
-          Built as a fast, native Android app designed for students on the move, with instant
-          glanceable countdowns and private on-device study reminders.
+          Open any assessment to tick off syllabus topics, launch a Pomodoro focus block, drill
+          practice questions offline, and calculate the exact score you need for your target grade.
+        </p>
+      </div>
+
+      <div class="suite-split">
+        <!-- Tightly framed full Assessment Detail sheet showing all actions & What-If calculator -->
+        <figure class="suite-visual">
+          <div class="suite-shot-frame">
+            <img
+              class="screenshot-outline suite-img"
+              data-theme-img
+              src={withBase(base, "/screenshots/app-detail-dark.webp")}
+              data-src-dark={withBase(base, "/screenshots/app-detail-dark.webp")}
+              data-src-light={withBase(base, "/screenshots/app-detail-light.webp")}
+              data-src-amoled={withBase(base, "/screenshots/app-detail-amoled.webp")}
+              alt="QuizRadar Assessment Detail sheet showing Date and Room CS Lab 3, checkable Syllabus Topics with Pomodoro timers, Deterministic Planner note, Google Calendar and .ics export, Practice Quiz button, and Grade Recording & What-If calculator."
+              width="1720"
+              height="1948"
+              loading="eager"
+              decoding="async"
+            />
+          </div>
+          <figcaption class="suite-figcaption">
+            Every assessment sheet keeps the resolved time &amp; room, checkable syllabus topics,
+            per-topic Pomodoro launcher, Practice Quiz drill, one-click <code>.ics</code> export,
+            and Grade What-If calculator in one place.
+          </figcaption>
+        </figure>
+
+        <!-- Structured hairline editorial ledger -->
+        <div class="suite-ledger">
+          {
+            SUITE_FEATURES.map((feat, idx) => (
+              <div class="suite-row">
+                <div class="suite-row-marker">
+                  <span class="suite-row-num tabular">0{idx + 1}</span>
+                  <div class="suite-row-icon">
+                    <BrandIcon name={feat.icon} size={17} />
+                  </div>
+                </div>
+                <div class="suite-row-copy">
+                  <h3>{feat.title}</h3>
+                  <p>{feat.body}</p>
+                  {feat.id === "shortcuts" && (
+                    <div class="shortcut-bar" aria-label="Desktop keyboard shortcuts">
+                      <span>
+                        <kbd class="keycap">1</kbd>–<kbd class="keycap">4</kbd> Views
+                      </span>
+                      <span>
+                        <kbd class="keycap">T</kbd> Today
+                      </span>
+                      <span>
+                        <kbd class="keycap">N</kbd> New event
+                      </span>
+                      <span>
+                        <kbd class="keycap">Space</kbd> Pomodoro
+                      </span>
+                      <span>
+                        <kbd class="keycap">/</kbd> Search
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =====================================================================
+       4. ZERO-SERVER PRIVACY & CAMPUS SOURCES DATA-FLOW (`#sources`)
+       ===================================================================== -->
+  <section id="sources" class="band">
+    <div class="container">
+      <div class="editorial-head">
+        <h2 class="section-title">Connects straight to your campus — never through our servers.</h2>
+        <p class="section-lead">
+          Your device speaks directly to Google, Microsoft, Moodle, or your university calendar
+          feed. Tokens stay locked inside your OS vault, and syncing between devices transfers only
+          schedule data.
+        </p>
+      </div>
+
+      <!-- Visual 3-Column Local-First Architecture Flow -->
+      <div class="flow-diagram">
+        <!-- Left Column: Campus Inputs -->
+        <div class="flow-col">
+          <div class="flow-col-head">
+            <h3>Campus Inputs</h3>
+            <span>Direct on-device read</span>
+          </div>
+          <ul class="flow-list">
+            {
+              inputSources.map((src) => (
+                <li class="flow-node">
+                  <span class="flow-node-icon">
+                    <BrandIcon name={src.id} size={20} />
+                  </span>
+                  <div class="flow-node-copy">
+                    <div class="flow-node-top">
+                      <strong>{src.name}</strong>
+                      <span class="flow-proto">{src.protocol}</span>
+                    </div>
+                    <p>{src.summary}</p>
+                  </div>
+                </li>
+              ))
+            }
+          </ul>
+        </div>
+
+        <!-- Center Hub: Your Device Vault -->
+        <div class="flow-hub">
+          <div class="flow-connector flow-connector-in" aria-hidden="true">
+            <span class="flow-arrow-line" />
+            <BrandIcon name="arrow-right" size={15} />
+          </div>
+
+          <div class="vault-core">
+            <div class="vault-emblem">
+              <BrandIcon name="quizradar" size={44} animated={true} uid="vault" />
+            </div>
+            <h3 class="vault-title">Your Device Only</h3>
+            <p class="vault-sub">
+              Pure-Rust local engine + SQLite / IndexedDB. OAuth tokens live strictly in Windows
+              Credential Manager, macOS Keychain, Linux Secret Service, or Android Keystore.
+            </p>
+            <div class="vault-seal">
+              <BrandIcon name="lock" size={14} />
+              <span>0 bytes sent to QuizRadar servers</span>
+            </div>
+            <ul class="vault-facts">
+              <li>Zero user accounts or sign-up walls</li>
+              <li>Zero analytics, trackers, or telemetry</li>
+              <li>Works 100% offline with deterministic rules</li>
+            </ul>
+          </div>
+
+          <div class="flow-connector flow-connector-out" aria-hidden="true">
+            <span class="flow-arrow-line" />
+            <BrandIcon name="arrow-right" size={15} />
+          </div>
+        </div>
+
+        <!-- Right Column: Exports & Sync -->
+        <div class="flow-col">
+          <div class="flow-col-head">
+            <h3>Exports &amp; Device Sync</h3>
+            <span>Data-only · user-initiated</span>
+          </div>
+          <ul class="flow-list">
+            {
+              outputSources.map((src) => (
+                <li class="flow-node">
+                  <span class="flow-node-icon">
+                    <BrandIcon name={src.id} size={20} />
+                  </span>
+                  <div class="flow-node-copy">
+                    <div class="flow-node-top">
+                      <strong>{src.name}</strong>
+                      <span class="flow-proto">{src.protocol}</span>
+                    </div>
+                    <p>{src.summary}</p>
+                  </div>
+                </li>
+              ))
+            }
+          </ul>
+        </div>
+      </div>
+
+      <!-- Honesty Doctrine 3-column hairline bar -->
+      <div class="honesty-bar">
+        <div class="honesty-col">
+          <h3>Unannounced rooms stay “—”</h3>
+          <p>
+            QuizRadar never fabricates rooms, instructors, or due dates. Every anchored exam retains
+            the professor’s original quote so you can double-check it instantly.
+          </p>
+        </div>
+        <div class="honesty-col">
+          <h3>No AI key required</h3>
+          <p>
+            All parsing, conflict detection, GPA math, and Leitner flashcards work offline with zero
+            API keys. Optional BYOK Google Gemini stays off by default.
+          </p>
+        </div>
+        <div class="honesty-col">
+          <h3>Ephemeral LAN QR sync</h3>
+          <p>
+            Sync Desktop and Android over local Wi-Fi with one QR scan using a per-session pinned
+            TLS certificate that auto-closes after a single bidirectional merge.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =====================================================================
+       5. NATIVE ANDROID COMPANION (`#android`, TINTED BAND)
+       ===================================================================== -->
+  <section id="android" class="band band-tinted">
+    <div class="container android-grid">
+      <div class="android-copy">
+        <h2 class="section-title">Your exam countdown and today’s classes, right on Android.</h2>
+        <p class="section-lead">
+          A fast, native Jetpack Compose app sharing the exact same Rust engine — built for glancing
+          between lectures, marking attendance in one tap, and staying on top of exam day.
         </p>
 
-        <!-- Authentic 2x1 Starry Android Glance Home-Screen Widget Preview -->
-        <div class="glance-widget-wrap">
-          <span class="glance-caption">2&times;1 Android Glance Home-Screen Widget</span>
-          <div class="glance-widget">
-            <CelestialSky showRadarArcs={false} />
+        <!-- Interactive 4x2 / 2x1 Android Glance Widget Switcher -->
+        <div class="widget-showcase">
+          <div class="widget-switch-bar">
+            <span class="widget-switch-label">Home-Screen Glance Widgets</span>
+            <div class="widget-pills" role="tablist" aria-label="Android home-screen widget sizes">
+              <button
+                type="button"
+                role="tab"
+                id="widget-tab-4x2"
+                aria-selected="true"
+                aria-controls="widget-panel-4x2"
+                tabindex={0}
+                class="widget-pill is-active"
+                data-widget-tab="4x2"
+              >
+                4×2 Today’s Schedule
+              </button>
+              <button
+                type="button"
+                role="tab"
+                id="widget-tab-2x1"
+                aria-selected="false"
+                aria-controls="widget-panel-2x1"
+                tabindex={-1}
+                class="widget-pill"
+                data-widget-tab="2x1"
+              >
+                2×1 Exam Countdown
+              </button>
+            </div>
+          </div>
+
+          <!-- 4x2 Today's Schedule Widget -->
+          <div
+            role="tabpanel"
+            id="widget-panel-4x2"
+            aria-labelledby="widget-tab-4x2"
+            class="glance-widget glance-4x2"
+            data-widget-panel="4x2"
+          >
+            <CelestialSky showRadarArcs={false} compact={true} />
             <div class="glance-inner">
               <div class="glance-top">
                 <span class="amber-pill glance-pill">
                   <BrandIcon name="zap" size={11} />
-                  <span>Up next &middot; In 3d</span>
+                  <span>Today · Mon, Nov 2</span>
                 </span>
-                <span class="glance-course">CSE 341</span>
+                <span class="glance-course tabular">Next exam in 1d</span>
               </div>
-              <div class="glance-title">Class Quiz 2 &mdash; CPU Scheduling</div>
+              <ul class="glance-schedule-list">
+                <li>
+                  <span class="glance-slot-time tabular">09:00</span>
+                  <span class="glance-slot-name">CS301 Algorithms Lecture</span>
+                  <span class="glance-slot-room tabular">Hall 302</span>
+                </li>
+                <li>
+                  <span class="glance-slot-time tabular">14:00</span>
+                  <span class="glance-slot-name">PHYS102 Electromagnetism</span>
+                  <span class="glance-slot-room tabular">Sci 101</span>
+                </li>
+                <li class="is-due">
+                  <span class="glance-slot-time tabular">17:00</span>
+                  <span class="glance-slot-name">Due · Problem Set 4</span>
+                  <span class="glance-slot-room tabular">—</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- 2x1 Exam Countdown Widget -->
+          <div
+            role="tabpanel"
+            id="widget-panel-2x1"
+            aria-labelledby="widget-tab-2x1"
+            hidden
+            class="glance-widget"
+            data-widget-panel="2x1"
+          >
+            <CelestialSky showRadarArcs={false} compact={true} />
+            <div class="glance-inner">
+              <div class="glance-top">
+                <span class="amber-pill glance-pill">
+                  <BrandIcon name="zap" size={11} />
+                  <span>Up next · In 3d</span>
+                </span>
+                <span class="glance-course tabular">CSE 341</span>
+              </div>
+              <div class="glance-title">Class Quiz 2 — CPU Scheduling</div>
               <div class="glance-meta tabular">Thu, Nov 5 &middot; 10:00 AM &middot; CS Lab 3</div>
+            </div>
+          </div>
+
+          <!-- Authentic T-3h Persistent Lock-Screen Exam Chronometer Strip -->
+          <div class="lock-notif">
+            <BrandIcon name="clock" size={15} />
+            <div class="lock-notif-copy">
+              <strong>T-3h Lock-Screen Exam Chronometer</strong>
+              <span>Ongoing live countdown with room code starting 3 hours before exam time.</span>
             </div>
           </div>
         </div>
@@ -405,132 +628,128 @@ function splitHighlight(text: string, highlight?: string) {
           <li>
             <BrandIcon name="check" size={16} />
             <span>
-              <strong>Share-Sheet Quick Add:</strong> Share messages from WhatsApp, Telegram,
-              or class group chats directly into QuizRadar to add exam dates in one tap.
+              <strong>Attendance &amp; Absence Limits:</strong> Tap any class slot in Agenda view to
+              mark Present, Absent, or Excused — with automatic limit warnings.
             </span>
           </li>
           <li>
             <BrandIcon name="check" size={16} />
             <span>
-              <strong>On-Device Reminders:</strong> Receive timely study and exam alerts scheduled
-              locally on your phone &mdash; no push servers or data collection.
+              <strong>Share-Sheet Quick Add:</strong> Share a professor’s message from WhatsApp or
+              Telegram straight into QuizRadar to capture a deadline in one tap.
             </span>
           </li>
           <li>
             <BrandIcon name="check" size={16} />
             <span>
-              <strong>Hardware-Backed Protection:</strong> Your login credentials stay protected
-              inside Android's secure system vault.
+              <strong>Hardware-Backed Vault + LAN QR Sync:</strong> Tokens stay inside Android
+              Keystore; scan your laptop’s local Wi-Fi QR for an instant two-way merge.
             </span>
           </li>
         </ul>
 
         <div class="android-cta-row">
-          <a href={PLATFORM_DOWNLOADS.android.primaryUrl} class="btn btn-primary">
+          <a href={`${downloadHref}#android`} class="btn btn-primary">
             <BrandIcon name="android" size={17} />
             <span>{PLATFORM_DOWNLOADS.android.label}</span>
           </a>
-          <a href={downloadHref} class="btn btn-secondary">
-            <span>View SHA-256 Checksums</span>
+          <a href={`${downloadHref}#android`} class="btn btn-secondary">
+            <span>QR &amp; SHA-256 Checksums</span>
           </a>
         </div>
       </div>
 
-      <div class="android-phones animate-on-scroll" style="--reveal-delay: 90ms;">
-        <div class="phone-frame phone-primary">
-          <span class="phone-notch" aria-hidden="true"></span>
-          <span class="phone-btn-side phone-btn-side-r" aria-hidden="true"></span>
-          <span class="phone-btn-side phone-btn-side-l" aria-hidden="true"></span>
-          <div class="phone-screen">
-            <img
-              class="theme-shot-dark phone-img"
-              src={withBase(base, "/screenshots/android-dashboard-dark.webp")}
-              alt="QuizRadar native Android Jetpack Compose app in dark mode showing the starry Next-Up hero and upcoming exams."
-              width="960"
-              height="2133"
-              loading="lazy"
-              decoding="async"
-            />
-            <img
-              class="theme-shot-light phone-img"
-              src={withBase(base, "/screenshots/android-dashboard-light.webp")}
-              alt="QuizRadar native Android Jetpack Compose app in light mode showing the sunlit Next-Up hero and upcoming exams."
-              width="960"
-              height="2133"
-              loading="lazy"
-              decoding="async"
-            />
+      <!-- Authentic Pixel-Style Android Bezel + 4-Screen Interactive Switcher -->
+      <div class="android-stage">
+        <div class="android-tabs" role="tablist" aria-label="Android app screens">
+          {
+            ANDROID_SCREENS.map((scr, idx) => (
+              <button
+                type="button"
+                role="tab"
+                id={`android-tab-${scr.id}`}
+                aria-selected={idx === 0 ? "true" : "false"}
+                aria-controls={`android-panel-${scr.id}`}
+                tabindex={idx === 0 ? 0 : -1}
+                class:list={["android-tab", { "is-active": idx === 0 }]}
+                data-android-tab={scr.id}
+              >
+                {scr.label}
+              </button>
+            ))
+          }
+        </div>
+
+        <div class="pixel-frame">
+          <span class="pixel-camera" aria-hidden="true"></span>
+          <span class="pixel-btn pixel-btn-power" aria-hidden="true"></span>
+          <span class="pixel-btn pixel-btn-vol" aria-hidden="true"></span>
+          <div class="pixel-screen">
+            {
+              ANDROID_SCREENS.map((scr, idx) => (
+                <div
+                  role="tabpanel"
+                  id={`android-panel-${scr.id}`}
+                  aria-labelledby={`android-tab-${scr.id}`}
+                  hidden={idx !== 0}
+                  class="android-screen-panel"
+                  data-android-panel={scr.id}
+                >
+                  <img
+                    class="pixel-img"
+                    data-theme-img
+                    src={withBase(base, scr.darkSrc)}
+                    data-src-dark={withBase(base, scr.darkSrc)}
+                    data-src-light={withBase(base, scr.lightSrc)}
+                    data-src-amoled={withBase(base, scr.amoledSrc)}
+                    alt={scr.alt}
+                    width="1233"
+                    height="2673"
+                    loading={idx === 0 ? "eager" : "lazy"}
+                    decoding="async"
+                  />
+                </div>
+              ))
+            }
           </div>
         </div>
 
-        <div class="phone-frame phone-secondary">
-          <span class="phone-notch" aria-hidden="true"></span>
-          <span class="phone-btn-side phone-btn-side-r" aria-hidden="true"></span>
-          <span class="phone-btn-side phone-btn-side-l" aria-hidden="true"></span>
-          <div class="phone-screen">
-            <img
-              class="theme-shot-dark phone-img"
-              src={withBase(base, "/screenshots/android-focus-dark.webp")}
-              alt="QuizRadar Android Focus timer and study readiness view in dark mode."
-              width="960"
-              height="2155"
-              loading="lazy"
-              decoding="async"
-            />
-            <img
-              class="theme-shot-light phone-img"
-              src={withBase(base, "/screenshots/android-focus-light.webp")}
-              alt="QuizRadar Android Focus timer and study readiness view in light mode."
-              width="960"
-              height="2155"
-              loading="lazy"
-              decoding="async"
-            />
-          </div>
-        </div>
+        <p class="android-screen-caption" id="android-active-caption">
+          {ANDROID_SCREENS[0].caption}
+        </p>
       </div>
     </div>
   </section>
 
   <!-- =====================================================================
-       6. FREQUENTLY ASKED QUESTIONS (`#faq`)
+       6. EDITORIAL FAQ (`#faq`)
        ===================================================================== -->
-  <section id="faq" class="page-section">
+  <section id="faq" class="band">
     <div class="container faq-layout">
-      <!-- Left Column: Context, Privacy Guarantees & Support -->
-      <aside class="faq-sidebar animate-on-scroll">
-        <h2 class="section-title">Everything about QuizRadar, answered.</h2>
+      <aside class="faq-sidebar">
+        <h2 class="section-title">Everything about QuizRadar, answered honestly.</h2>
         <p class="section-lead">
-          Can't find what you're looking for? QuizRadar is fully open-source and built from the ground up for student privacy.
+          Fully open source under the MIT License and architected from day one for student privacy.
         </p>
 
-        <div class="faq-help-card">
-          <BrandIcon name="quizradar" size={28} />
-          <h3 class="faq-help-title">Still need a hand getting set up?</h3>
-          <p class="faq-help-body">
-            Download the app for your device, or ask the community — most setup
-            questions get an answer the same day.
-          </p>
-          <div class="faq-help-actions">
-            <a href={downloadHref} class="btn btn-primary btn-sm">
-              <BrandIcon name="download" size={15} />
-              <span>Get QuizRadar</span>
-            </a>
-            <a
-              href={`${GITHUB_REPO_URL}/issues`}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="btn btn-secondary btn-sm"
-            >
-              <BrandIcon name="github" size={15} />
-              <span>Ask a question</span>
-            </a>
-          </div>
+        <div class="faq-actions">
+          <a href={downloadHref} class="btn btn-primary btn-sm">
+            <BrandIcon name="download" size={15} />
+            <span>Get QuizRadar</span>
+          </a>
+          <a
+            href={`${GITHUB_REPO_URL}/issues`}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn btn-secondary btn-sm"
+          >
+            <BrandIcon name="github" size={15} />
+            <span>Ask on GitHub</span>
+          </a>
         </div>
       </aside>
 
-      <!-- Right Column: Accordion List -->
-      <div class="faq-list animate-on-scroll" style="--reveal-delay: 80ms;">
+      <div class="faq-list">
         {
           FAQ_ITEMS.map((item, idx) => (
             <details class="faq-item" open={idx === 0}>
@@ -547,196 +766,191 @@ function splitHighlight(text: string, highlight?: string) {
   </section>
 
   <!-- =====================================================================
-       7. STARRY HORIZON FINALE
+       7. FULL-BLEED STARRY HORIZON FINALE
        ===================================================================== -->
-  <section class="finale-section">
-    <div class="container">
-      <div class="finale-card animate-on-scroll">
-        <CelestialSky showRadarArcs={true} />
-        <div class="finale-inner">
-          <BrandIcon name="quizradar" size={56} animated={true} class="finale-logo" />
-          <h2 class="finale-title">Put your semester on the radar.</h2>
-          <p class="finale-sub">
-            Free, private, and open source under the MIT License. Install on your laptop or phone
-            for automatic schedule checks, or try the Web App instantly in your browser.
-          </p>
-          <div class="finale-actions">
-            <a
-              href={PLATFORM_DOWNLOADS.windows.primaryUrl}
-              class="btn btn-sky-primary btn-lg"
-              data-dl-cta
-            >
-              <BrandIcon name="download" size={18} />
-              <span data-dl-label>{PLATFORM_DOWNLOADS.windows.label}</span>
-            </a>
-            <a href={downloadHref} class="btn btn-sky-secondary btn-lg">
-              <span>All Platforms & Checksums</span>
-            </a>
-          </div>
-        </div>
+  <section class="finale-horizon">
+    <CelestialSky showRadarArcs={true} />
+    <div class="container finale-inner">
+      <BrandIcon name="quizradar" size={56} animated={true} uid="finale" class="finale-logo" />
+      <h2 class="finale-title">Put your semester on the radar.</h2>
+      <p class="finale-sub">
+        Free, private, and open source under the MIT License. Install on Windows, macOS, Linux, or
+        Android for background schedule checks — or open the offline Web Companion immediately.
+      </p>
+      <div class="finale-actions">
+        <a
+          href={downloadHref}
+          class="btn btn-sky-primary btn-lg"
+          data-dl-cta
+          data-download-base={downloadHref}
+          data-web-href={webAppHref}
+        >
+          <BrandIcon name="download" size={18} />
+          <span data-dl-label>Download QuizRadar</span>
+        </a>
+        <a href={webAppHref} class="btn btn-sky-secondary btn-lg">
+          <BrandIcon name="globe" size={18} />
+          <span>Open Web Companion</span>
+        </a>
+        <a href={downloadHref} class="btn btn-sky-secondary btn-lg">
+          <span>All Platforms &amp; Checksums</span>
+        </a>
       </div>
     </div>
   </section>
 </Layout>
 
 <script>
-  import { detectClientPlatform, PLATFORM_DOWNLOADS } from "../lib/releaseData";
+  import {
+    ANDROID_SCREENS,
+    detectClientPlatform,
+    isIosClient,
+    PLATFORM_DOWNLOADS,
+  } from "../lib/releaseData";
 
-  // 1. OS-aware primary download CTA routing
-  const os = detectClientPlatform(
-    navigator.userAgent || "",
+  // 1. OS-aware primary download CTA routing (routes iOS to Web Companion and desktop/Android to /download/#<os>)
+  const ua = navigator.userAgent || "";
+  const platform =
     (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform ||
-      navigator.platform ||
-      "",
-  );
-  const target = PLATFORM_DOWNLOADS[os];
-  document.querySelectorAll<HTMLAnchorElement>("[data-dl-cta]").forEach((anchor) => {
-    anchor.href = target.primaryUrl;
-  });
-  document.querySelectorAll<HTMLElement>("[data-dl-label]").forEach((span) => {
-    span.textContent = target.label;
-  });
+    navigator.platform ||
+    "";
+  const touchPoints = navigator.maxTouchPoints || 0;
 
-  // 2. Accessible Roving-Tabindex Real App View Switcher
-  const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-view-tab]"));
-  const panels = Array.from(document.querySelectorAll<HTMLElement>("[data-view-panel]"));
-
-  const activateView = (viewId: string, focusTab = false) => {
-    tabs.forEach((tab) => {
-      const active = tab.dataset.viewTab === viewId;
-      tab.classList.toggle("is-active", active);
-      tab.setAttribute("aria-selected", active ? "true" : "false");
-      tab.tabIndex = active ? 0 : -1;
-      if (active && focusTab) tab.focus();
+  if (isIosClient(ua, platform, touchPoints)) {
+    document.querySelectorAll<HTMLAnchorElement>("[data-dl-cta]").forEach((anchor) => {
+      const webHref = anchor.dataset.webHref;
+      if (webHref) anchor.href = webHref;
     });
-    panels.forEach((panel) => {
-      panel.hidden = panel.dataset.viewPanel !== viewId;
+    document.querySelectorAll<HTMLElement>("[data-dl-label]").forEach((span) => {
+      span.textContent = "Open Web Companion (iOS)";
     });
-  };
-
-  tabs.forEach((tab, index) => {
-    tab.addEventListener("click", () => {
-      if (tab.dataset.viewTab) activateView(tab.dataset.viewTab, false);
+    document.querySelectorAll<HTMLAnchorElement>("[data-secondary-cta]").forEach((anchor) => {
+      const dlBase = anchor.dataset.downloadBase;
+      if (dlBase) anchor.href = dlBase;
     });
-
-    tab.addEventListener("keydown", (event) => {
-      let nextIndex: number | null = null;
-      if (event.key === "ArrowRight") nextIndex = (index + 1) % tabs.length;
-      else if (event.key === "ArrowLeft") nextIndex = (index - 1 + tabs.length) % tabs.length;
-      else if (event.key === "Home") nextIndex = 0;
-      else if (event.key === "End") nextIndex = tabs.length - 1;
-
-      if (nextIndex !== null) {
-        event.preventDefault();
-        const nextId = tabs[nextIndex]?.dataset.viewTab;
-        if (nextId) activateView(nextId, true);
-      }
+    document.querySelectorAll<HTMLElement>("[data-secondary-label]").forEach((span) => {
+      span.textContent = "Desktop & Android Installers";
     });
-  });
+  } else {
+    const os = detectClientPlatform(ua, platform);
+    const target = PLATFORM_DOWNLOADS[os];
+    document.querySelectorAll<HTMLAnchorElement>("[data-dl-cta]").forEach((anchor) => {
+      const dlBase = anchor.dataset.downloadBase || "/download/";
+      anchor.href = `${dlBase}#${os}`;
+    });
+    document.querySelectorAll<HTMLElement>("[data-dl-label]").forEach((span) => {
+      span.textContent = target.label;
+    });
+  }
 
-  // 3. Scroll-Progress Timeline (`scroll-progress-timeline`, compositor-only `scaleY`)
-  const timeline = document.querySelector<HTMLElement>("[data-scroll-timeline]");
-  const fill = document.querySelector<HTMLElement>("[data-timeline-fill]");
-  const stepEls = Array.from(document.querySelectorAll<HTMLElement>("[data-timeline-step]"));
+  // Reusable roving-tabindex tab controller
+  function bindTabGroup(
+    tabSelector: string,
+    panelSelector: string,
+    tabAttr: string,
+    panelAttr: string,
+    onActivate?: (id: string) => void,
+  ) {
+    const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>(tabSelector));
+    const panels = Array.from(document.querySelectorAll<HTMLElement>(panelSelector));
+    if (tabs.length === 0) return;
 
-  if (timeline && fill && stepEls.length > 0) {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      fill.style.setProperty("--timeline-progress", "1");
-      stepEls.forEach((el) => el.classList.add("is-active"));
-    } else {
-      let ticking = false;
-      const updateTimeline = () => {
-        ticking = false;
-        const rect = timeline.getBoundingClientRect();
-        const triggerY = window.innerHeight * 0.62;
-        const raw = (triggerY - rect.top) / Math.max(rect.height, 1);
-        const clamped = Math.min(1, Math.max(0.06, raw));
-        fill.style.setProperty("--timeline-progress", clamped.toFixed(4));
+    const activate = (id: string, focusTab = false) => {
+      tabs.forEach((tab) => {
+        const active = tab.dataset[tabAttr] === id;
+        tab.classList.toggle("is-active", active);
+        tab.setAttribute("aria-selected", active ? "true" : "false");
+        tab.tabIndex = active ? 0 : -1;
+        if (active && focusTab) tab.focus();
+      });
+      panels.forEach((panel) => {
+        panel.hidden = panel.dataset[panelAttr] !== id;
+      });
+      onActivate?.(id);
+    };
 
-        stepEls.forEach((step, idx) => {
-          const sRect = step.getBoundingClientRect();
-          const reached = idx === 0 || sRect.top <= triggerY;
-          step.classList.toggle("is-active", reached);
-        });
-      };
+    tabs.forEach((tab, index) => {
+      tab.addEventListener("click", () => {
+        const id = tab.dataset[tabAttr];
+        if (id) activate(id, false);
+      });
 
-      const requestTick = () => {
-        if (!ticking) {
-          ticking = true;
-          window.requestAnimationFrame(updateTimeline);
+      tab.addEventListener("keydown", (event) => {
+        let nextIndex: number | null = null;
+        if (event.key === "ArrowRight") nextIndex = (index + 1) % tabs.length;
+        else if (event.key === "ArrowLeft") nextIndex = (index - 1 + tabs.length) % tabs.length;
+        else if (event.key === "Home") nextIndex = 0;
+        else if (event.key === "End") nextIndex = tabs.length - 1;
+        if (nextIndex !== null) {
+          event.preventDefault();
+          const nextId = tabs[nextIndex]?.dataset[tabAttr];
+          if (nextId) activate(nextId, true);
         }
-      };
-
-      window.addEventListener("scroll", requestTick, { passive: true });
-      window.addEventListener("resize", requestTick, { passive: true });
-      updateTimeline();
-    }
+      });
+    });
   }
 
-  // 4. Highlight swipe — reveal amber highlight left-to-right on scroll into view
-  const phraseMarks = Array.from(document.querySelectorAll<HTMLElement>(".phrase-mark"));
-  if (phraseMarks.length > 0) {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      phraseMarks.forEach((m) => m.classList.add("is-wiped"));
-    } else {
-      const markObserver = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
-            if (entry.isIntersecting) {
-              entry.target.classList.add("is-wiped");
-              markObserver.unobserve(entry.target);
-            }
-          });
-        },
-        { rootMargin: "0px 0px -18% 0px", threshold: 0.9 },
-      );
-      phraseMarks.forEach((m) => markObserver.observe(m));
+  // 2. Hero Interactive Timetable Resolver
+  bindTabGroup("[data-resolver-tab]", "[data-resolver-panel]", "resolverTab", "resolverPanel");
+
+  // 3. Real 2x Product Views Stage
+  bindTabGroup("[data-view-tab]", "[data-view-panel]", "viewTab", "viewPanel");
+
+  // 4. Android Glance Widget Switcher (4x2 vs 2x1)
+  bindTabGroup("[data-widget-tab]", "[data-widget-panel]", "widgetTab", "widgetPanel");
+
+  // 5. Android Screen Switcher with synced caption
+  const captionEl = document.getElementById("android-active-caption");
+  const androidCaptionMap = new Map(ANDROID_SCREENS.map((s) => [s.id, s.caption]));
+  bindTabGroup("[data-android-tab]", "[data-android-panel]", "androidTab", "androidPanel", (id) => {
+    if (captionEl && androidCaptionMap.has(id)) {
+      captionEl.textContent = androidCaptionMap.get(id) ?? "";
     }
-  }
+  });
 </script>
 
 <style>
-  /* -------------------------------------------------------------------------
-     1. Hero Celestial Canopy + Real App Views Stage
-     ------------------------------------------------------------------------- */
-  .hero-section {
-    padding-block: 16px 52px;
-  }
-
-  .hero-sky-card {
+  /* =========================================================================
+     1. FULL-BLEED CELESTIAL HORIZON HERO + LIVE RESOLVER
+     ========================================================================= */
+  .hero-horizon {
     position: relative;
-    border-radius: 28px;
-    overflow: hidden;
-    padding: 42px 48px 84px;
+    margin-block-start: -60px;
+    padding-block: 112px 100px;
     color: #ffffff;
-    box-shadow: var(--shadow-lg);
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    overflow: hidden;
   }
 
-  .hero-sky-content {
+  .hero-grid {
     position: relative;
-    z-index: 1;
-    max-width: 820px;
+    z-index: 2;
+    display: grid;
+    grid-template-columns: minmax(0, 1.06fr) minmax(0, 0.94fr);
+    gap: 44px 52px;
+    align-items: center;
+  }
+
+  .hero-copy {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 16px;
+    gap: 20px;
   }
 
   .hero-title {
-    font-size: clamp(1.85rem, 5.2vw, 3.85rem);
-    font-weight: 800;
-    line-height: 1.06;
-    letter-spacing: -0.032em;
+    font-family: var(--font-display);
+    font-size: clamp(2.55rem, 4.45vw, 4.15rem);
+    font-weight: 500;
+    line-height: 1.03;
+    letter-spacing: -0.025em;
     color: #ffffff;
-    text-shadow: 0 2px 24px rgba(2, 6, 23, 0.28);
   }
 
   .hero-sub {
-    font-size: clamp(1rem, 1.35vw, 1.15rem);
+    font-size: clamp(1rem, 1.25vw, 1.12rem);
     line-height: 1.62;
-    color: rgba(241, 245, 249, 0.9);
-    max-width: 63ch;
+    color: rgba(235, 241, 252, 0.92);
+    max-width: 54ch;
     text-wrap: pretty;
   }
 
@@ -748,54 +962,321 @@ function splitHighlight(text: string, highlight?: string) {
     margin-block-start: 4px;
   }
 
-  .hero-foot-strip {
+  .hero-proof-strip {
+    list-style: none;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    font-size: 0.81rem;
-    color: rgba(226, 232, 240, 0.86);
-    margin-block-start: 2px;
+    gap: 10px 20px;
+    margin-block-start: 4px;
+    font-size: 0.82rem;
+    color: rgba(219, 230, 248, 0.9);
   }
 
-  .sky-foot-link {
-    font-weight: 600;
+  .hero-proof-strip li {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .hero-proof-strip :global(svg) {
+    color: #34d399;
+  }
+
+  .hero-platforms-link {
     color: #ffffff;
+    font-weight: 550;
     text-decoration: underline;
-    text-decoration-color: rgba(255, 255, 255, 0.42);
-    text-underline-offset: 3px;
-    transition-property: color, text-decoration-color;
+    text-decoration-color: rgba(255, 255, 255, 0.48);
+    transition-property: text-decoration-color;
     transition-duration: 150ms;
     transition-timing-function: var(--ease-snappy);
   }
 
-  /* Overlapping Real Product Stage */
-  .stage-wrap {
-    position: relative;
-    z-index: 2;
-    margin-block-start: -52px;
-    padding-inline: 22px;
+  /* Interactive Live Timetable Resolver Specimen (editorial hairline ledger, no nested card clutter) */
+  .resolver-bench {
+    background-color: rgba(11, 16, 29, 0.9);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 16px;
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    color: #f4f6fb;
     min-width: 0;
-    max-width: 100%;
   }
 
-  .app-stage {
-    border-radius: 20px;
-    overflow: hidden;
-    min-width: 0;
-    max-width: 100%;
+  :global(html[data-theme="solar"]) .resolver-bench {
+    background-color: rgba(9, 20, 48, 0.92);
+    border-color: rgba(255, 255, 255, 0.28);
   }
 
-  .stage-toolbar {
+  .resolver-head {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-block-end: 14px;
+    border-block-end: 1px solid rgba(148, 163, 184, 0.2);
+  }
+
+  .resolver-heading {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: rgba(226, 232, 240, 0.9);
+  }
+
+  .resolver-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .resolver-tab {
+    min-height: 36px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: rgba(226, 232, 240, 0.88);
+    background-color: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    transition-property: transform, background-color, border-color, color;
+    transition-duration: 140ms;
+    transition-timing-function: var(--ease-snappy);
+  }
+
+  .resolver-tab:active {
+    transform: scale(0.96);
+  }
+
+  .resolver-tab.is-active {
+    background-color: #fbbf24;
+    border-color: #fbbf24;
+    color: #090d16;
+  }
+
+  .resolver-panel:not([hidden]) {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+    animation: resolverSnap 220ms var(--ease-out-expo);
+  }
+
+  @keyframes resolverSnap {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .resolver-meta-row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
+    gap: 8px;
+  }
+
+  .resolver-course {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.8rem;
+  }
+
+  .resolver-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background-color: var(--course-dot);
+  }
+
+  .resolver-code {
+    font-family: var(--font-mono);
+    font-weight: 650;
+    color: #ffffff;
+  }
+
+  .resolver-course-name {
+    color: rgba(226, 232, 240, 0.88);
+  }
+
+  .resolver-source {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: rgba(191, 219, 254, 0.9);
+  }
+
+  .resolver-quote {
+    font-family: var(--font-display);
+    font-size: 1.04rem;
+    line-height: 1.54;
+    color: #f8fafc;
+    padding-inline-start: 14px;
+    border-inline-start: 2px solid rgba(251, 191, 36, 0.75);
+  }
+
+  .resolver-mark {
+    background-color: rgba(251, 191, 36, 0.26);
+    color: #fef3c7;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+
+  .resolver-bridge {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .resolver-bridge-line {
+    flex: 1;
+    min-width: 12px;
+    height: 1px;
+    background-color: rgba(148, 163, 184, 0.24);
+  }
+
+  .resolver-bridge-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: #93c5fd;
+    text-align: center;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .resolver-slot {
+    padding-block-start: 14px;
+    border-block-start: 1px solid rgba(96, 165, 250, 0.34);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .resolver-slot.signal-conflict {
+    border-block-start-color: rgba(248, 113, 113, 0.48);
+  }
+
+  .resolver-slot.signal-tba {
+    border-block-start-color: rgba(251, 191, 36, 0.48);
+  }
+
+  .resolver-slot-top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .resolver-signal-pill {
+    font-family: var(--font-sans);
+    font-size: 0.74rem;
+    font-weight: 650;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background-color: rgba(59, 130, 246, 0.24);
+    color: #dbeafe;
+  }
+
+  .resolver-slot.signal-conflict .resolver-signal-pill {
+    background-color: rgba(239, 68, 68, 0.26);
+    color: #fecaca;
+  }
+
+  .resolver-slot.signal-tba .resolver-signal-pill {
+    background-color: rgba(245, 158, 11, 0.26);
+    color: #fef3c7;
+  }
+
+  .resolver-room-readout {
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    color: rgba(226, 232, 240, 0.88);
+  }
+
+  .resolver-room-readout strong {
+    color: #ffffff;
+  }
+
+  .resolver-room-readout strong.is-tba {
+    color: #fbbf24;
+  }
+
+  .resolver-slot-title {
+    font-size: 1.02rem;
+    font-weight: 680;
+    color: #ffffff;
+    letter-spacing: -0.012em;
+  }
+
+  .resolver-slot-time {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: #bfdbfe;
+  }
+
+  .resolver-honesty {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    font-size: 0.8rem;
+    color: rgba(203, 213, 225, 0.92);
+  }
+
+  .resolver-honesty :global(svg) {
+    color: #34d399;
+    margin-block-start: 2px;
+  }
+
+  /* =========================================================================
+     SHARED EDITORIAL SECTION HEADER
+     ========================================================================= */
+  .editorial-head {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
     gap: 12px;
+    margin-block-end: 40px;
+  }
+
+  /* =========================================================================
+     2. REAL 2x PRODUCT VIEWS STAGE (`#views`)
+     ========================================================================= */
+  .views-band {
+    padding-block-start: 56px;
+  }
+
+  .stage-shell {
+    background-color: var(--surface);
+    border: 1px solid var(--surface-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+
+  .stage-bar {
     padding: 12px 16px;
     background-color: var(--surface-elevated);
     border-block-end: 1px solid var(--surface-border);
-    min-width: 0;
-    max-width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px 16px;
   }
 
   .stage-tablist {
@@ -803,18 +1284,18 @@ function splitHighlight(text: string, highlight?: string) {
     flex-wrap: wrap;
     align-items: center;
     gap: 4px;
-    min-width: 0;
-    max-width: 100%;
   }
 
   .stage-tab {
+    min-height: 36px;
     padding: 7px 13px;
-    border-radius: 10px;
-    font-size: 0.815rem;
+    border-radius: 9px;
+    font-size: 0.83rem;
     font-weight: 600;
     color: var(--text-muted);
-    transition-property: transform, color, background-color, box-shadow;
-    transition-duration: 150ms;
+    white-space: nowrap;
+    transition-property: transform, color, background-color;
+    transition-duration: 140ms;
     transition-timing-function: var(--ease-snappy);
   }
 
@@ -825,487 +1306,449 @@ function splitHighlight(text: string, highlight?: string) {
   .stage-tab.is-active {
     background-color: var(--accent-fill);
     color: #ffffff;
-    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.32);
   }
 
-  .stage-sky-switch {
+  .stage-theme-bar {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 11px;
-    border-radius: 9px;
-    border: 1px solid var(--surface-border);
+    gap: 3px;
+    padding: 3px;
+    border-radius: 10px;
     background-color: var(--surface);
-    font-size: 0.76rem;
-    font-weight: 600;
-    color: var(--text-secondary);
-    transition-property: transform, border-color, background-color, color;
-    transition-duration: 150ms;
+    border: 1px solid var(--surface-border);
+  }
+
+  .stage-theme-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 32px;
+    padding: 0 10px;
+    border-radius: 7px;
+    font-size: 0.75rem;
+    font-weight: 620;
+    color: var(--text-muted);
+    transition-property: transform, background-color, color;
+    transition-duration: 140ms;
     transition-timing-function: var(--ease-snappy);
   }
 
-  .stage-sky-switch:active {
+  .stage-theme-btn:active {
     transform: scale(0.96);
   }
 
-  .switch-sun {
-    display: none;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .switch-sun :global(svg) {
-    color: #fbbf24;
-  }
-
-  .switch-moon {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .switch-moon :global(svg) {
-    color: var(--accent-ink);
-  }
-
-  :global(html.dark) .switch-sun {
-    display: inline-flex;
-  }
-
-  :global(html.dark) .switch-moon {
-    display: none;
+  .stage-theme-btn.is-active {
+    background-color: var(--accent-fill);
+    color: #ffffff;
   }
 
   .stage-panel:not([hidden]) {
-    animation: stagePanelIn 220ms var(--ease-snappy);
+    display: flex;
+    flex-direction: column;
   }
 
-  @keyframes stagePanelIn {
-    from {
-      opacity: 0;
-      transform: translateY(6px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
+  .stage-caption-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+    gap: 18px 36px;
+    align-items: center;
+    padding: 20px 24px;
+    border-block-end: 1px solid var(--surface-border);
+    background-color: var(--surface);
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .stage-panel:not([hidden]) {
-      animation: none;
-    }
+  .stage-caption-main {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .stage-badge {
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    font-weight: 650;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background-color: var(--accent-soft);
+    color: var(--accent-ink);
+  }
+
+  .stage-caption-text {
+    font-size: 0.92rem;
+    line-height: 1.58;
+    color: var(--text-secondary);
+    text-wrap: pretty;
+  }
+
+  .stage-highlights {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 0.84rem;
+    color: var(--text-muted);
+  }
+
+  .stage-highlights li {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    line-height: 1.48;
+  }
+
+  .stage-highlights :global(svg) {
+    color: var(--status-ok);
+    margin-block-start: 3px;
   }
 
   .stage-frame {
+    padding: 16px;
     background-color: var(--page);
-    padding: 14px;
   }
 
   .stage-img {
     width: 100%;
     height: auto;
-    border-radius: 12px;
-    box-shadow: var(--shadow-md);
+    border-radius: 10px;
   }
 
-  /* -------------------------------------------------------------------------
-     Shared Section Header
-     ------------------------------------------------------------------------- */
-  .section-head {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
-    margin-block-end: 48px;
-  }
-
-  .section-lead code {
-    font-size: 0.9em;
-    padding: 1px 6px;
-    border-radius: 5px;
-    background-color: var(--accent-soft);
-    color: var(--accent-ink);
-  }
-
-  /* -------------------------------------------------------------------------
-     2. Scroll-Progress Timetable Anchor Timeline
-     ------------------------------------------------------------------------- */
-  .timeline-shell {
-    position: relative;
-    padding-inline-start: 56px;
-  }
-
-  .timeline-rail {
-    position: absolute;
-    inset-block: 16px 24px;
-    inset-inline-start: 19px;
-    width: 2px;
-    background-color: var(--surface-border);
-    border-radius: 999px;
-    overflow: hidden;
-  }
-
-  .timeline-fill {
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(180deg, var(--accent) 0%, #8e24aa 60%, #fbbf24 100%);
-    transform-origin: top;
-    transform: scaleY(var(--timeline-progress, 0.1));
-  }
-
-  .timeline-list {
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 34px;
-  }
-
-  .timeline-step {
-    position: relative;
-  }
-
-  .step-marker {
-    position: absolute;
-    inset-inline-start: -56px;
-    inset-block-start: 4px;
-    width: 40px;
-    height: 40px;
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-variant-numeric: tabular-nums;
-    font-size: 0.82rem;
-    font-weight: 700;
-    background-color: var(--surface);
-    border: 1px solid var(--border-strong);
-    color: var(--text-muted);
-    box-shadow: var(--shadow-sm);
-    transition-property: background-color, border-color, color, transform;
-    transition-duration: 200ms;
-    transition-timing-function: var(--ease-out-quart);
-  }
-
-  .timeline-step.is-active .step-marker {
-    background-color: var(--accent-fill);
-    border-color: var(--accent-fill);
-    color: #ffffff;
-  }
-
-  .step-grid {
+  /* =========================================================================
+     3. EXAM-WEEK ACADEMIC SUITE (`#suite`)
+     ========================================================================= */
+  .suite-split {
     display: grid;
-    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
-    gap: 28px 40px;
-    align-items: center;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    gap: 36px 48px;
+    align-items: start;
   }
 
-  .step-copy {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .step-title {
-    font-size: clamp(1.2rem, 2vw, 1.48rem);
-    font-weight: 700;
-    line-height: 1.25;
-    color: var(--text);
-  }
-
-  .step-body {
-    font-size: 0.94rem;
-    line-height: 1.62;
-    color: var(--text-muted);
-    text-wrap: pretty;
-  }
-
-  .anchor-card {
-    background-color: var(--surface);
-    border: 1px solid var(--surface-border);
-    border-radius: var(--radius-lg);
-    padding: 20px 22px;
-    box-shadow: var(--shadow-md);
+  .suite-visual {
     display: flex;
     flex-direction: column;
     gap: 14px;
   }
 
-  .anchor-card-top {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-
-  .course-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    padding: 4px 10px;
-    border-radius: 999px;
-    background-color: var(--surface-elevated);
-    border: 1px solid var(--surface-border);
-    font-size: 0.76rem;
-    font-weight: 700;
-    color: var(--text);
-  }
-
-  .course-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 999px;
-    background-color: var(--chip-color);
-  }
-
-  .course-chip-sep,
-  .course-chip-name {
-    font-weight: 500;
-    color: var(--text-muted);
-  }
-
-  .snippet-source {
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--text-muted);
-  }
-
-  .snippet-quote {
-    font-size: 0.94rem;
-    line-height: 1.56;
-    color: var(--text);
-    padding: 12px 16px;
-    border-radius: 10px;
-    background-color: var(--page);
-    border: 1px solid var(--surface-border);
-  }
-
-  .phrase-mark {
-    background: linear-gradient(90deg, rgba(251, 191, 36, 0.38) 0%, rgba(251, 191, 36, 0.38) 100%)
-      left center / 0% 100% no-repeat;
-    border: 1px solid transparent;
-    color: inherit;
-    padding: 1px 5px;
-    border-radius: 4px;
-    font-weight: 600;
-    box-decoration-break: clone;
-    -webkit-box-decoration-break: clone;
-  }
-
-  .phrase-mark.is-wiped {
-    border-color: rgba(245, 158, 11, 0.35);
-    background-size: 100% 100%;
-    transition: background-size 700ms var(--ease-out-expo);
-  }
-
-  :global(html.dark) .phrase-mark.is-wiped {
-    border-color: rgba(251, 191, 36, 0.4);
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .phrase-mark {
-      background-size: 100% 100%;
-    }
-    .phrase-mark.is-wiped {
-      transition: none;
-    }
-  }
-
-  .resolved-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.65fr);
-    gap: 10px;
-  }
-
-  .resolved-cell {
-    padding: 10px 12px;
-    border-radius: 10px;
-    background-color: var(--surface-elevated);
-    border: 1px solid var(--surface-border);
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .resolved-label {
-    font-size: 0.69rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
-  }
-
-  .resolved-val {
-    font-size: 0.84rem;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    color: var(--text);
-  }
-
-  .resolved-val.is-unassigned {
-    color: var(--status-warn);
-  }
-
-  .honesty-strip {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    font-size: 0.8125rem;
-    color: var(--text-muted);
-  }
-
-  .honesty-strip :global(svg) {
-    color: var(--status-ok);
-  }
-
-  /* -------------------------------------------------------------------------
-     3. Campus Sources Ledger
-     ------------------------------------------------------------------------- */
-  .sources-ledger {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    border: 1px solid var(--surface-border);
-    border-radius: var(--radius-lg);
-    background-color: var(--surface);
-    box-shadow: var(--shadow-md);
+  .suite-shot-frame {
+    border-radius: var(--radius-md);
     overflow: hidden;
+    border: 1px solid var(--surface-border);
+    background-color: var(--surface);
   }
 
-  .source-cell {
-    padding: 24px;
+  .suite-img {
+    width: 100%;
+    height: auto;
+  }
+
+  .suite-figcaption {
+    font-size: 0.86rem;
+    line-height: 1.58;
+    color: var(--text-muted);
+    max-width: 60ch;
+  }
+
+  .suite-figcaption code {
+    font-size: 0.8rem;
+    padding: 1px 5px;
+    border-radius: 5px;
+    background-color: var(--accent-soft);
+    color: var(--accent-ink);
+  }
+
+  .suite-ledger {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    border-inline-end: 1px solid var(--surface-border);
+    border-block-start: 2px solid var(--text);
+  }
+
+  .suite-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding-block: 20px;
     border-block-end: 1px solid var(--surface-border);
   }
 
-  .source-cell:nth-child(3n) {
-    border-inline-end: 0;
-  }
-
-  .source-cell:nth-last-child(-n + 3) {
-    border-block-end: 0;
-  }
-
-  .source-cell-head {
+  .suite-row-marker {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
+    flex-shrink: 0;
   }
 
-  .source-icon-wrap {
-    width: 42px;
-    height: 42px;
-    border-radius: 11px;
-    background-color: var(--page);
+  .suite-row-num {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--accent-ink);
+    line-height: 1;
+  }
+
+  .suite-row-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    background-color: var(--surface);
     border: 1px solid var(--surface-border);
+    color: var(--accent-ink);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .suite-row-copy {
     display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .suite-row-copy h3 {
+    font-size: 1rem;
+    font-weight: 660;
+    color: var(--text);
+  }
+
+  .suite-row-copy p {
+    font-size: 0.88rem;
+    line-height: 1.6;
+    color: var(--text-muted);
+  }
+
+  .shortcut-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    margin-block-start: 8px;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+  }
+
+  .shortcut-bar span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  /* =========================================================================
+     4. ZERO-SERVER DATA-FLOW PIPELINE (`#sources`)
+     ========================================================================= */
+  .flow-diagram {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.96fr) minmax(0, 1fr);
+    gap: 24px;
+    align-items: stretch;
+  }
+
+  .flow-col {
+    background-color: var(--surface);
+    border: 1px solid var(--surface-border);
+    border-radius: var(--radius-lg);
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .flow-col-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px 10px;
+    padding-block-end: 12px;
+    border-block-end: 1px solid var(--surface-border);
+  }
+
+  .flow-col-head h3 {
+    font-size: 0.96rem;
+    font-weight: 680;
+    color: var(--text);
+  }
+
+  .flow-col-head span {
+    font-family: var(--font-sans);
+    font-size: 0.76rem;
+    font-weight: 550;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .flow-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .flow-node {
+    display: flex;
+    align-items: flex-start;
+    gap: 11px;
+  }
+
+  .flow-node-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 9px;
+    background-color: var(--page-subtle);
+    border: 1px solid var(--surface-border);
+    color: var(--accent-ink);
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
   }
 
-  .source-meta {
+  .flow-node-copy {
     display: flex;
     flex-direction: column;
     gap: 2px;
+    min-width: 0;
   }
 
-  .source-meta h3 {
-    font-size: 0.98rem;
-    font-weight: 700;
+  .flow-node-top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 10px;
+  }
+
+  .flow-node-top strong {
+    font-size: 0.9rem;
+    font-weight: 650;
     color: var(--text);
   }
 
-  .protocol-tag {
-    font-size: 0.8125rem;
+  .flow-proto {
+    font-family: var(--font-sans);
+    font-size: 0.74rem;
     font-weight: 600;
     color: var(--accent-ink);
   }
 
-  .source-summary {
-    font-size: 0.865rem;
-    line-height: 1.56;
+  .flow-node-copy p {
+    font-size: 0.82rem;
+    line-height: 1.5;
     color: var(--text-muted);
   }
 
-  /* -------------------------------------------------------------------------
-     4. Workflow Split (Calendar + Detail Proof)
-     ------------------------------------------------------------------------- */
-  .workflow-split {
-    display: grid;
-    grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
-    gap: 22px;
+  /* Center Vault Hub */
+  .flow-hub {
+    display: flex;
+    align-items: center;
+    gap: 10px;
   }
 
-  .workflow-card {
-    background-color: var(--surface);
-    border: 1px solid var(--surface-border);
-    border-radius: var(--radius-xl);
-    box-shadow: var(--shadow-md);
-    overflow: hidden;
+  .flow-connector {
+    display: flex;
+    align-items: center;
+    color: var(--accent-ink);
+    flex-shrink: 0;
+  }
+
+  .flow-arrow-line {
+    width: 14px;
+    height: 1.5px;
+    background-color: var(--border-strong);
+  }
+
+  .vault-core {
+    flex: 1;
+    background-color: var(--surface-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    padding: 26px 20px;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+    align-items: center;
+    text-align: center;
+    gap: 12px;
   }
 
-  .workflow-copy {
-    padding: 24px 24px 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 11px;
+  .vault-emblem :global(svg) {
+    border-radius: 11px;
   }
 
-  .workflow-copy h3 {
-    font-size: 1.25rem;
-    font-weight: 700;
-    line-height: 1.26;
+  .vault-title {
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    font-weight: 500;
     color: var(--text);
   }
 
-  .workflow-copy p {
-    font-size: 0.9rem;
+  .vault-sub {
+    font-size: 0.85rem;
+    line-height: 1.58;
+    color: var(--text-muted);
+    text-wrap: pretty;
+  }
+
+  .vault-seal {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background-color: var(--status-ok-soft);
+    color: var(--status-ok);
+    font-family: var(--font-sans);
+    font-size: 0.78rem;
+    font-weight: 650;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+
+  .vault-facts {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+    padding-block-start: 10px;
+    border-block-start: 1px solid var(--surface-border);
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+  }
+
+  /* Honesty Doctrine 3-column hairline bar */
+  .honesty-bar {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 28px 36px;
+    margin-block-start: 48px;
+    padding-block-start: 32px;
+    border-block-start: 1px solid var(--surface-border);
+  }
+
+  .honesty-col {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .honesty-col h3 {
+    font-size: 0.96rem;
+    font-weight: 660;
+    color: var(--text);
+  }
+
+  .honesty-col p {
+    font-size: 0.86rem;
     line-height: 1.6;
     color: var(--text-muted);
   }
 
-  .workflow-copy code {
-    font-size: 0.84rem;
-    padding: 1px 5px;
-    border-radius: 4px;
-    background-color: var(--accent-soft);
-    color: var(--accent-ink);
-  }
-
-  .workflow-shot-wrap {
-    margin-block-start: auto;
-    padding: 4px 14px 0;
-    background-color: var(--page-subtle);
-    border-block-start: 1px solid var(--surface-border);
-    height: 272px;
-    display: flex;
-    align-items: flex-end;
-    justify-content: center;
-    overflow: hidden;
-  }
-
-  .workflow-shot {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    object-position: top center;
-    border-radius: 10px 10px 0 0;
-  }
-
-  /* -------------------------------------------------------------------------
-     5. Native Android & 2x1 Starry Glance Widget
-     ------------------------------------------------------------------------- */
+  /* =========================================================================
+     5. NATIVE ANDROID COMPANION (`#android`)
+     ========================================================================= */
   .android-grid {
     display: grid;
     grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-    gap: 44px;
+    gap: 48px 56px;
     align-items: center;
   }
 
@@ -1313,32 +1756,68 @@ function splitHighlight(text: string, highlight?: string) {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 16px;
+    gap: 18px;
   }
 
-  .glance-widget-wrap {
+  .widget-showcase {
     width: 100%;
-    max-width: 390px;
+    max-width: 440px;
     display: flex;
     flex-direction: column;
-    gap: 7px;
-    margin-block: 6px;
+    gap: 10px;
   }
 
-  .glance-caption {
-    font-size: 0.8125rem;
+  .widget-switch-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .widget-switch-label {
+    font-size: 0.8rem;
     font-weight: 600;
     color: var(--text-muted);
   }
 
+  .widget-pills {
+    display: inline-flex;
+    gap: 4px;
+    padding: 3px;
+    border-radius: 9px;
+    background-color: var(--surface);
+    border: 1px solid var(--surface-border);
+  }
+
+  .widget-pill {
+    min-height: 34px;
+    padding: 5px 11px;
+    border-radius: 7px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    transition-property: transform, background-color, color;
+    transition-duration: 140ms;
+    transition-timing-function: var(--ease-snappy);
+  }
+
+  .widget-pill:active {
+    transform: scale(0.96);
+  }
+
+  .widget-pill.is-active {
+    background-color: var(--accent-fill);
+    color: #ffffff;
+  }
+
   .glance-widget {
     position: relative;
-    border-radius: 22px;
+    border-radius: 18px;
     overflow: hidden;
     padding: 16px 18px;
     color: #ffffff;
-    box-shadow: var(--shadow-md);
-    border: 1px solid rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.18);
   }
 
   .glance-inner {
@@ -1346,7 +1825,7 @@ function splitHighlight(text: string, highlight?: string) {
     z-index: 1;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 10px;
   }
 
   .glance-top {
@@ -1358,25 +1837,101 @@ function splitHighlight(text: string, highlight?: string) {
 
   .glance-pill {
     padding: 3px 9px;
-    font-size: 0.8125rem;
+    font-size: 0.74rem;
   }
 
   .glance-course {
-    font-size: 0.8125rem;
-    font-weight: 700;
-    color: rgba(255, 255, 255, 0.88);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.94);
+  }
+
+  .glance-schedule-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .glance-schedule-list li {
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    font-size: 0.8rem;
+    padding: 6px 10px;
+    border-radius: 9px;
+    background-color: rgba(7, 10, 18, 0.44);
+  }
+
+  .glance-schedule-list li.is-due {
+    background-color: rgba(7, 10, 18, 0.68);
+    border: 1px solid #fbbf24;
+  }
+
+  .glance-slot-time {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: #bfdbfe;
+  }
+
+  .glance-schedule-list li.is-due .glance-slot-time {
+    color: #fde68a;
+  }
+
+  .glance-slot-name {
+    font-weight: 600;
+    color: #ffffff;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .glance-slot-room {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: rgba(241, 245, 249, 0.92);
   }
 
   .glance-title {
-    font-size: 0.98rem;
-    font-weight: 750;
-    letter-spacing: -0.015em;
+    font-size: 1rem;
+    font-weight: 680;
     color: #ffffff;
   }
 
   .glance-meta {
-    font-size: 0.8125rem;
-    color: rgba(226, 232, 240, 0.88);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: rgba(241, 245, 249, 0.92);
+  }
+
+  .lock-notif {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 11px 14px;
+    border-radius: 12px;
+    background-color: var(--surface);
+    border: 1px solid var(--surface-border);
+    color: var(--accent-ink);
+  }
+
+  .lock-notif-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 0.8rem;
+  }
+
+  .lock-notif-copy strong {
+    color: var(--text);
+    font-weight: 640;
+  }
+
+  .lock-notif-copy span {
+    color: var(--text-muted);
+    line-height: 1.45;
   }
 
   .android-points {
@@ -1384,7 +1939,6 @@ function splitHighlight(text: string, highlight?: string) {
     display: flex;
     flex-direction: column;
     gap: 11px;
-    margin-block: 4px;
   }
 
   .android-points li {
@@ -1392,21 +1946,13 @@ function splitHighlight(text: string, highlight?: string) {
     align-items: flex-start;
     gap: 10px;
     font-size: 0.9rem;
-    line-height: 1.55;
+    line-height: 1.56;
     color: var(--text-secondary);
   }
 
-  .android-points li :global(svg) {
+  .android-points :global(svg) {
     color: var(--status-ok);
     margin-block-start: 3px;
-  }
-
-  .android-points code {
-    font-size: 0.8rem;
-    padding: 1px 5px;
-    border-radius: 4px;
-    background-color: var(--accent-soft);
-    color: var(--accent-ink);
   }
 
   .android-cta-row {
@@ -1414,98 +1960,124 @@ function splitHighlight(text: string, highlight?: string) {
     flex-wrap: wrap;
     align-items: center;
     gap: 10px;
-    margin-block-start: 4px;
   }
 
-  .android-phones {
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    gap: 22px;
-  }
-
-  .phone-frame {
-    position: relative;
-    border-radius: 40px;
-    padding: 10px;
-    background: linear-gradient(180deg, #334155 0%, #0f172a 100%);
-    border: 1px solid rgba(148, 163, 184, 0.32);
-    box-shadow:
-      0 1px 2px rgba(15, 23, 42, 0.45),
-      0 18px 36px -12px rgba(2, 6, 23, 0.55),
-      0 0 0 2px rgba(15, 23, 42, 0.6);
-    flex-shrink: 0;
-  }
-
-  .phone-primary {
-    width: min(250px, 52%);
-  }
-
-  .phone-secondary {
-    width: min(212px, 42%);
-    margin-block-start: 32px;
-  }
-
-  .phone-notch {
-    position: absolute;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 72px;
-    height: 18px;
-    border-radius: 999px;
-    background-color: #020617;
-    z-index: 3;
-    box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.18) inset;
-  }
-
-  .phone-btn-side {
-    position: absolute;
-    right: -3px;
-    border-radius: 2px;
-    background-color: #334155;
-    z-index: 1;
-  }
-
-  .phone-btn-side-r {
-    top: 108px;
-    width: 3px;
-    height: 54px;
-  }
-
-  .phone-btn-side-l {
-    left: -3px;
-    right: auto;
-    top: 88px;
-    width: 3px;
-    height: 34px;
-  }
-
-  .phone-screen {
-    position: relative;
-    border-radius: 30px;
-    overflow: hidden;
-    background-color: #020617;
-    aspect-ratio: 9 / 19.4;
+  /* Authentic Pixel-Style Android Hardware Frame (exact 1233x2673 native capture ratio) */
+  .android-stage {
     display: flex;
     flex-direction: column;
+    align-items: center;
+    gap: 16px;
   }
 
-  .phone-img {
+  .android-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .android-tab {
+    min-height: 36px;
+    padding: 6px 13px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    background-color: var(--surface);
+    border: 1px solid var(--surface-border);
+    transition-property: transform, background-color, border-color, color;
+    transition-duration: 140ms;
+    transition-timing-function: var(--ease-snappy);
+  }
+
+  .android-tab:active {
+    transform: scale(0.96);
+  }
+
+  .android-tab.is-active {
+    background-color: var(--accent-fill);
+    border-color: var(--accent-fill);
+    color: #ffffff;
+  }
+
+  .pixel-frame {
+    position: relative;
+    width: min(304px, 84vw);
+    border-radius: 36px;
+    padding: 20px 9px 10px;
+    background: linear-gradient(180deg, #2b3446 0%, #0d1320 100%);
+    border: 1px solid rgba(148, 163, 184, 0.32);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .pixel-camera {
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background-color: #030712;
+    box-shadow: 0 0 0 1.5px rgba(100, 116, 139, 0.5);
+    z-index: 4;
+  }
+
+  .pixel-btn {
+    position: absolute;
+    right: -3px;
+    width: 3px;
+    border-radius: 2px;
+    background-color: #334155;
+  }
+
+  .pixel-btn-power {
+    top: 112px;
+    height: 36px;
+  }
+
+  .pixel-btn-vol {
+    top: 162px;
+    height: 62px;
+  }
+
+  .pixel-screen {
+    position: relative;
+    border-radius: 26px;
+    overflow: hidden;
+    background-color: #070a12;
+    aspect-ratio: 137 / 297;
+  }
+
+  .android-screen-panel {
+    position: absolute;
+    inset: 0;
+  }
+
+  .pixel-img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
-    object-position: center 7%;
-    display: block;
+    object-fit: contain;
+    object-position: top center;
   }
 
-  /* -------------------------------------------------------------------------
-     6. Frequently Asked Questions (2-Column Balanced Layout)
-     ------------------------------------------------------------------------- */
+  .android-screen-caption {
+    font-size: 0.85rem;
+    line-height: 1.54;
+    color: var(--text-muted);
+    text-align: center;
+    max-width: 40ch;
+    text-wrap: pretty;
+  }
+
+  /* =========================================================================
+     6. EDITORIAL FAQ (`#faq`)
+     ========================================================================= */
   .faq-layout {
     display: grid;
-    grid-template-columns: minmax(0, 0.88fr) minmax(0, 1.12fr);
-    gap: 48px;
+    grid-template-columns: minmax(0, 0.84fr) minmax(0, 1.16fr);
+    gap: 48px 56px;
     align-items: start;
   }
 
@@ -1513,83 +2085,43 @@ function splitHighlight(text: string, highlight?: string) {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 18px;
+    gap: 16px;
     position: sticky;
-    top: 96px;
+    top: 92px;
   }
 
-  .faq-help-card {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 20px;
-    background-color: var(--surface);
-    border: 1px solid var(--surface-border);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-sm);
-    width: 100%;
-  }
-
-  .faq-help-card :global(svg) {
-    color: var(--accent-ink);
-  }
-
-  .faq-help-title {
-    font-size: 0.95rem;
-    font-weight: 700;
-    color: var(--text);
-    line-height: 1.3;
-  }
-
-  .faq-help-body {
-    font-size: 0.82rem;
-    line-height: 1.55;
-    color: var(--text-muted);
-  }
-
-  .faq-help-actions {
+  .faq-actions {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    margin-block-start: 2px;
+    gap: 10px;
+    margin-block-start: 4px;
   }
 
   .faq-list {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    border-block-start: 1px solid var(--surface-border);
   }
 
   .faq-item {
-    background-color: var(--surface);
-    border: 1px solid var(--surface-border);
-    border-radius: 14px;
-    overflow: hidden;
-    box-shadow: var(--shadow-sm);
+    border-block-end: 1px solid var(--surface-border);
   }
 
   .faq-summary {
     list-style: none;
     cursor: pointer;
-    padding: 16px 18px;
+    padding: 20px 4px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 14px;
-    font-size: 0.93rem;
-    font-weight: 650;
+    gap: 16px;
+    font-size: 0.98rem;
+    font-weight: 620;
     color: var(--text);
   }
 
   .faq-summary::-webkit-details-marker {
     display: none;
-  }
-
-  .faq-summary:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: -2px;
   }
 
   .faq-summary :global(.faq-chevron) {
@@ -1605,57 +2137,52 @@ function splitHighlight(text: string, highlight?: string) {
   }
 
   .faq-answer {
-    padding: 0 18px 18px;
-    font-size: 0.88rem;
-    line-height: 1.62;
+    padding: 0 4px 20px;
+    font-size: 0.9rem;
+    line-height: 1.66;
     color: var(--text-muted);
+    max-width: 66ch;
   }
 
-  /* -------------------------------------------------------------------------
-     7. Starry Horizon Finale
-     ------------------------------------------------------------------------- */
-  .finale-section {
-    padding-block: 16px 84px;
-  }
-
-  .finale-card {
+  /* =========================================================================
+     7. FULL-BLEED STARRY HORIZON FINALE
+     ========================================================================= */
+  .finale-horizon {
     position: relative;
-    border-radius: 28px;
-    overflow: hidden;
-    padding: 60px 32px;
+    padding-block: 88px;
     color: #ffffff;
-    box-shadow: var(--shadow-lg);
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    overflow: hidden;
   }
 
   .finale-inner {
     position: relative;
-    z-index: 1;
-    max-width: 640px;
+    z-index: 2;
+    max-width: 680px;
     margin-inline: auto;
     text-align: center;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 16px;
+    gap: 18px;
   }
 
   .finale-inner :global(.finale-logo) {
     border-radius: 14px;
-    box-shadow: 0 10px 28px rgba(2, 6, 23, 0.42);
+    box-shadow: 0 12px 30px rgba(2, 6, 23, 0.45);
   }
 
   .finale-title {
-    font-size: clamp(1.9rem, 3.6vw, 2.75rem);
-    font-weight: 800;
-    line-height: 1.1;
+    font-family: var(--font-display);
+    font-size: clamp(2.15rem, 3.8vw, 3.2rem);
+    font-weight: 500;
+    line-height: 1.06;
     color: #ffffff;
   }
 
   .finale-sub {
     font-size: 1rem;
-    line-height: 1.6;
-    color: rgba(241, 245, 249, 0.9);
+    line-height: 1.62;
+    color: rgba(235, 241, 252, 0.9);
     text-wrap: pretty;
   }
 
@@ -1668,174 +2195,163 @@ function splitHighlight(text: string, highlight?: string) {
     margin-block-start: 6px;
   }
 
-  /* -------------------------------------------------------------------------
-     Hover & Responsive Breakpoints (verified down to 320px)
-     ------------------------------------------------------------------------- */
+  /* =========================================================================
+     HOVER & RESPONSIVE BREAKPOINTS (verified down to 320px)
+     ========================================================================= */
   @media (hover: hover) {
-    .sky-foot-link:hover {
+    .hero-platforms-link:hover {
       text-decoration-color: #ffffff;
     }
 
-    .stage-tab:not(.is-active):hover {
+    .resolver-tab:not(.is-active):hover {
+      background-color: rgba(255, 255, 255, 0.14);
+      color: #ffffff;
+    }
+
+    .stage-tab:not(.is-active):hover,
+    .stage-theme-btn:not(.is-active):hover {
       color: var(--text);
       background-color: var(--surface-hover);
     }
 
-    .stage-sky-switch:hover {
-      border-color: var(--border-strong);
+    .widget-pill:not(.is-active):hover,
+    .android-tab:not(.is-active):hover {
       color: var(--text);
+      border-color: var(--border-strong);
     }
 
     .faq-summary:hover {
-      background-color: var(--surface-hover);
+      color: var(--accent-ink);
     }
   }
 
-  @media (max-width: 980px) {
-    .hero-sky-card {
-      padding: 38px 28px 96px;
-      border-radius: 22px;
-    }
-
-    .stage-wrap {
-      margin-block-start: -56px;
-      padding-inline: 10px;
-    }
-
-    .step-grid,
-    .workflow-split,
+  @media (max-width: 1040px) {
+    .hero-grid,
+    .suite-split,
+    .flow-diagram,
     .android-grid,
     .faq-layout {
       grid-template-columns: minmax(0, 1fr);
     }
 
+    .flow-hub {
+      flex-direction: column;
+    }
+
+    .flow-connector {
+      transform: rotate(90deg);
+      padding-block: 4px;
+    }
+
+    .stage-caption-row {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .honesty-bar {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 22px;
+    }
+
     .faq-sidebar {
       position: static;
-    }
-
-    .sources-ledger {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .source-cell:nth-child(3n) {
-      border-inline-end: 1px solid var(--surface-border);
-    }
-
-    .source-cell:nth-child(2n) {
-      border-inline-end: 0;
-    }
-
-    .source-cell:nth-last-child(-n + 3) {
-      border-block-end: 1px solid var(--surface-border);
-    }
-
-    .source-cell:nth-last-child(-n + 2) {
-      border-block-end: 0;
     }
   }
 
   @media (max-width: 640px) {
-    .hero-sky-card {
-      padding: 28px 20px 72px;
-      border-radius: 20px;
+    .hero-horizon {
+      padding-block: 92px 68px;
     }
 
-    .hero-actions {
-      width: 100%;
-    }
-
-    .hero-actions .btn {
-      width: 100%;
-    }
-
-    .stage-wrap {
-      margin-block-start: -42px;
-      padding-inline: 0;
-    }
-
-    .stage-toolbar {
-      padding: 10px 12px;
-    }
-
-    .stage-tablist {
-      width: 100%;
-      overflow-x: auto;
-      flex-wrap: nowrap;
-      padding-block-end: 2px;
-    }
-
-    .stage-tab {
-      white-space: nowrap;
-      padding: 6px 10px;
-      font-size: 0.77rem;
-    }
-
-    .stage-sky-switch {
-      width: 100%;
-      justify-content: center;
-    }
-
-    .stage-frame {
-      padding: 8px 8px 0;
-    }
-
-    .timeline-shell {
-      padding-inline-start: 38px;
-    }
-
-    .timeline-rail {
-      inset-inline-start: 13px;
-    }
-
-    .step-marker {
-      inset-inline-start: -38px;
-      width: 28px;
-      height: 28px;
-      font-size: 0.7rem;
-    }
-
-    .anchor-card {
-      padding: 16px 14px;
-      min-width: 0;
-    }
-
-    .resolved-grid,
-    .sources-ledger {
-      grid-template-columns: minmax(0, 1fr);
-    }
-
-    .source-cell,
-    .source-cell:nth-child(n) {
-      border-inline-end: 0;
-      border-block-end: 1px solid var(--surface-border);
-    }
-
-    .source-cell:last-child {
-      border-block-end: 0;
-    }
-
-    .workflow-copy {
-      padding: 22px 20px 16px;
-    }
-
-    .phone-secondary {
-      display: none;
-    }
-
-    .phone-primary {
-      width: min(260px, 82%);
-    }
-
-    .finale-card {
-      padding: 44px 20px;
-    }
-
+    .hero-actions,
     .finale-actions {
       width: 100%;
     }
 
+    .hero-actions .btn,
     .finale-actions .btn {
       width: 100%;
+    }
+
+    .resolver-bench {
+      padding: 16px;
+    }
+
+    .resolver-tabs {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+    }
+
+    .resolver-tab {
+      min-height: 44px;
+      justify-content: center;
+      text-align: center;
+    }
+
+    .stage-bar {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .stage-tablist {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+    }
+
+    .stage-tab {
+      min-height: 44px;
+      white-space: normal;
+      text-align: center;
+      line-height: 1.25;
+    }
+
+    .stage-theme-bar {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .stage-theme-btn {
+      min-height: 42px;
+      justify-content: center;
+    }
+
+    .stage-caption-row {
+      padding: 16px;
+    }
+
+    .stage-frame {
+      padding: 10px;
+    }
+
+    .vault-seal {
+      white-space: normal;
+    }
+
+    .widget-pills {
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .widget-pill {
+      min-height: 44px;
+      text-align: center;
+    }
+
+    .android-tabs {
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .android-tab {
+      min-height: 44px;
+      text-align: center;
+    }
+
+    .finale-horizon {
+      padding-block: 64px;
     }
   }
 </style>

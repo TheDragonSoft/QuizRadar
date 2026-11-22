@@ -11,80 +11,98 @@ const base = import.meta.env.BASE_URL;
 const homeHref = withBase(base, "/");
 const downloadHref = withBase(base, "/download/");
 const webAppHref = withBase(base, "/app/");
+const isHeroOverlay = currentPage === "home" || currentPage === "download";
 ---
 
-<header class="nav" id="site-nav">
+<header class:list={["nav", { "nav-over-sky": isHeroOverlay }]} id="site-nav">
   <div class="nav-inner">
     <a href={homeHref} class="nav-brand" aria-label="QuizRadar home">
-      <BrandIcon name="quizradar" size={30} animated={true} class="nav-logo" />
+      <BrandIcon name="quizradar" size={30} animated={true} uid="nav" class="nav-logo" />
       <span class="nav-wordmark">QuizRadar</span>
     </a>
 
-    <!-- Desktop Navigation Pill -->
-    <nav class="nav-pill nav-desktop-only" aria-label="Primary">
-      <a href={`${homeHref}#views`} class="nav-link">App Views</a>
-      <a href={`${homeHref}#how-it-works`} class="nav-link">How It Works</a>
-      <a href={`${homeHref}#sources`} class="nav-link">Sources</a>
-      <a href={`${homeHref}#android`} class="nav-link">Android</a>
-      <a href={`${homeHref}#faq`} class="nav-link">FAQ</a>
-      <a
-        href={downloadHref}
-        class:list={["nav-link", { "is-active": currentPage === "download" }]}
-        aria-current={currentPage === "download" ? "page" : undefined}
+    <!-- Focused 4-item navigation with scroll-spy on home -->
+    <nav class="nav-links nav-desktop-only" aria-label="Primary">
+      <a href={`${homeHref}#views`} class="nav-link" data-nav-section="views">App Views</a>
+      <a href={`${homeHref}#suite`} class="nav-link" data-nav-section="suite">Study Suite</a>
+      <a href={`${homeHref}#sources`} class="nav-link" data-nav-section="sources"
+        >Privacy &amp; Sources</a
       >
-        Download
-      </a>
+      <a href={`${homeHref}#android`} class="nav-link" data-nav-section="android">Android</a>
     </nav>
 
     <div class="nav-actions">
-      <!-- Day / Starry Sky Theme Toggle -->
+      <!-- 3-Theme Student Observatory Switcher (Desktop & Tablet) -->
+      <div class="theme-switcher nav-theme-desktop" role="group" aria-label="Observatory theme">
+        <button
+          type="button"
+          class="theme-opt is-active"
+          data-set-theme="obsidian"
+          aria-pressed="true"
+          aria-label="Obsidian dark theme"
+          title="Obsidian Cosmic (Dark)"
+        >
+          <BrandIcon name="moon" size={14} />
+          <span class="theme-opt-text">Obsidian</span>
+        </button>
+        <button
+          type="button"
+          class="theme-opt"
+          data-set-theme="solar"
+          aria-pressed="false"
+          aria-label="Solar light theme"
+          title="Solar Dawn (Light)"
+        >
+          <BrandIcon name="sun" size={14} />
+          <span class="theme-opt-text">Solar</span>
+        </button>
+        <button
+          type="button"
+          class="theme-opt"
+          data-set-theme="amoled-nebula"
+          aria-pressed="false"
+          aria-label="AMOLED black theme"
+          title="AMOLED Cosmic Stardust"
+        >
+          <BrandIcon name="eclipse" size={14} />
+          <span class="theme-opt-text">AMOLED</span>
+        </button>
+      </div>
+
+      <!-- Mobile 44x44 single-tap theme cycle button -->
       <button
         type="button"
-        class="theme-toggle"
-        data-theme-toggle
-        aria-label="Toggle between Starry Night and Day Sky theme"
-        title="Switch between Starry Night and Day Sky"
+        class="nav-icon-btn nav-theme-cycle-btn"
+        data-cycle-theme
+        aria-label="Cycle Observatory theme (Obsidian, Solar, AMOLED)"
+        title="Switch Observatory theme"
       >
-        <span class="theme-icon-sun">
-          <BrandIcon name="sun" size={16} />
-        </span>
-        <span class="theme-icon-moon">
-          <BrandIcon name="moon" size={16} />
-        </span>
-        <span class="theme-label theme-label-day">Day Sky</span>
-        <span class="theme-label theme-label-night">Starry Sky</span>
+        <BrandIcon name="sun" size={18} />
       </button>
 
-      <!-- GitHub Link (Desktop/Tablet) -->
+      <!-- GitHub Source Link -->
       <a
         href={GITHUB_REPO_URL}
         target="_blank"
         rel="noopener noreferrer"
         class="nav-icon-btn nav-hide-mobile"
         aria-label="QuizRadar source code on GitHub"
-        title="View MIT source on GitHub"
+        title="Inspect MIT source on GitHub"
       >
         <BrandIcon name="github" size={17} />
       </a>
 
-      <!-- Primary Action CTA (Desktop: Web App; Mobile: Direct Download) -->
-      <a href={webAppHref} class="btn btn-primary nav-pwa-btn nav-desktop-only">
-        <span>Open Web App</span>
-      </a>
-
+      <!-- Consistent Primary CTA across desktop and mobile -->
       <a
         href={downloadHref}
-        class:list={[
-          "btn btn-primary nav-mobile-dl-btn",
-          { "is-active": currentPage === "download" },
-        ]}
-        aria-label="Download QuizRadar"
+        class:list={["btn btn-primary nav-dl-btn", { "is-current": currentPage === "download" }]}
+        aria-current={currentPage === "download" ? "page" : undefined}
       >
         <BrandIcon name="download" size={15} />
         <span>Download</span>
       </a>
 
-      <!-- Mobile Hamburger Toggle -->
+      <!-- Mobile Hamburger Toggle (44x44 touch target) -->
       <button
         type="button"
         class="nav-icon-btn nav-hamburger-btn"
@@ -103,45 +121,73 @@ const webAppHref = withBase(base, "/app/");
     </div>
   </div>
 
-  <!-- Mobile Collapsible Menu Drawer -->
-  <div
-    class="nav-mobile-drawer"
-    id="nav-mobile-menu"
-    hidden
-    aria-label="Mobile navigation"
-  >
+  <!-- Mobile Collapsible Drawer -->
+  <div class="nav-mobile-drawer" id="nav-mobile-menu" hidden>
     <div class="nav-mobile-inner">
-      <nav class="nav-mobile-links">
+      <div class="mobile-theme-group" role="group" aria-label="Observatory theme">
+        <button
+          type="button"
+          class="theme-opt is-active"
+          data-set-theme="obsidian"
+          aria-pressed="true"
+          aria-label="Obsidian dark theme"
+        >
+          <BrandIcon name="moon" size={15} />
+          <span>Obsidian</span>
+        </button>
+        <button
+          type="button"
+          class="theme-opt"
+          data-set-theme="solar"
+          aria-pressed="false"
+          aria-label="Solar light theme"
+        >
+          <BrandIcon name="sun" size={15} />
+          <span>Solar</span>
+        </button>
+        <button
+          type="button"
+          class="theme-opt"
+          data-set-theme="amoled-nebula"
+          aria-pressed="false"
+          aria-label="AMOLED black theme"
+        >
+          <BrandIcon name="eclipse" size={15} />
+          <span>AMOLED</span>
+        </button>
+      </div>
+
+      <nav class="nav-mobile-links" aria-label="Mobile navigation">
         <a href={`${homeHref}#views`} class="mobile-nav-link">
           <span>App Views</span>
-          <span class="mobile-nav-desc">5 real desktop and mobile views</span>
+          <span class="mobile-nav-desc">Dashboard, Week Calendar, Roadmap, GPA, Flashcards</span>
         </a>
-        <a href={`${homeHref}#how-it-works`} class="mobile-nav-link">
-          <span>How It Works</span>
-          <span class="mobile-nav-desc">Timetable anchoring & honesty rules</span>
+        <a href={`${homeHref}#suite`} class="mobile-nav-link">
+          <span>Study Suite</span>
+          <span class="mobile-nav-desc">Study Cushion, Week A/B parity, print cram sheets</span>
         </a>
         <a href={`${homeHref}#sources`} class="mobile-nav-link">
-          <span>Campus Sources</span>
-          <span class="mobile-nav-desc">Gmail, Teams, Moodle, Classroom</span>
+          <span>Privacy &amp; Sources</span>
+          <span class="mobile-nav-desc">Zero-server flow across Gmail, Teams, Moodle &amp; Canvas</span>
         </a>
         <a href={`${homeHref}#android`} class="mobile-nav-link">
           <span>Android App</span>
-          <span class="mobile-nav-desc">Jetpack Compose + 2×1 Glance widget</span>
+          <span class="mobile-nav-desc">4×2 &amp; 2×1 Glance widgets, attendance &amp; LAN QR sync</span>
         </a>
         <a href={`${homeHref}#faq`} class="mobile-nav-link">
           <span>FAQ</span>
-          <span class="mobile-nav-desc">Zero servers, privacy & BYOK Gemini</span>
+          <span class="mobile-nav-desc">Privacy guarantees, offline core &amp; device sync</span>
         </a>
       </nav>
 
       <div class="nav-mobile-footer">
         <a href={downloadHref} class="btn btn-primary mobile-menu-cta">
-          <BrandIcon name="download" size={17} />
-          <span>Download Installers (Windows, Mac, Linux, Android)</span>
+          <BrandIcon name="download" size={16} />
+          <span>Download Installers</span>
         </a>
         <a href={webAppHref} class="btn btn-secondary mobile-menu-cta">
-          <BrandIcon name="globe" size={17} />
-          <span>Launch Web Companion (PWA)</span>
+          <BrandIcon name="globe" size={16} />
+          <span>Try Web App in Browser</span>
         </a>
         <a
           href={GITHUB_REPO_URL}
@@ -149,8 +195,8 @@ const webAppHref = withBase(base, "/app/");
           rel="noopener noreferrer"
           class="mobile-github-link"
         >
-          <BrandIcon name="github" size={16} />
-          <span>View Source Code on GitHub</span>
+          <BrandIcon name="github" size={15} />
+          <span>View MIT Source on GitHub</span>
         </a>
       </div>
     </div>
@@ -158,83 +204,161 @@ const webAppHref = withBase(base, "/app/");
 </header>
 
 <script>
+  type ObservatoryTheme = "obsidian" | "solar" | "amoled-nebula";
+  const THEME_ORDER: ObservatoryTheme[] = ["obsidian", "solar", "amoled-nebula"];
+
   const nav = document.getElementById("site-nav");
   const menuToggle = document.getElementById("nav-menu-toggle");
   const mobileMenu = document.getElementById("nav-mobile-menu");
 
   const syncScrollState = () => {
     if (!nav) return;
-    nav.classList.toggle("is-scrolled", window.scrollY > 10);
+    nav.classList.toggle("is-scrolled", window.scrollY > 18);
   };
   window.addEventListener("scroll", syncScrollState, { passive: true });
   syncScrollState();
 
-  const applyTheme = (next: "dark" | "light") => {
-    const root = document.documentElement;
-    root.classList.toggle("dark", next === "dark");
-    try {
-      localStorage.setItem("quizradar-theme", next);
-    } catch {
-      // Ignore storage errors in private browsing
-    }
-    const meta = document.getElementById("meta-theme-color");
-    if (meta) {
-      meta.setAttribute("content", next === "dark" ? "#0b0f19" : "#f8fafc");
+  const currentTheme = (): ObservatoryTheme => {
+    const t = document.documentElement.dataset.theme;
+    if (t === "solar" || t === "amoled-nebula") return t;
+    return "obsidian";
+  };
+
+  const syncThemeImages = async (active: ObservatoryTheme) => {
+    const imgs = Array.from(document.querySelectorAll<HTMLImageElement>("img[data-theme-img]"));
+    const decodes: Promise<unknown>[] = [];
+    imgs.forEach((img) => {
+      const nextSrc =
+        active === "solar"
+          ? img.dataset.srcLight
+          : active === "amoled-nebula"
+            ? img.dataset.srcAmoled
+            : img.dataset.srcDark;
+      if (nextSrc && img.getAttribute("src") !== nextSrc) {
+        img.setAttribute("src", nextSrc);
+        if (typeof img.decode === "function" && !img.closest("[hidden]")) {
+          decodes.push(img.decode().catch(() => undefined));
+        }
+      }
+    });
+    if (decodes.length > 0) {
+      await Promise.all(decodes);
     }
   };
 
-  const toggleTheme = () => {
-    const isDark = document.documentElement.classList.contains("dark");
-    const next: "dark" | "light" = isDark ? "light" : "dark";
+  const syncThemeButtons = (active: ObservatoryTheme) => {
+    document.querySelectorAll<HTMLButtonElement>("[data-set-theme]").forEach((btn) => {
+      const selected = btn.dataset.setTheme === active;
+      btn.setAttribute("aria-pressed", selected ? "true" : "false");
+      btn.classList.toggle("is-active", selected);
+    });
+  };
+
+  const applyTheme = async (next: ObservatoryTheme, useTransition = false) => {
+    await syncThemeImages(next);
+
+    const mutateDom = () => {
+      const root = document.documentElement;
+      root.dataset.theme = next;
+      root.classList.toggle("dark", next !== "solar");
+      try {
+        localStorage.setItem("quizradar-theme", next);
+        localStorage.setItem("quizradar_theme", next);
+      } catch {
+        // Ignore storage errors in private browsing
+      }
+      const meta = document.getElementById("meta-theme-color");
+      if (meta) {
+        meta.setAttribute(
+          "content",
+          next === "solar" ? "#f5f7fb" : next === "amoled-nebula" ? "#000000" : "#070a12",
+        );
+      }
+      syncThemeButtons(next);
+    };
+
     const docWithVT = document as Document & {
       startViewTransition?: (cb: () => void) => unknown;
     };
     const allowMotion = window.matchMedia("(prefers-reduced-motion: no-preference)").matches;
-    if (allowMotion && typeof docWithVT.startViewTransition === "function") {
-      docWithVT.startViewTransition(() => applyTheme(next));
+    if (useTransition && allowMotion && typeof docWithVT.startViewTransition === "function") {
+      docWithVT.startViewTransition(mutateDom);
     } else {
-      applyTheme(next);
+      mutateDom();
     }
   };
 
-  document.querySelectorAll<HTMLButtonElement>("[data-theme-toggle]").forEach((btn) => {
-    btn.addEventListener("click", toggleTheme);
+  // Initial sync for buttons and theme-aware images
+  const initTheme = currentTheme();
+  syncThemeButtons(initTheme);
+  void syncThemeImages(initTheme);
+
+  // Delegate clicks for all `[data-set-theme]` buttons (Navbar, Mobile Drawer, and `#views` stage bar)
+  document.addEventListener("click", (event) => {
+    const targetEl = (event.target as Element | null)?.closest<HTMLButtonElement>("[data-set-theme]");
+    if (targetEl) {
+      const target = targetEl.dataset.setTheme as ObservatoryTheme | undefined;
+      if (target && target !== currentTheme()) {
+        void applyTheme(target, true);
+      }
+      return;
+    }
+
+    const cycleEl = (event.target as Element | null)?.closest<HTMLButtonElement>("[data-cycle-theme]");
+    if (cycleEl) {
+      const cur = currentTheme();
+      const next = THEME_ORDER[(THEME_ORDER.indexOf(cur) + 1) % THEME_ORDER.length];
+      void applyTheme(next, true);
+    }
   });
 
-  // Mobile Menu Drawer Toggle Logic
+  // Active section scroll-spy for desktop links
+  const sectionLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>("[data-nav-section]"));
+  const sections = sectionLinks
+    .map((link) => {
+      const id = link.dataset.navSection;
+      const el = id ? document.getElementById(id) : null;
+      return el ? { id, el, link } : null;
+    })
+    .filter((item): item is { id: string; el: HTMLElement; link: HTMLAnchorElement } => item !== null);
+
+  if (sections.length > 0 && "IntersectionObserver" in window) {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const activeId = entry.target.id;
+            sections.forEach((s) => s.link.classList.toggle("is-active", s.id === activeId));
+          }
+        });
+      },
+      { rootMargin: "-30% 0px -55% 0px", threshold: 0.01 },
+    );
+    sections.forEach((s) => observer.observe(s.el));
+  }
+
+  // Mobile Menu Drawer
   if (menuToggle && mobileMenu) {
     const closeMenu = () => {
       menuToggle.setAttribute("aria-expanded", "false");
       mobileMenu.classList.remove("is-open");
       mobileMenu.hidden = true;
-      document.body.classList.remove("mobile-nav-lock");
     };
 
     const openMenu = () => {
       menuToggle.setAttribute("aria-expanded", "true");
       mobileMenu.hidden = false;
-      // Allow DOM paint before triggering transition class
-      requestAnimationFrame(() => {
-        mobileMenu.classList.add("is-open");
-      });
-      document.body.classList.add("mobile-nav-lock");
+      requestAnimationFrame(() => mobileMenu.classList.add("is-open"));
     };
 
     menuToggle.addEventListener("click", () => {
-      const isExpanded = menuToggle.getAttribute("aria-expanded") === "true";
-      if (isExpanded) {
-        closeMenu();
-      } else {
-        openMenu();
-      }
+      const expanded = menuToggle.getAttribute("aria-expanded") === "true";
+      if (expanded) closeMenu();
+      else openMenu();
     });
 
-    // Close on navigation link clicks
-    mobileMenu.querySelectorAll("a").forEach((link) => {
-      link.addEventListener("click", closeMenu);
-    });
+    mobileMenu.querySelectorAll("a").forEach((link) => link.addEventListener("click", closeMenu));
 
-    // Close on Escape key
     window.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && menuToggle.getAttribute("aria-expanded") === "true") {
         closeMenu();
@@ -258,15 +382,57 @@ const webAppHref = withBase(base, "/app/");
     transition-timing-function: var(--ease-snappy);
   }
 
+  /* Blend smoothly over the full-bleed sky canopy before scrolling */
+  .nav.nav-over-sky:not(.is-scrolled) {
+    background-color: var(--nav-bg-over-sky);
+    border-block-end-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .nav.nav-over-sky:not(.is-scrolled) .nav-wordmark {
+    color: #ffffff;
+  }
+
+  .nav.nav-over-sky:not(.is-scrolled) .nav-link {
+    color: rgba(241, 245, 249, 0.88);
+  }
+
+  .nav.nav-over-sky:not(.is-scrolled) .nav-link.is-active {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.16);
+  }
+
+  .nav.nav-over-sky:not(.is-scrolled) .theme-switcher,
+  .nav.nav-over-sky:not(.is-scrolled) .nav-icon-btn {
+    background-color: rgba(7, 10, 18, 0.42);
+    border-color: rgba(255, 255, 255, 0.22);
+    color: rgba(241, 245, 249, 0.92);
+  }
+
+  .nav.nav-over-sky:not(.is-scrolled) .theme-opt {
+    color: rgba(226, 232, 240, 0.88);
+  }
+
+  .nav.nav-over-sky:not(.is-scrolled) .theme-opt.is-active {
+    background-color: #fbbf24;
+    color: #090d16;
+  }
+
+  /* High-contrast Download CTA over both Solar & Dark skies (11.4:1 contrast) */
+  .nav.nav-over-sky:not(.is-scrolled) .nav-dl-btn {
+    background-color: #ffffff;
+    color: #0e2458;
+    border-color: rgba(255, 255, 255, 0.9);
+  }
+
   .nav.is-scrolled {
     border-block-end-color: var(--surface-border);
     box-shadow: var(--shadow-sm);
   }
 
   .nav-inner {
-    max-width: 1220px;
+    max-width: 1240px;
     margin-inline: auto;
-    padding: 11px 28px;
+    padding: 10px 28px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -276,39 +442,33 @@ const webAppHref = withBase(base, "/app/");
   .nav-brand {
     display: inline-flex;
     align-items: center;
-    gap: 9px;
-    min-height: 38px;
+    gap: 10px;
+    min-height: 40px;
     flex-shrink: 0;
   }
 
   .nav-brand :global(.nav-logo) {
     border-radius: 7px;
-    box-shadow: 0 2px 8px rgba(29, 78, 216, 0.28);
   }
 
   .nav-wordmark {
-    font-size: 1.02rem;
-    font-weight: 750;
-    letter-spacing: -0.026em;
+    font-size: 1.04rem;
+    font-weight: 720;
+    letter-spacing: -0.025em;
     color: var(--text);
   }
 
-  /* Segmented switcher bar inspired by QuizRadar's TopBar */
-  .nav-pill {
+  .nav-links {
     display: inline-flex;
     align-items: center;
-    gap: 2px;
-    padding: 3px;
-    border-radius: 12px;
-    background-color: var(--surface-elevated);
-    border: 1px solid var(--surface-border);
+    gap: 4px;
   }
 
   .nav-link {
-    font-size: 0.825rem;
-    font-weight: 600;
+    font-size: 0.84rem;
+    font-weight: 560;
     color: var(--text-muted);
-    padding: 6px 11px;
+    padding: 7px 12px;
     border-radius: 9px;
     white-space: nowrap;
     transition-property: color, background-color;
@@ -328,64 +488,49 @@ const webAppHref = withBase(base, "/app/");
     flex-shrink: 0;
   }
 
-  .theme-toggle {
+  /* 3-Theme Observatory Pill */
+  .theme-switcher {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    min-height: 36px;
-    padding: 0 11px;
+    gap: 2px;
+    padding: 3px;
     border-radius: 10px;
     background-color: var(--surface-elevated);
     border: 1px solid var(--surface-border);
-    color: var(--text-secondary);
-    font-size: 0.79rem;
-    font-weight: 600;
+  }
+
+  .theme-opt {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-height: 32px;
+    padding: 0 10px;
+    border-radius: 7px;
+    font-size: 0.76rem;
+    font-weight: 620;
+    color: var(--text-muted);
     white-space: nowrap;
-    transition-property: transform, background-color, border-color, color;
-    transition-duration: 150ms;
+    transition-property: transform, background-color, color;
+    transition-duration: 140ms;
     transition-timing-function: var(--ease-snappy);
   }
 
-  .theme-toggle:active {
+  .theme-opt:active {
     transform: scale(0.96);
   }
 
-  /* Light mode shows Moon ("Starry Sky"); Dark mode shows Sun ("Day Sky") */
-  .theme-icon-sun,
-  .theme-label-day {
-    display: none;
-  }
-
-  .theme-icon-moon,
-  .theme-label-night {
-    display: inline-flex;
-    color: var(--accent-ink);
-  }
-
-  .theme-label-night {
-    color: var(--text-secondary);
-  }
-
-  :global(html.dark) .theme-icon-sun {
-    display: inline-flex;
-    color: #fbbf24;
-  }
-
-  :global(html.dark) .theme-label-day {
-    display: inline;
-  }
-
-  :global(html.dark) .theme-icon-moon,
-  :global(html.dark) .theme-label-night {
-    display: none;
+  .theme-opt.is-active {
+    background-color: var(--accent-fill);
+    color: #ffffff;
   }
 
   .nav-icon-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
+    width: 38px;
+    height: 38px;
     border-radius: 10px;
     background-color: var(--surface-elevated);
     border: 1px solid var(--surface-border);
@@ -399,22 +544,19 @@ const webAppHref = withBase(base, "/app/");
     transform: scale(0.96);
   }
 
-  .nav-pwa-btn {
-    min-height: 36px;
-    padding: 7px 14px;
-    border-radius: 10px;
-    font-size: 0.82rem;
-    white-space: nowrap;
+  .nav-theme-cycle-btn {
+    display: none;
   }
 
-  .nav-mobile-dl-btn {
-    display: none;
-    min-height: 34px;
-    padding: 6px 12px;
+  .nav-dl-btn {
+    min-height: 38px;
+    padding: 7px 14px;
     border-radius: 10px;
-    font-size: 0.78rem;
-    gap: 5px;
-    white-space: nowrap;
+    font-size: 0.83rem;
+  }
+
+  .nav-dl-btn.is-current {
+    box-shadow: 0 0 0 2px #fbbf24;
   }
 
   .nav-hamburger-btn {
@@ -433,9 +575,7 @@ const webAppHref = withBase(base, "/app/");
     display: inline-flex;
   }
 
-  /* -------------------------------------------------------------------------
-     Mobile Navigation Drawer
-     ------------------------------------------------------------------------- */
+  /* Mobile Drawer */
   .nav-mobile-drawer {
     border-block-start: 1px solid var(--surface-border);
     background-color: var(--surface);
@@ -443,7 +583,7 @@ const webAppHref = withBase(base, "/app/");
     max-height: calc(100dvh - 60px);
     overflow-y: auto;
     opacity: 0;
-    transform: translateY(-8px);
+    transform: translateY(-6px);
     transition-property: opacity, transform;
     transition-duration: 180ms;
     transition-timing-function: var(--ease-snappy);
@@ -455,12 +595,28 @@ const webAppHref = withBase(base, "/app/");
   }
 
   .nav-mobile-inner {
-    padding: 18px 20px 24px;
+    padding: 16px 20px 24px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 14px;
     max-width: 520px;
     margin-inline: auto;
+  }
+
+  .mobile-theme-group {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    padding: 4px;
+    border-radius: 12px;
+    background-color: var(--surface-elevated);
+    border: 1px solid var(--surface-border);
+  }
+
+  .mobile-theme-group .theme-opt {
+    min-height: 44px;
+    font-size: 0.82rem;
+    border-radius: 9px;
   }
 
   .nav-mobile-links {
@@ -473,8 +629,9 @@ const webAppHref = withBase(base, "/app/");
     display: flex;
     flex-direction: column;
     gap: 2px;
-    padding: 10px 14px;
-    border-radius: 12px;
+    padding: 11px 14px;
+    min-height: 48px;
+    border-radius: 11px;
     transition-property: background-color, transform;
     transition-duration: 150ms;
     transition-timing-function: var(--ease-snappy);
@@ -485,13 +642,13 @@ const webAppHref = withBase(base, "/app/");
   }
 
   .mobile-nav-link span:first-child {
-    font-size: 0.95rem;
-    font-weight: 700;
+    font-size: 0.94rem;
+    font-weight: 650;
     color: var(--text);
   }
 
   .mobile-nav-desc {
-    font-size: 0.77rem;
+    font-size: 0.78rem;
     color: var(--text-muted);
   }
 
@@ -506,8 +663,8 @@ const webAppHref = withBase(base, "/app/");
   .mobile-menu-cta {
     width: 100%;
     justify-content: center;
-    min-height: 42px;
-    font-size: 0.86rem;
+    min-height: 44px;
+    font-size: 0.88rem;
   }
 
   .mobile-github-link {
@@ -515,13 +672,10 @@ const webAppHref = withBase(base, "/app/");
     align-items: center;
     justify-content: center;
     gap: 7px;
-    font-size: 0.8rem;
+    min-height: 44px;
+    font-size: 0.82rem;
     font-weight: 600;
     color: var(--text-muted);
-    padding-block: 6px;
-    transition-property: color;
-    transition-duration: 150ms;
-    transition-timing-function: var(--ease-snappy);
   }
 
   @media (hover: hover) {
@@ -530,69 +684,92 @@ const webAppHref = withBase(base, "/app/");
       background-color: var(--surface-hover);
     }
 
-    .theme-toggle:hover,
+    .nav.nav-over-sky:not(.is-scrolled) .nav-link:hover {
+      color: #ffffff;
+      background-color: rgba(255, 255, 255, 0.14);
+    }
+
+    .theme-opt:not(.is-active):hover {
+      color: var(--text);
+    }
+
+    .nav.nav-over-sky:not(.is-scrolled) .theme-opt:not(.is-active):hover {
+      color: #ffffff;
+    }
+
+    .nav.nav-over-sky:not(.is-scrolled) .nav-dl-btn:hover {
+      background-color: #edf4ff;
+    }
+
     .nav-icon-btn:hover {
       color: var(--text);
       background-color: var(--surface-hover);
       border-color: var(--border-strong);
     }
 
+    .nav.nav-over-sky:not(.is-scrolled) .nav-icon-btn:hover {
+      color: #ffffff;
+      background-color: rgba(255, 255, 255, 0.16);
+      border-color: rgba(255, 255, 255, 0.34);
+    }
+
     .mobile-nav-link:hover {
       background-color: var(--surface-hover);
     }
-
-    .mobile-github-link:hover {
-      color: var(--accent-ink);
-    }
   }
 
-  @media (max-width: 1040px) {
-    .theme-label {
-      display: none !important;
+  @media (max-width: 1080px) {
+    .nav-theme-desktop .theme-opt-text {
+      display: none;
     }
 
-    .theme-toggle {
-      padding: 0;
-      width: 36px;
-      justify-content: center;
+    .nav-theme-desktop .theme-opt {
+      padding: 0 9px;
+      min-width: 34px;
     }
   }
 
   @media (max-width: 860px) {
     .nav-desktop-only,
-    .nav-hide-mobile {
+    .nav-hide-mobile,
+    .nav-theme-desktop {
       display: none !important;
     }
 
-    .nav-mobile-dl-btn,
+    .nav-theme-cycle-btn,
     .nav-hamburger-btn {
       display: inline-flex;
+      width: 44px;
+      height: 44px;
+    }
+
+    .nav-dl-btn {
+      min-height: 44px;
+      padding: 8px 14px;
     }
 
     .nav-inner {
-      padding-inline: 18px;
+      padding-inline: 16px;
     }
   }
 
-  @media (max-width: 480px) {
+  @media (max-width: 420px) {
     .nav-inner {
-      padding-inline: 14px;
+      padding-inline: 12px;
       gap: 6px;
     }
 
     .nav-wordmark {
-      font-size: 0.96rem;
+      font-size: 0.95rem;
     }
 
-    .nav-mobile-dl-btn {
-      padding: 5px 9px;
-      font-size: 0.8125rem;
+    .nav-actions {
+      gap: 6px;
     }
-  }
 
-  @media (max-width: 360px) {
-    .nav-mobile-dl-btn {
-      display: none !important;
+    .nav-dl-btn {
+      padding: 8px 11px;
+      font-size: 0.78rem;
     }
   }
 </style>

@@ -2,10 +2,13 @@
 import Layout from "../layouts/Layout.astro";
 import BrandIcon from "../components/BrandIcon.astro";
 import CelestialSky from "../components/CelestialSky.astro";
+import { buildQrSvgData } from "../lib/qrSvg";
 import {
   APP_VERSION,
   CHECKSUMS_URL,
   GITHUB_RELEASES_LATEST,
+  GITHUB_RELEASE_TAG_URL,
+  GITHUB_REPO_URL,
   PLATFORM_DOWNLOADS,
   withBase,
 } from "../lib/releaseData";
@@ -13,248 +16,354 @@ import {
 const base = import.meta.env.BASE_URL;
 const webAppHref = withBase(base, "/app/");
 
-const verifyPsSnippet = `Get-FileHash .\\QuizRadar_${APP_VERSION}_x64-setup.exe -Algorithm SHA256`;
-const verifyShSnippet = `sha256sum --ignore-missing -c SHA256SUMS.txt`;
+const verifyPsSnippet = `Get-FileHash .\\QuizRadar* -Algorithm SHA256`;
+const verifyShSnippet = `shasum -a 256 QuizRadar*`;
+
+// Deterministic, scannable ISO/IEC 18004 QR SVG pointing straight to the tagged Android APK
+const androidApkQr = buildQrSvgData(PLATFORM_DOWNLOADS.android.primaryUrl);
 ---
 
 <Layout
   title="Download QuizRadar — Windows, macOS, Linux, Android & Web"
-  description="Download signed QuizRadar installers for Windows, macOS, Linux, and Android, or launch the offline WebAssembly companion in your browser."
+  description="Download QuizRadar installers for Windows, macOS, Linux, and Android with SHA-256 checksums, or launch the offline WebAssembly companion in your browser."
   canonicalPath="/download/"
   currentPage="download"
 >
-  <section class="dl-hero-wrap">
+  <!-- Full-bleed Celestial Banner (aligned to 1240px container rail, h1 first without eyebrow above) -->
+  <section class="dl-horizon">
+    <CelestialSky showRadarArcs={true} fadeBottom={true} />
     <div class="container">
-      <div class="dl-sky-banner">
-        <CelestialSky showRadarArcs={true} />
-        <div class="dl-sky-inner">
-          <h1 class="dl-title">Download QuizRadar</h1>
-          <p class="dl-lead">
-            Every installer is compiled from public source by GitHub Actions and published with{" "}
-            <a href={CHECKSUMS_URL} target="_blank" rel="noopener noreferrer" class="sky-link"
-              ><code>SHA256SUMS.txt</code></a
-            >{" "}
-            on{" "}
-            <a
-              href={GITHUB_RELEASES_LATEST}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="sky-link">GitHub Releases</a
-            >. Zero accounts, zero telemetry, MIT licensed.
-          </p>
+      <div class="dl-hero-inner">
+        <h1 class="dl-title">Download QuizRadar</h1>
+        <p class="dl-lead">
+          Every installer is built from public source by GitHub Actions and published with{" "}
+          <a href={CHECKSUMS_URL} target="_blank" rel="noopener noreferrer" class="sky-link"
+            ><code>SHA256SUMS.txt</code></a
+          >{" "}
+          on{" "}
+          <a
+            href={GITHUB_RELEASES_LATEST}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="sky-link">GitHub Releases</a
+          >. Free, MIT licensed, zero user accounts, and zero telemetry.
+        </p>
+        <div class="dl-ver-row">
+          <a
+            href={GITHUB_RELEASE_TAG_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="dl-ver-pill tabular"
+          >
+            Release v{APP_VERSION}
+          </a>
+          <a
+            href={`${GITHUB_REPO_URL}/blob/main/CHANGELOG.md`}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="dl-changelog-link"
+          >
+            Read release notes &rarr;
+          </a>
         </div>
       </div>
     </div>
   </section>
 
-  <section class="dl-cards-section">
-    <div class="container dl-stack">
-      <!-- Windows -->
-      <article class="dl-card" data-platform-card="windows">
-        <div class="dl-meta">
-          <div class="dl-title-row">
-            <div class="dl-os-icon">
-              <BrandIcon name="windows" size={20} />
+  <!-- Platform Installers Grid (Detected or #hash OS auto-promoted to balanced 2-col featured spotlight) -->
+  <section class="dl-platforms-section">
+    <div class="container">
+      <div class="dl-grid" id="dl-platform-grid">
+        <!-- Windows -->
+        <article class="dl-card" id="windows" data-platform-card="windows">
+          <div class="dl-card-main">
+            <div class="dl-title-row">
+              <div class="dl-os-icon">
+                <BrandIcon name="windows" size={20} />
+              </div>
+              <h2>Windows</h2>
+              <span class="os-badge">{PLATFORM_DOWNLOADS.windows.badge}</span>
+              <span class="detected-pill" data-detected-badge="windows" hidden
+                >Recommended for your device</span
+              >
             </div>
-            <h2>Windows</h2>
-            <span class="os-badge">{PLATFORM_DOWNLOADS.windows.badge}</span>
-            <span class="detected-pill" data-detected-badge="windows" hidden>For your device</span>
+            <p class="dl-req">{PLATFORM_DOWNLOADS.windows.requirements}</p>
+            <p class="dl-note">{PLATFORM_DOWNLOADS.windows.notes}</p>
           </div>
-          <p class="dl-req">{PLATFORM_DOWNLOADS.windows.requirements}</p>
-          <p class="dl-note">{PLATFORM_DOWNLOADS.windows.notes}</p>
-        </div>
 
-        <div class="dl-actions">
-          <a href={PLATFORM_DOWNLOADS.windows.primaryUrl} class="btn btn-primary">
-            <BrandIcon name="download" size={16} />
-            <span class="tabular">{PLATFORM_DOWNLOADS.windows.primaryArtifact}</span>
-          </a>
-          {
-            PLATFORM_DOWNLOADS.windows.secondaryUrl && (
-              <a href={PLATFORM_DOWNLOADS.windows.secondaryUrl} class="btn btn-secondary">
-                <span>{PLATFORM_DOWNLOADS.windows.secondaryLabel}</span>
+          <div class="dl-card-aside">
+            <p class="dl-security-inline" data-detected-hint="windows" hidden>
+              <BrandIcon name="shield" size={15} />
+              <span>{PLATFORM_DOWNLOADS.windows.securityHint}</span>
+            </p>
+            <div class="dl-actions">
+              <a href={PLATFORM_DOWNLOADS.windows.primaryUrl} class="btn btn-primary">
+                <BrandIcon name="download" size={16} />
+                <span>{PLATFORM_DOWNLOADS.windows.buttonLabel}</span>
               </a>
-            )
-          }
-        </div>
-      </article>
-
-      <!-- macOS -->
-      <article class="dl-card" data-platform-card="mac">
-        <div class="dl-meta">
-          <div class="dl-title-row">
-            <div class="dl-os-icon">
-              <BrandIcon name="apple" size={20} />
+              {
+                PLATFORM_DOWNLOADS.windows.secondaryUrl && (
+                  <a href={PLATFORM_DOWNLOADS.windows.secondaryUrl} class="btn btn-secondary">
+                    <span>{PLATFORM_DOWNLOADS.windows.secondaryLabel}</span>
+                  </a>
+                )
+              }
             </div>
-            <h2>macOS</h2>
-            <span class="os-badge">{PLATFORM_DOWNLOADS.mac.badge}</span>
-            <span class="detected-pill" data-detected-badge="mac" hidden>For your device</span>
+            <span class="dl-artifact-meta">
+              Artifact: <code class="tabular">{PLATFORM_DOWNLOADS.windows.primaryArtifact}</code>
+            </span>
           </div>
-          <p class="dl-req">{PLATFORM_DOWNLOADS.mac.requirements}</p>
-          <p class="dl-note">{PLATFORM_DOWNLOADS.mac.notes}</p>
-        </div>
+        </article>
 
-        <div class="dl-actions">
-          <a href={PLATFORM_DOWNLOADS.mac.primaryUrl} class="btn btn-primary">
-            <BrandIcon name="download" size={16} />
-            <span class="tabular">{PLATFORM_DOWNLOADS.mac.primaryArtifact}</span>
-          </a>
-        </div>
-      </article>
-
-      <!-- Linux -->
-      <article class="dl-card" data-platform-card="linux">
-        <div class="dl-meta">
-          <div class="dl-title-row">
-            <div class="dl-os-icon">
-              <BrandIcon name="linux" size={20} />
+        <!-- macOS -->
+        <article class="dl-card" id="mac" data-platform-card="mac">
+          <div class="dl-card-main">
+            <div class="dl-title-row">
+              <div class="dl-os-icon">
+                <BrandIcon name="apple" size={20} />
+              </div>
+              <h2>macOS</h2>
+              <span class="os-badge">{PLATFORM_DOWNLOADS.mac.badge}</span>
+              <span class="detected-pill" data-detected-badge="mac" hidden
+                >Recommended for your device</span
+              >
             </div>
-            <h2>Linux</h2>
-            <span class="os-badge">{PLATFORM_DOWNLOADS.linux.badge}</span>
-            <span class="detected-pill" data-detected-badge="linux" hidden>For your device</span>
+            <p class="dl-req">{PLATFORM_DOWNLOADS.mac.requirements}</p>
+            <p class="dl-note">{PLATFORM_DOWNLOADS.mac.notes}</p>
           </div>
-          <p class="dl-req">{PLATFORM_DOWNLOADS.linux.requirements}</p>
-          <p class="dl-note">{PLATFORM_DOWNLOADS.linux.notes}</p>
-        </div>
 
-        <div class="dl-actions">
-          <a href={PLATFORM_DOWNLOADS.linux.primaryUrl} class="btn btn-primary">
-            <BrandIcon name="download" size={16} />
-            <span class="tabular">{PLATFORM_DOWNLOADS.linux.primaryArtifact}</span>
-          </a>
-          {
-            PLATFORM_DOWNLOADS.linux.secondaryUrl && (
-              <a href={PLATFORM_DOWNLOADS.linux.secondaryUrl} class="btn btn-secondary">
-                <span>{PLATFORM_DOWNLOADS.linux.secondaryLabel}</span>
+          <div class="dl-card-aside">
+            <p class="dl-security-inline" data-detected-hint="mac" hidden>
+              <BrandIcon name="shield" size={15} />
+              <span>{PLATFORM_DOWNLOADS.mac.securityHint}</span>
+            </p>
+            <div class="dl-actions">
+              <a href={PLATFORM_DOWNLOADS.mac.primaryUrl} class="btn btn-primary">
+                <BrandIcon name="download" size={16} />
+                <span>{PLATFORM_DOWNLOADS.mac.buttonLabel}</span>
               </a>
-            )
-          }
-        </div>
-      </article>
-
-      <!-- Android -->
-      <article class="dl-card" data-platform-card="android">
-        <div class="dl-meta">
-          <div class="dl-title-row">
-            <div class="dl-os-icon">
-              <BrandIcon name="android" size={20} />
             </div>
-            <h2>Android</h2>
-            <span class="os-badge">{PLATFORM_DOWNLOADS.android.badge}</span>
-            <span class="detected-pill" data-detected-badge="android" hidden>For your device</span>
+            <span class="dl-artifact-meta">
+              Artifact: <code class="tabular">{PLATFORM_DOWNLOADS.mac.primaryArtifact}</code>
+            </span>
           </div>
-          <p class="dl-req">{PLATFORM_DOWNLOADS.android.requirements}</p>
-          <p class="dl-note">
-            {PLATFORM_DOWNLOADS.android.notes} Google PKCE sign-in works out of the box; for
-            Microsoft Teams, add your Azure public client ID (redirect
-            <code>com.quizradar.app://oauth/microsoft</code>) in <strong>Settings → Sources</strong>.
-          </p>
-        </div>
+        </article>
 
-        <div class="dl-actions">
-          <a href={PLATFORM_DOWNLOADS.android.primaryUrl} class="btn btn-primary">
-            <BrandIcon name="download" size={16} />
-            <span class="tabular">{PLATFORM_DOWNLOADS.android.primaryArtifact}</span>
-          </a>
-        </div>
-      </article>
-
-      <!-- Web Companion -->
-      <article class="dl-card">
-        <div class="dl-meta">
-          <div class="dl-title-row">
-            <div class="dl-os-icon">
-              <BrandIcon name="globe" size={20} />
+        <!-- Linux -->
+        <article class="dl-card" id="linux" data-platform-card="linux">
+          <div class="dl-card-main">
+            <div class="dl-title-row">
+              <div class="dl-os-icon">
+                <BrandIcon name="linux" size={20} />
+              </div>
+              <h2>Linux</h2>
+              <span class="os-badge">{PLATFORM_DOWNLOADS.linux.badge}</span>
+              <span class="detected-pill" data-detected-badge="linux" hidden
+                >Recommended for your device</span
+              >
             </div>
-            <h2>Web Companion (PWA)</h2>
-            <span class="os-badge">WebAssembly + IndexedDB</span>
+            <p class="dl-req">{PLATFORM_DOWNLOADS.linux.requirements}</p>
+            <p class="dl-note">{PLATFORM_DOWNLOADS.linux.notes}</p>
           </div>
-          <p class="dl-req">Any modern desktop or mobile browser · Works offline after first load</p>
-          <p class="dl-note">
-            Runs the exact same <code>quizradar-core</code> engine compiled to WebAssembly. Uses
-            ephemeral 1-hour Google Identity tokens in memory and standard <code>.ics</code> export.
-          </p>
-        </div>
 
-        <div class="dl-actions">
-          <a href={webAppHref} class="btn btn-secondary">
-            <BrandIcon name="globe" size={16} />
-            <span>Open Web Companion</span>
-          </a>
-        </div>
-      </article>
+          <div class="dl-card-aside">
+            <p class="dl-security-inline" data-detected-hint="linux" hidden>
+              <BrandIcon name="shield" size={15} />
+              <span>{PLATFORM_DOWNLOADS.linux.securityHint}</span>
+            </p>
+            <div class="dl-actions">
+              <a href={PLATFORM_DOWNLOADS.linux.primaryUrl} class="btn btn-primary">
+                <BrandIcon name="download" size={16} />
+                <span>{PLATFORM_DOWNLOADS.linux.buttonLabel}</span>
+              </a>
+              {
+                PLATFORM_DOWNLOADS.linux.secondaryUrl && (
+                  <a href={PLATFORM_DOWNLOADS.linux.secondaryUrl} class="btn btn-secondary">
+                    <span>{PLATFORM_DOWNLOADS.linux.secondaryLabel}</span>
+                  </a>
+                )
+              }
+            </div>
+            <span class="dl-artifact-meta">
+              Artifact: <code class="tabular">{PLATFORM_DOWNLOADS.linux.primaryArtifact}</code>
+            </span>
+          </div>
+        </article>
+
+        <!-- Android (with scannable direct-APK QR code + tucked Teams setup disclosure) -->
+        <article class="dl-card dl-card-android" id="android" data-platform-card="android">
+          <div class="dl-android-body">
+            <div class="dl-card-main">
+              <div class="dl-title-row">
+                <div class="dl-os-icon">
+                  <BrandIcon name="android" size={20} />
+                </div>
+                <h2>Android</h2>
+                <span class="os-badge">{PLATFORM_DOWNLOADS.android.badge}</span>
+                <span class="detected-pill" data-detected-badge="android" hidden
+                  >Recommended for your device</span
+                >
+              </div>
+              <p class="dl-req">{PLATFORM_DOWNLOADS.android.requirements}</p>
+              <p class="dl-note">{PLATFORM_DOWNLOADS.android.notes}</p>
+              <p class="dl-security-inline" data-detected-hint="android" hidden>
+                <BrandIcon name="shield" size={15} />
+                <span>{PLATFORM_DOWNLOADS.android.securityHint}</span>
+              </p>
+
+              <details class="dl-advanced-note">
+                <summary>Microsoft Teams setup note for Android</summary>
+                <p>
+                  Google PKCE sign-in works out of the box. For Microsoft Teams, add your Azure
+                  public client ID (redirect <code>com.quizradar.app://oauth/microsoft</code>) in{" "}
+                  <strong>Settings &rarr; Sources</strong>.
+                </p>
+              </details>
+            </div>
+
+            <div class="dl-qr-box" aria-label="QR code to download the Android APK on your phone">
+              <svg
+                class="dl-qr-svg"
+                viewBox={androidApkQr.viewBox}
+                role="img"
+                aria-label={`QR code linking to ${PLATFORM_DOWNLOADS.android.primaryArtifact}`}
+                shape-rendering="crispEdges"
+              >
+                <rect width="100%" height="100%" fill="#ffffff" />
+                <path d={androidApkQr.pathD} fill="#0c1424" />
+              </svg>
+              <span class="dl-qr-label">Scan on phone</span>
+            </div>
+          </div>
+
+          <div class="dl-card-aside">
+            <div class="dl-actions">
+              <a href={PLATFORM_DOWNLOADS.android.primaryUrl} class="btn btn-primary">
+                <BrandIcon name="download" size={16} />
+                <span>{PLATFORM_DOWNLOADS.android.buttonLabel}</span>
+              </a>
+            </div>
+            <span class="dl-artifact-meta">
+              Artifact: <code class="tabular">{PLATFORM_DOWNLOADS.android.primaryArtifact}</code>
+            </span>
+          </div>
+        </article>
+
+        <!-- Web Companion (PWA — promoted automatically on iOS / iPadOS) -->
+        <article class="dl-card dl-card-pwa" id="web" data-platform-card="web">
+          <div class="dl-card-main">
+            <div class="dl-title-row">
+              <div class="dl-os-icon">
+                <BrandIcon name="globe" size={20} />
+              </div>
+              <h2>Web Companion (PWA)</h2>
+              <span class="os-badge">WebAssembly + IndexedDB</span>
+              <span class="detected-pill" data-detected-badge="web" hidden
+                >Recommended for iPhone &amp; iPad</span
+              >
+            </div>
+            <p class="dl-req">
+              Any modern desktop or mobile browser · Works offline after first load
+            </p>
+            <p class="dl-note">
+              Runs the exact same pure-Rust engine compiled to WebAssembly. Uses ephemeral 1-hour
+              Google Identity tokens in memory, offline IndexedDB storage, and standard{" "}
+              <code>.ics</code> export — ideal for trying QuizRadar immediately or using on iPhone
+              and iPad.
+            </p>
+          </div>
+
+          <div class="dl-card-aside">
+            <div class="dl-actions">
+              <a href={webAppHref} class="btn btn-secondary">
+                <BrandIcon name="globe" size={16} />
+                <span>Open Web Companion</span>
+              </a>
+            </div>
+            <span class="dl-artifact-meta">Zero install · Instant browser launch</span>
+          </div>
+        </article>
+      </div>
     </div>
   </section>
 
   <!-- First-Time Installation & OS Security Guidance -->
-  <section class="page-section install-guide-section">
+  <section class="band band-tinted">
     <div class="container">
-      <div class="guide-card">
-        <div class="guide-header">
-          <div class="guide-icon">
-            <BrandIcon name="shield" size={24} />
+      <div class="guide-head">
+        <h2 class="section-title">First-time installation &amp; OS security notes.</h2>
+        <p class="section-lead">
+          QuizRadar is 100% free, MIT-licensed, and built reproducibly by GitHub Actions CI. Because
+          releases ship directly without commercial signing certificates, your OS may display a
+          standard first-run prompt.
+        </p>
+      </div>
+
+      <div class="guide-grid">
+        <div class="guide-item">
+          <div class="guide-os-row">
+            <BrandIcon name="windows" size={17} />
+            <h3>Windows Defender SmartScreen</h3>
           </div>
-          <div class="guide-header-copy">
-            <h2>First-time installation &amp; security notes</h2>
-            <p>
-              QuizRadar is 100% free, MIT-licensed, and compiled from public source code by GitHub Actions CI.
-              Because artifacts are released directly without proprietary commercial signing certificates, your OS may show a standard first-time security prompt.
-            </p>
-          </div>
+          <p>
+            If a <em>“Windows protected your PC”</em> card appears, click{" "}
+            <strong>More info</strong> and choose <strong>Run anyway</strong>. You can verify{" "}
+            <code>QuizRadar_{APP_VERSION}_x64-setup.exe</code> against <code>SHA256SUMS.txt</code>{" "}
+            below.
+          </p>
         </div>
 
-        <div class="guide-grid">
-          <div class="guide-item">
-            <div class="guide-os-row">
-              <BrandIcon name="windows" size={17} />
-              <h3>Windows Defender SmartScreen</h3>
-            </div>
-            <p>
-              If a blue <em>“Windows protected your PC”</em> card appears: click <strong>More info</strong>, then click <strong>Run anyway</strong>. You can independently verify the hash of <code>QuizRadar_{APP_VERSION}_x64-setup.exe</code> against <code>SHA256SUMS.txt</code> below.
-            </p>
+        <div class="guide-item">
+          <div class="guide-os-row">
+            <BrandIcon name="apple" size={17} />
+            <h3>macOS Gatekeeper</h3>
           </div>
+          <p>
+            If macOS reports that Apple cannot verify the app, right-click{" "}
+            <code>QuizRadar.app</code> in Applications and select <strong>Open</strong>, or allow it
+            under <strong>System Settings &rarr; Privacy &amp; Security</strong>.
+          </p>
+        </div>
 
-          <div class="guide-item">
-            <div class="guide-os-row">
-              <BrandIcon name="apple" size={17} />
-              <h3>macOS Gatekeeper</h3>
-            </div>
-            <p>
-              If macOS displays <em>“QuizRadar cannot be opened because Apple cannot check it”</em>: right-click <code>QuizRadar.app</code> in your Applications folder and click <strong>Open</strong>, or go to <strong>System Settings → Privacy &amp; Security</strong> and select <strong>Open Anyway</strong>.
-            </p>
+        <div class="guide-item">
+          <div class="guide-os-row">
+            <BrandIcon name="android" size={17} />
+            <h3>Android APK Install</h3>
           </div>
+          <p>
+            When downloading <code>QuizRadar-v{APP_VERSION}.apk</code>, tap{" "}
+            <strong>Download anyway</strong>. Open the file and switch on{" "}
+            <strong>Allow from this source</strong> when prompted.
+          </p>
+        </div>
 
-          <div class="guide-item">
-            <div class="guide-os-row">
-              <BrandIcon name="android" size={17} />
-              <h3>Android APK Sideload</h3>
-            </div>
-            <p>
-              When downloading <code>QuizRadar-v{APP_VERSION}.apk</code>: tap <strong>Download anyway</strong>. When opening the installer, tap <strong>Settings</strong> and switch on <strong>Allow from this source</strong> to complete the install.
-            </p>
+        <div class="guide-item">
+          <div class="guide-os-row">
+            <BrandIcon name="linux" size={17} />
+            <h3>Linux AppImage &amp; Debian</h3>
           </div>
-
-          <div class="guide-item">
-            <div class="guide-os-row">
-              <BrandIcon name="linux" size={17} />
-              <h3>Linux AppImage &amp; Deb</h3>
-            </div>
-            <p>
-              Make the AppImage executable: <code>chmod +x QuizRadar_{APP_VERSION}_amd64.AppImage &amp;&amp; ./QuizRadar_{APP_VERSION}_amd64.AppImage</code>. On Debian or Ubuntu, install with <code>sudo dpkg -i QuizRadar_{APP_VERSION}_amd64.deb</code>.
-            </p>
-          </div>
+          <p>
+            Run{" "}
+            <code>
+              chmod +x QuizRadar_{APP_VERSION}_amd64.AppImage &amp;&amp; ./QuizRadar_{
+                APP_VERSION
+              }_amd64.AppImage
+            </code>
+            , or install the Debian package with{" "}
+            <code>sudo dpkg -i QuizRadar_{APP_VERSION}_amd64.deb</code>.
+          </p>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Checksum Verification -->
-  <section class="page-section">
+  <!-- SHA-256 Checksum Verification -->
+  <section class="band">
     <div class="container">
       <div class="verify-head">
-        <h2>Verify your installer checksum</h2>
-        <p>
-          Compare your downloaded artifact’s SHA-256 hash against{" "}
+        <h2 class="section-title">Verify your installer checksum.</h2>
+        <p class="section-lead">
+          Run either command in your Downloads folder and compare the printed SHA-256 hash against{" "}
           <a href={CHECKSUMS_URL} target="_blank" rel="noopener noreferrer" class="text-link"
             ><code>SHA256SUMS.txt</code></a
           >.
@@ -270,7 +379,7 @@ const verifyShSnippet = `sha256sum --ignore-missing -c SHA256SUMS.txt`;
               <span data-copy-status>Copy</span>
             </button>
           </div>
-          <pre><code>{verifyPsSnippet}</code></pre>
+          <pre><code data-cmd-code>{verifyPsSnippet}</code></pre>
         </div>
 
         <div class="cmd-card">
@@ -281,7 +390,7 @@ const verifyShSnippet = `sha256sum --ignore-missing -c SHA256SUMS.txt`;
               <span data-copy-status>Copy</span>
             </button>
           </div>
-          <pre><code>{verifyShSnippet}</code></pre>
+          <pre><code data-cmd-code>{verifyShSnippet}</code></pre>
         </div>
       </div>
     </div>
@@ -289,36 +398,48 @@ const verifyShSnippet = `sha256sum --ignore-missing -c SHA256SUMS.txt`;
 </Layout>
 
 <script>
-  import { detectClientPlatform } from "../lib/releaseData";
+  import { detectClientPlatform, isIosClient } from "../lib/releaseData";
 
-  const detected = detectClientPlatform(
-    navigator.userAgent || "",
+  const ua = navigator.userAgent || "";
+  const platform =
     (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform ||
-      navigator.platform ||
-      "",
-  );
+    navigator.platform ||
+    "";
+  const touchPoints = navigator.maxTouchPoints || 0;
+
+  const validHashes = new Set(["windows", "mac", "linux", "android", "web"]);
+  const rawHash = window.location.hash.replace(/^#/, "").toLowerCase();
+
+  const detected = validHashes.has(rawHash)
+    ? rawHash
+    : isIosClient(ua, platform, touchPoints)
+      ? "web"
+      : detectClientPlatform(ua, platform);
 
   document.querySelectorAll<HTMLElement>("[data-detected-badge]").forEach((badge) => {
     badge.hidden = badge.dataset.detectedBadge !== detected;
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-detected-hint]").forEach((hint) => {
+    hint.hidden = hint.dataset.detectedHint !== detected;
   });
 
   document.querySelectorAll<HTMLElement>("[data-platform-card]").forEach((card) => {
     card.classList.toggle("is-detected", card.dataset.platformCard === detected);
   });
 
-  // Move the visitor's platform card to the top so it is first and highlighted.
-  const stack = document.querySelector<HTMLElement>(".dl-stack");
-  const detectedCard = document.querySelector<HTMLElement>(
-    `[data-platform-card="${detected}"]`,
-  );
-  if (stack && detectedCard && detectedCard.parentElement === stack) {
-    stack.prepend(detectedCard);
+  // Promote detected platform card to top-most full-width spotlight slot
+  const grid = document.getElementById("dl-platform-grid");
+  const detectedCard = document.querySelector<HTMLElement>(`[data-platform-card="${detected}"]`);
+  if (grid && detectedCard && detectedCard.parentElement === grid) {
+    grid.prepend(detectedCard);
   }
 
   document.querySelectorAll<HTMLButtonElement>("[data-copy-cmd]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const cmd = btn.dataset.copyCmd ?? "";
       const status = btn.querySelector<HTMLElement>("[data-copy-status]");
+      const codeEl = btn.closest(".cmd-card")?.querySelector<HTMLElement>("[data-cmd-code]");
       try {
         await navigator.clipboard.writeText(cmd);
         if (status) {
@@ -328,48 +449,49 @@ const verifyShSnippet = `sha256sum --ignore-missing -c SHA256SUMS.txt`;
           }, 1800);
         }
       } catch {
-        if (status) status.textContent = "Select";
+        if (codeEl && window.getSelection) {
+          const sel = window.getSelection();
+          sel?.selectAllChildren(codeEl);
+        }
+        if (status) status.textContent = "Press Ctrl+C";
       }
     });
   });
 </script>
 
 <style>
-  .dl-hero-wrap {
-    padding-block: 22px 32px;
-  }
-
-  .dl-sky-banner {
+  /* Full-bleed Celestial Header */
+  .dl-horizon {
     position: relative;
-    border-radius: 26px;
-    overflow: hidden;
-    padding: 44px 44px;
+    margin-block-start: -60px;
+    padding-block: 112px 88px;
     color: #ffffff;
-    box-shadow: var(--shadow-lg);
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    overflow: hidden;
   }
 
-  .dl-sky-inner {
+  .dl-hero-inner {
     position: relative;
-    z-index: 1;
-    max-width: 740px;
+    z-index: 2;
+    max-width: 780px;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 14px;
+    gap: 16px;
   }
 
   .dl-title {
-    font-size: clamp(2.1rem, 4.2vw, 3.25rem);
-    font-weight: 800;
-    line-height: 1.08;
+    font-family: var(--font-display);
+    font-size: clamp(2.45rem, 4.4vw, 3.7rem);
+    font-weight: 500;
+    line-height: 1.04;
+    letter-spacing: -0.024em;
     color: #ffffff;
   }
 
   .dl-lead {
-    font-size: 1rem;
+    font-size: 1.03rem;
     line-height: 1.62;
-    color: rgba(241, 245, 249, 0.92);
+    color: rgba(235, 241, 252, 0.92);
     text-wrap: pretty;
   }
 
@@ -377,17 +499,43 @@ const verifyShSnippet = `sha256sum --ignore-missing -c SHA256SUMS.txt`;
     color: #fde68a;
     font-weight: 600;
     text-decoration: underline;
-    text-underline-offset: 3px;
   }
 
-  .dl-cards-section {
-    padding-block: 8px 64px;
-  }
-
-  .dl-stack {
+  .dl-ver-row {
     display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
+    align-items: center;
     gap: 14px;
+    margin-block-start: 2px;
+  }
+
+  .dl-ver-pill {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background-color: #fbbf24;
+    color: #090d16;
+  }
+
+  .dl-changelog-link {
+    font-size: 0.85rem;
+    font-weight: 560;
+    color: rgba(235, 241, 252, 0.94);
+    text-decoration: underline;
+    text-decoration-color: rgba(255, 255, 255, 0.42);
+  }
+
+  /* Platform Grid (Featured Detected Card spans full width in balanced 2-column layout) */
+  .dl-platforms-section {
+    padding-block: 36px 80px;
+  }
+
+  .dl-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
   }
 
   .dl-card {
@@ -395,31 +543,37 @@ const verifyShSnippet = `sha256sum --ignore-missing -c SHA256SUMS.txt`;
     border: 1px solid var(--surface-border);
     border-radius: var(--radius-lg);
     padding: 24px 26px;
-    box-shadow: var(--shadow-sm);
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
+    flex-direction: column;
     justify-content: space-between;
-    gap: 20px 32px;
+    gap: 20px;
+    scroll-margin-block-start: 92px;
   }
 
   .dl-card.is-detected {
-    border-color: var(--accent-fill);
-    box-shadow:
-      0 0 0 2px var(--accent-soft),
-      var(--shadow-md);
+    grid-column: 1 / -1;
+    background-color: var(--surface-elevated);
+    border: 1.5px solid var(--accent-fill);
   }
 
-  .dl-card.is-detected .detected-pill {
-    background-color: var(--accent-fill);
-    color: #ffffff;
+  .dl-card.is-detected:not(.dl-card-android) {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+    gap: 24px 36px;
+    align-items: center;
   }
 
-  .dl-meta {
-    max-width: 640px;
+  .dl-card-main {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
+  }
+
+  .dl-card-aside {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
   }
 
   .dl-title-row {
@@ -437,47 +591,124 @@ const verifyShSnippet = `sha256sum --ignore-missing -c SHA256SUMS.txt`;
   }
 
   .dl-title-row h2 {
-    font-size: 1.22rem;
-    font-weight: 720;
+    font-family: var(--font-sans);
+    font-size: 1.2rem;
+    font-weight: 700;
     color: var(--text);
   }
 
   .os-badge {
-    font-size: 0.72rem;
+    font-family: var(--font-sans);
+    font-size: 0.74rem;
     font-weight: 600;
-    padding: 2px 8px;
+    padding: 3px 10px;
     border-radius: 999px;
-    background-color: var(--surface-elevated);
+    background-color: var(--page-subtle);
     border: 1px solid var(--surface-border);
     color: var(--text-muted);
   }
 
   .detected-pill {
-    font-size: 0.72rem;
+    font-size: 0.74rem;
     font-weight: 700;
-    padding: 2px 9px;
+    padding: 3px 10px;
     border-radius: 999px;
-    background-color: var(--accent-soft);
-    color: var(--accent-ink);
+    background-color: var(--amber-pill);
+    color: var(--amber-ink);
   }
 
   .dl-req {
-    font-size: 0.78rem;
+    font-family: var(--font-sans);
+    font-size: 0.8rem;
+    font-weight: 560;
     color: var(--text-secondary);
   }
 
   .dl-note {
-    font-size: 0.875rem;
-    line-height: 1.56;
+    font-size: 0.88rem;
+    line-height: 1.6;
     color: var(--text-muted);
+    max-width: 68ch;
   }
 
-  .dl-note code {
-    font-size: 0.79rem;
+  .dl-note code,
+  .dl-advanced-note code {
+    font-size: 0.78rem;
     padding: 1px 5px;
     border-radius: 4px;
     background-color: var(--accent-soft);
     color: var(--accent-ink);
+    overflow-wrap: anywhere;
+  }
+
+  .dl-security-inline {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 11px 14px;
+    border-radius: 10px;
+    background-color: var(--surface);
+    border: 1px solid var(--surface-border);
+    font-size: 0.82rem;
+    line-height: 1.52;
+    color: var(--text-secondary);
+  }
+
+  .dl-security-inline :global(svg) {
+    color: var(--accent-ink);
+    margin-block-start: 2px;
+  }
+
+  .dl-android-body {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+  }
+
+  .dl-qr-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    padding: 8px;
+    border-radius: 12px;
+    background-color: #ffffff;
+    border: 1px solid var(--surface-border);
+  }
+
+  .dl-qr-svg {
+    width: 96px;
+    height: 96px;
+    display: block;
+    border-radius: 4px;
+  }
+
+  .dl-qr-label {
+    font-family: var(--font-sans);
+    font-size: 0.7rem;
+    font-weight: 650;
+    color: #0c1424;
+  }
+
+  .dl-advanced-note {
+    margin-block-start: 4px;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+  }
+
+  .dl-advanced-note summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--accent-ink);
+    width: fit-content;
+    padding-block: 4px;
+  }
+
+  .dl-advanced-note p {
+    margin-block-start: 6px;
+    line-height: 1.56;
   }
 
   .dl-actions {
@@ -487,70 +718,36 @@ const verifyShSnippet = `sha256sum --ignore-missing -c SHA256SUMS.txt`;
     gap: 10px;
   }
 
-  /* First-Time Installation & OS Security Guidance */
-  .install-guide-section {
-    padding-block: 28px 48px;
-  }
-
-  .guide-card {
-    background-color: var(--surface);
-    border: 1px solid var(--surface-border);
-    border-radius: var(--radius-xl);
-    padding: 32px 34px;
-    box-shadow: var(--shadow-md);
-    display: flex;
-    flex-direction: column;
-    gap: 26px;
-  }
-
-  .guide-header {
-    display: flex;
-    align-items: flex-start;
-    gap: 16px;
-  }
-
-  .guide-icon {
-    width: 44px;
-    height: 44px;
-    border-radius: 12px;
-    background-color: var(--accent-soft);
-    color: var(--accent-ink);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .guide-header-copy {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .guide-header-copy h2 {
-    font-size: 1.35rem;
-    font-weight: 750;
-    color: var(--text);
-  }
-
-  .guide-header-copy p {
-    font-size: 0.92rem;
-    line-height: 1.58;
+  .dl-artifact-meta {
+    font-size: 0.76rem;
     color: var(--text-muted);
-    max-width: 72ch;
+  }
+
+  .dl-artifact-meta code {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--text-secondary);
+  }
+
+  /* Security Guide Band */
+  .guide-head,
+  .verify-head {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    margin-block-end: 32px;
   }
 
   .guide-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px 24px;
+    gap: 24px 36px;
   }
 
   .guide-item {
-    background-color: var(--page);
-    border: 1px solid var(--surface-border);
-    border-radius: var(--radius-md);
-    padding: 18px 20px;
+    padding-block-start: 18px;
+    border-block-start: 1px solid var(--surface-border);
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -559,18 +756,18 @@ const verifyShSnippet = `sha256sum --ignore-missing -c SHA256SUMS.txt`;
   .guide-os-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 9px;
     color: var(--text);
   }
 
   .guide-os-row h3 {
     font-size: 0.98rem;
-    font-weight: 700;
+    font-weight: 660;
   }
 
   .guide-item p {
-    font-size: 0.85rem;
-    line-height: 1.55;
+    font-size: 0.87rem;
+    line-height: 1.6;
     color: var(--text-muted);
   }
 
@@ -580,51 +777,26 @@ const verifyShSnippet = `sha256sum --ignore-missing -c SHA256SUMS.txt`;
     border-radius: 4px;
     background-color: var(--accent-soft);
     color: var(--accent-ink);
-    word-break: break-word;
     overflow-wrap: anywhere;
-  }
-
-  .dl-note code {
-    word-break: break-word;
-    overflow-wrap: anywhere;
-  }
-
-  .verify-head {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-block-end: 20px;
-  }
-
-  .verify-head h2 {
-    font-size: 1.35rem;
-    font-weight: 720;
-    color: var(--text);
-  }
-
-  .verify-head p {
-    font-size: 0.92rem;
-    color: var(--text-muted);
   }
 
   .text-link {
     color: var(--accent-ink);
     text-decoration: underline;
-    text-underline-offset: 3px;
   }
 
+  /* Checksums */
   .verify-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
+    gap: 18px;
   }
 
   .cmd-card {
     background-color: var(--surface);
     border: 1px solid var(--surface-border);
-    border-radius: 14px;
+    border-radius: var(--radius-md);
     overflow: hidden;
-    box-shadow: var(--shadow-sm);
   }
 
   .cmd-head {
@@ -634,9 +806,9 @@ const verifyShSnippet = `sha256sum --ignore-missing -c SHA256SUMS.txt`;
     padding: 9px 14px;
     background-color: var(--surface-elevated);
     border-block-end: 1px solid var(--surface-border);
-    font-family: var(--font-mono);
-    font-size: 0.73rem;
-    font-weight: 600;
+    font-family: var(--font-sans);
+    font-size: 0.78rem;
+    font-weight: 620;
     color: var(--text-muted);
   }
 
@@ -644,14 +816,15 @@ const verifyShSnippet = `sha256sum --ignore-missing -c SHA256SUMS.txt`;
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    padding: 4px 9px;
+    min-height: 34px;
+    padding: 5px 11px;
     border-radius: 7px;
     border: 1px solid var(--surface-border);
     background-color: var(--surface);
     color: var(--text-secondary);
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     font-weight: 600;
-    transition-property: transform, color, border-color, background-color;
+    transition-property: transform, color, border-color;
     transition-duration: 140ms;
     transition-timing-function: var(--ease-snappy);
   }
@@ -661,39 +834,39 @@ const verifyShSnippet = `sha256sum --ignore-missing -c SHA256SUMS.txt`;
   }
 
   .cmd-card pre {
-    padding: 14px;
-    font-size: 0.78rem;
+    padding: 16px;
+    font-size: 0.8rem;
     color: var(--text);
     overflow-x: auto;
   }
 
   @media (hover: hover) {
+    .dl-changelog-link:hover {
+      text-decoration-color: #ffffff;
+    }
+
     .copy-btn:hover {
       border-color: var(--border-strong);
       color: var(--text);
     }
   }
 
-  @media (max-width: 820px) {
-    .dl-sky-banner {
-      padding: 32px 22px;
-      border-radius: 20px;
-    }
-
-    .verify-grid,
-    .guide-grid {
+  @media (max-width: 900px) {
+    .dl-grid,
+    .dl-card.is-detected:not(.dl-card-android),
+    .guide-grid,
+    .verify-grid {
       grid-template-columns: minmax(0, 1fr);
     }
 
-    .guide-card {
-      padding: 24px 18px;
+    .dl-android-body {
+      flex-direction: column;
     }
   }
 
   @media (max-width: 560px) {
-    .guide-header {
-      flex-direction: column;
-      gap: 12px;
+    .dl-horizon {
+      padding-block: 92px 64px;
     }
 
     .dl-card {

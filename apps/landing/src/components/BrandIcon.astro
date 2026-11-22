@@ -6,8 +6,10 @@ interface Props {
     | "teams"
     | "moodle"
     | "classroom"
+    | "canvas"
     | "gcal"
     | "drive"
+    | "wifi"
     | "windows"
     | "apple"
     | "linux"
@@ -15,28 +17,38 @@ interface Props {
     | "github"
     | "check"
     | "arrow-up-right"
+    | "arrow-right"
     | "download"
     | "globe"
     | "shield"
+    | "lock"
     | "cpu"
     | "calendar"
     | "sparkles"
     | "copy"
     | "sun"
     | "moon"
+    | "eclipse"
     | "zap"
     | "chevron-down"
     | "menu"
-    | "x";
+    | "x"
+    | "clock"
+    | "layers"
+    | "sliders"
+    | "printer"
+    | "keyboard"
+    | "qr";
   size?: number;
   animated?: boolean;
+  uid?: string;
   class?: string;
 }
 
-const { name, size = 20, animated = false, class: className = "" } = Astro.props;
-const uid = Math.random().toString(36).slice(2, 8);
-const bgId = `qrBrandBg-${uid}`;
-const sweepId = `qrBrandSweep-${uid}`;
+const { name, size = 20, animated = false, uid = "mark", class: className = "" } = Astro.props;
+const safeUid = `${uid}-${size}-${animated ? "anim" : "static"}`.replace(/[^a-zA-Z0-9_-]/g, "");
+const bgId = `qrBrandBg-${safeUid}`;
+const sweepId = `qrBrandSweep-${safeUid}`;
 ---
 
 {
@@ -192,6 +204,22 @@ const sweepId = `qrBrandSweep-${uid}`;
 }
 
 {
+  name === "canvas" && (
+    <svg class={className} width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="5" r="2.2" fill="#E13F2B" />
+      <circle cx="12" cy="19" r="2.2" fill="#E13F2B" />
+      <circle cx="5" cy="12" r="2.2" fill="#E13F2B" />
+      <circle cx="19" cy="12" r="2.2" fill="#E13F2B" />
+      <circle cx="7.1" cy="7.1" r="1.7" fill="#E13F2B" fill-opacity="0.72" />
+      <circle cx="16.9" cy="7.1" r="1.7" fill="#E13F2B" fill-opacity="0.72" />
+      <circle cx="7.1" cy="16.9" r="1.7" fill="#E13F2B" fill-opacity="0.72" />
+      <circle cx="16.9" cy="16.9" r="1.7" fill="#E13F2B" fill-opacity="0.72" />
+      <circle cx="12" cy="12" r="2.4" stroke="#E13F2B" stroke-width="1.6" />
+    </svg>
+  )
+}
+
+{
   name === "gcal" && (
     <svg class={className} width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <rect x="3" y="4" width="18" height="17" rx="3" fill="#1A73E8" />
@@ -210,6 +238,28 @@ const sweepId = `qrBrandSweep-${uid}`;
       <path d="M9.2 4h5.6l6.2 10.8-2.8 4.8H15L9.2 4Z" fill="#FBBC04" />
       <path d="M9.2 4 3 14.8l2.8 4.8L12 8.8 9.2 4Z" fill="#0F9D58" />
       <path d="M5.8 19.6h12.4l2.8-4.8H8.6l-2.8 4.8Z" fill="#4285F4" />
+    </svg>
+  )
+}
+
+{
+  name === "wifi" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.9"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 12.6a10 10 0 0 1 14 0" />
+      <path d="M8.5 16.1a5 5 0 0 1 7 0" />
+      <path d="M2 8.8a15 15 0 0 1 20 0" />
+      <circle cx="12" cy="19.5" r="1" fill="currentColor" stroke="none" />
     </svg>
   )
 }
@@ -305,6 +355,25 @@ const sweepId = `qrBrandSweep-${uid}`;
 }
 
 {
+  name === "arrow-right" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 12h14m-6-6 6 6-6 6" />
+    </svg>
+  )
+}
+
+{
   name === "download" && (
     <svg
       class={className}
@@ -359,6 +428,26 @@ const sweepId = `qrBrandSweep-${uid}`;
     >
       <path d="M12 3 4.5 6.2v5.4c0 5 3.2 8.2 7.5 9.9 4.3-1.7 7.5-4.9 7.5-9.9V6.2L12 3Z" />
       <path d="m9 12 2 2 4-4" />
+    </svg>
+  )
+}
+
+{
+  name === "lock" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.8"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="4" y="11" width="16" height="10" rx="2.5" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
     </svg>
   )
 }
@@ -484,15 +573,28 @@ const sweepId = `qrBrandSweep-${uid}`;
 }
 
 {
-  name === "zap" && (
+  name === "eclipse" && (
     <svg
       class={className}
       width={size}
       height={size}
       viewBox="0 0 24 24"
-      fill="currentColor"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.85"
+      stroke-linecap="round"
+      stroke-linejoin="round"
       aria-hidden="true"
     >
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 3.5a8.5 8.5 0 0 0 0 17 5.5 5.5 0 0 1 0-17Z" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+{
+  name === "zap" && (
+    <svg class={className} width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
       <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" />
     </svg>
   )
@@ -554,6 +656,129 @@ const sweepId = `qrBrandSweep-${uid}`;
     >
       <line x1="18" y1="6" x2="6" y2="18" />
       <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  )
+}
+
+{
+  name === "clock" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.8"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3.5 2" />
+    </svg>
+  )
+}
+
+{
+  name === "layers" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.8"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m12 3 9 4.5-9 4.5-9-4.5L12 3Z" />
+      <path d="m3 12 9 4.5 9-4.5" />
+      <path d="m3 16.5 9 4.5 9-4.5" />
+    </svg>
+  )
+}
+
+{
+  name === "sliders" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.8"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4" />
+    </svg>
+  )
+}
+
+{
+  name === "printer" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.8"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 9V3h12v6" />
+      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+      <rect x="6" y="14" width="12" height="7" rx="1" />
+    </svg>
+  )
+}
+
+{
+  name === "keyboard" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.8"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="2" y="5" width="20" height="14" rx="2.5" />
+      <path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M10 13h.01M14 13h.01M18 13h.01M8 16h8" />
+    </svg>
+  )
+}
+
+{
+  name === "qr" && (
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.8"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 21h1M21 14v1" />
     </svg>
   )
 }

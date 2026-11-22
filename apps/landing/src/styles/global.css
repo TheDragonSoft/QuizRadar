@@ -1,40 +1,50 @@
 /*
- * QuizRadar Marketing Design System
+ * QuizRadar Marketing Design System — Academic Editorial Observatory
  *
- * Directly shares the v4/v5 QuizRadar visual language (`apps/web/src/tokens.css`
- * & `apps/web/src/index.css`): Day Sky (royal blue + breathing golden sun) and
- * Night Sky (deep slate-indigo + dual twinkling starfields + diagonal sheen),
- * animated calendar-radar mark, tactile keycaps, and layered neutral shadows.
+ * Mirrors the 3-theme Student Observatory palette (`apps/web/src/tokens.css`):
+ *   1. Obsidian Cosmic (`obsidian`, default dark)
+ *   2. Solar Dawn (`solar`, daylight paper)
+ *   3. AMOLED Cosmic Stardust (`amoled-nebula`, pure OLED black + gutter starfield)
+ *
+ * Typography (100% self-hosted via @fontsource-variable, zero external CDNs):
+ *   - Display serif: Newsreader Variable (editorial authority for h1/h2)
+ *   - Interface & body: Inter Variable (matches desktop/web app UI)
+ *   - Data & code: JetBrains Mono Variable (times, course codes, checksums only)
  */
 
-:root {
-  /* Day Mode palette — exact match with `apps/web/src/tokens.css` `:root` */
-  --page: #f8fafc;
-  --page-subtle: #f1f5f9;
+:root,
+html[data-theme="solar"] {
+  --page: #f5f7fb;
+  --page-subtle: #ebf0f8;
   --surface: #ffffff;
-  --surface-elevated: #ffffff;
-  --surface-border: #e2e8f0;
-  --border-strong: #cbd5e1;
-  --surface-hover: #f1f5f9;
+  --surface-elevated: #f8fafd;
+  --surface-border: #dce3ef;
+  --border-strong: #bfcbe0;
+  --surface-hover: #edf2fa;
 
-  --text: #0f172a;
-  --text-secondary: #334155;
-  --text-muted: #475569;
+  --text: #0c1424;
+  --text-secondary: #2d3b54;
+  --text-muted: #4a5a75;
 
   --accent: #1a73e8;
   --accent-hover: #1557b0;
   --accent-fill: #1a73e8;
   --accent-fill-hover: #1557b0;
-  --accent-ink: #1557b0;
+  --accent-ink: #1456b3;
   --accent-soft: rgba(26, 115, 232, 0.1);
 
-  /* Signature QuizRadar countdown & semantic tokens */
+  /* Signature semantic signals */
   --amber-pill: #fbbf24;
-  --amber-ink: #0f172a;
-  --status-ok: #0f9d58;
+  --amber-ink: #0c1424;
+  --amber-text: #b45309;
+  --amber-soft: rgba(245, 158, 11, 0.14);
+  --status-ok: #086836;
+  --status-ok-soft: rgba(8, 104, 54, 0.1);
   --status-warn: #b45309;
-  --exam-red: #dc2626;
-  --exam-glow: 0 3px 12px rgba(220, 38, 38, 0.18);
+  --exam-red: #c81e1e;
+  --exam-red-soft: rgba(200, 30, 30, 0.1);
+  --exam-glow: 0 3px 12px rgba(220, 38, 38, 0.16);
+  --focus-ring: #1a73e8;
 
   /* Authentic 8-course palette (`apps/web/src/tokens.css`) */
   --course-1: #1a73e8;
@@ -46,37 +56,28 @@
   --course-7: #e67c73;
   --course-8: #3949ab;
 
-  /* Nav glass */
-  --nav-bg: rgba(248, 250, 252, 0.82);
+  /* Translucent observatory nav */
+  --nav-bg: rgba(245, 247, 251, 0.84);
+  --nav-bg-over-sky: rgba(23, 48, 115, 0.34);
 
-  /* Layered neutral shadows (`beautiful-shadows`) */
-  --shadow-sm:
-    0px 2px 3px -1px rgba(15, 23, 42, 0.08), 0px 1px 0px 0px rgba(15, 23, 42, 0.02),
-    0px 0px 0px 1px rgba(15, 23, 42, 0.06);
-  --shadow-md:
-    0px 0px 0px 1px rgba(15, 23, 42, 0.06), 0px 1px 2px -0.5px rgba(15, 23, 42, 0.06),
-    0px 6px 12px -4px rgba(15, 23, 42, 0.07), 0px 18px 28px -12px rgba(15, 23, 42, 0.09);
-  --shadow-lg:
-    0 2.8px 2.2px rgba(15, 23, 42, 0.03), 0 6.7px 5.3px rgba(15, 23, 42, 0.045),
-    0 12.5px 10px rgba(15, 23, 42, 0.055), 0 22.3px 17.9px rgba(15, 23, 42, 0.07),
-    0 41.8px 33.4px rgba(15, 23, 42, 0.09);
+  /* Crisp directional shadows (never zero-offset colored halos) */
+  --shadow-sm: 0 1px 2px rgba(12, 20, 36, 0.05), 0 4px 10px -4px rgba(12, 20, 36, 0.06);
+  --shadow-md: 0 2px 4px rgba(12, 20, 36, 0.04), 0 14px 32px -12px rgba(12, 20, 36, 0.12);
+  --shadow-lg: 0 6px 14px -4px rgba(12, 20, 36, 0.08), 0 28px 56px -18px rgba(12, 20, 36, 0.16);
 
-  /* Border-gradient stops (`css-border-gradient`) */
-  --grad-border-a: rgba(26, 115, 232, 0.32);
-  --grad-border-b: rgba(142, 36, 170, 0.2);
-  --grad-border-c: rgba(15, 23, 42, 0.08);
-
-  /* Typography & Radii */
+  /* Typography */
+  --font-display: "Newsreader Variable", Georgia, "Times New Roman", serif;
   --font-sans:
     "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "Cascadia Code", Menlo, Consolas, monospace;
+  --font-mono:
+    "JetBrains Mono Variable", ui-monospace, SFMono-Regular, "Cascadia Code", Menlo, Consolas,
+    monospace;
 
   --radius-sm: 10px;
   --radius-md: 14px;
-  --radius-lg: 18px;
-  --radius-xl: 24px;
+  --radius-lg: 16px;
 
-  /* Motion curves (`apps/web/src/tokens.css` + `animation-systems`) */
+  /* Motion curves */
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-out-quart: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-snappy: cubic-bezier(0.2, 0, 0, 1);
@@ -84,54 +85,97 @@
   color-scheme: light;
 }
 
-html.dark {
-  /* Night Mode palette — exact match with `apps/web/src/tokens.css` `.dark` */
-  --page: #0b0f19;
-  --page-subtle: #0e1424;
-  --surface: #111827;
-  --surface-elevated: #162033;
-  --surface-border: #1e293b;
-  --border-strong: #334155;
-  --surface-hover: #1e293b;
+/* 1. Obsidian Cosmic (Default Dark) */
+html.dark,
+html[data-theme="obsidian"] {
+  --page: #070a12;
+  --page-subtle: #0b101d;
+  --surface: #0e1526;
+  --surface-elevated: #131c31;
+  --surface-border: #1a243a;
+  --border-strong: #273654;
+  --surface-hover: #17223b;
 
-  --text: #f8fafc;
-  --text-secondary: #cbd5e1;
-  --text-muted: #94a3b8;
+  --text: #f4f6fb;
+  --text-secondary: #c5d0e6;
+  --text-muted: #8b9bb8;
 
   --accent: #3b82f6;
   --accent-hover: #60a5fa;
   --accent-fill: #2563eb;
   --accent-fill-hover: #1d4ed8;
-  --accent-ink: #60a5fa;
-  --accent-soft: rgba(59, 130, 246, 0.15);
+  --accent-ink: #7bb3ff;
+  --accent-soft: rgba(59, 130, 246, 0.16);
 
+  --amber-text: #fbbf24;
+  --amber-soft: rgba(251, 191, 36, 0.16);
   --status-ok: #34d399;
+  --status-ok-soft: rgba(52, 211, 153, 0.12);
   --status-warn: #fbbf24;
   --exam-red: #f87171;
-  --exam-glow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --exam-red-soft: rgba(248, 113, 113, 0.14);
+  --exam-glow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --focus-ring: #60a5fa;
 
-  --nav-bg: rgba(11, 15, 25, 0.8);
+  --nav-bg: rgba(7, 10, 18, 0.88);
+  --nav-bg-over-sky: rgba(7, 10, 18, 0.42);
 
-  --shadow-sm: 0px 2px 4px -1px rgba(0, 0, 0, 0.4), 0px 0px 0px 1px rgba(255, 255, 255, 0.06);
-  --shadow-md:
-    0px 0px 0px 1px rgba(255, 255, 255, 0.07), 0px 6px 16px -4px rgba(0, 0, 0, 0.45),
-    0px 20px 34px -14px rgba(0, 0, 0, 0.6);
-  --shadow-lg:
-    0 0 0 1px rgba(148, 163, 184, 0.14), 0 12px 24px -6px rgba(0, 0, 0, 0.52),
-    0 32px 64px -16px rgba(2, 6, 23, 0.78);
-
-  --grad-border-a: rgba(96, 165, 250, 0.42);
-  --grad-border-b: rgba(129, 140, 248, 0.28);
-  --grad-border-c: rgba(255, 255, 255, 0.08);
+  --shadow-sm: 0 2px 6px -2px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 10px 26px -10px rgba(0, 0, 0, 0.58);
+  --shadow-lg: 0 24px 56px -16px rgba(2, 6, 23, 0.82);
 
   color-scheme: dark;
+}
+
+/* 2. AMOLED Cosmic Stardust (Pure OLED Black) */
+html[data-theme="amoled-nebula"] {
+  --page: #000000;
+  --page-subtle: #090d16;
+  --surface: #0b0e17;
+  --surface-elevated: #121724;
+  --surface-border: #1e2638;
+  --border-strong: #2f3b56;
+  --surface-hover: #171d2e;
+
+  --text: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+
+  --nav-bg: rgba(0, 0, 0, 0.9);
+  --nav-bg-over-sky: rgba(0, 0, 0, 0.52);
+
+  color-scheme: dark;
+}
+
+/* Subtle gutter starfield in AMOLED mode behind opaque content */
+html[data-theme="amoled-nebula"] body {
+  position: relative;
+  isolation: isolate;
+}
+
+html[data-theme="amoled-nebula"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0.24;
+  background-image:
+    radial-gradient(1.5px 1.5px at 50px 70px, #ffffff, transparent),
+    radial-gradient(2px 2px at 190px 250px, #fef08a, transparent),
+    radial-gradient(1.5px 1.5px at 330px 125px, #ffffff, transparent),
+    radial-gradient(2px 2px at 510px 360px, #ffffff, transparent),
+    radial-gradient(1.5px 1.5px at 660px 175px, #ffffff, transparent),
+    radial-gradient(2px 2px at 830px 300px, #fef08a, transparent),
+    radial-gradient(1.5px 1.5px at 980px 105px, #ffffff, transparent);
+  background-size: 520px 420px;
 }
 
 @media (color-gamut: p3) {
   html.dark {
     --accent-fill: oklch(0.55 0.21 262);
     --accent-fill-hover: oklch(0.5 0.21 262);
-    --accent-ink: oklch(0.74 0.15 254);
+    --accent-ink: oklch(0.76 0.14 252);
   }
 }
 
@@ -148,10 +192,12 @@ html {
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 16px;
-  line-height: 1.55;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  scroll-padding-block-start: 80px;
+  scroll-padding-block-start: 78px;
+  scrollbar-color: var(--border-strong) var(--page);
+  scrollbar-width: thin;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -163,25 +209,52 @@ html {
 body {
   background-color: var(--page);
   color: var(--text);
+  caret-color: var(--accent);
   min-height: 100dvh;
   overflow-x: clip;
   display: flex;
   flex-direction: column;
 }
 
+/* Themed browser surfaces */
 ::selection {
-  background-color: rgba(26, 115, 232, 0.18);
-  color: #1557b0;
+  background-color: rgba(26, 115, 232, 0.2);
+  color: #0c1424;
 }
 
 html.dark ::selection {
-  background-color: rgba(59, 130, 246, 0.3);
-  color: #dbeafe;
+  background-color: rgba(251, 191, 36, 0.28);
+  color: #fef3c7;
+}
+
+.hero-horizon ::selection,
+.finale-horizon ::selection,
+.dl-horizon ::selection,
+.glance-widget ::selection,
+.nav.nav-over-sky:not(.is-scrolled) ::selection {
+  background-color: rgba(251, 191, 36, 0.36);
+  color: #ffffff;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background-color: var(--page);
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--border-strong);
+  border-radius: 999px;
+  border: 2px solid var(--page);
 }
 
 a {
   color: inherit;
   text-decoration: none;
+  text-underline-offset: 3px;
 }
 
 button {
@@ -205,11 +278,18 @@ pre {
   font-family: var(--font-mono);
 }
 
-/* Accessible keyboard focus ring (WCAG 2.2 AA) */
+/* Accessible keyboard focus ring (WCAG 2.2 AA — preserves element border-radius) */
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring, var(--accent));
   outline-offset: 2px;
-  border-radius: 6px;
+}
+
+.hero-horizon,
+.finale-horizon,
+.dl-horizon,
+.glance-widget,
+.nav.nav-over-sky:not(.is-scrolled) {
+  --focus-ring: #fbbf24;
 }
 
 /* Skip link */
@@ -239,7 +319,6 @@ pre {
   transform: translateY(0);
 }
 
-/* Screen-reader only */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -252,10 +331,14 @@ pre {
   border: 0;
 }
 
-/* Container */
+[hidden] {
+  display: none !important;
+}
+
+/* Layout container */
 .container {
   width: 100%;
-  max-width: 1220px;
+  max-width: 1240px;
   margin-inline: auto;
   padding-inline: 28px;
 }
@@ -266,13 +349,19 @@ pre {
   }
 }
 
-/* Typography system (`better-typography`) */
+/* Academic Editorial Typography */
 h1,
-h2,
+h2 {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  text-wrap: balance;
+}
+
 h3,
 h4 {
+  font-family: var(--font-sans);
   text-wrap: balance;
-  letter-spacing: -0.024em;
+  letter-spacing: -0.02em;
 }
 
 .tabular {
@@ -280,54 +369,56 @@ h4 {
 }
 
 .section-title {
-  font-size: clamp(1.85rem, 3.5vw, 2.75rem);
-  font-weight: 700;
-  line-height: 1.12;
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 3.4vw, 2.95rem);
+  font-weight: 500;
+  line-height: 1.08;
+  letter-spacing: -0.022em;
   color: var(--text);
 }
 
 .section-lead {
-  font-size: clamp(1rem, 1.25vw, 1.125rem);
-  line-height: 1.62;
+  font-size: clamp(0.98rem, 1.2vw, 1.08rem);
+  line-height: 1.65;
   color: var(--text-muted);
   max-width: 62ch;
   text-wrap: pretty;
 }
 
-/* Signature Amber Countdown Pill (`DashboardView.tsx` NextUpHero) */
+/* Signature Amber Countdown Signal Pill */
 .amber-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 12px;
+  padding: 4px 11px;
   border-radius: 999px;
   background-color: var(--amber-pill);
   color: var(--amber-ink);
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-weight: 700;
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
-  box-shadow: 0 2px 10px rgba(251, 191, 36, 0.28);
 }
 
-/* Tactile physical keycap (`apps/web/src/index.css`) */
+/* Tactile physical keycap */
 .keycap {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 1.5rem;
-  padding: 0.125rem 0.42rem;
+  min-width: 1.6rem;
+  padding: 0.14rem 0.44rem;
   font-family: var(--font-mono);
-  font-size: 0.8125rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  line-height: 1.1rem;
+  line-height: 1.15rem;
   color: var(--text);
   background-color: var(--surface);
   border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
   border-radius: 6px;
 }
 
-/* Buttons — verb-first, exact 0.96 press scale (`better-ui`) */
+/* Buttons — verb-first, exact 0.96 tactile press scale */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -335,14 +426,14 @@ h4 {
   gap: 8px;
   min-height: 40px;
   padding: 9px 18px;
-  border-radius: 12px;
+  border-radius: 11px;
   border: 1px solid transparent;
   font-size: 0.875rem;
   font-weight: 600;
   line-height: 1.2;
   white-space: nowrap;
   transition-property: transform, background-color, border-color, color, box-shadow;
-  transition-duration: 160ms;
+  transition-duration: 150ms;
   transition-timing-function: var(--ease-snappy);
 }
 
@@ -350,41 +441,43 @@ h4 {
   transform: scale(0.96);
 }
 
+.btn-sm {
+  min-height: 36px;
+  padding: 7px 14px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+}
+
 .btn-lg {
   min-height: 48px;
   padding: 12px 22px;
-  border-radius: 14px;
+  border-radius: 12px;
   font-size: 0.9375rem;
-  font-weight: 700;
+  font-weight: 650;
 }
 
 .btn-primary {
   background-color: var(--accent-fill);
   color: #ffffff;
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.18) inset,
-    var(--shadow-sm);
+  box-shadow: var(--shadow-sm);
 }
 
 .btn-secondary {
   background-color: var(--surface);
   border-color: var(--border-strong);
   color: var(--text);
-  box-shadow: var(--shadow-sm);
 }
 
-/* Buttons sitting on the dark/royal Celestial Sky banner (matches NextUpHero) */
+/* Buttons on the Celestial Sky canopy */
 .btn-sky-primary {
   background-color: #ffffff;
-  color: #1557b0;
-  box-shadow:
-    0 2px 6px rgba(2, 6, 23, 0.2),
-    0 12px 28px -8px rgba(2, 6, 23, 0.35);
+  color: #0e2458;
+  box-shadow: 0 8px 24px -8px rgba(2, 6, 23, 0.45);
 }
 
 .btn-sky-secondary {
-  background-color: rgba(2, 6, 23, 0.38);
-  border-color: rgba(255, 255, 255, 0.24);
+  background-color: rgba(7, 10, 18, 0.34);
+  border-color: rgba(255, 255, 255, 0.28);
   color: #ffffff;
 }
 
@@ -398,17 +491,18 @@ h4 {
   }
 
   .btn-sky-primary:hover {
-    background-color: #eff6ff;
+    background-color: #edf4ff;
   }
 
   .btn-sky-secondary:hover {
-    background-color: rgba(2, 6, 23, 0.54);
-    border-color: rgba(255, 255, 255, 0.4);
+    background-color: rgba(7, 10, 18, 0.54);
+    border-color: rgba(255, 255, 255, 0.48);
   }
 }
 
-/* Dual-theme real product screenshots */
-.theme-shot-dark {
+/* 3-Theme real product screenshots (Obsidian / Solar / AMOLED) */
+.theme-shot-dark,
+.theme-shot-amoled {
   display: none;
 }
 
@@ -416,36 +510,37 @@ h4 {
   display: block;
 }
 
-html.dark .theme-shot-dark {
+html[data-theme="obsidian"] .theme-shot-dark,
+html.dark:not([data-theme="amoled-nebula"]) .theme-shot-dark {
   display: block;
 }
 
+html[data-theme="obsidian"] .theme-shot-light,
 html.dark .theme-shot-light {
   display: none;
 }
 
+html[data-theme="amoled-nebula"] .theme-shot-amoled {
+  display: block;
+}
+
+html[data-theme="amoled-nebula"] .theme-shot-dark,
+html[data-theme="amoled-nebula"] .theme-shot-light {
+  display: none;
+}
+
 .screenshot-outline {
-  outline: 1px solid rgba(15, 23, 42, 0.08);
+  outline: 1px solid rgba(12, 20, 36, 0.08);
   outline-offset: -1px;
 }
 
 html.dark .screenshot-outline {
-  outline: 1px solid oklch(1 0 0 / 0.1);
+  outline: 1px solid rgba(255, 255, 255, 0.09);
   outline-offset: -1px;
 }
 
-/* Gradient-border elevated stage (`css-border-gradient`) */
-.gradient-stage {
-  border: 1px solid transparent;
-  background:
-    linear-gradient(var(--surface), var(--surface)) padding-box,
-    linear-gradient(140deg, var(--grad-border-a), var(--grad-border-b) 50%, var(--grad-border-c))
-      border-box;
-  box-shadow: var(--shadow-lg);
-}
-
 /* ---------------------------------------------------------------------------
-   Authentic QuizRadar Celestial Animations (`apps/web/src/index.css`)
+   Observatory Celestial Keyframes (reserved for sky & brand mark only)
    --------------------------------------------------------------------------- */
 @keyframes radarSweep {
   from {
@@ -503,63 +598,61 @@ html.dark .screenshot-outline {
 
 @keyframes heroSheen {
   0% {
-    background-position: 160% 0;
+    transform: translate3d(-45%, 0, 0);
   }
   60%,
   100% {
-    background-position: -60% 0;
-  }
-}
-
-@keyframes qrRevealIn {
-  0% {
-    opacity: 0;
-    transform: translateY(18px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
+    transform: translate3d(45%, 0, 0);
   }
 }
 
 @media (prefers-reduced-motion: no-preference) {
   .radar-sweep-hand {
     transform-origin: 128px 136px;
-    animation: radarSweep 5s linear infinite;
+    animation: radarSweep 6s linear infinite;
   }
 
   .radar-blip-pulse {
     transform-box: fill-box;
     transform-origin: center;
-    animation: radarPing 2.2s cubic-bezier(0, 0, 0.2, 1) infinite;
+    animation: radarPing 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
   }
 
-  .animate-on-scroll {
-    animation: qrRevealIn 560ms var(--ease-out-expo) both;
-    animation-delay: var(--reveal-delay, 0ms);
-    animation-play-state: paused;
-  }
-
-  .animate-on-scroll.is-visible {
-    animation-play-state: running;
-  }
-
-  /* View Transitions Day <-> Starry Night crossfade (`tokens.css`) */
   ::view-transition-old(root),
   ::view-transition-new(root) {
-    animation-duration: 260ms;
+    animation-duration: 240ms;
     animation-timing-function: ease;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto !important;
+  }
+
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
+  }
+}
+
+/* Band rhythm (alternating grounds instead of repetitive boxed dividers) */
+.band {
+  position: relative;
+  padding-block: 88px;
+  overflow-x: clip;
+}
+
+.band-tinted {
+  background-color: var(--page-subtle);
+  border-block: 1px solid var(--surface-border);
+}
+
+@media (max-width: 768px) {
+  .band {
+    padding-block: 60px;
   }
 }
 
@@ -575,18 +668,5 @@ html.dark .screenshot-outline {
     text-align: center;
     max-width: 100%;
     overflow-wrap: anywhere;
-  }
-}
-
-/* Section structural rhythm */
-.page-section {
-  position: relative;
-  padding-block: 88px;
-  border-block-start: 1px solid var(--surface-border);
-}
-
-@media (max-width: 768px) {
-  .page-section {
-    padding-block: 60px;
   }
 }

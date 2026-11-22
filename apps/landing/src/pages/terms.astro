@@ -1,0 +1,146 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { GITHUB_REPO_URL, withBase } from "../lib/releaseData";
+
+const base = import.meta.env.BASE_URL;
+const privacyHref = withBase(base, "/privacy/");
+const homeHref = withBase(base, "/");
+---
+
+<Layout
+  title="Terms of Service — QuizRadar"
+  description="Terms of Service for QuizRadar Desktop, Android, and Web Companion applications."
+  canonicalPath="/terms/"
+  currentPage="terms"
+>
+  <article class="legal-page">
+    <div class="container legal-container">
+      <header class="legal-header">
+        <a href={homeHref} class="legal-back">← Back to QuizRadar</a>
+        <h1>Terms of Service</h1>
+        <p class="legal-meta">
+          <strong>Last Updated:</strong> November 2026 · <strong>Applies to:</strong> QuizRadar Desktop
+          (Windows, macOS, Linux), Android, and Web Companion (PWA).
+        </p>
+      </header>
+
+      <section class="legal-section">
+        <h2>1. Open-Source License</h2>
+        <p>
+          QuizRadar is distributed under the MIT License. You may use, copy, inspect, modify, and
+          distribute the software in accordance with the license text published in the{" "}
+          <a href={`${GITHUB_REPO_URL}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer">
+            QuizRadar GitHub repository
+          </a>
+          .
+        </p>
+      </section>
+
+      <section class="legal-section">
+        <h2>2. Academic Accuracy &amp; Student Responsibility</h2>
+        <p>
+          QuizRadar parses university announcements, syllabi, and calendar feeds to help you track
+          upcoming quizzes, exams, labs, and assignments. Automated extraction and optional AI syllabus
+          parsing can occasionally misread ambiguous instructor emails or scanned PDFs.
+        </p>
+        <p>
+          You remain solely responsible for verifying official exam dates, rooms, weights, and submission
+          deadlines against your instructor's syllabus and university portal.
+        </p>
+      </section>
+
+      <section class="legal-section">
+        <h2>3. Connected Services (Google, Microsoft &amp; University LMS)</h2>
+        <p>
+          Connecting Gmail, Google Classroom, Google Calendar, Google Drive AppData, Microsoft Outlook /
+          Teams, or Moodle/LMS iCalendar feeds is optional. When you connect an external service, you
+          agree to comply with that provider's terms of service and your institution's acceptable use
+          policies. You can disconnect any provider at any time from Settings or from your Google /
+          Microsoft account security page.
+        </p>
+      </section>
+
+      <section class="legal-section">
+        <h2>4. Optional AI Features &amp; Fair Use</h2>
+        <p>
+          AI features (BYOK Google Gemini and the opt-in Free Starter AI Relay) are strictly optional and
+          subject to Google's Gemini API Terms of Service. The Free Starter AI Relay enforces fair-use
+          daily limits per install and per network to prevent abuse and may be rate-limited or paused
+          without notice; adding your own Gemini API key or turning AI off to use deterministic local
+          features remains available at all times.
+        </p>
+      </section>
+
+      <section class="legal-section">
+        <h2>5. Privacy &amp; No Warranty</h2>
+        <p>
+          Your use of QuizRadar is also governed by our <a href={privacyHref}>Privacy Policy</a>.
+          Consistent with the MIT License, QuizRadar is provided "as is", without warranty of any kind,
+          express or implied, including merchantability, fitness for a particular purpose, or
+          non-infringement.
+        </p>
+      </section>
+    </div>
+  </article>
+</Layout>
+
+<style>
+  .legal-page {
+    padding-block: 48px 72px;
+  }
+
+  .legal-container {
+    max-width: 820px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .legal-back {
+    display: inline-block;
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: var(--accent-ink);
+    margin-block-end: 12px;
+  }
+
+  .legal-header h1 {
+    font-size: clamp(1.9rem, 3.6vw, 2.5rem);
+    letter-spacing: -0.03em;
+    color: var(--text);
+    margin-block-end: 8px;
+  }
+
+  .legal-meta {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+
+  .legal-section {
+    background-color: var(--surface);
+    border: 1px solid var(--surface-border);
+    border-radius: var(--radius-lg);
+    padding: 22px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .legal-section h2 {
+    font-size: 1.14rem;
+    color: var(--text);
+  }
+
+  .legal-page p {
+    font-size: 0.94rem;
+    line-height: 1.68;
+    color: var(--text-secondary);
+  }
+
+  .legal-page a {
+    color: var(--accent-ink);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+</style>

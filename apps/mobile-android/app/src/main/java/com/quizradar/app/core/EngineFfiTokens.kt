@@ -178,7 +178,7 @@ class EngineFfiTokens(
         val refreshToken =
             if (google) tokens.getGoogleRefreshToken() else tokens.getMicrosoftRefreshToken()
         if (refreshToken.isNullOrBlank()) return null
-        val clientId = if (google) googleRefreshClientId() else clientIds.microsoftClientId()
+        val clientId = if (google) googleRefreshClientId() else microsoftRefreshClientId()
         if (clientId.isNullOrBlank()) return null
         val body =
             try {
@@ -222,6 +222,14 @@ class EngineFfiTokens(
         val stored = clientIds.googleClientId()
         if (stored != null && stored !in OAuthManager.LEGACY_PLACEHOLDER_GOOGLE_CLIENT_IDS) return stored
         return if (clientIds !== OAuthClientIds.EMPTY) OAuthManager.DEFAULT_GOOGLE_CLIENT_ID else null
+    }
+
+    private fun microsoftRefreshClientId(): String? {
+        val stored = clientIds.microsoftClientId()
+        if (OAuthManager.isUsableMicrosoftClientId(stored)) return stored!!.trim()
+        if (clientIds === OAuthClientIds.EMPTY) return null
+        val resolved = OAuthManager.resolveMicrosoftClientId(null)
+        return resolved.takeIf { OAuthManager.isValidMicrosoftClientId(it) }
     }
 
     private fun nowMs(): Long = System.currentTimeMillis()

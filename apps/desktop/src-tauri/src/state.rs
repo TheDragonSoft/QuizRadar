@@ -10,9 +10,9 @@ use std::time::{Duration, Instant};
 
 use chrono::{FixedOffset, Local, NaiveDate, Offset, Utc};
 use quizradar_core::auth::providers::{
-    google_union_scopes, microsoft_union_scopes, refresh_token_params,
-    refresh_token_params_with_secret, GoogleCapability, MicrosoftCapability, ProviderCapability,
-    GOOGLE_TOKEN_URL, MICROSOFT_TOKEN_URL,
+    google_union_scopes, is_valid_microsoft_client_id, microsoft_union_scopes,
+    refresh_token_params, refresh_token_params_with_secret, GoogleCapability, MicrosoftCapability,
+    ProviderCapability, GOOGLE_TOKEN_URL, MICROSOFT_TOKEN_URL,
 };
 use quizradar_core::sources::TokenProvider;
 use quizradar_core::store::Store;
@@ -50,8 +50,24 @@ pub const GEMINI_KEY_FILENAME: &str = "gemini.key";
 /// Public (non-secret) client id of the "Microsoft Graph Command Line Tools"
 /// registration. `docs/rebuild/02-current-architecture.md` §5.3 names it as
 /// QuizRadar's Microsoft app ("... or user-supplied"), and a public client id
-/// is not a secret, so it may ship. A user-supplied app id always wins.
+/// is not a secret, so it may ship. A first-party multi-tenant Microsoft Entra
+/// GUID injected at build time (`QUIZRADAR_BUILD_MICROSOFT_CLIENT_ID`) or a
+/// user-supplied app id in Settings always wins.
 pub const DEFAULT_MICROSOFT_CLIENT_ID: &str = "14d82eec-204b-4c2f-b7e8-296a70dab67e";
+
+/// Optional build-time first-party multi-tenant Microsoft Entra ID Application
+/// (client) GUID baked by release CI (`QUIZRADAR_BUILD_MICROSOFT_CLIENT_ID`).
+/// Falls back to [`DEFAULT_MICROSOFT_CLIENT_ID`] when unset or invalid.
+#[must_use]
+pub fn bundled_microsoft_client_id() -> &'static str {
+    if let Some(baked) = option_env!("QUIZRADAR_BUILD_MICROSOFT_CLIENT_ID") {
+        let trimmed = baked.trim();
+        if is_valid_microsoft_client_id(trimmed) {
+            return trimmed;
+        }
+    }
+    DEFAULT_MICROSOFT_CLIENT_ID
+}
 
 /// Google OAuth client id of the maintainer-provided registration (project
 /// `quizradar-513903`, an **Installed**-type client). A client id is a public
@@ -276,19 +292,20 @@ impl AppState {
         })
     }
 
-    /// Effective Microsoft application (client) id (Settings → env → the
-    /// bundled public Graph Command Line Tools client id).
+    /// Effective Microsoft application (client) id (Settings → env → bundled
+    /// multi-tenant Entra ID or public Graph Command Line Tools fallback).
     pub async fn effective_microsoft_client_id(&self) -> Result<String, String> {
         let stored = self
             .store
             .get_config_string("teams_client_id".to_string())
             .await
-            .unwrap_or(None);
+            .unwrap_or(None)
+            .filter(|v| !v.trim().eq_ignore_ascii_case("quizradar-android-public-ms"));
         let from_env = env_client_id(ENV_MICROSOFT_CLIENT_ID);
         resolve_client_id(
             stored.as_deref(),
             from_env.as_deref(),
-            Some(DEFAULT_MICROSOFT_CLIENT_ID),
+            Some(bundled_microsoft_client_id()),
             MICROSOFT_CLIENT_ID_INVALID,
             MICROSOFT_CLIENT_ID_INVALID,
         )
@@ -659,6 +676,12 @@ mod tests {
     #[test]
     fn the_bundled_google_secret_is_never_blank() {
         assert!(!DEFAULT_GOOGLE_CLIENT_SECRET.trim().is_empty());
+    }
+
+    #[test]
+    fn the_bundled_microsoft_client_id_is_a_valid_guid() {
+        let bundled = bundled_microsoft_client_id();
+        assert!(is_valid_microsoft_client_id(bundled));
     }
 
     #[test]

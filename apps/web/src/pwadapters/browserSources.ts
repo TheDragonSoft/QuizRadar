@@ -75,6 +75,66 @@ export const GOOGLE_BROWSER_SCOPES =
 export const DEFAULT_BROWSER_GOOGLE_CLIENT_ID =
   "438181858687-9etakn8k6fd1en8ra968russdpkjh9jr.apps.googleusercontent.com";
 
+const MICROSOFT_GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ALL_ZERO_GUID = "00000000-0000-0000-0000-000000000000";
+
+function readViteEnv(key: "VITE_GOOGLE_CLIENT_ID" | "VITE_MICROSOFT_CLIENT_ID"): string | null {
+  const env =
+    typeof import.meta !== "undefined"
+      ? (import.meta as unknown as { env?: Record<string, string | undefined> }).env
+      : undefined;
+  const raw = env?.[key]?.trim();
+  return raw && raw.length > 0 ? raw : null;
+}
+
+/** True when `raw` is a valid Microsoft Entra Application (client) GUID. */
+export function isValidMicrosoftClientId(raw: string | null | undefined): boolean {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed || trimmed.toLowerCase() === ALL_ZERO_GUID) return false;
+  return MICROSOFT_GUID_RE.test(trimmed);
+}
+
+/**
+ * Optional build-time first-party multi-tenant Microsoft Entra SPA client ID
+ * injected via `VITE_MICROSOFT_CLIENT_ID` (public identifier, never a secret).
+ */
+export function getDefaultBrowserMicrosoftClientId(): string | null {
+  const fromEnv = readViteEnv("VITE_MICROSOFT_CLIENT_ID");
+  return isValidMicrosoftClientId(fromEnv) ? fromEnv!.trim() : null;
+}
+
+/** Resolution order: user override (Settings) → `VITE_GOOGLE_CLIENT_ID` → bundled Web client ID. */
+export function resolveBrowserGoogleClientId(stored?: string | null): string {
+  const override = (stored ?? "").trim();
+  if (override) return override;
+  const fromEnv = readViteEnv("VITE_GOOGLE_CLIENT_ID");
+  if (fromEnv) return fromEnv;
+  return DEFAULT_BROWSER_GOOGLE_CLIENT_ID;
+}
+
+/** Resolution order: user override (Settings) → build-time multi-tenant Entra GUID → null. */
+export function resolveBrowserMicrosoftClientId(
+  stored?: string | null,
+  bundledOverride: string | null = getDefaultBrowserMicrosoftClientId(),
+): string | null {
+  const override = (stored ?? "").trim();
+  if (isValidMicrosoftClientId(override)) return override;
+  const bundled = (bundledOverride ?? "").trim();
+  if (isValidMicrosoftClientId(bundled)) return bundled;
+  return null;
+}
+
+/**
+ * Computes the exact SPA redirect URI for Microsoft PKCE popups without
+ * dropping subpath deployments like GitHub Pages (`/QuizRadar/app/`).
+ */
+export function resolveBrowserMicrosoftRedirectUri(href: string = window.location.href): string {
+  const base = new URL("./", href);
+  base.search = "";
+  base.hash = "";
+  return base.toString();
+}
+
 export const GOOGLE_USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v3/userinfo";
 export const MICROSOFT_AUTHORIZE_ENDPOINT =
   "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
@@ -122,6 +182,12 @@ export function explainOAuthError(provider: "google" | "microsoft", body: string
     }
     if (lower.includes("invalid_grant")) {
       return "Google rejected the authorization code. It is single-use and short-lived — start the sign-in again and finish it in the same browser session.";
+    }
+    if (lower.includes("org_internal") || lower.includes("admin_policy_enforced")) {
+      return "Your university Google Workspace administrator restricts third-party app access for this account. You can still import course syllabi PDFs directly or subscribe to Moodle/LMS .ics calendar feeds without Google sign-in.";
+    }
+    if (lower.includes("access_denied")) {
+      return "Google sign-in was cancelled or access was not granted. If Google showed a verification warning while app review is in progress, choose Advanced → Go to QuizRadar, or use Syllabus Import / .ics feeds instead.";
     }
   }
 
@@ -305,7 +371,7 @@ export async function microsoftPkcePopupLogin(
   scopes: string = MICROSOFT_SIGNIN_SCOPES,
   prompt = "select_account",
 ): Promise<BrowserProfile> {
-  const redirectUri = `${window.location.origin}/`;
+  const redirectUri = resolveBrowserMicrosoftRedirectUri();
   const verifier = randomB64Url(48, cryptoImpl);
   const challenge = await pkceChallenge(verifier, cryptoImpl);
   const state = randomB64Url(16, cryptoImpl);

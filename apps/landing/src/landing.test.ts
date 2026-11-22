@@ -114,11 +114,34 @@ describe("QuizRadar Landing Site — Identity, Real Screenshots, Design Rules & 
       "src/components/Footer.astro",
       "src/pages/index.astro",
       "src/pages/download.astro",
+      "src/pages/privacy.astro",
+      "src/pages/terms.astro",
     ];
     for (const rel of astroFiles) {
       const content = stripComments(readFileSync(path.join(landingRoot, rel), "utf8"));
       expect(content, `${rel} must not use transition: all`).not.toMatch(/transition\s*:\s*all\b/);
     }
+  });
+
+  it("hosts same-domain /privacy/ and /terms/ pages with verbatim Google API Limited Use disclosure", () => {
+    const privacyPage = readFileSync(path.join(landingRoot, "src/pages/privacy.astro"), "utf8");
+    const termsPage = readFileSync(path.join(landingRoot, "src/pages/terms.astro"), "utf8");
+    const footer = readFileSync(path.join(landingRoot, "src/components/Footer.astro"), "utf8");
+    const repoPrivacy = readFileSync(path.join(repoRoot, "PRIVACY.md"), "utf8");
+
+    expect(privacyPage).toContain("Google API Services User Data Policy");
+    expect(privacyPage).toContain("Limited Use requirements");
+    expect(privacyPage).toContain("gmail.readonly");
+    expect(privacyPage).toContain("classroom.coursework.students");
+    expect(privacyPage).toContain("drive.appdata");
+    expect(privacyPage).toContain("trial-ai.quizradar.workers.dev");
+
+    expect(repoPrivacy).toContain("Google API Services User Data Policy");
+    expect(repoPrivacy).toContain("Limited Use requirements");
+
+    expect(termsPage).toContain("Terms of Service");
+    expect(footer).toContain('withBase(base, "/privacy/")');
+    expect(footer).toContain('withBase(base, "/terms/")');
   });
 
   it("ships a 1200x630 Open Graph social preview banner and declares structured FAQPage metadata", () => {

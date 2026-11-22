@@ -93,7 +93,10 @@ class BackgroundScanWorker(
                 OAuthManager.resolveGoogleClientId(
                     engine.getConfigString("google_client_id"),
                 )
-            val teamsClientId = engine.getConfigString("teams_client_id")
+            val teamsClientId =
+                OAuthManager.resolveMicrosoftClientId(
+                    engine.getConfigString("teams_client_id"),
+                ).takeIf { OAuthManager.isUsableMicrosoftClientId(it) }
             engine.oauthClientIds =
                 OAuthClientIds(
                     google = { googleClientId },

@@ -17,6 +17,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "test:worker": "pnpm --dir apps/web exec vitest run --config ../../workers/trial-ai-relay/vitest.config.ts",
+    "test:diagnostics": "pnpm --dir apps/web exec vitest run --config ../../workers/diagnostics-relay/vitest.config.ts",
     "test:tooling": "pnpm --dir apps/web exec vitest run --config ../../tooling/vitest.config.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

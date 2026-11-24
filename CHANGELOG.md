@@ -2,6 +2,39 @@
 
 All notable changes to QuizRadar will be documented in this file.
 
+## [5.21.0] — 2026-11-24
+
+### 🤝 Agent & Contributor Summaries
+
+- **[desktop, android, web, docs, ci]** Rotate bundled Google OAuth client IDs to project quizradar-511922 across Desktop, Android, Web/PWA, and docs/OAUTH-VERIFICATION.md, and move the Desktop Google client secret out of git into build-time injection from GitHub Actions secret QUIZRADAR_GOOGLE_CLIENT_SECRET.
+
+- **[core, desktop, web, android, docs, ci]** Stage 1 PR 3: OAuth Verification & First-Party Client Readiness — hosts same-domain /privacy/ (with verbatim Google API Services User Data Policy Limited Use disclosure & scope justification table) and /terms/ pages on apps/landing/, updates PRIVACY.md, adds CASA Tier 2 & Microsoft Entra multi-tenant submission runbook (docs/OAUTH-VERIFICATION.md), adds cross-platform Microsoft Entra GUID validation & build-time multi-tenant injection across Core, Desktop, Android (BuildConfig + OAuthManager + EngineFfiTokens + BackgroundScanWorker), Web/PWA (subpath-safe SPA redirect URI), and CI release/pages workflows.
+
+- **[core, desktop, web, android, docs]** Stage 1 PR 1: Multi-Syllabus PDF/Photo Importer (1-6 docs) and 1-Tap Shareable Course Pack links (#course= HTTPS URL, quizradar://course?d= deep link, QR code) across Rust core, Desktop Tauri, Web/PWA, and Android native; recorded 2026-11-21 Trial AI Relay maintainer override in AGENTS.md.
+
+- **[core, desktop, web, android, tooling, docs]** Stage 1 PR 2: Stateless Zero-Key Trial AI Relay Cloudflare Worker and opt-in starter AI routing across Rust core, Desktop Tauri, Web/PWA, and Android native (BYOK always wins, verbatim 05 §5.1 consent preserved).
+
+- **[web, tooling, docs]** Stage 2 PR 2: First-party zero-PII diagnostics Cloudflare Worker (workers/diagnostics-relay), opt-out client funnel + sanitized crash reporter (apps/web/src/lib/diagnostics.ts), Settings toggle, 2026-11-22 AGENTS.md override, and PRIVACY.md disclosure.
+
+- **[ci]** Fix the Windows desktop release leg: the v5.20.0 tag build failed the 'require updater signing credentials' guard with a PowerShell ParserError because the step is written in bash (if [ -z ...]) but release.yml's desktop job declares no default shell, so windows-latest ran it under pwsh. The TAURI_SIGNING_PRIVATE_KEY secret is present and masked in the run log - the guard never got to evaluate it. Set defaults.run.shell=bash for the whole desktop job (macOS/Linux were already bash by default; the one pwsh step, Stage Windows Portable ZIP, keeps its explicit shell: pwsh override).
+
+- **[ci, docs]** Make the version-bump rollup self-healing: when the direct push to main is rejected by branch protection (GH006, every post-merge rollup since required checks landed), push the rollup commit to chore/release-rollup-v<next> and open a release PR instead of failing the run - the reviewed release-PR path is already proven (v5.19.2 via #47, v5.20.0 via #49). No tag is created in that path (the rollup commit is not on main yet); the following post-merge run tags it. Also record the Node 22 toolchain floor in AGENTS.md §5 (Astro 7 requires >= 22.23.4; enforced by engines and CI pins since #45).
+
+- **[ci]** Fix the tag-only rollup path in version-bump.yml: the 'Tag unreleased version' step creates an annotated tag without configuring a git identity, so any push to main that needs tagging but carries no pending fragment work (exactly the state after merging a release PR) fails with git exit 128 'empty ident name' - observed on the post-#49 run 44840466884. Configure the github-actions[bot] identity in that step. Note: v5.20.0 was tagged manually at e6e0f65 to unblock the release pipeline, so this fix prevents recurrence only. Separate open question for the maintainer: the direct-push rollup path ('Commit, tag & push release rollup to main') is rejected by branch protection (GH006) on every run - either allow a github-actions[bot] bypass or change the step to open a release PR.
+
+- **[web, tooling]** Complete the vitest 4.1.11 migration on top of the dependabot bump: vitest 4 removed coverage.all (untested files are now always included, which is what all: true asked for) and pool/poolOptions (defaults are the equivalent worker-thread, per-file-isolated, parallel configuration) - both blocks replaced in apps/web/vite.config.ts with explanatory comments. Verified locally under vitest 4: apps/web suite 49 files / 458 tests green, tooling meta-tests 5 files / 45 tests green, landing 8 tests green, web typecheck (app + node configs) clean, prettier clean.
+
+### 🚀 New Features
+
+- `fb0eada` feat(stage2): privacy-first zero-PII diagnostics worker & opt-out client funnel (#60)
+- `628f16c` feat(stage1): OAuth verification compliance pages & multi-tenant Microsoft client plumbing (#56)
+- `a604e51` feat(stage1): zero-key trial AI relay worker & opt-in starter AI routing (#55)
+- `e3d1070` feat(stage1): multi-syllabus PDF/photo importer & 1-tap shareable course packs (#54)
+
+### 🔧 Maintenance, Docs & Tests
+
+- `37ea252` chore(auth): update Google OAuth clients to quizradar-511922 & build-time desktop secret (#57)
+
 ## [5.20.0] — 2026-11-20
 
 ### 🤝 Agent & Contributor Summaries

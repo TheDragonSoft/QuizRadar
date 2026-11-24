@@ -169,7 +169,7 @@ const PROMISE_EXEMPTIONS: ReadonlyArray<{ path: string; promiseId: string; reaso
   },
 ];
 
-/** The free-tier disclosure, quoted from docs/rebuild/05-ai-features-plan.md §5.1. */
+/** The free-tier disclosure, quoted from docs/product-spec.md §4. */
 const AI_DISCLOSURE_PHRASES: readonly string[] = [
   "Your email announcements and timetable images are sent to Google's Gemini API when AI is used.",
   "On Google's free tier, Google may use that content to improve its products.",
@@ -192,7 +192,7 @@ function findRepoFile(relativePath: string): string {
   throw new Error(`Could not locate ${relativePath} above ${process.cwd()}`);
 }
 
-const AI_SPEC_PATH = findRepoFile("docs/rebuild/05-ai-features-plan.md");
+const AI_SPEC_PATH = findRepoFile("docs/product-spec.md");
 const AI_SPEC_TEXT = readFileSync(AI_SPEC_PATH, "utf8");
 
 describe("copy module conformance", () => {

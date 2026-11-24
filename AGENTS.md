@@ -1,109 +1,56 @@
-# AGENTS.md — QuizRadar v5 Multi-Agent Engineering Protocol
+# AGENTS.md — QuizRadar Engineering Protocol
 
-_QuizRadar v5 is shipped and actively developed by multiple concurrent AI agents (Antigravity, Claude Code, Codex, Cursor, Jules/Bolt/Palette, GitHub Copilot) across isolated git branches and worktrees. Product specs and architecture live in `docs/rebuild/`; live operational status lives in `docs/STATUS.md`; historical v4 reference lives only under git tag **`v4-final`**._
+_Single canonical rulebook for human contributors and AI agents. Product & system truth live in [`docs/`](./docs/README.md); architectural exceptions live in [`docs/adr/`](./docs/adr/README.md); historical pre-purge docs live under git tag `docs-pre-purge-2026-11` (and v4 under `v4-final`)._
 
 ---
 
-## 1. What you are building
+## 1. What We Are Building
 
-**QuizRadar** — a local-first, zero-server dashboard for university students that resolves fuzzy announcements ("Class Quiz 1 next week, not this week") into exact calendar items by cross-referencing each announcement against the student's weekly timetable, then manages the resulting exam radar (dashboard, week calendar, study tasks, readiness, practice quizzes, grades, Google-Calendar push, notifications, Android widget).
+**QuizRadar** — a local-first, zero-server academic radar that resolves fuzzy announcements ("Class Quiz 1 next week") against a student's weekly timetable and manages exams, study tasks, readiness, grades, practice quizzes, Google Calendar push, notifications, and widgets.
 
-**Locked stack (see `docs/rebuild/04-rebuild-architecture.md` §0 — this table wins over everything else):**
-
-| Layer | Choice |
+| Layer | Locked Choice |
 |---|---|
-| Core logic | **One Rust crate `core/`** — parsers, planner, conflicts, study blocks, ICS, GCal, Drive backup, AI client, SQLite store. Implemented exactly once. |
-| Desktop | **Tauri 2** shell (in-process IPC, signed updater, OS keyring) + **React 19 + Vite** UI |
-| Mobile | **Android-only, forever: Kotlin + Jetpack Compose M3** (Glance widget, first-party notifications/share) bound to the core via **UniFFI** |
-| Web tier | PWA companion: same React UI + core compiled to **WASM**; browser fetch adapters in TS |
-| Auth | **PKCE OAuth, zero client secrets.** Google + Microsoft. Desktop = loopback redirect, Android = custom scheme, PWA = GIS token client (1h, memory-only) |
-| Sync | Per-device accounts (each device scans with its own tokens; tokens never leave the device or cross a network). Optional Drive-appdata **data-only** backup |
-| AI | BYOK Google Gemini (header key `x-goog-api-key`), typed provider interface, quota tracker, honest deterministic fallbacks. **Maintainer override (2026-11-21):** An **opt-in, stateless Zero-Key Trial AI Relay** is authorized for first-run trial extractions while preserving verbatim AI consent disclosure (`05` §5.1) and BYOK power-user mode. |
-| Server | **None for normal operation** — no backend server, no cloud relay, no persistent LAN daemon. **Maintainer override (2026-11-20):** an **ephemeral, on-demand Desktop-only LAN HTTPS pairing session** (`apps/desktop/src-tauri/src/lan_pair.rs`) is explicitly authorized to connect Desktop and Android on the same Wi-Fi/hotspot via a tiny QR code carrying a pinned per-session self-signed TLS certificate SHA-256 fingerprint + single-use 256-bit bearer token. It carries data-only `BackupPayload` JSON (zero tokens/secrets), auto-closes immediately after 1 bidirectional sync or 5 minutes, and keeps `android:usesCleartextTraffic="false"` and `https://`-only networking intact. **Maintainer override (2026-11-21):** An **opt-in, stateless Zero-Key Trial AI Relay** (Cloudflare Worker / HTTPS edge function) is explicitly authorized to power first-run trial AI extractions (syllabus PDF imports and initial AI actions) without requiring users to paste a Gemini API key. It stores zero user data, never receives OAuth tokens or personal credentials, preserves the verbatim AI privacy/consent disclosure (`05` §5.1), and keeps BYOK Gemini available in Settings for power users. Do not revert this as a spec violation. |
+| Core logic | **One Rust crate (`core/`)** — parsers, planner, conflicts, study blocks, ICS, GCal, Drive backup, AI client, SQLite store. Implemented once. |
+| Desktop | **Tauri 2** (in-process IPC, signed updater, OS keyring) + **React 19 + Vite** (`apps/web`) |
+| Mobile | **Android-only (Kotlin + Jetpack Compose M3 + Glance)** bound to `core/` via **UniFFI** |
+| Web tier | PWA companion: same `apps/web` React UI + `core/` compiled to **WASM**; browser fetch adapters in TS |
+| Auth & Sync | **PKCE OAuth**, per-device tokens (tokens never leave the device). Optional Drive-appdata / QR / ephemeral LAN data-only sync. See [ADR-0001](./docs/adr/0001-desktop-oauth-secret.md) and [ADR-0002](./docs/adr/0002-ephemeral-lan-https-pairing.md). |
+| AI | BYOK Gemini (`x-goog-api-key` header), quota tracker, labeled deterministic fallbacks, plus opt-in stateless Trial AI Relay ([ADR-0003](./docs/adr/0003-zero-key-trial-ai-relay.md)). |
 
-## 2. Read-first map (in order)
+## 2. Read-First Map
 
-1. **Run `pnpm agent:preflight`** + read `docs/STATUS.md` — live SemVer, active peer worktrees, file-collision warnings, pending `changes/*.md` handoffs, and required gates.
-2. `docs/rebuild/01-product-spec.md` — **the acceptance spec**: every feature, all screens/modals (§4–§5), domain glossary (§3), design language (§6), feature parity checklist (§8).
-3. `docs/rebuild/04-rebuild-architecture.md` — locked architecture (§0), repo layout (§4), banned v4 features (§5).
-4. `docs/rebuild/02-current-architecture.md` + `docs/rebuild/03-issues-and-pain-points.md` + `docs/rebuild/05-ai-features-plan.md` — schemas, v4 anti-checklist, and verbatim AI consent/quota design.
-5. `docs/TESTING-PLAYBOOK.md` + `docs/RELEASE-RUNBOOK.md` — 7-layer verification & release procedures.
-6. **Historical references (only when needed):** `docs/archive/STATUS-v5.0-rebuild.md` (Phases 01–20 & Rounds 1–15) and `git show v4-final:<path>`.
+1. Run `pnpm agent:preflight` and read [`docs/STATUS.md`](./docs/STATUS.md) (live version, worktrees, verification commands).
+2. Read [`docs/README.md`](./docs/README.md) for the doc system and find the exact evergreen doc for your task (`product-spec.md`, `architecture.md`, `android-design.md`, `testing.md`, `release.md`, `oauth.md`, `roadmap.md`).
+3. Check [`docs/adr/`](./docs/adr/README.md) before questioning or reverting scoped architectural overrides.
 
-## 3. Golden rules (violations = failed review)
+## 3. Golden Rules (Violations = Failed Review)
 
-1. **Honesty doctrine:** never fabricate data, stats, rooms, instructors, countdowns or success messages. An empty scan says "0 found, these sources ran", a failed check fails loudly, an estimate is labeled with its inference note. Missing room → render "—", never a default room string.
-2. **No secrets, ever:** no OAuth client_secret anywhere (PKCE only), keys/tokens never enter the repo, binaries, logs, error strings or the web bundle. AI keys via `x-goog-api-key` header only. Secrets live in OS keyring (desktop) / EncryptedSharedPreferences (Android) / memory (PWA).
-   - **Maintainer override (2026-10-28):** the Google OAuth client of project `gmail-summary-511914` is a *Web application* client, and Google refuses a secretless token exchange for it (`invalid_request: client_secret is missing`, verified against `oauth2.googleapis.com/token`). The maintainer therefore asked for that client id **and its secret** to be hardcoded — so the desktop shell ships both (`apps/desktop/src-tauri/src/state.rs`: `DEFAULT_GOOGLE_CLIENT_ID` / `DEFAULT_GOOGLE_CLIENT_SECRET`). Scope of that exception: the **desktop shell only**, used for the Google token exchange and refresh grant; it never enters `core/` (so never the WASM/PWA bundle), the SQLite DB, the UI, the logs or an error string, and the authorize URL stays secret-free (guarded by a unit test). Runtime overrides (OS keyring `google_client_secret`, `QUIZRADAR_GOOGLE_CLIENT_SECRET`) win. **Do not revert this as a "spec violation"** — and do not extend it to the web bundle, the core crate or the Android app. **Amendment (2026-11-05):** the maintainer replaced that registration with an *Installed*-type client of the same project (`341760934836-60toi8rjgkid0gmc69tmt598teghbgv4.apps.googleusercontent.com`, secret in `state.rs`) and asked for it to be baked into **both** desktop and Android. The desktop keeps the same id+secret rules as above; the Android app ships the client **id only** (its flow is a PKCE public client — no secret ever), a user-supplied id still wins (Settings → Sources), and the legacy placeholder ids remain refused.
-3. **Core purity:** `core/` is pure Rust — no tao/wry/tauri/Android deps, UI-agnostic, no DOM/HTML. Every shell stays thin glue (≤ a few hundred LOC of its own logic).
-4. **Nothing fabricated, nothing whimsical from v4:** do not port: demo course palettes/plans/practice banks, `Hall B-204`, "(via Home-Su25)", dev email-ID branches, `_KEYWORD` course forcing, `?demo=` hacks, the `teams_token`-to-Drive channel, the calendar-event sync fallback, `LocalOAuthServer.java`, the Axum HTTP server, `auto_sync_gcal: true` default. (Full delete list: `04` §5.) Note: the scoped Desktop-only ephemeral LAN HTTPS pairing session (`lan_pair.rs`, maintainer override 2026-11-20) is **not** the deleted v4 Axum server — do not revert it as a spec violation, and never turn it into a persistent daemon or expose non-sync routes on it. Likewise, the authorized **opt-in, stateless Zero-Key Trial AI Relay** (maintainer override 2026-11-21) is explicitly permitted for first-run trial AI extractions; it stores zero user data, never receives OAuth tokens or credentials, preserves verbatim `05` §5.1 consent disclosure, and keeps BYOK Gemini available in Settings.
-5. **Single source of truth for versions (`tooling/version.json` + `changes/*.md`):** `tooling/generate-version.mjs` stamps all 5 sinks (`apps/web/package.json`, `tauri.conf.json`, `Cargo.toml`, `build.gradle.kts`, `version.ts`). Never hardcode version literals, and **never edit `tooling/version.json` on feature branches** — write a `changes/<slug>.md` fragment via `pnpm agent:note` so `.github/workflows/version-bump.yml` bumps SemVer conflict-free on merge to `main`.
-6. **Conflict-free agent communication:** Never dump task logs into `docs/STATUS.md` (capped at ≤ 250 lines). Every non-trivial branch communicates its summary, verification commands, and follow-ups via `changes/<slug>.md`, archived automatically to `docs/worklog/YYYY-MM.md`.
-7. **Tests & contract gates pass before merge:** `core` golden-fixture tests + shell unit tests + contract wire-map freshness + lint clean (rustfmt/clippy, eslint/prettier, ktlint). CI defines green.
-8. **Data safety:** never commit user data — schedule JSONs, email caches, tokens, credentials, pems, `.env` (see `.gitignore`). Large generated files ship as CI artifacts, not as repo content.
-9. **Scope discipline:** touch only files relevant to your task. Never modify `docs/rebuild/`, `prompts/`, sibling git worktrees, git history, or the `v4-final` tag. Never rewrite git history without an explicit maintainer instruction.
-10. **Windows shell reality:** local commands often run in PowerShell 5.1 — avoid `&&` (run separate commands or `; if ($?) { }`), and prefer passing working directory arguments over `cd`.
+1. **Honesty doctrine:** Never fabricate data, stats, rooms, instructors, countdowns, or success messages. Empty scans report `"0 found"` and which sources ran; missing rooms render `"—"`; estimates carry provenance notes.
+2. **No secrets, ever:** No OAuth `client_secret`, API keys, or tokens in code, configs, fixtures, logs, error strings, or the web bundle (sole scoped desktop exception: [ADR-0001](./docs/adr/0001-desktop-oauth-secret.md)). AI keys use `x-goog-api-key` only. Secrets live in OS keyring (Desktop), EncryptedSharedPreferences (Android), or ephemeral memory (PWA).
+3. **Core purity:** `core/` is pure Rust — no Tauri/wry/Android/DOM dependencies. Shells stay thin glue.
+4. **No banned v4 patterns:** Never reintroduce demo palettes/banks, `Hall B-204`, `?demo=` hacks, `teams_token` cloud channels, calendar-event sync fallback, `LocalOAuthServer.java`, the persistent Axum HTTP server, or `auto_sync_gcal: true` default. (See [`docs/architecture.md`](./docs/architecture.md).)
+5. **Single source of truth for versions (`tooling/version.json` + `changes/*.md`):** Never hardcode version literals or edit `tooling/version.json` / `CHANGELOG.md` on feature branches. Record work via `pnpm agent:note`; `.github/workflows/version-bump.yml` rolls up SemVer on merge to `main`.
+6. **Documentation hygiene (enforced by `agent-gate.mjs`):** Never drop dated audits, demos, or essays into `docs/` or `docs/STATUS.md`. Keep evergreen docs under their line budgets, put architectural exceptions in `docs/adr/`, and put per-branch change records in `changes/<slug>.md`.
+7. **Tests & contract gates pass before merge:** If `core/src/types.rs` or `core/src/ffi.rs` changes, immediately run `node apps/web/src/contract/regenerate.mjs` and `.\gradlew.bat uniffiGenerate`. Never fake green gates — record blockers honestly in `changes/<slug>.md`.
+8. **Data safety & scope discipline:** Never commit user data (`.env`, tokens, schedules, DBs, `.pem`, `.keystore`). Touch only files relevant to your task; never rewrite git history or touch sibling worktrees.
+9. **Shell reality:** Local dev runs on Linux (`devbox`, bash) or Windows (PowerShell 5.1 — avoid `&&` in PowerShell). Toolchain: Rust stable, Node **22+** (≥ 22.23.4), `pnpm` ≥ 9, Temurin JDK **21**, Android SDK 35 + NDK r27b.
 
-## 4. Repo layout
+## 4. Git Remotes, CI/CD & Multi-Agent Workflow
 
-```
-core/                  # Pure Rust crate — THE app logic (one implementation)
-  src/{types,parse,plan,cal,ai,store,auth,sources,ffi}/…
-  bindings/{uniffi.toml, wasm/}
-  tests/fixtures/      # golden emails/ICS/schedules + property suites
-apps/
-  desktop/             # Tauri 2 + src-tauri/ (consumes apps/web dist)
-  web/                 # React 19 + Vite SPA → dist (desktop webview + PWA)
-  mobile-android/      # Kotlin + Compose M3 + Glance (UniFFI bindings)
-changes/               # Per-branch agent handoff & SemVer fragments (<slug>.md)
-tooling/               # Preflight, agent-note, version-rollup, gates, hooks, build scripts
-docs/                  # STATUS.md, RELEASE-RUNBOOK.md, TESTING-PLAYBOOK.md, worklog/, archive/, rebuild/
-prompts/               # Historical v5.0 phase prompts (immutable)
-```
+1. **Session start:** Run `pnpm agent:preflight`. Never commit directly to `main` or inside another agent's dirty worktree; use an isolated branch (`feat/`, `fix/`, `refactor/`, `test/`, `docs/`, `chore/`, `ci/`).
+2. **Forgejo-first (`origin` = Forgejo, see [ADR-0004](./docs/adr/0004-forgejo-first-git-and-ci.md)):**
+   - Always fetch, branch, push, and open PRs against **`origin`** (`git@forgejo:GordyTheKat/QuizRadar.git`, auto-mirrored to GitHub `TheDragonSoft/QuizRadar`). Never push directly to `github` unless explicitly asked.
+   - **Forgejo Actions (`.forgejo/workflows/`):** Fast local Linux/Rust/Web/Android checks on `devbox-runner` (`devbox-host`). Keep Forgejo workflows here (Forgejo ignores `.github/workflows/` when `.forgejo/workflows/` exists).
+   - **GitHub Actions (`.github/workflows/`):** Multi-OS releases (`release.yml`), GitHub Pages (`pages.yml`), SemVer rollups (`version-bump.yml`), and heavy/Android Emulator suites (`ci.yml`, `performance.yml`).
+3. **Auto-finish (commit & push without waiting to be asked):** Once approved work is complete and all required verification gates pass, **automatically** record a handoff fragment, commit with Conventional Commits (`feat(scope): ...`, `fix(scope): ...`, etc.), and push your branch (and any created tags) to **`origin` (Forgejo)** — never stop at an uncommitted working tree unless blocked by a failing gate or ambiguity:
+   ```bash
+   pnpm agent:note --bump <patch|minor|major|none> --surfaces <core,web,...> --agent <name> --summary "<what & why>" --verify "<commands run>" --handoff "<follow-ups or None>"
+   ```
 
-## 5. Environment
+## 5. Security & Privacy Checklist (Every PR)
 
-- OS/Shell: Windows (PowerShell 5.1) locally; Ubuntu/macOS/Windows in GitHub Actions.
-- Toolchain: Rust stable (`rustfmt`, `clippy`, `wasm32-unknown-unknown`), Node **22+** (≥ 22.23.4 — Astro 7's floor, enforced by root `engines` and all CI pins), `pnpm` ≥ 9, Temurin JDK **21**, Android SDK 35 + NDK r27b.
-- Canonical commands live in `docs/STATUS.md` §Canonical Verification Commands.
-
-## 6. Multi-agent workflow & versioning protocol
-
-1. **Session start (`pnpm agent:preflight`):**
-   - Inspect your current branch, active sibling `git worktree` checkouts, `CONFLICT RADAR` file-overlap warnings, and pending `changes/*.md` notes left by other agents.
-   - Never work directly on `main` or inside another agent's dirty worktree. Use an isolated branch (`feat/<slug>`, `fix/<slug>`, `refactor/<slug>`, `test/<slug>`, `docs/<slug>`, `chore/<slug>`).
-2. **During implementation:**
-   - Keep `core/` pure and shells thin.
-   - If you edit `core/src/types.rs` or `core/src/ffi.rs`, immediately regenerate `node apps/web/src/contract/regenerate.mjs` and Android UniFFI bindings (`.\gradlew.bat uniffiGenerate`).
-   - If blocked by missing credentials/hardware, commit only compiling code, record the exact blocker honestly in `changes/<slug>.md` under `### Handoff / Follow-ups`, and stop — never fake green gates.
-3. **Before pushing / finishing (`pnpm agent:note`):**
-   - Run every required gate listed by `pnpm agent:preflight`.
-   - Record your handoff & SemVer impact in `changes/<slug>.md` (one file per branch, zero merge conflicts):
-     ```powershell
-     pnpm agent:note --bump <patch|minor|major|none> --surfaces <core,web,...> --agent <your-agent-name> --summary "<what shipped & why>" --verify "<exact commands run>" --handoff "<follow-ups or None>"
-     ```
-   - Commit using **Conventional Commits** (`feat(scope): ...`, `fix(scope): ...`, `perf(scope): ...`, `refactor(scope): ...`, `test(scope): ...`, `docs(scope): ...`, `chore(scope): ...`, `ci(scope): ...`). Local git hooks (`tooling/git-hooks/`) and CI (`tooling/agent-gate.mjs --ci`) enforce this automatically.
-4. **How versions advance:**
-   - Do **not** edit `tooling/version.json` or `CHANGELOG.md` on feature branches.
-   - Merging to `main` triggers `.github/workflows/version-bump.yml`, which runs `node tooling/version-rollup.mjs --apply` to bump SemVer, stamp all 5 sinks + `Cargo.lock`, update `CHANGELOG.md`, archive `changes/*.md` into `docs/worklog/YYYY-MM.md`, and keep `changes/` clean.
-
-## 7. Definition of Done (per task / PR)
-
-- Behavior matches `docs/rebuild/01-product-spec.md` (including exact honesty/error copy in `apps/web/src/copy.ts`).
-- Covered by automated unit/fixture/integration tests; all touched-surface lints, typechecks, and tests pass.
-- Valid `changes/<slug>.md` handoff & version fragment committed (`pnpm agent:note --validate`).
-- No new runtime dependencies without explicit justification in the fragment summary.
-- Security & privacy checklist (§8) passes.
-
-## 8. Security & privacy checklist (every PR)
-
-- [ ] No client_secret / API key / token in code, configs, fixtures, logs, or error messages (sole scoped exception: `AGENTS.md` §3.2)
-- [ ] Token storage path = keyring (desktop) / EncryptedSharedPreferences (Android) / memory (PWA)
-- [ ] Every OAuth URL uses PKCE + random state (single-use, 15 min)
-- [ ] Cloud payloads (Drive backup) contain data only — never tokens
-- [ ] AI enable-flow includes the verbatim free-tier disclosure copy (`05` §5.1) and zero OAuth-bearer AI fallback
-- [ ] All network calls `https://`; no logging of PII beyond the user's own device
-
-## 9. Non-negotiable non-goals
-
-No backend server/user accounts/telemetry/analytics/cloud relay, no shared-secret OAuth, no timeline fabrication, no keyword-renaming of user courses, no generic `.ics` writing into a user's calendar as storage.
+- [ ] Zero secrets/keys/tokens in code, fixtures, logs, or error messages (sole exception: [ADR-0001](./docs/adr/0001-desktop-oauth-secret.md))
+- [ ] Token storage: OS keyring (Desktop) / EncryptedSharedPreferences (Android) / memory-only (PWA)
+- [ ] OAuth uses PKCE + single-use random `state` (15 min); Drive/QR/LAN payloads are data-only
+- [ ] AI enable flow keeps verbatim free-tier disclosure ([`docs/product-spec.md`](./docs/product-spec.md)) and zero OAuth-bearer AI fallback
+- [ ] All network calls use `https://` (pinned TLS for ephemeral LAN sync); no telemetry, accounts, or analytics

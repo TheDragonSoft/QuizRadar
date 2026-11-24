@@ -9,7 +9,7 @@
  *   node tooling/agent-gate.mjs --ci [--base <ref>] [--head <ref>] [--root <dir>]
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -27,7 +27,36 @@ const repoRoot = flags.root
   ? path.resolve(process.cwd(), String(flags.root))
   : path.resolve(scriptDir, "..");
 
-const STATUS_MAX_LINES = 250;
+// 4-tier documentation system allowlist & line budgets (see `docs/README.md`).
+const DOC_LINE_BUDGETS = new Map([
+  ["AGENTS.md", 120],
+  ["CLAUDE.md", 25],
+  ["CONTRIBUTING.md", 40],
+  ["docs/README.md", 80],
+  ["docs/STATUS.md", 100],
+  ["docs/product-spec.md", 180],
+  ["docs/architecture.md", 180],
+  ["docs/android-design.md", 120],
+  ["docs/testing.md", 200],
+  ["docs/release.md", 120],
+  ["docs/oauth.md", 120],
+  ["docs/roadmap.md", 100],
+]);
+
+const ALLOWED_DOCS_FILES = new Set([
+  "README.md",
+  "STATUS.md",
+  "product-spec.md",
+  "architecture.md",
+  "android-design.md",
+  "testing.md",
+  "release.md",
+  "oauth.md",
+  "roadmap.md",
+]);
+
+const ALLOWED_DOCS_DIRS = new Set(["adr", "worklog", "screenshots"]);
+const ADR_FILE_PATTERN = /^\d{4}-[a-z0-9-]+\.md$/;
 
 const FORBIDDEN_FILE_PATTERNS = [
   /(^|\/)\.env(\..+)?$/i,
@@ -68,14 +97,44 @@ function checkVersionSinks(errors) {
   }
 }
 
-function checkStatusLineCap(errors) {
-  const statusPath = path.join(repoRoot, "docs/STATUS.md");
-  if (!existsSync(statusPath)) return;
-  const lineCount = readFileSync(statusPath, "utf8").replace(/\r\n/g, "\n").split("\n").length;
-  if (lineCount > STATUS_MAX_LINES) {
-    errors.push(
-      `docs/STATUS.md is ${lineCount} lines (limit: ${STATUS_MAX_LINES}). Keep STATUS.md concise and record per-task handoffs in \`changes/<slug>.md\` via \`pnpm agent:note\`.`,
-    );
+function checkDocsHygiene(errors) {
+  for (const [relPath, maxLines] of DOC_LINE_BUDGETS) {
+    const fullPath = path.join(repoRoot, relPath);
+    if (!existsSync(fullPath)) continue;
+    const lineCount = readFileSync(fullPath, "utf8").replace(/\r\n/g, "\n").split("\n").length;
+    if (lineCount > maxLines) {
+      errors.push(
+        `${relPath} is ${lineCount} lines (limit: ${maxLines}). Keep evergreen docs concise, put overrides in \`docs/adr/\`, and record per-task handoffs in \`changes/<slug>.md\` via \`pnpm agent:note\`.`,
+      );
+    }
+  }
+
+  const docsDir = path.join(repoRoot, "docs");
+  if (!existsSync(docsDir)) return;
+
+  for (const entry of readdirSync(docsDir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      if (!ALLOWED_DOCS_DIRS.has(entry.name)) {
+        errors.push(
+          `Unexpected directory \`docs/${entry.name}/\`. Only \`docs/adr/\`, \`docs/worklog/\`, and \`docs/screenshots/\` are allowed (see \`docs/README.md\`).`,
+        );
+      }
+    } else if (entry.name.endsWith(".md") && !ALLOWED_DOCS_FILES.has(entry.name)) {
+      errors.push(
+        `Unregistered doc \`docs/${entry.name}\`. Update an existing evergreen doc in \`docs/README.md\`, add a numbered ADR in \`docs/adr/\`, or record branch work via \`pnpm agent:note\`.`,
+      );
+    }
+  }
+
+  const adrDir = path.join(docsDir, "adr");
+  if (existsSync(adrDir)) {
+    for (const entry of readdirSync(adrDir, { withFileTypes: true })) {
+      if (entry.isFile() && entry.name !== "README.md" && !ADR_FILE_PATTERN.test(entry.name)) {
+        errors.push(
+          `Invalid ADR filename \`docs/adr/${entry.name}\`. Expected \`NNNN-short-slug.md\` (e.g., \`0005-my-decision.md\`).`,
+        );
+      }
+    }
   }
 }
 
@@ -222,6 +281,7 @@ function checkBranchRange({ baseRef, headRef, errors }) {
       f.startsWith("core/") ||
       f.startsWith("apps/") ||
       f.startsWith(".github/") ||
+      f.startsWith(".forgejo/") ||
       f.startsWith("tooling/"),
   );
   const inferredBump = classifyCommitsBump(commits);
@@ -292,7 +352,7 @@ if (hook === "commit-msg") {
 
 if (hook === "pre-commit") {
   checkVersionSinks(errors);
-  checkStatusLineCap(errors);
+  checkDocsHygiene(errors);
   checkFragmentsValidity(errors);
 
   const stagedRaw =
@@ -325,7 +385,7 @@ if (hook === "pre-commit") {
   }
 } else if (hook === "pre-push") {
   checkVersionSinks(errors);
-  checkStatusLineCap(errors);
+  checkDocsHygiene(errors);
   const currentBranch =
     runGit(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"], { allowFailure: true }) || "";
   if (currentBranch !== "main" && currentBranch !== "master") {
@@ -336,7 +396,7 @@ if (hook === "pre-commit") {
   }
 } else if (flags.ci) {
   checkVersionSinks(errors);
-  checkStatusLineCap(errors);
+  checkDocsHygiene(errors);
   const headRef = typeof flags.head === "string" ? flags.head : "HEAD";
   const baseRef = resolveBaseRef(typeof flags.base === "string" ? flags.base : null);
   if (baseRef) {

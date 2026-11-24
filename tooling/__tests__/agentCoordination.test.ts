@@ -273,15 +273,25 @@ describe("Multi-Agent Versioning & Coordination Suite", { timeout: 30_000 }, () 
     ]);
     expect(ciPass.ok).toBe(true);
 
-    // 4. STATUS.md bloat guard (> 250 lines) blocks regressions back to 2,000-line dumps
+    // 4. STATUS.md bloat guard (> 100 lines) blocks regressions back to multi-hundred-line dumps
     writeFileSync(
       path.join(sandbox, "docs/STATUS.md"),
-      Array.from({ length: 265 }, (_, i) => `Line ${i + 1}`).join("\n"),
+      Array.from({ length: 115 }, (_, i) => `Line ${i + 1}`).join("\n"),
       "utf8",
     );
     const bloatRes = runNode(agentGate, ["--root", sandbox, "--hook", "pre-commit"]);
     expect(bloatRes.ok).toBe(false);
-    expect(bloatRes.stderr).toContain("docs/STATUS.md is 265 lines (limit: 250)");
+    expect(bloatRes.stderr).toContain("docs/STATUS.md is 115 lines (limit: 100)");
+
+    // 5. Unregistered ad-hoc doc files and malformed ADR names are rejected
+    writeFileSync(path.join(sandbox, "docs/STATUS.md"), "# STATUS\n", "utf8");
+    writeFileSync(path.join(sandbox, "docs/RANDOM-AUDIT-2026.md"), "# Audit\n", "utf8");
+    mkdirSync(path.join(sandbox, "docs/adr"), { recursive: true });
+    writeFileSync(path.join(sandbox, "docs/adr/bad-name.md"), "# Bad ADR\n", "utf8");
+    const docGateRes = runNode(agentGate, ["--root", sandbox, "--hook", "pre-commit"]);
+    expect(docGateRes.ok).toBe(false);
+    expect(docGateRes.stderr).toContain("Unregistered doc `docs/RANDOM-AUDIT-2026.md`");
+    expect(docGateRes.stderr).toContain("Invalid ADR filename `docs/adr/bad-name.md`");
   });
 
   it("rolls up parallel agent fragments, bumps 5 sinks + Cargo.lock, writes CHANGELOG & worklog, and cleans changes/", () => {

@@ -1,0 +1,48 @@
+name: DevBox Fast CI
+
+# Fast single-pass local CI on devbox-runner (uses warm Cargo/pnpm/Gradle caches
+# and 421 GB /mnt/devbox/forgejo-storage for large artifacts).
+# Heavy 8-job parallel matrix, API 35 Android Emulator, Pages, and multi-OS
+# Release builds remain on GitHub Actions (unlimited free minutes on public repo).
+
+on:
+  push:
+    branches: [main, "feat/**", "fix/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  fast-check:
+    name: Version, Rust & Web Checks (devbox-host)
+    runs-on: devbox-host
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Version & contract freshness gates
+        run: |
+          node tooling/generate-version.mjs --check
+          node apps/web/src/contract/regenerate.mjs --check
+      - name: Rust fmt, clippy & workspace tests
+        run: |
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+      - name: Web lint, format, typecheck & tests
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm lint
+          pnpm format:check
+          pnpm typecheck
+          pnpm test
+          pnpm test:tooling
+      - name: Upload build artifacts (if generated)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quizradar-devbox-${{ github.run_number }}
+          path: |
+            apps/web/dist
+            apps/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: ignore
+          retention-days: 14

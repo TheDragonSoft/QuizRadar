@@ -78,10 +78,11 @@ Turning **AI Features** off in Settings immediately stops all AI traffic in both
 
 ---
 
-## 6. Cloud Backups & Shareable Course Packs
+## 6. Cloud Backups, Shareable Course Packs & Privacy-First Diagnostics
 
 - **Google Drive AppData Backup:** Strictly strips OAuth tokens, Moodle credentials, session cookies, and API keys before writing to your private `appDataFolder`.
 - **1-Tap Shareable Course Packs (`qrpack1_`):** When you choose to share a course pack with classmates, QuizRadar explicitly excludes personal grades, attendance logs, study sessions, custom personal notes, and all credentials—sharing only course schedule slots, syllabus milestones, weights, and study topics.
+- **Opt-Out Anonymous Diagnostics (`diagnostics.quizradar.workers.dev`):** To catch broken installs and measure onboarding reliability without third-party trackers, QuizRadar sends strictly allowlisted daily aggregate counters for 6 anonymous events (`app_opened`, `syllabus_imported`, `onboarding_finished`, `course_link_shared`, `course_link_imported`, `day_7_return`) and sanitized error class names. The Worker rejects any `Authorization` header, unknown field, or PII-shaped string, and never stores IP addresses, cookies, user IDs, emails, course codes, or assessment titles. You can turn this off with one toggle in **Settings → Privacy-First Anonymous Diagnostics**.
 
 ---
 

@@ -2751,6 +2751,77 @@ pub fn parse_email_announcement_from_source(
     }
 }
 
+/// Deterministic offline parser for a single shared or pasted announcement
+/// message (WhatsApp, Telegram, Discord, SMS, or copied portal notice).
+///
+/// Reuses the full Timetable Anchor Engine ([`parse_email_announcement_from_source`])
+/// so relative phrases like `"Quiz 2 moved to next Tuesday's tutorial"` resolve
+/// against the student's local courses and weekly slots without requiring AI.
+/// Missing dates or rooms stay `None` honestly.
+pub fn parse_shared_announcement(
+    subject: Option<&str>,
+    text: &str,
+    schedule: &ScheduleData,
+    ref_date: NaiveDate,
+) -> Result<Assessment, String> {
+    let clean_text = text.trim();
+    let clean_subject = subject
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+
+    if clean_text.is_empty() && clean_subject.is_none() {
+        return Err("Paste or share an announcement message first.".to_string());
+    }
+
+    let derived_subject = clean_subject.unwrap_or_else(|| {
+        let first_line = clean_text
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .unwrap_or("Shared Announcement");
+        first_line
+            .strip_prefix("Subject:")
+            .or_else(|| first_line.strip_prefix("subject:"))
+            .unwrap_or(first_line)
+            .trim()
+            .chars()
+            .take(160)
+            .collect()
+    });
+
+    let body = if clean_text.is_empty() {
+        derived_subject.clone()
+    } else {
+        clean_text.to_string()
+    };
+
+    let identity_input = format!("{}|{}|{}", derived_subject, body, ref_date);
+    let synthetic = CachedEmail {
+        id: format!(
+            "share-{:016x}",
+            crate::parse::util::fnv1a64(identity_input.as_bytes())
+        ),
+        subject: derived_subject,
+        from: String::new(),
+        date: ref_date.format("%Y-%m-%d").to_string(),
+        snippet: None,
+        body,
+        body_truncated: false,
+        internal_date_ms: None,
+        history_id: None,
+    };
+
+    let mut assessment = parse_email_announcement_from_source(
+        &synthetic,
+        schedule,
+        ref_date,
+        AssessmentSource::Feed("Shared Message".to_string()),
+    );
+    assessment.id = synthetic.id;
+    Ok(assessment)
+}
+
 /// Scans announcement emails → (assessments, honest stats). Only candidate
 /// emails are parsed; duplicates inside one scan are skipped (first wins)
 /// using the shared [`merge_key`] — cross-scan merge/refresh is the planner's
@@ -4017,5 +4088,68 @@ Dr. X";
                 "Context-Free Grammars",
             ]
         );
+    }
+
+    #[test]
+    fn parse_shared_announcement_anchors_whatsapp_text_to_timetable_and_stays_honest() {
+        let schedule = ScheduleData {
+            semester: Some("Fall 2026".to_string()),
+            academic_week_start: None,
+            courses: vec![Course {
+                id: "ECE210".to_string(),
+                name: "Digital Systems".to_string(),
+                color: "#1a73e8".to_string(),
+                bg: None,
+                border: None,
+                credits: Some(3.0),
+                max_absences: None,
+                aliases: vec!["ECE 210".to_string()],
+            }],
+            slots: vec![ScheduleSlot {
+                id: "slot-tut".to_string(),
+                day: "Tuesday".to_string(),
+                day_index: 2,
+                course_id: "ECE210".to_string(),
+                course_name: "Digital Systems".to_string(),
+                slot_type: "Tutorial".to_string(),
+                group: None,
+                room: Some("Eng 305".to_string()),
+                start_time: NaiveTime::from_hms_opt(14, 0, 0).unwrap(),
+                end_time: NaiveTime::from_hms_opt(15, 30, 0).unwrap(),
+                display_time: "14:00–15:30".to_string(),
+                has_quiz: false,
+                quiz_title: None,
+                week_parity: None,
+            }],
+        };
+
+        // Anchor date: Sunday 2026-11-01. "next week" tutorial -> Tuesday 2026-11-10.
+        let ref_date = NaiveDate::from_ymd_opt(2026, 11, 1).unwrap();
+        let msg = "ECE 210 Quiz 2 is next week during the tutorial. Topics: Sequential Circuits, Flip-Flops.";
+        let parsed = parse_shared_announcement(None, msg, &schedule, ref_date).unwrap();
+
+        assert!(parsed.id.starts_with("share-"));
+        assert_eq!(parsed.course_id.as_deref(), Some("ECE210"));
+        assert_eq!(parsed.date, NaiveDate::from_ymd_opt(2026, 11, 10));
+        assert_eq!(parsed.room.as_deref(), Some("Eng 305"));
+        assert_eq!(parsed.start_time, NaiveTime::from_hms_opt(14, 0, 0));
+        assert_eq!(
+            parsed.source,
+            AssessmentSource::Feed("Shared Message".to_string())
+        );
+
+        // Undated message never invents a date.
+        let undated = parse_shared_announcement(
+            Some("ECE210 Lab Report"),
+            "Details coming soon",
+            &schedule,
+            ref_date,
+        )
+        .unwrap();
+        assert_eq!(undated.course_id.as_deref(), Some("ECE210"));
+        assert_eq!(undated.date, None);
+
+        // Empty input fails honestly.
+        assert!(parse_shared_announcement(None, "   ", &schedule, ref_date).is_err());
     }
 }

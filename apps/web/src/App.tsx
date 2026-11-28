@@ -35,6 +35,7 @@ import { SearchPaletteModal } from "./components/SearchPaletteModal";
 import { SyllabusPreviewModal } from "./components/SyllabusPreviewModal";
 import { CoursePackShareModal } from "./components/CoursePackShareModal";
 import { CoursePackImportModal } from "./components/CoursePackImportModal";
+import { QuickCaptureModal } from "./components/QuickCaptureModal";
 import { clearCoursePackFromLocation, extractCoursePackFromLocation } from "./lib/coursePack";
 
 // Register the spec modal components with canonical single-shell sizing & flush
@@ -84,6 +85,9 @@ registerModal("course-pack-share", CoursePackShareModal as unknown as ModalCompo
   size: "lg",
 });
 registerModal("course-pack-import", CoursePackImportModal as unknown as ModalComponent, {
+  size: "lg",
+});
+registerModal("quick-capture", QuickCaptureModal as unknown as ModalComponent, {
   size: "lg",
 });
 

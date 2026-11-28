@@ -236,13 +236,42 @@ class MainActivity : ComponentActivity() {
     private fun handleIncomingIntent(intent: Intent?) {
         if (intent == null) return
 
-        // 1. Share-Sheet Ingest: ACTION_SEND text/plain
-        if (intent.action == Intent.ACTION_SEND && intent.type == "text/plain") {
-            val subject = intent.getStringExtra(Intent.EXTRA_SUBJECT)
-            val text = intent.getStringExtra(Intent.EXTRA_TEXT)
-            val draft = ShareIngestParser.parse(subject, text)
-            viewModel.openCreateEventDraft(draft)
-            return
+        // 1. Share-Sheet Ingest: ACTION_SEND text/plain, image/*, or application/pdf
+        if (intent.action == Intent.ACTION_SEND) {
+            val mimeType = intent.type.orEmpty()
+            if (mimeType == "text/plain") {
+                val subject = intent.getStringExtra(Intent.EXTRA_SUBJECT)
+                val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+                viewModel.ingestSharedText(subject, text)
+                return
+            }
+            if (mimeType.startsWith("image/") || mimeType == "application/pdf") {
+                @Suppress("DEPRECATION")
+                val streamUri =
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
+                    } else {
+                        intent.getParcelableExtra(Intent.EXTRA_STREAM)
+                    }
+                if (streamUri != null) {
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        val read =
+                            com.quizradar.app.ui.SyllabusDocumentReader.readFromUris(
+                                this@MainActivity,
+                                listOf(streamUri),
+                            )
+                        val first = read.documents.firstOrNull()
+                        if (first != null) {
+                            viewModel.ingestSharedMedia(first.second, first.third, first.first)
+                        } else {
+                            viewModel.showToast(
+                                read.errors.firstOrNull() ?: "Could not read shared attachment.",
+                            )
+                        }
+                    }
+                }
+                return
+            }
         }
 
         // 2. Custom-scheme PKCE OAuth or Pairing deep link

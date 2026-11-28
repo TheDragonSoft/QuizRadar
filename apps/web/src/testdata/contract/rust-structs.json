@@ -18,7 +18,7 @@
     "core/src/plan/conflicts.rs": "10e08f36c34eb1fbb628ed5733109d372b6d96cf083854d51ac6fd7b995f2dc3",
     "apps/desktop/src-tauri/src/commands/state.rs": "1e77eaa44969b5861c4bd1f96b95a82adad2968cfd8d49f4106593720de53570",
     "core/src/store/repo.rs": "95fd75f4baf901a6258b8bf0ff7001e4a3c1a1323c36aeed90df8052204c9e09",
-    "core/src/ffi.rs": "4ec6d1dc8f575e8abd87da8926118bf9eae879ded961bbdea249734206f9b8ad",
+    "core/src/ffi.rs": "d2c8543438d66888bce0234f1cfe026f1fc6d12cf819cd7c8b81a31821ce7600",
     "core/src/store/db.rs": "7bb13b760def20b915a1c214ddad9ea60b8c37702bcd69e9fee780cff4ecd4db"
   },
   "structs": {
@@ -2844,6 +2844,23 @@
       "returns": "Result<String, QuizRadarFfiError>"
     },
     "NativeStore.extract_syllabus_from_document": {
+      "parameters": [
+        "&self",
+        "document_b64: String",
+        "mime: String",
+        "api_key: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.parse_shared_announcement_json": {
+      "parameters": [
+        "&self",
+        "subject: String",
+        "text: String"
+      ],
+      "returns": "Result<String, QuizRadarFfiError>"
+    },
+    "NativeStore.extract_announcement_from_document_json": {
       "parameters": [
         "&self",
         "document_b64: String",

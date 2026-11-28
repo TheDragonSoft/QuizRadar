@@ -1583,6 +1583,58 @@ impl NativeStore {
         Ok(serde_json::to_string(&extracted)?)
     }
 
+    /// Deterministically parses a shared or pasted announcement message
+    /// (WhatsApp, Telegram, Discord, SMS, or copied portal notice) against the
+    /// student's saved weekly timetable without requiring AI or network access.
+    #[uniffi::method(async_runtime = "tokio")]
+    pub async fn parse_shared_announcement_json(
+        &self,
+        subject: String,
+        text: String,
+    ) -> Result<String, QuizRadarFfiError> {
+        let today = chrono::Utc::now().date_naive();
+        let schedule = self.inner.load_state(today).await?.schedule;
+        let subject_opt = (!subject.trim().is_empty()).then_some(subject.as_str());
+        let assessment =
+            crate::parse::email::parse_shared_announcement(subject_opt, &text, &schedule, today)
+                .map_err(|msg| QuizRadarFfiError::Validation { msg })?;
+        Ok(serde_json::to_string(&assessment)?)
+    }
+
+    /// Consent-gated extraction of a single academic announcement from a shared
+    /// screenshot (`image/*`) or PDF notice (`application/pdf`), anchored
+    /// against the student's saved timetable.
+    #[uniffi::method(async_runtime = "tokio")]
+    pub async fn extract_announcement_from_document_json(
+        &self,
+        document_b64: String,
+        mime: String,
+        api_key: String,
+    ) -> Result<String, QuizRadarFfiError> {
+        let provider = self
+            .require_consented_vision_provider(
+                api_key,
+                "AI features are turned off in Settings, so this screenshot cannot leave \
+                 the device. Turn Gemini back on (or paste the text) to capture it.",
+            )
+            .await?;
+
+        let today = chrono::Utc::now().date_naive();
+        let schedule = self.inner.load_state(today).await?.schedule;
+        let extracted_res = crate::ai::tasks::extract_announcement_from_document(
+            &provider,
+            &document_b64,
+            &mime,
+            &schedule,
+            today,
+        )
+        .await;
+        self.persist_trial_quota_if_any(&provider).await;
+        let assessment =
+            extracted_res.map_err(|e| QuizRadarFfiError::Validation { msg: e.reason() })?;
+        Ok(serde_json::to_string(&assessment)?)
+    }
+
     /// Returns the most recently observed Trial AI Relay quota snapshot as
     /// JSON (`{limit, remaining, resetIso}` or `{}`).
     #[uniffi::method(async_runtime = "tokio")]

@@ -432,6 +432,8 @@ export interface AppStoreState {
   validateGeminiKey: (key: string) => Promise<{ valid: boolean; error?: string }>;
   extractSchedule: (image: string) => Promise<DesktopExtractedTimetable>;
   extractSyllabi: (documents: SyllabusDocumentInput[]) => Promise<DesktopExtractedSyllabi>;
+  parseSharedAnnouncement: (text: string, subject?: string) => Promise<Assessment>;
+  extractAnnouncementMedia: (document: SyllabusDocumentInput) => Promise<Assessment>;
   applyCourseBundle: (args: {
     semester?: string | null;
     courses: Course[];
@@ -468,6 +470,7 @@ export interface AppStoreState {
   openSyllabusPreview: (extracted: DesktopExtractedSyllabi) => void;
   openShareCoursePack: (courseId: string) => void;
   openImportCoursePack: (opts?: { rawInput?: string; pack?: CoursePackPayload }) => void;
+  openQuickCapture: (opts?: { initialText?: string }) => void;
 
   // Pomodoro
   pomodoroIsRunning: boolean;
@@ -2103,6 +2106,20 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     return aliasDeep(raw);
   },
 
+  parseSharedAnnouncement: async (text, subject) => {
+    const raw = await rpc<Assessment>("parse_shared_announcement", {
+      subject: subject ?? null,
+      text,
+    });
+    return aliasDeep(raw);
+  },
+
+  extractAnnouncementMedia: async (document) => {
+    const raw = await rpc<Assessment>("extract_announcement_media", { document });
+    void get().refreshAiQuota();
+    return aliasDeep(raw);
+  },
+
   applyCourseBundle: async ({ semester, courses, slots, assessments }) => {
     const raw = await rpc<ApplyCourseBundleResult>("apply_course_bundle", {
       schedule: toRustSchedule({
@@ -2342,6 +2359,13 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   openImportCoursePack: (opts) => {
     get().openModal({
       id: "course-pack-import",
+      props: opts || {},
+    });
+  },
+
+  openQuickCapture: (opts) => {
+    get().openModal({
+      id: "quick-capture",
       props: opts || {},
     });
   },

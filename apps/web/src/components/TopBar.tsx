@@ -4,6 +4,7 @@ import {
   CheckSquare,
   ChevronLeft,
   ChevronRight,
+  ClipboardPaste,
   Database,
   LayoutDashboard,
   Moon,
@@ -434,6 +435,18 @@ export const TopBar: React.FC<TopBarProps> = ({ onOpenSettings, onOpenAuth }) =>
             aria-hidden="true"
           />
           <span className="hidden sm:inline">{syncLabel}</span>
+        </button>
+
+        {/* Quick announcement capture (WhatsApp / Telegram / Discord text or screenshot) */}
+        <button
+          type="button"
+          onClick={() => openModal({ id: "quick-capture" })}
+          aria-label="Quick capture announcement"
+          title="Capture WhatsApp / Discord message or screenshot"
+          className="hidden h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--surface-border)] bg-[var(--surface)] px-2.5 text-xs font-semibold text-[var(--text)] transition hover:bg-[var(--surface-hover)] active:scale-[0.98] lg:flex sm:px-3"
+        >
+          <ClipboardPaste className="h-3.5 w-3.5 text-[var(--accent)]" aria-hidden="true" />
+          <span>Capture</span>
         </button>
 
         {/* On-device engine & local backup — refined surface button with emerald accent icon */}

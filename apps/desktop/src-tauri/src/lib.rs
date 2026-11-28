@@ -206,6 +206,8 @@ pub fn run() -> tauri::Result<()> {
             commands::logout,
             commands::extract_schedule,
             commands::extract_syllabi,
+            commands::parse_shared_announcement,
+            commands::extract_announcement_media,
             commands::apply_course_bundle,
             commands::optimize_tasks,
             commands::practice_generate,

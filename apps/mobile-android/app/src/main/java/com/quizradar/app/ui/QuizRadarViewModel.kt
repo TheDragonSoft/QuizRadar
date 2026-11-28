@@ -748,6 +748,96 @@ class QuizRadarViewModel(
         _activeCreateEventDraft.value = draft
     }
 
+    fun ingestSharedText(
+        subject: String?,
+        text: String?,
+    ) {
+        viewModelScope.launch {
+            val fallback = com.quizradar.app.ui.share.ShareIngestParser.parse(subject, text)
+            val resolved =
+                try {
+                    val rawJson =
+                        core.parseSharedAnnouncementJson(
+                            subject.orEmpty(),
+                            text.orEmpty(),
+                        )
+                    parseAnnouncementDraftFromCoreJson(rawJson, fallback)
+                } catch (_: Exception) {
+                    fallback
+                }
+            _activeCreateEventDraft.value = resolved
+        }
+    }
+
+    fun ingestSharedMedia(
+        documentBytes: ByteArray,
+        mime: String,
+        fileName: String,
+    ) {
+        viewModelScope.launch {
+            try {
+                val b64 = android.util.Base64.encodeToString(documentBytes, android.util.Base64.NO_WRAP)
+                val apiKey = _geminiApiKey.value.trim().ifEmpty { core.geminiApiKey().orEmpty() }
+                val rawJson = core.extractAnnouncementFromDocumentJson(b64, mime, apiKey)
+                val fallback =
+                    com.quizradar.app.ui.share.SharedEventDraft(
+                        title = fileName.substringBeforeLast('.').ifBlank { "Shared Announcement" },
+                        notes = "",
+                    )
+                _activeCreateEventDraft.value = parseAnnouncementDraftFromCoreJson(rawJson, fallback)
+                if (_aiTrialEnabled.value) {
+                    _trialAiQuotaJson.value =
+                        runCatching { core.getTrialAiQuotaJson() }.getOrDefault("{}")
+                }
+            } catch (e: Exception) {
+                showToast(e.message ?: "Could not extract announcement from shared file.")
+            }
+        }
+    }
+
+    private fun parseAnnouncementDraftFromCoreJson(
+        rawJson: String,
+        fallback: com.quizradar.app.ui.share.SharedEventDraft,
+    ): com.quizradar.app.ui.share.SharedEventDraft {
+        val obj = org.json.JSONObject(rawJson)
+        val title = obj.optString("title", "").trim().ifEmpty { fallback.title }
+        val courseId =
+            obj.optString("course_id", "").trim().ifEmpty { null }
+                ?: fallback.courseId
+        val dateStr =
+            obj.optString("date_iso", "").trim().ifEmpty {
+                obj.optString("date", "").trim()
+            }
+        val date =
+            if (dateStr.isNotEmpty()) {
+                try {
+                    java.time.LocalDate.parse(dateStr)
+                } catch (_: Exception) {
+                    fallback.dateIso
+                }
+            } else {
+                fallback.dateIso
+            }
+        val startTime = obj.optString("start_time", "").trim().ifEmpty { null } ?: fallback.startTime
+        val endTime = obj.optString("end_time", "").trim().ifEmpty { null } ?: fallback.endTime
+        val note = obj.optString("ai_inference_note", "").trim()
+        val room = obj.optString("room", "").trim()
+        val notesParts =
+            buildList {
+                if (room.isNotEmpty()) add("Room: $room")
+                if (note.isNotEmpty()) add(note)
+                if (fallback.notes.isNotBlank()) add(fallback.notes)
+            }
+        return com.quizradar.app.ui.share.SharedEventDraft(
+            title = title,
+            notes = notesParts.joinToString("\n"),
+            courseId = courseId,
+            dateIso = date,
+            startTime = startTime,
+            endTime = endTime,
+        )
+    }
+
     fun dismissCreateEventDraft() {
         _activeCreateEventDraft.value = null
     }
